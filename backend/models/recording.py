@@ -176,11 +176,6 @@ class RecordingCaptureLifecycleResponse(SQLModel):
     last_sequence: int
 
 
-class RecordingUploadTokenResponse(SQLModel):
-    recording_id: str
-    upload_token: str
-
-
 def recording_supports_unified_mutations(recording: Optional["Recording"]) -> bool:
     if recording is None:
         return False

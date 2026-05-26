@@ -89,14 +89,14 @@ def transcode_segment_task(recording_id: int, sequence: int):
                     sync_recording_audio_chunks_from_directory(
                         session,
                         recording_id=recording_id,
-                        source_kind="companion",
+                        source_kind="browser",
                         suffix=".wav",
                         temp_dir=wav_path.parent,
                     )
                     sync_recording_audio_window_manifests(
                         session,
                         recording_id=recording_id,
-                        source_kind="companion",
+                        source_kind="browser",
                         seal_tail=False,
                     )
                     session.commit()
@@ -136,14 +136,14 @@ def transcode_segment_task(recording_id: int, sequence: int):
             sync_recording_audio_chunks_from_directory(
                 session,
                 recording_id=recording_id,
-                source_kind="companion",
+                source_kind="browser",
                 suffix=".wav",
                 temp_dir=wav_path.parent,
             )
             sync_recording_audio_window_manifests(
                 session,
                 recording_id=recording_id,
-                source_kind="companion",
+                source_kind="browser",
                 seal_tail=False,
             )
             session.commit()

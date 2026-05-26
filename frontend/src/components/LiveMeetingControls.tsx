@@ -1,22 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Pause, Play, Square } from "lucide-react";
 
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-import {
-  COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
-  companionLocalFetch,
-  isCompanionLocalConnectionError,
-  readCompanionLocalError,
-  type CompanionLocalAction,
-} from "@/lib/companionLocalApi";
-
-const COMPANION_COMMAND_ACTIONS: Record<string, CompanionLocalAction> = {
-  stop: "recording:stop",
-  pause: "recording:pause",
-  resume: "recording:resume",
-};
+import { useCapture } from "@/lib/capture/CaptureProvider";
 
 interface LiveMeetingControlsProps {
   size?: "compact" | "full";
@@ -38,76 +25,39 @@ export default function LiveMeetingControls({
   onMeetingEnd,
 }: LiveMeetingControlsProps) {
   const {
-    companion,
-    companionStatus,
-    companionLocalHttpsStatus,
-    recordingDuration,
-    checkCompanion,
-    enableCompanionMonitoring,
-  } = useServiceStatusStore();
+    elapsedSeconds,
+    error: captureError,
+    pause,
+    resume,
+    runtimeActive,
+    status,
+    stop,
+  } = useCapture();
 
-  const [elapsedTime, setElapsedTime] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const localHttpsNeedsRepair = companionLocalHttpsStatus === "needs-repair";
-  const isRecording = companionStatus === "recording";
-
-  useEffect(() => {
-    setElapsedTime(recordingDuration);
-  }, [recordingDuration]);
-
-  useEffect(() => {
-    if (companion && isRecording) {
-      timerRef.current = setInterval(() => {
-        setElapsedTime((current) => current + 1);
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [companion, isRecording]);
+  const isRecording = status === "recording";
+  const disabled = !runtimeActive || status === "finalizing";
 
   const sendCommand = async (command: "stop" | "pause" | "resume") => {
     setError(null);
-    if (localHttpsNeedsRepair) {
-      setError(
-        "Browser repair required. Open Companion Settings, then follow the repair steps in the Companion app.",
-      );
-      return null;
-    }
-
     try {
-      const action = COMPANION_COMMAND_ACTIONS[command];
-      const res = await companionLocalFetch(
-        `/${command}`,
-        { method: "POST", headers: { "Content-Type": "application/json" } },
-        action,
-      );
-
-      if (!res.ok) {
-        const errorMessage = await readCompanionLocalError(
-          res,
-          `Companion App error: ${res.status}`,
-        );
-        setError(errorMessage || "Failed to reach Backend API from Companion App.");
-        return null;
+      if (command === "pause") {
+        await pause();
+        return { ok: true };
       }
 
-      enableCompanionMonitoring();
-      setTimeout(() => checkCompanion(), 500);
-      return await res.json();
+      if (command === "resume") {
+        await resume();
+        return { ok: true };
+      }
+
+      return await stop();
     } catch (err: unknown) {
-      if (isCompanionLocalConnectionError(err)) {
-        setError(COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE);
-      } else if (err instanceof Error && err.message) {
+      if (err instanceof Error && err.message) {
         setError(err.message);
       } else {
-        setError("Failed to connect to Companion App.");
+        setError(`Failed to ${command} the browser recording.`);
       }
-      console.error(err);
       return null;
     }
   };
@@ -115,9 +65,8 @@ export default function LiveMeetingControls({
   const handleStop = async () => {
     const result = await sendCommand("stop");
     if (result) {
-      setElapsedTime(0);
       if (onMeetingEnd) {
-        setTimeout(onMeetingEnd, 1000);
+        setTimeout(onMeetingEnd, 300);
       }
     }
   };
@@ -127,9 +76,9 @@ export default function LiveMeetingControls({
   if (size === "compact") {
     return (
       <div className="space-y-2">
-        {error && (
+        {(error || captureError) && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-            {error}
+            {error || captureError}
           </div>
         )}
         <div className="flex items-center gap-2">
@@ -141,14 +90,14 @@ export default function LiveMeetingControls({
               {statusLabel}
             </span>
             <span className="ml-auto font-mono text-sm font-semibold text-gray-950 dark:text-white">
-              {formatTime(elapsedTime)}
+              {formatTime(elapsedSeconds)}
             </span>
           </div>
           {isRecording ? (
             <button
               type="button"
               onClick={() => sendCommand("pause")}
-              disabled={localHttpsNeedsRepair}
+              disabled={disabled}
               className="rounded-xl border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
               title="Pause recording"
               aria-label="Pause recording"
@@ -159,7 +108,7 @@ export default function LiveMeetingControls({
             <button
               type="button"
               onClick={() => sendCommand("resume")}
-              disabled={localHttpsNeedsRepair}
+              disabled={disabled}
               className="rounded-xl border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
               title="Resume recording"
               aria-label="Resume recording"
@@ -170,7 +119,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={handleStop}
-            disabled={localHttpsNeedsRepair}
+            disabled={disabled}
             className="rounded-xl bg-red-600 p-2 text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             title="Stop recording"
             aria-label="Stop recording"
@@ -184,9 +133,9 @@ export default function LiveMeetingControls({
 
   return (
     <div className="space-y-3">
-      {error && (
+      {(error || captureError) && (
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-          {error}
+          {error || captureError}
         </div>
       )}
       <div className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-red-100 bg-red-50 px-4 py-4 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
@@ -199,7 +148,7 @@ export default function LiveMeetingControls({
           </span>
         </div>
         <span className="font-mono text-3xl font-semibold text-gray-950 dark:text-white">
-          {formatTime(elapsedTime)}
+          {formatTime(elapsedSeconds)}
         </span>
       </div>
 
@@ -208,7 +157,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={() => sendCommand("pause")}
-            disabled={localHttpsNeedsRepair}
+            disabled={disabled}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
             title="Pause recording"
           >
@@ -219,7 +168,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={() => sendCommand("resume")}
-            disabled={localHttpsNeedsRepair}
+            disabled={disabled}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
             title="Resume recording"
           >
@@ -231,7 +180,7 @@ export default function LiveMeetingControls({
         <button
           type="button"
           onClick={handleStop}
-          disabled={localHttpsNeedsRepair}
+          disabled={disabled}
           className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           title="Stop recording"
         >

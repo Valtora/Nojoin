@@ -144,26 +144,6 @@ async def test_revoke_jwt_by_payload_inserts_jti_and_is_idempotent(
 
 
 @pytest.mark.anyio
-async def test_revoke_jwt_by_payload_skips_companion_tokens(
-    session_maker, isolated_keyring
-):
-    user = await _seed_user(session_maker)
-    token = security.create_access_token(
-        user.username,
-        token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_BOOTSTRAP_SCOPE],
-        expires_delta=timedelta(minutes=10),
-    )
-    payload = security.decode_access_token(token)
-
-    async with session_maker() as session:
-        managed = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
-        result = await revoke_jwt_by_payload(session, payload, managed)
-
-    assert result is False
-
-
-@pytest.mark.anyio
 async def test_prune_expired_revoked_jwts_deletes_only_past_entries(session_maker):
     user = await _seed_user(session_maker)
 

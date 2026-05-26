@@ -6,6 +6,8 @@ import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
 import TourGuide from "@/components/TourGuide";
+import CaptureShell from "@/components/CaptureShell";
+import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 
 export default function DashboardLayout({
   children,
@@ -18,16 +20,20 @@ export default function DashboardLayout({
   const showSidebar = pathname?.startsWith('/recordings');
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
-      <TourGuide />
-      <MainNav />
-      {!isSettingsPage && !isPeoplePage && showSidebar && <Sidebar />}
-      
-      <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full">
-        <TopBar />
-        {children}
-        <ServiceStatusAlerts />
-      </main>
-    </div>
+    <CaptureProvider>
+      <CaptureShell>
+        <div className="flex h-screen w-full overflow-hidden">
+          <TourGuide />
+          <MainNav />
+          {!isSettingsPage && !isPeoplePage && showSidebar && <Sidebar />}
+          
+          <main className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full">
+            <TopBar />
+            {children}
+            <ServiceStatusAlerts />
+          </main>
+        </div>
+      </CaptureShell>
+    </CaptureProvider>
   );
 }

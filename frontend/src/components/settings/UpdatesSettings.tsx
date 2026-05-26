@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   ArrowUpCircle,
-  Download,
   ExternalLink,
   GitBranch,
   RefreshCw,
@@ -10,7 +9,7 @@ import {
 
 import { getVersion } from "@/lib/api";
 import { fuzzyMatch } from "@/lib/searchUtils";
-import { ReleaseAsset, ReleaseInfo, UpdateStatus, VersionInfo } from "@/types";
+import { UpdateStatus, VersionInfo } from "@/types";
 import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
@@ -30,19 +29,6 @@ const SECONDARY_ACTION_STYLES =
 
 interface UpdatesSettingsProps {
   searchQuery?: string;
-}
-
-function getInstallerAsset(release: ReleaseInfo | null): ReleaseAsset | null {
-  if (!release) {
-    return null;
-  }
-
-  return (
-    release.assets.find((asset) => {
-      const assetName = asset.name.toLowerCase();
-      return assetName.endsWith(".exe") && !assetName.includes("portable");
-    }) || null
-  );
 }
 
 function formatPublishedAt(value: string | null | undefined): string {
@@ -289,14 +275,13 @@ export default function UpdatesSettings({
   }, []);
 
   const latestRelease = versionInfo?.releases?.[0] || null;
-  const latestInstaller = getInstallerAsset(latestRelease);
 
   if (!showUpdates && searchQuery) {
     return (
       <SettingsCallout
         tone="neutral"
         title="No matching settings"
-        message="Try a broader search term for releases, versions, downloads, or installers."
+        message="Try a broader search term for releases, versions, deployment, or downloads."
       />
     );
   }
@@ -334,7 +319,7 @@ export default function UpdatesSettings({
       <SettingsSection
         eyebrow="Updates"
         title="Release overview"
-        description="Track the installed version, the latest stable release, and the published download links."
+        description="Track the installed version, the latest stable release, and the published release links."
         width="full"
         headerAside={
           <button
@@ -380,7 +365,7 @@ export default function UpdatesSettings({
                   Release links
                 </div>
                 <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                  Open the published release pages, compare versions, or download the latest Companion installer directly.
+                  Open the published release pages, compare versions, and review deployment guidance for upgrading your installation.
                 </p>
               </div>
 
@@ -403,21 +388,6 @@ export default function UpdatesSettings({
                   <GitBranch className="h-4 w-4" />
                   Browse all releases
                 </a>
-                {(latestInstaller || versionInfo.companion_download_url) && (
-                  <a
-                    href={
-                      latestInstaller?.browser_download_url ||
-                      versionInfo.companion_download_url ||
-                      RELEASES_PAGE_URL
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={SECONDARY_ACTION_STYLES}
-                  >
-                    <Download className="h-4 w-4" />
-                    Download Companion
-                  </a>
-                )}
               </div>
             </SettingsPanel>
           </div>
@@ -490,17 +460,6 @@ export default function UpdatesSettings({
                     <ExternalLink className="h-4 w-4" />
                     Open on GitHub
                   </a>
-                  {latestInstaller && (
-                    <a
-                      href={latestInstaller.browser_download_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={SECONDARY_ACTION_STYLES}
-                    >
-                      <Download className="h-4 w-4" />
-                      Windows installer
-                    </a>
-                  )}
                 </div>
               </div>
             </SettingsPanel>
@@ -529,7 +488,6 @@ export default function UpdatesSettings({
         {versionInfo.releases.length > 0 ? (
           <div className="space-y-4">
             {versionInfo.releases.map((release) => {
-              const installerAsset = getInstallerAsset(release);
               const isInstalled = release.version === versionInfo.current_version;
               const isLatest = release.version === versionInfo.latest_version;
 
@@ -567,17 +525,6 @@ export default function UpdatesSettings({
                         <ExternalLink className="h-4 w-4" />
                         View release
                       </a>
-                      {installerAsset && (
-                        <a
-                          href={installerAsset.browser_download_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={SECONDARY_ACTION_STYLES}
-                        >
-                          <Download className="h-4 w-4" />
-                          Installer
-                        </a>
-                      )}
                     </div>
                   </div>
 

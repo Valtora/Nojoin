@@ -1,5 +1,6 @@
 export enum RecordingStatus {
   UPLOADING = "UPLOADING",
+  PAUSED = "PAUSED",
   RECORDED = "RECORDED",
   QUEUED = "QUEUED",
   PROCESSING = "PROCESSING",
@@ -267,6 +268,25 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   calendar_event?: CalendarEventLink | null;
 }
 
+export interface RecordingInitResponse {
+  id: RecordingId;
+  name: string;
+  upload_token?: string | null;
+}
+
+export interface RecordingCaptureLifecycleResponse {
+  recording_id: RecordingId;
+  status: RecordingStatus;
+  last_sequence: number;
+}
+
+export interface ActiveRecordingConflictDetail {
+  code: "active_recording_exists";
+  message: string;
+  recording_id: RecordingId;
+  status: RecordingStatus;
+}
+
 export interface Settings {
   whisper_model_size?: string;
   transcription_backend?: string;
@@ -292,7 +312,6 @@ export interface Settings {
   ollama_api_url?: string;
   hf_token?: string;
   worker_url?: string;
-  companion_url?: string;
   enable_auto_voiceprints?: boolean;
   prefer_short_titles?: boolean;
   enable_vad?: boolean;
@@ -512,13 +531,6 @@ export interface AudioDevice {
   is_default: boolean;
 }
 
-export interface CompanionDevices {
-  input_devices: AudioDevice[];
-  output_devices: AudioDevice[];
-  selected_input: string | null;
-  selected_output: string | null;
-}
-
 export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
@@ -612,7 +624,6 @@ export interface VersionInfo {
   current_release_url?: string | null;
   latest_published_at?: string | null;
   release_source?: string;
-  companion_download_url?: string | null;
   releases: ReleaseInfo[];
 }
 

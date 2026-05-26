@@ -5,10 +5,12 @@ import logging
 import os
 from contextlib import contextmanager
 
-from sqlalchemy import text
-from sqlmodel import Session
+from sqlalchemy import or_, text
+from sqlmodel import Session, select
 
 from backend.core.db import sync_engine
+from backend.models.task import UserTask
+from backend.models.user import User
 from backend.startup_migrations import wait_for_database_connection
 from backend.utils.canonical_pipeline import (
     list_pending_startup_cutover_recording_ids,
@@ -21,6 +23,9 @@ SKIP_STARTUP_CANONICAL_CUTOVER_ENV_VAR = "NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER"
 STARTUP_CANONICAL_CUTOVER_BATCH_SIZE_ENV_VAR = "NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE"
 STARTUP_CANONICAL_CUTOVER_ADVISORY_LOCK_ID = 640_227_114_901_337_251
 TRUE_VALUES = {"1", "true", "yes", "on"}
+COMPANION_RETIREMENT_NOTICE_TITLE = (
+    "Companion app retired. Recording is now browser-only. See docs/CAPTURE.md."
+)
 MODEL_MODULES = (
     "backend.models.recording",
     "backend.models.speaker",
@@ -35,8 +40,6 @@ MODEL_MODULES = (
     "backend.models.people_tag",
     "backend.models.task",
     "backend.models.calendar",
-    "backend.models.companion_pairing",
-    "backend.models.companion_pairing_request",
     "backend.models.pipeline",
 )
 
@@ -57,6 +60,38 @@ def _batch_size() -> int:
     except ValueError:
         return 100
     return max(parsed, 1)
+
+
+def _ensure_companion_retirement_notice(session: Session) -> int:
+    existing_user_ids = set(
+        session.exec(
+            select(UserTask.user_id).where(
+                UserTask.title == COMPANION_RETIREMENT_NOTICE_TITLE
+            )
+        ).all()
+    )
+    admin_users = session.exec(
+        select(User).where(
+            or_(
+                User.role.in_(["owner", "admin"]),
+                User.is_superuser == True,
+            )
+        )
+    ).all()
+
+    created = 0
+    for admin_user in admin_users:
+        if admin_user.id in existing_user_ids:
+            continue
+        session.add(
+            UserTask(
+                title=COMPANION_RETIREMENT_NOTICE_TITLE,
+                user_id=admin_user.id,
+            )
+        )
+        created += 1
+
+    return created
 
 
 @contextmanager
@@ -95,10 +130,16 @@ def run_startup_canonical_cutover() -> dict[str, int]:
         "already_reprocess_required": 0,
         "skipped_unified": 0,
         "missing": 0,
+        "retirement_notices": 0,
     }
 
     with sync_engine.connect() as connection:
         with _advisory_lock(connection):
+            with Session(bind=connection) as session:
+                summary["retirement_notices"] = _ensure_companion_retirement_notice(session)
+                if summary["retirement_notices"]:
+                    session.commit()
+
             while True:
                 with Session(bind=connection) as session:
                     recording_ids = list_pending_startup_cutover_recording_ids(

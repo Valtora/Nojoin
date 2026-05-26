@@ -45,20 +45,6 @@ def test_session_token_round_trip_carries_jti_iat_and_tv(isolated_keyring):
     assert "iat" in decoded
 
 
-def test_companion_token_does_not_carry_jti_or_tv(isolated_keyring):
-    token = security.create_access_token(
-        "alice",
-        token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_BOOTSTRAP_SCOPE],
-        expires_delta=timedelta(minutes=5),
-    )
-
-    decoded = security.decode_access_token(token)
-
-    assert "jti" not in decoded
-    assert "tv" not in decoded
-
-
 def test_keyring_rotation_keeps_old_tokens_verifying(isolated_keyring):
     token_before = security.create_access_token(
         "alice",

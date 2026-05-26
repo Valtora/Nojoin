@@ -1,61 +1,67 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-describe("serviceStatusStore companion pairing state", () => {
+describe("serviceStatusStore backend health", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();
   });
 
-  it("keeps the device paired when backend auth succeeds but the local status endpoint is unreachable", async () => {
+  it("uses the detailed health endpoint when it is available", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ token: "local-token", expires_in: 120 }),
+        json: async () => ({
+          version: "1.2.3",
+          components: {
+            db: "connected",
+            worker: "inactive",
+          },
+        }),
       } as Response)
-      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
-
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { useServiceStatusStore } = await import("./serviceStatusStore");
-
-    await useServiceStatusStore.getState().checkCompanion();
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(useServiceStatusStore.getState()).toMatchObject({
-      companion: false,
-      companionAuthenticated: true,
-      companionLocalConnectionUnavailable: true,
-      companionFailCount: 1,
-    });
-  });
-
-  it("keeps the device paired when the local status endpoint returns a non-auth failure", async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ token: "local-token", expires_in: 120 }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 503,
       } as Response);
 
     vi.stubGlobal("fetch", fetchMock);
 
     const { useServiceStatusStore } = await import("./serviceStatusStore");
 
-    await useServiceStatusStore.getState().checkCompanion();
+    await useServiceStatusStore.getState().checkBackend();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(useServiceStatusStore.getState()).toMatchObject({
+      backend: true,
+      db: true,
+      worker: false,
+      backendVersion: "1.2.3",
+      backendFailCount: 0,
+    });
+  });
+
+  it("falls back to the public health probe when the detailed endpoint fails", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { useServiceStatusStore } = await import("./serviceStatusStore");
+
+    await useServiceStatusStore.getState().checkBackend();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(useServiceStatusStore.getState()).toMatchObject({
-      companion: false,
-      companionAuthenticated: true,
-      companionLocalConnectionUnavailable: false,
-      companionFailCount: 1,
+      backend: true,
+      db: true,
+      worker: true,
+      backendFailCount: 0,
     });
   });
 });

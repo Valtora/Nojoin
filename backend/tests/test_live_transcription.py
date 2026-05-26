@@ -765,9 +765,9 @@ def test_build_audio_window_specs_tracks_overlap_independent_of_chunk_cadence():
     from backend.utils.audio_windows import build_audio_window_specs
 
     chunk_rows = [
-        SimpleNamespace(sequence_no=1, source_kind="companion", absolute_start_ms=0, absolute_end_ms=1000),
-        SimpleNamespace(sequence_no=2, source_kind="companion", absolute_start_ms=1000, absolute_end_ms=2300),
-        SimpleNamespace(sequence_no=3, source_kind="companion", absolute_start_ms=2300, absolute_end_ms=3600),
+        SimpleNamespace(sequence_no=1, source_kind="browser", absolute_start_ms=0, absolute_end_ms=1000),
+        SimpleNamespace(sequence_no=2, source_kind="browser", absolute_start_ms=1000, absolute_end_ms=2300),
+        SimpleNamespace(sequence_no=3, source_kind="browser", absolute_start_ms=2300, absolute_end_ms=3600),
     ]
 
     specs = build_audio_window_specs(
@@ -2448,7 +2448,7 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
     assert upload_response.status_code == 200
     assert finalize_response.status_code == 409
     assert finalize_response.json()["detail"] == (
-        "Recording is no longer accepting companion uploads"
+        "Recording is no longer accepting capture uploads"
     )
     assert queued_recordings == []
     assert concatenated_paths == [[str(upload_dir / "0.wav")]]

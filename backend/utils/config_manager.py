@@ -93,7 +93,6 @@ _default_models = _get_default_models()
 
 DEFAULT_SYSTEM_CONFIG = {
     "worker_url": "redis://localhost:6379/0", # Default Redis URL for Celery worker
-    "companion_url": "http://localhost:12345", # Default Companion App URL
     "web_app_url": "https://localhost:14443", # Default Web App URL
     "enable_canonical_transcript_writes": True,
     "enable_asr_window_result_ledger": True,

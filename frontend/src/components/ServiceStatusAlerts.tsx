@@ -3,26 +3,15 @@
 import { useEffect, useRef } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-import { getCompanionSteadyStateGuidance } from "@/lib/companionSteadyState";
 
 export default function ServiceStatusAlerts() {
   const { addNotification, removeActiveNotification } = useNotificationStore();
   const {
     backend,
-    backendVersion,
     db,
     worker,
-    companion,
-    companionAuthenticated,
-    companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
-    companionStatus,
-    companionVersion,
-    companionMonitoringEnabled,
     backendFailCount,
-    companionFailCount,
     checkBackend,
-    checkCompanion,
     startPolling,
     stopPolling,
   } = useServiceStatusStore();
@@ -32,22 +21,10 @@ export default function ServiceStatusAlerts() {
     backend: null,
     db: null,
     worker: null,
-    companion: null,
   });
-  const companionNotificationState = useRef<string | null>(null);
-  const previousCompanionAuthenticated = useRef(false);
 
   // Track startup grace period
   const isStartupRef = useRef(true);
-  const companionGuidance = getCompanionSteadyStateGuidance({
-    companion,
-    companionAuthenticated,
-    companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
-    companionStatus,
-    backendVersion,
-    companionVersion,
-  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -69,7 +46,6 @@ export default function ServiceStatusAlerts() {
       }
 
       void checkBackend();
-      void checkCompanion();
     };
 
     window.addEventListener("focus", refreshStatuses);
@@ -79,58 +55,10 @@ export default function ServiceStatusAlerts() {
       window.removeEventListener("focus", refreshStatuses);
       document.removeEventListener("visibilitychange", refreshStatuses);
     };
-  }, [checkBackend, checkCompanion]);
-
-  useEffect(() => {
-    if (
-      !isStartupRef.current &&
-      companionMonitoringEnabled &&
-      previousCompanionAuthenticated.current &&
-      !companionAuthenticated
-    ) {
-      addNotification({
-        type: "info",
-        message:
-          "Companion pairing ended for this Nojoin backend. Start a new pairing request from the Nojoin settings page if you still need local recording controls.",
-      });
-    }
-
-    previousCompanionAuthenticated.current = companionAuthenticated;
-  }, [
-    addNotification,
-    companionAuthenticated,
-    companionMonitoringEnabled,
-  ]);
+  }, [checkBackend]);
 
   // Monitor Service Status
   useEffect(() => {
-    const clearCompanionNotification = () => {
-      if (notificationIds.current.companion) {
-        removeActiveNotification(notificationIds.current.companion);
-        notificationIds.current.companion = null;
-      }
-      companionNotificationState.current = null;
-    };
-
-    const showCompanionNotification = (
-      stateKey: string,
-      type: "error" | "warning" | "info",
-      message: string,
-      persistent = false,
-    ) => {
-      if (companionNotificationState.current === stateKey) {
-        return;
-      }
-
-      clearCompanionNotification();
-      notificationIds.current.companion = addNotification({
-        type,
-        message,
-        persistent,
-      });
-      companionNotificationState.current = stateKey;
-    };
-
     const updateNotifications = () => {
       // Backend
       if (!backend && !notificationIds.current.backend) {
@@ -173,50 +101,6 @@ export default function ServiceStatusAlerts() {
         removeActiveNotification(notificationIds.current.worker);
         notificationIds.current.worker = null;
       }
-
-      // Companion
-      if (!companionMonitoringEnabled) {
-        clearCompanionNotification();
-      } else if (
-        companionGuidance.key === "local-browser-connection-unavailable"
-      ) {
-        showCompanionNotification(
-          "local-browser-connection-unavailable",
-          "warning",
-          "Local browser connection unavailable. Quit and relaunch the Companion app to restore browser-side local controls.",
-          true,
-        );
-      } else if (companionGuidance.key === "version-mismatch") {
-        showCompanionNotification(
-          "version-mismatch",
-          "warning",
-          "Version mismatch. Open Companion support and align versions before local control will work again.",
-        );
-      } else if (
-        companionGuidance.key === "local-browser-connection-recovering"
-      ) {
-        showCompanionNotification(
-          "local-browser-connection-recovering",
-          "info",
-          "Local browser connection recovering. Browser controls will refresh automatically when recovery finishes.",
-        );
-      } else if (
-        !isStartupRef.current &&
-        companionGuidance.key === "temporarily-disconnected" &&
-        companionFailCount > 2
-      ) {
-        showCompanionNotification(
-          companionLocalConnectionUnavailable
-            ? "temporarily-disconnected-local-unavailable"
-            : "temporarily-disconnected",
-          "info",
-          companionLocalConnectionUnavailable
-            ? "Temporarily disconnected. This pairing stays valid while the browser reconnects to the local Companion."
-            : "Temporarily disconnected. Existing pairing stays valid and will resync automatically when the Companion reconnects.",
-        );
-      } else {
-        clearCompanionNotification();
-      }
     };
 
     updateNotifications();
@@ -224,17 +108,7 @@ export default function ServiceStatusAlerts() {
     backend,
     db,
     worker,
-    companion,
-    companionAuthenticated,
-    companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
-    companionGuidance.key,
-    companionMonitoringEnabled,
-    companionStatus,
-    companionVersion,
     backendFailCount,
-    backendVersion,
-    companionFailCount,
     addNotification,
     removeActiveNotification,
   ]);

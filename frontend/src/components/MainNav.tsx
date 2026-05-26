@@ -34,6 +34,7 @@ import {
   pointerWithin,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNavigationStore, ViewType } from "@/lib/store";
 import {
   getTags,
@@ -60,6 +61,7 @@ interface NavItemProps {
   collapsed: boolean;
   badge?: number;
   id?: string;
+  disabled?: boolean;
 }
 
 function NavItem({
@@ -70,19 +72,28 @@ function NavItem({
   collapsed,
   badge,
   id,
+  disabled = false,
 }: NavItemProps) {
   return (
     <button
       id={id}
-      onClick={onClick}
+      onClick={() => {
+        if (!disabled) {
+          onClick();
+        }
+      }}
+      disabled={disabled}
       title={collapsed ? label : undefined}
       className={`
         w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
         ${
           isActive
             ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
-            : "text-gray-700 dark:text-gray-300 hover:bg-white/70 hover:text-orange-800 dark:hover:bg-gray-800/70"
+            : disabled
+              ? "text-gray-400 dark:text-gray-600"
+              : "text-gray-700 dark:text-gray-300 hover:bg-white/70 hover:text-orange-800 dark:hover:bg-gray-800/70"
         }
+        ${disabled ? "cursor-not-allowed opacity-60" : ""}
         ${collapsed ? "justify-center" : ""}
       `}
     >
@@ -301,6 +312,7 @@ function TagItem({
 export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
+  const { pausedRecording, runtimeActive } = useCapture();
   const {
     currentView,
     setCurrentView,
@@ -356,6 +368,7 @@ export default function MainNav() {
   // const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+  const hasPausedCaptureLock = Boolean(pausedRecording && !runtimeActive);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -1039,6 +1052,7 @@ export default function MainNav() {
             label="Import Audio"
             onClick={() => setIsImportModalOpen(true)}
             collapsed={collapsed}
+            disabled={hasPausedCaptureLock}
           />
           <NavItem
             id="nav-notifications"

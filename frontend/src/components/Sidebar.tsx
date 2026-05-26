@@ -8,6 +8,7 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
+  Pause,
   UploadCloud,
   Menu,
   Search,
@@ -98,6 +99,8 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
       );
     case RecordingStatus.UPLOADING:
       return <UploadCloud className="w-3 h-3 text-orange-500 animate-pulse" />;
+    case RecordingStatus.PAUSED:
+      return <Pause className="w-3 h-3 text-amber-500" />;
     case RecordingStatus.ERROR:
       return <AlertCircle className="w-3 h-3 text-red-500" />;
     default:

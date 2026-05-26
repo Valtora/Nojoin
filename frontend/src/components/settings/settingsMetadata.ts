@@ -1,7 +1,7 @@
 import {
   Bot,
   ArrowUpCircle,
-  Link2,
+  Mic,
   PlayCircle,
   Shield,
   User,
@@ -13,7 +13,7 @@ import { TAB_KEYWORDS } from "./keywords";
 export const SETTINGS_SECTION_IDS = [
   "personal",
   "ai",
-  "companion",
+  "capture",
   "administration",
   "updates",
   "help",
@@ -54,12 +54,12 @@ export const SETTINGS_SECTION_METADATA: Record<
     keywords: TAB_KEYWORDS.ai,
     roleRequirement: "all",
   },
-  companion: {
-    id: "companion",
-    label: "Companion",
-    description: "Connection and pairing, devices and alerts, and local capture preferences.",
-    icon: Link2,
-    keywords: TAB_KEYWORDS.companion,
+  capture: {
+    id: "capture",
+    label: "Capture",
+    description: "Browser recording devices, gain controls, quiet-audio reminders, and capture guidance.",
+    icon: Mic,
+    keywords: TAB_KEYWORDS.capture,
     roleRequirement: "all",
   },
   administration: {
@@ -73,7 +73,7 @@ export const SETTINGS_SECTION_METADATA: Record<
   updates: {
     id: "updates",
     label: "Updates",
-    description: "Installed version details, release history, and Companion installers.",
+    description: "Installed version details, release history, and deployment guidance.",
     icon: ArrowUpCircle,
     keywords: TAB_KEYWORDS.updates,
     roleRequirement: "all",
@@ -115,8 +115,8 @@ export function resolveLegacySettingsSectionId(
     return null;
   }
 
-  if (value === "audio") {
-    return "companion";
+  if (value === "audio" || value === "companion" || value === "capture") {
+    return "capture";
   }
 
   if (value === "general" || value === "account" || value === "personal") {

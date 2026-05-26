@@ -30,6 +30,20 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  async redirects() {
+    return [
+      {
+        source: "/settings/companion",
+        destination: "/settings/capture",
+        permanent: false,
+      },
+      {
+        source: "/settings/audio",
+        destination: "/settings/capture",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

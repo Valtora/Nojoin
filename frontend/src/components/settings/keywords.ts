@@ -11,22 +11,19 @@ export const AI_KEYWORDS = [
 export const AUDIO_KEYWORDS = [
   'device', 'input', 'output', 'microphone', 'speaker', 'audio', 'capture', 'playback',
   'warning', 'warnings', 'dismiss', 'quiet', 'silence', 'reset warnings',
-  'meeting length', 'minimum meeting length', 'recording length', 'loopback'
+  'browser recording', 'browser capture', 'share audio', 'system audio',
+  'system gain', 'microphone gain', 'waveform', 'paused recording'
 ];
 
-export const COMPANION_KEYWORDS = [
-  'companion', 'companion app', 'pair', 'pairing', 'pairing code',
-  'manual pairing', 'connect', 'connection', 'disconnect', 'backend switch',
-  'switch backend', 'reconnect', 'repair', 'repairing', 'version mismatch',
-  'temporarily disconnected', 'browser repair required', 'browser repair in progress',
-  'download companion', 'installer', 'update companion',
-  'status', 'local recording', 'firefox', 'windows roots', 'enterprise roots',
-  'certificate trust', 'security.enterprise_roots.enabled', ...AUDIO_KEYWORDS
+export const CAPTURE_KEYWORDS = [
+  'capture', 'browser capture', 'browser recording', 'recording controls',
+  'share audio', 'system audio', 'microphone', 'gain', 'paused recording',
+  'resume recording', 'discard recording', 'unsupported browser', ...AUDIO_KEYWORDS
 ];
 
 export const SYSTEM_KEYWORDS = [
   'infrastructure', 'worker', 'redis', 'url', 'broker', 'connection', 
-  'companion', 'app', 'backend', 'api', 'port', 'address'
+  'backend', 'api', 'port', 'address'
 ];
 
 export const ACCOUNT_KEYWORDS = [
@@ -49,8 +46,8 @@ export const PERSONAL_KEYWORDS = [
 
 export const UPDATES_KEYWORDS = [
   'update', 'updates', 'release', 'releases', 'version', 'versions',
-  'latest', 'upgrade', 'changelog', 'release notes', 'installer',
-  'download', 'github', 'companion'
+  'latest', 'upgrade', 'changelog', 'release notes',
+  'download', 'github', 'deployment'
 ];
 
 export const ADMIN_KEYWORDS = [
@@ -80,7 +77,7 @@ export const TAB_KEYWORDS: Record<string, string[]> = {
   personal: PERSONAL_KEYWORDS,
   general: GENERAL_KEYWORDS,
   ai: AI_KEYWORDS,
-  companion: COMPANION_KEYWORDS,
+  capture: CAPTURE_KEYWORDS,
   updates: UPDATES_KEYWORDS,
   help: ['help', 'tour', 'demo', 'tutorial', 'issue', 'bug'],
   system: SYSTEM_KEYWORDS,

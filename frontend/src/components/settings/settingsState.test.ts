@@ -68,7 +68,7 @@ describe("settings search state", () => {
 
     expect(
       getPreferredSettingsSectionForSearch({
-        activeSectionId: "companion",
+        activeSectionId: "capture",
         matchScores,
       }),
     ).toBe("help");

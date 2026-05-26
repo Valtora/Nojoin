@@ -8,6 +8,7 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
+  Pause,
 } from "lucide-react";
 import RecordingInfoModal from "./RecordingInfoModal";
 import ConfirmationModal from "./ConfirmationModal";
@@ -28,7 +29,10 @@ interface RecordingCardProps {
 }
 
 const formatDuration = (recording: Recording) => {
-  if (recording.status === RecordingStatus.UPLOADING) {
+  if (
+    recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.PAUSED
+  ) {
     return "--";
   }
   const seconds = recording.duration_seconds;
@@ -47,7 +51,10 @@ const formatDate = (dateString: string, recording: Recording) => {
     minute: "2-digit",
   });
 
-  if (recording.status === RecordingStatus.UPLOADING) {
+  if (
+    recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.PAUSED
+  ) {
     return `${start} - --:--`;
   }
 
@@ -99,6 +106,13 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
           <AlertCircle className="w-3 h-3 mr-1" />
           Error
+        </span>
+      );
+    case RecordingStatus.PAUSED:
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+          <Pause className="w-3 h-3 mr-1" />
+          Paused
         </span>
       );
     case RecordingStatus.CANCELLED:

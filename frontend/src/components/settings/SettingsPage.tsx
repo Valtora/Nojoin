@@ -4,24 +4,16 @@ import React, {
   useState,
   useEffect,
   useMemo,
-  useRef,
   useCallback,
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { getSettings, updateSettings, getUserMe } from "@/lib/api";
-import { Settings, CompanionDevices, UserRole } from "@/types";
+import { Settings, UserRole } from "@/types";
 import { isValidUrl } from "@/lib/validation";
 import { Loader2, Search } from "lucide-react";
-import {
-  CompanionLocalRequestError,
-  type CompanionLocalAction,
-  companionLocalFetch,
-} from "@/lib/companionLocalApi";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-import { TAB_KEYWORDS } from "./keywords";
 import VersionTag from "./VersionTag";
 import AISettings from "./AISettings";
-import CompanionAppSettings from "./CompanionAppSettings";
+import CaptureSettings from "./CaptureSettings";
 import AdminSettings from "./AdminSettings";
 import HelpSettings from "./HelpSettings";
 import PersonalSettings from "./PersonalSettings";
@@ -44,44 +36,10 @@ import {
 } from "./settingsState";
 import useDebouncedAutosave from "./useDebouncedAutosave";
 
-interface CompanionConfig {
-  api_port: number;
-  local_port: number;
-  min_meeting_length?: number;
-}
-
-interface MainAutosaveValue {
-  settings: Settings;
-  companionConfig: CompanionConfig | null;
-  selectedInputDevice: string | null;
-  selectedOutputDevice: string | null;
-}
-
-const COMPANION_CONFIG_READ_ACTIONS: CompanionLocalAction[] = [
-  "settings:read",
-  "devices:read",
-];
-
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const companionAuthenticated = useServiceStatusStore(
-    (state) => state.companionAuthenticated,
-  );
-  const handleCompanionPairingEnded = useServiceStatusStore(
-    (state) => state.handleCompanionPairingEnded,
-  );
   const [activeTab, setActiveTab] = useState<SettingsSectionId>("personal");
   const [settings, setSettings] = useState<Settings>({});
-  const [companionConfig, setCompanionConfig] =
-    useState<CompanionConfig | null>(null);
-  const [companionDevices, setCompanionDevices] =
-    useState<CompanionDevices | null>(null);
-  const [selectedInputDevice, setSelectedInputDevice] = useState<string | null>(
-    null,
-  );
-  const [selectedOutputDevice, setSelectedOutputDevice] = useState<
-    string | null
-  >(null);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -92,15 +50,7 @@ export default function SettingsPage() {
   const [accountAutosaveState, setAccountAutosaveState] =
     useState<SettingsAutosaveSnapshot | null>(null);
 
-  const refreshCompanionConfigRequestRef = useRef<Promise<boolean> | null>(
-    null,
-  );
-  const pendingCompanionHydrationRef = useRef(false);
-
-  const validateSettings = (
-    settings: Settings,
-    companionConfig: CompanionConfig | null,
-  ): string | null => {
+  const validateSettings = (settings: Settings): string | null => {
     if (
       settings.whisper_model_size &&
       !["tiny", "base", "small", "medium", "large", "turbo"].includes(
@@ -126,201 +76,27 @@ export default function SettingsPage() {
     if (settings.timezone && !isValidTimeZone(settings.timezone)) {
       return "Invalid timezone. Use a valid IANA timezone such as Europe/London.";
     }
-    if (companionConfig?.min_meeting_length !== undefined) {
-      if (
-        companionConfig.min_meeting_length < 0 ||
-        companionConfig.min_meeting_length > 1440
-      ) {
-        return "Meeting length must be between 0 and 1440 minutes.";
-      }
-    }
     return null;
   };
-
-  const mainAutosaveValue = useMemo<MainAutosaveValue>(
-    () => ({
-      settings,
-      companionConfig,
-      selectedInputDevice,
-      selectedOutputDevice,
-    }),
-    [settings, companionConfig, selectedInputDevice, selectedOutputDevice],
-  );
 
   const {
     autosaveState: mainAutosaveState,
     markAsSaved: markMainAutosaveSaved,
     saveNow: saveMainAutosaveNow,
-  } = useDebouncedAutosave<MainAutosaveValue>({
-    value: mainAutosaveValue,
+  } = useDebouncedAutosave<Settings>({
+    value: settings,
     enabled: !loading && !forcePasswordChange,
-    serialize: (value) =>
-      JSON.stringify({
-        settings: value.settings,
-        companionApiPort: value.companionConfig?.api_port,
-        companionMinLength: value.companionConfig?.min_meeting_length,
-        selectedInputDevice: value.selectedInputDevice,
-        selectedOutputDevice: value.selectedOutputDevice,
-      }),
-    validate: (value) => validateSettings(value.settings, value.companionConfig),
+    serialize: (value) => JSON.stringify(value),
+    validate: validateSettings,
     save: async (value) => {
-      await updateSettings(value.settings);
-      setCachedUserTimeZone(value.settings.timezone);
-
-      if (value.companionConfig) {
-        await companionLocalFetch(
-          "/config",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              api_port: value.companionConfig.api_port,
-              min_meeting_length: value.companionConfig.min_meeting_length,
-            }),
-          },
-          "settings:write",
-        );
-      }
-
-      if (companionDevices) {
-        await companionLocalFetch(
-          "/config",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              input_device_name: value.selectedInputDevice,
-              output_device_name: value.selectedOutputDevice,
-            }),
-          },
-          "settings:write",
-        );
-      }
+      await updateSettings(value);
+      setCachedUserTimeZone(value.timezone);
     },
     pendingMessage: "Changes pending...",
     savingMessage: "Saving changes...",
     savedMessage: "All changes saved",
     fallbackErrorMessage: "Failed to save settings",
   });
-
-  const refreshCompanionConfig = useCallback(async () => {
-    const companionAuthenticated =
-      useServiceStatusStore.getState().companionAuthenticated;
-
-    if (!companionAuthenticated) {
-      setCompanionConfig(null);
-      setCompanionDevices(null);
-      setSelectedInputDevice(null);
-      setSelectedOutputDevice(null);
-      return false;
-    }
-
-    if (refreshCompanionConfigRequestRef.current) {
-      return refreshCompanionConfigRequestRef.current;
-    }
-
-    const request = (async () => {
-      try {
-        const res = await companionLocalFetch(
-          "/config",
-          { method: "GET" },
-          COMPANION_CONFIG_READ_ACTIONS,
-        );
-        if (!res.ok) {
-          if (res.status === 403 || res.status === 409) {
-            handleCompanionPairingEnded();
-          }
-          setCompanionConfig(null);
-          setCompanionDevices(null);
-          setSelectedInputDevice(null);
-          setSelectedOutputDevice(null);
-          return false;
-        }
-
-        const companionData: CompanionConfig = await res.json();
-        setCompanionConfig(companionData);
-
-        const devicesRes = await companionLocalFetch(
-          "/devices",
-          { method: "GET" },
-          COMPANION_CONFIG_READ_ACTIONS,
-        );
-        if (!devicesRes.ok) {
-          if (devicesRes.status === 403 || devicesRes.status === 409) {
-            handleCompanionPairingEnded();
-          }
-          setCompanionDevices(null);
-          setSelectedInputDevice(null);
-          setSelectedOutputDevice(null);
-          return false;
-        }
-
-        const devicesData: CompanionDevices = await devicesRes.json();
-        setCompanionDevices(devicesData);
-        setSelectedInputDevice(devicesData.selected_input);
-        setSelectedOutputDevice(devicesData.selected_output);
-        pendingCompanionHydrationRef.current = true;
-        return true;
-      } catch (e) {
-        console.error("Failed to refresh companion config", e);
-        if (
-          e instanceof CompanionLocalRequestError &&
-          (e.status === 403 || e.status === 409)
-        ) {
-          handleCompanionPairingEnded();
-        }
-        setCompanionConfig(null);
-        setCompanionDevices(null);
-        setSelectedInputDevice(null);
-        setSelectedOutputDevice(null);
-        return false;
-      }
-    })();
-
-    refreshCompanionConfigRequestRef.current = request.finally(() => {
-      refreshCompanionConfigRequestRef.current = null;
-    });
-
-    return refreshCompanionConfigRequestRef.current;
-  }, [handleCompanionPairingEnded]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const syncCompanionConfigAfterAuthChange = async () => {
-      if (!companionAuthenticated) {
-        setCompanionConfig(null);
-        setCompanionDevices(null);
-        setSelectedInputDevice(null);
-        setSelectedOutputDevice(null);
-        return;
-      }
-
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        const refreshed = await refreshCompanionConfig();
-        if (isCancelled || refreshed) {
-          return;
-        }
-
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 400);
-        });
-      }
-    };
-
-    void syncCompanionConfigAfterAuthChange();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [companionAuthenticated, refreshCompanionConfig]);
-
-  useEffect(() => {
-    if (!loading && pendingCompanionHydrationRef.current) {
-      markMainAutosaveSaved(mainAutosaveValue);
-      pendingCompanionHydrationRef.current = false;
-    }
-  }, [loading, mainAutosaveValue, markMainAutosaveSaved]);
 
   // Determine which tabs have matches and their scores
   const tabMatches = useMemo(() => {
@@ -356,12 +132,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const load = async () => {
       let currentSettings = {};
-      const loadedAutosaveValue: MainAutosaveValue = {
-        settings: {},
-        companionConfig: null,
-        selectedInputDevice: null,
-        selectedOutputDevice: null,
-      };
+      const loadedAutosaveValue: Settings = {};
 
       try {
         const userData = await getUserMe();
@@ -389,10 +160,7 @@ export default function SettingsPage() {
         setCachedUserTimeZone(safeSettings.timezone);
         currentSettings = safeSettings;
         setForcePasswordChange(false);
-        markMainAutosaveSaved({
-          ...loadedAutosaveValue,
-          settings: safeSettings,
-        });
+        markMainAutosaveSaved(safeSettings);
       } catch (e) {
         console.error("Failed to load settings", e);
       }
@@ -412,20 +180,9 @@ export default function SettingsPage() {
         return;
       }
 
-      await saveMainAutosaveNow({
-        settings: nextSettings,
-        companionConfig,
-        selectedInputDevice,
-        selectedOutputDevice,
-      });
+      await saveMainAutosaveNow(nextSettings);
     },
-    [
-      companionConfig,
-      forcePasswordChange,
-      saveMainAutosaveNow,
-      selectedInputDevice,
-      selectedOutputDevice,
-    ],
+    [forcePasswordChange, saveMainAutosaveNow],
   );
 
   const tabs = useMemo(
@@ -518,22 +275,8 @@ export default function SettingsPage() {
               searchQuery={searchQuery}
             />
           )}
-          {activeTab === "companion" && (
-            <CompanionAppSettings
-              companionConfig={companionConfig}
-              onUpdateCompanionConfig={(config) =>
-                setCompanionConfig((prev) =>
-                  prev ? { ...prev, ...config } : null,
-                )
-              }
-              onRefreshCompanionConfig={refreshCompanionConfig}
-              companionDevices={companionDevices}
-              selectedInputDevice={selectedInputDevice}
-              onSelectInputDevice={setSelectedInputDevice}
-              selectedOutputDevice={selectedOutputDevice}
-              onSelectOutputDevice={setSelectedOutputDevice}
-              searchQuery={searchQuery}
-            />
+          {activeTab === "capture" && (
+            <CaptureSettings searchQuery={searchQuery} />
           )}
           {activeTab === "updates" && (
             <UpdatesSettings searchQuery={searchQuery} />

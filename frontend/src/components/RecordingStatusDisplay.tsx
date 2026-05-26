@@ -56,9 +56,12 @@ export default function RecordingStatusDisplay({
   showMeetingEdge = true,
 }: RecordingStatusDisplayProps) {
   const isActiveRecording =
-    recording.status === RecordingStatus.UPLOADING &&
-    recording.client_status !== ClientStatus.UPLOADING;
-  const isPaused = recording.client_status === ClientStatus.PAUSED;
+    recording.status === RecordingStatus.PAUSED ||
+    (recording.status === RecordingStatus.UPLOADING &&
+      recording.client_status !== ClientStatus.UPLOADING);
+  const isPaused =
+    recording.status === RecordingStatus.PAUSED ||
+    recording.client_status === ClientStatus.PAUSED;
   const isFinalisingUpload =
     recording.status === RecordingStatus.UPLOADING &&
     recording.client_status === ClientStatus.UPLOADING;
@@ -77,7 +80,9 @@ export default function RecordingStatusDisplay({
         : "Processing recording";
 
   const subheading = isActiveRecording
-    ? "Live audio waveform and timer are shown while your meeting is being recorded."
+    ? isPaused
+      ? "Resume or discard this recording to clear the paused capture state."
+      : "Live audio waveform and timer are shown while your meeting is being recorded."
     : recording.processing_step ||
       (recording.status === RecordingStatus.QUEUED
         ? "Waiting for a worker to begin processing."

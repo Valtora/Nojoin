@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 import logging
 import os
@@ -12,10 +10,8 @@ from typing import Any, Optional, Union
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from cryptography.hazmat.primitives import hashes
 from jose import jwt
 
-from backend.core.encryption import _get_encryption_seed
 from backend.utils.path_manager import path_manager
 from backend.utils.time import utc_now
 
@@ -24,47 +20,13 @@ password_hasher = PasswordHasher()
 logger = logging.getLogger(__name__)
 
 MIN_PASSWORD_LENGTH = 8
-COMPANION_CREDENTIAL_HASH_PREFIX = "hmac-sha256$"
 
 
 SESSION_TOKEN_TYPE = "session"
 API_TOKEN_TYPE = "api"
-COMPANION_TOKEN_TYPE = "companion"
-COMPANION_LOCAL_CONTROL_TOKEN_TYPE = "companion_local_control"
 
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
-COMPANION_BOOTSTRAP_SCOPE = "companion:init"
-# Deprecated during the browser-capture cutover. Retained for legacy
-# Companion compatibility until the follow-up removal phase lands.
-COMPANION_RECORDING_SCOPE = "recordings:companion"
-COMPANION_PAIRING_ID_CLAIM = "companion_pairing_id"
-COMPANION_LOCAL_CONTROL_AUDIENCE = "nojoin-companion-local"
-COMPANION_LOCAL_CONTROL_TOKEN_EXPIRE_SECONDS = 120
-LOCAL_CONTROL_STATUS_READ_ACTION = "status:read"
-LOCAL_CONTROL_SETTINGS_READ_ACTION = "settings:read"
-LOCAL_CONTROL_SETTINGS_WRITE_ACTION = "settings:write"
-LOCAL_CONTROL_DEVICES_READ_ACTION = "devices:read"
-LOCAL_CONTROL_WAVEFORM_READ_ACTION = "waveform:read"
-LOCAL_CONTROL_RECORDING_START_ACTION = "recording:start"
-LOCAL_CONTROL_RECORDING_STOP_ACTION = "recording:stop"
-LOCAL_CONTROL_RECORDING_PAUSE_ACTION = "recording:pause"
-LOCAL_CONTROL_RECORDING_RESUME_ACTION = "recording:resume"
-LOCAL_CONTROL_UPDATE_TRIGGER_ACTION = "update:trigger"
-LOCAL_CONTROL_ALLOWED_ACTIONS = frozenset(
-    {
-        LOCAL_CONTROL_STATUS_READ_ACTION,
-        LOCAL_CONTROL_SETTINGS_READ_ACTION,
-        LOCAL_CONTROL_SETTINGS_WRITE_ACTION,
-        LOCAL_CONTROL_DEVICES_READ_ACTION,
-        LOCAL_CONTROL_WAVEFORM_READ_ACTION,
-        LOCAL_CONTROL_RECORDING_START_ACTION,
-        LOCAL_CONTROL_RECORDING_STOP_ACTION,
-        LOCAL_CONTROL_RECORDING_PAUSE_ACTION,
-        LOCAL_CONTROL_RECORDING_RESUME_ACTION,
-        LOCAL_CONTROL_UPDATE_TRIGGER_ACTION,
-    }
-)
 
 ALGORITHM = "HS256"
 DEFAULT_LEGACY_KID = "legacy"
@@ -258,14 +220,10 @@ def _migrate_legacy_secret_file(
 
 SESSION_TOKEN_EXPIRE_MINUTES = 12 * 60
 API_TOKEN_EXPIRE_MINUTES = 60
-COMPANION_ACCESS_TOKEN_EXPIRE_MINUTES = 5
-COMPANION_ACCESS_TOKEN_EXPIRE_SECONDS = COMPANION_ACCESS_TOKEN_EXPIRE_MINUTES * 60
-COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES = 12 * 60
 
 TOKEN_EXPIRY_MINUTES = {
     SESSION_TOKEN_TYPE: SESSION_TOKEN_EXPIRE_MINUTES,
     API_TOKEN_TYPE: API_TOKEN_EXPIRE_MINUTES,
-    COMPANION_TOKEN_TYPE: COMPANION_ACCESS_TOKEN_EXPIRE_MINUTES,
 }
 
 _REVOCABLE_TOKEN_TYPES = frozenset({SESSION_TOKEN_TYPE, API_TOKEN_TYPE})
@@ -336,84 +294,6 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
         raise JWTError("Unknown signing key id")
     return jwt.decode(token, signing_key, algorithms=[ALGORITHM])
-
-
-def generate_local_control_secret() -> str:
-    return secrets.token_urlsafe(48)
-
-
-def generate_companion_credential_secret() -> str:
-    return secrets.token_urlsafe(48)
-
-
-def _companion_credential_hmac_key() -> bytes:
-    installation_seed = _get_encryption_seed().encode("utf-8")
-    return hmac.new(
-        b"nojoin:companion-credential",
-        installation_seed,
-        hashlib.sha256,
-    ).digest()
-
-
-def _legacy_companion_credential_hash(secret: str) -> str:
-    digest = hashes.Hash(hashes.SHA256())
-    digest.update(secret.encode("utf-8"))
-    return digest.finalize().hex()
-
-
-def companion_credential_hash_uses_legacy_format(expected_hash: str | None) -> bool:
-    return bool(expected_hash) and not str(expected_hash).startswith(
-        COMPANION_CREDENTIAL_HASH_PREFIX
-    )
-
-
-def hash_companion_credential_secret(secret: str) -> str:
-    digest = hmac.new(
-        _companion_credential_hmac_key(),
-        secret.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"{COMPANION_CREDENTIAL_HASH_PREFIX}{digest}"
-
-
-def verify_companion_credential_secret(secret: str, expected_hash: str) -> bool:
-    if companion_credential_hash_uses_legacy_format(expected_hash):
-        candidate_hash = _legacy_companion_credential_hash(secret)
-    else:
-        candidate_hash = hash_companion_credential_secret(secret)
-    return secrets.compare_digest(candidate_hash, expected_hash)
-
-
-def create_local_control_token(
-    *,
-    secret_key: str,
-    subject: Union[str, Any],
-    user_id: int,
-    username: str,
-    origin: str,
-    actions: list[str],
-    pairing_session_id: str,
-    secret_version: int,
-    expires_delta: Optional[timedelta] = None,
-) -> str:
-    expire = utc_now() + (
-        expires_delta or timedelta(seconds=COMPANION_LOCAL_CONTROL_TOKEN_EXPIRE_SECONDS)
-    )
-    issued_at = utc_now()
-    payload = {
-        "aud": COMPANION_LOCAL_CONTROL_AUDIENCE,
-        "exp": expire,
-        "iat": issued_at,
-        "sub": str(subject),
-        "token_type": COMPANION_LOCAL_CONTROL_TOKEN_TYPE,
-        "user_id": user_id,
-        "username": username,
-        "origin": origin,
-        "actions": sorted(set(actions)),
-        COMPANION_PAIRING_ID_CLAIM: pairing_session_id,
-        "secret_version": secret_version,
-    }
-    return jwt.encode(payload, secret_key, algorithm=ALGORITHM)
 
 
 def validate_password_policy(password: str) -> str:

@@ -20,8 +20,6 @@ from backend.models.context_chunk import ContextChunk
 from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.task import UserTask
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
-from backend.models.companion_pairing import CompanionPairing
-from backend.models.companion_pairing_request import CompanionPairingRequest
 from backend.models.pipeline import (
     RecordingAudioChunk,
     RecordingAsrWindowResult,

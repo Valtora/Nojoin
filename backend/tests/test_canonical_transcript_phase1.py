@@ -3044,7 +3044,7 @@ async def test_persist_diarization_window_result_records_model_and_speaker_metad
                     processing_run_id, last_error
                 ) VALUES (
                     11, :now, :now, 'manifest-public-11', 1,
-                    0, 'companion', 20000, 5000,
+                    0, 'browser', 20000, 5000,
                     0, 20000, 1,
                     10, 'live_processed', 0, 0,
                     NULL, NULL

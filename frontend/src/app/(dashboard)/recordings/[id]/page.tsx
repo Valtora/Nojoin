@@ -82,6 +82,7 @@ const shouldPollRecordingUpdates = (recording: Recording) => {
   return (
     recording.status === RecordingStatus.PROCESSING ||
     recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.PAUSED ||
     recording.status === RecordingStatus.QUEUED ||
     recording.transcript?.notes_status === "generating" ||
     recording.transcript?.meeting_edge_status === "updating" ||
@@ -410,6 +411,7 @@ export default function RecordingPage({ params }: PageProps) {
 
     const pollIntervalMs =
       recording.status === RecordingStatus.UPLOADING ||
+      recording.status === RecordingStatus.PAUSED ||
       (recording.status === RecordingStatus.PROCESSED &&
         recording.has_proxy === false &&
         !isDemoRecording(recording))
@@ -477,7 +479,10 @@ export default function RecordingPage({ params }: PageProps) {
     }
 
     const pollIntervalMs =
-      recording.status === RecordingStatus.UPLOADING ? 1000 : 3000;
+      recording.status === RecordingStatus.UPLOADING ||
+      recording.status === RecordingStatus.PAUSED
+        ? 1000
+        : 3000;
 
     const interval = setInterval(() => {
       syncTranscriptState("delta").catch((e) => {
@@ -1235,6 +1240,7 @@ export default function RecordingPage({ params }: PageProps) {
 
         {/* Audio Player in Header */}
         {recording && 
+          recording.status !== RecordingStatus.PAUSED &&
          recording.status !== RecordingStatus.UPLOADING &&
          recording.status !== RecordingStatus.PROCESSING &&
          recording.status !== RecordingStatus.QUEUED && (
@@ -1405,6 +1411,7 @@ export default function RecordingPage({ params }: PageProps) {
   }
 
   const isInFlightRecording =
+    recording.status === RecordingStatus.PAUSED ||
     recording.status === RecordingStatus.UPLOADING ||
     recording.status === RecordingStatus.PROCESSING ||
     recording.status === RecordingStatus.QUEUED;

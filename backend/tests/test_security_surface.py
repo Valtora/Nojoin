@@ -625,6 +625,22 @@ async def test_operational_system_endpoints_require_authentication() -> None:
 
 
 @pytest.mark.anyio
+async def test_companion_releases_endpoint_is_gone_for_authenticated_users() -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="user")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+        response = await client.get("/api/v1/system/companion-releases")
+
+    assert response.status_code == 410
+    assert response.json() == {
+        "error": "companion_retired",
+        "message": "The Nojoin Companion app has been retired. Please update your installation and use the web app for recording.",
+        "see": "https://github.com/Valtora/Nojoin/blob/main/docs/CAPTURE.md",
+    }
+
+
+@pytest.mark.anyio
 async def test_openapi_and_docs_require_authentication() -> None:
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = _unauthorized_user

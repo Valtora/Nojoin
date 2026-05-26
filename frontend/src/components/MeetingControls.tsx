@@ -4,14 +4,9 @@ import { useState } from "react";
 import { Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
-import { getCompanionSteadyStateGuidance } from "@/lib/companionSteadyState";
-import {
-  COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE,
-  companionLocalFetch,
-  isCompanionLocalConnectionError,
-  readCompanionLocalError,
-} from "@/lib/companionLocalApi";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 
+import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
 
 interface MeetingControlsProps {
@@ -32,35 +27,23 @@ export default function MeetingControls({
   onMeetingEnd,
   variant = "sidebar",
 }: MeetingControlsProps) {
+  const { backend } = useServiceStatusStore();
   const {
-    backend,
-    backendVersion,
-    companion,
-    companionAuthenticated,
-    companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
-    companionStatus,
-    companionVersion,
-    checkCompanion,
-    enableCompanionMonitoring,
-  } = useServiceStatusStore();
+    error: captureError,
+    pausedRecording,
+    runtimeActive,
+    start,
+    status,
+    support,
+  } = useCapture();
 
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const localHttpsNeedsRepair = companionLocalHttpsStatus === "needs-repair";
   const hasLiveRecording =
-    companion &&
-    (companionStatus === "recording" || companionStatus === "paused");
-  const isCompanionUploading = companion && companionStatus === "uploading";
-  const companionGuidance = getCompanionSteadyStateGuidance({
-    companion,
-    companionAuthenticated,
-    companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
-    companionStatus,
-    backendVersion,
-    companionVersion,
-  });
+    runtimeActive && (status === "recording" || status === "paused");
+  const hasPausedBlock = Boolean(pausedRecording && !runtimeActive);
+  const isBusy = status === "starting" || status === "finalizing";
+  const unsupported = !support.supported;
 
   const meetingSurfaceState: MeetingSurfaceState = !backend
     ? {
@@ -70,34 +53,33 @@ export default function MeetingControls({
         buttonTooltip:
           "The Nojoin backend is offline. Wait for it to reconnect before starting a meeting.",
       }
-    : companionGuidance.key === "local-browser-connection-unavailable" ||
-        companionGuidance.key === "version-mismatch" ||
-        companionGuidance.key === "not-paired" ||
-        companionGuidance.key === "temporarily-disconnected" ||
-      companionGuidance.key === "local-browser-connection-recovering" ||
-        companionGuidance.key === "companion-needs-attention"
-      ? {
-          buttonLabel: "Open Companion Settings",
-          buttonMode: "open-settings",
-          buttonDisabled: false,
-          buttonTooltip: `${companionGuidance.statusLabel}. ${companionGuidance.summary}`,
-        }
-      : isCompanionUploading
+    : unsupported
         ? {
-            buttonLabel: "Finishing upload...",
+            buttonLabel: "Unsupported browser",
             buttonMode: "wait",
             buttonDisabled: true,
             buttonTooltip:
-              "The Companion is still uploading the previous meeting. Wait for it to finish.",
+              "Use a Chromium browser on Windows or Linux for browser capture.",
           }
-        : companionStatus === "backend-offline"
+        : hasPausedBlock
           ? {
-              buttonLabel: "Nojoin unavailable",
+              buttonLabel: "Paused recording needs attention",
               buttonMode: "wait",
               buttonDisabled: true,
               buttonTooltip:
-                "The Companion is paired but the Nojoin backend is offline.",
+                "Resume or discard the paused recording in the modal before starting anything new.",
             }
+          : isBusy
+            ? {
+                buttonLabel:
+                  status === "finalizing" ? "Finalizing meeting..." : "Starting meeting...",
+                buttonMode: "wait",
+                buttonDisabled: true,
+                buttonTooltip:
+                  status === "finalizing"
+                    ? "Nojoin is finalizing the current meeting recording."
+                    : "Nojoin is preparing browser capture.",
+              }
           : {
               buttonLabel: "Start Meeting",
               buttonMode: "start",
@@ -107,63 +89,28 @@ export default function MeetingControls({
 
   const sendStart = async () => {
     setError(null);
-    if (localHttpsNeedsRepair) {
-      setError(
-        "Browser repair required. Open Companion Settings, then follow the repair steps in the Companion app.",
-      );
-      return null;
-    }
-
     try {
-      const res = await companionLocalFetch(
-        "/start",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: "" }),
-        },
-        "recording:start",
-      );
-
-      if (!res.ok) {
-        const errorMessage = await readCompanionLocalError(
-          res,
-          `Companion App error: ${res.status}`,
-        );
-        setError(errorMessage || "Failed to reach Backend API from Companion App.");
-        return null;
-      }
-
-      enableCompanionMonitoring();
-      setTimeout(() => checkCompanion(), 500);
-      return await res.json();
+      return await start("");
     } catch (err: unknown) {
-      if (isCompanionLocalConnectionError(err)) {
-        setError(COMPANION_LOCAL_CONNECTION_UNAVAILABLE_MESSAGE);
-      } else if (err instanceof Error && err.message) {
+      if (err instanceof Error && err.message) {
         setError(err.message);
       } else {
-        setError("Failed to connect to Companion App.");
+        setError("Failed to start browser recording.");
       }
-      console.error(err);
       return null;
     }
   };
 
   const handleStart = async () => {
     const response = await sendStart();
-    if (response && response.id) {
-      router.push(`/recordings/${response.id}`);
+    if (response && response.recordingId) {
+      router.push(`/recordings/${response.recordingId}`);
       if (onMeetingEnd) onMeetingEnd();
     }
   };
 
   const handlePrimaryAction = () => {
     setError(null);
-    if (meetingSurfaceState.buttonMode === "open-settings") {
-      router.push("/settings?tab=companion");
-      return;
-    }
     if (meetingSurfaceState.buttonMode === "start") {
       void handleStart();
     }
@@ -184,9 +131,13 @@ export default function MeetingControls({
             </div>
           </div>
 
-          {error && (
+          {unsupported ? (
+            <CaptureUnsupportedNotice reason={support.reason} />
+          ) : null}
+
+          {(error || captureError) && (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-              {error}
+              {error || captureError}
             </div>
           )}
 
@@ -213,7 +164,15 @@ export default function MeetingControls({
   return (
     <div className="border-b border-orange-100/80 bg-transparent p-4 dark:border-gray-800/80">
       <div className="w-full">
-        {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
+        {unsupported ? (
+          <div className="mb-2">
+            <CaptureUnsupportedNotice reason={support.reason} compact />
+          </div>
+        ) : null}
+
+        {(error || captureError) ? (
+          <div className="mb-2 text-xs text-red-500">{error || captureError}</div>
+        ) : null}
 
         {!hasLiveRecording ? (
           <button

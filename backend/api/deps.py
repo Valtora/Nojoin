@@ -12,9 +12,6 @@ from backend.core.db import get_session
 from backend.core.security import (
     API_ACCESS_SCOPE,
     API_TOKEN_TYPE,
-    COMPANION_BOOTSTRAP_SCOPE,
-    COMPANION_RECORDING_SCOPE,
-    COMPANION_TOKEN_TYPE,
     SESSION_TOKEN_TYPE,
     WEB_SESSION_SCOPE,
     decode_access_token,
@@ -34,20 +31,9 @@ STANDARD_USER_SCOPE_REQUIREMENTS = {
     SESSION_TOKEN_TYPE: {WEB_SESSION_SCOPE},
     API_TOKEN_TYPE: {API_ACCESS_SCOPE},
 }
-RECORDING_CLIENT_TOKEN_TYPES = STANDARD_USER_TOKEN_TYPES | {COMPANION_TOKEN_TYPE}
-RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS = {
-    **STANDARD_USER_SCOPE_REQUIREMENTS,
-    COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
-}
-RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS = {
-    **STANDARD_USER_SCOPE_REQUIREMENTS,
-    COMPANION_TOKEN_TYPE: {COMPANION_RECORDING_SCOPE},
-}
-PAIRING_MANAGEMENT_TOKEN_TYPES = STANDARD_USER_TOKEN_TYPES | {COMPANION_TOKEN_TYPE}
-PAIRING_MANAGEMENT_SCOPE_REQUIREMENTS = {
-    **STANDARD_USER_SCOPE_REQUIREMENTS,
-    COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
-}
+RECORDING_CLIENT_TOKEN_TYPES = STANDARD_USER_TOKEN_TYPES
+RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS = STANDARD_USER_SCOPE_REQUIREMENTS
+RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS = STANDARD_USER_SCOPE_REQUIREMENTS
 PASSWORD_CHANGE_EXEMPT_ROUTES = {
     ("/api/v1/users/me", "GET"),
     ("/api/v1/users/me/password", "PUT"),
@@ -154,19 +140,6 @@ def enforce_password_change_policy(user: User, *, path: str, method: str) -> Non
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Password change required",
     )
-
-
-def _validate_companion_recording_claim(payload: dict[str, Any], recording_id: str) -> None:
-    if payload.get("token_type") != COMPANION_TOKEN_TYPE:
-        return
-
-    token_recording_id = payload.get("recording_public_id")
-
-    if token_recording_id != recording_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Token does not grant access to this recording",
-        )
 
 
 async def get_authenticated_token_details(
@@ -338,101 +311,21 @@ async def get_current_recording_client_details(
     if used_cookie_auth:
         enforce_trusted_browser_origin(request)
 
-        user, payload = await get_authenticated_token_details(
-            db,
-            actual_token,
-            allowed_token_types=STANDARD_USER_TOKEN_TYPES,
-            required_scopes_by_type=STANDARD_USER_SCOPE_REQUIREMENTS,
-        )
-    else:
-        required_scopes = (
-            RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS
-            if recording_id is not None
-            else RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS
-        )
-        user, payload = await get_authenticated_token_details(
-            db,
-            actual_token,
-            allowed_token_types=RECORDING_CLIENT_TOKEN_TYPES,
-            required_scopes_by_type=required_scopes,
-        )
-        if recording_id is not None:
-            _validate_companion_recording_claim(payload, recording_id)
+    required_scopes = (
+        RECORDING_CLIENT_OPERATION_SCOPE_REQUIREMENTS
+        if recording_id is not None
+        else RECORDING_CLIENT_INIT_SCOPE_REQUIREMENTS
+    )
+    user, payload = await get_authenticated_token_details(
+        db,
+        actual_token,
+        allowed_token_types=RECORDING_CLIENT_TOKEN_TYPES,
+        required_scopes_by_type=required_scopes,
+    )
 
     request.state.recording_client_payload = payload
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
     return user, payload
-
-
-async def get_current_companion_bootstrap_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(reusable_oauth2),
-) -> User:
-    # Deprecated during the browser-capture cutover. Retained for the legacy
-    # Companion upload-token refresh path until Phase E removes it.
-    user, _ = await get_current_companion_bootstrap_details(
-        request,
-        db,
-        token,
-    )
-    return user
-
-
-async def get_current_companion_bootstrap_details(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(reusable_oauth2),
-) -> tuple[User, dict[str, Any]]:
-    actual_token, used_cookie_auth = _resolve_request_token(request, token)
-
-    if not actual_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if used_cookie_auth:
-        enforce_trusted_browser_origin(request)
-
-    user, payload = await get_authenticated_token_details(
-        db,
-        actual_token,
-        allowed_token_types={COMPANION_TOKEN_TYPE},
-        required_scopes_by_type={
-            COMPANION_TOKEN_TYPE: {COMPANION_BOOTSTRAP_SCOPE},
-        },
-    )
-    enforce_password_change_policy(user, path=request.url.path, method=request.method)
-    return user, payload
-
-
-async def get_current_pairing_management_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(reusable_oauth2),
-) -> User:
-    actual_token, used_cookie_auth = _resolve_request_token(request, token)
-
-    if not actual_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if used_cookie_auth:
-        enforce_trusted_browser_origin(request)
-
-    user = await get_authenticated_user_from_token(
-        db,
-        actual_token,
-        allowed_token_types=PAIRING_MANAGEMENT_TOKEN_TYPES,
-        required_scopes_by_type=PAIRING_MANAGEMENT_SCOPE_REQUIREMENTS,
-    )
-    enforce_password_change_policy(user, path=request.url.path, method=request.method)
-    return user
 
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),

@@ -23,7 +23,7 @@
 
 Nojoin is a self-hosted meeting transcription and notes solution.
 
-It captures audio through a local Windows Companion app, processes recordings on your own server, and gives you transcripts, speaker separation, meeting notes, search, meeting chat, and a web-based dashboard for day-to-day work.
+It captures audio through a supported Chromium browser on Windows or Linux, processes recordings on your own server, and gives you transcripts, speaker separation, meeting notes, search, meeting chat, and a web-based dashboard for day-to-day work.
 
 Nojoin is built for people who want the usefulness of meeting assistants without inviting bots into meetings or defaulting to a SaaS platform for storage and processing.
 
@@ -35,7 +35,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 - Local Whisper transcription and Pyannote diarisation on your own infrastructure.
 - Optional cloud LLMs, or fully local AI with Ollama.
 - Web dashboard with recordings, calendar context, and a Task List.
-- Windows Companion app for system and microphone capture.
+- Browser-native capture for system audio and microphone input.
 
 ## Quick Start
 
@@ -70,13 +70,13 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 7. Complete the first-run wizard.
 
-8. Download and launch the latest Windows Companion build from GitHub Releases, then pair it from `Settings -> Companion` inside Nojoin.
+8. Open Nojoin in Chrome, Edge, Brave, or another Chromium-family browser on Windows or Linux, then start a short test meeting. See `docs/CAPTURE.md` for browser capture guidance.
 
 Notes:
 
 - An NVIDIA GPU is strongly recommended for faster processing.
 - CPU-only mode is supported but it is much slower.
-- The Companion app currently supports Windows only.
+- Browser capture is supported on Chromium-family browsers on Windows and Linux.
 - Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
 - For remote access, reverse proxy setup, calendar OAuth, updates, and backup guidance, use the documentation below.
 

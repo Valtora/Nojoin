@@ -48,7 +48,7 @@ export function getSettingsSectionMatchScores({
   return {
     personal: getMatchScore(searchQuery, TAB_KEYWORDS.personal),
     ai: getMatchScore(searchQuery, TAB_KEYWORDS.ai),
-    companion: getMatchScore(searchQuery, TAB_KEYWORDS.companion),
+    capture: getMatchScore(searchQuery, TAB_KEYWORDS.capture),
     administration: isAdmin
       ? getMatchScore(searchQuery, TAB_KEYWORDS.administration)
       : 1,

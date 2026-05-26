@@ -3,20 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecordingId } from "@/types";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
-import { companionLocalFetch } from "@/lib/companionLocalApi";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
+import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useLiveWaveform } from "@/lib/capture/waveform";
 
 const HISTORY_LENGTH = 48;
-const POLL_INTERVAL_MS = 180;
-const CALIBRATION_WINDOW = 72;
-const MIN_REFERENCE_RANGE = 2.5;
-const NOISE_GATE_FLOOR = 0.35;
 const ACTIVITY_LEVEL_THRESHOLD = 6;
 const QUIET_HINT_DELAY_MS = 20000;
 const ACTIVITY_HINT_COPY = {
   title: "Audio has been quiet for a bit",
   message:
-    "That can be normal during a quiet stretch. If the meeting should be active, check the companion audio device settings.",
+    "That can be normal during a quiet stretch. If the meeting should be active, check the capture settings and the browser share picker.",
 };
 
 const AUDIO_BAR_CLASS_NAME =
@@ -24,101 +20,12 @@ const AUDIO_BAR_CLASS_NAME =
 
 function combineAudioLevel(inputLevel: number, outputLevel: number) {
   return Math.max(inputLevel, outputLevel);
-};
-
-function quantile(values: number[], percentile: number) {
-  if (values.length === 0) {
-    return 0;
-  }
-
-  const sorted = [...values].sort((left, right) => left - right);
-  const index = (sorted.length - 1) * percentile;
-  const lowerIndex = Math.floor(index);
-  const upperIndex = Math.ceil(index);
-  if (lowerIndex === upperIndex) {
-    return sorted[lowerIndex];
-  }
-
-  const weight = index - lowerIndex;
-  return (
-    sorted[lowerIndex] + (sorted[upperIndex] - sorted[lowerIndex]) * weight
-  );
-}
-
-function calibrateLevel(rawLevel: number, history: number[]) {
-  const baseline = quantile(history, 0.18);
-  const gate = Math.max(NOISE_GATE_FLOOR, baseline + 0.25);
-  const referencePeak = Math.max(
-    quantile(history, 0.92),
-    quantile(history, 0.75) * 1.25,
-    gate + MIN_REFERENCE_RANGE,
-  );
-
-  if (rawLevel <= gate) {
-    return 0;
-  }
-
-  const normalised = Math.min(
-    1,
-    Math.max(0, (rawLevel - gate) / (referencePeak - gate)),
-  );
-
-  return Math.round(Math.pow(normalised, 0.72) * 100);
 }
 
 function smoothLevel(previousLevel: number, nextLevel: number) {
   const riseBlend = nextLevel > previousLevel ? 0.65 : 0.35;
   return Math.round(previousLevel + (nextLevel - previousLevel) * riseBlend);
 }
-
-interface AudioLevelsResponse {
-  input_level: number;
-  output_level: number;
-  is_recording: boolean;
-}
-
-type WaveformUnavailableState =
-  | null
-  | "reconnecting"
-  | "repair-required"
-  | "repairing"
-  | "fetch-unavailable";
-
-const WAVEFORM_UNAVAILABLE_COPY: Record<
-  Exclude<WaveformUnavailableState, null>,
-  { title: string; message: string; tone: "info" | "warning" }
-> = {
-  reconnecting: {
-    title: "Live audio preview reconnecting",
-    message:
-      "The Companion is temporarily disconnected. This preview should return automatically when the local connection recovers.",
-    tone: "info",
-  },
-  "repair-required": {
-    title: "Live audio preview unavailable",
-    message:
-      "Browser repair is required before this preview can return. Open Companion support if it does not recover after repair.",
-    tone: "warning",
-  },
-  repairing: {
-    title: "Live audio preview paused",
-    message:
-      "Browser repair is in progress. This preview will return automatically when the repair finishes.",
-    tone: "info",
-  },
-  "fetch-unavailable": {
-    title: "Live audio preview temporarily unavailable",
-    message:
-      "The preview could not refresh from the Companion right now. That does not necessarily mean the meeting audio is silent.",
-    tone: "info",
-  },
-};
-
-const WAVEFORM_UNAVAILABLE_STYLES = {
-  info: "border-blue-200/80 bg-blue-50/80 text-blue-900 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100",
-  warning:
-    "border-amber-200/80 bg-amber-50/80 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100",
-};
 
 interface LiveAudioWaveformProps {
   recordingId: RecordingId;
@@ -162,23 +69,11 @@ export default function LiveAudioWaveform({
   enabled,
   paused = false,
 }: LiveAudioWaveformProps) {
-  const companion = useServiceStatusStore((state) => state.companion);
-  const companionAuthenticated = useServiceStatusStore(
-    (state) => state.companionAuthenticated,
-  );
-  const companionLocalConnectionUnavailable = useServiceStatusStore(
-    (state) => state.companionLocalConnectionUnavailable,
-  );
-  const companionLocalHttpsStatus = useServiceStatusStore(
-    (state) => state.companionLocalHttpsStatus,
-  );
+  const { controller, runtimeActive } = useCapture();
+  const levels = useLiveWaveform(controller);
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
-  const [waveformUnavailableState, setWaveformUnavailableState] =
-    useState<WaveformUnavailableState>(null);
-  const inputCalibrationHistoryRef = useRef<number[]>([]);
-  const outputCalibrationHistoryRef = useRef<number[]>([]);
-  const lastAudioActivityAtRef = useRef<number>(Date.now());
+  const lastAudioActivityAtRef = useRef<number>(0);
   const suppressQuietAudioWarnings = useAudioWarningStore(
     (state) => state.suppressQuietAudioWarnings,
   );
@@ -199,192 +94,63 @@ export default function LiveAudioWaveform({
       setShowQuietHint(false);
     };
 
-    if (!enabled) {
-      setWaveformUnavailableState(null);
-      setAudioHistory(zeroHistory());
-      inputCalibrationHistoryRef.current = [];
-      outputCalibrationHistoryRef.current = [];
-      resetActivityTracking();
-      return;
-    }
-
-    if (companionLocalHttpsStatus === "needs-repair") {
-      setWaveformUnavailableState("repair-required");
-      setAudioHistory(zeroHistory());
-      inputCalibrationHistoryRef.current = [];
-      outputCalibrationHistoryRef.current = [];
-      resetActivityTracking();
-      return;
-    }
-
-    if (companionLocalHttpsStatus === "repairing") {
-      setWaveformUnavailableState("repairing");
-      setAudioHistory(zeroHistory());
-      inputCalibrationHistoryRef.current = [];
-      outputCalibrationHistoryRef.current = [];
-      resetActivityTracking();
-      return;
-    }
-
-    if (companionAuthenticated && !companion) {
-      setWaveformUnavailableState("reconnecting");
-      setAudioHistory(zeroHistory());
-      inputCalibrationHistoryRef.current = [];
-      outputCalibrationHistoryRef.current = [];
-      resetActivityTracking();
-      return;
-    }
-
-    if (!companion) {
-      setWaveformUnavailableState(null);
-      setAudioHistory(zeroHistory());
-      inputCalibrationHistoryRef.current = [];
-      outputCalibrationHistoryRef.current = [];
-      resetActivityTracking();
-      return;
-    }
-
-    resetActivityTracking();
-    setWaveformUnavailableState(null);
-
-    let cancelled = false;
-    let timeoutId: number | undefined;
-
     const appendSample = (history: number[], nextValue: number) => {
       return [...history.slice(-(HISTORY_LENGTH - 1)), nextValue];
     };
 
-    const pollLevels = async () => {
-      try {
-        const response = await companionLocalFetch(
-          "/levels/live",
-          {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-          },
-          "waveform:read",
-        );
+    if (!enabled) {
+      setAudioHistory(zeroHistory());
+      resetActivityTracking();
+      return;
+    }
 
-        if (!response.ok) {
-          throw new Error(`Companion returned ${response.status}`);
-        }
+    if (!runtimeActive) {
+      setAudioHistory((history) => appendSample(history, 0));
+      resetActivityTracking();
+      return;
+    }
 
-        const data: AudioLevelsResponse = await response.json();
-        const rawInputLevel = Math.max(0, Math.min(100, data.input_level));
-        const rawOutputLevel = Math.max(0, Math.min(100, data.output_level));
+    if (lastAudioActivityAtRef.current === 0) {
+      lastAudioActivityAtRef.current = Date.now();
+    }
 
-        if (cancelled) {
-          return;
-        }
+    const combinedLevel = combineAudioLevel(levels.system, levels.microphone);
+    const now = Date.now();
 
-        setWaveformUnavailableState(null);
-
-        const nextInputCalibrationHistory = [
-          ...inputCalibrationHistoryRef.current,
-          rawInputLevel,
-        ].slice(-CALIBRATION_WINDOW);
-        inputCalibrationHistoryRef.current = nextInputCalibrationHistory;
-        const calibratedInputLevel = calibrateLevel(
-          rawInputLevel,
-          nextInputCalibrationHistory,
-        );
-
-        const nextOutputCalibrationHistory = [
-          ...outputCalibrationHistoryRef.current,
-          rawOutputLevel,
-        ].slice(-CALIBRATION_WINDOW);
-        outputCalibrationHistoryRef.current = nextOutputCalibrationHistory;
-        const calibratedOutputLevel = calibrateLevel(
-          rawOutputLevel,
-          nextOutputCalibrationHistory,
-        );
-
-        const combinedLevel = combineAudioLevel(
-          calibratedInputLevel,
-          calibratedOutputLevel,
-        );
-        const now = Date.now();
-
-        if (!paused) {
-          if (combinedLevel > ACTIVITY_LEVEL_THRESHOLD) {
-            lastAudioActivityAtRef.current = now;
-          }
-
-          setShowQuietHint(
-            now - lastAudioActivityAtRef.current >= QUIET_HINT_DELAY_MS,
-          );
-        } else {
-          resetActivityTracking();
-        }
-        setAudioHistory((displayHistory) => {
-          const smoothedLevel = smoothLevel(
-            displayHistory[displayHistory.length - 1] || 0,
-            combinedLevel,
-          );
-          return appendSample(displayHistory, smoothedLevel);
-        });
-      } catch {
-        if (cancelled) {
-          return;
-        }
-
-        setWaveformUnavailableState((currentState) =>
-          currentState === "repair-required" ||
-          currentState === "repairing" ||
-          currentState === "reconnecting"
-            ? currentState
-            : "fetch-unavailable",
-        );
-        setShowQuietHint(false);
-        lastAudioActivityAtRef.current = Date.now();
-        setAudioHistory((history) => appendSample(history, 0));
+    if (!paused) {
+      if (combinedLevel > ACTIVITY_LEVEL_THRESHOLD) {
+        lastAudioActivityAtRef.current = now;
       }
 
-      if (!cancelled) {
-        timeoutId = window.setTimeout(pollLevels, POLL_INTERVAL_MS);
-      }
-    };
+      setShowQuietHint(now - lastAudioActivityAtRef.current >= QUIET_HINT_DELAY_MS);
+    } else {
+      resetActivityTracking();
+    }
 
-    void pollLevels();
-
-    return () => {
-      cancelled = true;
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
-    };
+    setAudioHistory((displayHistory) => {
+      const smoothedLevel = smoothLevel(
+        displayHistory[displayHistory.length - 1] || 0,
+        combinedLevel,
+      );
+      return appendSample(displayHistory, smoothedLevel);
+    });
   }, [
-    companion,
-    companionAuthenticated,
-    companionLocalConnectionUnavailable,
-    companionLocalHttpsStatus,
     enabled,
+    levels.microphone,
+    levels.system,
     paused,
-    recordingId,
+    runtimeActive,
   ]);
 
   const showActivityHint = Boolean(
     showQuietHint &&
-      !waveformUnavailableState &&
       !suppressQuietAudioWarnings &&
       !dismissedForMeeting,
   );
-  const waveformUnavailableCopy = waveformUnavailableState
-    ? WAVEFORM_UNAVAILABLE_COPY[waveformUnavailableState]
-    : null;
 
   return (
     <div className="space-y-3">
-      {waveformUnavailableCopy ? (
-        <div
-          className={`rounded-3xl border px-4 py-3 shadow-sm ${WAVEFORM_UNAVAILABLE_STYLES[waveformUnavailableCopy.tone]}`}
-        >
-          <p className="text-sm font-medium">{waveformUnavailableCopy.title}</p>
-          <p className="mt-1 text-xs leading-5 opacity-90">
-            {waveformUnavailableCopy.message}
-          </p>
-        </div>
-      ) : showActivityHint ? (
+      {showActivityHint ? (
         <div className="rounded-3xl border border-orange-200/80 bg-orange-50/80 px-4 py-3 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10">
           <p className="text-sm font-medium text-orange-950 dark:text-orange-100">
             {ACTIVITY_HINT_COPY.title}

@@ -140,9 +140,9 @@ def test_cleanup_recording_audio_chunks_deletes_eligible_files_and_marks_rows(
                     received_at, cleanup_eligible_at
                 ) VALUES (
                     1, :created_at, :updated_at, 'chunk-public-id', 401,
-                    0, 'companion', 0, 500,
+                    0, 'browser', 0, 500,
                     500, 16000, 1, 7,
-                    'abc', :storage_path, 'finalized', 'companion:0:abc',
+                    'abc', :storage_path, 'finalized', 'browser:0:abc',
                     :received_at, :cleanup_eligible_at
                 )
                 """
@@ -194,9 +194,9 @@ def test_mark_recording_audio_chunks_ready_for_cleanup_sets_deadline_without_del
                     received_at, cleanup_eligible_at
                 ) VALUES (
                     1, :created_at, :updated_at, 'chunk-public-id', 402,
-                    0, 'companion', 0, 500,
+                    0, 'browser', 0, 500,
                     500, 16000, 1, 7,
-                    'abc', :storage_path, 'received', 'companion:0:abc',
+                    'abc', :storage_path, 'received', 'browser:0:abc',
                     :received_at, NULL
                 )
                 """

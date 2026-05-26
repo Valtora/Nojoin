@@ -1,5 +1,6 @@
 import axios from "axios";
 import {
+  ActiveRecordingConflictDetail,
   CalendarConnection,
   CalendarDashboardSummary,
   CalendarOverview,
@@ -7,7 +8,9 @@ import {
   CalendarProviderConfigUpdate,
   CalendarProviderStatus,
   Recording,
+  RecordingCaptureLifecycleResponse,
   RecordingId,
+  RecordingInitResponse,
   RecordingsCalendar,
   GlobalSpeaker,
   Settings,
@@ -225,6 +228,95 @@ export const getRecordings = async (
 export const getRecording = async (id: RecordingId): Promise<Recording> => {
   const response = await api.get<Recording>(`/recordings/${id}`);
   return response.data;
+};
+
+export const initRecording = async (name?: string): Promise<RecordingInitResponse> => {
+  const params = new URLSearchParams();
+
+  if (name?.trim()) {
+    params.set("name", name.trim());
+  }
+
+  const suffix = params.toString();
+  const response = await api.post<RecordingInitResponse>(
+    `/recordings/init${suffix ? `?${suffix}` : ""}`,
+  );
+  return response.data;
+};
+
+export const pauseRecordingCapture = async (
+  recordingId: RecordingId,
+): Promise<RecordingCaptureLifecycleResponse> => {
+  const response = await api.post<RecordingCaptureLifecycleResponse>(
+    `/recordings/${recordingId}/pause`,
+  );
+  return response.data;
+};
+
+export const resumeRecordingCapture = async (
+  recordingId: RecordingId,
+): Promise<RecordingCaptureLifecycleResponse> => {
+  const response = await api.post<RecordingCaptureLifecycleResponse>(
+    `/recordings/${recordingId}/resume`,
+  );
+  return response.data;
+};
+
+export const finalizeRecordingCapture = async (
+  recordingId: RecordingId,
+): Promise<Recording> => {
+  const response = await api.post<Recording>(`/recordings/${recordingId}/finalize`);
+  return response.data;
+};
+
+export const discardRecordingCapture = async (
+  recordingId: RecordingId,
+): Promise<void> => {
+  await api.post(`/recordings/${recordingId}/discard`);
+};
+
+export const uploadRecordingSegment = async (
+  recordingId: RecordingId,
+  sequence: number,
+  blob: Blob,
+  filename = `${sequence}.webm`,
+): Promise<{ status: string; segment: number }> => {
+  const formData = new FormData();
+  formData.append("file", blob, filename);
+
+  const response = await api.post<{ status: string; segment: number }>(
+    `/recordings/${recordingId}/segment?sequence=${sequence}`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+  return response.data;
+};
+
+export const getPausedRecordings = async (): Promise<Recording[]> => {
+  const response = await api.get<Recording[]>(
+    "/recordings/?status=PAUSED&user=me",
+  );
+  return response.data;
+};
+
+export const isActiveRecordingConflictDetail = (
+  detail: unknown,
+): detail is ActiveRecordingConflictDetail => {
+  if (!detail || typeof detail !== "object") {
+    return false;
+  }
+
+  const candidate = detail as Partial<ActiveRecordingConflictDetail>;
+  return (
+    candidate.code === "active_recording_exists" &&
+    typeof candidate.message === "string" &&
+    typeof candidate.recording_id === "string" &&
+    typeof candidate.status === "string"
+  );
 };
 
 export const linkRecordingCalendarEvent = async (
@@ -1802,20 +1894,6 @@ export const uploadBackupChunked = async (
   } catch (error) {
     throw error;
   }
-};
-
-export interface CompanionReleases {
-  version: string | null;
-  windows_url: string | null;
-  macos_url: string | null;
-  linux_url: string | null;
-}
-
-export const getCompanionReleases = async (): Promise<CompanionReleases> => {
-  const response = await api.get<CompanionReleases>(
-    "/system/companion-releases",
-  );
-  return response.data;
 };
 
 export const seedDemoData = async (): Promise<void> => {

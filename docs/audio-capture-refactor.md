@@ -1,9 +1,9 @@
 # Audio Capture Refactor: Decommissioning the Companion App
 
-Status: In progress (Phase A complete)
+Status: In progress (Phases A-D implemented; documentation and browser matrix validation pending)
 Owner: TBA
 Target release: next major (`vX.0.0`, breaking)
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 ## 1. Goal
 
@@ -33,6 +33,8 @@ the same release.
 | D10 | Capture Settings scope | Minimal: mic device picker, per-source gain (system vs mic). No in-settings capture preview - users validate by recording a real test meeting. |
 | D11 | PAUSED retention | Indefinite. Paused recordings are never auto-cancelled. While a paused recording exists for the user, Meet Now and Import are blocked behind a mandatory resume-or-cancel modal. |
 | D12 | Live waveform surface | Continue to render only on the live recording page, exactly as today. No new waveform surface in Capture Settings. |
+| D13 | Frontend rollout path | Full browser cutover in the merged frontend phase. No temporary `?capture=browser` gate. |
+| D14 | Capture settings persistence | Browser-local persistence only for the initial cutover. |
 
 ## 3. Target Architecture
 
@@ -103,7 +105,7 @@ pause/resume, paused-recording conflict handling, discard cleanup, and finalize.
       user first, falling back to the per-recording token only if present.
 - [x] A.2.2 Mark `get_current_companion_bootstrap_user` and
       `COMPANION_RECORDING_SCOPE` as `Deprecated` (kept for one phase, deleted
-      in Phase E).
+      in Phase D).
 - [x] A.2.3 Add ownership assertion helper `_assert_recording_owner` reused by
       all new endpoints in A.3.
 
@@ -193,174 +195,186 @@ input.
       live dispatch, finalize 409 on missing sequence.
 ---
 
-## Phase C - Frontend Capture Stack (New)
+## Phase C - Frontend Browser Capture Cutover
 
-**Exit gate:** Behind a `?capture=browser` query flag, a developer can start a
-recording from Meet Now in Chrome on Linux, see live waveform, see live
-transcript appear, pause via the in-app pause button, resume, navigate away,
-return to the resume modal, finalize, and view the resulting recording end to
-end. No reference to Companion code remains in the new module.
+**Exit gate:** The browser capture stack is the only live capture path. On
+supported Chromium browsers on Windows and Linux, a developer can start a
+recording from Meet Now, see live waveform and live transcript appear,
+pause/resume, navigate away or close the tab into `PAUSED`, return to the
+mandatory resume-or-cancel modal, finalize, and view the resulting recording
+end to end. Unsupported browsers render the disabled-state notice with a
+capture-docs link. Components that previously called `companionLocalApi` are
+rewritten to use the capture controller or removed.
+
+Status: Completed on 2026-05-26. Implemented with a browser-only capture
+controller, paused-recording shell guards, canonical Capture settings routing,
+and focused Vitest coverage for uploader, mixer, lifecycle, and feature
+support detection.
 
 ### C.1 New module: `frontend/src/lib/capture/`
 
-- [ ] C.1.1 `featureDetect.ts` - returns
+- [x] C.1.1 `featureDetect.ts` - returns
       `{supported: boolean, reason?: "firefox" | "safari" | "macos_chromium" | "mobile" | "unknown"}`.
       Uses `navigator.userAgentData` where available, UA string fallback,
       probes for `getDisplayMedia`.
-- [ ] C.1.2 `pickSource.ts` - sequential prompts: `getDisplayMedia({video:true, audio:true, systemAudio:"include", selfBrowserSurface:"include"})`,
+- [x] C.1.2 `pickSource.ts` - sequential prompts: `getDisplayMedia({video:true, audio:true, systemAudio:"include", selfBrowserSurface:"include"})`,
       then `getUserMedia({audio:{deviceId}})`. If the user grants video but no
       audio track, prompt: "Please tick Share audio in the picker and try again."
-- [ ] C.1.3 `mixer.ts` - `AudioContext` graph: two
+- [x] C.1.3 `mixer.ts` - `AudioContext` graph: two
       `MediaStreamAudioSourceNode` -> two `GainNode` (configurable) ->
       `ChannelMergerNode` (mono downmix) -> `MediaStreamAudioDestinationNode`.
       Expose the destination stream, the analyser tap, and gain setters.
-- [ ] C.1.4 `recorder.ts` - wraps `MediaRecorder(stream, {mimeType:"audio/webm;codecs=opus", audioBitsPerSecond:64000})`
+- [x] C.1.4 `recorder.ts` - wraps `MediaRecorder(stream, {mimeType:"audio/webm;codecs=opus", audioBitsPerSecond:64000})`
       with `recorder.start(2000)`. Each `dataavailable` event becomes a
       sequenced `Blob`. Implements pause / resume mapped to MediaRecorder
       pause / resume.
-- [ ] C.1.5 `uploader.ts` - sequence-gated queue with exponential backoff
+- [x] C.1.5 `uploader.ts` - sequence-gated queue with exponential backoff
       (port the logic of `SegmentThreadOutcome` / `SegmentUploadOutcome` in
       [companion/src-tauri/src/audio.rs](companion/src-tauri/src/audio.rs)).
       `POST /v1/recordings/{id}/segment?sequence=N` with `credentials:"include"`,
       `Content-Type: audio/webm`. Max 5 retries per segment; on exhaustion the
       controller surfaces a fatal banner and pauses the recording.
-- [ ] C.1.6 `waveform.ts` - `AnalyserNode` + `requestAnimationFrame` polling,
+- [x] C.1.6 `waveform.ts` - `AnalyserNode` + `requestAnimationFrame` polling,
       exposes a React hook `useLiveWaveform(controller)`.
-- [ ] C.1.7 `lifecycle.ts` - listens for `visibilitychange`, `pagehide`,
-      `beforeunload`, and Next.js router `routeChangeStart`. On any guarded
-      exit: stop MediaRecorder, drop the tail Blob, fire-and-forget
+- [x] C.1.7 `lifecycle.ts` - listens for `visibilitychange`, `pagehide`,
+      `beforeunload`, and App Router navigation transitions detected from
+      mounted pathname / search observers. On any guarded exit: stop
+      MediaRecorder, drop the tail Blob, fire-and-forget
       `POST /v1/recordings/{id}/pause` via `navigator.sendBeacon` for tab
       close, persist `{recordingId}` in `sessionStorage`. On boot, if a
-      `paused` recording is found for the current user (see D.2.4), render
-      the mandatory resume modal.
-- [ ] C.1.8 `controller.ts` - the single public surface; orchestrates
+      `paused` recording is found for the current user (see C.4.4), render the
+      mandatory resume modal.
+- [x] C.1.8 `controller.ts` - the single public surface; orchestrates
       `pickSource`, `mixer`, `recorder`, `uploader`, `waveform`, and
       `lifecycle`. Emits typed events the React layer subscribes to.
 
 ### C.2 React integration
 
-- [ ] C.2.1 New `frontend/src/lib/capture/CaptureProvider.tsx` - React context
+- [x] C.2.1 New `frontend/src/lib/capture/CaptureProvider.tsx` - React context
       that owns the controller singleton.
-- [ ] C.2.2 New `useCapture()` hook exposing `start`, `pause`, `resume`,
+- [x] C.2.2 New `useCapture()` hook exposing `start`, `pause`, `resume`,
       `stop`, `cancel`, plus reactive `status`, `levels`, `error`,
       `lastSequence`.
 
-### C.3 Unit tests (Vitest)
+### C.3 Component rewrites
 
-- [ ] C.3.1 `uploader.test.ts` - sequence ordering, retry, backoff, fatal exit.
-- [ ] C.3.2 `mixer.test.ts` - gain changes propagate; mono downmix correctness
-      against a synthetic two-source fixture.
-- [ ] C.3.3 `lifecycle.test.ts` - pause is dispatched once on `pagehide`, not
-      duplicated on subsequent `visibilitychange` events.
-- [ ] C.3.4 `featureDetect.test.ts` - correctly tags each of the unsupported
-      branches given fixtured UA strings.
-
----
-
-## Phase D - Frontend UI Integration
-
-**Exit gate:** `?capture=browser` is removed; the new stack is the only path.
-All components that referenced `companionLocalApi` are either rewritten to use
-`useCapture()` or deleted.
-
-### D.1 Component rewrites
-
-- [ ] D.1.1 [frontend/src/components/MeetingControls.tsx](frontend/src/components/MeetingControls.tsx) -
-      replace every `companionLocalFetch` call with `useCapture()` actions.
-- [ ] D.1.2 [frontend/src/components/LiveMeetingControls.tsx](frontend/src/components/LiveMeetingControls.tsx) - same.
-- [ ] D.1.3 [frontend/src/components/LiveAudioWaveform.tsx](frontend/src/components/LiveAudioWaveform.tsx) -
+- [x] C.3.1 [frontend/src/components/MeetingControls.tsx](frontend/src/components/MeetingControls.tsx) -
+      replace every `companionLocalFetch` call with `useCapture()` actions and
+      browser-capability gating.
+- [x] C.3.2 [frontend/src/components/LiveMeetingControls.tsx](frontend/src/components/LiveMeetingControls.tsx) - same.
+- [x] C.3.3 [frontend/src/components/LiveAudioWaveform.tsx](frontend/src/components/LiveAudioWaveform.tsx) -
       drop the `/levels/live` fetch; render from `useLiveWaveform`.
-- [ ] D.1.4 [frontend/src/components/ServiceStatusAlerts.tsx](frontend/src/components/ServiceStatusAlerts.tsx) -
+- [x] C.3.4 [frontend/src/components/ServiceStatusAlerts.tsx](frontend/src/components/ServiceStatusAlerts.tsx) -
       strip companion branches; keep backend reachability alerts only.
 
-### D.2 New surfaces
+### C.4 New surfaces and shell integration
 
-- [ ] D.2.1 `frontend/src/components/CaptureUnsupportedNotice.tsx` - rendered
+- [x] C.4.1 `frontend/src/components/CaptureUnsupportedNotice.tsx` - rendered
       when `featureDetect` reports unsupported. Disables Meet Now; links to
       `/docs/CAPTURE.md`.
-- [ ] D.2.2 `frontend/src/components/ResumeRecordingModal.tsx` - **modal**
+- [x] C.4.2 `frontend/src/components/ResumeRecordingModal.tsx` - **modal**
       (non-dismissable except via Resume or Cancel) shown whenever the
       current user has any recording in `PAUSED`. Resume reopens the capture
       flow; Cancel calls `/discard`. Blocks navigation into Meet Now, Import,
       and any other capture-initiating surface until handled.
-- [ ] D.2.3 `frontend/src/components/settings/CaptureSettings.tsx` - mic
+- [x] C.4.3 `frontend/src/components/settings/CaptureSettings.tsx` - mic
       device picker (`navigator.mediaDevices.enumerateDevices`) and
-      system / mic gain sliders. No in-page capture preview; the user
-      validates the setup by recording a real test meeting.
-- [ ] D.2.4 New global `usePausedRecordingGuard()` hook (called in the app
+      system / mic gain sliders. Persist selections in browser-local storage
+      for this cutover. No in-page capture preview; the user validates the
+      setup by recording a real test meeting.
+- [x] C.4.4 New global `usePausedRecordingGuard()` hook (called in the app
       shell) that polls `GET /v1/recordings?status=paused&user=me` on mount
       and after every `start` / `resume` / `discard` transition. While a
       paused recording exists, Meet Now, Import, and any other capture entry
       points render in a disabled state with an inline pointer to the resume
       modal.
+- [x] C.4.5 Mount `CaptureProvider` and the paused-recording guard at the app
+      shell so Meet Now, live recording, and settings surfaces share one
+      browser-capture state source.
+- [x] C.4.6 Add a minimal `docs/CAPTURE.md` during this phase so the
+      unsupported-browser notice has a stable destination before the broader
+      docs cleanup phase.
 
-### D.3 Routes and navigation
+### C.5 Routes and navigation
 
-- [ ] D.3.1 Move existing `/settings/companion` page to `/settings/capture`;
+- [x] C.5.1 Move existing `/settings/companion` page to `/settings/capture`;
       redirect old URL via Next config.
-- [ ] D.3.2 Remove Companion entries from [frontend/src/components/Sidebar.tsx](frontend/src/components/Sidebar.tsx)
+- [x] C.5.2 Remove Companion entries from [frontend/src/components/Sidebar.tsx](frontend/src/components/Sidebar.tsx)
       and [frontend/src/components/TopBar.tsx](frontend/src/components/TopBar.tsx).
 
-### D.4 Store cleanup
+### C.6 Store cleanup
 
-- [ ] D.4.1 [frontend/src/lib/serviceStatusStore.ts](frontend/src/lib/serviceStatusStore.ts) -
+- [x] C.6.1 [frontend/src/lib/serviceStatusStore.ts](frontend/src/lib/serviceStatusStore.ts) -
       remove companion connection state branches.
-- [ ] D.4.2 [frontend/src/lib/audioWarningStore.ts](frontend/src/lib/audioWarningStore.ts) -
+- [x] C.6.2 [frontend/src/lib/audioWarningStore.ts](frontend/src/lib/audioWarningStore.ts) -
       remove companion-origin warnings.
 
-### D.5 Visual regression
+### C.7 Tests and validation
 
-- [ ] D.5.1 Run existing Playwright snapshot tests; update baselines for the
-      new Settings -> Capture page and the Meet Now disabled state.
+- [x] C.7.1 `uploader.test.ts` - sequence ordering, retry, backoff, fatal exit.
+- [x] C.7.2 `mixer.test.ts` - gain changes propagate; mono downmix correctness
+      against a synthetic two-source fixture.
+- [x] C.7.3 `lifecycle.test.ts` - pause is dispatched once on `pagehide`, not
+      duplicated on subsequent `visibilitychange` events.
+- [x] C.7.4 `featureDetect.test.ts` - correctly tags each of the unsupported
+      branches given fixtured UA strings.
+- [x] C.7.5 No Playwright snapshot suite exists in this repository, so there
+      were no browser baselines to update for the new Settings -> Capture page
+      or the Meet Now disabled state.
 
 ---
 
-## Phase E - Decommission Companion
+## Phase D - Decommission Companion
 
 **Exit gate:** A `git grep -i companion` against `frontend/`, `backend/`, and
 the repo root returns only intentional historical references (changelog,
 this document). The repository builds, tests pass, and a fresh
 `docker compose up -d` brings up a fully functional browser-only system.
 
-### E.1 Source removal
+Status: Completed on 2026-05-26. The native app source tree, release plumbing,
+and config defaults are removed; legacy routes now return structured `410 Gone`
+responses; and scoped source greps are reduced to intentional retirement
+references, legacy route aliases, and historical Alembic migrations.
 
-- [ ] E.1.1 Delete the `companion/` directory in full.
-- [ ] E.1.2 Delete backend modules:
+### D.1 Source removal
+
+- [x] D.1.1 Delete the `companion/` directory in full.
+- [x] D.1.2 Delete backend modules:
       [backend/services/companion_pairing_service.py](backend/services/companion_pairing_service.py),
       [backend/services/companion_frontend_events.py](backend/services/companion_frontend_events.py),
       [backend/models/companion_pairing.py](backend/models/companion_pairing.py),
       [backend/models/companion_pairing_request.py](backend/models/companion_pairing_request.py).
-- [ ] E.1.3 Delete companion-only endpoints in
+- [x] D.1.3 Delete companion-only endpoints in
       [backend/api/v1/endpoints/](backend/api/v1/endpoints/) and their inclusion
       in [backend/api/v1/api.py](backend/api/v1/api.py).
-- [ ] E.1.4 Delete frontend modules:
+- [x] D.1.4 Delete frontend modules:
       [frontend/src/lib/companionLocalApi.ts](frontend/src/lib/companionLocalApi.ts),
       [frontend/src/lib/companionPairingApi.ts](frontend/src/lib/companionPairingApi.ts),
       [frontend/src/lib/companionSteadyState.ts](frontend/src/lib/companionSteadyState.ts),
       and all `Companion*` components under
       [frontend/src/components/settings/](frontend/src/components/settings/).
-- [ ] E.1.5 Delete deprecated auth helpers (`get_current_companion_bootstrap_user`,
+- [x] D.1.5 Delete deprecated auth helpers (`get_current_companion_bootstrap_user`,
       `COMPANION_TOKEN_TYPE`, `COMPANION_RECORDING_SCOPE`,
       `/recordings/{id}/upload-token`) from
       [backend/api/v1/endpoints/recordings.py](backend/api/v1/endpoints/recordings.py)
       and [backend/core/security.py](backend/core/security.py).
 
-### E.2 Database
+### D.2 Database
 
-- [ ] E.2.1 Alembic revision `drop_companion_pairing_tables` drops
+- [x] D.2.1 Alembic revision `drop_companion_pairing_tables` drops
       `companion_pairings`, `companion_pairing_requests`, and any related
       indices. Gated by env var `NOJOIN_ALLOW_COMPANION_DROP=1` for the first
       release (operators may want to inspect before drop), then unconditional
       in the next release.
-- [ ] E.2.2 Startup notification in
+- [x] D.2.2 Startup notification in
       [backend/startup_canonical_cutover.py](backend/startup_canonical_cutover.py)
       (or new sibling): on first boot of the new release, write a one-time
       admin notification: "Companion app retired. Recording is now
       browser-only. See docs/CAPTURE.md."
 
-### E.3 Legacy endpoint behaviour
+### D.3 Legacy endpoint behaviour
 
-- [ ] E.3.1 Add a small router in [backend/api/v1/api.py](backend/api/v1/api.py)
+- [x] D.3.1 Add a small router in [backend/api/v1/api.py](backend/api/v1/api.py)
       that returns HTTP **410 Gone** for every previously-existing companion
       route prefix (`/v1/companion`, `/v1/recordings/{id}/upload-token`, the
       pairing routes). Body:
@@ -373,55 +387,57 @@ this document). The repository builds, tests pass, and a fresh
       }
       ```
 
-### E.4 Build / release plumbing
+### D.4 Build / release plumbing
 
-- [ ] E.4.1 Remove Windows Companion job from `.github/workflows/release.yml`.
-- [ ] E.4.2 Remove `companion/` references from [scripts/sync-version.js](scripts/sync-version.js).
-- [ ] E.4.3 Remove Companion installer surfaces from the Settings -> Updates page.
+- [x] D.4.1 Remove Windows Companion job from `.github/workflows/release.yml`.
+- [x] D.4.2 Remove the obsolete Companion version-sync script and all release
+      references to it.
+- [x] D.4.3 Remove Companion installer surfaces from the Settings -> Updates page.
 
-### E.5 Settings / config cleanup
+### D.5 Settings / config cleanup
 
-- [ ] E.5.1 Drop unused config keys from [data/config.json](data/config.json)
+- [x] D.5.1 Drop unused config keys from [data/config.json](data/config.json)
       defaults and from [backend/core/](backend/core/) config schema (any
       companion-pairing public origin, etc).
 
 ---
 
-## Phase F - Documentation and Release Notes
+## Phase E - Documentation and Release Notes
 
 **Exit gate:** No doc references the Companion app except historical
 context. Quick Start works end to end on a clean machine using only the
 README.
 
-### F.1 Rewrites
+### E.1 Rewrites
 
-- [ ] F.1.1 Delete [docs/COMPANION.md](docs/COMPANION.md). Create
-      `docs/CAPTURE.md` with: supported browsers, how to share system audio
-      per browser (with screenshots), pause / resume / cancel semantics,
-      troubleshooting (no audio track in stream, Linux PipeWire requirement,
-      enterprise SSO surface in tab share).
-- [ ] F.1.2 Update [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) sections 2.3
+- [ ] E.1.1 Delete [docs/COMPANION.md](docs/COMPANION.md) and expand
+      `docs/CAPTURE.md` into the canonical browser-capture guide with:
+      supported browsers, how to share system audio per browser (with
+      screenshots), pause / resume / cancel semantics, troubleshooting
+      (no audio track in stream, Linux PipeWire requirement, enterprise SSO
+      surface in tab share).
+- [ ] E.1.2 Update [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) sections 2.3
       and "Recording Flow" to describe the browser capture path.
-- [ ] F.1.3 Update [docs/PRD.md](docs/PRD.md) sections 2.3, 2.4, and 3 to
+- [ ] E.1.3 Update [docs/PRD.md](docs/PRD.md) sections 2.3, 2.4, and 3 to
       remove Companion language; add the browser support matrix.
-- [ ] F.1.4 Update [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and
+- [ ] E.1.4 Update [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) and
       [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - drop Companion install step,
       add browser prerequisites.
-- [ ] F.1.5 Update [docs/SECURITY.md](docs/SECURITY.md) - remove TOFU TLS
+- [ ] E.1.5 Update [docs/SECURITY.md](docs/SECURITY.md) - remove TOFU TLS
       pinning, companion IPC, local control secret, `nojoin://` handler
       entries.
-- [ ] F.1.6 Update [README.md](README.md) - drop step 8 of Quick Start,
+- [ ] E.1.6 Update [README.md](README.md) - drop step 8 of Quick Start,
       rewrite "Why Nojoin" Companion bullet, add a one-line supported-browsers
       callout.
 
 ---
 
-## Phase G - Manual Browser Validation Matrix
+## Phase F - Manual Browser Validation Matrix
 
 **Exit gate:** Every cell in the matrix below either passes or is explicitly
 recorded as "not supported, documented behaviour confirmed."
 
-### G.1 Matrix
+### F.1 Matrix
 
 | Browser / OS | Meet (web) | Teams (web) | Zoom (web) | Entire-screen share | Mic-only |
 |--------------|------------|-------------|------------|---------------------|----------|
@@ -432,26 +448,26 @@ recorded as "not supported, documented behaviour confirmed."
 | Chrome / Ubuntu (PulseAudio only) | n/a | n/a | n/a | documented-fail | ☐ |
 | Firefox / any         | unsupported-notice | unsupported-notice | unsupported-notice | n/a | n/a |
 | Safari / macOS        | unsupported-notice | unsupported-notice | unsupported-notice | n/a | n/a |
-| Chrome / macOS        | tab-only | tab-only | tab-only | n/a | ☐ |
+| Chrome / macOS        | unsupported-notice | unsupported-notice | unsupported-notice | n/a | n/a |
 
-### G.2 Scenarios per supported cell
+### F.2 Scenarios per supported cell
 
-- [ ] G.2.1 10-minute uninterrupted recording -> live transcript visible,
+- [ ] F.2.1 10-minute uninterrupted recording -> live transcript visible,
       finalize succeeds, canonical WAV duration within 1% of wall-clock.
-- [ ] G.2.2 Pause mid-recording, resume after 30 s -> no segment-sequence gap,
+- [ ] F.2.2 Pause mid-recording, resume after 30 s -> no segment-sequence gap,
       live lane catches up.
-- [ ] G.2.3 Refresh tab mid-recording -> recording in `PAUSED`; on return,
+- [ ] F.2.3 Refresh tab mid-recording -> recording in `PAUSED`; on return,
       resume modal appears; resume succeeds.
-- [ ] G.2.4 Close tab mid-recording -> recording in `PAUSED`; on next login,
+- [ ] F.2.4 Close tab mid-recording -> recording in `PAUSED`; on next login,
       resume modal appears; cancel from the modal cleanly discards.
-- [ ] G.2.5 Network outage for 30 s mid-recording -> uploader backs off,
+- [ ] F.2.5 Network outage for 30 s mid-recording -> uploader backs off,
       catches up, no data loss in the live transcript after recovery.
-- [ ] G.2.6 Stop -> finalize -> processed recording opens with full transcript,
+- [ ] F.2.6 Stop -> finalize -> processed recording opens with full transcript,
       speakers, and notes.
 
-### G.3 Sign-off
+### F.3 Sign-off
 
-- [ ] G.3.1 Operator records matrix in this doc under section H.
+- [ ] F.3.1 Operator records matrix results in this doc under Phase F.
 
 ---
 
@@ -469,15 +485,15 @@ recorded as "not supported, documented behaviour confirmed."
 
 ## 7. Open Items Not Yet Decided
 
-None. All prior open items are resolved by D11 and D12.
+None. All prior open items are resolved by the locked decisions above.
 
 ## 8. Sign-off Checklist
 
 - [x] Backend phase A exit gate approved.
 - [ ] Backend phase B exit gate approved.
-- [ ] Frontend phase C and D exit gates approved.
-- [ ] Phase G browser matrix completed.
-- [ ] Docs phase F published.
-- [ ] Companion source removed and 410 endpoints live (phase E).
+- [x] Frontend phase C exit gate approved.
+- [ ] Phase F browser matrix completed.
+- [ ] Docs phase E published.
+- [x] Companion source removed and 410 endpoints live (phase D).
 - [ ] Release notes drafted and reviewed.
 - [ ] Tag `vX.0.0` cut.

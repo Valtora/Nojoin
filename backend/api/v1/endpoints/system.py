@@ -6,6 +6,7 @@ import logging
 from docker.client import DockerClient
 from docker.errors import DockerException, NotFound
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,11 +27,6 @@ from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.preload_models import check_model_status
 from backend.utils.download_progress import get_download_progress, is_download_in_progress
 from backend.seed_demo import seed_demo_data
-from backend.api.services.release_service import (
-    GITHUB_RELEASES_PAGE_URL,
-    get_release_catalog,
-    get_windows_installer_asset,
-)
 from backend.api.services.health_service import (
     get_admin_health_status,
     get_system_health_status,
@@ -43,6 +39,12 @@ from backend.api.v1.endpoints.setup import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+RETIRED_COMPANION_RESPONSE = {
+    "error": "companion_retired",
+    "message": "The Nojoin Companion app has been retired. Please update your installation and use the web app for recording.",
+    "see": "https://github.com/Valtora/Nojoin/blob/main/docs/CAPTURE.md",
+}
 
 
 def resolve_tls_fingerprint() -> str | None:
@@ -556,33 +558,7 @@ async def get_demo_recording(
 async def get_companion_releases(
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """
-    Fetch the latest companion app release from GitHub.
-    """
-    try:
-        catalog = await get_release_catalog()
-        latest_release = catalog.releases[0] if catalog.releases else None
-        windows_asset = get_windows_installer_asset(latest_release)
-
-        return {
-            "version": catalog.latest_version,
-            "windows_url": (
-                windows_asset.browser_download_url
-                if windows_asset
-                else catalog.latest_release_url
-            ),
-            "macos_url": None,
-            "linux_url": None,
-        }
-
-    except Exception:
-        logger.exception("Error fetching companion releases metadata.")
-        return {
-            "version": None,
-            "windows_url": GITHUB_RELEASES_PAGE_URL,
-            "macos_url": GITHUB_RELEASES_PAGE_URL,
-            "linux_url": GITHUB_RELEASES_PAGE_URL,
-        }
+    return JSONResponse(status_code=410, content=RETIRED_COMPANION_RESPONSE)
 
 @router.get("/fingerprint")
 async def get_tls_fingerprint(

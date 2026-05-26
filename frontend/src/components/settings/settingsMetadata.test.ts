@@ -24,7 +24,7 @@ describe("settingsMetadata", () => {
     expect(sections.map((section) => section.id)).toEqual([
       "personal",
       "ai",
-      "companion",
+      "capture",
       "updates",
       "help",
     ]);
@@ -33,7 +33,8 @@ describe("settingsMetadata", () => {
   it("maps legacy tab ids onto the unified section ids", () => {
     expect(resolveLegacySettingsSectionId("general")).toBe("personal");
     expect(resolveLegacySettingsSectionId("account")).toBe("personal");
-    expect(resolveLegacySettingsSectionId("audio")).toBe("companion");
+    expect(resolveLegacySettingsSectionId("audio")).toBe("capture");
+    expect(resolveLegacySettingsSectionId("companion")).toBe("capture");
     expect(resolveLegacySettingsSectionId("admin")).toBe("administration");
     expect(resolveLegacySettingsSectionId("ai")).toBe("ai");
     expect(resolveLegacySettingsSectionId("unknown")).toBeNull();

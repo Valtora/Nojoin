@@ -73,7 +73,7 @@ def build_audio_window_specs(
                 _build_window_spec(
                     group,
                     window_index=next_window_index,
-                    source_kind=str(group[0].source_kind or "companion"),
+                    source_kind=str(group[0].source_kind or "browser"),
                     target_window_ms=target_window_ms,
                     hop_ms=hop_ms,
                     window_start_ms=window_start_ms,
@@ -101,7 +101,7 @@ def build_audio_window_specs(
             _build_window_spec(
                 group,
                 window_index=next_window_index,
-                source_kind=str(group[0].source_kind or "companion"),
+                source_kind=str(group[0].source_kind or "browser"),
                 target_window_ms=target_window_ms,
                 hop_ms=hop_ms,
                 window_start_ms=tail_start_ms,
@@ -335,7 +335,7 @@ def _window_row_signature(row: RecordingAudioWindowManifest) -> tuple[Any, ...]:
         int(row.hop_ms),
         bool(row.is_partial),
         bool(row.is_sealed),
-        str(row.source_kind or "companion"),
+        str(row.source_kind or "browser"),
     )
 
 
@@ -349,5 +349,5 @@ def _window_spec_signature(spec: AudioWindowSpec) -> tuple[Any, ...]:
         int(spec.hop_ms),
         bool(spec.is_partial),
         bool(spec.is_sealed),
-        str(spec.source_kind or "companion"),
+        str(spec.source_kind or "browser"),
     )

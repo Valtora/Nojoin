@@ -3,7 +3,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any, List, Optional
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete
@@ -13,14 +13,12 @@ import aiofiles
 from uuid import uuid4
 
 from backend.api.deps import (
-    get_current_companion_bootstrap_user,
     get_current_recording_client_user,
     get_db,
     get_current_user,
     get_current_user_stream,
 )
 from backend.api.error_handling import sanitized_http_exception
-from backend.core import security
 from backend.models.recording import (
     ClientStatus,
     Recording,
@@ -29,7 +27,6 @@ from backend.models.recording import (
     RecordingPipelineGeneration,
     RecordingStatus,
     RecordingUpdate,
-    RecordingUploadTokenResponse,
 )
 from backend.models.recording_public import RecordingPublicRead, RecordingsCalendarRead, serialize_recording
 from backend.models.calendar import CalendarDashboardDayCountRead
@@ -77,9 +74,9 @@ from backend.utils.recording_audio_sync import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-COMPANION_UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting companion uploads"
-COMPANION_STATUS_UPDATES_CLOSED_DETAIL = (
-    "Recording is no longer accepting companion status updates"
+UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting capture uploads"
+STATUS_UPDATES_CLOSED_DETAIL = (
+    "Recording is no longer accepting capture status updates"
 )
 UNSUPPORTED_SEGMENT_MEDIA_DETAIL = (
     "Unsupported audio segment format. Use audio/wav, audio/webm, or audio/ogg with a matching filename suffix."
@@ -442,19 +439,19 @@ def get_ordinal_suffix(day: int) -> str:
         return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
 
 
-def _ensure_recording_accepts_companion_uploads(recording: Recording) -> None:
+def _ensure_recording_accepts_uploads(recording: Recording) -> None:
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409,
-            detail=COMPANION_UPLOAD_CLOSED_DETAIL,
+            detail=UPLOAD_CLOSED_DETAIL,
         )
 
 
-def _ensure_recording_accepts_companion_status_updates(recording: Recording) -> None:
+def _ensure_recording_accepts_status_updates(recording: Recording) -> None:
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409,
-            detail=COMPANION_STATUS_UPDATES_CLOSED_DETAIL,
+            detail=STATUS_UPDATES_CLOSED_DETAIL,
         )
 
 
@@ -468,7 +465,7 @@ def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(
             status_code=409,
-            detail=COMPANION_UPLOAD_CLOSED_DETAIL,
+            detail=UPLOAD_CLOSED_DETAIL,
         )
 
 def generate_default_meeting_name() -> str:
@@ -631,8 +628,6 @@ async def init_upload(
     """
     Initialize a multipart upload.
     """
-    token_payload = getattr(request.state, "recording_client_payload", {})
-
     active_recording = await _get_active_capture_recording_for_user(db, current_user.id)
     if active_recording is not None:
         raise HTTPException(
@@ -664,20 +659,9 @@ async def init_upload(
 
     recording_upload_temp_dir(recording.id, create=True)
 
-    upload_token: Optional[str] = None
-    if token_payload.get("token_type") == security.COMPANION_TOKEN_TYPE:
-        upload_token = security.create_access_token(
-            current_user.username,
-            token_type=security.COMPANION_TOKEN_TYPE,
-            scopes=[security.COMPANION_RECORDING_SCOPE],
-            expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
-            extra_claims={"recording_public_id": recording.public_id},
-        )
-
     return RecordingInitResponse(
         id=recording.public_id,
         name=recording.name,
-        upload_token=upload_token,
     )
 
 
@@ -693,7 +677,7 @@ async def pause_upload(
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
-        raise HTTPException(status_code=409, detail=COMPANION_UPLOAD_CLOSED_DETAIL)
+        raise HTTPException(status_code=409, detail=UPLOAD_CLOSED_DETAIL)
 
     if recording.status != RecordingStatus.PAUSED:
         recording.status = RecordingStatus.PAUSED
@@ -766,7 +750,7 @@ async def upload_segment(
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     segment_suffix = _resolve_segment_upload_suffix(file)
 
-    _ensure_recording_accepts_companion_uploads(recording)
+    _ensure_recording_accepts_uploads(recording)
     
     recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
         
@@ -782,13 +766,13 @@ async def upload_segment(
             await _sync_recording_audio_chunks_from_directory(
                 db,
                 recording_id=recording.id,
-                source_kind="companion",
+                source_kind="browser",
                 suffix=".wav",
             )
             await _sync_recording_audio_window_manifests(
                 db,
                 recording_id=recording.id,
-                source_kind="companion",
+                source_kind="browser",
                 seal_tail=False,
             )
         await db.commit()
@@ -852,36 +836,6 @@ async def upload_segment(
     return {"status": "received", "segment": sequence}
 
 
-@router.post("/{recording_id}/upload-token", response_model=RecordingUploadTokenResponse)
-async def refresh_upload_token(
-    recording_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_companion_bootstrap_user),
-):
-    """
-    Re-issue a companion upload token for an existing in-flight recording.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    if recording.status != RecordingStatus.UPLOADING:
-        raise HTTPException(
-            status_code=409,
-            detail="Recording is no longer accepting companion uploads",
-        )
-
-    upload_token = security.create_access_token(
-        current_user.username,
-        token_type=security.COMPANION_TOKEN_TYPE,
-        scopes=[security.COMPANION_RECORDING_SCOPE],
-        expires_delta=timedelta(minutes=security.COMPANION_RECORDING_TOKEN_EXPIRE_MINUTES),
-        extra_claims={"recording_public_id": recording.public_id},
-    )
-
-    return RecordingUploadTokenResponse(
-        recording_id=recording.public_id,
-        upload_token=upload_token,
-    )
-
 @router.post("/{recording_id}/finalize", response_model=RecordingPublicRead)
 async def finalize_upload(
     recording_id: str,
@@ -898,19 +852,19 @@ async def finalize_upload(
     await _sync_recording_audio_chunks_from_directory(
         db,
         recording_id=recording.id,
-        source_kind="companion",
+        source_kind="browser",
         suffix=".wav",
     )
     await _sync_recording_audio_window_manifests(
         db,
         recording_id=recording.id,
-        source_kind="companion",
+        source_kind="browser",
         seal_tail=True,
     )
     chunk_rows = await _list_recording_audio_chunks(
         db,
         recording_id=recording.id,
-        source_kind="companion",
+        source_kind="browser",
     )
     pending_transcode_sequences = _find_pending_transcode_sequences(
         recording.id,
@@ -977,7 +931,7 @@ async def finalize_upload(
         await db.refresh(recording)
         raise HTTPException(
             status_code=409,
-            detail=COMPANION_UPLOAD_CLOSED_DETAIL,
+            detail=UPLOAD_CLOSED_DETAIL,
         )
 
     # Update recording status
@@ -1330,7 +1284,7 @@ async def upload_recording(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Upload a new audio recording (used by Companion app).
+    Upload a new audio recording.
     """
     # Generate a unique filename to prevent collisions
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
@@ -1887,20 +1841,20 @@ async def delete_recording(
 
 
 @router.post("/{recording_id}/discard")
-async def discard_companion_upload(
+async def discard_upload(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user)
 ):
     """
-    Discard an in-flight companion recording before it is finalised.
+    Discard an in-flight recording before it is finalised.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=400,
-            detail="Only in-flight companion uploads can be discarded",
+            detail="Only in-flight uploads can be discarded",
         )
 
     delete_recording_artifacts(
@@ -2251,7 +2205,7 @@ async def update_client_status(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    _ensure_recording_accepts_companion_status_updates(recording)
+    _ensure_recording_accepts_status_updates(recording)
 
     recording.client_status = status
     if upload_progress is not None:

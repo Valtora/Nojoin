@@ -31,4 +31,3 @@ Please provide a screenshot of the change if relevant, you can drag and drop an 
 
 - [ ] Successful npm build
 - [ ] Successful docker build
-- [ ] Successful companion app build (if relevant)

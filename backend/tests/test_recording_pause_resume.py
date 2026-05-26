@@ -315,8 +315,6 @@ async def api_app(monkeypatch, tmp_path, test_session_maker: sessionmaker) -> Fa
     async def fake_get_authenticated_token_details(db, actual_token, *, allowed_token_types, required_scopes_by_type=None):
         if actual_token == "session-token":
             return fake_user, {"sub": fake_user.username, "token_type": "session", "scopes": ["session:web"]}
-        if actual_token == "companion-token":
-            return fake_user, {"sub": fake_user.username, "token_type": "companion", "scopes": ["companion:init", "recordings:companion"]}
         raise AssertionError(f"Unexpected token: {actual_token}")
 
     async def fake_get_authenticated_user_from_token(db, actual_token, *, allowed_token_types, required_scopes_by_type=None):
