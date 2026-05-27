@@ -565,6 +565,7 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
+        extract_audio_clip=lambda *a, **k: None,
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
 
@@ -934,6 +935,7 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
+        extract_audio_clip=lambda *a, **k: None,
     )
     _install(
         "backend.utils.live_transcript",
@@ -1334,6 +1336,343 @@ def test_process_recording_task_uses_catch_up_segments_without_live_reuse(monkey
     ]
 
 
+def test_process_recording_task_refreshes_transcript_projection_after_window_replay(monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.models.recording import RecordingStatus
+    from backend.worker import tasks as tasks_module
+
+    captured: dict = {}
+
+    base_config = {
+        "transcription_backend": "whisper",
+        "whisper_model_size": "base",
+        "enable_vad": False,
+        "enable_diarization": True,
+    }
+
+    class _FakeLlmConfig:
+        merged_config = dict(base_config)
+
+    monkeypatch.setattr(
+        tasks_module, "resolve_llm_config", lambda *a, **k: _FakeLlmConfig()
+    )
+
+    class _FakeTranscript:
+        def __init__(self):
+            self.recording_id = 701
+            self.text = ""
+            self.segments = []
+            self.transcript_status = "pending"
+            self.error_message = None
+            self.notes_status = "pending"
+
+    class _ExecResult:
+        def __init__(self, session):
+            self._session = session
+
+        def first(self):
+            if not self._session.transcript_returned:
+                self._session.transcript_returned = True
+                return self._session.transcript
+            return None
+
+        def all(self):
+            return []
+
+    class _FakeRecording:
+        id = 701
+        status = RecordingStatus.PROCESSED
+        user_id = None
+        audio_path = "/tmp/recording.wav"
+        proxy_path = None
+        duration_seconds = 60.0
+        processing_started_at = None
+        processing_completed_at = None
+        processing_progress = 0
+        processing_step = ""
+        client_status = None
+
+    class _FakeSession:
+        def __init__(self):
+            self.recording = _FakeRecording()
+            self.transcript = _FakeTranscript()
+            self.transcript_returned = False
+
+        def get(self, model, recording_id):
+            return self.recording
+
+        def add(self, obj):
+            pass
+
+        def commit(self):
+            pass
+
+        def refresh(self, obj):
+            pass
+
+        def flush(self):
+            pass
+
+        def exec(self, *a, **k):
+            return _ExecResult(self)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(
+        tasks_module.config_manager,
+        "get",
+        lambda key, default=None: True
+        if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
+        else default,
+    )
+
+    fake_session = _FakeSession()
+
+    import sys
+    import types
+
+    def _install(module_name: str, **attrs):
+        mod = types.ModuleType(module_name)
+        for name, value in attrs.items():
+            setattr(mod, name, value)
+        monkeypatch.setitem(sys.modules, module_name, mod)
+
+    _install(
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, 10.0),
+    )
+    _install(
+        "backend.processing.audio_preprocessing",
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: "/tmp/recording_vad.wav",
+        validate_audio_file=lambda *a, **k: None,
+        cleanup_temp_file=lambda *a, **k: None,
+        repair_audio_file=lambda *a, **k: None,
+    )
+
+    def _unexpected_transcribe(*args, **kwargs):
+        raise AssertionError("transcribe_audio should not run when live reuse is available")
+
+    _install(
+        "backend.processing.transcribe",
+        transcribe_audio=_unexpected_transcribe,
+        release_model_cache=lambda: None,
+    )
+    _install(
+        "backend.processing.diarize",
+        diarize_audio=lambda *a, **k: None,
+        release_pipeline_cache=lambda: None,
+    )
+    _install("backend.processing.embedding_core", extract_embeddings=lambda *a, **k: {})
+    _install(
+        "backend.processing.embedding",
+        cosine_similarity=lambda *a, **k: 0.0,
+        merge_embeddings=lambda *a, **k: None,
+        find_matching_global_speaker=lambda *a, **k: (None, 0.0),
+        AUTO_UPDATE_THRESHOLD=0.8,
+    )
+    _install(
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=lambda *a, **k: [],
+        consolidate_diarized_transcript=lambda segments, *a, **k: [dict(segment) for segment in segments],
+    )
+    _install(
+        "backend.utils.audio",
+        get_audio_duration=lambda *a, **k: 60.0,
+        convert_to_mp3=lambda *a, **k: None,
+        convert_to_proxy_mp3=lambda *a, **k: None,
+        extract_audio_clip=lambda *a, **k: None,
+    )
+    _install(
+        "backend.utils.live_transcript",
+        apply_live_authority_to_segments=lambda *a, **k: [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "text": "hello there",
+                "segment_source": "live",
+            }
+        ],
+        build_transcription_result_from_segments=lambda segments: (
+            {
+                "text": "hello there",
+                "segments": [{"start": 0.0, "end": 1.0, "text": "hello there"}],
+            },
+            [{"start": 0.0, "end": 1.0, "text": "hello there"}],
+        ),
+        merge_reusable_segments=lambda primary, additional: list(primary) + list(additional),
+        map_final_speakers_to_live_labels=lambda *a, **k: {},
+    )
+    _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
+    _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
+
+    monkeypatch.setattr("os.path.exists", lambda path: True)
+    monkeypatch.setattr(
+        tasks_module,
+        "build_reusable_live_segments",
+        lambda *a, **k: [
+            {
+                "id": "canon-live-1",
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "text": "hello there",
+                "segment_source": "live",
+                "speaker_state": "stable",
+                "speaker_confidence": 0.95,
+            }
+        ],
+    )
+    monkeypatch.setattr(tasks_module, "_load_recording_audio_window_manifests", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "_load_recording_audio_chunks", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "collect_pending_chunk_spans", lambda *a, **k: [])
+    monkeypatch.setattr(
+        tasks_module,
+        "_summarize_completed_diarization_window_speaker_evidence",
+        lambda *a, **k: {
+            "completed_window_count": 1,
+            "multi_speaker_window_count": 1,
+            "max_speaker_count": 2,
+        },
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_build_final_diarization_plan",
+        lambda **kwargs: {
+            "should_run": False,
+            "reason": "confident_live_reuse",
+            "low_confidence_spans": [],
+            "completed_window_replay_available": True,
+        },
+    )
+    monkeypatch.setattr(tasks_module, "finalize_utterances_from_segments", lambda *a, **k: None)
+    monkeypatch.setattr(
+        tasks_module,
+        "reconcile_completed_diarization_windows",
+        lambda *a, **k: {
+            "matched_turn_count": 2,
+            "updated_utterance_count": 1,
+            "preserved_manual_lock_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "refine_recording_utterances_via_segmentation",
+        lambda *a, **k: {"refined_utterance_count": 0},
+    )
+
+    projection_snapshots = [
+        [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "speaker": "LIVE_01",
+                "text": "hello there",
+                "segment_source": "live",
+            }
+        ],
+        [
+            {
+                "start": 0.0,
+                "end": 0.5,
+                "speaker": "LIVE_01",
+                "text": "hello",
+                "segment_source": "finalize_window_replay",
+            },
+            {
+                "start": 0.5,
+                "end": 1.0,
+                "speaker": "LIVE_02",
+                "text": "there",
+                "segment_source": "finalize_window_replay",
+            },
+        ],
+    ]
+    refresh_calls: list[list[dict]] = []
+
+    def _fake_refresh_projection(session, recording_id):
+        snapshot = projection_snapshots[min(len(refresh_calls), len(projection_snapshots) - 1)]
+        normalized = [dict(segment) for segment in snapshot]
+        session.transcript.segments = normalized
+        session.transcript.text = " ".join(segment["text"] for segment in normalized)
+        refresh_calls.append(normalized)
+        return normalized
+
+    monkeypatch.setattr(
+        tasks_module,
+        "refresh_transcript_projection_from_canonical",
+        _fake_refresh_projection,
+    )
+    monkeypatch.setattr(tasks_module, "get_speakers_eligible_for_llm_renaming", lambda *a, **k: [])
+    monkeypatch.setattr(tasks_module, "build_recording_speaker_map", lambda *a, **k: {})
+
+    def _capture_transcript_for_ai(segments, *args, **kwargs):
+        captured["segments_for_ai"] = [dict(segment) for segment in segments]
+        return ""
+
+    monkeypatch.setattr(
+        tasks_module,
+        "_build_automatic_meeting_intelligence_transcript",
+        _capture_transcript_for_ai,
+    )
+    monkeypatch.setattr(tasks_module, "_run_automatic_meeting_intelligence_stage", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "mark_recording_audio_chunks_ready_for_cleanup", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "auto_link_recording", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "update_recording_status", lambda *a, **k: None)
+    monkeypatch.setattr(tasks_module, "index_transcript_task", SimpleNamespace(delay=lambda *a, **k: None))
+
+    task = tasks_module.process_recording_task
+    monkeypatch.setattr(task, "_session", fake_session, raising=False)
+    monkeypatch.setattr(task, "update_state", lambda *a, **k: None, raising=False)
+
+    result = task.run(701, False, None)
+
+    assert result == {"status": "success", "recording_id": 701}
+    assert len(refresh_calls) == 2
+    assert fake_session.transcript.segments == projection_snapshots[1]
+    assert fake_session.transcript.text == "hello there"
+    assert captured["segments_for_ai"] == projection_snapshots[1]
+
+
+def test_summarize_completed_diarization_window_speaker_evidence_rows_counts_distinct_speakers():
+    from types import SimpleNamespace
+
+    from backend.worker import tasks as tasks_module
+
+    summary = tasks_module._summarize_completed_diarization_window_speaker_evidence_rows(
+        [
+            SimpleNamespace(raw_payload={"speaker_labels": ["SPEAKER_00", "SPEAKER_01"]}),
+            SimpleNamespace(
+                raw_payload={
+                    "speaker_metadata": {
+                        "SPEAKER_00": {},
+                        "SPEAKER_01": {},
+                        "SPEAKER_02": {},
+                    }
+                }
+            ),
+            SimpleNamespace(
+                raw_payload={
+                    "turns": [
+                        {"local_speaker_key": "SPEAKER_01"},
+                        {"local_speaker_key": "SPEAKER_01"},
+                    ]
+                }
+            ),
+        ]
+    )
+
+    assert summary == {
+        "completed_window_count": 3,
+        "multi_speaker_window_count": 2,
+        "max_speaker_count": 3,
+    }
+
+
 def test_build_final_diarization_plan_skips_confident_live_reuse():
     from backend.worker import tasks as tasks_module
 
@@ -1435,6 +1774,51 @@ def test_build_final_diarization_plan_runs_for_low_confidence_even_with_window_r
         "should_run": True,
         "reason": "low_confidence_spans",
         "low_confidence_spans": [{"start_ms": 0, "end_ms": 2000, "segment_count": 1}],
+        "completed_window_replay_available": True,
+    }
+
+
+def test_build_final_diarization_plan_runs_for_completed_window_speaker_mismatch():
+    from backend.worker import tasks as tasks_module
+
+    plan = tasks_module._build_final_diarization_plan(
+        live_segments_for_reuse=[
+            {
+                "start": 0.0,
+                "end": 5.0,
+                "speaker": "LIVE_01",
+                "segment_source": "live",
+                "speaker_state": "stable",
+                "speaker_confidence": 0.93,
+                "overlapping_speakers": [],
+            },
+            {
+                "start": 5.0,
+                "end": 10.0,
+                "speaker": "LIVE_01",
+                "segment_source": "live",
+                "speaker_state": "stable",
+                "speaker_confidence": 0.94,
+                "overlapping_speakers": [],
+            },
+        ],
+        reused_live_transcript_segments=[
+            {"start": 0.0, "end": 5.0, "text": "speaker a content"},
+            {"start": 5.0, "end": 10.0, "text": "speaker b content"},
+        ],
+        engine_override=None,
+        completed_window_replay_available=True,
+        completed_window_speaker_evidence={
+            "completed_window_count": 3,
+            "multi_speaker_window_count": 2,
+            "max_speaker_count": 2,
+        },
+    )
+
+    assert plan == {
+        "should_run": True,
+        "reason": "completed_window_speaker_mismatch",
+        "low_confidence_spans": [],
         "completed_window_replay_available": True,
     }
 

@@ -8,7 +8,7 @@ import warnings
 import urllib.error
 import requests.exceptions
 
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 from celery import Task
 from celery.signals import worker_ready
 from sqlalchemy import inspect
@@ -110,6 +110,7 @@ from backend.utils.canonical_pipeline import (
     ensure_processing_run,
     finalize_utterances_from_segments,
     reconcile_completed_diarization_windows,
+    refresh_transcript_projection_from_canonical,
     refine_recording_utterances_via_segmentation,
 )
 from backend.utils.rolling_diarization import (
@@ -611,12 +612,115 @@ def _collect_low_confidence_diarization_spans(
     return spans
 
 
+def _count_distinct_live_reuse_speakers(
+    live_segments_for_reuse: Sequence[dict],
+) -> int:
+    speaker_labels: set[str] = set()
+    for segment in live_segments_for_reuse:
+        speaker_label = str(segment.get("speaker") or "UNKNOWN")
+        if _is_unresolved_speaker_label(speaker_label):
+            continue
+        speaker_labels.add(speaker_label)
+    return len(speaker_labels)
+
+
+def _extract_completed_window_speaker_labels(raw_payload: object) -> set[str]:
+    if not isinstance(raw_payload, dict):
+        return set()
+
+    speaker_labels: set[str] = set()
+    for label in raw_payload.get("speaker_labels") or []:
+        label_text = str(label or "").strip()
+        if label_text:
+            speaker_labels.add(label_text)
+
+    speaker_metadata = raw_payload.get("speaker_metadata") or {}
+    if isinstance(speaker_metadata, dict):
+        for label in speaker_metadata.keys():
+            label_text = str(label or "").strip()
+            if label_text:
+                speaker_labels.add(label_text)
+
+    for turn_payload in raw_payload.get("turns") or []:
+        if not isinstance(turn_payload, dict):
+            continue
+        label_text = str(turn_payload.get("local_speaker_key") or "").strip()
+        if label_text:
+            speaker_labels.add(label_text)
+
+    return speaker_labels
+
+
+def _summarize_completed_diarization_window_speaker_evidence_rows(
+    window_results: Sequence[object],
+) -> dict[str, int]:
+    evidence = {
+        "completed_window_count": 0,
+        "multi_speaker_window_count": 0,
+        "max_speaker_count": 0,
+    }
+
+    for window_result in window_results:
+        evidence["completed_window_count"] += 1
+        speaker_count = len(
+            _extract_completed_window_speaker_labels(
+                getattr(window_result, "raw_payload", None)
+            )
+        )
+        evidence["max_speaker_count"] = max(evidence["max_speaker_count"], speaker_count)
+        if speaker_count > 1:
+            evidence["multi_speaker_window_count"] += 1
+
+    return evidence
+
+
+def _summarize_completed_diarization_window_speaker_evidence(
+    session,
+    *,
+    recording_id: int,
+    effective_from_ms: int = 0,
+) -> dict[str, int]:
+    if not hasattr(session, "exec"):
+        return {
+            "completed_window_count": 0,
+            "multi_speaker_window_count": 0,
+            "max_speaker_count": 0,
+        }
+
+    window_results = session.exec(
+        select(DiarizationWindowResult)
+        .where(DiarizationWindowResult.recording_id == recording_id)
+        .where(DiarizationWindowResult.status == "completed")
+        .where(DiarizationWindowResult.window_end_ms > int(effective_from_ms))
+    ).all()
+    return _summarize_completed_diarization_window_speaker_evidence_rows(window_results)
+
+
+def _completed_window_speaker_evidence_requires_final_diarization(
+    live_segments_for_reuse: Sequence[dict],
+    completed_window_speaker_evidence: dict[str, int] | None,
+) -> bool:
+    if not completed_window_speaker_evidence:
+        return False
+
+    max_speaker_count = int(completed_window_speaker_evidence.get("max_speaker_count", 0) or 0)
+    multi_speaker_window_count = int(
+        completed_window_speaker_evidence.get("multi_speaker_window_count", 0) or 0
+    )
+    if max_speaker_count <= 1 or multi_speaker_window_count <= 0:
+        return False
+
+    live_speaker_count = _count_distinct_live_reuse_speakers(live_segments_for_reuse)
+    return max_speaker_count > live_speaker_count
+
+
 def _build_final_diarization_plan(
     *,
     live_segments_for_reuse: Sequence[dict],
     reused_live_transcript_segments: Sequence[dict],
     engine_override: dict | None,
     completed_window_replay_available: bool = False,
+    completed_window_speaker_evidence: dict[str, int] | None = None,
 ) -> dict[str, object]:
     if engine_override:
         return {
@@ -638,6 +742,17 @@ def _build_final_diarization_plan(
             "should_run": True,
             "reason": "low_confidence_spans",
             "low_confidence_spans": low_confidence_spans,
+            "completed_window_replay_available": bool(completed_window_replay_available),
+        }
+
+    if _completed_window_speaker_evidence_requires_final_diarization(
+        live_segments_for_reuse,
+        completed_window_speaker_evidence,
+    ):
+        return {
+            "should_run": True,
+            "reason": "completed_window_speaker_mismatch",
+            "low_confidence_spans": [],
             "completed_window_replay_available": bool(completed_window_replay_available),
         }
 
@@ -2014,14 +2129,19 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         # --- Diarization Stage ---
         enable_diarization = merged_config.get("enable_diarization", True)
         diarization_result = None
+        completed_window_speaker_evidence = _summarize_completed_diarization_window_speaker_evidence(
+            session,
+            recording_id=recording.id,
+        )
+        completed_window_replay_available = (
+            int(completed_window_speaker_evidence.get("completed_window_count", 0) or 0) > 0
+        )
         final_diarization_plan = _build_final_diarization_plan(
             live_segments_for_reuse=live_segments_for_reuse,
             reused_live_transcript_segments=reused_live_transcript_segments,
             engine_override=engine_override,
-            completed_window_replay_available=_recording_has_completed_diarization_windows(
-                session,
-                recording_id=recording.id,
-            ),
+            completed_window_replay_available=completed_window_replay_available,
+            completed_window_speaker_evidence=completed_window_speaker_evidence,
         )
         
         if enable_diarization and final_diarization_plan["should_run"] is True:
@@ -2041,6 +2161,13 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     "reason": str(final_diarization_plan["reason"]),
                     "low_confidence_span_count": len(final_diarization_plan["low_confidence_spans"]),
                     "low_confidence_spans": list(final_diarization_plan["low_confidence_spans"]),
+                    "completed_window_replay_available": completed_window_replay_available,
+                    "completed_window_multi_speaker_count": int(
+                        completed_window_speaker_evidence.get("multi_speaker_window_count", 0) or 0
+                    ),
+                    "completed_window_max_speaker_count": int(
+                        completed_window_speaker_evidence.get("max_speaker_count", 0) or 0
+                    ),
                 },
                 log=logger,
             ) as metric:
@@ -2074,6 +2201,13 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 payload={
                     "reason": str(final_diarization_plan["reason"]),
                     "low_confidence_span_count": len(final_diarization_plan["low_confidence_spans"]),
+                    "completed_window_replay_available": completed_window_replay_available,
+                    "completed_window_multi_speaker_count": int(
+                        completed_window_speaker_evidence.get("multi_speaker_window_count", 0) or 0
+                    ),
+                    "completed_window_max_speaker_count": int(
+                        completed_window_speaker_evidence.get("max_speaker_count", 0) or 0
+                    ),
                 },
                 log=logger,
             )
@@ -2482,10 +2616,11 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 reused_live_asr=bool(reused_live_transcript_segments),
                 trigger_source="worker",
             )
-            if not final_diarization_plan["should_run"] and _recording_has_completed_diarization_windows(
+            updated_segments = refresh_transcript_projection_from_canonical(
                 session,
-                recording_id=recording.id,
-            ):
+                recording.id,
+            )
+            if not final_diarization_plan["should_run"] and completed_window_replay_available:
                 replay_summary = reconcile_completed_diarization_windows(
                     session,
                     recording_id=recording.id,
@@ -2498,10 +2633,9 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     payload=replay_summary,
                     log=logger,
                 )
-                updated_segments = build_transcript_segments_for_read(
+                updated_segments = refresh_transcript_projection_from_canonical(
                     session,
                     recording.id,
-                    transcript=transcript,
                 )
 
             # Phase F4: frame-level segmentation safety net for utterances
@@ -2529,10 +2663,9 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     )
                     seg_metric["payload"].update(seg_summary)
                 if (seg_summary or {}).get("refined_utterance_count", 0) > 0:
-                    updated_segments = build_transcript_segments_for_read(
+                    updated_segments = refresh_transcript_projection_from_canonical(
                         session,
                         recording.id,
-                        transcript=transcript,
                     )
             except Exception as seg_exc:
                 logger.warning(
