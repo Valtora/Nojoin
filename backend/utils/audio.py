@@ -7,6 +7,10 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
+LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND = 128_000
+PLAYBACK_PROXY_SAMPLE_RATE_HZ = 48_000
+PLAYBACK_PROXY_BITRATE_BITS_PER_SECOND = 192_000
+
 def ensure_ffmpeg_in_path():
     """
     Ensures ffmpeg and ffprobe are in the system PATH.
@@ -66,10 +70,8 @@ def get_audio_duration(file_path: str) -> float:
         # FileNotFoundError can happen if ffprobe is still not found
         raise RuntimeError(f"Failed to get audio duration for {file_path}: {e}")
 
-def concatenate_wavs(segment_paths: List[str], output_path: str):
-    """
-    Concatenate multiple WAV files into a single file using ffmpeg.
-    """
+def _concatenate_with_ffmpeg_concat_demuxer(segment_paths: List[str], output_path: str):
+    """Concatenate multiple same-codec/container files into a single output."""
     ensure_ffmpeg_in_path()
     
     # Create a temporary file list for ffmpeg
@@ -101,6 +103,20 @@ def concatenate_wavs(segment_paths: List[str], output_path: str):
     finally:
         if os.path.exists(list_file_path):
             os.remove(list_file_path)
+
+
+def concatenate_media_files(segment_paths: List[str], output_path: str):
+    """
+    Concatenate multiple same-codec/container audio files into a single file.
+    """
+    _concatenate_with_ffmpeg_concat_demuxer(segment_paths, output_path)
+
+
+def concatenate_wavs(segment_paths: List[str], output_path: str):
+    """
+    Concatenate multiple WAV files into a single file using ffmpeg.
+    """
+    _concatenate_with_ffmpeg_concat_demuxer(segment_paths, output_path)
 
 def concatenate_binary_files(segment_paths: List[str], output_path: str):
     """
@@ -187,9 +203,14 @@ def convert_to_wav(input_path: str, output_path: str) -> bool:
         logger.error(f"Unexpected error converting to WAV: {str(e)}")
         return False
 
-def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
+def convert_to_proxy_mp3(
+    input_path: str,
+    output_path: str,
+    *,
+    mix_to_mono: bool = False,
+) -> bool:
     """
-    Convert audio to 48kHz mono MP3 (128kbps) for proxy playback.
+    Convert audio to a high-quality MP3 proxy for frontend playback.
     Returns True if successful, False otherwise.
     """
     ensure_ffmpeg_in_path()
@@ -209,13 +230,18 @@ def convert_to_proxy_mp3(input_path: str, output_path: str) -> bool:
         "ffmpeg",
         "-y",
         "-i", input_path,
-        "-ar", "48000",   # 48kHz sample rate
-        "-ac", "1",       # Mono (speech-optimised)
+        "-ar", str(PLAYBACK_PROXY_SAMPLE_RATE_HZ),
+    ]
+
+    if mix_to_mono:
+        cmd.extend(["-ac", "1"])
+
+    cmd.extend([
         "-codec:a", "libmp3lame",
-        "-b:a", "128k",   # Transparent quality for speech
+        "-b:a", f"{PLAYBACK_PROXY_BITRATE_BITS_PER_SECOND // 1000}k",
         "-f", "mp3",      # Force MP3 format
         final_output_path
-    ]
+    ])
     
     try:
         subprocess.run(cmd, check=True, capture_output=True)

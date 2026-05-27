@@ -165,3 +165,50 @@ def test_generate_proxy_task_reuses_imported_mp3_without_deleting_it(
         assert recording[1] == str(audio_path)
     finally:
         verification_engine.dispose()
+
+
+def test_generate_proxy_task_mixdowns_browser_capture_for_proxy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "browser-proxy-test.sqlite"
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    with engine.begin() as connection:
+        connection.execute(text(RECORDING_PROXY_SCHEMA))
+
+    audio_path = tmp_path / "browser-meeting.webm"
+    audio_path.write_bytes(b"fake-webm")
+    create_recording_row(engine, recording_id=2, audio_path=str(audio_path), status="QUEUED")
+
+    convert_calls: list[tuple[str, str, bool]] = []
+
+    def fake_convert_to_proxy_mp3(input_path: str, output_path: str, *, mix_to_mono: bool = False) -> bool:
+        convert_calls.append((input_path, output_path, mix_to_mono))
+        Path(output_path).write_bytes(b"proxy-mp3")
+        return True
+
+    monkeypatch.setattr("backend.utils.audio.convert_to_proxy_mp3", fake_convert_to_proxy_mp3)
+    monkeypatch.setattr(tasks_module, "_recording_uses_browser_capture", lambda session, recording_id: True)
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    tasks_module.generate_proxy_task._session = None
+
+    try:
+        tasks_module.generate_proxy_task.run(2)
+    finally:
+        if tasks_module.generate_proxy_task._session is not None:
+            tasks_module.generate_proxy_task._session.close()
+        tasks_module.generate_proxy_task._session = None
+        engine.dispose()
+
+    assert convert_calls == [
+        (str(audio_path), str(tmp_path / "browser-meeting.mp3"), True)
+    ]
+
+    verification_engine = create_engine(f"sqlite:///{db_path}", future=True)
+    try:
+        with Session(verification_engine) as session:
+            recording = session.exec(text("SELECT proxy_path, audio_path FROM recordings WHERE id = 2")).one()
+        assert recording[0] == str(tmp_path / "browser-meeting.mp3")
+        assert recording[1] == str(audio_path)
+    finally:
+        verification_engine.dispose()

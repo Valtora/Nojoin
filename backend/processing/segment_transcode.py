@@ -92,14 +92,6 @@ def transcode_staged_browser_segment(recording_id: int, sequence: int) -> Path:
 
     _run_ffmpeg_transcode(raw_segment_path, wav_path)
     try:
-        raw_segment_path.unlink()
-    except OSError as exc:
-        logger.warning(
-            "Failed to remove source segment %s after transcode: %s",
-            raw_segment_path,
-            exc,
-        )
-    try:
         failure_marker.unlink()
     except FileNotFoundError:
         pass

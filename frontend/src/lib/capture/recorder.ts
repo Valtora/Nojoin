@@ -13,7 +13,7 @@ export interface CreateBrowserRecorderOptions {
 }
 
 const DEFAULT_MIME_TYPE = "audio/webm;codecs=opus";
-const DEFAULT_AUDIO_BITS_PER_SECOND = 64_000;
+const DEFAULT_AUDIO_BITS_PER_SECOND = 160_000;
 
 const resolveRecorderMimeType = (mediaRecorderCtor: typeof MediaRecorder) => {
   if (mediaRecorderCtor.isTypeSupported(DEFAULT_MIME_TYPE)) {

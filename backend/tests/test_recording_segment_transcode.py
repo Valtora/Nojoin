@@ -453,7 +453,7 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
 
     assert result == {"status": "received", "segment": 0}
     assert wav_path.exists()
-    assert not webm_path.exists()
+    assert webm_path.exists()
     with wave.open(str(wav_path), "rb") as wav_file:
         assert wav_file.getframerate() == BROWSER_LIVE_SAMPLE_RATE_HZ
         assert wav_file.getnchannels() == BROWSER_LIVE_CHANNEL_COUNT
@@ -475,6 +475,7 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     tmp_path,
 ) -> None:
     from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+    from backend.api.v1.endpoints import recordings as recordings_module
 
     set_session_cookie(client)
 
@@ -509,6 +510,13 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
             make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
         ),
     )
+    monkeypatch.setattr(
+        recordings_module,
+        "concatenate_media_files",
+        lambda paths, destination: Path(destination).write_bytes(b"joined-browser-master"),
+    )
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None)
 
     finalize_response = await client.post(
         f"/api/v1/recordings/{recording_public_id}/finalize",
@@ -521,10 +529,22 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     assert finalize_response.status_code == 200
     assert finalize_response.json()["status"] == "QUEUED"
     assert wav_path.exists()
-    assert not (upload_dir / "0.webm").exists()
+    assert (upload_dir / "0.webm").exists()
     assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
         (0, str(wav_path))
     ]
+
+    async with test_session_maker() as session:
+        recording_row = (
+            await session.execute(
+                text("SELECT audio_path, proxy_path FROM recordings WHERE id = :recording_id"),
+                {"recording_id": recording_id},
+            )
+        ).one()
+
+    assert recording_row[0].endswith(".webm")
+    assert Path(recording_row[0]).exists()
+    assert recording_row[1].endswith(".mp3")
 
 
 @pytest.mark.anyio

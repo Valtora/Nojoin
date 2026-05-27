@@ -193,6 +193,19 @@ def _can_delete_source_audio(recording: Recording) -> bool:
     return not _paths_point_to_same_media(recording.audio_path, recording.proxy_path)
 
 
+def _recording_uses_browser_capture(session, recording_id: int) -> bool:
+    try:
+        statement = (
+            select(RecordingAudioChunk.id)
+            .where(RecordingAudioChunk.recording_id == recording_id)
+            .where(RecordingAudioChunk.source_kind == "browser")
+            .limit(1)
+        )
+        return session.exec(statement).first() is not None
+    except Exception:
+        return False
+
+
 def _format_notes_generation_error(error: Exception | str) -> str:
     message = str(error).strip() or "Meeting notes could not be generated."
     if len(message) > 500:
@@ -1683,17 +1696,23 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 logger.info("Source audio missing, but proxy exists. Restoring from proxy...")
                 from backend.utils.audio import convert_to_wav
                 
-                if not audio_path:
+                restore_audio_path = audio_path
+                if not restore_audio_path:
                     base_path, _ = os.path.splitext(recording.proxy_path)
-                    audio_path = f"{base_path}.wav"
-                    recording.audio_path = audio_path
+                    restore_audio_path = f"{base_path}.restored.wav"
+                    recording.audio_path = restore_audio_path
+                elif not restore_audio_path.lower().endswith(".wav"):
+                    base_path, _ = os.path.splitext(restore_audio_path)
+                    restore_audio_path = f"{base_path}.restored.wav"
+                    recording.audio_path = restore_audio_path
                 
                 recording.processing_step = f"Restoring audio from proxy...{device_suffix}"
                 session.add(recording)
                 session.commit()
                 
-                if convert_to_wav(recording.proxy_path, audio_path):
+                if convert_to_wav(recording.proxy_path, restore_audio_path):
                     logger.info("Successfully restored source audio from proxy.")
+                    audio_path = restore_audio_path
                 else:
                     raise FileNotFoundError(f"Source audio missing and failed to restore from proxy.")
             else:
@@ -2562,15 +2581,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         session.commit()
         update_recording_status(session, recording.id)
         
-        # Delete source wav if proxy exists to save storage
-        session.refresh(recording)
-        if _can_delete_source_audio(recording):
-            try:
-                logger.info(f"Storage optimization: Proxy audio exists, deleting source audio {recording.audio_path}")
-                os.remove(recording.audio_path)
-            except Exception as e:
-                logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
-        
         elapsed_time = time.time() - float(start_time)
         record_pipeline_metric(
             stage="final_processing_completed",
@@ -3210,7 +3220,7 @@ def cleanup_temp_recordings(self):
 @celery_app.task(base=DatabaseTask, bind=True)
 def generate_proxy_task(self, recording_id: int):
     """
-    Generate a lightweight MP3 proxy file for frontend playback.
+    Generate a high-quality MP3 proxy file for frontend playback.
     """
     from backend.utils.audio import convert_to_proxy_mp3
     session = self.session
@@ -3239,20 +3249,13 @@ def generate_proxy_task(self, recording_id: int):
             return
 
         logger.info(f"Generating proxy for recording {recording_id} at {proxy_path}")
-        
-        if convert_to_proxy_mp3(recording.audio_path, proxy_path):
+
+        mix_to_mono = _recording_uses_browser_capture(session, recording_id)
+        if convert_to_proxy_mp3(recording.audio_path, proxy_path, mix_to_mono=mix_to_mono):
             recording.proxy_path = proxy_path
             session.add(recording)
             session.commit()
             logger.info(f"Proxy generated successfully for recording {recording_id}")
-            
-            # If processing is already finished, delete source audio
-            if recording.status in [RecordingStatus.PROCESSED, RecordingStatus.ERROR] and _can_delete_source_audio(recording):
-                try:
-                    logger.info(f"Storage optimization: Proxy generated after processing, deleting source audio {recording.audio_path}")
-                    os.remove(recording.audio_path)
-                except Exception as e:
-                    logger.error(f"Failed to delete source audio {recording.audio_path}: {e}")
         else:
             logger.error(f"Failed to generate proxy for recording {recording_id}")
 

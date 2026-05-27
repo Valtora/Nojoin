@@ -40,7 +40,13 @@ from backend.models.user import User
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
-from backend.utils.audio import concatenate_wavs, get_audio_duration, concatenate_binary_files
+from backend.utils.audio import (
+    LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND,
+    concatenate_binary_files,
+    concatenate_media_files,
+    concatenate_wavs,
+    get_audio_duration,
+)
 from backend.processing.llm_services import get_llm_backend
 from backend.processing.live_transcribe import transcribe_segment_live_task
 from backend.processing.segment_transcode import transcode_segment_task, transcode_staged_browser_segment
@@ -91,10 +97,101 @@ SEGMENT_CONTENT_TYPE_SUFFIXES = {
     "audio/webm": ".webm",
     "audio/ogg": ".ogg",
 }
+LOSSY_AUDIO_SUFFIXES = frozenset({".mp3", ".m4a", ".aac", ".webm", ".ogg", ".mp4", ".wma", ".opus"})
 
 
 def _recording_has_proxy(recording: Recording) -> bool:
     return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
+
+
+def _estimated_audio_bitrate_bits_per_second(audio_info: dict[str, Any] | None) -> int | None:
+    if not audio_info:
+        return None
+
+    bitrate = audio_info.get("bitrate")
+    if isinstance(bitrate, int) and bitrate > 0:
+        return bitrate
+
+    size = audio_info.get("size")
+    duration = audio_info.get("duration")
+    if isinstance(size, int) and size > 0 and isinstance(duration, (int, float)) and duration > 0:
+        return int((size * 8) / float(duration))
+
+    return None
+
+
+def _enforce_lossy_audio_bitrate_floor(file_path: str) -> None:
+    suffix = Path(file_path).suffix.lower()
+    if suffix not in LOSSY_AUDIO_SUFFIXES:
+        return
+
+    from backend.processing.audio_preprocessing import analyze_audio_file
+
+    audio_info = analyze_audio_file(file_path)
+    bitrate = _estimated_audio_bitrate_bits_per_second(audio_info)
+    if bitrate is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not verify bitrate for this lossy recording.",
+        )
+
+    if bitrate < LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Lossy recordings below 128 kbps are not supported "
+                f"(detected approximately {bitrate // 1000} kbps)."
+            ),
+        )
+
+
+def _list_staged_browser_master_segments(recording_id: int) -> list[Path]:
+    temp_dir = recording_upload_temp_dir(recording_id, create=False)
+    if not temp_dir.exists():
+        return []
+
+    segment_entries: list[tuple[int, Path]] = []
+    for entry in temp_dir.iterdir():
+        if not entry.is_file() or entry.suffix not in BROWSER_AUDIO_SEGMENT_SUFFIXES:
+            continue
+
+        try:
+            sequence = int(entry.stem)
+        except ValueError:
+            continue
+
+        segment_entries.append((sequence, entry))
+
+    return [path for _, path in sorted(segment_entries)]
+
+
+def _resolve_browser_master_suffix(segment_paths: list[Path]) -> str:
+    suffixes = {path.suffix.lower() for path in segment_paths}
+    if len(suffixes) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Browser capture segments use inconsistent container formats.",
+        )
+
+    return next(iter(suffixes))
+
+
+def _browser_master_output_path(recording: Recording, master_suffix: str) -> str:
+    base_path, _ = os.path.splitext(recording.audio_path)
+    return f"{base_path}{master_suffix}"
+
+
+async def _mark_recording_upload_error(
+    db: AsyncSession,
+    recording: Recording,
+    detail: str,
+) -> None:
+    recording.status = RecordingStatus.ERROR
+    recording.client_status = ClientStatus.IDLE
+    recording.processing_step = detail[:255]
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
 
 
 def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
@@ -946,13 +1043,46 @@ async def finalize_upload(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
-    try:
-        segment_paths = [row.storage_path for row in chunk_rows]
-        concatenate_wavs(segment_paths, recording.audio_path)
+    final_audio_path = recording.audio_path
 
-        # Set duration
-        duration_seconds = get_audio_duration(recording.audio_path)
-        
+    try:
+        master_segment_paths = _list_staged_browser_master_segments(recording.id)
+        if master_segment_paths:
+            final_audio_path = _browser_master_output_path(
+                recording,
+                _resolve_browser_master_suffix(master_segment_paths),
+            )
+            concatenate_media_files(
+                [str(path) for path in master_segment_paths],
+                final_audio_path,
+            )
+        else:
+            segment_paths = [row.storage_path for row in chunk_rows]
+            concatenate_wavs(segment_paths, final_audio_path)
+
+        _enforce_lossy_audio_bitrate_floor(final_audio_path)
+        duration_seconds = get_audio_duration(final_audio_path)
+    except HTTPException as exc:
+        failed_root: Path | None = None
+        try:
+            failed_root = move_recording_upload_to_failed(recording.id, logger=logger)
+        except Exception as move_error:
+            logger.error(f"Failed to move segments to failed dir: {move_error}")
+        await _mark_recording_audio_chunks_failed(
+            db,
+            recording_id=recording.id,
+            failed_root=failed_root,
+        )
+        await db.commit()
+
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=final_audio_path,
+            proxy_path=None,
+            logger=logger,
+        )
+        await _mark_recording_upload_error(db, recording, str(exc.detail))
+        raise
     except Exception as e:
         failed_root: Path | None = None
         try:
@@ -967,8 +1097,8 @@ async def finalize_upload(
         await db.commit()
             
         delete_recording_artifacts(
-            recording_id=None,
-            audio_path=recording.audio_path,
+            recording_id=recording.id,
+            audio_path=final_audio_path,
             proxy_path=None,
             logger=logger,
         )
@@ -981,8 +1111,10 @@ async def finalize_upload(
             exc=e,
         )
         
-    file_stats = os.stat(recording.audio_path)
+    file_stats = os.stat(final_audio_path)
     await db.refresh(recording)
+    recording.audio_path = final_audio_path
+    recording.proxy_path = get_initial_proxy_path(final_audio_path)
     recording.file_size_bytes = file_stats.st_size
     recording.duration_seconds = duration_seconds
 
@@ -1061,6 +1193,13 @@ async def import_audio(
             log_message=f"Failed to persist imported audio '{file.filename}'.",
             exc=e,
         )
+
+    try:
+        _enforce_lossy_audio_bitrate_floor(file_path)
+    except HTTPException:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
     
     # Get file stats
     file_stats = os.stat(file_path)
@@ -1263,6 +1402,7 @@ async def finalize_chunked_import(
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
+        _enforce_lossy_audio_bitrate_floor(recording.audio_path)
         
         # Get file stats
         file_stats = os.stat(recording.audio_path)
@@ -1289,7 +1429,15 @@ async def finalize_chunked_import(
             recording_id=recording.id,
             audio_path=recording.audio_path,
         )
-        
+    except HTTPException as exc:
+        delete_recording_artifacts(
+            recording_id=recording.id,
+            audio_path=recording.audio_path,
+            proxy_path=None,
+            logger=logger,
+        )
+        await _mark_recording_upload_error(db, recording, str(exc.detail))
+        raise
     except Exception as e:
         failed_root: Path | None = None
         try:
@@ -1305,7 +1453,7 @@ async def finalize_chunked_import(
         await db.commit()
 
         delete_recording_artifacts(
-            recording_id=None,
+            recording_id=recording.id,
             audio_path=recording.audio_path,
             proxy_path=None,
             logger=logger,
@@ -1377,6 +1525,13 @@ async def upload_recording(
             log_message=f"Failed to persist uploaded recording '{file.filename}'.",
             exc=e,
         )
+
+    try:
+        _enforce_lossy_audio_bitrate_floor(file_path)
+    except HTTPException:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
     
 
     file_stats = os.stat(file_path)

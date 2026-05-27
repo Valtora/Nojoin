@@ -19,8 +19,11 @@ class FakeMediaRecorder {
 
   readonly mimeType: string;
 
+  readonly audioBitsPerSecond: number | undefined;
+
   constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
     this.mimeType = options?.mimeType ?? "audio/webm;codecs=opus";
+    this.audioBitsPerSecond = options?.audioBitsPerSecond;
     FakeMediaRecorder.instances.push(this);
   }
 
@@ -76,6 +79,9 @@ describe("browser recorder", () => {
 
     expect(chunks.map((chunk) => chunk.sequence)).toEqual([0, 1, 2]);
     expect(FakeMediaRecorder.instances).toHaveLength(3);
+    expect(
+      FakeMediaRecorder.instances.map((instance) => instance.audioBitsPerSecond),
+    ).toEqual([160_000, 160_000, 160_000]);
 
     for (const chunk of chunks) {
       expect(chunk.blob.type).toBe("audio/webm;codecs=opus");
