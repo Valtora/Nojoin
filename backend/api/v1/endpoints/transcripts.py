@@ -200,6 +200,8 @@ class TranscriptUtteranceRead(BaseModel):
     text_manually_edited: bool = False
     speaker_confidence: Optional[float] = None
     text_confidence: Optional[float] = None
+    speaker_assignment_source: Optional[str] = None
+    speaker_assignment_authority: Optional[str] = None
     updated_at: Optional[str] = None
     overlapping_speakers: List[str] = []
 

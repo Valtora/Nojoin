@@ -261,6 +261,8 @@ CREATE TABLE transcript_utterances (
     overlap_rank INTEGER NOT NULL,
     manual_text_locked BOOLEAN NOT NULL,
     manual_speaker_locked BOOLEAN NOT NULL,
+    speaker_assignment_source VARCHAR(32) NOT NULL,
+    speaker_assignment_authority VARCHAR(32) NOT NULL,
     text_confidence FLOAT,
     speaker_confidence FLOAT,
     confidence_payload JSON
@@ -4316,6 +4318,7 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
         append_utterances_from_segments,
         reconcile_diarization_window_result,
         record_recording_speaker_corrections,
+        serialize_canonical_utterances,
     )
 
     await _seed_uploading_recording(test_session_maker)
@@ -4461,14 +4464,21 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
         await session.commit()
 
     async with test_session_maker() as session:
+        serialized_segments = await session.run_sync(
+            lambda sync_session: serialize_canonical_utterances(sync_session, 1)
+        )
         utterance_row = (
             await session.execute(
                 text(
-                    "SELECT speaker_label, last_diarization_window_result_id, confidence_payload "
+                    "SELECT speaker_label, last_diarization_window_result_id, confidence_payload, "
+                    "speaker_assignment_source, speaker_assignment_authority "
                     "FROM transcript_utterances WHERE public_id = 'live-utt-1'"
                 )
             )
         ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
         replay_event_count = (
             await session.execute(
                 text(
@@ -4477,12 +4487,673 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
                 )
             )
         ).scalar_one()
+        recording_speaker_count = (
+            await session.execute(
+                text("SELECT COUNT(*) FROM recording_speakers WHERE recording_id = 1")
+            )
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
         confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
 
         assert utterance_row[0] == "LIVE_02"
         assert utterance_row[1] == 41
         assert confidence_payload["rolling_diarization"]["matched_recording_speaker_id"] == 2
+        assert utterance_row[3] == "identity_replay"
+        assert utterance_row[4] == "provisional"
         assert replay_event_count == 1
+        assert recording_speaker_count == 1
+        assert transcript_segments[0]["speaker"] == "LIVE_02"
+        assert transcript_segments[0]["speaker_assignment_source"] == "identity_replay"
+        assert transcript_segments[0]["speaker_assignment_authority"] == "provisional"
+        assert serialized_segments[0]["speaker_assignment_source"] == "identity_replay"
+        assert serialized_segments[0]["speaker_assignment_authority"] == "provisional"
+
+
+@pytest.mark.anyio
+async def test_identity_replay_preserves_finalized_overlap_primary_for_out_of_cluster_candidate(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        record_recording_speaker_corrections,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "final-utt-overlap",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "finalized overlap stays put",
+                        "segment_source": "finalize",
+                    },
+                    {
+                        "id": "final-utt-overlap-peer",
+                        "start": 0.4,
+                        "end": 1.2,
+                        "speaker": "LIVE_03",
+                        "text": "overlap peer",
+                        "segment_source": "finalize",
+                    }
+                ],
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="finalize",
+                state_override=TranscriptUtteranceState.FINALIZED,
+                trigger_source="test",
+            )
+        )
+        anchor_speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers "
+                    "WHERE recording_id = 1 AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    21, :now, :now, 'speaker-public-21', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO global_speakers (
+                    id, created_at, updated_at, user_id, name, embedding,
+                    is_voiceprint_locked, color, title, company, email,
+                    phone_number, notes, description
+                ) VALUES (
+                    7, :now, :now, 1, 'Dana', NULL,
+                    0, NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text("UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = :speaker_id"),
+            {"speaker_id": anchor_speaker_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    61, :now, :now, 'window-public-61', 1,
+                    NULL, 0, 0,
+                    1000, 1, 1,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-overlap', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 21,
+                                "best_recording_speaker_score": 1.0,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    62, :now, :now, 61,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: record_recording_speaker_corrections(
+                sync_session,
+                recording_id=1,
+                target_recording_speaker_ids=[int(anchor_speaker_id)],
+                actor_user_id=1,
+                event_type=SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER,
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                target_global_speaker_id=7,
+                payload={"matched_global_speaker": True},
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, recording_speaker_id, confidence_payload "
+                    "FROM transcript_utterances WHERE public_id = 'final-utt-overlap'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments_by_id = {
+            segment["id"]: segment for segment in transcript_segments if segment.get("id")
+        }
+        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+
+        assert utterance_row[0] == "LIVE_01"
+        assert utterance_row[1] == anchor_speaker_id
+        assert confidence_payload["rolling_diarization"]["rejection_reason"] == "overlap_primary_preserved"
+        assert transcript_segments_by_id["final-utt-overlap"]["speaker"] == "LIVE_01"
+        assert transcript_segments_by_id["final-utt-overlap"]["overlapping_speakers"]
+
+
+@pytest.mark.anyio
+async def test_identity_replay_blocks_inactive_out_of_cluster_candidate(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        record_recording_speaker_corrections,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "final-utt-inactive",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "inactive outsider stays advisory",
+                        "segment_source": "finalize",
+                    }
+                ],
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="finalize",
+                state_override=TranscriptUtteranceState.FINALIZED,
+                trigger_source="test",
+            )
+        )
+        anchor_speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers "
+                    "WHERE recording_id = 1 AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    31, :now, :now, 'speaker-public-31', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'inactive', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO global_speakers (
+                    id, created_at, updated_at, user_id, name, embedding,
+                    is_voiceprint_locked, color, title, company, email,
+                    phone_number, notes, description
+                ) VALUES (
+                    7, :now, :now, 1, 'Dana', NULL,
+                    0, NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text("UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = :speaker_id"),
+            {"speaker_id": anchor_speaker_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    71, :now, :now, 'window-public-71', 1,
+                    NULL, 0, 0,
+                    1000, 1, 1,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-inactive', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 31,
+                                "best_recording_speaker_score": 1.0,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    72, :now, :now, 71,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: record_recording_speaker_corrections(
+                sync_session,
+                recording_id=1,
+                target_recording_speaker_ids=[int(anchor_speaker_id)],
+                actor_user_id=1,
+                event_type=SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER,
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                target_global_speaker_id=7,
+                payload={"matched_global_speaker": True},
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, recording_speaker_id, confidence_payload "
+                    "FROM transcript_utterances WHERE public_id = 'final-utt-inactive'"
+                )
+            )
+        ).one()
+        inactive_status = (
+            await session.execute(
+                text("SELECT speaker_status FROM recording_speakers WHERE id = 31")
+            )
+        ).scalar_one()
+        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+
+        assert utterance_row[0] == "LIVE_01"
+        assert utterance_row[1] == anchor_speaker_id
+        assert inactive_status == "inactive"
+        assert confidence_payload["rolling_diarization"]["rejection_reason"] == "inactive_candidate_blocked"
+
+
+@pytest.mark.anyio
+async def test_identity_replay_normalizes_cluster_candidate_to_anchor(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        record_recording_speaker_corrections,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO global_speakers (
+                    id, created_at, updated_at, user_id, name, embedding,
+                    is_voiceprint_locked, color, title, company, email,
+                    phone_number, notes, description
+                ) VALUES (
+                    7, :now, :now, 1, 'Dana', NULL,
+                    0, NULL, NULL, NULL, NULL,
+                    NULL, NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES
+                    (
+                        11, :now, :now, 'speaker-public-11', 1,
+                        7, 'LIVE_01', NULL, NULL,
+                        NULL, NULL, 'active', 'automated',
+                        0, 1000, NULL, 0
+                    ),
+                    (
+                        12, :now, :now, 'speaker-public-12', 1,
+                        7, 'LIVE_02', NULL, NULL,
+                        NULL, NULL, 'active', 'automated',
+                        0, 1000, NULL, 0
+                    )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "final-utt-anchor",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_02",
+                        "text": "cluster normalizes to anchor",
+                        "segment_source": "finalize",
+                    }
+                ],
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="finalize",
+                state_override=TranscriptUtteranceState.FINALIZED,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    81, :now, :now, 'window-public-81', 1,
+                    NULL, 0, 0,
+                    1000, 1, 1,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-anchor', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 12,
+                                "best_recording_speaker_score": 1.0,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    82, :now, :now, 81,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: record_recording_speaker_corrections(
+                sync_session,
+                recording_id=1,
+                target_recording_speaker_ids=[11],
+                actor_user_id=1,
+                event_type=SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER,
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                target_global_speaker_id=7,
+                payload={"matched_global_speaker": True},
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, recording_speaker_id, speaker_assignment_source, "
+                    "speaker_assignment_authority FROM transcript_utterances "
+                    "WHERE public_id = 'final-utt-anchor'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "LIVE_01"
+        assert utterance_row[1] == 11
+        assert utterance_row[2] == "identity_replay"
+        assert utterance_row[3] == "finalized"
+        assert transcript_segments[0]["speaker"] == "LIVE_01"
+        assert transcript_segments[0]["speaker_assignment_source"] == "identity_replay"
+
+
+@pytest.mark.anyio
+async def test_merge_identity_replay_normalizes_window_matches_to_merge_target(
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        merge_recording_speakers_by_label,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES
+                    (
+                        41, :now, :now, 'speaker-public-41', 1,
+                        NULL, 'LIVE_01', NULL, NULL,
+                        NULL, NULL, 'active', 'automated',
+                        0, 1000, NULL, 0
+                    ),
+                    (
+                        42, :now, :now, 'speaker-public-42', 1,
+                        NULL, 'LIVE_02', NULL, NULL,
+                        NULL, NULL, 'active', 'automated',
+                        0, 1000, NULL, 0
+                    )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "final-utt-merge",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_02",
+                        "text": "merge target wins",
+                        "segment_source": "finalize",
+                    }
+                ],
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="finalize",
+                state_override=TranscriptUtteranceState.FINALIZED,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    91, :now, :now, 'window-public-91', 1,
+                    NULL, 0, 0,
+                    1000, 1, 1,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu', 'rolling-cfg-merge', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 42,
+                                "best_recording_speaker_score": 1.0,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    92, :now, :now, 91,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: merge_recording_speakers_by_label(
+                sync_session,
+                recording_id=1,
+                source_diarization_label="LIVE_02",
+                target_diarization_label="LIVE_01",
+                actor_user_id=1,
+                source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT speaker_label, recording_speaker_id, speaker_assignment_source, "
+                    "speaker_assignment_authority FROM transcript_utterances "
+                    "WHERE public_id = 'final-utt-merge'"
+                )
+            )
+        ).one()
+        source_status = (
+            await session.execute(
+                text("SELECT speaker_status FROM recording_speakers WHERE id = 42")
+            )
+        ).scalar_one()
+        turn_match = (
+            await session.execute(
+                text("SELECT matched_recording_speaker_id FROM diarization_window_turns WHERE id = 92")
+            )
+        ).scalar_one()
+        transcript_segments = (
+            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+        ).scalar_one()
+        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+
+        assert utterance_row[0] == "LIVE_01"
+        assert utterance_row[1] == 41
+        assert utterance_row[2] == "manual"
+        assert utterance_row[3] == "manual"
+        assert source_status == "merged"
+        assert turn_match == 41
+        assert transcript_segments[0]["speaker"] == "LIVE_01"
 
 
 @pytest.mark.anyio

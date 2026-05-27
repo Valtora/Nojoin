@@ -186,6 +186,8 @@ export const transcriptSegmentFromUtterance = (
     text_manually_edited: utterance.text_manually_edited,
     speaker_confidence: utterance.speaker_confidence,
     text_confidence: utterance.text_confidence,
+    speaker_assignment_source: utterance.speaker_assignment_source,
+    speaker_assignment_authority: utterance.speaker_assignment_authority,
     updated_at: utterance.updated_at,
     speaker_state_source: utterance.speaker_state_source,
     live_source_speaker: utterance.live_source_speaker,

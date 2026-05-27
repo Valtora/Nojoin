@@ -339,6 +339,14 @@ class TranscriptUtterance(BaseDBModel, table=True):
     overlap_rank: Optional[int] = Field(default=0)
     manual_text_locked: bool = Field(default=False)
     manual_speaker_locked: bool = Field(default=False)
+    speaker_assignment_source: str = Field(
+        default="legacy",
+        sa_column=Column(String(32), nullable=False, default="legacy"),
+    )
+    speaker_assignment_authority: str = Field(
+        default="provisional",
+        sa_column=Column(String(32), nullable=False, default="provisional"),
+    )
     text_confidence: Optional[float] = None
     speaker_confidence: Optional[float] = None
     confidence_payload: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))

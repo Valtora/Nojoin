@@ -160,6 +160,8 @@ export interface TranscriptUtterance {
   text_manually_edited?: boolean;
   speaker_confidence?: number | null;
   text_confidence?: number | null;
+  speaker_assignment_source?: string;
+  speaker_assignment_authority?: "provisional" | "finalized" | "manual" | string;
   updated_at?: string | null;
   speaker_state_source?: string;
   live_source_speaker?: string | null;
@@ -193,6 +195,8 @@ export interface TranscriptSegment {
   text_manually_edited?: boolean;
   speaker_confidence?: number | null;
   text_confidence?: number | null;
+  speaker_assignment_source?: string;
+  speaker_assignment_authority?: "provisional" | "finalized" | "manual" | string;
   updated_at?: string | null;
   speaker_state_source?: string;
   live_source_speaker?: string | null;
