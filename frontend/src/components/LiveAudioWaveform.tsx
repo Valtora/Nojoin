@@ -13,6 +13,8 @@ const ACTIVITY_HINT_COPY = {
   title: "Audio has been quiet for a bit",
   message:
     "That can be normal during a quiet stretch. If the meeting should be active, check the microphone selection and the browser share picker.",
+  microphoneOnlyMessage:
+    "That can be normal during a quiet stretch. If the meeting should be active, check the microphone permission and keep the phone near the speaker.",
 };
 
 const AUDIO_BAR_CLASS_NAME =
@@ -65,8 +67,9 @@ export default function LiveAudioWaveform({
   enabled,
   paused = false,
 }: LiveAudioWaveformProps) {
-  const { controller, runtimeActive } = useCapture();
+  const { controller, runtimeActive, support } = useCapture();
   const levels = useLiveWaveform(controller);
+  const microphoneOnly = support.supported && support.mode === "microphone_only";
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
   const lastAudioActivityAtRef = useRef<number>(0);
@@ -151,7 +154,9 @@ export default function LiveAudioWaveform({
             {ACTIVITY_HINT_COPY.title}
           </p>
           <p className="mt-1 text-xs leading-5 text-orange-800 dark:text-orange-100/80">
-            {ACTIVITY_HINT_COPY.message}
+            {microphoneOnly
+              ? ACTIVITY_HINT_COPY.microphoneOnlyMessage
+              : ACTIVITY_HINT_COPY.message}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button

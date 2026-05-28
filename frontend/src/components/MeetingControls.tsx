@@ -44,6 +44,7 @@ export default function MeetingControls({
   const hasPausedBlock = Boolean(pausedRecording && !runtimeActive);
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
+  const microphoneOnly = support.supported && support.mode === "microphone_only";
 
   const meetingSurfaceState: MeetingSurfaceState = !backend
     ? {
@@ -84,7 +85,9 @@ export default function MeetingControls({
               buttonLabel: "Start Meeting",
               buttonMode: "start",
               buttonDisabled: false,
-              buttonTooltip: "Start a new meeting recording.",
+              buttonTooltip: microphoneOnly
+                ? "Start a phone microphone recording."
+                : "Start a new meeting recording.",
             };
 
   const sendStart = async () => {
@@ -138,6 +141,15 @@ export default function MeetingControls({
             <CaptureUnsupportedNotice reason={support.reason} />
           ) : null}
 
+          {microphoneOnly ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+              <p className="font-medium">Phone microphone recording</p>
+              <p className="mt-1 leading-5 opacity-90">
+                Mobile Chrome records the phone microphone only. Keep this tab open and the phone awake.
+              </p>
+            </div>
+          ) : null}
+
           {(error || captureError) && (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
               {error || captureError}
@@ -170,6 +182,12 @@ export default function MeetingControls({
         {unsupported ? (
           <div className="mb-2">
             <CaptureUnsupportedNotice reason={support.reason} compact />
+          </div>
+        ) : null}
+
+        {microphoneOnly ? (
+          <div className="mb-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+            Phone microphone only. Keep this tab open.
           </div>
         ) : null}
 

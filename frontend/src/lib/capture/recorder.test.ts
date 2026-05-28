@@ -5,8 +5,10 @@ import { createBrowserRecorder } from "./recorder";
 class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = [];
 
+  static supportedMimeTypes = new Set(["audio/webm;codecs=opus"]);
+
   static isTypeSupported(mimeType: string) {
-    return mimeType === "audio/webm;codecs=opus";
+    return FakeMediaRecorder.supportedMimeTypes.has(mimeType);
   }
 
   ondataavailable: ((event: BlobEvent) => void) | null = null;
@@ -52,6 +54,7 @@ class FakeMediaRecorder {
 describe("browser recorder", () => {
   afterEach(() => {
     FakeMediaRecorder.instances = [];
+    FakeMediaRecorder.supportedMimeTypes = new Set(["audio/webm;codecs=opus"]);
     vi.useRealTimers();
   });
 
@@ -104,5 +107,23 @@ describe("browser recorder", () => {
     await recorder.stop({ emitTail: false });
 
     expect(chunks).toEqual([]);
+  });
+
+  it("falls back to mobile-friendly MP4 audio when WebM is unavailable", async () => {
+    FakeMediaRecorder.supportedMimeTypes = new Set(["audio/mp4"]);
+    const chunks: { sequence: number; blob: Blob }[] = [];
+    const recorder = createBrowserRecorder({
+      stream: {} as MediaStream,
+      mediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+      onChunk: (chunk) => {
+        chunks.push(chunk);
+      },
+    });
+
+    recorder.start();
+    await recorder.stop({ emitTail: true });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].blob.type).toBe("audio/mp4");
   });
 });

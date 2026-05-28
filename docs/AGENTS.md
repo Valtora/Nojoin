@@ -11,7 +11,7 @@
 
 ## Project Context
 
-Nojoin is a distributed meeting intelligence platform. The system records live meeting audio directly from supported Chromium browsers, processes the data on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
+Nojoin is a distributed meeting intelligence platform. The system records live meeting audio directly from supported browsers, processes the data on a GPU-enabled Docker backend, and presents insights via a Next.js web interface.
 
 **Core Philosophy**: Centralized Intelligence (GPU server), Ubiquitous Access (Web), Configurable Privacy (Self-hosted with optional local-only AI).
 
@@ -30,7 +30,7 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
   - **Manual AI Flows**: Automatic AI enhancement is provider-gated and no longer uses separate per-feature toggles. Manual `Generate Notes` remains notes-only, and manual `Retry Speaker Inference` remains speaker-only.
   - **Meeting Edge**: Live guidance is a separate worker path from end-of-processing meeting intelligence. It consumes recent live transcript context plus optional user focus text and user notes, expects a strict JSON contract, and may use a provider-specific Meeting Edge live model that falls back to the provider's main model when unset.
   - **Transcription Engine**: The Transcribe step dispatches to a pluggable engine (`backend/processing/engines/`), selected by the `transcription_backend` config key. The normal live and final recording flow uses the same selected engine so live transcription can be reused during final processing. Whisper is the default; Parakeet and Canary (both onnx-asr, sharing the `OnnxAsrEngine` base) are selectable. Parakeet is much faster on supported NVIDIA systems, but trades off some accuracy and language coverage compared with Whisper. Different-engine transcription belongs to explicit manual reprocessing after Settings are changed.
-  - **Live Transcription Latency**: Browser capture uploads short WebM/Opus segments that the worker transcodes to WAV for the live lane. The backend live lane sequence-gates those uploads, carries trailing speech across segment boundaries, and force-emits continuous speech after about 8 seconds. The recording page should show the in-flight Meeting Edge/status workspace immediately for active recordings; provisional live transcript text is intentionally not rendered there anymore.
+  - **Live Transcription Latency**: Browser capture uploads short WebM/Opus, Ogg/Opus, or MP4 audio segments that the worker transcodes to WAV for the live lane. The backend live lane sequence-gates those uploads, carries trailing speech across segment boundaries, and force-emits continuous speech after about 8 seconds. The recording page should show the in-flight Meeting Edge/status workspace immediately for active recordings; provisional live transcript text is intentionally not rendered there anymore.
   - **Live Window State**: `RecordingAudioWindowManifest.status` is a legacy compatibility projection. Use `asr_status` for live/catch-up ASR coverage and `diarization_status`, `diarization_config_hash`, and `diarization_window_result_id` for rolling or catch-up speaker-window coverage. Do not treat legacy `live_processed` as diarization-complete.
   - **Live Speaker Assignment**: The live lane uses online voice embeddings to keep stable `LIVE_XX` speaker labels. Short or embedding-less regions should fall back to the most recent stable live label rather than creating a new speaker per fragment. Embedding extraction uses a centred window trimmed away from segment edges to reduce noise-pickup bias. Manual speaker edits and live text edits are authoritative and must survive final processing.
   - **Final Live Reuse**: Live/final transcript reuse must align by stable utterance identifiers or clear one-to-one time overlap. Never use equal array length or array index position as proof that a live segment maps to a final segment. Preserve ambiguous live evidence as metadata and keep final ASR/diarization output.
@@ -58,13 +58,13 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
 ### Browser Capture
 
 - **Structure**: Browser capture modules live under `frontend/src/lib/capture/`.
-- **Platform Support**: Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux. Firefox, Safari, mobile browsers, and Chromium browsers on macOS are not supported for live capture.
+- **Platform Support**: Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux support shared-audio live capture. Chrome on Android and iOS supports microphone-only live capture. Firefox, Safari, other mobile browsers, and Chromium browsers on macOS are not supported for live capture.
 - **Capture Strategy**:
-  - `getDisplayMedia` captures the user-selected tab, window, or screen and its shared audio track when the browser grants one.
-  - `getUserMedia` captures the local microphone.
-  - Web Audio mixes shared audio and microphone audio, applies gain, and feeds analyser state for the live waveform.
-  - MediaRecorder creates short WebM/Opus segments that upload sequentially to `/recordings/{id}/segment`.
-  - The worker transcodes each browser segment to canonical 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 is shared/system audio and channel 1 is microphone audio; ASR/VAD may consume a mono derivative from those preserved channels, but the browser-live asset itself is not mono.
+  - `getDisplayMedia` captures the user-selected tab, window, or screen and its shared audio track when the browser grants one on desktop.
+  - `getUserMedia` captures the local microphone. On mobile Chrome, this is the only live capture source.
+  - Web Audio mixes shared audio and microphone audio, applies gain, and feeds analyser state for the live waveform. Mobile Chrome records microphone-only audio.
+  - MediaRecorder creates short WebM/Opus, Ogg/Opus, or MP4 audio segments that upload sequentially to `/recordings/{id}/segment`.
+  - The worker transcodes each browser segment to canonical 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 is shared/system audio when available and channel 1 is microphone audio; ASR/VAD may consume a mono derivative from those preserved channels, but the browser-live asset itself is not mono.
 - **Lifecycle**:
   - Refreshing, closing, or navigating away from the Nojoin tab during capture marks the recording `PAUSED`.
   - A paused recording blocks new capture until the user resumes or discards it.
@@ -91,7 +91,7 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
   - Lint: `cd frontend && npm run lint`
 - **Browser Capture Verification**:
   - Unit tests: `cd frontend && npm run test -- --run src/lib/capture`
-  - Manual smoke: start Nojoin in a supported Chromium browser, share a meeting tab with audio enabled, verify waveform and Meeting Edge or processing-state updates, pause/resume, stop/finalize, and unsupported-browser messaging where practical.
+  - Manual smoke: start Nojoin in a supported desktop Chromium browser, share a meeting tab with audio enabled, verify waveform and Meeting Edge or processing-state updates, pause/resume, stop/finalize, and unsupported-browser messaging where practical. For mobile capture changes, also smoke Chrome on Android or iOS microphone-only recording with the tab open and the phone awake.
 
 ### Release Workflow (Unified Lock-step)
 

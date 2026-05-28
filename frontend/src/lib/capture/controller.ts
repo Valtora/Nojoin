@@ -106,6 +106,9 @@ const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => 
   }
 };
 
+const resolveCaptureMode = (support: CaptureState["support"]) =>
+  support.mode ?? "shared_audio";
+
 export class CaptureController {
   private state: CaptureState;
 
@@ -230,6 +233,7 @@ export class CaptureController {
     let sources: PickedCaptureSources | null = null;
     try {
       sources = await pickCaptureSource({
+        mode: resolveCaptureMode(support),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
       });
       await this.activateRuntime({
@@ -335,6 +339,7 @@ export class CaptureController {
 
     try {
       sources = await pickCaptureSource({
+        mode: resolveCaptureMode(support),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
       });
       resumeResponse = await resumeRecordingCapture(targetRecordingId);

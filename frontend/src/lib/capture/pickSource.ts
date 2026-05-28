@@ -1,3 +1,5 @@
+import type { CaptureMode } from "./shared";
+
 export type PickSourceErrorCode =
   | "display_denied"
   | "microphone_denied"
@@ -15,12 +17,14 @@ export class PickSourceError extends Error {
 }
 
 export interface PickSourceOptions {
+  mode?: CaptureMode;
   microphoneDeviceId?: string | null;
   mediaDevices?: MediaDevices;
 }
 
 export interface PickedCaptureSources {
-  displayStream: MediaStream;
+  mode: CaptureMode;
+  displayStream: MediaStream | null;
   microphoneStream: MediaStream;
   release: () => void;
 }
@@ -33,9 +37,15 @@ const stopTracks = (stream: MediaStream | null | undefined) => {
   stream.getTracks().forEach((track) => track.stop());
 };
 
-const readMediaDevices = (mediaDevices?: MediaDevices) => {
+const readMediaDevices = (
+  mode: CaptureMode,
+  mediaDevices?: MediaDevices,
+) => {
   const resolvedMediaDevices = mediaDevices ?? navigator.mediaDevices;
-  if (!resolvedMediaDevices?.getDisplayMedia || !resolvedMediaDevices?.getUserMedia) {
+  if (
+    !resolvedMediaDevices?.getUserMedia ||
+    (mode === "shared_audio" && !resolvedMediaDevices.getDisplayMedia)
+  ) {
     throw new PickSourceError(
       "unsupported",
       "This browser does not expose the media capture APIs required for recording.",
@@ -48,33 +58,36 @@ const readMediaDevices = (mediaDevices?: MediaDevices) => {
 export const pickCaptureSource = async (
   options: PickSourceOptions = {},
 ): Promise<PickedCaptureSources> => {
-  const mediaDevices = readMediaDevices(options.mediaDevices);
+  const mode = options.mode ?? "shared_audio";
+  const mediaDevices = readMediaDevices(mode, options.mediaDevices);
   let displayStream: MediaStream | null = null;
   let microphoneStream: MediaStream | null = null;
 
-  try {
-    displayStream = await mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true,
-      systemAudio: "include",
-      selfBrowserSurface: "include",
-      surfaceSwitching: "include",
-    } as DisplayMediaStreamOptions & Record<string, unknown>);
-  } catch (error) {
-    throw new PickSourceError(
-      "display_denied",
-      error instanceof Error
-        ? error.message
-        : "Display capture was cancelled before the recording started.",
-    );
-  }
+  if (mode === "shared_audio") {
+    try {
+      displayStream = await mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+        systemAudio: "include",
+        selfBrowserSurface: "include",
+        surfaceSwitching: "include",
+      } as DisplayMediaStreamOptions & Record<string, unknown>);
+    } catch (error) {
+      throw new PickSourceError(
+        "display_denied",
+        error instanceof Error
+          ? error.message
+          : "Display capture was cancelled before the recording started.",
+      );
+    }
 
-  if (displayStream.getAudioTracks().length === 0) {
-    stopTracks(displayStream);
-    throw new PickSourceError(
-      "missing_display_audio",
-      "Please tick Share audio in the picker and try again.",
-    );
+    if (displayStream.getAudioTracks().length === 0) {
+      stopTracks(displayStream);
+      throw new PickSourceError(
+        "missing_display_audio",
+        "Please tick Share audio in the picker and try again.",
+      );
+    }
   }
 
   try {
@@ -99,6 +112,7 @@ export const pickCaptureSource = async (
   }
 
   return {
+    mode,
     displayStream,
     microphoneStream,
     release: () => {

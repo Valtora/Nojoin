@@ -6,18 +6,23 @@ Use this guide when you are preparing a browser for live recording, choosing wha
 
 ## Supported Environments
 
-Live capture is supported only in Chromium-family browsers on Windows and Linux:
+Live capture has two browser modes:
+
+- **Shared-audio capture** on Chromium-family browsers on Windows and Linux. This captures the shared tab, window, or screen audio plus microphone audio.
+- **Microphone-only capture** on Chrome for Android and iOS. This records the phone microphone only; mobile browsers do not expose the shared tab, app, or system audio that Nojoin uses on desktop.
 
 | Browser or OS | Capture support |
 | --- | --- |
-| Chrome on Windows | Supported |
-| Edge on Windows | Supported |
-| Brave on Windows | Supported |
-| Arc on Windows | Supported |
-| Chrome, Edge, Brave, or Arc on Linux with PipeWire screen capture | Supported |
+| Chrome on Windows | Shared audio + microphone |
+| Edge on Windows | Shared audio + microphone |
+| Brave on Windows | Shared audio + microphone |
+| Arc on Windows | Shared audio + microphone |
+| Chrome, Edge, Brave, or Arc on Linux with PipeWire screen capture | Shared audio + microphone |
+| Chrome on Android | Microphone-only |
+| Chrome on iOS | Microphone-only |
 | Firefox | Not supported for live capture |
 | Safari | Not supported for live capture |
-| Mobile browsers | Not supported for live capture |
+| Other mobile browsers | Not supported for live capture |
 | Chromium browsers on macOS | Not supported for live capture |
 
 Unsupported browsers can still review recordings, play audio, edit transcripts, manage speakers, use search, and administer Nojoin. They cannot start live capture.
@@ -29,13 +34,15 @@ Nojoin combines two browser-granted audio sources:
 - **Shared tab, window, or screen audio** for meeting participants and other system output.
 - **Microphone audio** for the local speaker.
 
-The browser mixes those sources in the Nojoin tab, uploads short WebM/Opus segments to the backend, and the worker transcodes each segment to the canonical 16 kHz, two-channel WAV path used by live transcription and final processing. Channel 0 carries shared/system audio and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
+On desktop shared-audio capture, the browser mixes those sources in the Nojoin tab, uploads short audio segments to the backend, and the worker transcodes each segment to the canonical 16 kHz, two-channel WAV path used by live transcription and final processing. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
+
+On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
 
 For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps. Live ASR and rolling speaker-window diarization are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
 
 ## Before Your First Recording
 
-1. Open Nojoin in Chrome, Edge, Brave, or Arc on Windows or Linux.
+1. Open Nojoin in Chrome, Edge, Brave, or Arc on Windows or Linux for shared-audio capture, or Chrome on Android/iOS for microphone-only capture.
 2. Confirm your meeting platform is open in a browser tab if you want reliable tab audio capture.
 3. Check that your microphone is available to the browser.
 4. Open **Settings > Capture** if you need to choose a microphone or adjust system and microphone gain.
@@ -45,12 +52,15 @@ For support and debugging, browser recording segments are numbered from `0` and 
 
 1. Open the Nojoin dashboard.
 2. Select **Start Meeting**.
-3. When the browser share picker opens, choose the meeting tab, application window, or entire screen you want Nojoin to hear.
-4. Enable the browser's audio-sharing option before selecting **Share**.
+3. On desktop, when the browser share picker opens, choose the meeting tab, application window, or entire screen you want Nojoin to hear.
+4. On desktop, enable the browser's audio-sharing option before selecting **Share**.
 5. Allow microphone access if prompted.
-6. Keep the Nojoin tab open while recording.
+6. On mobile Chrome, keep the phone close enough for the microphone to hear the meeting audio.
+7. Keep the Nojoin tab open and the device awake while recording.
 
 Chrome and Edge may focus the chosen tab, window, or screen after you select **Share**. That is normal. You can continue using your computer, switch windows, or interact with the meeting while Nojoin keeps recording in the original browser tab.
+
+Mobile Chrome does not show a share picker for Nojoin because the mobile path is microphone-only.
 
 ## Choosing Tab, Window, Or Entire Screen
 
@@ -81,6 +91,10 @@ The exact wording is browser-dependent:
 - Linux Chromium builds require working desktop capture through PipeWire for screen capture. PulseAudio-only environments are expected to fail for system or screen audio.
 
 If the share button is disabled, select a source first and confirm that any required audio toggle is enabled.
+
+## Mobile Chrome Microphone Recording
+
+Chrome on Android and iOS can start recording from the same **Start Meeting** button, but it records only the phone microphone. It does not capture another mobile app, browser tab, headset output, or system audio. For best results, keep the meeting audio audible to the phone microphone, keep Nojoin visible, and prevent the phone from locking.
 
 ## Pause, Resume, Stop, And Cancel
 
@@ -134,7 +148,7 @@ Use a recent Chromium-family browser and a desktop session with PipeWire screen 
 
 ### The browser asks for permissions again on resume
 
-That is expected. Browsers do not let Nojoin silently recreate shared tab, window, or screen capture after a reload, close, or pause that released the previous tracks.
+That is expected. Browsers do not let Nojoin silently recreate shared tab, window, screen, or microphone capture after a reload, close, or pause that released the previous tracks.
 
 ### Nojoin says a paused recording exists
 
@@ -142,11 +156,11 @@ Use the resume-or-discard modal. Starting a second recording while a paused uplo
 
 ### Unsupported browser notice appears
 
-Open Nojoin in a supported Chromium browser on Windows or Linux. Review and playback still work in unsupported browsers, but live recording does not.
+Open Nojoin in a supported Chromium browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording. Review and playback still work in unsupported browsers, but live recording does not.
 
 ## Privacy Notes
 
-The browser picker controls what Nojoin can receive. Nojoin cannot silently capture your screen, tab, system audio, or microphone without browser permission. Stop sharing from the browser's sharing indicator or stop the meeting in Nojoin to end capture.
+The browser picker controls what Nojoin can receive on desktop. Nojoin cannot silently capture your screen, tab, system audio, or microphone without browser permission. On mobile Chrome, Nojoin receives only the microphone stream granted by the browser. Stop sharing from the browser's sharing indicator or stop the meeting in Nojoin to end capture.
 
 ## Related Docs
 

@@ -43,7 +43,8 @@ export default function CaptureSettings({
     "reset warnings",
   ]);
   const { addNotification } = useNotificationStore();
-  const { settings, updateSettings } = useCapture();
+  const { settings, support, updateSettings } = useCapture();
+  const microphoneOnly = support.supported && support.mode === "microphone_only";
   const suppressQuietAudioWarnings = useAudioWarningStore(
     (state) => state.suppressQuietAudioWarnings,
   );
@@ -163,7 +164,9 @@ export default function CaptureSettings({
                 Microphone and automatic levels
               </h4>
               <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                Select the microphone added to shared audio. Nojoin balances system and microphone levels during recording.
+                {microphoneOnly
+                  ? "Select the phone microphone used for mobile recording. Nojoin balances levels during recording."
+                  : "Select the microphone added to shared audio. Nojoin balances system and microphone levels during recording."}
               </p>
             </div>
             <button
@@ -191,7 +194,11 @@ export default function CaptureSettings({
             <SettingsField
               label="Microphone"
               icon={<Mic className="h-4 w-4" />}
-              description="This input is mixed with shared tab or system audio during capture."
+              description={
+                microphoneOnly
+                  ? "This input is recorded directly on mobile Chrome."
+                  : "This input is mixed with shared tab or system audio during capture."
+              }
             >
               <select
                 value={settings.microphoneDeviceId || ""}

@@ -93,15 +93,17 @@ Use **Settings > Updates** to see:
 
 ### Browser Capture Support
 
-- Live recording requires a supported Chromium browser on Windows or Linux.
-- Firefox, Safari, mobile browsers, and Chromium browsers on macOS can review and administer Nojoin but cannot start live capture.
+- Shared-audio live recording requires a supported Chromium browser on Windows or Linux.
+- Chrome on Android and iOS can start microphone-only live recordings.
+- Firefox, Safari, other mobile browsers, and Chromium browsers on macOS can review and administer Nojoin but cannot start live capture.
 - Tab sharing with audio enabled is the recommended support path for browser-based meetings.
 - If local microphone audio is missing, ask the user to grant microphone permission and review **Settings > Capture**.
 - If remote participant audio is missing, ask the user to start again and enable shared audio in the browser picker.
+- If a mobile Chrome recording is missing remote participants, confirm the user expected microphone-only capture and that the phone microphone could hear the meeting audio.
 - If a user has a paused recording, they must resume or discard it before starting another capture.
 - Review backend and worker logs for segment upload, transcode, live transcription, finalize, or discard failures.
 - Browser-live segment numbering starts at `0`; upload or finalize support cases should confirm the sequence is contiguous.
-- The worker keeps browser-live audio as 16 kHz, two-channel WAV after transcode. Channel 0 is shared/system audio and channel 1 is microphone audio.
+- The worker keeps browser-live audio as 16 kHz, two-channel WAV after transcode. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
 
 Paused recordings are retained indefinitely and are not cleaned up automatically. This protects uploaded meeting data and prevents overlapping segment streams for the same user.
 

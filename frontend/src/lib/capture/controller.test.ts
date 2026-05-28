@@ -4,23 +4,46 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureController } from "./controller";
 
 const apiMocks = vi.hoisted(() => ({
+  discardRecordingCapture: vi.fn(),
   finalizeRecordingCapture: vi.fn(),
   pauseRecordingCapture: vi.fn(),
   getPausedRecordings: vi.fn(),
+  initRecording: vi.fn(),
+}));
+
+const featureDetectMocks = vi.hoisted(() => ({
+  detectCaptureSupport: vi.fn(() => ({ supported: true, mode: "shared_audio" })),
+}));
+
+const pickSourceMocks = vi.hoisted(() => ({
+  pickCaptureSource: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
-  discardRecordingCapture: vi.fn(),
+  discardRecordingCapture: apiMocks.discardRecordingCapture,
   finalizeRecordingCapture: apiMocks.finalizeRecordingCapture,
   getPausedRecordings: apiMocks.getPausedRecordings,
-  initRecording: vi.fn(),
+  initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
   resumeRecordingCapture: vi.fn(),
 }));
 
 vi.mock("./featureDetect", () => ({
-  detectCaptureSupport: vi.fn(() => ({ supported: true, reason: null })),
+  detectCaptureSupport: featureDetectMocks.detectCaptureSupport,
+}));
+
+vi.mock("./pickSource", () => ({
+  PickSourceError: class PickSourceError extends Error {
+    code: string;
+
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+      this.name = "PickSourceError";
+    }
+  },
+  pickCaptureSource: pickSourceMocks.pickCaptureSource,
 }));
 
 vi.mock("./lifecycle", () => ({
@@ -56,10 +79,18 @@ const buildConflictError = (detail: string) => {
 
 describe("capture controller", () => {
   beforeEach(() => {
+    apiMocks.discardRecordingCapture.mockReset();
     apiMocks.finalizeRecordingCapture.mockReset();
     apiMocks.pauseRecordingCapture.mockReset();
     apiMocks.getPausedRecordings.mockReset();
+    apiMocks.initRecording.mockReset();
     apiMocks.getPausedRecordings.mockResolvedValue([]);
+    featureDetectMocks.detectCaptureSupport.mockReset();
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "shared_audio",
+    });
+    pickSourceMocks.pickCaptureSource.mockReset();
   });
 
   afterEach(() => {
@@ -173,5 +204,43 @@ describe("capture controller", () => {
     controller.finalizeRecordingWhenReady = vi.fn().mockRejectedValue(buildConflictError(detail));
 
     await expect(controller.stop()).rejects.toThrow(detail);
+  });
+
+  it("starts microphone-only capture with the detected mobile mode", async () => {
+    const sources = {
+      mode: "microphone_only",
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      release: vi.fn(),
+    };
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "microphone_only",
+    });
+    apiMocks.initRecording.mockResolvedValue({
+      id: "rec-1",
+      name: "Mobile meeting",
+    });
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+
+    const controller = new CaptureController() as any;
+    controller.activateRuntime = vi.fn().mockResolvedValue(undefined);
+
+    await expect(controller.start("Mobile meeting")).resolves.toEqual({
+      recordingId: "rec-1",
+      name: "Mobile meeting",
+      resumed: false,
+    });
+
+    expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledWith({
+      mode: "microphone_only",
+      microphoneDeviceId: null,
+    });
+    expect(controller.activateRuntime).toHaveBeenCalledWith({
+      recordingId: "rec-1",
+      startSequence: 0,
+      sources,
+      elapsedSeconds: 0,
+    });
   });
 });

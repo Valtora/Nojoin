@@ -17,7 +17,7 @@ from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.time import utc_now
 
 
-BROWSER_AUDIO_SEGMENT_SUFFIXES = frozenset({".webm", ".ogg"})
+BROWSER_AUDIO_SEGMENT_SUFFIXES = frozenset({".webm", ".ogg", ".m4a"})
 TRANSCODE_FAILED_SUFFIX = ".transcode_failed"
 PENDING_TRANSCODE_SUFFIXES = frozenset(
     {*BROWSER_AUDIO_SEGMENT_SUFFIXES, TRANSCODE_FAILED_SUFFIX}

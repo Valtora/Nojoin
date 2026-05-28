@@ -11,7 +11,7 @@ export interface CaptureMixer {
 }
 
 export interface CreateCaptureMixerOptions {
-  displayStream: MediaStream;
+  displayStream?: MediaStream | null;
   microphoneStream: MediaStream;
   audioContextFactory?: () => AudioContext;
 }
@@ -130,7 +130,12 @@ export const createCaptureMixer = async (
   }
 
   const destination = context.createMediaStreamDestination();
-  const systemSource = context.createMediaStreamSource(options.displayStream);
+  const systemSource = options.displayStream
+    ? context.createMediaStreamSource(options.displayStream)
+    : context.createGain();
+  if (!options.displayStream && "gain" in systemSource) {
+    systemSource.gain.value = 0;
+  }
   const microphoneSource = context.createMediaStreamSource(
     options.microphoneStream,
   );

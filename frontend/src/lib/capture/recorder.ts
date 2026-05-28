@@ -13,18 +13,22 @@ export interface CreateBrowserRecorderOptions {
 }
 
 const DEFAULT_MIME_TYPE = "audio/webm;codecs=opus";
+const RECORDER_MIME_TYPE_CANDIDATES = [
+  DEFAULT_MIME_TYPE,
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/ogg",
+  "audio/mp4;codecs=mp4a.40.2",
+  "audio/mp4",
+];
 const DEFAULT_AUDIO_BITS_PER_SECOND = 160_000;
 
 const resolveRecorderMimeType = (mediaRecorderCtor: typeof MediaRecorder) => {
-  if (mediaRecorderCtor.isTypeSupported(DEFAULT_MIME_TYPE)) {
-    return DEFAULT_MIME_TYPE;
-  }
-
-  if (mediaRecorderCtor.isTypeSupported("audio/webm")) {
-    return "audio/webm";
-  }
-
-  return "";
+  return (
+    RECORDER_MIME_TYPE_CANDIDATES.find((mimeType) =>
+      mediaRecorderCtor.isTypeSupported(mimeType),
+    ) ?? ""
+  );
 };
 
 interface ActiveSegment {

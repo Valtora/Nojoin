@@ -467,6 +467,74 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
 
 
 @pytest.mark.anyio
+async def test_m4a_upload_defers_live_sync_until_transcode_task(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    live_dispatches,
+    transcode_dispatches,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from backend.processing.browser_live_audio import (
+        BROWSER_LIVE_CHANNEL_COUNT,
+        BROWSER_LIVE_SAMPLE_RATE_HZ,
+    )
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Mobile browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker,
+        public_id=recording_public_id,
+    )
+
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.m4a", b"mp4-audio-segment", "audio/mp4")},
+    )
+
+    assert upload_response.status_code == 200
+    assert live_dispatches == []
+    assert transcode_dispatches == [(recording_id, 0)]
+    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+
+    upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
+
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    monkeypatch.setattr(
+        segment_transcode_module,
+        "_run_ffmpeg_transcode",
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
+    )
+
+    result = segment_transcode_module.transcode_segment_task.run(recording_id, 0)
+
+    wav_path = upload_dir / "0.wav"
+
+    assert result == {"status": "received", "segment": 0}
+    assert wav_path.exists()
+    assert (upload_dir / "0.m4a").exists()
+    with wave.open(str(wav_path), "rb") as wav_file:
+        assert wav_file.getframerate() == BROWSER_LIVE_SAMPLE_RATE_HZ
+        assert wav_file.getnchannels() == BROWSER_LIVE_CHANNEL_COUNT
+    assert live_dispatches == [(recording_id, 0)]
+
+    chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+    assert chunk_rows == [(0, str(wav_path))]
+
+
+@pytest.mark.anyio
 async def test_finalize_upload_transcodes_pending_browser_segments(
     client: AsyncClient,
     test_session_maker: sessionmaker,
@@ -544,7 +612,74 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
 
     assert recording_row[0].endswith(".webm")
     assert Path(recording_row[0]).exists()
-    assert recording_row[1].endswith(".mp3")
+    assert recording_row[1] is None
+
+
+@pytest.mark.anyio
+async def test_finalize_upload_transcodes_pending_m4a_segments(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    transcode_dispatches,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Finalize mobile meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker,
+        public_id=recording_public_id,
+    )
+
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.m4a", b"mp4-audio-segment", "audio/mp4")},
+    )
+    assert upload_response.status_code == 200
+    assert transcode_dispatches == [(recording_id, 0)]
+
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    monkeypatch.setattr(
+        segment_transcode_module,
+        "_run_ffmpeg_transcode",
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
+    )
+    monkeypatch.setattr(
+        recordings_module,
+        "concatenate_media_files",
+        lambda paths, destination: Path(destination).write_bytes(b"joined-browser-master"),
+    )
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None)
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
+    wav_path = upload_dir / "0.wav"
+
+    assert finalize_response.status_code == 200
+    assert wav_path.exists()
+    assert (upload_dir / "0.m4a").exists()
+    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
+        (0, str(wav_path))
+    ]
 
 
 @pytest.mark.anyio
@@ -657,6 +792,36 @@ async def test_wav_upload_keeps_existing_fast_path(
 
     chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
     assert chunk_rows == [(0, str(upload_dir / "0.wav"))]
+
+
+@pytest.mark.anyio
+async def test_segment_upload_rejects_mismatched_content_type_and_suffix(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Mismatch meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker,
+        public_id=recording_public_id,
+    )
+
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.webm", b"mp4-audio-segment", "audio/mp4")},
+    )
+
+    assert upload_response.status_code == 415
+    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
 
 
 def test_transcode_task_registered_with_celery() -> None:

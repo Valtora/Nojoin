@@ -9,7 +9,7 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 - **Recommended:** Linux or Windows with an NVIDIA GPU and CUDA 12.x support.
 - **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote.
 - **macOS hosting:** Not recommended for the backend because Docker on macOS cannot expose Apple Silicon GPU acceleration to the containers.
-- **Capture browser:** Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux for live recording.
+- **Capture browser:** Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux for shared-audio live recording, or Chrome on Android/iOS for microphone-only live recording.
 
 ## Core Requirements
 
@@ -45,7 +45,7 @@ The repository does not ship a separate Docker Compose development override.
    ```
 
 8. Open `https://localhost:14443`.
-9. Use a supported Chromium browser on Windows or Linux for live recording. Other browsers can still review and administer Nojoin.
+9. Use a supported Chromium browser on Windows or Linux for shared-audio live recording, or Chrome on Android/iOS for microphone-only live recording. Other browsers can still review and administer Nojoin.
 
 Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
 If you add or change it, redeploy the stack before using the setup wizard.
@@ -195,7 +195,7 @@ location / {
 ## Upgrading and Migration
 
 - When performing major upgrades, check release notes for breaking changes.
-- The browser-capture cutover retires the Windows desktop helper. Users start live recordings directly from the Nojoin web app in a supported Chromium browser.
+- The browser-capture cutover retires the Windows desktop helper. Users start live recordings directly from the Nojoin web app in a supported browser.
 - Existing recordings remain viewable and process through the same backend pipeline. Existing native-helper installs are obsolete and should be removed from user machines.
 - Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.
 - During that startup cutover, existing recordings are classified entirely on the backend. Successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalized safely are marked for explicit reprocess instead of being edited in place.
@@ -204,11 +204,11 @@ location / {
 
 ### Live Pipeline Readiness Notes
 
-- Browser live capture now depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio and channel 1 is microphone audio.
+- Browser live capture now depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
 - Segment sequences start at `0`. Operators investigating upload or finalization failures should check for missing sequence numbers before assuming ASR or diarisation failure.
 - Recording detail pages expose only high-level progress, waveform state, and Meeting Edge guidance during live capture.
 - Final processing reuses live transcript and source-channel speaker evidence only after stable-id or clear overlap alignment. Ambiguous live/final spans are intentionally left to final ASR and diarisation output.
-- A practical smoke after upgrade is: start a browser recording in supported Chromium, share a meeting tab with audio, speak through the microphone, observe waveform and Meeting Edge or processing-state updates, pause, resume, finalize, then verify final transcript and speaker continuity.
+- A practical smoke after upgrade is: start a browser recording in supported desktop Chromium, share a meeting tab with audio, speak through the microphone, observe waveform and Meeting Edge or processing-state updates, pause, resume, finalize, then verify final transcript and speaker continuity. For mobile capture changes, also smoke Chrome on Android or iOS microphone-only recording with the tab open and the phone awake.
 
 ### Canonical Cutover Notes
 

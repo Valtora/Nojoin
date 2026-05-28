@@ -6,7 +6,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 
 ## First Run
 
-1. Open Nojoin in a supported Chromium browser on Windows or Linux.
+1. Open Nojoin in a supported Chromium browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording.
 2. Sign in with your account.
 3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Use the **Meet Now** card on the dashboard and click **Start Meeting** to create a short test recording.
@@ -14,7 +14,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
 7. Stop the recording, open it in the `/recordings` workspace, and wait for processing to complete.
 
-Firefox, Safari, mobile browsers, and Chromium browsers on macOS can review recordings but cannot start live capture. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
+Firefox, Safari, mobile browsers other than Chrome, and Chromium browsers on macOS can review recordings but cannot start live capture. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
 
 ## Tours And Onboarding
 
@@ -54,16 +54,19 @@ You can create, rename, complete, reopen, delete, and schedule tasks. Active dea
 
 ## Live Recording
 
-Live recording is browser-native. Nojoin captures shared tab/window/screen audio plus microphone audio from the web app.
+Live recording is browser-native. On supported desktop Chromium browsers, Nojoin captures shared tab/window/screen audio plus microphone audio from the web app. On Chrome for Android and iOS, Nojoin records the phone microphone only.
 
 1. Open the dashboard.
 2. In the **Meet Now** card, click **Start Meeting**.
-3. Select a meeting tab, application window, or entire screen in the browser share picker.
-4. Enable the browser's shared-audio option before selecting **Share**.
+3. On desktop, select a meeting tab, application window, or entire screen in the browser share picker.
+4. On desktop, enable the browser's shared-audio option before selecting **Share**.
 5. Allow microphone access if prompted.
-6. Keep the Nojoin tab open until the meeting ends.
+6. On mobile Chrome, keep the phone close enough for the microphone to hear the meeting audio.
+7. Keep the Nojoin tab open and the device awake until the meeting ends.
 
 Tab sharing is usually the best choice for browser-based meetings because it most reliably exposes meeting audio. Window and screen sharing can work, but audio availability depends on browser and operating-system support.
+
+Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is useful for microphone or in-room speakerphone capture only.
 
 While recording, Nojoin shows recording state, duration, upload state, a live waveform, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
 
@@ -172,7 +175,7 @@ Settings are grouped by task.
 
 ## Troubleshooting
 
-- If live capture is unavailable, switch to a supported Chromium browser on Windows or Linux.
+- If live capture is unavailable, switch to a supported Chromium browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording.
 - If remote participants are missing, start again and enable shared audio in the browser picker.
 - If the microphone is missing, grant microphone permission and check **Settings > Capture**.
 - If Nojoin reports a paused recording, resume or discard it before starting another capture.

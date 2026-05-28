@@ -36,7 +36,7 @@ The web client is responsible for:
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.
-- Browser capture orchestration through `getDisplayMedia`, `getUserMedia`, Web Audio mixing, MediaRecorder segmenting, sequenced upload, live waveform state, pause/resume, and finalize controls.
+- Browser capture orchestration through `getDisplayMedia`, `getUserMedia`, Web Audio mixing, MediaRecorder segmenting, sequenced upload, live waveform state, pause/resume, and finalize controls. Mobile Chrome uses the same lifecycle with a microphone-only `getUserMedia` path.
 
 The web client is the only live capture surface. Unsupported browsers retain review, playback, admin, and settings capabilities, but cannot start live recording.
 
@@ -46,20 +46,20 @@ The browser capture stack is responsible for:
 
 - Prompting for shared tab, window, or screen audio.
 - Prompting for microphone access.
-- Mixing shared audio and microphone audio in the browser.
-- Recording short WebM/Opus slices and uploading them with session-cookie authentication.
-- Preserving the browser-live source layout after worker transcode as 16 kHz, two-channel WAV: channel 0 is shared/system audio and channel 1 is microphone audio.
+- Mixing shared audio and microphone audio in the browser on desktop, or recording microphone-only audio on mobile Chrome.
+- Recording short WebM/Opus, Ogg/Opus, or MP4 audio slices and uploading them with session-cookie authentication.
+- Preserving the browser-live source layout after worker transcode as 16 kHz, two-channel WAV: channel 0 is shared/system audio when available and channel 1 is microphone audio.
 - Exposing analyser output to the live waveform UI.
 - Moving recordings to `PAUSED` on real tab unload or app navigation away, then requiring resume or discard before another capture starts.
 
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. From the **Meet Now** card, the user clicks **Start Meeting** in a supported Chromium browser on Windows or Linux.
+2. From the **Meet Now** card, the user clicks **Start Meeting** in a supported desktop Chromium browser on Windows or Linux, or Chrome on Android/iOS for microphone-only recording.
 3. `/recordings/init` creates an `UPLOADING` recording for the current user. The same browser session is used for segment, pause, resume, discard, and finalize operations.
-4. The browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short WebM/Opus slices.
+4. On desktop, the browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short audio slices. On mobile Chrome, the browser asks for microphone access only and records microphone-only slices.
 5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing 0-based sequence numbers.
-6. The worker transcodes each browser segment to 16 kHz, two-channel WAV and dispatches the live transcription lane. Channel 0 is shared/system audio and channel 1 is microphone audio.
+6. The worker transcodes each browser segment to 16 kHz, two-channel WAV and dispatches the live transcription lane. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
 7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation.
 8. The web client shows a live capture or processing status workspace while the job runs.
 

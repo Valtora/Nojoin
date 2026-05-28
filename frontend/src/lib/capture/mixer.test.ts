@@ -120,6 +120,22 @@ describe("capture mixer", () => {
     expect(context.closed).toBe(true);
   });
 
+  it("creates a silent system channel for microphone-only capture", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+
+    expect(mixer.getSystemGain()).toBe(1);
+    expect(mixer.getMicrophoneGain()).toBe(1);
+
+    await mixer.dispose();
+
+    expect(context.closed).toBe(true);
+  });
+
   it("adjusts source gain from analyser levels", async () => {
     const mixer = await createCaptureMixer({
       displayStream: {} as MediaStream,

@@ -62,26 +62,28 @@ The primary user interface for interacting with the system.
 
 Live recording is owned by the web client through browser capture APIs.
 
-- **Supported capture browsers:** Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux.
-- **Unsupported capture browsers:** Firefox, Safari, mobile browsers, and Chromium browsers on macOS. These environments can still review, play back, edit, search, and administer recordings.
+- **Supported capture browsers:** Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux for shared-audio capture, plus Chrome on Android and iOS for microphone-only capture.
+- **Unsupported capture browsers:** Firefox, Safari, other mobile browsers, and Chromium browsers on macOS. These environments can still review, play back, edit, search, and administer recordings.
 - **Shared audio source:** `getDisplayMedia` captures tab, window, or screen audio when the user enables the browser's audio-sharing option.
 - **Microphone source:** `getUserMedia` captures the local microphone.
-- **Mixing:** The browser combines shared audio and microphone audio with Web Audio gain controls and analyser taps.
-- **Transport:** The browser uploads short WebM/Opus segments during live recording. The worker transcodes each segment to 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 carries shared/system audio and channel 1 carries microphone audio.
+- **Mixing:** The browser combines shared audio and microphone audio with Web Audio gain controls and analyser taps on desktop; mobile Chrome records microphone-only audio.
+- **Transport:** The browser uploads short WebM/Opus, Ogg/Opus, or MP4 audio segments during live recording. The worker transcodes each segment to 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio.
 - **Lifecycle:** Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`. Uploaded segments remain available, the in-memory tail is dropped, and the user must resume or discard before starting another capture.
 - **Settings:** Capture settings cover microphone selection and per-source gain. Settings are browser-local for the initial cutover.
 - **Documentation:** [CAPTURE.md](CAPTURE.md) is the canonical browser capture guide.
 
 | Browser / OS | Live capture |
 | --- | --- |
-| Chrome / Windows | Supported |
-| Edge / Windows | Supported |
-| Brave / Windows | Supported |
-| Arc / Windows | Supported |
-| Chromium-family / Linux with PipeWire | Supported |
+| Chrome / Windows | Shared audio + microphone |
+| Edge / Windows | Shared audio + microphone |
+| Brave / Windows | Shared audio + microphone |
+| Arc / Windows | Shared audio + microphone |
+| Chromium-family / Linux with PipeWire | Shared audio + microphone |
+| Chrome / Android | Microphone-only |
+| Chrome / iOS | Microphone-only |
 | Firefox / any OS | Unsupported notice |
 | Safari / any OS | Unsupported notice |
-| Mobile browsers | Unsupported notice |
+| Other mobile browsers | Unsupported notice |
 | Chromium-family / macOS | Unsupported notice |
 
 ### 2.4 Security
@@ -153,7 +155,7 @@ Live recording is owned by the web client through browser capture APIs.
 
 The system provides the following core capabilities:
 
-- **Audio Recording:** Browser-native live capture for shared tab/window/screen audio plus microphone input on supported Chromium browsers.
+- **Audio Recording:** Browser-native live capture for shared tab/window/screen audio plus microphone input on supported desktop Chromium browsers, and microphone-only recording on Chrome mobile.
   - **Live Waveform Visibility:** While a meeting is actively recording, the Web Client shows live audio activity derived from the browser analyser taps.
   - **Pause and Resume:** Paused recordings retain uploaded segments and block new capture until resumed or discarded.
 - **Import:** Support for importing existing audio files.
@@ -224,11 +226,11 @@ The system provides the following core capabilities:
 
 ### 4.3 Browser Capture Stack
 
-- **Browser APIs:** `getDisplayMedia`, `getUserMedia`, Web Audio, and MediaRecorder.
+- **Browser APIs:** `getDisplayMedia`, `getUserMedia`, Web Audio, and MediaRecorder. Mobile Chrome uses `getUserMedia` and MediaRecorder without `getDisplayMedia`.
 - **Frontend modules:** Capture logic lives under `frontend/src/lib/capture/`.
-- **Media transport:** WebM/Opus during live recording, transcoded by the worker to 16 kHz, two-channel WAV segments with shared/system audio on channel 0 and microphone audio on channel 1.
-- **Supported capture platforms:** Chromium-family browsers on Windows and Linux.
-- **Unsupported capture platforms:** Firefox, Safari, mobile browsers, and Chromium browsers on macOS.
+- **Media transport:** WebM/Opus, Ogg/Opus, or MP4 audio during live recording, transcoded by the worker to 16 kHz, two-channel WAV segments with shared/system audio on channel 0 when available and microphone audio on channel 1.
+- **Supported capture platforms:** Chromium-family browsers on Windows and Linux for shared-audio capture; Chrome on Android and iOS for microphone-only capture.
+- **Unsupported capture platforms:** Firefox, Safari, other mobile browsers, and Chromium browsers on macOS.
 - **Validation:** Manual browser matrix testing is required before release sign-off.
 
 ### 4.4 Deployment & Configuration

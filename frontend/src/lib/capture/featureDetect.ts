@@ -16,7 +16,9 @@ export interface FeatureDetectEnvironment {
   userAgentData?: UserAgentDataLike;
   mediaDevices?: {
     getDisplayMedia?: MediaDevices["getDisplayMedia"];
+    getUserMedia?: MediaDevices["getUserMedia"];
   } | null;
+  mediaRecorderCtor?: typeof MediaRecorder | null;
 }
 
 const CHROMIUM_BRANDS = [
@@ -39,6 +41,12 @@ const isSafariUserAgent = (userAgent: string) => {
 const isChromiumUserAgent = (userAgent: string) =>
   /chrome|chromium|crios|edg|brave|arc/i.test(userAgent);
 
+const isChromeMobileUserAgent = (userAgent: string) =>
+  (/android/i.test(userAgent) &&
+    /chrome/i.test(userAgent) &&
+    !/edg|opr|firefox/i.test(userAgent)) ||
+  /crios/i.test(userAgent);
+
 const isMacPlatform = (platform: string) => /mac/i.test(platform);
 
 const isWindowsOrLinuxPlatform = (platform: string) =>
@@ -54,6 +62,14 @@ const hasChromiumBrand = (brands: UserAgentBrand[] | undefined) => {
   );
 };
 
+const hasChromeBrand = (brands: UserAgentBrand[] | undefined) => {
+  if (!brands || brands.length === 0) {
+    return false;
+  }
+
+  return brands.some((entry) => entry.brand.toLowerCase() === "google chrome");
+};
+
 const readNavigatorEnvironment = (): FeatureDetectEnvironment => {
   if (typeof navigator === "undefined") {
     return { mediaDevices: null };
@@ -67,6 +83,8 @@ const readNavigatorEnvironment = (): FeatureDetectEnvironment => {
     userAgent: navigator.userAgent,
     userAgentData: navigatorWithUAData.userAgentData,
     mediaDevices: navigator.mediaDevices,
+    mediaRecorderCtor:
+      typeof MediaRecorder === "undefined" ? null : MediaRecorder,
   };
 };
 
@@ -85,6 +103,15 @@ export const detectCaptureSupport = (
   const macPlatform = isMacPlatform(platform);
   const supportedPlatform = isWindowsOrLinuxPlatform(platform);
   const hasDisplayMedia = Boolean(mediaDevices?.getDisplayMedia);
+  const hasUserMedia = Boolean(mediaDevices?.getUserMedia);
+  const hasMediaRecorder = Boolean(environment.mediaRecorderCtor);
+  const chromeMobile =
+    mobile &&
+    (hasChromeBrand(userAgentData?.brands) || isChromeMobileUserAgent(userAgent));
+
+  if (chromeMobile && hasUserMedia && hasMediaRecorder) {
+    return { supported: true, mode: "microphone_only" };
+  }
 
   if (mobile) {
     return { supported: false, reason: "mobile" };
@@ -102,8 +129,14 @@ export const detectCaptureSupport = (
     return { supported: false, reason: "macos_chromium" };
   }
 
-  if (chromium && supportedPlatform && hasDisplayMedia) {
-    return { supported: true };
+  if (
+    chromium &&
+    supportedPlatform &&
+    hasDisplayMedia &&
+    hasUserMedia &&
+    hasMediaRecorder
+  ) {
+    return { supported: true, mode: "shared_audio" };
   }
 
   return { supported: false, reason: "unknown" };

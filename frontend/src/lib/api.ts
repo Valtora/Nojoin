@@ -275,11 +275,26 @@ export const discardRecordingCapture = async (
   await api.post(`/recordings/${recordingId}/discard`);
 };
 
+const resolveRecordingSegmentExtension = (contentType: string | undefined) => {
+  const normalized = (contentType || "").split(";", 1)[0].trim().toLowerCase();
+  switch (normalized) {
+    case "audio/wav":
+      return "wav";
+    case "audio/ogg":
+      return "ogg";
+    case "audio/mp4":
+      return "m4a";
+    case "audio/webm":
+    default:
+      return "webm";
+  }
+};
+
 export const uploadRecordingSegment = async (
   recordingId: RecordingId,
   sequence: number,
   blob: Blob,
-  filename = `${sequence}.webm`,
+  filename = `${sequence}.${resolveRecordingSegmentExtension(blob.type)}`,
 ): Promise<{ status: string; segment: number }> => {
   const formData = new FormData();
   formData.append("file", blob, filename);

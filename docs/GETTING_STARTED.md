@@ -8,8 +8,9 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 
 - Docker must be installed.
 - An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported.
-- Live recording requires Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux.
-- Firefox, Safari, mobile browsers, and Chromium browsers on macOS can review existing recordings but cannot start live capture.
+- Shared-audio live recording requires Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux.
+- Chrome on Android and iOS can start microphone-only live recordings.
+- Firefox, Safari, other mobile browsers, and Chromium browsers on macOS can review existing recordings but cannot start live capture.
 
 ## 1. Start the Stack
 
@@ -68,12 +69,12 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 ## 4. Prepare Browser Capture
 
-1. Open Nojoin in Chrome, Edge, Brave, Arc, or another supported Chromium-family browser on Windows or Linux.
+1. Open Nojoin in Chrome, Edge, Brave, Arc, or another supported Chromium-family browser on Windows or Linux for shared-audio capture, or Chrome on Android/iOS for microphone-only capture.
 2. Open your meeting in a browser tab when possible. Tab sharing is the most reliable way to capture meeting audio.
 3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Keep the Nojoin tab open during live recording.
 
-The browser will ask what tab, window, or screen to share when you start recording. Turn on the browser's audio-sharing option in that picker so remote participants are captured.
+On desktop, the browser will ask what tab, window, or screen to share when you start recording. Turn on the browser's audio-sharing option in that picker so remote participants are captured. On mobile Chrome, Nojoin records only the phone microphone, so keep the phone close enough to hear the meeting and keep the tab open.
 
 See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes, pause/resume semantics, and troubleshooting.
 
@@ -81,8 +82,8 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 
 1. Open the dashboard.
 2. Use the **Meet Now** card and click **Start Meeting**.
-3. Select the meeting tab, window, or screen in the browser share picker.
-4. Enable shared audio in the picker and allow microphone access if prompted.
+3. On desktop, select the meeting tab, window, or screen in the browser share picker.
+4. On desktop, enable shared audio in the picker and allow microphone access if prompted. On mobile Chrome, allow microphone access and keep the phone awake.
 5. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance should appear after enough speech accumulates.
 6. Stop the recording when finished.
 7. Open the recording in the `/recordings` workspace.

@@ -7,9 +7,12 @@ export type CaptureUnsupportedReason =
   | "mobile"
   | "unknown";
 
+export type CaptureMode = "shared_audio" | "microphone_only";
+
 export interface CaptureSupport {
   supported: boolean;
   reason?: CaptureUnsupportedReason;
+  mode?: CaptureMode;
 }
 
 export type CaptureStatus =
