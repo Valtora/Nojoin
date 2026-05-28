@@ -128,6 +128,9 @@ export default function MeetingControls({
               <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
                 Meet Now
               </h2>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Click Start Meeting to begin browser capture from this dashboard card.
+              </p>
             </div>
           </div>
 

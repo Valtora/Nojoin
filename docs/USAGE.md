@@ -9,9 +9,9 @@ For deployment, administration, calendar provider setup, backup operations, and 
 1. Open Nojoin in a supported Chromium browser on Windows or Linux.
 2. Sign in with your account.
 3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
-4. Use **Meet Now** from the dashboard to create a short test recording.
+4. Use the **Meet Now** card on the dashboard and click **Start Meeting** to create a short test recording.
 5. In the browser share picker, choose the meeting tab, window, or screen and enable shared audio.
-6. Speak briefly and confirm the live waveform or live transcript responds.
+6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
 7. Stop the recording, open it in the `/recordings` workspace, and wait for processing to complete.
 
 Firefox, Safari, mobile browsers, and Chromium browsers on macOS can review recordings but cannot start live capture. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
@@ -30,7 +30,7 @@ The root route is the operational home surface for Nojoin.
 
 It brings together:
 
-- **Meet Now** for live browser capture.
+- **Meet Now** card for live browser capture.
 - **Calendar context** through month and agenda views, including recorded meeting history.
 - **Task List** for personal follow-up work.
 
@@ -57,7 +57,7 @@ You can create, rename, complete, reopen, delete, and schedule tasks. Active dea
 Live recording is browser-native. Nojoin captures shared tab/window/screen audio plus microphone audio from the web app.
 
 1. Open the dashboard.
-2. Choose **Meet Now**.
+2. In the **Meet Now** card, click **Start Meeting**.
 3. Select a meeting tab, application window, or entire screen in the browser share picker.
 4. Enable the browser's shared-audio option before selecting **Share**.
 5. Allow microphone access if prompted.
@@ -96,9 +96,9 @@ It can surface live questions, missed points, and quick concept help during a me
 
 You can import existing audio files directly through the web client.
 
-Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, MP4, and WMA.
+Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS.
 
-The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the in-flight live transcript UI but share the same final processing pipeline as live recordings.
+The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
 
 ### Cancel Processing
 

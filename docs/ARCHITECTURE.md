@@ -55,7 +55,7 @@ The browser capture stack is responsible for:
 ## Recording Flow
 
 1. The browser authenticates through a Secure HttpOnly session cookie.
-2. The user starts **Meet Now** from a supported Chromium browser on Windows or Linux.
+2. From the **Meet Now** card, the user clicks **Start Meeting** in a supported Chromium browser on Windows or Linux.
 3. `/recordings/init` creates an `UPLOADING` recording for the current user. The same browser session is used for segment, pause, resume, discard, and finalize operations.
 4. The browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short WebM/Opus slices.
 5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing 0-based sequence numbers.

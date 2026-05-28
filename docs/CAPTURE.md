@@ -95,7 +95,7 @@ Switching to another browser tab, changing the active window, or using another a
 
 ## Paused Recording Lock
 
-Nojoin allows one active browser capture per user. If a paused recording exists, **Meet Now** and import entry points stay blocked until you choose one of the modal actions:
+Nojoin allows one active browser capture per user. If a paused recording exists, new capture and import entry points stay blocked until you choose one of the modal actions:
 
 - **Resume recording** to continue capture from the same recording.
 - **Discard recording** to remove the partial upload and start fresh.

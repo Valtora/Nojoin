@@ -80,7 +80,7 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 ## 5. Make Your First Recording
 
 1. Open the dashboard.
-2. Use **Meet Now** to start a recording.
+2. Use the **Meet Now** card and click **Start Meeting**.
 3. Select the meeting tab, window, or screen in the browser share picker.
 4. Enable shared audio in the picker and allow microphone access if prompted.
 5. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance should appear after enough speech accumulates.

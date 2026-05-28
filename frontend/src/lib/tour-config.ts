@@ -22,7 +22,7 @@ export const dashboardSteps: DriveStep[] = [
     element: '#dashboard-meeting-controls',
     popover: {
       title: 'Meeting Controls',
-      description: 'Start, pause, and manage live capture from here. The button label tells you what to do next: Start Meeting when ready, or resolve the paused-recording or browser-support message before trying again.',
+      description: 'The Meet Now card is where live capture starts. Click Start Meeting when ready, or resolve the paused-recording or browser-support message before trying again.',
       side: 'left',
     }
   },
@@ -65,7 +65,7 @@ export const recordingsSteps: DriveStep[] = [
     element: '#recordings-landing-panel',
     popover: {
       title: 'Start Here',
-      description: 'When this workspace is empty, use Meet Now on the dashboard to record a session. If the button is disabled, follow the paused-recording or browser-support guidance first.',
+      description: 'When this workspace is empty, go to the Meet Now card on the dashboard and click Start Meeting to record a session. If the button is disabled, follow the paused-recording or browser-support guidance first.',
       side: 'left',
     }
   }

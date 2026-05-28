@@ -91,7 +91,7 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
   - Lint: `cd frontend && npm run lint`
 - **Browser Capture Verification**:
   - Unit tests: `cd frontend && npm run test -- --run src/lib/capture`
-  - Manual smoke: start Nojoin in a supported Chromium browser, share a meeting tab with audio enabled, verify waveform/live transcript, pause/resume, stop/finalize, and unsupported-browser messaging where practical.
+  - Manual smoke: start Nojoin in a supported Chromium browser, share a meeting tab with audio enabled, verify waveform and Meeting Edge or processing-state updates, pause/resume, stop/finalize, and unsupported-browser messaging where practical.
 
 ### Release Workflow (Unified Lock-step)
 

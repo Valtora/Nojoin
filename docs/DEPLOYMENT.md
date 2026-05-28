@@ -96,7 +96,7 @@ Processing will be slower, but the application remains usable.
 Create `.env` from `.env.example` and treat it as the canonical operator configuration file.
 The compose stack derives internal service URLs for PostgreSQL, Redis, and Celery automatically, so those values are intentionally not part of `.env.example`.
 Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
-Nojoin auto-generates and persists its JWT signing key under `data/.secret_key`, so no `.env` setting is required for that.
+Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that.
 Nojoin can also auto-generate `data/.data_encryption_key`, but operators should treat that as a fallback rather than the primary persistence strategy.
 
 ### Always Set

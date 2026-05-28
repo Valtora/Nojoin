@@ -93,7 +93,7 @@ Live recording is owned by the web client through browser capture APIs.
 - **Browser Sessions:** The Web Client authenticates with Secure HttpOnly cookies issued by the session login flow. These cookies are used for normal browser traffic, including authenticated WebSocket connections.
 - **Bearer Tokens:** Explicit Bearer tokens are reserved for non-browser API clients. Browser recording operations use the authenticated session cookie and strict ownership checks.
 - **Password Rotation Enforcement:** Users created manually by an Admin or Owner, and users whose password is reset by a superuser, must change their password before they can access other authenticated features. While the flag is set, only the self-profile, self-password update, and logout routes remain available.
-- **JWT Secret Key:** A secure JWT signing key is automatically generated on first startup and persisted to `data/.secret_key`. This ensures tokens remain valid across container restarts without requiring manual configuration.
+- **JWT Signing Keys:** A secure JWT signing keyring is automatically generated on first startup and persisted to `data/.secret_keys.json`. Legacy `data/.secret_key` files are migrated automatically so tokens remain valid across container restarts without requiring manual configuration.
 - **Authorization:** Role-based access control (Owner/Admin/User), privilege guardrails around Owner and superuser creation, and strict ownership checks ensure users can only access their own data.
 - **Public Auth Throttling:** Login, invitation validation, and invitation-backed registration are rate limited to reduce brute-force and enumeration attacks.
 - **Input Validation:** Strict validation and sanitization of all user inputs, including configuration settings, to prevent injection attacks and ensure data integrity.
@@ -141,9 +141,9 @@ Live recording is owned by the web client through browser capture APIs.
   - **Sensitive Archive:** Calendar provider credentials and connected-calendar OAuth tokens are intentionally preserved so calendar integrations can be restored on a new installation. Backup archives must therefore be handled as secret material.
   - **Ownership:** Backups include user mapping to ensure correct ownership upon restoration.
 - **Flexibility:**
-  - **Smart Deduplication:** Audio files are identified by hash to prevent duplication.
+  - **Smart Deduplication:** Restored recordings are matched by durable identifiers (`meeting_uid`, `public_id`) with a legacy fallback to the recording audio path to prevent duplicate restores.
   - **Additive Restore:** Can merge data into an existing installation.
-  - **Conflict Resolution:** Options to skip, overwrite, or create copies of conflicting data.
+  - **Conflict Resolution:** Options to skip (safe merge) or overwrite conflicting data.
 
 ---
 
@@ -183,7 +183,7 @@ The system provides the following core capabilities:
   - **Transcript Search:** Client-side fuzzy search for locating specific text within a transcript.
   - **Organization:** Hierarchical tagging system with expand/collapse functionality and custom creation modal.
 - **Web Playback:** Modern HTML5 player with synced transcript and edit mode.
-  - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete. This is handled by the Sidebar.tsx file.
+  - **Context Menus:** Right-click context menus on recording lists provide quick access to actions like Rename, Retry Processing, Show Recording Info, Archive, and Delete across both the main recording cards and the sidebar list view.
 - **Dashboard Workspace:** The dashboard now combines `Meet Now`, an interactive calendar shell with recorded meeting history, and personal task capture into a single operational home surface.
   - **Calendar Modes:** Month navigation, a `Today` reset action, and an Agenda toggle are live. Without a connected calendar source, both modes remain empty-state views.
   - **Calendar Colour Mapping:** Connected calendar sources can be given distinct colours in Personal settings. The dashboard month dots and agenda cards reuse those per-calendar colours instead of collapsing every event into a single accent colour.
