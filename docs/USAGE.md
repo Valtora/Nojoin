@@ -58,6 +58,7 @@ The dedicated **Tasks** page sits in the main navigation between **Dashboard** a
 
 Use it to manage tasks more holistically:
 
+- Select **Create Task** to open the task creation form when you need to add a richer task.
 - **Open** shows active, non-archived tasks.
 - **Completed** shows finished, non-archived tasks that can still be reopened.
 - **Archived** shows hidden tasks and lets you restore them to the active task surfaces.

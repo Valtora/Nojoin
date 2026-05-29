@@ -248,6 +248,7 @@ export default function TasksWorkspace() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<number | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [draft, setDraft] = useState<TaskDraft>(EMPTY_DRAFT);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<TaskDraft>(EMPTY_DRAFT);
@@ -347,6 +348,7 @@ export default function TasksWorkspace() {
       });
       setTasks((currentTasks) => sortTasks([...currentTasks, createdTask]));
       setDraft(EMPTY_DRAFT);
+      setIsCreateOpen(false);
       addNotification({ type: "success", message: "Task created." });
     } catch (error: unknown) {
       addNotification({
@@ -480,81 +482,108 @@ export default function TasksWorkspace() {
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
-            {(["open", "completed", "archived"] as TaskView[]).map((item) => (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
+              {(["open", "completed", "archived"] as TaskView[]).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setView(item)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-colors ${
+                    view === item
+                      ? "bg-white text-orange-700 shadow-sm dark:bg-gray-800 dark:text-orange-300"
+                      : "text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            {!isCreateOpen && (
               <button
-                key={item}
                 type="button"
-                onClick={() => setView(item)}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-colors ${
-                  view === item
-                    ? "bg-white text-orange-700 shadow-sm dark:bg-gray-800 dark:text-orange-300"
-                    : "text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
-                }`}
+                onClick={() => setIsCreateOpen(true)}
+                className="inline-flex h-[3.625rem] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-orange-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-orange-700"
               >
-                {item}
+                <Plus className="h-4 w-4" />
+                Create Task
               </button>
-            ))}
+            )}
           </div>
         </div>
 
-        <form
-          onSubmit={handleCreateTask}
-          className="mt-8 grid gap-4 rounded-[1.75rem] border border-orange-100 bg-orange-50/50 p-4 dark:border-orange-500/15 dark:bg-orange-500/5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.55fr)]"
-        >
-          <div className="space-y-3">
-            <input
-              value={draft.title}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, title: event.target.value }))
-              }
-              placeholder="Task title"
-              className="h-12 w-full rounded-2xl border border-orange-200 bg-white px-4 text-sm font-semibold text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
-            />
-            <textarea
-              value={draft.body}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, body: event.target.value }))
-              }
-              placeholder="Add context, notes, or acceptance criteria"
-              rows={4}
-              className="w-full resize-none rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-            />
-          </div>
+        {isCreateOpen && (
+          <form
+            onSubmit={handleCreateTask}
+            className="mt-8 grid items-stretch gap-4 rounded-[1.75rem] border border-orange-100 bg-orange-50/50 p-4 dark:border-orange-500/15 dark:bg-orange-500/5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]"
+          >
+            <div className="flex flex-col gap-3">
+              <input
+                value={draft.title}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, title: event.target.value }))
+                }
+                placeholder="Task title"
+                className="h-12 w-full rounded-2xl border border-orange-200 bg-white px-4 text-sm font-semibold text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+              />
+              <textarea
+                value={draft.body}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, body: event.target.value }))
+                }
+                placeholder="Add context, notes, or acceptance criteria"
+                className="min-h-48 flex-1 resize-none rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+              />
+            </div>
 
-          <div className="space-y-4">
-            <DeadlinePickerButton
-              value={draft.dueAt}
-              onClick={() => setDeadlineTarget("create")}
-            />
-            <TagSelector
-              tags={tags}
-              selectedIds={draft.tagIds}
-              onChange={(tagIds) =>
-                setDraft((current) => ({ ...current, tagIds }))
-              }
-            />
-            <RecordingSelector
-              recordings={recordings}
-              selectedIds={draft.recordingIds}
-              onChange={(recordingIds) =>
-                setDraft((current) => ({ ...current, recordingIds }))
-              }
-            />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Add task
-            </button>
-          </div>
-        </form>
+            <div className="flex flex-col gap-4">
+              <DeadlinePickerButton
+                value={draft.dueAt}
+                onClick={() => setDeadlineTarget("create")}
+              />
+              <TagSelector
+                tags={tags}
+                selectedIds={draft.tagIds}
+                onChange={(tagIds) =>
+                  setDraft((current) => ({ ...current, tagIds }))
+                }
+              />
+              <RecordingSelector
+                recordings={recordings}
+                selectedIds={draft.recordingIds}
+                onChange={(recordingIds) =>
+                  setDraft((current) => ({ ...current, recordingIds }))
+                }
+              />
+              <div className="mt-auto flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(EMPTY_DRAFT);
+                    setIsCreateOpen(false);
+                  }}
+                  disabled={submitting}
+                  className="inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                  aria-label="Cancel task creation"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  Add task
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
       </section>
 
       <section className="grid gap-4">
