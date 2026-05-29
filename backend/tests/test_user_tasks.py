@@ -13,12 +13,14 @@ def make_task(
     created_at: datetime,
     due_at: datetime | None = None,
     completed_at: datetime | None = None,
+    archived_at: datetime | None = None,
 ):
     return SimpleNamespace(
         id=task_id,
         title=title,
         due_at=due_at,
         completed_at=completed_at,
+        archived_at=archived_at,
         created_at=created_at,
     )
 
@@ -60,8 +62,14 @@ def test_sort_user_tasks_orders_open_then_completed():
             created_at=now - timedelta(days=1),
             completed_at=now - timedelta(minutes=10),
         ),
+        make_task(
+            task_id=5,
+            title="Archived",
+            created_at=now,
+            archived_at=now - timedelta(minutes=5),
+        ),
     ]
 
     sorted_tasks = sort_tasks_for_dashboard(tasks)
 
-    assert [task.id for task in sorted_tasks] == [3, 2, 1, 4]
+    assert [task.id for task in sorted_tasks] == [3, 2, 1, 4, 5]

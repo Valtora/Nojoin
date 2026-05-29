@@ -147,8 +147,12 @@ SCHEMA_STATEMENTS = [
     """
     CREATE TABLE tags (
         id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
         name VARCHAR(255) NOT NULL,
-        color VARCHAR(32)
+        color VARCHAR(32),
+        user_id INTEGER,
+        parent_id INTEGER
     )
     """,
     """
@@ -164,9 +168,31 @@ SCHEMA_STATEMENTS = [
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
         title VARCHAR(255) NOT NULL,
+        body TEXT,
         due_at DATETIME,
         completed_at DATETIME,
+        archived_at DATETIME,
         user_id INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE user_task_tags (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        task_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        UNIQUE (task_id, tag_id)
+    )
+    """,
+    """
+    CREATE TABLE user_task_recordings (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        task_id INTEGER NOT NULL,
+        recording_id INTEGER NOT NULL,
+        UNIQUE (task_id, recording_id)
     )
     """,
 ]
@@ -324,8 +350,10 @@ async def seed_task(
     task_id: int,
     user_id: int,
     title: str,
+    body: str | None = None,
     due_at: datetime | None = None,
     completed_at: datetime | None = None,
+    archived_at: datetime | None = None,
 ) -> None:
     await execute_sql(
         session_maker,
@@ -335,16 +363,20 @@ async def seed_task(
             created_at,
             updated_at,
             title,
+            body,
             due_at,
             completed_at,
+            archived_at,
             user_id
         ) VALUES (
             :id,
             :created_at,
             :updated_at,
             :title,
+            :body,
             :due_at,
             :completed_at,
+            :archived_at,
             :user_id
         )
         """,
@@ -353,8 +385,10 @@ async def seed_task(
             "created_at": TEST_TIMESTAMP,
             "updated_at": TEST_TIMESTAMP,
             "title": title,
+            "body": body,
             "due_at": due_at,
             "completed_at": completed_at,
+            "archived_at": archived_at,
             "user_id": user_id,
         },
     )
@@ -585,18 +619,90 @@ async def seed_tag(
     *,
     tag_id: int,
     name: str,
+    user_id: int | None = 1,
     color: str | None = None,
 ) -> None:
     await execute_sql(
         session_maker,
         """
-        INSERT INTO tags (id, name, color)
-        VALUES (:id, :name, :color)
+        INSERT INTO tags (id, created_at, updated_at, name, color, user_id)
+        VALUES (:id, :created_at, :updated_at, :name, :color, :user_id)
         """,
         {
             "id": tag_id,
+            "created_at": TEST_TIMESTAMP,
+            "updated_at": TEST_TIMESTAMP,
             "name": name,
             "color": color,
+            "user_id": user_id,
+        },
+    )
+
+
+async def seed_user_task_tag(
+    session_maker: sessionmaker,
+    *,
+    row_id: int,
+    task_id: int,
+    tag_id: int,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO user_task_tags (
+            id,
+            created_at,
+            updated_at,
+            task_id,
+            tag_id
+        ) VALUES (
+            :id,
+            :created_at,
+            :updated_at,
+            :task_id,
+            :tag_id
+        )
+        """,
+        {
+            "id": row_id,
+            "created_at": TEST_TIMESTAMP,
+            "updated_at": TEST_TIMESTAMP,
+            "task_id": task_id,
+            "tag_id": tag_id,
+        },
+    )
+
+
+async def seed_user_task_recording(
+    session_maker: sessionmaker,
+    *,
+    row_id: int,
+    task_id: int,
+    recording_id: int,
+) -> None:
+    await execute_sql(
+        session_maker,
+        """
+        INSERT INTO user_task_recordings (
+            id,
+            created_at,
+            updated_at,
+            task_id,
+            recording_id
+        ) VALUES (
+            :id,
+            :created_at,
+            :updated_at,
+            :task_id,
+            :recording_id
+        )
+        """,
+        {
+            "id": row_id,
+            "created_at": TEST_TIMESTAMP,
+            "updated_at": TEST_TIMESTAMP,
+            "task_id": task_id,
+            "recording_id": recording_id,
         },
     )
 
@@ -1285,6 +1391,52 @@ async def test_read_tasks_returns_only_current_users_tasks(
 
 
 @pytest.mark.anyio
+async def test_read_tasks_hides_archived_tasks_by_default(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_task(test_session_maker, task_id=101, user_id=1, title="Visible task")
+    await seed_task(
+        test_session_maker,
+        task_id=202,
+        user_id=1,
+        title="Archived task",
+        archived_at=TEST_TIMESTAMP,
+    )
+    override_current_user(1)
+
+    response = await client.get("/api/v1/tasks/")
+
+    assert response.status_code == 200
+    assert [task["id"] for task in response.json()] == [101]
+
+
+@pytest.mark.anyio
+async def test_read_tasks_can_return_archived_tasks(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_task(test_session_maker, task_id=101, user_id=1, title="Visible task")
+    await seed_task(
+        test_session_maker,
+        task_id=202,
+        user_id=1,
+        title="Archived task",
+        archived_at=TEST_TIMESTAMP,
+    )
+    override_current_user(1)
+
+    response = await client.get("/api/v1/tasks/", params={"status": "archived"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [task["id"] for task in payload] == [202]
+    assert payload[0]["archived_at"] is not None
+
+
+@pytest.mark.anyio
 async def test_read_tasks_returns_utc_instants_for_due_dates(
     client: AsyncClient,
     override_current_user,
@@ -1350,6 +1502,225 @@ async def test_create_task_normalises_due_at_using_user_timezone(
         ).scalar_one()
 
     assert datetime.fromisoformat(str(stored_due_at)) == datetime(2026, 4, 13, 12, 30, 0)
+
+
+@pytest.mark.anyio
+async def test_create_task_assigns_existing_recording_tags(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_tag(test_session_maker, tag_id=301, name="Follow-up", color="orange")
+    override_current_user(1)
+
+    response = await client.post(
+        "/api/v1/tasks/",
+        json={
+            "title": "Join planning call",
+            "body": "Ask about rollout risks.",
+            "tag_ids": [301],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["body"] == "Ask about rollout risks."
+    assert payload["tags"] == [
+        {
+            "id": 301,
+            "created_at": TEST_TIMESTAMP.isoformat().replace("+00:00", "Z"),
+            "updated_at": TEST_TIMESTAMP.isoformat().replace("+00:00", "Z"),
+            "name": "Follow-up",
+            "color": "orange",
+            "user_id": 1,
+            "parent_id": None,
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_create_task_links_owned_recordings(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_recording(
+        test_session_maker,
+        recording_id=401,
+        user_id=1,
+        name="Planning meeting",
+        public_id="rec-planning",
+        created_at=TEST_TIMESTAMP,
+    )
+    await seed_recording(
+        test_session_maker,
+        recording_id=402,
+        user_id=1,
+        name="Retrospective",
+        public_id="rec-retro",
+        created_at=TEST_TIMESTAMP,
+    )
+    override_current_user(1)
+
+    response = await client.post(
+        "/api/v1/tasks/",
+        json={
+            "title": "Follow up",
+            "body": "Review both meetings.",
+            "recording_ids": ["rec-planning", "rec-retro"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["body"] == "Review both meetings."
+    assert payload["linked_recordings"] == [
+        {
+            "id": "rec-planning",
+            "name": "Planning meeting",
+            "created_at": TEST_TIMESTAMP.replace(tzinfo=UTC)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "duration_seconds": None,
+            "status": "PROCESSED",
+            "is_archived": False,
+            "is_deleted": False,
+        },
+        {
+            "id": "rec-retro",
+            "name": "Retrospective",
+            "created_at": TEST_TIMESTAMP.replace(tzinfo=UTC)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "duration_seconds": None,
+            "status": "PROCESSED",
+            "is_archived": False,
+            "is_deleted": False,
+        },
+    ]
+
+
+@pytest.mark.anyio
+async def test_create_task_rejects_other_users_recording(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_recording(
+        test_session_maker,
+        recording_id=401,
+        user_id=2,
+        name="Other meeting",
+        public_id="rec-other",
+        created_at=TEST_TIMESTAMP,
+    )
+    override_current_user(1)
+
+    response = await client.post(
+        "/api/v1/tasks/",
+        json={"title": "Follow up", "recording_ids": ["rec-other"]},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Task recording not found"}
+
+
+@pytest.mark.anyio
+async def test_create_task_rejects_other_users_tag(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_tag(test_session_maker, tag_id=301, name="Other tag", user_id=2)
+    override_current_user(1)
+
+    response = await client.post(
+        "/api/v1/tasks/",
+        json={"title": "Join planning call", "tag_ids": [301]},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Task tag not found"}
+
+
+@pytest.mark.anyio
+async def test_update_task_archives_and_unarchives_owned_task(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_task(test_session_maker, task_id=202, user_id=1, title="Own task")
+    override_current_user(1)
+
+    archive_response = await client.patch("/api/v1/tasks/202", json={"archived": True})
+
+    assert archive_response.status_code == 200
+    assert archive_response.json()["archived_at"] is not None
+
+    unarchive_response = await client.patch("/api/v1/tasks/202", json={"archived": False})
+
+    assert unarchive_response.status_code == 200
+    assert unarchive_response.json()["archived_at"] is None
+
+
+@pytest.mark.anyio
+async def test_update_task_replaces_tags(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_task(test_session_maker, task_id=202, user_id=1, title="Own task")
+    await seed_tag(test_session_maker, tag_id=301, name="Old", color="gray")
+    await seed_tag(test_session_maker, tag_id=302, name="New", color="orange")
+    await seed_user_task_tag(test_session_maker, row_id=401, task_id=202, tag_id=301)
+    override_current_user(1)
+
+    response = await client.patch("/api/v1/tasks/202", json={"tag_ids": [302]})
+
+    assert response.status_code == 200
+    assert [tag["id"] for tag in response.json()["tags"]] == [302]
+
+
+@pytest.mark.anyio
+async def test_update_task_replaces_linked_recordings(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_task(test_session_maker, task_id=202, user_id=1, title="Own task")
+    await seed_recording(
+        test_session_maker,
+        recording_id=401,
+        user_id=1,
+        name="Old meeting",
+        public_id="rec-old",
+        created_at=TEST_TIMESTAMP,
+    )
+    await seed_recording(
+        test_session_maker,
+        recording_id=402,
+        user_id=1,
+        name="New meeting",
+        public_id="rec-new",
+        created_at=TEST_TIMESTAMP,
+    )
+    await seed_user_task_recording(
+        test_session_maker,
+        row_id=501,
+        task_id=202,
+        recording_id=401,
+    )
+    override_current_user(1)
+
+    response = await client.patch(
+        "/api/v1/tasks/202",
+        json={"recording_ids": ["rec-new"]},
+    )
+
+    assert response.status_code == 200
+    assert [recording["id"] for recording in response.json()["linked_recordings"]] == [
+        "rec-new"
+    ]
 
 
 @pytest.mark.anyio

@@ -248,8 +248,22 @@ export interface Tag extends BaseDBModel {
 
 export interface UserTask extends BaseDBModel {
   title: string;
+  body?: string | null;
   due_at?: string | null;
   completed_at?: string | null;
+  archived_at?: string | null;
+  tags?: Tag[];
+  linked_recordings?: UserTaskRecordingLink[];
+}
+
+export interface UserTaskRecordingLink {
+  id: RecordingId;
+  name: string;
+  created_at: string;
+  duration_seconds?: number | null;
+  status: RecordingStatus;
+  is_archived: boolean;
+  is_deleted: boolean;
 }
 
 export interface CalendarEventLink {

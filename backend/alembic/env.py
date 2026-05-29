@@ -18,7 +18,7 @@ from backend.models.chat import ChatMessage
 from backend.models.document import Document
 from backend.models.context_chunk import ContextChunk
 from backend.models.people_tag import PeopleTag, PeopleTagLink
-from backend.models.task import UserTask
+from backend.models.task import UserTask, UserTaskRecording, UserTaskTag
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
 from backend.models.pipeline import (
     RecordingAudioChunk,

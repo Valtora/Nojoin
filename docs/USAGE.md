@@ -32,7 +32,7 @@ It brings together:
 
 - **Meet Now** card for live browser capture.
 - **Calendar context** through month and agenda views, including recorded meeting history.
-- **Task List** for personal follow-up work.
+- **Task List** for quick personal follow-up capture.
 
 ### Calendar Surface
 
@@ -48,9 +48,22 @@ Read [CALENDAR.md](CALENDAR.md) for connection and setup details.
 
 ### Task List
 
-The Task List is a personal dashboard list for follow-up work.
+The Task List is a personal dashboard list for quick follow-up work.
 
-You can create, rename, complete, reopen, delete, and schedule tasks. Active deadlines show a live time-remaining badge.
+You can create, rename, complete, reopen, archive, delete, and schedule tasks. Active deadlines show a live time-remaining badge. Archived tasks disappear from the dashboard immediately, including tasks that were already completed.
+
+## Tasks Workspace
+
+The dedicated **Tasks** page sits in the main navigation between **Dashboard** and **Recordings**.
+
+Use it to manage tasks more holistically:
+
+- **Open** shows active, non-archived tasks.
+- **Completed** shows finished, non-archived tasks that can still be reopened.
+- **Archived** shows hidden tasks and lets you restore them to the active task surfaces.
+- Task cards support a title, body, deadline, permanent delete, direct recording links, and the same recording tag taxonomy used elsewhere in Nojoin.
+
+Delete remains permanent. Use archive when you want to hide a task without losing it.
 
 ## Live Recording
 

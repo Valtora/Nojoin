@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calendar, Check, Loader2, Trash2 } from "lucide-react";
+import { Archive, Calendar, Check, Loader2, Trash2 } from "lucide-react";
 
 import {
   createUserTask,
@@ -31,7 +31,7 @@ function parseTaskDeadline(value: string): Date | null {
 
 function sortTasks(tasks: UserTask[]): UserTask[] {
   const active = tasks
-    .filter((task) => !task.completed_at)
+    .filter((task) => !task.archived_at && !task.completed_at)
     .sort((left, right) => {
       const leftDue = left.due_at
         ? parseTaskDeadline(left.due_at)?.getTime() ?? Number.MAX_SAFE_INTEGER
@@ -50,7 +50,7 @@ function sortTasks(tasks: UserTask[]): UserTask[] {
     });
 
   const completed = tasks
-    .filter((task) => Boolean(task.completed_at))
+    .filter((task) => !task.archived_at && Boolean(task.completed_at))
     .sort(
       (left, right) =>
         new Date(right.completed_at || 0).getTime() -
@@ -205,11 +205,11 @@ export default function DashboardTasksPanel() {
 
   const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
   const openTasks = useMemo(
-    () => sortedTasks.filter((task) => !task.completed_at),
+    () => sortedTasks.filter((task) => !task.archived_at && !task.completed_at),
     [sortedTasks],
   );
   const completedTasks = useMemo(
-    () => sortedTasks.filter((task) => Boolean(task.completed_at)),
+    () => sortedTasks.filter((task) => !task.archived_at && Boolean(task.completed_at)),
     [sortedTasks],
   );
   const deadlineModalTask = useMemo(
@@ -503,6 +503,33 @@ export default function DashboardTasksPanel() {
     }
   };
 
+  const handleArchiveTask = async (task: UserTask) => {
+    const saved = await commitEditingTask();
+    if (!saved) {
+      return;
+    }
+
+    setBusyTaskId(task.id);
+
+    try {
+      await updateUserTask(task.id, {
+        archived: true,
+      });
+      setTasks((currentTasks) =>
+        currentTasks.filter((currentTask) => currentTask.id !== task.id),
+      );
+      addNotification({ message: "Task archived.", type: "success" });
+    } catch (archiveError: any) {
+      addNotification({
+        message:
+          archiveError.response?.data?.detail || "Failed to archive task.",
+        type: "error",
+      });
+    } finally {
+      setBusyTaskId(null);
+    }
+  };
+
   const handleSaveDeadline = async (dueDate: Date | null): Promise<boolean> => {
     if (deadlineModalTaskId === null) {
       return false;
@@ -693,15 +720,26 @@ export default function DashboardTasksPanel() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteTask(task.id)}
-                        disabled={isBusy}
-                        className="inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-2xl border border-transparent bg-white/80 text-gray-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-gray-400 dark:hover:border-rose-500/10 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                        aria-label={`Delete ${task.title}`}
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
+                      <div className="flex shrink-0 self-center rounded-2xl border border-transparent bg-white/80 dark:bg-white/5">
+                        <button
+                          type="button"
+                          onClick={() => void handleArchiveTask(task)}
+                          disabled={isBusy}
+                          className="inline-flex h-12 w-12 items-center justify-center rounded-l-2xl text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:text-gray-400 dark:hover:bg-amber-500/10 dark:hover:text-amber-300"
+                          aria-label={`Archive ${task.title}`}
+                        >
+                          <Archive className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteTask(task.id)}
+                          disabled={isBusy}
+                          className="inline-flex h-12 w-12 items-center justify-center rounded-r-2xl text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                          aria-label={`Delete ${task.title}`}
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -802,15 +840,26 @@ export default function DashboardTasksPanel() {
                         )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteTask(task.id)}
-                        disabled={isBusy}
-                        className="inline-flex h-12 w-12 shrink-0 self-center items-center justify-center rounded-2xl border border-transparent bg-white/80 text-gray-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-gray-400 dark:hover:border-rose-500/10 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
-                        aria-label={`Delete ${task.title}`}
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
+                      <div className="flex shrink-0 self-center rounded-2xl border border-transparent bg-white/80 dark:bg-white/5">
+                        <button
+                          type="button"
+                          onClick={() => void handleArchiveTask(task)}
+                          disabled={isBusy}
+                          className="inline-flex h-12 w-12 items-center justify-center rounded-l-2xl text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:text-gray-400 dark:hover:bg-amber-500/10 dark:hover:text-amber-300"
+                          aria-label={`Archive ${task.title}`}
+                        >
+                          <Archive className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteTask(task.id)}
+                          disabled={isBusy}
+                          className="inline-flex h-12 w-12 items-center justify-center rounded-r-2xl text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                          aria-label={`Delete ${task.title}`}
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

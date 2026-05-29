@@ -9,7 +9,7 @@ This guide explains what is included, what remains redacted, and what should be 
 A backup archive can include:
 
 - Database records.
-- Dashboard state such as Task List items.
+- Dashboard and Tasks workspace state such as Task List items, task archive state, task tag links, and task recording links.
 - People records and stored voiceprint embeddings.
 - Calendar provider configuration.
 - Connected-calendar tokens, selected calendars, sync cursors, colour overrides, and cached events.

@@ -20,7 +20,7 @@ from backend.models.recording import Recording
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.chat import ChatMessage
-from backend.models.task import UserTask
+from backend.models.task import UserTask, UserTaskRecording, UserTaskTag
 from backend.utils.path_manager import PathManager
 from backend.utils.audio import ensure_ffmpeg_in_path
 from backend.utils.version import get_installed_version
@@ -50,7 +50,9 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("global_speakers", GlobalSpeaker),
     ("people_tag_links", PeopleTagLink),
     ("tags", Tag),
+    ("user_task_tags", UserTaskTag),
     ("recordings", Recording),
+    ("user_task_recordings", UserTaskRecording),
     ("calendar_connections", CalendarConnection),
     ("calendar_sources", CalendarSource),
     ("calendar_events", CalendarEvent),
@@ -1435,6 +1437,57 @@ class BackupManager:
                             if item_data.get("user_id") in id_map["users"]:
                                 item_data["user_id"] = id_map["users"][item_data["user_id"]]
                             else:
+                                continue
+
+                        elif table_name == "user_task_tags":
+                            old_task_id = item_data.get("task_id")
+                            if old_task_id in id_map["user_tasks"]:
+                                item_data["task_id"] = id_map["user_tasks"][old_task_id]
+                            else:
+                                continue
+
+                            if item_data.get("tag_id") in id_map["tags"]:
+                                item_data["tag_id"] = id_map["tags"][item_data["tag_id"]]
+                            else:
+                                logger.warning(f"Skipping user_task_tag: tag_id {item_data.get('tag_id')} not found in map.")
+                                continue
+
+                            existing_link = session.exec(
+                                select(UserTaskTag)
+                                .where(UserTaskTag.task_id == item_data["task_id"])
+                                .where(UserTaskTag.tag_id == item_data["tag_id"])
+                            ).first()
+
+                            if existing_link:
+                                if old_id is not None:
+                                    id_map["user_task_tags"][old_id] = existing_link.id
+                                continue
+
+                        elif table_name == "user_task_recordings":
+                            old_task_id = item_data.get("task_id")
+                            if old_task_id in id_map["user_tasks"]:
+                                item_data["task_id"] = id_map["user_tasks"][old_task_id]
+                            else:
+                                continue
+
+                            old_rec_id = item_data.get("recording_id")
+                            if old_rec_id in id_map["recordings"]:
+                                item_data["recording_id"] = id_map["recordings"][old_rec_id]
+                            else:
+                                continue
+
+                            existing_link = session.exec(
+                                select(UserTaskRecording)
+                                .where(UserTaskRecording.task_id == item_data["task_id"])
+                                .where(
+                                    UserTaskRecording.recording_id
+                                    == item_data["recording_id"]
+                                )
+                            ).first()
+
+                            if existing_link:
+                                if old_id is not None:
+                                    id_map["user_task_recordings"][old_id] = existing_link.id
                                 continue
 
                         elif table_name == "recording_speakers":

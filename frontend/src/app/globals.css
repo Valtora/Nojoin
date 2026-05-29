@@ -292,6 +292,22 @@ body {
   color: #9ca3af;
 }
 
+.dark .task-deadline-calendar .react-datepicker__month,
+.dark .task-deadline-calendar .react-datepicker__week,
+.dark .task-deadline-calendar .react-datepicker__day-names {
+  background: transparent;
+}
+
+.dark .task-deadline-calendar .react-datepicker__day--keyboard-selected,
+.dark .task-deadline-calendar .react-datepicker__day--selected {
+  background-color: #ea580c !important;
+  color: #fff7ed !important;
+}
+
+.dark .task-deadline-calendar input[type="time"] {
+  color-scheme: dark;
+}
+
 /* Spell check error decoration */
 .spellcheck-error {
   text-decoration: underline wavy red;

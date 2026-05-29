@@ -62,8 +62,10 @@ class TestUserTask(TestBase, table=True):
     __tablename__ = "backup_test_user_tasks"
 
     title: str
+    body: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     due_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
     user_id: int
 
 
@@ -105,6 +107,20 @@ class TestTag(TestBase, table=True):
     color: Optional[str] = None
     user_id: Optional[int] = None
     parent_id: Optional[int] = None
+
+
+class TestUserTaskTag(TestBase, table=True):
+    __tablename__ = "backup_test_user_task_tags"
+
+    task_id: int
+    tag_id: int
+
+
+class TestUserTaskRecording(TestBase, table=True):
+    __tablename__ = "backup_test_user_task_recordings"
+
+    task_id: int
+    recording_id: int
 
 
 class TestRecording(TestBase, table=True):
@@ -223,7 +239,9 @@ TEST_MODELS = [
     ("global_speakers", TestGlobalSpeaker),
     ("people_tag_links", TestPeopleTagLink),
     ("tags", TestTag),
+    ("user_task_tags", TestUserTaskTag),
     ("recordings", TestRecording),
+    ("user_task_recordings", TestUserTaskRecording),
     ("calendar_connections", TestCalendarConnection),
     ("calendar_sources", TestCalendarSource),
     ("calendar_events", TestCalendarEvent),
@@ -303,7 +321,9 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_manager_module, "GlobalSpeaker", TestGlobalSpeaker)
     monkeypatch.setattr(backup_manager_module, "PeopleTagLink", TestPeopleTagLink)
     monkeypatch.setattr(backup_manager_module, "Tag", TestTag)
+    monkeypatch.setattr(backup_manager_module, "UserTaskTag", TestUserTaskTag)
     monkeypatch.setattr(backup_manager_module, "Recording", TestRecording)
+    monkeypatch.setattr(backup_manager_module, "UserTaskRecording", TestUserTaskRecording)
     monkeypatch.setattr(backup_manager_module, "CalendarConnection", TestCalendarConnection)
     monkeypatch.setattr(backup_manager_module, "CalendarSource", TestCalendarSource)
     monkeypatch.setattr(backup_manager_module, "CalendarEvent", TestCalendarEvent)
@@ -348,8 +368,24 @@ async def seed_source_data(
             TestUserTask(
                 id=20,
                 title="Follow up with supplier",
+                body="Confirm shipment timeline.",
                 due_at=datetime(2026, 4, 18, 9, 30),
                 user_id=1,
+            )
+        )
+        session.add(
+            TestTag(
+                id=25,
+                name="Follow-up",
+                color="orange",
+                user_id=1,
+            )
+        )
+        session.add(
+            TestUserTaskTag(
+                id=26,
+                task_id=20,
+                tag_id=25,
             )
         )
         session.add(
@@ -374,6 +410,13 @@ async def seed_source_data(
                 file_size_bytes=1024,
                 status="PROCESSED",
                 user_id=1,
+            )
+        )
+        session.add(
+            TestUserTaskRecording(
+                id=27,
+                task_id=20,
+                recording_id=40,
             )
         )
         session.add(
@@ -515,6 +558,8 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         calendar_connections = json.loads(archive.read("calendar_connections.json"))
         recordings = json.loads(archive.read("recordings.json"))
         user_tasks = json.loads(archive.read("user_tasks.json"))
+        user_task_tags = json.loads(archive.read("user_task_tags.json"))
+        user_task_recordings = json.loads(archive.read("user_task_recordings.json"))
         global_speakers = json.loads(archive.read("global_speakers.json"))
         users = json.loads(archive.read("users.json"))
 
@@ -533,6 +578,11 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     assert calendar_connections[0]["access_token"] == "google-access-token"
     assert calendar_connections[0]["refresh_token"] == "google-refresh-token"
     assert user_tasks[0]["title"] == "Follow up with supplier"
+    assert user_tasks[0]["body"] == "Confirm shipment timeline."
+    assert user_task_tags[0]["task_id"] == 20
+    assert user_task_tags[0]["tag_id"] == 25
+    assert user_task_recordings[0]["task_id"] == 20
+    assert user_task_recordings[0]["recording_id"] == 40
     assert global_speakers[0]["embedding"] == [0.11, 0.22, 0.33]
     assert users[0]["settings"]["gemini_api_key"] == "REDACTED"
 
@@ -569,6 +619,8 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         restored_source = session.exec(select(TestCalendarSource)).one()
         restored_event = session.exec(select(TestCalendarEvent)).one()
         restored_task = session.exec(select(TestUserTask)).one()
+        restored_task_tag = session.exec(select(TestUserTaskTag)).one()
+        restored_task_recording = session.exec(select(TestUserTaskRecording)).one()
         restored_user = session.exec(select(TestUser)).one()
         restored_global_speaker = session.exec(select(TestGlobalSpeaker)).one()
         restored_speakers = session.exec(
@@ -588,6 +640,10 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     assert restored_source.sync_cursor == "cursor-123"
     assert restored_event.meeting_url == "https://meet.google.com/abc-defg-hij"
     assert restored_task.due_at == datetime(2026, 4, 18, 9, 30)
+    assert restored_task.body == "Confirm shipment timeline."
+    assert restored_task_tag.task_id == restored_task.id
+    assert restored_task_recording.task_id == restored_task.id
+    assert restored_task_recording.recording_id == restored_recording.id
     assert restored_user.settings["gemini_api_key"] is None
     assert restored_global_speaker.embedding == [0.11, 0.22, 0.33]
     assert restored_global_speaker.is_voiceprint_locked is True

@@ -6,6 +6,7 @@ import Image from "next/image";
 import {
   Mic,
   LayoutDashboard,
+  ListTodo,
   Archive,
   Trash2,
   Tag as TagIcon,
@@ -611,6 +612,7 @@ export default function MainNav() {
   // Prevent hydration mismatch by using default state until mounted
   const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
   const isDashboardRoute = pathname === "/";
+  const isTasksRoute = pathname === "/tasks";
   const isRecordingsRoute =
     pathname === "/recordings" || pathname.startsWith("/recordings/");
 
@@ -801,6 +803,19 @@ export default function MainNav() {
             onClick={() => {
               if (!isDashboardRoute) {
                 router.push("/");
+              }
+            }}
+            collapsed={collapsed}
+          />
+
+          <NavItem
+            id="nav-tasks"
+            icon={<ListTodo className="w-5 h-5" />}
+            label="Tasks"
+            isActive={isTasksRoute}
+            onClick={() => {
+              if (!isTasksRoute) {
+                router.push("/tasks");
               }
             }}
             collapsed={collapsed}
