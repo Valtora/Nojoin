@@ -9,15 +9,15 @@ export default function TopBar() {
   const pathname = usePathname();
 
   const isRecordingView = pathname?.startsWith("/recordings/");
-  const buttonClassName = "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800";
+  const buttonClassName = "pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white/90 text-gray-700 shadow-lg shadow-black/10 backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:shadow-black/30";
 
   if (isRecordingView) {
     return null;
   }
 
   return (
-    <div className="sticky top-0 z-30 border-b border-orange-100/80 bg-white/85 backdrop-blur dark:border-gray-800/80 dark:bg-gray-950/85 md:hidden">
-      <div className="flex items-center px-4 py-3">
+    <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-40 lg:hidden">
+      <div className="flex items-center">
         <button
           onClick={toggleMobileNav}
           className={buttonClassName}

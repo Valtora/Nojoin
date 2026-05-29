@@ -310,6 +310,7 @@ function TagItem({
 }
 
 export default function MainNav() {
+  const DESKTOP_BREAKPOINT = 1024;
   const router = useRouter();
   const pathname = usePathname();
   const { pausedRecording, runtimeActive } = useCapture();
@@ -409,14 +410,14 @@ export default function MainNav() {
 
   useEffect(() => {
     const syncViewport = () => {
-      setIsDesktop(window.innerWidth >= 768);
+      setIsDesktop(window.innerWidth >= DESKTOP_BREAKPOINT);
     };
 
     syncViewport();
     window.addEventListener("resize", syncViewport);
 
     return () => window.removeEventListener("resize", syncViewport);
-  }, []);
+  }, [DESKTOP_BREAKPOINT]);
 
   // Handle resize
   useEffect(() => {
@@ -424,7 +425,7 @@ export default function MainNav() {
 
     const handleMouseMove = (e: MouseEvent) => {
       // Limit width on desktop, don't resize on mobile
-      if (window.innerWidth < 768) return;
+      if (window.innerWidth < DESKTOP_BREAKPOINT) return;
       const newWidth = e.clientX;
       if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
         setNavWidth(newWidth);
@@ -730,17 +731,17 @@ export default function MainNav() {
       {/* Mobile Overlay */}
       {isMobileNavOpen && (
         <div
-          className="md:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
           onClick={() => setMobileNavOpen(false)}
         />
       )}
 
       <aside
         id="main-nav"
-        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-50 transition-all duration-300 md:sticky md:top-0 md:h-screen ${
+        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-50 transition-all duration-300 lg:sticky lg:top-0 lg:h-screen ${
           isMobileNavOpen
-            ? "fixed inset-y-2 left-2 translate-x-0 rounded-[1.75rem] shadow-2xl md:inset-auto md:left-0 md:rounded-none md:shadow-none"
-            : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-[1.75rem] md:relative md:inset-auto md:left-0 md:translate-x-0 md:rounded-none md:shadow-none"
+            ? "fixed inset-y-2 left-2 translate-x-0 rounded-[1.75rem] shadow-2xl lg:inset-auto lg:left-0 lg:rounded-none lg:shadow-none"
+            : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-[1.75rem] lg:relative lg:inset-auto lg:left-0 lg:translate-x-0 lg:rounded-none lg:shadow-none"
         }`}
         style={{
           width: isDesktop
@@ -770,7 +771,7 @@ export default function MainNav() {
             {/* Close button for mobile */}
             <button
               onClick={() => setMobileNavOpen(false)}
-              className="md:hidden p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
+              className="lg:hidden p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
               title="Close Menu"
             >
               <X className="w-5 h-5 text-gray-500" />
@@ -778,7 +779,7 @@ export default function MainNav() {
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleNavCollapse}
-              className="hidden md:block p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
+              className="hidden lg:block p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
               title={collapsed ? "Expand" : "Collapse"}
             >
               {collapsed ? (
@@ -1080,7 +1081,7 @@ export default function MainNav() {
         {/* Resize Handle - Hidden on Mobile */}
         {!collapsed && (
           <div
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden md:block"
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden lg:block"
             onMouseDown={() => setIsResizing(true)}
           >
             <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 group-hover:bg-orange-500 transition-colors" />

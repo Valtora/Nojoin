@@ -10,7 +10,6 @@ import {
   HelpCircle,
   Pause,
   UploadCloud,
-  Menu,
   Search,
   Filter,
   X,
@@ -120,7 +119,6 @@ export default function Sidebar() {
     selectedTagIds,
     toggleTagFilter,
     clearTagFilters,
-    toggleMobileNav,
     selectionMode,
     selectedRecordingIds,
     toggleRecordingSelection,
@@ -433,7 +431,7 @@ export default function Sidebar() {
 
     const handleMouseMove = (e: MouseEvent) => {
       // Don't resize on mobile
-      if (window.innerWidth < 768) return;
+      if (window.innerWidth < 1024) return;
       
       const sidebarElement = document.getElementById("sidebar-recordings-list");
       if (!sidebarElement) return;
@@ -774,28 +772,20 @@ export default function Sidebar() {
     <aside
       id="sidebar-recordings-list"
       className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-100dvh relative transition-opacity ${
-        isRecordingView ? "hidden md:flex" : "w-full md:flex"
+        isRecordingView ? "hidden lg:flex" : "w-full lg:flex"
       }`}
-      style={window.innerWidth >= 768 ? { width: `${recordingsSidebarWidth}px` } : {}}
+      style={window.innerWidth >= 1024 ? { width: `${recordingsSidebarWidth}px` } : {}}
     >
       <div className="flex-1 overflow-y-auto">
       {view === "recordings" && (
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <MeetingControls onMeetingEnd={fetchRecordings} />
         </div>
       )}
 
       {/* Header */}
       <div className="p-4 border-b border-orange-100/80 dark:border-gray-800/80">
-        <div className="mb-3 flex items-center gap-3 md:hidden">
-          <button
-            type="button"
-            onClick={toggleMobileNav}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"
-            title="Open Menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+        <div className="mb-3 flex items-center gap-3 lg:hidden">
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
               Library
@@ -1149,7 +1139,7 @@ export default function Sidebar() {
 
       {/* Resize Handle - Hidden on Mobile */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden md:block z-10"
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden lg:block z-10"
         onMouseDown={() => setIsResizing(true)}
       >
         <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 hover:bg-orange-500 transition-colors" />

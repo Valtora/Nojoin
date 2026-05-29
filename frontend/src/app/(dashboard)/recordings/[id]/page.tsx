@@ -39,7 +39,7 @@ import ReprocessDialog from "@/components/ReprocessDialog";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
 import Link from "next/link";
-import { ArrowLeft, Edit2, MessageSquare, MoreHorizontal, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, Edit2, MessageSquare, MoreHorizontal, RefreshCw } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
@@ -186,6 +186,9 @@ export default function RecordingPage({ params }: PageProps) {
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
   const isInFlightRecording = isRecordingInFlight(recording);
+  const navigateToRecordings = useCallback(() => {
+    router.push("/recordings");
+  }, [router]);
 
   const transcriptSegments = useMemo(
     () => transcriptState?.segments || recording?.transcript?.segments || [],
@@ -410,7 +413,7 @@ export default function RecordingPage({ params }: PageProps) {
   }, [recording?.id, isInFlightRecording]);
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     // Initial check
     checkMobile();
     window.addEventListener("resize", checkMobile);
@@ -1115,20 +1118,38 @@ export default function RecordingPage({ params }: PageProps) {
   // View Components
   const renderMainContent = () => (
     <div className="flex-1 flex flex-col min-h-0 h-full">
+      {isMobile ? (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:hidden">
+          <button
+            onClick={() => router.push("/recordings")}
+            className="pointer-events-auto inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl border border-gray-200 bg-white/90 px-4 text-sm font-medium text-gray-700 shadow-lg shadow-black/10 backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:shadow-black/30"
+            title="Back to Recordings"
+            aria-label="Back to Recordings"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back</span>
+          </button>
+
+          <button
+            onClick={() => setIsMobileHeaderActionsOpen((current) => !current)}
+            className={`pointer-events-auto inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-lg shadow-black/10 backdrop-blur-sm transition-colors dark:shadow-black/30 ${isMobileHeaderActionsOpen ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300" : "border-gray-200 bg-white/90 text-gray-700 hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+            title={isMobileHeaderActionsOpen ? "Hide meeting actions" : "Show meeting actions"}
+            aria-label={isMobileHeaderActionsOpen ? "Hide meeting actions" : "Show meeting actions"}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </button>
+        </div>
+      ) : null}
+
       {/* Header (Title, Tags, Audio Player) */}
-      <header className={`sticky top-0 z-10 shrink-0 border-b-2 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]" : "space-y-4 p-4 md:p-6"}`}>
+      <header className={`sticky top-0 z-10 shrink-0 border-b-2 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-6"}`}>
         {isMobile ? (
           <>
-            <div className="flex items-start gap-3">
-              <button
-                onClick={() => router.push("/recordings")}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"
-                title="Back to Recordings"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-
-              <div className="min-w-0 flex-1 pt-0.5">
+            <div className="rounded-2xl border border-gray-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur dark:border-gray-700/80 dark:bg-gray-800/90">
+              <div className="min-w-0 pt-0.5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+                  Meeting Detail
+                </div>
                 {isEditingTitle ? (
                   <input
                     autoFocus
@@ -1143,11 +1164,11 @@ export default function RecordingPage({ params }: PageProps) {
                         setTitleValue(recording?.name || "");
                       }
                     }}
-                    className="w-full border-b-2 border-orange-500 bg-transparent pb-1 text-xl font-bold text-gray-900 focus:outline-none dark:text-white"
+                    className="mt-1 w-full border-b-2 border-orange-500 bg-transparent pb-1 text-lg font-bold text-gray-900 focus:outline-none dark:text-white"
                   />
                 ) : (
                   <h1
-                    className="flex cursor-pointer items-start gap-2 text-xl font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 group"
+                    className="mt-1 flex cursor-pointer items-start gap-2 text-lg font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 group"
                     onClick={() => setIsEditingTitle(true)}
                     title="Click to rename"
                   >
@@ -1156,18 +1177,10 @@ export default function RecordingPage({ params }: PageProps) {
                   </h1>
                 )}
               </div>
-
-              <button
-                onClick={() => setIsMobileHeaderActionsOpen((current) => !current)}
-                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm transition-colors ${isMobileHeaderActionsOpen ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300" : "border-gray-200 bg-white/90 text-gray-700 hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"}`}
-                title={isMobileHeaderActionsOpen ? "Hide meeting actions" : "Show meeting actions"}
-              >
-                <MoreHorizontal className="h-5 w-5" />
-              </button>
             </div>
 
             {isMobileHeaderActionsOpen && (
-              <div className="rounded-2xl border border-orange-100 bg-orange-50/60 p-2.5 dark:border-orange-500/15 dark:bg-orange-500/5">
+              <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-40 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-orange-100 bg-orange-50/95 p-2.5 shadow-xl shadow-black/10 backdrop-blur dark:border-orange-500/15 dark:bg-orange-500/10 dark:shadow-black/30">
                 {renderMobileHeaderActions()}
               </div>
             )}
@@ -1416,8 +1429,8 @@ export default function RecordingPage({ params }: PageProps) {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 flex min-h-0">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {isInFlightRecording ? (
           <div className="h-full flex-1 min-w-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.34),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.26),_transparent_36%),linear-gradient(180deg,_#ffedd5_0%,_#fff7ed_45%,_#ffe4c4_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.22),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.18),_transparent_34%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_50%,_#0b1220_100%)]">
             <RecordingStatusDisplay
@@ -1427,6 +1440,8 @@ export default function RecordingPage({ params }: PageProps) {
               meetingEdgeContextLevel={meetingEdgeContextLevel}
               onSaveMeetingEdgeContextLevel={handleMeetingEdgeContextLevelChange}
               showMeetingEdge={meetingEdgeEnabled}
+              onBack={navigateToRecordings}
+              showMobileBackButton={isMobile}
             />
           </div>
         ) : isMobile ? (
@@ -1456,11 +1471,14 @@ export default function RecordingPage({ params }: PageProps) {
                     <MessageSquare className="w-5 h-5 text-orange-500" />
                     Meeting Chat
                   </h2>
-                  <button
-                    onClick={() => setIsMobileChatOpen(false)}
-                    className="p-2 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                  >
-                    <X className="w-5 h-5" />
+                <button
+                  onClick={() => setIsMobileChatOpen(false)}
+                  className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                  title="Back to meeting"
+                  aria-label="Back to meeting"
+                >
+                    <ArrowLeft className="h-5 w-5" />
+                    <span>Back</span>
                   </button>
                 </header>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">

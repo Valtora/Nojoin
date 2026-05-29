@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -67,5 +67,23 @@ describe("RecordingStatusDisplay", () => {
 
     expect(screen.queryByTestId("meeting-edge-panel")).not.toBeInTheDocument();
     expect(screen.getByTestId("processing-notes-panel")).toBeInTheDocument();
+  });
+
+  it("renders a mobile back button when requested", () => {
+    const onBack = vi.fn();
+
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording()}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+        onBack={onBack}
+        showMobileBackButton
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Recordings" }));
+
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

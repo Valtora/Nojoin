@@ -147,19 +147,21 @@ export default function AudioPlayer({
     ? "w-full rounded-2xl border border-gray-300 bg-white px-3 py-2.5 shadow-sm dark:border-gray-700 dark:bg-gray-800/50"
     : "w-full bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-sm";
   const compactMockContent = (
-    <div className="flex items-center gap-3 opacity-30 pointer-events-none filter blur-[1px]">
-      <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-400 text-white shadow-sm">
-        <Play className="ml-0.5 h-5 w-5 fill-current" />
-      </button>
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
+      <div className="flex items-center justify-between gap-3">
+        <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-400 text-white shadow-sm">
+          <Play className="ml-0.5 h-5 w-5 fill-current" />
+        </button>
+        <div className="h-5 w-5 rounded-full bg-gray-200" />
+      </div>
+      <div className="min-w-0">
         <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-          <div className="h-3 w-8 rounded bg-gray-200" />
-          <div className="h-2 flex-1 rounded-full bg-gray-200" />
-          <div className="h-3 w-8 rounded bg-gray-200" />
+          <div className="h-3 w-9 shrink-0 rounded bg-gray-200" />
+          <div className="h-2 min-w-0 flex-1 rounded-full bg-gray-200" />
+          <div className="h-3 w-9 shrink-0 rounded bg-gray-200" />
+          <div className="h-3 w-8 shrink-0 rounded bg-gray-200" />
         </div>
       </div>
-      <div className="h-3 w-7 rounded bg-gray-200" />
-      <div className="h-5 w-5 rounded-full bg-gray-200" />
     </div>
   );
 
@@ -255,19 +257,33 @@ export default function AudioPlayer({
       />
 
       {compact ? (
-        <div className="flex items-center gap-3">
-          <button
-            onClick={togglePlay}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700"
-          >
-            {isPlaying ? (
-              <Pause className="h-5 w-5 fill-current" />
-            ) : (
-              <Play className="ml-0.5 h-5 w-5 fill-current" />
-            )}
-          </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={togglePlay}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-600 text-white shadow-sm transition-colors hover:bg-orange-700"
+            >
+              {isPlaying ? (
+                <Pause className="h-5 w-5 fill-current" />
+              ) : (
+                <Play className="ml-0.5 h-5 w-5 fill-current" />
+              )}
+            </button>
 
-          <div className="min-w-0 flex-1">
+            <button
+              onClick={toggleMute}
+              className="shrink-0 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              title={isMuted || volume === 0 ? "Unmute" : "Mute"}
+            >
+              {isMuted || volume === 0 ? (
+                <VolumeX className="h-5 w-5" />
+              ) : (
+                <Volume2 className="h-5 w-5" />
+              )}
+            </button>
+          </div>
+
+          <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
               <span className="w-9 shrink-0 text-left">{formatTime(currentTime)}</span>
               <input
@@ -276,31 +292,18 @@ export default function AudioPlayer({
                 max={duration || 100}
                 value={Math.min(currentTime, duration || 100)}
                 onChange={handleSeek}
-                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-gray-200 accent-orange-500 dark:bg-gray-700"
+                className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-gray-200 accent-orange-500 dark:bg-gray-700"
               />
               <span className="w-9 shrink-0 text-right">{formatTime(duration)}</span>
+              <button
+                onClick={changePlaybackRate}
+                className="w-8 shrink-0 text-right text-xs font-bold text-gray-600 hover:text-orange-500 dark:text-gray-300"
+                title="Playback Speed"
+              >
+                {playbackRate}x
+              </button>
             </div>
           </div>
-
-          <button
-            onClick={changePlaybackRate}
-            className="w-7 shrink-0 text-xs font-bold text-gray-600 hover:text-orange-500 dark:text-gray-300"
-            title="Playback Speed"
-          >
-            {playbackRate}x
-          </button>
-
-          <button
-            onClick={toggleMute}
-            className="shrink-0 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            title={isMuted || volume === 0 ? "Unmute" : "Mute"}
-          >
-            {isMuted || volume === 0 ? (
-              <VolumeX className="h-5 w-5" />
-            ) : (
-              <Volume2 className="h-5 w-5" />
-            )}
-          </button>
         </div>
       ) : (
         <>

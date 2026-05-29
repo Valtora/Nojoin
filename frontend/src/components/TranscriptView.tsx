@@ -158,6 +158,32 @@ export default function TranscriptView({
     ? "Finish the current transcript edit before exporting"
     : "Export";
 
+  const scrollSegmentIntoView = useCallback(
+    (segmentKey: string, behavior: ScrollBehavior = "smooth") => {
+      const container = scrollContainerRef.current;
+      const element = document.getElementById(`segment-${segmentKey}`);
+      if (!container || !element) {
+        return;
+      }
+
+      const elementTop = element.offsetTop;
+      const elementBottom = elementTop + element.offsetHeight;
+      const visibleTop = container.scrollTop;
+      const visibleBottom = visibleTop + container.clientHeight;
+
+      if (elementTop >= visibleTop && elementBottom <= visibleBottom) {
+        return;
+      }
+
+      const centeredTop = Math.max(
+        0,
+        elementTop - container.clientHeight / 2 + element.offsetHeight / 2,
+      );
+      container.scrollTo({ top: centeredTop, behavior });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!onActiveEditUtteranceChange) {
       return;
@@ -300,12 +326,9 @@ export default function TranscriptView({
   useEffect(() => {
     if (currentMatchIndex >= 0 && matches[currentMatchIndex]) {
       const match = matches[currentMatchIndex];
-      const element = document.getElementById(`segment-${match.segmentId}`);
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      scrollSegmentIntoView(match.segmentId, "smooth");
     }
-  }, [currentMatchIndex, matches]);
+  }, [currentMatchIndex, matches, scrollSegmentIntoView]);
 
   const nextMatch = () => {
     if (matches.length === 0) return;
@@ -411,12 +434,12 @@ export default function TranscriptView({
 
   useEffect(() => {
     if (activeSegmentRef.current) {
-      activeSegmentRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+      const segmentKey = activeSegmentRef.current.dataset.segmentId;
+      if (segmentKey) {
+        scrollSegmentIntoView(segmentKey, "smooth");
+      }
     }
-  }, [activeSegmentKey]);
+  }, [activeSegmentKey, scrollSegmentIntoView]);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;

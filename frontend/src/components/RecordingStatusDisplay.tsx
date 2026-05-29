@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Mic, Pause } from "lucide-react";
+import { ArrowLeft, Loader2, Mic, Pause } from "lucide-react";
 
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
@@ -49,6 +49,8 @@ interface RecordingStatusDisplayProps {
   meetingEdgeContextLevel?: number;
   onSaveMeetingEdgeContextLevel?: (level: number) => Promise<void>;
   showMeetingEdge?: boolean;
+  onBack?: () => void;
+  showMobileBackButton?: boolean;
 }
 
 export default function RecordingStatusDisplay({
@@ -58,6 +60,8 @@ export default function RecordingStatusDisplay({
   meetingEdgeContextLevel,
   onSaveMeetingEdgeContextLevel,
   showMeetingEdge = true,
+  onBack,
+  showMobileBackButton = false,
 }: RecordingStatusDisplayProps) {
   const isActiveRecording =
     recording.status === RecordingStatus.PAUSED ||
@@ -105,6 +109,22 @@ export default function RecordingStatusDisplay({
       wrapperClassName="flex-1 overflow-visible"
       backgroundClassName="bg-transparent"
     >
+      {showMobileBackButton && onBack ? (
+        <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-40 lg:hidden">
+          <button
+            type="button"
+            onClick={onBack}
+            className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-2xl border border-gray-200 bg-white/90 px-4 text-sm font-medium text-gray-700 shadow-lg shadow-black/10 backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:shadow-black/30"
+            title="Back to Recordings"
+            aria-label="Back to Recordings"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+        </div>
+      ) : null}
+
+      <div className={showMobileBackButton && onBack ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0" : ""}>
       <section className="mx-auto flex min-w-0 w-full max-w-5xl flex-col rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
@@ -214,6 +234,7 @@ export default function RecordingStatusDisplay({
           disabled={notesAreLocked}
           disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
         />
+      </div>
       </div>
     </AmbientWorkspace>
   );
