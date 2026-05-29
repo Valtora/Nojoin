@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, RefreshCw, AlertTriangle } from "lucide-react";
 import { reprocessRecording } from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingId, ReprocessRequest } from "@/types";
 
 type TranscriptionBackend = "whisper" | "parakeet" | "canary";
@@ -40,14 +41,13 @@ export default function ReprocessDialog({
     DEFAULT_WHISPER_MODEL_SIZE,
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const { addNotification } = useNotificationStore();
 
   useEffect(() => {
     if (isOpen) {
       setBackend(defaultBackend);
       setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
       setIsSubmitting(false);
-      setError(null);
     }
   }, [isOpen, defaultBackend]);
 
@@ -55,7 +55,6 @@ export default function ReprocessDialog({
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
-    setError(null);
 
     let body: ReprocessRequest;
     if (backend === "whisper") {
@@ -85,7 +84,10 @@ export default function ReprocessDialog({
           ? ((err as { response?: { data?: { detail?: unknown } } }).response
               ?.data?.detail as string | undefined)
           : undefined;
-      setError(message || "Failed to start reprocessing. Please try again.");
+      addNotification({
+        type: "error",
+        message: message || "Failed to start reprocessing. Please try again.",
+      });
       setIsSubmitting(false);
     }
   };
@@ -197,11 +199,6 @@ export default function ReprocessDialog({
               be lost. Manual processing notes, tags and documents are kept.
             </p>
           </div>
-
-          {/* Error message */}
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
         </div>
 
         {/* Footer */}

@@ -39,7 +39,6 @@ interface TaskDeadlineModalProps {
   value: Date | null;
   timeZone?: string;
   isSaving?: boolean;
-  error?: string | null;
   onClose: () => void;
   onSave: (date: Date | null) => Promise<boolean | void> | boolean | void;
 }
@@ -116,7 +115,6 @@ export default function TaskDeadlineModal({
   value,
   timeZone,
   isSaving = false,
-  error,
   onClose,
   onSave,
 }: TaskDeadlineModalProps) {
@@ -248,12 +246,6 @@ export default function TaskDeadlineModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-
-        {error && (
-          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
-            {error}
-          </div>
-        )}
 
         <div className="mt-4 flex flex-wrap gap-2">
           {quickDates.map((option) => {

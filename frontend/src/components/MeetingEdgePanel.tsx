@@ -25,7 +25,6 @@ interface MeetingEdgePanelProps {
   payload?: MeetingEdgePayload | null;
   focusText?: string | null;
   status?: string | null;
-  errorMessage?: string | null;
   onSaveFocus: (focus: string) => Promise<void>;
   contextLevel?: number;
   onSaveContextLevel?: (level: number) => Promise<void>;
@@ -35,7 +34,6 @@ function MeetingEdgePanel({
   payload,
   focusText,
   status,
-  errorMessage,
   onSaveFocus,
   contextLevel,
   onSaveContextLevel,
@@ -211,12 +209,6 @@ function MeetingEdgePanel({
           </span>
         ) : null}
       </div>
-
-      {status === "error" && errorMessage ? (
-        <div className="mt-4 rounded-[1.25rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-          {errorMessage}
-        </div>
-      ) : null}
 
       {hasPayload ? (
         <div className="mt-5 space-y-4">

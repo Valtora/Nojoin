@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, FileAudio, Loader2, CheckCircle, AlertCircle, Calendar, FileText } from 'lucide-react';
+import { X, Upload, FileAudio, Loader2, CheckCircle, Calendar, FileText } from 'lucide-react';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
 import { importAudio, getSupportedAudioFormats } from '@/lib/api';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 interface ImportAudioModalProps {
   isOpen: boolean;
@@ -34,8 +35,8 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [errorMessage, setErrorMessage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const { addNotification } = useNotificationStore();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -53,7 +54,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     setRecordedAt(null);
     setUploadState('idle');
     setUploadProgress(0);
-    setErrorMessage('');
     setIsDragging(false);
   }, []);
 
@@ -74,13 +74,12 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const handleFileSelect = (file: File) => {
     const error = validateFile(file);
     if (error) {
-      setErrorMessage(error);
-      setUploadState('error');
+      addNotification({ type: 'error', message: error });
+      setUploadState('idle');
       return;
     }
     
     setSelectedFile(file);
-    setErrorMessage('');
     setUploadState('idle');
     
     // Auto-fill meeting name from filename (without extension)
@@ -132,7 +131,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     
     setUploadState('uploading');
     setUploadProgress(0);
-    setErrorMessage('');
     
     try {
       await importAudio(selectedFile, {
@@ -149,12 +147,18 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
         handleClose();
       }, 1500);
     } catch (error: unknown) {
-      setUploadState('error');
+      setUploadState('idle');
       if (error && typeof error === 'object' && 'response' in error) {
         const axiosError = error as { response?: { data?: { detail?: string } } };
-        setErrorMessage(axiosError.response?.data?.detail || 'Upload failed. Please try again.');
+        addNotification({
+          type: 'error',
+          message: axiosError.response?.data?.detail || 'Upload failed. Please try again.',
+        });
       } else {
-        setErrorMessage('Upload failed. Please check your connection and try again.');
+        addNotification({
+          type: 'error',
+          message: 'Upload failed. Please check your connection and try again.',
+        });
       }
     }
   };
@@ -162,7 +166,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setUploadState('idle');
-    setErrorMessage('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -266,14 +269,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
             <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg">
               <CheckCircle className="w-5 h-5 shrink-0" />
               <span>Audio imported successfully! Processing will begin shortly.</span>
-            </div>
-          )}
-
-          {/* Error Message */}
-          {uploadState === 'error' && errorMessage && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg">
-              <AlertCircle className="w-5 h-5 shrink-0" />
-              <span>{errorMessage}</span>
             </div>
           )}
 

@@ -192,6 +192,14 @@ export class CaptureController {
     this.setState({ settings: nextSettings });
   };
 
+  clearError = () => {
+    if (!this.state.error) {
+      return;
+    }
+
+    this.setState({ error: null });
+  };
+
   start = async (name?: string): Promise<StartCaptureResult> => {
     const support = detectCaptureSupport();
     this.setState({ support });

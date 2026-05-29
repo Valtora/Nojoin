@@ -10,7 +10,6 @@ interface ResumeRecordingModalProps {
   isOpen: boolean;
   recording: Recording | null;
   busyAction?: "resume" | "cancel" | null;
-  error?: string | null;
   onResume: () => void;
   onCancel: () => void;
 }
@@ -19,7 +18,6 @@ export default function ResumeRecordingModal({
   isOpen,
   recording,
   busyAction = null,
-  error = null,
   onResume,
   onCancel,
 }: ResumeRecordingModalProps) {
@@ -60,12 +58,6 @@ export default function ResumeRecordingModal({
           <p className="font-medium">{recording.name}</p>
           <p className="mt-1 opacity-80">Recording ID: {recording.id}</p>
         </div>
-
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-            {error}
-          </div>
-        ) : null}
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button

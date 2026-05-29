@@ -15,6 +15,7 @@ import {
   type CaptureController,
 } from "./controller";
 import type { CaptureState } from "./shared";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 interface CaptureContextValue {
   controller: CaptureController;
@@ -49,6 +50,18 @@ export function CaptureProvider({ children }: CaptureProviderProps) {
   useEffect(() => {
     controller.updateRouteSignature(routeSignature);
   }, [controller, routeSignature]);
+
+  useEffect(() => {
+    if (!state.error) {
+      return;
+    }
+
+    useNotificationStore.getState().addNotification({
+      type: "error",
+      message: state.error,
+    });
+    controller.clearError();
+  }, [controller, state.error]);
 
   const value = useMemo(
     () => ({ controller, state }),

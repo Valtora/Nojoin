@@ -18,7 +18,6 @@ import {
   ListOrdered,
   Link as LinkIcon,
   Settings,
-  AlertCircle,
 } from "lucide-react";
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
@@ -45,7 +44,6 @@ interface NotesViewProps {
   canUndo: boolean;
   canRedo: boolean;
   isGenerating: boolean;
-  errorMessage?: string | null;
   onExport: () => void;
 }
 
@@ -59,7 +57,6 @@ export default function NotesView({
   canUndo,
   canRedo,
   isGenerating,
-  errorMessage,
   onExport,
 }: NotesViewProps) {
   const displayNotes = notes
@@ -518,16 +515,6 @@ export default function NotesView({
             </button>
           </div>
         </div>
-
-        {errorMessage && (
-          <div className="mx-6 mb-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <p className="font-semibold">Generation Failed</p>
-              <p>{errorMessage}</p>
-            </div>
-          </div>
-        )}
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (

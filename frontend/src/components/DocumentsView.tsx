@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FileText,
   Upload,
@@ -22,26 +22,28 @@ interface DocumentsViewProps {
 export default function DocumentsView({ recordingId }: DocumentsViewProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(
     null,
   );
   const { addNotification } = useNotificationStore();
+  const notifiedDocumentErrorsRef = useRef<Set<string>>(new Set());
 
   const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
       const docs = await getDocuments(recordingId);
       setDocuments(docs);
-      setError("");
+      setLoadFailed(false);
     } catch (e) {
       console.error("Failed to load documents", e);
-      setError("Failed to load documents.");
+      setLoadFailed(true);
+      addNotification({ type: "error", message: "Failed to load documents." });
     } finally {
       setLoading(false);
     }
-  }, [recordingId]);
+  }, [addNotification, recordingId]);
 
   useEffect(() => {
     if (recordingId) {
@@ -64,6 +66,25 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
 
     return () => clearInterval(interval);
   }, [documents, recordingId]);
+
+  useEffect(() => {
+    documents.forEach((document) => {
+      if (!document.error_message) {
+        return;
+      }
+
+      const signature = `${document.id}:${document.error_message}`;
+      if (notifiedDocumentErrorsRef.current.has(signature)) {
+        return;
+      }
+
+      notifiedDocumentErrorsRef.current.add(signature);
+      addNotification({
+        type: "error",
+        message: `${document.title}: ${document.error_message}`,
+      });
+    });
+  }, [addNotification, documents]);
 
   const handleDelete = async () => {
     if (!documentToDelete) return;
@@ -116,10 +137,18 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             <Loader2 className="w-6 h-6 animate-spin mr-2" />
             Loading documents...
           </div>
-        ) : error ? (
-          <div className="flex items-center justify-center h-full text-red-500">
-            <AlertCircle className="w-6 h-6 mr-2" />
-            {error}
+        ) : loadFailed ? (
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
+            <AlertCircle className="w-10 h-10 mb-3 opacity-40" />
+            <p className="text-base font-medium text-gray-600 dark:text-gray-300">
+              Documents are temporarily unavailable
+            </p>
+            <button
+              onClick={() => void fetchDocuments()}
+              className="mt-4 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+            >
+              Try again
+            </button>
           </div>
         ) : documents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -178,12 +207,6 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                     </p>
                   </div>
                 </div>
-
-                {doc.error_message && (
-                  <div className="mt-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/10 p-2 rounded">
-                    Error: {doc.error_message}
-                  </div>
-                )}
               </div>
             ))}
           </div>

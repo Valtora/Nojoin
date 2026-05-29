@@ -222,7 +222,6 @@ export default function RecordingStatusDisplay({
             payload={recording.transcript?.meeting_edge_payload}
             focusText={recording.transcript?.meeting_edge_focus}
             status={recording.transcript?.meeting_edge_status}
-            errorMessage={recording.transcript?.meeting_edge_error_message}
             onSaveFocus={onSaveMeetingEdgeFocus}
             contextLevel={meetingEdgeContextLevel}
             onSaveContextLevel={onSaveMeetingEdgeContextLevel}

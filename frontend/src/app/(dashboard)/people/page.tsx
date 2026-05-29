@@ -22,6 +22,7 @@ import RecalibrateModal from "@/components/people/RecalibrateModal";
 import SplitPersonModal from "@/components/people/SplitPersonModal";
 import { Trash2, Edit2, CheckSquare } from "lucide-react";
 import { deleteGlobalSpeakerEmbedding } from "@/lib/api"; // Ensure this is imported for batch voiceprint delete
+import { useNotificationStore } from "@/lib/notificationStore";
 
 export default function PeoplePage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,6 +51,7 @@ export default function PeoplePage() {
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [isBatchDeleteConfirmOpen, setIsBatchDeleteConfirmOpen] =
     useState(false);
+  const { addNotification } = useNotificationStore();
 
   // Fetch People
   const fetchPeople = useCallback(async () => {
@@ -62,10 +64,11 @@ export default function PeoplePage() {
       setPeople(data);
     } catch (error) {
       console.error("Failed to fetch people:", error);
+      addNotification({ type: "error", message: "Failed to load people." });
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, selectedTagIds]);
+  }, [addNotification, searchQuery, selectedTagIds]);
 
   useEffect(() => {
     fetchPeople();
@@ -93,6 +96,7 @@ export default function PeoplePage() {
         fetchPeople();
       } catch (error) {
         console.error("Failed to delete person:", error);
+        addNotification({ type: "error", message: "Failed to delete person." });
       } finally {
         setPersonToDelete(null);
       }
@@ -191,7 +195,7 @@ export default function PeoplePage() {
       fetchPeople();
     } catch (error) {
       console.error("Batch delete failed", error);
-      alert("Failed to delete some people.");
+      addNotification({ type: "error", message: "Failed to delete some people." });
     } finally {
       setIsBatchDeleting(false);
       setIsBatchDeleteConfirmOpen(false);
@@ -251,7 +255,10 @@ export default function PeoplePage() {
       setSelectedIds(new Set());
     } catch (error) {
       console.error("Batch update failed:", error);
-      alert("Batch update failed partially or fully.");
+      addNotification({
+        type: "error",
+        message: "Batch update failed partially or fully.",
+      });
     }
   };
 

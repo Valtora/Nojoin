@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import api, { API_BASE_URL, getAdminHealth } from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
 import type { AdminHealthCheckStatus, AdminHealthStatus } from "@/types";
 
@@ -184,6 +185,7 @@ export default function SystemTab() {
     logWordWrap,
     toggleLogWordWrap,
   } = useNavigationStore();
+  const { addNotification } = useNotificationStore();
 
   const containers = [
     "all",
@@ -364,7 +366,7 @@ export default function SystemTab() {
       link.remove();
     } catch (error) {
       console.error("Download failed", error);
-      alert("Failed to download logs.");
+      addNotification({ type: "error", message: "Failed to download logs." });
     }
   };
 

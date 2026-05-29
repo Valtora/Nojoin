@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X, FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording } from "@/types";
 
 interface RecordingInfoModalProps {
@@ -17,21 +18,29 @@ export default function RecordingInfoModal({
 }: RecordingInfoModalProps) {
   const [info, setInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
+  const { addNotification } = useNotificationStore();
 
   useEffect(() => {
     if (isOpen) {
       setLoading(true);
-      setError("");
+      setUnavailable(false);
       getRecordingInfo(recording.id)
-        .then(setInfo)
+        .then((nextInfo) => {
+          setInfo(nextInfo);
+          setUnavailable(false);
+        })
         .catch((err) => {
           console.error(err);
-          setError("Failed to load recording info.");
+          setUnavailable(true);
+          addNotification({
+            type: "error",
+            message: "Failed to load recording info.",
+          });
         })
         .finally(() => setLoading(false));
     }
-  }, [isOpen, recording.id]);
+  }, [addNotification, isOpen, recording.id]);
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -126,9 +135,9 @@ export default function RecordingInfoModal({
                     <div className="flex justify-center p-8">
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
                     </div>
-                  ) : error ? (
-                    <div className="text-red-500 text-center text-sm p-4">
-                      {error}
+                  ) : unavailable ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
+                      Recording details are temporarily unavailable.
                     </div>
                   ) : (
                     <>

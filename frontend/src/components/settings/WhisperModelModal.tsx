@@ -15,6 +15,7 @@ import {
   getTaskStatus,
   deleteModel,
 } from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 interface WhisperModelModalProps {
   isOpen: boolean;
@@ -69,6 +70,7 @@ export default function WhisperModelModal({
 
   // Deleting State
   const [deleting, setDeleting] = useState(false);
+  const { addNotification } = useNotificationStore();
 
   // Initial sync
   useEffect(() => {
@@ -127,7 +129,10 @@ export default function WhisperModelModal({
             clearInterval(pollInterval);
             setDownloading(false);
             setDownloadProgress(null);
-            alert(`Download failed: ${status.result}`);
+            addNotification({
+              type: "error",
+              message: `Download failed: ${status.result}`,
+            });
           } else if (status.status === "PROCESSING" && status.result) {
             setDownloadProgress({
               percent: status.result.progress || 0,
@@ -147,7 +152,7 @@ export default function WhisperModelModal({
       console.error(e);
       setDownloading(false);
       setDownloadProgress(null);
-      alert("Failed to start download");
+      addNotification({ type: "error", message: "Failed to start download" });
     }
   };
 
@@ -167,7 +172,7 @@ export default function WhisperModelModal({
       setStatus(res);
     } catch (e) {
       console.error(e);
-      alert("Failed to delete model cache");
+      addNotification({ type: "error", message: "Failed to delete model cache" });
     } finally {
       setDeleting(false);
     }

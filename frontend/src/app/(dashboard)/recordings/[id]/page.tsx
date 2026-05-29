@@ -38,7 +38,6 @@ import ExportModal from "@/components/ExportModal";
 import ReprocessDialog from "@/components/ReprocessDialog";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
-import Link from "next/link";
 import { ArrowLeft, Edit2, MessageSquare, MoreHorizontal, RefreshCw } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
@@ -136,7 +135,6 @@ export default function RecordingPage({ params }: PageProps) {
   const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
     DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
   );
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -185,6 +183,8 @@ export default function RecordingPage({ params }: PageProps) {
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
+  const lastNotesErrorRef = useRef<string | null>(null);
+  const lastMeetingEdgeErrorRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const navigateToRecordings = useCallback(() => {
     router.push("/recordings");
@@ -376,12 +376,16 @@ export default function RecordingPage({ params }: PageProps) {
       return recData;
     } catch (e) {
       console.error("Failed to fetch recording:", e);
-      setError("Failed to load recording.");
+      addNotification({
+        type: "error",
+        message: "Failed to load recording.",
+      });
+      router.push("/recordings");
       return null;
     } finally {
       setLoading(false);
     }
-  }, [params, isEditingTitle]);
+  }, [addNotification, params, isEditingTitle, router]);
 
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
@@ -562,6 +566,44 @@ export default function RecordingPage({ params }: PageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, transcriptSegments]);
 
+  useEffect(() => {
+    const notesError =
+      recording?.transcript?.notes_status === "error"
+        ? recording.transcript?.error_message ||
+          "Meeting notes could not be generated. Configure an AI provider and model in Settings, then try again."
+        : null;
+
+    if (notesError && notesError !== lastNotesErrorRef.current) {
+      addNotification({ type: "error", message: notesError });
+      lastNotesErrorRef.current = notesError;
+    }
+
+    if (!notesError) {
+      lastNotesErrorRef.current = null;
+    }
+  }, [addNotification, recording?.transcript?.error_message, recording?.transcript?.notes_status]);
+
+  useEffect(() => {
+    const meetingEdgeError =
+      recording?.transcript?.meeting_edge_status === "error"
+        ? recording.transcript?.meeting_edge_error_message ||
+          "Meeting Edge is temporarily unavailable."
+        : null;
+
+    if (meetingEdgeError && meetingEdgeError !== lastMeetingEdgeErrorRef.current) {
+      addNotification({ type: "error", message: meetingEdgeError });
+      lastMeetingEdgeErrorRef.current = meetingEdgeError;
+    }
+
+    if (!meetingEdgeError) {
+      lastMeetingEdgeErrorRef.current = null;
+    }
+  }, [
+    addNotification,
+    recording?.transcript?.meeting_edge_error_message,
+    recording?.transcript?.meeting_edge_status,
+  ]);
+
   // Player Handlers
   const handleTimeUpdate = () => {
     if (audioRef.current) {
@@ -671,7 +713,7 @@ export default function RecordingPage({ params }: PageProps) {
     } catch (e) {
       console.error("Undo failed", e);
       await syncTranscriptState("full").catch(() => undefined);
-      alert("Undo failed.");
+      addNotification({ type: "error", message: "Undo failed." });
     } finally {
       setIsUndoing(false);
     }
@@ -691,7 +733,7 @@ export default function RecordingPage({ params }: PageProps) {
     } catch (e) {
       console.error("Redo failed", e);
       await syncTranscriptState("full").catch(() => undefined);
-      alert("Redo failed.");
+      addNotification({ type: "error", message: "Redo failed." });
     } finally {
       setIsUndoing(false);
     }
@@ -707,7 +749,10 @@ export default function RecordingPage({ params }: PageProps) {
       await syncTranscriptState("full");
     } catch (error) {
       console.error("Failed to rename speaker:", error);
-      alert("Failed to rename speaker. Please try again.");
+      addNotification({
+        type: "error",
+        message: "Failed to rename speaker. Please try again.",
+      });
     }
   };
 
@@ -809,7 +854,10 @@ export default function RecordingPage({ params }: PageProps) {
       }
     } catch (error) {
       console.error("Failed to update segment speaker:", error);
-      alert("Failed to update segment speaker. Please try again.");
+      addNotification({
+        type: "error",
+        message: "Failed to update segment speaker. Please try again.",
+      });
     }
   };
 
@@ -867,7 +915,7 @@ export default function RecordingPage({ params }: PageProps) {
       );
     } catch (error) {
       console.error("Failed to update segment text:", error);
-      alert("Failed to update segment text.");
+      addNotification({ type: "error", message: "Failed to update segment text." });
     }
   };
 
@@ -888,7 +936,7 @@ export default function RecordingPage({ params }: PageProps) {
       setRecording(updated);
     } catch (error) {
       console.error("Failed to find and replace:", error);
-      alert("Failed to find and replace.");
+      addNotification({ type: "error", message: "Failed to find and replace." });
     }
   };
 
@@ -912,7 +960,7 @@ export default function RecordingPage({ params }: PageProps) {
       router.refresh();
     } catch (e) {
       console.error("Failed to rename recording:", e);
-      alert("Failed to rename recording.");
+      addNotification({ type: "error", message: "Failed to rename recording." });
     }
   };
 
@@ -946,6 +994,7 @@ export default function RecordingPage({ params }: PageProps) {
         setRecording(updated);
       } catch (e) {
         console.error("Failed to update speaker color", e);
+        addNotification({ type: "error", message: "Failed to update speaker color." });
       }
     }
   };
@@ -968,10 +1017,12 @@ export default function RecordingPage({ params }: PageProps) {
       } catch (refreshError) {
         console.error("Failed to refresh recording after notes error:", refreshError);
       }
-      alert(
-        e.response?.data?.detail ||
+      addNotification({
+        type: "error",
+        message:
+          e.response?.data?.detail ||
           "Failed to generate notes. Configure an AI provider and model in Settings, then try again.",
-      );
+      });
     } finally {
       setIsGeneratingNotes(false);
     }
@@ -990,7 +1041,7 @@ export default function RecordingPage({ params }: PageProps) {
       setRecording(updated);
     } catch (e) {
       console.error("Failed to update notes:", e);
-      alert("Failed to update notes.");
+      addNotification({ type: "error", message: "Failed to update notes." });
     }
   };
 
@@ -1009,6 +1060,7 @@ export default function RecordingPage({ params }: PageProps) {
       setRecording(updated);
     } catch (e) {
       console.error("Notes undo failed:", e);
+      addNotification({ type: "error", message: "Failed to undo notes changes." });
     }
   };
 
@@ -1027,6 +1079,7 @@ export default function RecordingPage({ params }: PageProps) {
       setRecording(updated);
     } catch (e) {
       console.error("Notes redo failed:", e);
+      addNotification({ type: "error", message: "Failed to redo notes changes." });
     }
   };
 
@@ -1070,7 +1123,10 @@ export default function RecordingPage({ params }: PageProps) {
       }
     } catch (error: any) {
       console.error("Export failed:", error);
-      alert("Export failed. Please check the logs.");
+      addNotification({
+        type: "error",
+        message: "Export failed. Please check the logs.",
+      });
     }
   };
 
@@ -1384,12 +1440,6 @@ export default function RecordingPage({ params }: PageProps) {
                 isGeneratingNotes ||
                 recording.transcript?.notes_status === "generating"
               }
-              errorMessage={
-                recording.transcript?.notes_status === "error"
-                  ? recording.transcript?.error_message ||
-                    "Meeting notes could not be generated. Configure an AI provider and model in Settings, then try again."
-                  : null
-              }
               onExport={() => setShowExportModal(true)}
             />
           )}
@@ -1412,20 +1462,8 @@ export default function RecordingPage({ params }: PageProps) {
     );
   }
 
-  if (error || !recording) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Error</h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            {error || "Recording not found"}
-          </p>
-          <Link href="/recordings" className="text-orange-600 hover:underline">
-            Back to Recordings
-          </Link>
-        </div>
-      </div>
-    );
+  if (!recording) {
+    return null;
   }
 
   return (

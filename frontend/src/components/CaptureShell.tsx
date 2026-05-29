@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { usePausedRecordingGuard } from "@/lib/capture/usePausedRecordingGuard";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 import ResumeRecordingModal from "./ResumeRecordingModal";
 
@@ -15,9 +16,9 @@ interface CaptureShellProps {
 export default function CaptureShell({ children }: CaptureShellProps) {
   const router = useRouter();
   const { pausedRecording, hasPausedRecording } = usePausedRecordingGuard();
-  const { cancel, resume, runtimeActive } = useCapture();
+  const { cancel, controller, resume, runtimeActive } = useCapture();
   const [busyAction, setBusyAction] = useState<"resume" | "cancel" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { addNotification } = useNotificationStore();
 
   const modalOpen = hasPausedRecording && !runtimeActive;
 
@@ -27,16 +28,19 @@ export default function CaptureShell({ children }: CaptureShellProps) {
     }
 
     setBusyAction("resume");
-    setError(null);
     try {
       await resume(pausedRecording.id);
       router.push(`/recordings/${pausedRecording.id}`);
     } catch (resumeError) {
-      setError(
-        resumeError instanceof Error
-          ? resumeError.message
-          : "Failed to resume the paused recording.",
-      );
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message:
+            resumeError instanceof Error
+              ? resumeError.message
+              : "Failed to resume the paused recording.",
+        });
+      }
     } finally {
       setBusyAction(null);
     }
@@ -48,16 +52,17 @@ export default function CaptureShell({ children }: CaptureShellProps) {
     }
 
     setBusyAction("cancel");
-    setError(null);
     try {
       await cancel(pausedRecording.id);
       router.push("/recordings");
     } catch (cancelError) {
-      setError(
-        cancelError instanceof Error
-          ? cancelError.message
-          : "Failed to discard the paused recording.",
-      );
+      addNotification({
+        type: "error",
+        message:
+          cancelError instanceof Error
+            ? cancelError.message
+            : "Failed to discard the paused recording.",
+      });
     } finally {
       setBusyAction(null);
     }
@@ -70,7 +75,6 @@ export default function CaptureShell({ children }: CaptureShellProps) {
         isOpen={modalOpen}
         recording={pausedRecording}
         busyAction={busyAction}
-        error={error}
         onResume={handleResume}
         onCancel={handleCancel}
       />

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
@@ -29,7 +29,7 @@ export default function MeetingControls({
 }: MeetingControlsProps) {
   const { backend } = useServiceStatusStore();
   const {
-    error: captureError,
+    controller,
     pausedRecording,
     runtimeActive,
     start,
@@ -37,7 +37,7 @@ export default function MeetingControls({
     support,
   } = useCapture();
 
-  const [error, setError] = useState<string | null>(null);
+  const { addNotification } = useNotificationStore();
   const router = useRouter();
   const hasLiveRecording =
     runtimeActive && (status === "recording" || status === "paused");
@@ -91,14 +91,17 @@ export default function MeetingControls({
             };
 
   const sendStart = async () => {
-    setError(null);
     try {
       return await start("");
     } catch (err: unknown) {
-      if (err instanceof Error && err.message) {
-        setError(err.message);
-      } else {
-        setError("Failed to start browser recording.");
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message:
+            err instanceof Error && err.message
+              ? err.message
+              : "Failed to start browser recording.",
+        });
       }
       return null;
     }
@@ -113,7 +116,6 @@ export default function MeetingControls({
   };
 
   const handlePrimaryAction = () => {
-    setError(null);
     if (meetingSurfaceState.buttonMode === "start") {
       void handleStart();
     }
@@ -150,12 +152,6 @@ export default function MeetingControls({
             </div>
           ) : null}
 
-          {(error || captureError) && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-              {error || captureError}
-            </div>
-          )}
-
           {!hasLiveRecording ? (
             <button
               type="button"
@@ -189,10 +185,6 @@ export default function MeetingControls({
           <div className="mb-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
             Phone microphone only. Keep this tab open.
           </div>
-        ) : null}
-
-        {(error || captureError) ? (
-          <div className="mb-2 text-xs text-red-500">{error || captureError}</div>
         ) : null}
 
         {!hasLiveRecording ? (

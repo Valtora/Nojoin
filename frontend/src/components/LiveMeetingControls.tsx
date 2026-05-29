@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import { Pause, Play, Square } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 interface LiveMeetingControlsProps {
   size?: "compact" | "full";
@@ -25,8 +25,8 @@ export default function LiveMeetingControls({
   onMeetingEnd,
 }: LiveMeetingControlsProps) {
   const {
+    controller,
     elapsedSeconds,
-    error: captureError,
     pause,
     resume,
     runtimeActive,
@@ -34,12 +34,11 @@ export default function LiveMeetingControls({
     stop,
   } = useCapture();
 
-  const [error, setError] = useState<string | null>(null);
+  const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
   const disabled = !runtimeActive || status === "finalizing";
 
   const sendCommand = async (command: "stop" | "pause" | "resume") => {
-    setError(null);
     try {
       if (command === "pause") {
         await pause();
@@ -53,10 +52,14 @@ export default function LiveMeetingControls({
 
       return await stop();
     } catch (err: unknown) {
-      if (err instanceof Error && err.message) {
-        setError(err.message);
-      } else {
-        setError(`Failed to ${command} the browser recording.`);
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message:
+            err instanceof Error && err.message
+              ? err.message
+              : `Failed to ${command} the browser recording.`,
+        });
       }
       return null;
     }
@@ -76,11 +79,6 @@ export default function LiveMeetingControls({
   if (size === "compact") {
     return (
       <div className="space-y-2">
-        {(error || captureError) && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-            {error || captureError}
-          </div>
-        )}
         <div className="flex items-center gap-2">
           <div className="flex flex-1 items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
             <span
@@ -133,11 +131,6 @@ export default function LiveMeetingControls({
 
   return (
     <div className="space-y-3">
-      {(error || captureError) && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-          {error || captureError}
-        </div>
-      )}
       <div className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-red-100 bg-red-50 px-4 py-4 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
         <div className="flex items-center gap-3">
           <div

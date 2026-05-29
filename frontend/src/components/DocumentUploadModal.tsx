@@ -2,9 +2,10 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Upload, FileText, Loader2, CheckCircle } from 'lucide-react';
 import { uploadDocument } from '@/lib/api';
 import type { RecordingId } from '@/types';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 interface DocumentUploadModalProps {
     isOpen: boolean;
@@ -31,8 +32,8 @@ const getFileExtension = (filename: string): string => {
 export default function DocumentUploadModal({ isOpen, onClose, onSuccess, recordingId }: DocumentUploadModalProps) {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [uploadState, setUploadState] = useState<UploadState>('idle');
-    const [errorMessage, setErrorMessage] = useState('');
     const [isDragging, setIsDragging] = useState(false);
+    const { addNotification } = useNotificationStore();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -43,7 +44,6 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
     const resetState = useCallback(() => {
         setSelectedFile(null);
         setUploadState('idle');
-        setErrorMessage('');
         setIsDragging(false);
     }, []);
 
@@ -67,13 +67,12 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
     const handleFileSelect = (file: File) => {
         const error = validateFile(file);
         if (error) {
-            setErrorMessage(error);
-            setUploadState('error');
+            addNotification({ type: 'error', message: error });
+            setUploadState('idle');
             return;
         }
 
         setSelectedFile(file);
-        setErrorMessage('');
         setUploadState('idle');
     };
 
@@ -118,7 +117,6 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
         if (!selectedFile) return;
 
         setUploadState('uploading');
-        setErrorMessage('');
 
         try {
             await uploadDocument(recordingId, selectedFile);
@@ -129,15 +127,17 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 handleClose();
             }, 1500);
         } catch (error: any) {
-            setUploadState('error');
-            setErrorMessage(error.response?.data?.detail || 'Upload failed. Please try again.');
+            setUploadState('idle');
+            addNotification({
+                type: 'error',
+                message: error.response?.data?.detail || 'Upload failed. Please try again.',
+            });
         }
     };
 
     const handleRemoveFile = () => {
         setSelectedFile(null);
         setUploadState('idle');
-        setErrorMessage('');
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -228,13 +228,6 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                         </div>
                     )}
 
-                    {/* Error Message */}
-                    {uploadState === 'error' && errorMessage && (
-                        <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg">
-                            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                            <span>{errorMessage}</span>
-                        </div>
-                    )}
                 </div>
 
                 {/* Footer */}

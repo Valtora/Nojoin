@@ -134,12 +134,10 @@ export default function DashboardTasksPanel() {
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [isComposerOpen, setIsComposerOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE);
   const [deadlineModalTaskId, setDeadlineModalTaskId] = useState<number | null>(null);
-  const [deadlineModalError, setDeadlineModalError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const editingFormRef = useRef<HTMLFormElement>(null);
   const editingInputRef = useRef<HTMLInputElement>(null);
@@ -161,7 +159,11 @@ export default function DashboardTasksPanel() {
         }
       } catch (loadError: any) {
         if (!cancelled) {
-          setError(loadError.response?.data?.detail || "Failed to load tasks.");
+          addNotification({
+            type: "error",
+            message:
+              loadError.response?.data?.detail || "Failed to load tasks.",
+          });
         }
       } finally {
         if (!cancelled) {
@@ -175,7 +177,7 @@ export default function DashboardTasksPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [addNotification]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,7 +235,6 @@ export default function DashboardTasksPanel() {
   useEffect(() => {
     if (deadlineModalTaskId !== null && !deadlineModalTask && !isDeadlineModalSaving) {
       setDeadlineModalTaskId(null);
-      setDeadlineModalError(null);
     }
   }, [deadlineModalTaskId, deadlineModalTask, isDeadlineModalSaving]);
 
@@ -265,12 +266,10 @@ export default function DashboardTasksPanel() {
   const handleCloseComposer = () => {
     setIsComposerOpen(false);
     setTitle("");
-    setError(null);
   };
 
   const handleCloseDeadlineModal = () => {
     setDeadlineModalTaskId(null);
-    setDeadlineModalError(null);
 
     window.requestAnimationFrame(() => {
       const taskId = lastDeadlineTriggerTaskIdRef.current;
@@ -302,18 +301,19 @@ export default function DashboardTasksPanel() {
 
     const trimmedTitle = editingTitle.trim();
     if (!trimmedTitle) {
-      setError("Enter a task title before saving it.");
+      addNotification({
+        type: "error",
+        message: "Enter a task title before saving it.",
+      });
       return false;
     }
 
     if (trimmedTitle === task.title) {
-      setError(null);
       resetEditingTask();
       return true;
     }
 
     setSavingTitleTaskId(task.id);
-    setError(null);
 
     const savePromise = (async () => {
       try {
@@ -357,14 +357,12 @@ export default function DashboardTasksPanel() {
     }
 
     handleCloseComposer();
-    setError(null);
     setEditingTaskId(task.id);
     setEditingTitle(task.title);
   };
 
   const handleCancelEditingTask = () => {
     pendingTitleSaveRef.current = null;
-    setError(null);
     resetEditingTask();
   };
 
@@ -388,7 +386,6 @@ export default function DashboardTasksPanel() {
       return;
     }
 
-    setError(null);
     setIsComposerOpen(true);
   };
 
@@ -402,8 +399,6 @@ export default function DashboardTasksPanel() {
     }
 
     handleCloseComposer();
-    setError(null);
-    setDeadlineModalError(null);
     lastDeadlineTriggerTaskIdRef.current = task.id;
     deadlineTriggerRefs.current.set(task.id, trigger);
     setDeadlineModalTaskId(task.id);
@@ -414,12 +409,14 @@ export default function DashboardTasksPanel() {
 
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setError("Enter a task title before adding it.");
+      addNotification({
+        type: "error",
+        message: "Enter a task title before adding it.",
+      });
       return;
     }
 
     setSubmitting(true);
-    setError(null);
 
     try {
       const createdTask = await createUserTask({
@@ -431,7 +428,11 @@ export default function DashboardTasksPanel() {
       setIsComposerOpen(false);
       addNotification({ message: "Task added.", type: "success" });
     } catch (createError: any) {
-      setError(createError.response?.data?.detail || "Failed to add task.");
+      addNotification({
+        type: "error",
+        message:
+          createError.response?.data?.detail || "Failed to add task.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -453,7 +454,6 @@ export default function DashboardTasksPanel() {
     }
 
     setBusyTaskId(task.id);
-    setError(null);
 
     try {
       const updatedTask = await updateUserTask(task.id, {
@@ -485,7 +485,6 @@ export default function DashboardTasksPanel() {
     }
 
     setBusyTaskId(taskId);
-    setError(null);
 
     try {
       await deleteUserTask(taskId);
@@ -510,8 +509,6 @@ export default function DashboardTasksPanel() {
     }
 
     setBusyTaskId(deadlineModalTaskId);
-    setError(null);
-    setDeadlineModalError(null);
 
     try {
       const updatedTask = await updateUserTask(deadlineModalTaskId, {
@@ -531,9 +528,11 @@ export default function DashboardTasksPanel() {
       });
       return true;
     } catch (deadlineError: any) {
-      setDeadlineModalError(
-        deadlineError.response?.data?.detail || "Failed to save deadline.",
-      );
+      addNotification({
+        type: "error",
+        message:
+          deadlineError.response?.data?.detail || "Failed to save deadline.",
+      });
       return false;
     } finally {
       setBusyTaskId(null);
@@ -588,12 +587,6 @@ export default function DashboardTasksPanel() {
         >
           Add a task...
         </button>
-      )}
-
-      {error && (
-        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
-          {error}
-        </div>
       )}
 
       <div className="mt-6 space-y-6">
@@ -837,7 +830,6 @@ export default function DashboardTasksPanel() {
         }
         timeZone={timeZone}
         isSaving={isDeadlineModalSaving}
-        error={deadlineModalError}
         onClose={handleCloseDeadlineModal}
         onSave={handleSaveDeadline}
       />
