@@ -103,6 +103,16 @@ services:
         condition: service_healthy
       socket-proxy:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import json, sys, urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/api/health', headers={'X-Forwarded-Proto': 'https'}); data = json.load(urllib.request.urlopen(req, timeout=3)); sys.exit(0 if data.get('status') == 'ok' else 1)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
@@ -148,6 +158,15 @@ services:
   frontend:
     container_name: nojoin-frontend
     image: ghcr.io/valtora/nojoin-frontend:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:14141/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     restart: unless-stopped
     networks:
       - nojoin_net
@@ -164,8 +183,20 @@ services:
       - ./nginx:/etc/nginx/certs
       - ./docker/init-ssl.sh:/docker-entrypoint.d/99-init-ssl.sh
     depends_on:
-      - frontend
-      - api
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q --spider --no-check-certificate https://127.0.0.1/api/health && wget -q --spider --no-check-certificate https://127.0.0.1/",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
     networks:
       - nojoin_net

@@ -93,6 +93,14 @@ Practical use:
 - Run `docker compose up -d --build worker` after worker code, dependency, or worker-image changes.
 - Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
 
+The compose files now gate `frontend` on a healthy `api`, and gate `nginx` on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
+
+Docker Compose still does not auto-start an omitted dependent service from a stopped stack. If `nginx-dev` is not already running and you want `https://localhost:14443` to come back as part of a targeted start, include it explicitly:
+
+```bash
+docker compose up -d --build api frontend nginx-dev
+```
+
 If you need to discard cached layers or the application services drift out of sync, use a clean rebuild:
 
 ```bash

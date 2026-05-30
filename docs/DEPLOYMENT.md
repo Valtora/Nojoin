@@ -52,6 +52,14 @@ If you add or change it, redeploy the stack before using the setup wizard.
 
 The compose template is already configured for GPU inference.
 
+The compose files now health-gate the web stack so `frontend` waits for a healthy `api`, and `nginx` waits for healthy `api` plus `frontend` before it is considered ready.
+
+When doing targeted starts from a fully stopped stack, remember that Docker Compose does not auto-start an omitted dependent service. If you want the proxy back as part of a partial startup, include `nginx` explicitly:
+
+```bash
+docker compose up -d api frontend nginx
+```
+
 `DATA_ENCRYPTION_KEY` is strongly recommended for every non-ephemeral deployment. Earlier releases relied on the auto-generated `data/.data_encryption_key` fallback alone, which meant encrypted calendar secrets and tokens could become unreadable if the app data directory was replaced while the database volume was preserved. Setting a stable `DATA_ENCRYPTION_KEY` avoids that class of failure.
 
 If you are developing from local source instead of operating a deployment, read [DEVELOPMENT.md](DEVELOPMENT.md).
