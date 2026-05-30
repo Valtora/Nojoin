@@ -77,6 +77,23 @@ def test_merge_llm_config_prefers_user_meeting_edge_override() -> None:
     assert resolved.model == "qwen2.5:3b"
 
 
+def test_merge_llm_config_ignores_user_ollama_api_url_override() -> None:
+    resolved = _merge_llm_config(
+        base_config={
+            "llm_provider": "ollama",
+            "ollama_model": "llama3.1:70b",
+            "ollama_api_url": "http://localhost:11434",
+        },
+        system_keys={},
+        owner_settings=None,
+        user_settings={"ollama_api_url": "http://192.168.1.20:11434"},
+        purpose=LLM_PURPOSE_DEFAULT,
+    )
+
+    assert resolved.provider == "ollama"
+    assert resolved.api_url == "http://localhost:11434"
+
+
 def test_merge_llm_config_prefers_config_backed_model_defaults_over_owner_settings() -> None:
     resolved = _merge_llm_config(
         base_config={

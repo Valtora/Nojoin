@@ -64,7 +64,7 @@ The audit covered:
 
 ### SEC-002: Authenticated Ollama Model Listing Allows SSRF
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Internal service access from the API container.
 - **Evidence:** [`backend/api/v1/endpoints/llm.py`](../backend/api/v1/endpoints/llm.py#L11)
   accepts an arbitrary `api_url` for any authenticated user.
@@ -78,6 +78,11 @@ The audit covered:
   DNS safely and reject private, loopback, link-local, reserved, and internal
   service addresses unless an operator has explicitly configured a trusted
   local Ollama endpoint.
+- **Verification:** Ollama URL validation now lives in a shared backend policy,
+  the authenticated model-list route is pinned to the installation-wide
+  configured endpoint, runtime Ollama requests disable redirects, and focused
+  tests cover direct IPs, internal service names, DNS resolution, IPv4, IPv6,
+  trusted installation-wide endpoints, and override rejection.
 - **Acceptance criteria:** Ordinary users cannot direct API requests to
   arbitrary internal or external endpoints. Tests cover direct IPs, internal
   service names, DNS resolution, redirects, IPv4, IPv6, and approved Ollama
@@ -85,7 +90,7 @@ The audit covered:
 
 ### SEC-003: Ordinary Users Can Persist Worker-Side Ollama SSRF Targets
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Repeated internal requests from worker processes.
 - **Evidence:** [`backend/api/v1/endpoints/settings.py`](../backend/api/v1/endpoints/settings.py#L86)
   checks URL shape only, and ordinary users can persist `ollama_api_url`.
@@ -95,6 +100,10 @@ The audit covered:
 - **Remediation direction:** Make the Ollama endpoint installation-wide and
   admin-controlled, or apply the same centralised outbound policy before
   persistence and again before use.
+- **Verification:** `ollama_api_url` is now treated as install-wide only,
+  non-admin settings updates drop it, merged worker configuration ignores user
+  overrides, and backend construction rejects unsafe runtime endpoints even if
+  stale values still exist in user settings.
 - **Acceptance criteria:** Non-admin users cannot persist arbitrary Ollama
   endpoints. Worker tasks reject unsafe persisted values even if they already
   exist in the database.

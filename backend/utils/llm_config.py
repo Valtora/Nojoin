@@ -37,6 +37,7 @@ LIVE_MODEL_FIELDS_BY_PROVIDER = {
     "anthropic": "anthropic_live_model",
     "ollama": "ollama_live_model",
 }
+INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset({"ollama_api_url"})
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,8 @@ def _merge_llm_config(
     sanitized_user_settings = strip_legacy_automatic_ai_settings(
         dict(user_settings) if user_settings else {}
     )
+    for field in INSTALL_WIDE_ONLY_USER_LLM_FIELDS:
+        sanitized_user_settings.pop(field, None)
     merged.update({key: value for key, value in system_keys.items() if value})
 
     if owner_settings:

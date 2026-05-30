@@ -3,6 +3,8 @@ from typing import List, Optional
 from backend.api.error_handling import sanitized_http_exception
 from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import get_current_user, get_db
+from backend.utils.config_manager import config_manager
+from backend.utils.ollama_url_policy import validate_ollama_api_url
 import logging
 
 router = APIRouter()
@@ -17,6 +19,20 @@ async def list_models(
     db = Depends(get_db) # We need the DB to fetch system keys
 ):
     try:
+        if provider == "ollama":
+            configured_api_url = validate_ollama_api_url(
+                config_manager.get("ollama_api_url"),
+                allow_private=True,
+            )
+            if api_url:
+                requested_api_url = validate_ollama_api_url(
+                    api_url,
+                    trusted_url=configured_api_url,
+                )
+                if requested_api_url != configured_api_url:
+                    raise ValueError("Ollama API URL is managed installation-wide.")
+            api_url = configured_api_url
+
         if not api_key:
             from backend.utils.config_manager import async_get_system_api_keys
             system_keys = await async_get_system_api_keys(db)

@@ -43,6 +43,7 @@ def test_get_mutable_user_settings_strips_legacy_automatic_ai_keys() -> None:
         {
             "theme": "dark",
             "prefer_short_titles": False,
+            "ollama_api_url": "http://192.168.1.20:11434",
             "auto_generate_notes": False,
             "auto_generate_title": False,
             "auto_infer_speakers": False,
@@ -65,6 +66,19 @@ def test_build_settings_update_data_ignores_masked_sensitive_values() -> None:
     )
 
     update_data = _build_settings_update_data(settings, is_admin=True)
+
+    assert update_data == {"prefer_short_titles": False}
+
+
+def test_build_settings_update_data_drops_install_wide_ollama_url_for_non_admin() -> None:
+    settings = SettingsUpdate.model_validate(
+        {
+            "prefer_short_titles": False,
+            "ollama_api_url": "http://192.168.1.20:11434",
+        }
+    )
+
+    update_data = _build_settings_update_data(settings, is_admin=False)
 
     assert update_data == {"prefer_short_titles": False}
 

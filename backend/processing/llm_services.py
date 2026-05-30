@@ -33,6 +33,7 @@ from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     parse_speaker_inference_response,
 )
+from backend.utils.ollama_url_policy import validate_ollama_api_url
 import os
 
 logger = logging.getLogger(__name__)
@@ -1530,20 +1531,45 @@ class AnthropicLLMBackend(LLMBackend):
             raise ValueError(f"Anthropic API validation failed: {e}")
 
 class OllamaLLMBackend(LLMBackend):
-    def __init__(self, api_url=None, model=None):
+    def __init__(
+        self,
+        api_url=None,
+        model=None,
+        allow_private_api_url: bool = False,
+    ):
         import requests
+
         self.requests = requests
+        trusted_api_url = config_manager.get("ollama_api_url")
         if api_url is None:
-            api_url = config_manager.get("ollama_api_url")
+            api_url = trusted_api_url
         if not api_url:
-             api_url = "http://host.docker.internal:11434"
-        
-        self.api_url = api_url.rstrip('/')
+            api_url = "http://host.docker.internal:11434"
+
+        self.api_url = validate_ollama_api_url(
+            api_url,
+            allow_private=allow_private_api_url,
+            trusted_url=trusted_api_url,
+        )
         self.model = model or config_manager.get("ollama_model")
+
+    def _get(self, path: str, **kwargs):
+        return self.requests.get(
+            f"{self.api_url}{path}",
+            allow_redirects=False,
+            **kwargs,
+        )
+
+    def _post(self, path: str, **kwargs):
+        return self.requests.post(
+            f"{self.api_url}{path}",
+            allow_redirects=False,
+            **kwargs,
+        )
 
     def list_models(self) -> List[str]:
         try:
-            resp = self.requests.get(f"{self.api_url}/api/tags")
+            resp = self._get("/api/tags", timeout=10)
             resp.raise_for_status()
             data = resp.json()
             return sorted([m['name'] for m in data.get('models', [])])
@@ -1579,7 +1605,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_speaker_inference_result(text, eligible_labels)
@@ -1619,7 +1645,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
@@ -1647,7 +1673,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_automatic_meeting_intelligence_result(text, request)
@@ -1672,7 +1698,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_meeting_edge_result(text, request)
@@ -1704,7 +1730,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             return resp.json().get('message', {}).get('content', '')
         except Exception as e:
@@ -1735,7 +1761,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": True,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, stream=True, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, stream=True, timeout=timeout)
             resp.raise_for_status()
             
             import json
@@ -1765,7 +1791,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": {"temperature": 0.2}
             }
-            resp = self.requests.post(f"{self.api_url}/api/chat", json=payload, timeout=timeout)
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_title(text)
@@ -1795,7 +1821,13 @@ def get_default_model_for_provider(provider: str) -> Optional[str]:
     return _get_default_model_for_provider(provider)
 
 # --- LLM Backend Factory ---
-def get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
+def get_llm_backend(
+    provider: str,
+    api_key=None,
+    model=None,
+    api_url=None,
+    allow_private_api_url: bool = False,
+):
     """
     Factory function to instantiate the appropriate LLM backend.
     Heavy dependencies are only imported when needed.
@@ -1824,6 +1856,10 @@ def get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
     elif provider == "anthropic":
         return AnthropicLLMBackend(api_key=api_key, model=model)
     elif provider == "ollama":
-        return OllamaLLMBackend(api_url=api_url, model=model)
+        return OllamaLLMBackend(
+            api_url=api_url,
+            model=model,
+            allow_private_api_url=allow_private_api_url,
+        )
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

@@ -5,6 +5,10 @@ import logging
 import os
 from urllib.parse import urlparse
 
+from backend.utils.ollama_url_policy import (
+    OllamaURLValidationError,
+    validate_ollama_api_url,
+)
 from backend.utils.timezones import get_default_timezone_name
 from .path_manager import path_manager
 
@@ -338,11 +342,9 @@ class ConfigManager:
             validate_timezone_name(str(value))
         if key == "ollama_api_url" and value:
             try:
-                result = urlparse(value)
-                if not all([result.scheme, result.netloc]) or result.scheme not in ['http', 'https']:
-                    raise ValueError(f"Invalid ollama_api_url: {value}")
-            except:
-                raise ValueError(f"Invalid ollama_api_url: {value}")
+                validate_ollama_api_url(str(value), allow_private=True)
+            except OllamaURLValidationError as exc:
+                raise ValueError(f"Invalid ollama_api_url: {value}") from exc
         return True
 
     def get(self, key, default=None):

@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import Optional, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from urllib.parse import urlparse
 import logging
 
 from backend.api.error_handling import sanitized_http_exception
@@ -20,10 +19,12 @@ from backend.utils.config_manager import (
     get_default_user_settings,
     strip_legacy_automatic_ai_settings,
 )
+from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset({"ollama_api_url"})
 
 class SettingsUpdate(BaseModel):
     openai_api_key: Optional[str] = None
@@ -88,11 +89,9 @@ class SettingsUpdate(BaseModel):
     def validate_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
         if value:
             try:
-                result = urlparse(value)
-                if not all([result.scheme, result.netloc]):
-                    raise ValueError("Invalid URL format")
-            except ValueError:
-                raise ValueError("Invalid URL format")
+                return validate_ollama_api_url(value, allow_private=True)
+            except OllamaURLValidationError as exc:
+                raise ValueError(str(exc)) from exc
         return value
 
     @field_validator('timezone')
@@ -207,7 +206,12 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
 
 
 def _get_mutable_user_settings(user_settings: dict | None) -> dict[str, Any]:
-    return strip_legacy_automatic_ai_settings(dict(user_settings) if user_settings else {})
+    sanitized = strip_legacy_automatic_ai_settings(
+        dict(user_settings) if user_settings else {}
+    )
+    for key in INSTALL_WIDE_ONLY_USER_SETTING_KEYS:
+        sanitized.pop(key, None)
+    return sanitized
 
 
 def _build_settings_update_data(
@@ -227,6 +231,10 @@ def _build_settings_update_data(
         if not is_admin or (value and ("..." in str(value) or "***" in str(value))):
             del update_data[key]
 
+    if not is_admin:
+        for key in INSTALL_WIDE_ONLY_USER_SETTING_KEYS:
+            update_data.pop(key, None)
+
     return update_data
 
 
@@ -240,6 +248,11 @@ async def _save_user_settings(
     update_data = _build_settings_update_data(settings, is_admin=is_admin)
 
     try:
+        if "ollama_api_url" in update_data:
+            update_data["ollama_api_url"] = validate_ollama_api_url(
+                update_data["ollama_api_url"],
+                allow_private=True,
+            )
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
     except ValueError as e:

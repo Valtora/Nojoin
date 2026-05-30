@@ -24,6 +24,7 @@ from backend.core.security import MIN_PASSWORD_LENGTH, hash_user_password, valid
 from backend.models.user import User
 from backend.worker.tasks import download_models_task
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
+from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
 from backend.preload_models import check_model_status
 from backend.utils.download_progress import get_download_progress, is_download_in_progress
 from backend.seed_demo import seed_demo_data
@@ -265,6 +266,16 @@ class SetupRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         return validate_password_policy(value)
 
+    @field_validator("ollama_api_url")
+    @classmethod
+    def validate_ollama_url(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return value
+        try:
+            return validate_ollama_api_url(value, allow_private=True)
+        except OllamaURLValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
 
 @router.get("/health")
 async def get_system_health(
@@ -355,7 +366,10 @@ async def setup_system(
     settings["gemini_api_key"] = resolve(setup_in.gemini_api_key, "gemini_api_key")
     settings["openai_api_key"] = resolve(setup_in.openai_api_key, "openai_api_key")
     settings["anthropic_api_key"] = resolve(setup_in.anthropic_api_key, "anthropic_api_key")
-    settings["ollama_api_url"] = resolve(setup_in.ollama_api_url, "ollama_api_url")
+    settings["ollama_api_url"] = validate_ollama_api_url(
+        resolve(setup_in.ollama_api_url, "ollama_api_url"),
+        allow_private=True,
+    )
     
     if setup_in.selected_model:
         if setup_in.llm_provider == "ollama":
@@ -570,4 +584,3 @@ async def get_tls_fingerprint(
     Falls back to hashing the local self-signed certificate.
     """
     return {"fingerprint": resolve_tls_fingerprint()}
-

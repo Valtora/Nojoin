@@ -114,10 +114,17 @@ def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
     capture: dict[str, object] = {}
 
     class FakeRequests:
-        def post(self, url: str, json: dict, timeout: int):
+        def post(
+            self,
+            url: str,
+            json: dict,
+            timeout: int,
+            allow_redirects: bool,
+        ):
             capture["url"] = url
             capture["json"] = json
             capture["timeout"] = timeout
+            capture["allow_redirects"] = allow_redirects
             return _FakeOllamaResponse(_sample_payload())
 
     backend = object.__new__(OllamaLLMBackend)
@@ -130,5 +137,6 @@ def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
     assert "## User Notes" in result.notes_markdown
     assert capture["timeout"] == 30
+    assert capture["allow_redirects"] is False
     assert capture["url"] == "http://ollama.local/api/chat"
     assert capture["json"]["stream"] is False

@@ -1,10 +1,7 @@
 import hmac
-import ipaddress
 import logging
 import os
-import socket
 from typing import Optional
-import urllib.parse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -24,6 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from backend.models.user import User
 from backend.utils.config_manager import config_manager
+from backend.utils.ollama_url_policy import (
+    OllamaURLValidationError,
+    validate_ollama_api_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,62 +55,20 @@ def _raise_setup_validation_error(
         exc=exc,
     )
 
-def validate_api_url_for_ssrf(url: Optional[str]):
+
+def _validate_setup_ollama_api_url(url: str | None) -> str | None:
     if not url:
-        return
-        
-    # If the URL matches the default configured OLLAMA_API_URL, it's safe (admin configured it via env)
-    default_ollama_url = config_manager.get("ollama_api_url")
-    if url == default_ollama_url:
-        return
+        return url
 
     try:
-        parsed = urllib.parse.urlparse(url)
-        hostname = parsed.hostname
-        if not hostname:
-            return
-            
-        hostname = hostname.lower()
-        
-        # Allow explicit external LLM API hostnames to avoid DNS lookup overhead
-        whitelist = [
-            "api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com", 
-            "api.groq.com", "api.deepseek.com", "api.together.xyz", "openrouter.ai"
-        ]
-        if hostname in whitelist:
-            return
+        return validate_ollama_api_url(
+            url,
+            allow_private=True,
+            trusted_url=config_manager.get("ollama_api_url"),
+        )
+    except OllamaURLValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        # Block obvious internal hostnames 
-        forbidden_hosts = [
-            "localhost", "socket-proxy", "db", "redis", "worker", "api", "frontend", "host.docker.internal", "nginx"
-        ]
-        
-        if hostname in forbidden_hosts:
-            raise HTTPException(status_code=400, detail="Invalid API URL: Internal network hostnames are blocked for security reasons.")
-            
-        # Resolve hostname to IP and check if it's private/loopback/link-local
-        ip_obj = None
-        try:
-            # Check if hostname is already an IP
-            ip_obj = ipaddress.ip_address(hostname)
-        except ValueError:
-            # Not an IP, try to resolve it
-            try:
-                # getaddrinfo handles both IPv4 and IPv6
-                addr_info = socket.getaddrinfo(hostname, None)
-                ip = addr_info[0][4][0]
-                ip_obj = ipaddress.ip_address(ip)
-            except (socket.gaierror, IndexError):
-                # DNS resolution failed, we must reject it to prevent SSRF bypass
-                raise HTTPException(status_code=400, detail="Invalid API URL: Could not resolve hostname.")
-
-        if ip_obj and (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified):
-            raise HTTPException(status_code=400, detail="Invalid API URL: Internal or reserved IPs are blocked for security reasons.")
-            
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=400, detail="Invalid API URL format")
 
 router = APIRouter()
 
@@ -272,9 +231,16 @@ async def validate_llm(
              db_url = user.settings.get("ollama_api_url") if user and hasattr(user, "settings") and user.settings else None
              api_url = db_url if db_url else config_manager.get("ollama_api_url")
 
-        validate_api_url_for_ssrf(api_url)
+        if request.provider == "ollama":
+            api_url = _validate_setup_ollama_api_url(api_url)
 
-        llm = get_llm_backend(request.provider, api_key=api_key, model=request.model, api_url=api_url)
+        llm = get_llm_backend(
+            request.provider,
+            api_key=api_key,
+            model=request.model,
+            api_url=api_url,
+            allow_private_api_url=request.provider == "ollama",
+        )
         llm.validate_api_key()
         
         models = []
@@ -372,9 +338,15 @@ async def list_models(
              db_url = user.settings.get("ollama_api_url") if user and hasattr(user, "settings") and user.settings else None
              api_url = db_url if db_url else config_manager.get("ollama_api_url")
 
-        validate_api_url_for_ssrf(api_url)
+        if request.provider == "ollama":
+            api_url = _validate_setup_ollama_api_url(api_url)
 
-        llm = get_llm_backend(request.provider, api_key=api_key, api_url=api_url)
+        llm = get_llm_backend(
+            request.provider,
+            api_key=api_key,
+            api_url=api_url,
+            allow_private_api_url=request.provider == "ollama",
+        )
         models = llm.list_models()
         return {"models": models}
     except HTTPException:
