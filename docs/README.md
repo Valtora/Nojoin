@@ -27,6 +27,7 @@ Use the links below by task rather than treating the root README as the source o
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): Community conduct expectations.
 - [PRD.md](PRD.md): Product requirements and longer-term feature scope.
 - [AGENTS.md](AGENTS.md): Contributor and automation-oriented project instructions.
+- [code-audit.md](code-audit.md): Living security, release-readiness, correctness, and code-quality remediation tracker.
 - [VERSION](VERSION): The current release version used by the project.
 
 ## Common Tasks

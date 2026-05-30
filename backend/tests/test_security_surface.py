@@ -132,6 +132,7 @@ async def test_public_invitation_validation_is_minimal(monkeypatch) -> None:
             return _FakeScalarResult(
                 SimpleNamespace(
                     code="invite123",
+                    role="user",
                     is_revoked=False,
                     expires_at=None,
                     max_uses=None,

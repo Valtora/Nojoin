@@ -14,6 +14,7 @@ from backend.models.invitation import Invitation
 from backend.models.recording import Recording
 from backend.seed_demo import seed_demo_data
 from backend.services.jwt_revocation_service import bump_user_token_version
+from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.recording_storage import delete_recording_artifacts
 from backend.utils.time import utc_now
@@ -76,6 +77,12 @@ async def register_user(
         raise HTTPException(status_code=400, detail="Invitation has expired")
     if invitation.max_uses and invitation.used_count >= invitation.max_uses:
         raise HTTPException(status_code=400, detail="Invitation usage limit reached")
+
+    invitation_role = resolve_invitation_role(
+        invitation.role,
+        invalid_detail="Invitation is invalid",
+        owner_detail="Invitation is invalid",
+    )
         
     # Check if user exists
     query = select(User).where(User.username == user_in.username)
@@ -89,7 +96,7 @@ async def register_user(
     user = User(
         username=user_in.username,
         hashed_password=hash_user_password(user_in.password),
-        role=invitation.role,
+        role=invitation_role,
         invitation_id=invitation.id,
         is_superuser=False,
         force_password_change=False,
@@ -463,4 +470,3 @@ async def revoke_user_sessions(
         "user_id": target.id,
         "token_version": new_version,
     }
-

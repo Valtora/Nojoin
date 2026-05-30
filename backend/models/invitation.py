@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import ForeignKey, Column, Integer
+from sqlalchemy import ForeignKey, Column, Integer, Enum as SAEnum
 from sqlmodel import Field, Relationship
 from backend.models.base import BaseDBModel
 import secrets
@@ -17,7 +17,14 @@ class Invitation(BaseDBModel, table=True):
     __tablename__ = "invitations"
     
     code: str = Field(default_factory=generate_invite_code, index=True, unique=True)
-    role: str = Field(default="user") # "admin", "user"
+    role: str = Field(
+        default="user",
+        sa_column=Column(
+            SAEnum("user", "admin", name="invitationrole", validate_strings=True),
+            nullable=False,
+            server_default="user",
+        ),
+    )
     expires_at: Optional[datetime] = None
     max_uses: Optional[int] = 1 # None = unlimited
     used_count: int = Field(default=0)

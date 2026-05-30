@@ -10,6 +10,7 @@ from backend.api.deps import get_db, get_current_user
 from backend.models.user import User, UserRole
 from backend.models.invitation import Invitation
 from backend.utils.config_manager import get_trusted_web_origin
+from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.time import utc_now
 from pydantic import BaseModel
@@ -56,12 +57,18 @@ async def create_invitation(
     if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
         raise HTTPException(status_code=403, detail="Not authorized")
 
+    invitation_role = resolve_invitation_role(
+        invitation_in.role,
+        invalid_detail="Invalid invitation role",
+        owner_detail="Owner invitations are not allowed",
+    )
+
     expires_at = None
     if invitation_in.expires_in_days:
         expires_at = utc_now() + timedelta(days=invitation_in.expires_in_days)
 
     invitation = Invitation(
-        role=invitation_in.role,
+        role=invitation_role,
         expires_at=expires_at,
         max_uses=invitation_in.max_uses,
         created_by_id=current_user.id
@@ -75,7 +82,7 @@ async def create_invitation(
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
-        **invitation.dict(),
+        **invitation.model_dump(),
         link=link,
         users=[]
     )
@@ -110,7 +117,7 @@ async def read_invitations(
         link = f"{web_app_url}/register?invite={inv.code}"
         usernames = [u.username for u in inv.users]
         res.append(InvitationRead(
-            **inv.dict(),
+            **inv.model_dump(),
             link=link,
             users=usernames
         ))
@@ -142,7 +149,7 @@ async def revoke_invitation(
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
-        **invitation.dict(),
+        **invitation.model_dump(),
         link=link,
         users=[] 
     )
@@ -171,7 +178,7 @@ async def delete_invitation(
     link = f"{web_app_url}/register?invite={invitation.code}"
     
     return InvitationRead(
-        **invitation.dict(),
+        **invitation.model_dump(),
         link=link,
         users=[] 
     )
@@ -208,5 +215,11 @@ async def validate_invitation(
         
     if invitation.max_uses and invitation.used_count >= invitation.max_uses:
         raise HTTPException(status_code=400, detail="Invitation usage limit reached")
+
+    resolve_invitation_role(
+        invitation.role,
+        invalid_detail="Invitation is invalid",
+        owner_detail="Invitation is invalid",
+    )
         
     return {"valid": True}

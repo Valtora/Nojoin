@@ -19,7 +19,7 @@ Registration is invite-gated.
 Admins can:
 
 - Create invitation links.
-- Choose the invited role.
+- Choose the invited role between `user` and `admin`.
 - Set expiry and usage limits.
 - Revoke invites while retaining the historical record.
 - Delete revoked invites permanently if desired.
