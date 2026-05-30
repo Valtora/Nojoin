@@ -19,9 +19,9 @@ if [ ! -f "$KEY_FILE" ] || [ ! -f "$CRT_FILE" ]; then
     
     echo "Certificates generated successfully."
     
-    # Set permissions so other containers/users can read them if necessary
+    # Set permissions: public certificate is world-readable, private key is owner-only
     chmod 644 "$CRT_FILE"
-    chmod 644 "$KEY_FILE"
+    chmod 600 "$KEY_FILE"
 else
     echo "SSL certificates already exist. Skipping generation."
 fi

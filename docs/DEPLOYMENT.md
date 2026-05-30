@@ -210,6 +210,10 @@ location / {
 ## Upgrading and Migration
 
 - When performing major upgrades, check release notes for breaking changes.
+- **TLS Private Key Permissions (SEC-005):** For security hardening, the TLS private key (`cert.key`) generated in `nginx/` is now set to mode `600` (owner-readable only) instead of `644` (world-readable). For existing deployments, operators should manually restrict the permissions of their existing private key on the host:
+  ```bash
+  chmod 600 nginx/cert.key
+  ```
 - The browser-capture cutover retires the Windows desktop helper. Users start live recordings directly from the Nojoin web app in a supported browser.
 - Existing recordings remain viewable and process through the same backend pipeline. Existing native-helper installs are obsolete and should be removed from user machines.
 - Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.

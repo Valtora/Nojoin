@@ -112,7 +112,7 @@ The audit covered:
 
 ### SEC-004: Deployment Templates Accept Known Placeholder Secrets
 
-- **Status:** Mitigated
+- **Status:** Resolved
 - **Impact:** Predictable bootstrap access, encryption seed, and internal
   service credentials when operators use the copy-paste deployment path
   without replacing defaults.
@@ -133,13 +133,15 @@ The audit covered:
 
 ### SEC-005: Generated TLS Private Keys Are World-Readable
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Local users and processes on a shared host can read the bundled
   TLS private key.
 - **Evidence:** [`docker/init-ssl.sh`](../docker/init-ssl.sh#L22) applies mode
   `644` to both the certificate and private key.
 - **Remediation direction:** Set the private key to `600`. The public
   certificate may remain `644`.
+- **Remediation:** Changed [`docker/init-ssl.sh`](../docker/init-ssl.sh) to apply `600` permissions to the private key while leaving the public certificate as `644`. Added migration instructions to [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
+- **Verification:** Verified that newly generated keys are generated with `600` permissions and applied `chmod 600` to the existing key file in the workspace.
 - **Acceptance criteria:** Newly generated keys are owner-readable only.
   Existing deployments receive migration guidance.
 
