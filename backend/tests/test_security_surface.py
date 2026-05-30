@@ -475,6 +475,14 @@ async def test_detailed_system_health_returns_component_status_for_authenticated
         return {
             "status": "warning",
             "version": "2.0.0",
+            "deployment_warnings": [
+                {
+                    "code": "placeholder_first_run_password",
+                    "key": "FIRST_RUN_PASSWORD",
+                    "title": "Placeholder bootstrap password configured",
+                    "message": "Update it.",
+                }
+            ],
             "components": {
                 "db": "connected",
                 "worker": "inactive",
@@ -490,6 +498,14 @@ async def test_detailed_system_health_returns_component_status_for_authenticated
     assert response.json() == {
         "status": "warning",
         "version": "2.0.0",
+        "deployment_warnings": [
+            {
+                "code": "placeholder_first_run_password",
+                "key": "FIRST_RUN_PASSWORD",
+                "title": "Placeholder bootstrap password configured",
+                "message": "Update it.",
+            }
+        ],
         "components": {
             "db": "connected",
             "worker": "inactive",

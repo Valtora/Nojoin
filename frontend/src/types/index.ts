@@ -590,6 +590,13 @@ export interface AdminHealthCheck {
   [key: string]: unknown;
 }
 
+export interface DeploymentWarning {
+  code: string;
+  key: string;
+  title: string;
+  message: string;
+}
+
 export interface AdminHealthSummary {
   pipeline_status: "ready" | "degraded" | "blocked";
   message: string;

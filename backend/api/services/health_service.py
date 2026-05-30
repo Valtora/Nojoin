@@ -15,6 +15,7 @@ from sqlmodel import Session, text
 from backend.celery_app import celery_app
 from backend.core.db import sync_engine
 from backend.preload_models import check_model_status
+from backend.utils.deployment_warnings import get_deployment_warnings
 from backend.utils.config_manager import async_get_system_api_keys, config_manager
 from backend.utils.download_progress import get_download_progress, is_download_in_progress
 from backend.utils.version import get_installed_version
@@ -622,6 +623,7 @@ async def get_system_health_status() -> dict[str, Any]:
     health_status = {
         "status": "ok",
         "version": get_installed_version(),
+        "deployment_warnings": get_deployment_warnings(),
         "components": {
             "db": "unknown",
             "worker": "unknown",

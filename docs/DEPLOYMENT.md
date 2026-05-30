@@ -49,6 +49,11 @@ The repository does not ship a separate Docker Compose development override.
 
 Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
 If you add or change it, redeploy the stack before using the setup wizard.
+If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD`, or the
+tracked PostgreSQL password placeholder are left at their example values,
+Nojoin now emits startup log warnings and an authenticated frontend warning
+toast. Those warnings are advisory only; operators are still responsible for
+replacing the placeholder secrets in `.env`.
 
 The compose template is already configured for GPU inference.
 
@@ -111,6 +116,8 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 
 - `FIRST_RUN_PASSWORD`: Required bootstrap password for the first successful Nojoin initialisation.
 - `DATA_ENCRYPTION_KEY`: Stable installation-wide encryption seed used for calendar OAuth client secrets and user calendar tokens. Set this once and keep it unchanged for the lifetime of the deployment.
+- `POSTGRES_PASSWORD`: Replace the tracked example value before any deployment that persists data or is reachable by other users or hosts.
+- `REDIS_PASSWORD`: Replace the tracked example value before any deployment that persists data or is reachable by other users or hosts.
 
 ### Change for Remote or Reverse-Proxy Deployments
 

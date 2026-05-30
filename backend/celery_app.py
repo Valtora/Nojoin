@@ -5,8 +5,9 @@ import logging
 import redis
 from celery import Celery, bootsteps
 from backend.core.audio_setup import setup_audio_environment
-from celery.signals import setup_logging
+from celery.signals import setup_logging, worker_ready
 from backend.utils.logging_config import setup_logging as configure_logging
+from backend.utils.deployment_warnings import log_deployment_warnings
 
 # Setup audio environment (patches torchaudio)
 setup_audio_environment()
@@ -19,6 +20,11 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 @setup_logging.connect
 def config_loggers(*args, **kwargs):
     configure_logging()
+
+
+@worker_ready.connect
+def log_placeholder_secret_warnings_on_worker_start(**kwargs):
+    log_deployment_warnings(startup_path="worker startup", logger_instance=logger)
 
 celery_app = Celery(
     "nojoin_worker",

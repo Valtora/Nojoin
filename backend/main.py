@@ -128,6 +128,7 @@ from backend.utils.config_manager import (
     get_trusted_host_list,
     get_trusted_web_origin,
 )
+from backend.utils.deployment_warnings import log_deployment_warnings
 
 async def ensure_owner_exists():
     """
@@ -192,6 +193,7 @@ async def lifespan(app: FastAPI):
     await ensure_owner_exists()
     await ensure_recording_public_ids_on_startup()
     await ensure_recording_meeting_uids_on_startup()
+    log_deployment_warnings(startup_path="API startup", logger_instance=logger)
     # Seed demo data for the initial user if needed
     try:
         await seed_demo_data()

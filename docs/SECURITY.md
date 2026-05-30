@@ -18,6 +18,11 @@ Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first succes
 - Application log output redacts `Authorization`, cookies, bootstrap credentials, passwords, tokens, and API-key fields if they are accidentally included in a log record.
 
 Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record `Authorization` headers or setup request bodies.
+Nojoin also warns operators when `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`,
+or the tracked Redis/PostgreSQL placeholder secrets still match the shipped
+deployment-template values. Those warnings appear in API or worker startup logs
+and in the authenticated frontend, but they are advisory only and do not block
+startup or first-run setup.
 
 ## Browser Session Request Protection
 

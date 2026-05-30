@@ -10,6 +10,7 @@ export default function ServiceStatusAlerts() {
     backend,
     db,
     worker,
+    deploymentWarnings,
     backendFailCount,
     checkBackend,
     startPolling,
@@ -21,7 +22,9 @@ export default function ServiceStatusAlerts() {
     backend: null,
     db: null,
     worker: null,
+    placeholderSecrets: null,
   });
+  const placeholderWarningSignature = useRef<string>("");
 
   // Track startup grace period
   const isStartupRef = useRef(true);
@@ -101,6 +104,41 @@ export default function ServiceStatusAlerts() {
         removeActiveNotification(notificationIds.current.worker);
         notificationIds.current.worker = null;
       }
+
+      const nextPlaceholderSignature = deploymentWarnings
+        .map((warning) => `${warning.code}:${warning.key}`)
+        .sort()
+        .join("|");
+
+      if (!backend || deploymentWarnings.length === 0) {
+        if (notificationIds.current.placeholderSecrets) {
+          removeActiveNotification(notificationIds.current.placeholderSecrets);
+          notificationIds.current.placeholderSecrets = null;
+        }
+        placeholderWarningSignature.current = "";
+        return;
+      }
+
+      if (nextPlaceholderSignature === placeholderWarningSignature.current) {
+        return;
+      }
+
+      if (notificationIds.current.placeholderSecrets) {
+        removeActiveNotification(notificationIds.current.placeholderSecrets);
+      }
+
+      const affectedKeys = deploymentWarnings
+        .map((warning) => warning.key)
+        .sort()
+        .join(", ");
+
+      notificationIds.current.placeholderSecrets = addNotification({
+        type: "warning",
+        message:
+          `Security warning: Nojoin is using known placeholder secrets from the deployment templates (${affectedKeys}). Update .env and restart or redeploy Nojoin.`,
+        persistent: true,
+      });
+      placeholderWarningSignature.current = nextPlaceholderSignature;
     };
 
     updateNotifications();
@@ -108,6 +146,7 @@ export default function ServiceStatusAlerts() {
     backend,
     db,
     worker,
+    deploymentWarnings,
     backendFailCount,
     addNotification,
     removeActiveNotification,

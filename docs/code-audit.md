@@ -112,7 +112,7 @@ The audit covered:
 
 ### SEC-004: Deployment Templates Accept Known Placeholder Secrets
 
-- **Status:** Open
+- **Status:** Mitigated
 - **Impact:** Predictable bootstrap access, encryption seed, and internal
   service credentials when operators use the copy-paste deployment path
   without replacing defaults.
@@ -120,10 +120,16 @@ The audit covered:
   Redis, first-run, and data-encryption placeholders.
   [`docker-compose.example.yml`](../docker-compose.example.yml#L96) rejects a
   missing `FIRST_RUN_PASSWORD` but accepts the known placeholder.
-- **Remediation direction:** Implement a secure generation command for operator secrets.
-  Document that PostgreSQL and Redis credentials also need replacement.
+- **Remediation direction:** Detect tracked placeholder secrets at runtime,
+  warn operators in startup logs and the authenticated web UI, and document
+  that secret replacement remains the operator's responsibility.
+- **Verification:** The API and worker now log one startup warning when tracked
+  placeholder secrets are active, authenticated `/api/v1/system/health`
+  responses expose a non-secret `deployment_warnings` array, and the frontend
+  shows a persistent authenticated toast until the placeholders are removed.
 - **Acceptance criteria:** A template deployment with unchanged sentinel values
-  fails closed with actionable operator guidance.
+  produces actionable operator-visible warnings without exposing the raw secret
+  values or blocking startup.
 
 ### SEC-005: Generated TLS Private Keys Are World-Readable
 

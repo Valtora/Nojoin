@@ -1,8 +1,10 @@
 import { create } from "zustand";
+import type { DeploymentWarning } from "@/types";
 
 interface DetailedHealthStatus {
   status: string;
   version: string;
+  deployment_warnings: DeploymentWarning[];
   components: {
     db: string;
     worker: string;
@@ -14,6 +16,7 @@ interface ServiceStatusState {
   db: boolean;
   worker: boolean;
   backendVersion: string | null;
+  deploymentWarnings: DeploymentWarning[];
   isPolling: boolean;
   backendFailCount: number;
   checkBackend: () => Promise<void>;
@@ -59,6 +62,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       backend: false,
       db: false,
       worker: false,
+      deploymentWarnings: [],
       backendFailCount: state.backendFailCount + 1,
     }));
   };
@@ -68,6 +72,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     db: true,
     worker: true,
     backendVersion: null,
+    deploymentWarnings: [],
     isPolling: false,
     backendFailCount: 0,
 
@@ -99,6 +104,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             db: data.components.db === "connected",
             worker: data.components.worker === "active",
             backendVersion: data.version,
+            deploymentWarnings: data.deployment_warnings,
             backendFailCount: 0,
           });
           scheduleNextBackend();
