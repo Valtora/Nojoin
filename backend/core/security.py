@@ -71,6 +71,10 @@ def _write_keyring_file(data: dict[str, Any]) -> None:
     keyring_file = _keyring_path()
     keyring_file.parent.mkdir(parents=True, exist_ok=True)
     keyring_file.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    try:
+        keyring_file.chmod(0o600)
+    except OSError as e:
+        logger.warning("Could not set owner-only permissions on keyring file %s: %s", keyring_file, e)
 
 
 def _bootstrap_keyring() -> dict[str, Any]:
@@ -202,6 +206,10 @@ def _migrate_legacy_secret_file(
     if current_value != legacy_value:
         current_key_file.parent.mkdir(parents=True, exist_ok=True)
         current_key_file.write_text(legacy_value, encoding="utf-8")
+        try:
+            current_key_file.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set owner-only permissions on migrated secret file %s: %s", current_key_file, e)
         logger.warning(
             "Migrated legacy SECRET_KEY from %s to %s so tokens survive container restarts.",
             legacy_key_file,

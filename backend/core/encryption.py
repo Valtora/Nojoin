@@ -1,8 +1,11 @@
 import base64
 import hashlib
+import logging
 import os
 import secrets
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -21,6 +24,10 @@ def _get_encryption_seed() -> str:
     new_seed = secrets.token_urlsafe(48)
     key_file.parent.mkdir(parents=True, exist_ok=True)
     key_file.write_text(new_seed, encoding="utf-8")
+    try:
+        key_file.chmod(0o600)
+    except OSError as e:
+        logger.warning("Could not set owner-only permissions on encryption key file %s: %s", key_file, e)
     return new_seed
 
 
@@ -41,6 +48,10 @@ def _migrate_legacy_encryption_key_file(current_key_file: Path) -> None:
     if current_value != legacy_value:
         current_key_file.parent.mkdir(parents=True, exist_ok=True)
         current_key_file.write_text(legacy_value, encoding="utf-8")
+        try:
+            current_key_file.chmod(0o600)
+        except OSError as e:
+            logger.warning("Could not set owner-only permissions on migrated encryption key file %s: %s", current_key_file, e)
 
     migrated_key_file = legacy_key_file.with_name(f"{legacy_key_file.name}.migrated")
     try:

@@ -138,6 +138,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft calendar OAuth client ID.
 - `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft calendar OAuth client secret.
 - `MICROSOFT_OAUTH_TENANT_ID`: Microsoft tenant ID. Use `common` only when the app registration supports the intended sign-in model.
+- `NOJOIN_UMASK`: Custom umask for the application processes. Defaults to `0077` (owner-only access: `0600`/`0700` permissions on files/directories).
 
 ### DATA_ENCRYPTION_KEY Guidance
 
@@ -214,6 +215,11 @@ location / {
   ```bash
   chmod 600 nginx/cert.key
   ```
+- **Confidential Data File Permissions (SEC-006):** For security hardening, all confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) now default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
+  ```bash
+  chmod -R 700 ./data
+  ```
+  If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
 - The browser-capture cutover retires the Windows desktop helper. Users start live recordings directly from the Nojoin web app in a supported browser.
 - Existing recordings remain viewable and process through the same backend pipeline. Existing native-helper installs are obsolete and should be removed from user machines.
 - Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.

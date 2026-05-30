@@ -178,9 +178,45 @@ class PathManager:
             
             logger.info(f"Ensured directories exist: {self._user_data_directory}")
             
+            # Run the startup permission repair pass
+            self.repair_data_permissions()
+            
         except OSError as e:
             logger.error(f"Failed to create directories: {e}")
             raise
+
+    def repair_data_permissions(self) -> None:
+        """
+        Recursively scans the user data directory and enforces:
+          - 0700 (owner read/write/execute) on all directories.
+          - 0600 (owner read/write) on all files.
+        """
+        user_data_dir = self._user_data_directory
+        if not user_data_dir.exists():
+            return
+            
+        logger.info("Running startup permission repair pass on: %s", user_data_dir)
+        
+        # Secure the root user data directory itself
+        try:
+            user_data_dir.chmod(0o700)
+        except OSError as e:
+            logger.warning("Could not set permissions on root data dir %s: %s", user_data_dir, e)
+            
+        # Walk the directory structure recursively
+        for root, dirs, files in os.walk(user_data_dir):
+            for d in dirs:
+                dir_path = Path(root) / d
+                try:
+                    dir_path.chmod(0o700)
+                except OSError as e:
+                    logger.warning("Could not set permissions on directory %s: %s", dir_path, e)
+            for f in files:
+                file_path = Path(root) / f
+                try:
+                    file_path.chmod(0o600)
+                except OSError as e:
+                    logger.warning("Could not set permissions on file %s: %s", file_path, e)
     
     # Public API
     @property

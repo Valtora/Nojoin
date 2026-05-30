@@ -147,7 +147,7 @@ The audit covered:
 
 ### SEC-006: Confidential Data Files Rely on Default Umask
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Meeting audio, JWT signing material, encryption fallback keys,
   logs, and configuration may be readable by unrelated host users.
 - **Evidence:** [`backend/core/security.py`](../backend/core/security.py#L70),
@@ -158,6 +158,8 @@ The audit covered:
 - **Remediation direction:** Apply explicit `0600` file permissions and `0700`
   confidential directory permissions. Add a startup permission repair pass and
   operator-facing migration notes.
+- **Remediation:** Enforced a default `0077` umask at process initialization in [`backend/__init__.py`](../backend/__init__.py) (with custom override support via `NOJOIN_UMASK`). Added explicit `chmod 600` calls during JWT keyring and encryption key file writing. Added an automatic recursive permission repair pass on startup inside [`backend/utils/path_manager.py`](../backend/utils/path_manager.py). Updated migration notes in [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
+- **Verification:** Created unit tests in [`backend/tests/test_umask_security.py`](../backend/tests/test_umask_security.py) verifying umask parsing and the recursive file/directory permissions repair pass, both of which pass successfully.
 - **Acceptance criteria:** New and existing secret, recording, document, and
   log files are not group- or world-readable unless intentionally configured.
 
