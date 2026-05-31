@@ -104,7 +104,9 @@ async def upload_document(
     await db.refresh(document)
 
     # Trigger processing task
-    process_document_task.delay(document.id)
+    task = process_document_task.delay(document.id)
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, current_user.id)
 
     return serialize_document(document, recording_public_id=recording.public_id)
 

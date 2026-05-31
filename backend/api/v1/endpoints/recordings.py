@@ -568,6 +568,8 @@ async def _requeue_for_processing(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, recording.user_id)
 
 
 def get_ordinal_suffix(day: int) -> str:
@@ -1155,9 +1157,11 @@ async def finalize_upload(
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
-    
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, recording.user_id)
 
-    generate_proxy_task.delay(recording.id)
+    proxy_task = generate_proxy_task.delay(recording.id)
+    await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -1259,10 +1263,13 @@ async def import_audio(
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, recording.user_id)
     
     # Trigger proxy generation task
     if not recording.proxy_path:
-        generate_proxy_task.delay(recording.id)
+        proxy_task = generate_proxy_task.delay(recording.id)
+        await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -1486,10 +1493,12 @@ async def finalize_chunked_import(
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
-    
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, recording.user_id)
 
     if not recording.proxy_path:
-        generate_proxy_task.delay(recording.id)
+        proxy_task = generate_proxy_task.delay(recording.id)
+        await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -1578,10 +1587,12 @@ async def upload_recording(
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
-    
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, recording.user_id)
 
     if not recording.proxy_path:
-        generate_proxy_task.delay(recording.id)
+        proxy_task = generate_proxy_task.delay(recording.id)
+        await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -2474,6 +2485,8 @@ async def infer_speakers_for_recording(
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, recording.user_id)
     
     return {"status": "queued", "message": "Speaker suggestion refresh started in background."}
 

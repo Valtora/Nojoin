@@ -3,7 +3,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from backend.api.error_handling import sanitized_http_exception
 from backend.core.backup_manager import BackupManager
 from backend.utils.path_manager import PathManager
-from backend.api.deps import get_current_active_superuser
+from backend.api.deps import get_current_active_superuser, get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models.user import User
 from backend.utils.upload_limit import stream_and_validate_upload, UPLOAD_LIMIT_BACKUP
 from backend.utils.rate_limit import enforce_upload_concurrency
@@ -19,9 +20,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/export", dependencies=[Depends(get_current_active_superuser)])
+@router.post("/export")
 async def export_backup(
-    include_audio: bool = Query(True, description="Include audio files in backup")
+    include_audio: bool = Query(True, description="Include audio files in backup"),
+    current_user: User = Depends(get_current_active_superuser),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Trigger background backup creation.
@@ -34,6 +37,8 @@ async def export_backup(
             "backend.worker.tasks.create_backup_task",
             kwargs={"include_audio": include_audio}
         )
+        from backend.models.task import register_task_ownership
+        await register_task_ownership(db, task.id, current_user.id)
         return {"task_id": task.id}
     except Exception as e:
         raise sanitized_http_exception(

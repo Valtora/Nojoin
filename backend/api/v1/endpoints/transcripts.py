@@ -1689,7 +1689,9 @@ async def generate_notes(
     db.add(transcript)
     await db.commit()
     
-    generate_notes_task.delay(recording.id)
+    task = generate_notes_task.delay(recording.id)
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, current_user.id)
     
     return {
         "status": "success",

@@ -2,7 +2,8 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Text, UniqueConstraint
-from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Field, Relationship, SQLModel, select
 
 from backend.models.base import BaseDBModel
 from backend.models.tag import TagRead
@@ -134,3 +135,45 @@ class UserTaskRead(BaseDBModel):
     archived_at: Optional[datetime] = None
     tags: list[TagRead] = Field(default_factory=list)
     linked_recordings: list[UserTaskRecordingRead] = Field(default_factory=list)
+
+
+class AsyncTaskOwnership(BaseDBModel, table=True):
+    __tablename__ = "async_task_ownerships"
+
+    task_id: str = Field(max_length=255, unique=True, index=True, nullable=False)
+    user_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+
+
+async def register_task_ownership(db: AsyncSession, task_id: str, user_id: int) -> None:
+    """Record the ownership of a Celery task."""
+    ownership = AsyncTaskOwnership(task_id=task_id, user_id=user_id)
+    db.add(ownership)
+    await db.commit()
+
+
+async def check_task_ownership(db: AsyncSession, task_id: str, user) -> bool:
+    """
+    Check if the user is allowed to query the given task.
+    Admins/superusers can access all tasks.
+    Standard users can only access tasks they own.
+    """
+    is_superuser = getattr(user, "is_superuser", False)
+    role = getattr(user, "role", "user")
+    if is_superuser or role in ("owner", "admin"):
+        return True
+
+    stmt = select(AsyncTaskOwnership).where(AsyncTaskOwnership.task_id == task_id)
+    result = await db.execute(stmt)
+    ownership = result.scalar_one_or_none()
+
+    if ownership is None:
+        return False
+
+    return ownership.user_id == user.id

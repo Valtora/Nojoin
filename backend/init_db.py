@@ -9,7 +9,7 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import Tag, RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.chat import ChatMessage
-from backend.models.task import UserTask
+from backend.models.task import UserTask, AsyncTaskOwnership
 from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
 from backend.models.pipeline import (
     RecordingAudioChunk,

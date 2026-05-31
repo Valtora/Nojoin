@@ -433,6 +433,7 @@ async def trigger_model_download(
     hf_token: Optional[str] = None,
     whisper_model_size: Optional[str] = None,
     current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Trigger the background task to download models.
@@ -443,6 +444,8 @@ async def trigger_model_download(
             hf_token = configured_hf_token if isinstance(configured_hf_token, str) else None
 
     task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size) # type: ignore
+    from backend.models.task import register_task_ownership
+    await register_task_ownership(db, task.id, current_user.id)
     return {"task_id": task.id}
 
 @router.get("/download-progress")
@@ -487,10 +490,15 @@ async def get_current_download_progress(
 async def get_task_status(
     task_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Any:
     """
     Get the status of a background task.
     """
+    from backend.models.task import check_task_ownership
+    if not await check_task_ownership(db, task_id, current_user):
+         raise HTTPException(status_code=404, detail="Task not found")
+
     task_result = AsyncResult(task_id)
     
     # Handle potential serialization errors if result contains exceptions

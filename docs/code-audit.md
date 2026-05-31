@@ -280,7 +280,7 @@ The audit covered:
 
 ### SEC-011: Celery Task Results Are Not Bound to Owners
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Any authenticated user who obtains a task ID can read task result
   or progress metadata from another user's operation.
 - **Evidence:** [`backend/api/v1/endpoints/system.py`](../backend/api/v1/endpoints/system.py#L444)
@@ -288,6 +288,8 @@ The audit covered:
   or task type.
 - **Remediation direction:** Persist task ownership and expose scoped status
   endpoints for each operation. Return only allowlisted public metadata.
+- **Remediation:** Introduced a new SQLModel table `AsyncTaskOwnership` to track Celery task IDs created by each user. Configured all endpoints dispatching user-facing Celery tasks to register ownership, and enforced verification inside the generic `/tasks/{task_id}` endpoint.
+- **Verification:** Created unit tests in [`backend/tests/test_task_ownership_security.py`](../backend/tests/test_task_ownership_security.py) verifying that standard users cannot fetch tasks owned by others or unregistered task IDs (resulting in a 404), while admins and task owners can read status successfully.
 - **Acceptance criteria:** Cross-user task result reads are rejected.
 
 ### SEC-012: Model Status Exposes Internal Cache Paths

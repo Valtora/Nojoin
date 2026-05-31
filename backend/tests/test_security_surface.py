@@ -578,7 +578,7 @@ async def test_admin_health_returns_readiness_payload_for_admin(monkeypatch) -> 
 @pytest.mark.anyio
 async def test_task_status_hides_internal_failure_details() -> None:
     app, _ = _build_app(initialized=True)
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="user")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1, role="admin", is_superuser=False)
 
     class _FailedTaskResult:
         status = "FAILURE"
