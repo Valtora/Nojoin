@@ -544,7 +544,13 @@ async def get_models_status(
     """
     Get the status of all models.
     """
-    return check_model_status(whisper_model_size=whisper_model_size)
+    status = check_model_status(whisper_model_size=whisper_model_size)
+    is_admin = current_user.role in ["owner", "admin"] or current_user.is_superuser
+    if not is_admin:
+        for model in status:
+            status[model]["path"] = None
+            status[model]["checked_paths"] = []
+    return status
 
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(

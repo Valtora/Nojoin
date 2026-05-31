@@ -1123,7 +1123,7 @@ export default function AISettings({
                           <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
                             <X className="w-3 h-3" /> Missing
                           </span>
-                          {modelStatus?.[model.id]?.checked_paths && (
+                          {modelStatus?.[model.id]?.checked_paths && modelStatus[model.id].checked_paths.length > 0 && (
                             <span
                               className="mt-1 max-w-[200px] truncate cursor-help text-[10px] text-gray-500 dark:text-gray-400"
                               title={`Checked paths:\n${modelStatus[model.id].checked_paths.join("\n")}`}

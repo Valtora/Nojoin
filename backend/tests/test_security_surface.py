@@ -816,3 +816,45 @@ async def test_cors_preflight_allows_configured_web_app_url(monkeypatch) -> None
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://nojoin.example.com"
+
+
+@pytest.mark.anyio
+async def test_models_status_admin() -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, role="admin", is_superuser=False
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url=SECURE_TEST_BASE_URL,
+    ) as client:
+        response = await client.get("/api/v1/system/models/status")
+
+    assert response.status_code == 200
+    res_data = response.json()
+    assert "whisper" in res_data
+    # Admin users should see the unredacted paths/checked_paths lists
+    assert len(res_data["whisper"]["checked_paths"]) > 0
+
+
+@pytest.mark.anyio
+async def test_models_status_non_admin() -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, role="user", is_superuser=False
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url=SECURE_TEST_BASE_URL,
+    ) as client:
+        response = await client.get("/api/v1/system/models/status")
+
+    assert response.status_code == 200
+    res_data = response.json()
+    assert "whisper" in res_data
+    # Non-admin users should get redacted path and checked_paths
+    for model in res_data:
+        assert res_data[model]["path"] is None
+        assert res_data[model]["checked_paths"] == []

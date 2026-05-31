@@ -294,7 +294,7 @@ The audit covered:
 
 ### SEC-012: Model Status Exposes Internal Cache Paths
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Ordinary authenticated users receive internal filesystem paths
   and cache layout details.
 - **Evidence:** [`backend/api/v1/endpoints/system.py`](../backend/api/v1/endpoints/system.py#L489)
@@ -303,6 +303,8 @@ The audit covered:
   `path` and `checked_paths`.
 - **Remediation direction:** Return a redacted user-facing model status or
   restrict detailed paths to administrators.
+- **Remediation:** Updated `/models/status` in [`backend/api/v1/endpoints/system.py`](../backend/api/v1/endpoints/system.py) to check if the user is an admin or superuser, and if not, redacts `path` (set to `None`) and `checked_paths` (set to `[]`). Also updated [`frontend/src/components/settings/AISettings.tsx`](../frontend/src/components/settings/AISettings.tsx) to only display the hover debug info element if `checked_paths` has items to display.
+- **Verification:** Added `test_models_status_admin` and `test_models_status_non_admin` to [`backend/tests/test_security_surface.py`](../backend/tests/test_security_surface.py) to assert correct redaction behavior based on the requester's role. Both tests passed.
 - **Acceptance criteria:** Standard users receive readiness booleans and safe
   labels only.
 
