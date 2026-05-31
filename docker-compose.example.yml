@@ -192,7 +192,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -q --spider --no-check-certificate https://127.0.0.1/api/health && wget -q --spider --no-check-certificate https://127.0.0.1/",
+          "curl -k -f -s -o /dev/null https://127.0.0.1/api/health && curl -k -f -s -o /dev/null https://127.0.0.1/",
         ]
       interval: 10s
       timeout: 5s
