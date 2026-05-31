@@ -96,6 +96,7 @@ services:
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache
       HF_HOME: /shared_model_cache/huggingface
+      NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
     depends_on:
       db:
         condition: service_healthy

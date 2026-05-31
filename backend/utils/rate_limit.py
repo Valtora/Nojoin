@@ -19,19 +19,106 @@ _fallback_lock = asyncio.Lock()
 _fallback_windows: dict[str, deque[float]] = defaultdict(deque)
 
 
+import ipaddress
+import socket
+
+_dns_cache: dict[str, tuple[list[ipaddress.IPv4Address | ipaddress.IPv6Address], float]] = {}
+DNS_CACHE_TTL = 60.0
+
+
+def _parse_trusted_proxies(proxies_str: str) -> list:
+    if not proxies_str:
+        return []
+    
+    trusted = []
+    for item in proxies_str.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            if "/" in item:
+                trusted.append(ipaddress.ip_network(item, strict=False))
+            else:
+                trusted.append(ipaddress.ip_address(item))
+            continue
+        except ValueError:
+            pass
+        trusted.append(item)
+    return trusted
+
+
+def _resolve_hostname(hostname: str) -> list:
+    now = time.time()
+    if hostname in _dns_cache:
+        cached_ips, expires = _dns_cache[hostname]
+        if now < expires:
+            return cached_ips
+            
+    ips = []
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+        for info in infos:
+            ip_str = info[4][0]
+            try:
+                ips.append(ipaddress.ip_address(ip_str))
+            except ValueError:
+                pass
+    except socket.gaierror as exc:
+        logger.warning(f"Failed to resolve trusted proxy hostname {hostname}: {exc}")
+        
+    _dns_cache[hostname] = (ips, now + DNS_CACHE_TTL)
+    return ips
+
+
+def _is_ip_in_trusted(ip_str: str, trusted_list: list) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+        
+    for target in trusted_list:
+        if isinstance(target, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+            if ip == target:
+                return True
+        elif isinstance(target, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+            if ip in target:
+                return True
+        elif isinstance(target, str):
+            resolved_ips = _resolve_hostname(target)
+            if ip in resolved_ips:
+                return True
+    return False
+
+
 def get_client_address(request: Request) -> str:
-    x_real_ip = request.headers.get("x-real-ip")
-    if x_real_ip:
-        return x_real_ip.split(",")[0].strip()
+    if not request.client or not request.client.host:
+        return "unknown"
+
+    direct_peer = request.client.host
+    
+    trusted_proxies_env = os.getenv("NOJOIN_TRUSTED_PROXIES", "127.0.0.1,::1,nginx")
+    trusted_list = _parse_trusted_proxies(trusted_proxies_env)
+    
+    if not _is_ip_in_trusted(direct_peer, trusted_list):
+        return direct_peer
 
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+        ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+        client_ip = direct_peer
+        for hop in reversed(ips):
+            if _is_ip_in_trusted(client_ip, trusted_list):
+                client_ip = hop
+            else:
+                break
+        return client_ip
 
-    if request.client and request.client.host:
-        return request.client.host
+    x_real_ip = request.headers.get("x-real-ip")
+    if x_real_ip:
+        return x_real_ip.strip()
 
-    return "unknown"
+    return direct_peer
+
 
 
 def _build_rate_limit_key(

@@ -250,7 +250,7 @@ The audit covered:
 
 ### SEC-009: Reverse-Proxy Client Address Handling Is Not Explicit
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Login throttling can become ineffective or collapse all users
   behind an edge proxy into one denial-of-service bucket.
 - **Evidence:** [`backend/utils/rate_limit.py`](../backend/utils/rate_limit.py#L22)
@@ -259,8 +259,11 @@ The audit covered:
 - **Remediation direction:** Define trusted proxy hops explicitly. Preserve or
   derive the real edge client address only from trusted intermediaries, and
   reject spoofed forwarded headers from untrusted peers.
+- **Remediation:** Added `NOJOIN_TRUSTED_PROXIES` environment variable defaulting to `127.0.0.1,::1,nginx`. Reimplemented `get_client_address` in `backend/utils/rate_limit.py` to traverse the `X-Forwarded-For` header right-to-left, stopping at the first untrusted IP, and to only fall back to `X-Real-IP` if the direct peer is trusted. Documented configuration in `.env.example`, `docker-compose.example.yml`, and `docs/DEPLOYMENT.md`.
+- **Verification:** Created unit/integration tests in [`backend/tests/test_proxy_rate_limit.py`](../backend/tests/test_proxy_rate_limit.py) covering direct access (spoofed headers ignored), single trusted proxy, nested trusted proxies, spoofed headers via trusted proxies, `X-Real-IP` fallback, and dynamic hostname resolution for docker containers. All 7 tests passed successfully.
 - **Acceptance criteria:** Tests cover direct access, one trusted proxy, nested
   trusted proxies, spoofed headers, and multiple users behind an edge proxy.
+
 
 ### SEC-010: Invitation Usage Limits Are Race-Prone
 

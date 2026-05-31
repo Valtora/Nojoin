@@ -122,6 +122,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 ### Change for Remote or Reverse-Proxy Deployments
 
 - `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, other public URLs, and the backend CORS allowlist.
+- `NOJOIN_TRUSTED_PROXIES`: Comma-separated list of trusted proxy IP addresses, CIDR blocks, or hostnames. Defaults to `127.0.0.1,::1,nginx` to cover local loopback access and the default Docker Nginx proxy container name. If deploying behind an external load balancer or edge proxy (e.g. Cloudflare, AWS ALB), add its IP/CIDR to ensure that rate-limiting resolves client IPs correctly and safely.
 
 ### Common Optional Values
 
