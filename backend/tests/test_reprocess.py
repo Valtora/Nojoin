@@ -2057,10 +2057,12 @@ async def test_import_audio_bootstraps_durable_import_chunk_and_window(
     tmp_path: Path,
 ) -> None:
     from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.utils import recording_audio_sync as sync_module
 
     calls = _patch_delay(monkeypatch)
     monkeypatch.setattr(recordings_module, "generate_proxy_task", type("_Task", (), {"delay": staticmethod(lambda *a, **k: None)})())
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda *a, **k: 12.0)
+    monkeypatch.setattr(sync_module, "get_audio_duration", lambda *a, **k: 12.0)
     monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
 
     response = await client.post(
@@ -2086,3 +2088,43 @@ async def test_import_audio_bootstraps_durable_import_chunk_and_window(
     assert chunk_rows[0][3] == 12000
     assert Path(chunk_rows[0][4]).exists()
     assert manifest_rows == [("import", 0, 12000, 0, 0)]
+
+
+@pytest.mark.anyio
+async def test_import_low_bitrate_audio_succeeds(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.utils import recording_audio_sync as sync_module
+
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setattr(recordings_module, "generate_proxy_task", type("_Task", (), {"delay": staticmethod(lambda *a, **k: None)})())
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda *a, **k: 15.0)
+    monkeypatch.setattr(sync_module, "get_audio_duration", lambda *a, **k: 15.0)
+    monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
+
+    # Send a request to import a low-bitrate .mp3 file
+    response = await client.post(
+        "/api/v1/recordings/import",
+        files={"file": ("low_quality.mp3", b"fake-mp3-data", "audio/mp3")},
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+    async with test_session_maker() as session:
+        chunk_rows = (
+            await session.execute(text("SELECT sequence_no, source_kind, absolute_start_ms, absolute_end_ms, storage_path FROM recording_audio_chunks"))
+        ).all()
+        manifest_rows = (
+            await session.execute(text("SELECT source_kind, window_start_ms, window_end_ms, chunk_start_sequence, chunk_end_sequence FROM recording_audio_window_manifests"))
+        ).all()
+
+    assert len(chunk_rows) == 1
+    assert chunk_rows[0][1] == "import"
+    assert chunk_rows[0][3] == 15000
+    assert manifest_rows == [("import", 0, 15000, 0, 0)]
+

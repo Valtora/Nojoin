@@ -1207,13 +1207,7 @@ async def import_audio(
             exc=e,
         )
 
-    try:
-        _enforce_lossy_audio_bitrate_floor(file_path)
-    except HTTPException:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        raise
-    
+
     # Get file stats
     file_stats = os.stat(file_path)
     
@@ -1415,7 +1409,6 @@ async def finalize_chunked_import(
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
-        _enforce_lossy_audio_bitrate_floor(recording.audio_path)
         
         # Get file stats
         file_stats = os.stat(recording.audio_path)
