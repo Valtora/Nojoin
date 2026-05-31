@@ -94,13 +94,16 @@ export default function MeetingControls({
     try {
       return await start("");
     } catch (err: unknown) {
+      console.error("Failed to start browser recording:", err);
       if (!controller.getState().error) {
         addNotification({
           type: "error",
           message:
             err instanceof Error && err.message
               ? err.message
-              : "Failed to start browser recording.",
+              : err
+                ? String(err)
+                : "Failed to start browser recording.",
         });
       }
       return null;

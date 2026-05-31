@@ -130,10 +130,15 @@ export const createCaptureMixer = async (
   }
 
   const destination = context.createMediaStreamDestination();
-  const systemSource = options.displayStream
-    ? context.createMediaStreamSource(options.displayStream)
+  const hasDisplayAudio = Boolean(
+    options.displayStream &&
+      typeof options.displayStream.getAudioTracks === "function" &&
+      options.displayStream.getAudioTracks().length > 0,
+  );
+  const systemSource = hasDisplayAudio
+    ? context.createMediaStreamSource(options.displayStream!)
     : context.createGain();
-  if (!options.displayStream && "gain" in systemSource) {
+  if (!hasDisplayAudio && "gain" in systemSource) {
     systemSource.gain.value = 0;
   }
   const microphoneSource = context.createMediaStreamSource(

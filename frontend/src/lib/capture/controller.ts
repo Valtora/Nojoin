@@ -9,6 +9,7 @@ import {
   pauseRecordingCapture,
   resumeRecordingCapture,
 } from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 import type { Recording, RecordingId } from "@/types";
 
 import { detectCaptureSupport } from "./featureDetect";
@@ -84,11 +85,15 @@ const formatCaptureError = (error: unknown) => {
     }
   }
 
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
 
-  return "The browser capture flow failed unexpectedly.";
+  return error ? String(error) : "The browser capture flow failed unexpectedly.";
 };
 
 const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => {
@@ -244,6 +249,14 @@ export class CaptureController {
         mode: resolveCaptureMode(support),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
       });
+
+      if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
+        useNotificationStore.getState().addNotification({
+          type: "warning",
+          message: "No system/tab audio detected. Only microphone audio will be recorded.",
+        });
+      }
+
       await this.activateRuntime({
         recordingId: initResponse.id,
         startSequence: 0,
@@ -350,6 +363,14 @@ export class CaptureController {
         mode: resolveCaptureMode(support),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
       });
+
+      if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
+        useNotificationStore.getState().addNotification({
+          type: "warning",
+          message: "No system/tab audio detected. Only microphone audio will be recorded.",
+        });
+      }
+
       resumeResponse = await resumeRecordingCapture(targetRecordingId);
       await this.activateRuntime({
         recordingId: targetRecordingId,

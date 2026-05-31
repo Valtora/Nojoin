@@ -11,8 +11,10 @@ export class PickSourceError extends Error {
 
   constructor(code: PickSourceErrorCode, message: string) {
     super(message);
+    this.message = message;
     this.code = code;
     this.name = "PickSourceError";
+    Object.setPrototypeOf(this, PickSourceError.prototype);
   }
 }
 
@@ -80,21 +82,13 @@ export const pickCaptureSource = async (
           : "Display capture was cancelled before the recording started.",
       );
     }
-
-    if (displayStream.getAudioTracks().length === 0) {
-      stopTracks(displayStream);
-      throw new PickSourceError(
-        "missing_display_audio",
-        "Please tick Share audio in the picker and try again.",
-      );
-    }
   }
 
   try {
     microphoneStream = await mediaDevices.getUserMedia({
       audio: {
         deviceId: options.microphoneDeviceId
-          ? { exact: options.microphoneDeviceId }
+          ? { ideal: options.microphoneDeviceId }
           : undefined,
         echoCancellation: false,
         noiseSuppression: false,
