@@ -182,7 +182,7 @@ The audit covered:
 
 ### REL-001: Release Images Can Be Published Without Verification Gates
 
-- **Status:** Open
+- **Status:** Deferred
 - **Impact:** Broken or vulnerable images can be published as release artifacts
   and tagged `latest`.
 - **Evidence:** [`.github/workflows/release.yml`](../.github/workflows/release.yml#L3)
@@ -233,7 +233,7 @@ The audit covered:
 
 ### SEC-008: Superusers Can Read Logs From Arbitrary Host Containers
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** On shared Docker hosts, a compromised Nojoin superuser account can
   retrieve logs from unrelated containers and potentially disclose secrets.
 - **Evidence:** [`backend/api/v1/endpoints/system.py`](../backend/api/v1/endpoints/system.py#L128)
@@ -243,6 +243,8 @@ The audit covered:
 - **Remediation direction:** Restrict log access to an explicit Nojoin
   container allowlist. Consider removing Docker socket access entirely from the
   API and collecting Nojoin logs through a narrower mechanism.
+- **Remediation:** Enforced a strict allowlist of allowed Nojoin production and development container names in `backend/api/v1/endpoints/system.py`. Requests to download or stream logs for any container outside of this list are rejected immediately.
+- **Verification:** Created unit and integration tests in [`backend/tests/test_container_logs_security.py`](../backend/tests/test_container_logs_security.py) verifying that log requests for allowed container names succeed, whereas unauthorized/invalid container names are rejected with 403 Forbidden (for downloads) or closed immediately with WS code 1008 policy violation (for WebSockets).
 - **Acceptance criteria:** Requests for non-Nojoin container names are rejected
   before Docker is queried.
 
@@ -373,7 +375,7 @@ The audit covered:
 
 ### QA-001: There Is No Pull-Request CI Workflow
 
-- **Status:** Open
+- **Status:** Deferred
 - **Impact:** Regressions are detected manually or during release instead of
   before merge.
 - **Evidence:** The only workflow under `.github/workflows/` is

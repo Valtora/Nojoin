@@ -126,6 +126,26 @@ except DockerException as e:
     client_init_error = str(e)
 
 
+ALLOWED_CONTAINERS = {
+    # Production container names
+    "nojoin-api",
+    "nojoin-worker",
+    "nojoin-frontend",
+    "nojoin-nginx",
+    "nojoin-redis",
+    "nojoin-db",
+    "nojoin-socket-proxy",
+    # Development container names
+    "nojoin-dev-api",
+    "nojoin-dev-worker",
+    "nojoin-dev-frontend",
+    "nojoin-dev-nginx",
+    "nojoin-dev-redis",
+    "nojoin-dev-db",
+    "nojoin-dev-socket-proxy",
+}
+
+
 @router.get("/logs/download")
 def download_logs(
     container: str,
@@ -135,6 +155,9 @@ def download_logs(
     Download logs for a specific container.
     Requires Superuser privileges.
     """
+    if container not in ALLOWED_CONTAINERS:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     docker_client = client
     if docker_client is None:
         raise HTTPException(status_code=503, detail="Docker client unavailable")
@@ -157,6 +180,7 @@ def download_logs(
         logger.error(f"Error fetching logs for {container}: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
 
+
 @router.websocket("/logs/live")
 async def websocket_logs(
     websocket: WebSocket, 
@@ -169,6 +193,10 @@ async def websocket_logs(
     and pushes to an asyncio queue to prevent blocking the main event loop.
     Supports streaming from a single container or "all" containers.
     """
+    if container != "all" and container not in ALLOWED_CONTAINERS:
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     
     docker_client = client
