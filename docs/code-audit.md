@@ -195,13 +195,15 @@ The audit covered:
 
 ### BUG-001: Calendar Candidate Linking Crashes at Runtime
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** The calendar event candidate endpoint returns a server error.
 - **Evidence:** [`backend/api/v1/endpoints/recordings.py`](../backend/api/v1/endpoints/recordings.py#L1794)
   uses `timedelta` without importing it. The backend suite reproduces the
   failure.
 - **Remediation direction:** Add the missing import and retain a focused
   regression test.
+- **Remediation:** Imported `timedelta` from the `datetime` module at the top of [`backend/api/v1/endpoints/recordings.py`](../backend/api/v1/endpoints/recordings.py).
+- **Verification:** Verified that the candidate calendar linking tests in [`backend/tests/test_calendar_event_linking.py`](../backend/tests/test_calendar_event_linking.py) pass successfully after the fix.
 - **Acceptance criteria:** The affected backend test passes and candidate
   linking works through the API.
 
