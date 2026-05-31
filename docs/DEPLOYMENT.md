@@ -180,6 +180,14 @@ For internet-exposed deployments, treat `FIRST_RUN_PASSWORD` as a deployment sec
 
 When fronting Nojoin with Nginx, Caddy, Traefik, or another reverse proxy:
 
+### Loopback Port Binding (DEP-001)
+
+By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to the loopback interface (`127.0.0.1`) rather than all host interfaces (`0.0.0.0`). This ensures that if you place Nojoin behind an edge reverse proxy (such as Caddy, Traefik, or a tunnel) on the same host, the bundled proxy is not exposed directly to the public internet, preventing bypass of the edge proxy's authentication, rate limiting, or filtering.
+
+* **NOJOIN_BIND_ADDRESS**: Controls the host IP interface the bundled proxy binds to. Defaults to `127.0.0.1`.
+* **Direct-Access Deployments**: If you do not use an edge proxy and want the bundled Nginx proxy to be reachable directly from other hosts or the public internet, set `NOJOIN_BIND_ADDRESS=0.0.0.0` in your `.env` file and restart the stack.
+* **Firewall Expectations**: If exposing ports directly by setting `NOJOIN_BIND_ADDRESS=0.0.0.0` or a public IP, ensure you have configured appropriate host firewall rules (e.g., `ufw` or `iptables`) to restrict access to authorized IP ranges.
+
 1. Proxy to the HTTPS endpoint, not the plain HTTP port.
 2. By default that means the host-facing port `14443`.
 3. Disable upstream certificate verification because Nojoin uses a self-signed internal certificate by default.

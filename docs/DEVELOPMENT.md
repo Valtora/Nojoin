@@ -409,8 +409,8 @@ services:
     container_name: nojoin-dev-nginx
     image: nginx:alpine
     ports:
-      - "14141:80"
-      - "14443:443"
+      - "${NOJOIN_BIND_ADDRESS:-127.0.0.1}:14141:80"
+      - "${NOJOIN_BIND_ADDRESS:-127.0.0.1}:14443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx:/etc/nginx/certs

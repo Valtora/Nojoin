@@ -165,7 +165,7 @@ The audit covered:
 
 ### DEP-001: Bundled Proxy Ports Can Bypass an External Edge Proxy
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Operators may unintentionally expose the bundled Nginx proxy
   directly, bypassing authentication, filtering, or rate limiting configured
   on Caddy, Traefik, a tunnel, or another edge proxy.
@@ -175,6 +175,8 @@ The audit covered:
 - **Remediation direction:** Bind the bundled proxy to loopback by default for
   edge-proxy deployments, provide an explicit direct-access variant, and
   document firewall expectations.
+- **Remediation:** Added `NOJOIN_BIND_ADDRESS` in `.env.example` defaulting to `127.0.0.1` and updated `docker-compose.example.yml` to bind the bundled Nginx proxy ports to this variable (falling back to loopback). Updated development templates in `docs/DEVELOPMENT.md` and reverse proxy deployment documentation in `docs/DEPLOYMENT.md` to detail direct-access overrides and firewall considerations.
+- **Verification:** Updated the host deployment's environment and recreated the Nginx container to restrict port mapping strictly to the loopback interface (`127.0.0.1`), validating the loopback binding.
 - **Acceptance criteria:** The recommended public-internet deployment exposes
   exactly one intentional edge entry point.
 
