@@ -1,7 +1,7 @@
 """add async task ownerships
 
 Revision ID: 8ea23b91dd75
-Revises: 7c1f4e2a9b63
+Revises: 1f2e3d4c5b6a
 Create Date: 2026-05-31 12:00:00.000000
 """
 
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 revision: str = "8ea23b91dd75"
-down_revision: Union[str, Sequence[str], None] = "7c1f4e2a9b63"
+down_revision: Union[str, Sequence[str], None] = "1f2e3d4c5b6a"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
