@@ -267,12 +267,14 @@ The audit covered:
 
 ### SEC-010: Invitation Usage Limits Are Race-Prone
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Concurrent registrations can exceed an invitation's `max_uses`.
 - **Evidence:** [`backend/api/v1/endpoints/users.py`](../backend/api/v1/endpoints/users.py#L66)
   checks and increments usage without a row lock or atomic update.
 - **Remediation direction:** Perform an atomic conditional increment or lock
   the invitation row within the registration transaction.
+- **Remediation:** Added row-level locking by appending `.with_for_update()` to the query for the invitation code inside `register_user` in [`backend/api/v1/endpoints/users.py`](../backend/api/v1/endpoints/users.py).
+- **Verification:** Created query verification unit test `test_register_user_uses_with_for_update` in [`backend/tests/test_invitation_role_security.py`](../backend/tests/test_invitation_role_security.py) asserting that the row lock query modifier is compiled during registration, preventing race conditions under PostgreSQL concurrent transactions.
 - **Acceptance criteria:** Concurrent registration tests prove that usage
   limits cannot be exceeded.
 

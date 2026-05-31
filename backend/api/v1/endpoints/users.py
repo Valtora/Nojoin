@@ -65,7 +65,7 @@ async def register_user(
         raise HTTPException(status_code=400, detail="Invitation code required")
         
     # Validate invite
-    query = select(Invitation).where(Invitation.code == user_in.invite_code)
+    query = select(Invitation).where(Invitation.code == user_in.invite_code).with_for_update()
     result = await db.execute(query)
     invitation = result.scalar_one_or_none()
     
