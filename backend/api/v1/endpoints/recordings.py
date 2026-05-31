@@ -58,6 +58,12 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
 from backend.utils.config_manager import config_manager, is_llm_available
+from backend.utils.upload_limit import (
+    stream_and_validate_upload,
+    UPLOAD_LIMIT_SEGMENT,
+    UPLOAD_LIMIT_LEGACY_RECORDING,
+)
+from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.processing_eta import estimate_processing_eta
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
@@ -870,6 +876,7 @@ async def resume_upload(
 
 @router.post("/{recording_id}/segment")
 async def upload_segment(
+    request: Request,
     recording_id: str,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
@@ -879,48 +886,53 @@ async def upload_segment(
     """
     Upload a segment for a recording.
     """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-    segment_suffix = _resolve_segment_upload_suffix(file)
+    async with enforce_upload_concurrency(request, "upload_segment", str(current_user.id), 5):
+        recording = await _get_owned_recording(db, recording_id, current_user.id)
+        segment_suffix = _resolve_segment_upload_suffix(file)
 
-    _ensure_recording_accepts_uploads(recording)
-    
-    recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
+        _ensure_recording_accepts_uploads(recording)
         
-    filename = os.path.basename(f"{int(sequence)}{segment_suffix}")
-    segment_path = recording_temp_dir / filename
-    content = b""
-    
-    try:
-        async with aiofiles.open(segment_path, 'wb') as out_file:
-            content = await file.read()
-            await out_file.write(content)
-        if segment_suffix == ".wav":
-            await _sync_recording_audio_chunks_from_directory(
-                db,
-                recording_id=recording.id,
-                source_kind="browser",
-                suffix=".wav",
-            )
-            await _sync_recording_audio_window_manifests(
-                db,
-                recording_id=recording.id,
-                source_kind="browser",
-                seal_tail=False,
-            )
-        await db.commit()
-    except Exception as e:
+        recording_temp_dir = recording_upload_temp_dir(recording.id, create=True)
+            
+        filename = os.path.basename(f"{int(sequence)}{segment_suffix}")
+        segment_path = recording_temp_dir / filename
+        
         try:
-            if segment_path.exists():
-                segment_path.unlink()
-        except OSError:
-            pass
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Failed to save the uploaded segment.",
-            log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
-            exc=e,
-        )
+            await stream_and_validate_upload(
+                file=file,
+                dest_path=str(segment_path),
+                max_size=UPLOAD_LIMIT_SEGMENT,
+            )
+            if segment_suffix == ".wav":
+                await _sync_recording_audio_chunks_from_directory(
+                    db,
+                    recording_id=recording.id,
+                    source_kind="browser",
+                    suffix=".wav",
+                )
+                await _sync_recording_audio_window_manifests(
+                    db,
+                    recording_id=recording.id,
+                    source_kind="browser",
+                    seal_tail=False,
+                )
+            await db.commit()
+        except HTTPException:
+            raise
+        except Exception as e:
+            try:
+                if segment_path.exists():
+                    segment_path.unlink()
+            except OSError:
+                pass
+            raise sanitized_http_exception(
+                logger=logger,
+                status_code=500,
+                client_message="Failed to save the uploaded segment.",
+                log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
+                exc=e,
+            )
+
 
     try:
         record_pipeline_metric(
@@ -1491,6 +1503,7 @@ async def finalize_chunked_import(
 
 @router.post("/upload", response_model=RecordingPublicRead)
 async def upload_recording(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -1514,18 +1527,24 @@ async def upload_recording(
     file_path = str(recordings_root_dir() / unique_filename)
     
     # Save the file
-    try:
-        async with aiofiles.open(file_path, 'wb') as out_file:
-            content = await file.read()
-            await out_file.write(content)
-    except Exception as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Failed to save the uploaded recording.",
-            log_message=f"Failed to persist uploaded recording '{file.filename}'.",
-            exc=e,
-        )
+    async with enforce_upload_concurrency(request, "upload_recording", str(current_user.id), 2):
+        try:
+            await stream_and_validate_upload(
+                file=file,
+                dest_path=file_path,
+                max_size=UPLOAD_LIMIT_LEGACY_RECORDING,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise sanitized_http_exception(
+                logger=logger,
+                status_code=500,
+                client_message="Failed to save the uploaded recording.",
+                log_message=f"Failed to persist uploaded recording '{file.filename}'.",
+                exc=e,
+            )
+
 
     try:
         _enforce_lossy_audio_bitrate_floor(file_path)

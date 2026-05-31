@@ -123,3 +123,71 @@ async def enforce_rate_limit(
             detail=detail,
             headers={"Retry-After": str(retry_after)},
         )
+
+
+_fallback_concurrency: dict[str, int] = defaultdict(int)
+
+
+async def acquire_concurrency_limit(key: str, limit: int) -> bool:
+    client = await _get_redis()
+    if client is not None:
+        try:
+            val = await client.incr(key)
+            if val > limit:
+                await client.decr(key)
+                return False
+            return True
+        except Exception as exc:
+            logger.warning(f"Redis concurrency check failed: {exc}")
+            # Fall through to in-memory fallback
+
+    async with _fallback_lock:
+        val = _fallback_concurrency[key]
+        if val >= limit:
+            return False
+        _fallback_concurrency[key] = val + 1
+        return True
+
+
+async def release_concurrency_limit(key: str):
+    client = await _get_redis()
+    if client is not None:
+        try:
+            await client.decr(key)
+            # Clean up key if it drops to 0 or below to prevent memory leak
+            val = await client.get(key)
+            if val is not None and int(val) <= 0:
+                await client.delete(key)
+            return
+        except Exception as exc:
+            logger.warning(f"Redis concurrency release failed: {exc}")
+            # Fall through to in-memory fallback
+
+    async with _fallback_lock:
+        if key in _fallback_concurrency:
+            _fallback_concurrency[key] -= 1
+            if _fallback_concurrency[key] <= 0:
+                _fallback_concurrency.pop(key, None)
+
+
+import contextlib
+
+
+@contextlib.asynccontextmanager
+async def enforce_upload_concurrency(
+    request: Request,
+    namespace: str,
+    user_id: str,
+    limit: int,
+):
+    key = f"{RATE_LIMIT_KEY_PREFIX}:concurrency:{namespace}:{user_id}"
+    acquired = await acquire_concurrency_limit(key, limit)
+    if not acquired:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many concurrent uploads. Please wait for active uploads to finish."
+        )
+    try:
+        yield
+    finally:
+        await release_concurrency_limit(key)

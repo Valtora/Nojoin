@@ -1,5 +1,7 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
+from backend.utils.upload_limit import stream_and_validate_upload, UPLOAD_LIMIT_DOCUMENT
+from backend.utils.rate_limit import enforce_upload_concurrency
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 import logging
@@ -48,6 +50,7 @@ async def list_documents(
 
 @router.post("/recordings/{recording_id}/documents", response_model=DocumentPublicRead)
 async def upload_document(
+    request: Request,
     recording_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -69,18 +72,24 @@ async def upload_document(
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = os.path.join(DOCUMENTS_DIR, unique_filename)
 
-    try:
-        async with aiofiles.open(file_path, 'wb') as out_file:
-            content = await file.read()
-            await out_file.write(content)
-    except Exception as e:
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Failed to save the uploaded document.",
-            log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording.public_id}.",
-            exc=e,
-        )
+    async with enforce_upload_concurrency(request, "upload_document", str(current_user.id), 2):
+        try:
+            await stream_and_validate_upload(
+                file=file,
+                dest_path=file_path,
+                max_size=UPLOAD_LIMIT_DOCUMENT,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise sanitized_http_exception(
+                logger=logger,
+                status_code=500,
+                client_message="Failed to save the uploaded document.",
+                log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording.public_id}.",
+                exc=e,
+            )
+
 
     # Create Document entry
     document = Document(

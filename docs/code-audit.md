@@ -211,7 +211,7 @@ The audit covered:
 
 ### SEC-007: Authenticated Upload Routes Buffer Large Bodies in API Memory
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** A low-privilege account can create avoidable API memory pressure
   with concurrent uploads.
 - **Evidence:** [`nginx/nginx.conf`](../nginx/nginx.conf#L25) permits request
@@ -226,6 +226,8 @@ The audit covered:
   [`backend/api/v1/endpoints/backup.py`](../backend/api/v1/endpoints/backup.py#L157).
 - **Remediation direction:** Stream uploads to disk in bounded chunks, apply
   route-specific size limits, and add per-user concurrency or rate controls.
+- **Remediation:** Rewrote all API upload endpoints to stream incoming files to disk in 64KB chunks rather than buffering them fully in memory. Applied configurable route-specific size limits defaulting to 15MB for segments, 250MB for legacy recordings, 20MB for documents, and 300MB for backups. Enforced per-user concurrency limits (5 for segments, 2 for large uploads) via Redis with local dictionary fallback.
+- **Verification:** Verified by writing a comprehensive unit/integration test suite in [`backend/tests/test_upload_limits.py`](../backend/tests/test_upload_limits.py) covering chunked streaming, early content-length rejection, chunk-based rejection, temporary file cleanup, and concurrency locking.
 - **Acceptance criteria:** Large uploads do not scale API memory linearly with
   request size.
 

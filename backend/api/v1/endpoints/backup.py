@@ -1,9 +1,12 @@
-from fastapi import APIRouter, UploadFile, File, Query, BackgroundTasks, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Query, BackgroundTasks, HTTPException, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse
 from backend.api.error_handling import sanitized_http_exception
 from backend.core.backup_manager import BackupManager
 from backend.utils.path_manager import PathManager
 from backend.api.deps import get_current_active_superuser
+from backend.models.user import User
+from backend.utils.upload_limit import stream_and_validate_upload, UPLOAD_LIMIT_BACKUP
+from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.celery_app import celery_app
 from celery.result import AsyncResult
 import os
@@ -125,9 +128,11 @@ async def download_export(
 @router.post("/import", dependencies=[Depends(get_current_active_superuser)])
 async def import_backup(
     background_tasks: BackgroundTasks,
+    request: Request,
     file: UploadFile = File(...),
     clear_existing: bool = Query(False, description="Clear existing data before restoring"),
-    overwrite_existing: bool = Query(False, description="Overwrite existing recordings if they exist")
+    overwrite_existing: bool = Query(False, description="Overwrite existing recordings if they exist"),
+    current_user: User = Depends(get_current_active_superuser)
 ):
     """
     Trigger background backup restoration.
@@ -152,43 +157,51 @@ async def import_backup(
         safe_filename = "backup.zip"
     temp_path = restore_temp_dir / f"{job_id}_{safe_filename}"
     
-    try:
-        with open(temp_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        # Initialize job in manager
-        BackupManager.restore_jobs[job_id] = {
-            "status": "pending",
-            "progress": "Queued",
-            "error": None
-        }
+    async with enforce_upload_concurrency(request, "import_backup", str(current_user.id), 2):
+        try:
+            await stream_and_validate_upload(
+                file=file,
+                dest_path=str(temp_path),
+                max_size=UPLOAD_LIMIT_BACKUP,
+            )
+            
+            # Initialize job in manager
+            BackupManager.restore_jobs[job_id] = {
+                "status": "pending",
+                "progress": "Queued",
+                "error": None
+            }
 
-        # Run in background
-        background_tasks.add_task(
-            BackupManager.restore_backup, 
-            job_id, 
-            str(temp_path), 
-            clear_existing, 
-            overwrite_existing
-        )
-        
-        return JSONResponse(
-            status_code=202,
-            content={"job_id": job_id, "message": "Restore started"}
-        )
+            # Run in background
+            background_tasks.add_task(
+                BackupManager.restore_backup, 
+                job_id, 
+                str(temp_path), 
+                clear_existing, 
+                overwrite_existing
+            )
+            
+            return JSONResponse(
+                status_code=202,
+                content={"job_id": job_id, "message": "Restore started"}
+            )
 
-    except Exception as e:
-        # Cleanup on immediate failure
-        if temp_path.exists():
-            os.remove(temp_path)
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message="Failed to start backup restore.",
-            log_message="Failed to start backup restore upload.",
-            exc=e,
-        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            # Cleanup on immediate failure
+            try:
+                if temp_path.exists():
+                    os.unlink(temp_path)
+            except OSError:
+                pass
+            raise sanitized_http_exception(
+                logger=logger,
+                status_code=500,
+                client_message="Failed to start backup restore.",
+                log_message="Failed to start backup restore upload.",
+                exc=e,
+            )
 
 @router.get("/import/{job_id}", dependencies=[Depends(get_current_active_superuser)])
 async def get_import_status(job_id: str):
