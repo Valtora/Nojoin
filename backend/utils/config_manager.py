@@ -469,55 +469,19 @@ def is_llm_available():
     model = config_manager.get(f"{provider}_model")
     return bool(api_key and model)
 
-def get_system_api_keys(session):
-    """Retrieves system-wide API keys prioritizing the owner user's settings, then .env fallback."""
-    from backend.models.user import User
-    from sqlmodel import select
-    keys = {}
-    
-    # First, try to get from the owner's database settings
-    owner = session.exec(select(User).where(User.role == "owner")).first()
-    if owner and getattr(owner, "settings", None):
-        for sk in SENSITIVE_KEYS:
-            val = owner.settings.get(sk)
-            if val and not ("..." in val or "***" in val):
-                keys[sk] = val
-                
-    # Fallback to .env for any missing keys
+def get_system_api_keys(session=None):
+    """Retrieves system-wide API keys exclusively from environment variables."""
     import os
+    keys = {}
     for sk in SENSITIVE_KEYS:
-        if sk not in keys or not keys[sk]:
-            env_val = os.environ.get(sk.upper())
-            if env_val:
-                keys[sk] = env_val
-                
+        env_val = os.environ.get(sk.upper())
+        if env_val:
+            keys[sk] = env_val
     return keys
 
-async def async_get_system_api_keys(db):
-    """Async version of get_system_api_keys for FastAPI endpoints."""
-    from backend.models.user import User
-    from sqlmodel import select
-    keys = {}
-    
-    # Try to get from the owner's database settings
-    result = await db.execute(select(User).where(User.role == "owner"))
-    owner = result.scalar_one_or_none()
-    
-    if owner and getattr(owner, "settings", None):
-        for sk in SENSITIVE_KEYS:
-            val = owner.settings.get(sk)
-            if val and not ("..." in val or "***" in val):
-                keys[sk] = val
-                
-    # Fallback to .env for any missing keys
-    import os
-    for sk in SENSITIVE_KEYS:
-        if sk not in keys or not keys[sk]:
-            env_val = os.environ.get(sk.upper())
-            if env_val:
-                keys[sk] = env_val
-                
-    return keys
+async def async_get_system_api_keys(db=None):
+    """Async version of get_system_api_keys."""
+    return get_system_api_keys()
 
 
 def _normalise_origin(origin: str | None) -> str | None:

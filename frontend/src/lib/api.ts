@@ -1258,12 +1258,6 @@ export const setupSystem = async (
   data: {
     username: string;
     password: string;
-    llm_provider: string;
-    gemini_api_key?: string;
-    openai_api_key?: string;
-    anthropic_api_key?: string;
-    ollama_api_url?: string;
-    hf_token?: string;
     selected_model?: string;
   },
   bootstrapPassword?: string,

@@ -280,12 +280,6 @@ async def websocket_logs(
 class SetupRequest(BaseModel):
     username: str
     password: str = Field(min_length=MIN_PASSWORD_LENGTH)
-    llm_provider: str = "gemini"
-    gemini_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
-    anthropic_api_key: Optional[str] = None
-    ollama_api_url: Optional[str] = None
-    hf_token: Optional[str] = None
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
 
@@ -293,16 +287,6 @@ class SetupRequest(BaseModel):
     @classmethod
     def validate_password(cls, value: str) -> str:
         return validate_password_policy(value)
-
-    @field_validator("ollama_api_url")
-    @classmethod
-    def validate_ollama_url(cls, value: Optional[str]) -> Optional[str]:
-        if not value:
-            return value
-        try:
-            return validate_ollama_api_url(value, allow_private=True)
-        except OllamaURLValidationError as exc:
-            raise ValueError(str(exc)) from exc
 
 
 @router.get("/health")
@@ -377,33 +361,17 @@ async def setup_system(
 
     require_first_run_password(request)
     
-    # Helper to resolve value (use input if valid, else fallback to config)
-    def resolve(val, config_key):
-        if val and "..." not in val:
-            return val
-        return config_manager.get(config_key)
-
     # Construct settings dict
     settings = {
-        "llm_provider": setup_in.llm_provider,
-        "hf_token": resolve(setup_in.hf_token, "hf_token"),
         "whisper_model_size": setup_in.whisper_model_size
     }
-
-    # Handle API Keys with fallback
-    settings["gemini_api_key"] = resolve(setup_in.gemini_api_key, "gemini_api_key")
-    settings["openai_api_key"] = resolve(setup_in.openai_api_key, "openai_api_key")
-    settings["anthropic_api_key"] = resolve(setup_in.anthropic_api_key, "anthropic_api_key")
-    settings["ollama_api_url"] = validate_ollama_api_url(
-        resolve(setup_in.ollama_api_url, "ollama_api_url"),
-        allow_private=True,
-    )
     
+    llm_provider = config_manager.get("llm_provider", "gemini")
     if setup_in.selected_model:
-        if setup_in.llm_provider == "ollama":
+        if llm_provider == "ollama":
             settings["ollama_model"] = setup_in.selected_model
         else:
-            settings[f"{setup_in.llm_provider}_model"] = setup_in.selected_model
+            settings[f"{llm_provider}_model"] = setup_in.selected_model
 
     user = User(
         username=setup_in.username,

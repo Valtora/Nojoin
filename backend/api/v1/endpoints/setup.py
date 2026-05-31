@@ -218,37 +218,31 @@ async def validate_llm(
     is_public_request = user is None
     
     try:
-        # Fallback to database user settings, then config manager if api_key/url is missing or looks masked
-        api_key = request.api_key
-        if not api_key or "..." in api_key or "***" in api_key:
-             from backend.utils.config_manager import async_get_system_api_keys
-             system_keys = await async_get_system_api_keys(db)
-             db_key = user.settings.get(f"{request.provider}_api_key") if user and hasattr(user, "settings") and user.settings else None
-             api_key = db_key if db_key else system_keys.get(f"{request.provider}_api_key")
+        provider = request.provider
+        from backend.utils.config_manager import get_system_api_keys
+        system_keys = get_system_api_keys()
+        api_key = system_keys.get(f"{provider}_api_key")
              
-        api_url = request.api_url
-        if request.provider == "ollama" and (not api_url or "..." in api_url or "***" in api_url):
-             db_url = user.settings.get("ollama_api_url") if user and hasattr(user, "settings") and user.settings else None
-             api_url = db_url if db_url else config_manager.get("ollama_api_url")
-
-        if request.provider == "ollama":
+        api_url = None
+        if provider == "ollama":
+            api_url = config_manager.get("ollama_api_url")
             api_url = _validate_setup_ollama_api_url(api_url)
 
         llm = get_llm_backend(
-            request.provider,
+            provider,
             api_key=api_key,
             model=request.model,
             api_url=api_url,
-            allow_private_api_url=request.provider == "ollama",
+            allow_private_api_url=provider == "ollama",
         )
         llm.validate_api_key()
         
         models = []
-        if request.provider == "ollama":
+        if provider == "ollama":
             models = llm.list_models()
             return {"valid": True, "message": "Connected to Ollama successfully.", "models": models}
             
-        provider_name = request.provider.capitalize() if request.provider else "LLM"
+        provider_name = provider.capitalize() if provider else "LLM"
         return {"valid": True, "message": f"{provider_name} API key is valid."}
     except HTTPException:
         if is_public_request:
@@ -281,12 +275,11 @@ async def validate_hf(
     is_public_request = user is None
 
     try:
-        token = request.token
-        if not token or "..." in token or "***" in token:
-            from backend.utils.config_manager import async_get_system_api_keys
-            system_keys = await async_get_system_api_keys(db)
-            db_token = user.settings.get("hf_token") if user and hasattr(user, "settings") and user.settings else None
-            token = db_token if db_token else system_keys.get("hf_token")
+        from backend.utils.config_manager import get_system_api_keys
+        system_keys = get_system_api_keys()
+        token = system_keys.get("hf_token")
+        if not token:
+            raise ValueError("Hugging Face token is not set.")
             
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -325,27 +318,21 @@ async def list_models(
     is_public_request = user is None
 
     try:
-        # Fallback logic
-        api_key = request.api_key
-        if not api_key or "..." in api_key or "***" in api_key:
-             from backend.utils.config_manager import async_get_system_api_keys
-             system_keys = await async_get_system_api_keys(db)
-             db_key = user.settings.get(f"{request.provider}_api_key") if user and hasattr(user, "settings") and user.settings else None
-             api_key = db_key if db_key else system_keys.get(f"{request.provider}_api_key")
+        provider = request.provider
+        from backend.utils.config_manager import get_system_api_keys
+        system_keys = get_system_api_keys()
+        api_key = system_keys.get(f"{provider}_api_key")
              
-        api_url = request.api_url
-        if request.provider == "ollama" and (not api_url or "..." in api_url or "***" in api_url):
-             db_url = user.settings.get("ollama_api_url") if user and hasattr(user, "settings") and user.settings else None
-             api_url = db_url if db_url else config_manager.get("ollama_api_url")
-
-        if request.provider == "ollama":
+        api_url = None
+        if provider == "ollama":
+            api_url = config_manager.get("ollama_api_url")
             api_url = _validate_setup_ollama_api_url(api_url)
 
         llm = get_llm_backend(
-            request.provider,
+            provider,
             api_key=api_key,
             api_url=api_url,
-            allow_private_api_url=request.provider == "ollama",
+            allow_private_api_url=provider == "ollama",
         )
         models = llm.list_models()
         return {"models": models}

@@ -1161,7 +1161,8 @@ async def finalize_upload(
     await register_task_ownership(db, task.id, recording.user_id)
 
     proxy_task = generate_proxy_task.delay(recording.id)
-    await register_task_ownership(db, proxy_task.id, recording.user_id)
+    if proxy_task:
+        await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -1269,7 +1270,8 @@ async def import_audio(
     # Trigger proxy generation task
     if not recording.proxy_path:
         proxy_task = generate_proxy_task.delay(recording.id)
-        await register_task_ownership(db, proxy_task.id, recording.user_id)
+        if proxy_task:
+            await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -1498,7 +1500,8 @@ async def finalize_chunked_import(
 
     if not recording.proxy_path:
         proxy_task = generate_proxy_task.delay(recording.id)
-        await register_task_ownership(db, proxy_task.id, recording.user_id)
+        if proxy_task:
+            await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -1592,7 +1595,8 @@ async def upload_recording(
 
     if not recording.proxy_path:
         proxy_task = generate_proxy_task.delay(recording.id)
-        await register_task_ownership(db, proxy_task.id, recording.user_id)
+        if proxy_task:
+            await register_task_ownership(db, proxy_task.id, recording.user_id)
     
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 

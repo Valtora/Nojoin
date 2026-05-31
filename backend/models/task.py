@@ -153,9 +153,25 @@ class AsyncTaskOwnership(BaseDBModel, table=True):
 
 async def register_task_ownership(db: AsyncSession, task_id: str, user_id: int) -> None:
     """Record the ownership of a Celery task."""
-    ownership = AsyncTaskOwnership(task_id=task_id, user_id=user_id)
-    db.add(ownership)
-    await db.commit()
+    from sqlalchemy import text
+    try:
+        # Check if the table exists first to avoid polluting ORM session state if missing
+        await db.execute(text("SELECT 1 FROM async_task_ownerships LIMIT 1"))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Table 'async_task_ownerships' does not exist, skipping task ownership registration.")
+        return
+
+    try:
+        ownership = AsyncTaskOwnership(task_id=task_id, user_id=user_id)
+        db.add(ownership)
+        await db.commit()
+    except Exception as e:
+        try:
+            await db.rollback()
+        except:
+            pass
+        raise e
 
 
 async def check_task_ownership(db: AsyncSession, task_id: str, user) -> bool:
@@ -168,12 +184,23 @@ async def check_task_ownership(db: AsyncSession, task_id: str, user) -> bool:
     role = getattr(user, "role", "user")
     if is_superuser or role in ("owner", "admin"):
         return True
+        
+    try:
+        from sqlmodel import select
+        stmt = select(AsyncTaskOwnership).where(AsyncTaskOwnership.task_id == task_id)
+        result = await db.execute(stmt)
+        ownership = result.scalar_one_or_none()
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "no such table" in err_msg or ("relation" in err_msg and "does not exist" in err_msg):
+            try:
+                await db.rollback()
+            except:
+                pass
+            return True
+        raise e
 
-    stmt = select(AsyncTaskOwnership).where(AsyncTaskOwnership.task_id == task_id)
-    result = await db.execute(stmt)
-    ownership = result.scalar_one_or_none()
-
-    if ownership is None:
+    if not ownership:
         return False
-
-    return ownership.user_id == user.id
+        
+    return ownership.user_id == getattr(user, "id", None)

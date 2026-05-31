@@ -310,17 +310,16 @@ The audit covered:
 
 ### SEC-013: AI Provider API Keys Can Be Sent in Query Strings
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Provider secrets may be retained in browser history, reverse-proxy
   access logs, and monitoring systems.
 - **Evidence:** [`backend/api/v1/endpoints/llm.py`](../backend/api/v1/endpoints/llm.py#L15)
   accepts `api_key` as a query parameter. The corresponding frontend helper is
   [`frontend/src/lib/api.ts`](../frontend/src/lib/api.ts#L1694).
-- **Remediation direction:** Remove secret-bearing query parameters. Use
-  authenticated stored configuration or request bodies for validation
-  operations.
+- **Remediation:** Migrated to a server-side environment-only (`.env`) keys regime. Removed all LLM API key and Hugging Face token input fields from both the Settings view and the Setup Wizard. The backend validation and model listing endpoints read credentials directly from system environments (`get_system_api_keys()`). The Setup Wizard detects missing keys and presents warning panels explaining the loss of core intelligence features (Meeting Edge, Notes, and Speaker Inference) with options to reload the configuration or proceed without them.
+- **Verification:** Frontend built and compiled successfully with Turbopack and TypeScript verification. Tested both setup flow paths (missing and configured credentials) and verified they behave correctly.
 - **Acceptance criteria:** No API keys, tokens, or passwords are transmitted in
-  URLs.
+  URLs or request payloads from the frontend.
 
 ### ARC-001: Heavy Inference Work Still Runs Inside API Requests
 

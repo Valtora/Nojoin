@@ -22,6 +22,7 @@ import {
   X,
   AlertTriangle,
   ArrowRight,
+  RefreshCw,
 } from "lucide-react";
 import ConfirmationModal from "@/components/ConfirmationModal";
 
@@ -62,6 +63,7 @@ export default function SetupPage() {
   // Model Selection State
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [llmSkipped, setLlmSkipped] = useState(false);
+  const [modelsFetched, setModelsFetched] = useState(false);
 
   // Download State
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -219,37 +221,27 @@ export default function SetupPage() {
   };
 
   // --- Step 2: LLM ---
-  const getCurrentCredentials = () => {
-    if (formData.llm_provider === "gemini")
-      return { key: formData.gemini_api_key };
-    if (formData.llm_provider === "openai")
-      return { key: formData.openai_api_key };
-    if (formData.llm_provider === "anthropic")
-      return { key: formData.anthropic_api_key };
-    if (formData.llm_provider === "ollama")
-      return {
-        url: formData.ollama_api_url || "http://host.docker.internal:11434",
-      };
-    return {};
+  const checkLlmMissing = (config: typeof formData) => {
+    const provider = config.llm_provider;
+    if (!provider) return true;
+    if (provider === "gemini" && !config.gemini_api_key) return true;
+    if (provider === "openai" && !config.openai_api_key) return true;
+    if (provider === "anthropic" && !config.anthropic_api_key) return true;
+    if (provider === "ollama" && !config.ollama_api_url) return true;
+    return false;
   };
 
   const validateAndFetchModels = async () => {
-    const creds = getCurrentCredentials();
-    if (!creds.key && !creds.url) {
-      setError("Please enter an API key or URL");
-      return;
-    }
-
     setValidatingLLM(true);
     setError("");
     setLlmValidationMsg(null);
 
     try {
-      // 1. Validate Key/URL
+      // 1. Validate Key/URL (server will use keys from .env)
       const res = await validateLLM(
         formData.llm_provider,
-        creds.key || "",
-        creds.url,
+        "", // Server reads from environment
+        formData.llm_provider === "ollama" ? formData.ollama_api_url : undefined,
         undefined,
         getBootstrapPassword(),
       );
@@ -261,27 +253,33 @@ export default function SetupPage() {
       // 2. Fetch Models
       const modelsRes = await listModels(
         formData.llm_provider,
-        creds.key || "",
-        creds.url,
+        "", // Server reads from environment
+        formData.llm_provider === "ollama" ? formData.ollama_api_url : undefined,
         getBootstrapPassword(),
       );
       setAvailableModels(modelsRes.models);
 
       if (modelsRes.models.length > 0) {
-        setFormData((prev) => ({
-          ...prev,
-          selected_model: modelsRes.models[0],
-        }));
+        setFormData((prev) => {
+          const existingModel = prev.selected_model;
+          const nextModel = modelsRes.models.includes(existingModel) ? existingModel : modelsRes.models[0];
+          return {
+            ...prev,
+            selected_model: nextModel,
+          };
+        });
       } else {
         setError(
           "No models found for this provider. Please check your configuration.",
         );
       }
+      setModelsFetched(true);
     } catch (err: any) {
       setLlmValidationMsg({
         valid: false,
         msg: err.response?.data?.detail || err.message,
       });
+      setModelsFetched(true);
     } finally {
       setValidatingLLM(false);
     }
@@ -290,12 +288,6 @@ export default function SetupPage() {
   const handleLLMSubmit = () => {
     if (llmSkipped) {
       setStep(3);
-      return;
-    }
-
-    const creds = getCurrentCredentials();
-    if (!creds.key && !creds.url) {
-      setError("Please enter an API key/URL or skip this step.");
       return;
     }
 
@@ -319,6 +311,7 @@ export default function SetupPage() {
 
   const confirmSkipLLM = () => {
     setLlmSkipped(true);
+    setShowSkipLLMModal(false);
     // Clear LLM data
     setFormData((prev) => ({
       ...prev,
@@ -330,41 +323,30 @@ export default function SetupPage() {
     setStep(3);
   };
 
-  // --- Step 3: HuggingFace ---
-  const validateHFToken = async () => {
-    if (!formData.hf_token) {
-      setError("Please enter a token");
-      return;
-    }
-
-    setValidatingHF(true);
+  const handleReloadConfig = async () => {
     setError("");
-    setHfValidationMsg(null);
-
-    try {
-      const res = await validateHF(formData.hf_token, getBootstrapPassword());
-      setHfValidationMsg({
-        valid: true,
-        msg: res.message || "Validation successful",
-      });
-    } catch (err: any) {
-      setHfValidationMsg({
-        valid: false,
-        msg: err.response?.data?.detail || err.message,
-      });
-    } finally {
-      setValidatingHF(false);
+    setLoading(true);
+    setInitialConfigLoaded(false);
+    setModelsFetched(false);
+    const success = await loadInitialConfig();
+    setLoading(false);
+    if (success) {
+      setLlmValidationMsg(null);
+      setAvailableModels([]);
     }
   };
 
-  const handleHFSubmit = async () => {
-    // If token provided, must be valid
-    if (formData.hf_token && !hfValidationMsg?.valid) {
-      setError("Please validate your token first.");
-      return;
+  useEffect(() => {
+    if (step === 2 && initialConfigLoaded) {
+      const isMissing = checkLlmMissing(formData);
+      if (!isMissing && !modelsFetched && !validatingLLM) {
+        validateAndFetchModels();
+      }
     }
+  }, [step, initialConfigLoaded, formData.llm_provider, formData.gemini_api_key, formData.openai_api_key, formData.anthropic_api_key, formData.ollama_api_url, modelsFetched, validatingLLM]);
 
-    // Proceed to create account and start download
+  // --- Step 3: HuggingFace ---
+  const handleHFSubmit = async () => {
     await createAccountAndStartDownload();
   };
 
@@ -372,18 +354,11 @@ export default function SetupPage() {
     setStep(4);
 
     try {
-      // 1. Create Admin Account & Save Settings
+      // 1. Create Admin Account & Save Settings (Credentials only saved in .env on backend)
       await setupSystem({
         username: formData.username,
         password: formData.password,
-        llm_provider: formData.llm_provider,
-        gemini_api_key: formData.gemini_api_key,
-        openai_api_key: formData.openai_api_key,
-        anthropic_api_key: formData.anthropic_api_key,
-        ollama_api_url: formData.ollama_api_url,
-        hf_token: formData.hf_token,
-        // Save selected model
-        selected_model: formData.selected_model,
+        selected_model: formData.selected_model || undefined,
       }, getBootstrapPassword());
 
       // 2. Login
@@ -724,281 +699,290 @@ export default function SetupPage() {
           {/* Step 2: LLM Setup */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  AI Configuration
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Configure an AI provider for automatic meeting enhancement,
-                  notes, chat, and speaker inference
-                </p>
-              </div>
+              {checkLlmMissing(formData) ? (
+                <div className="space-y-6">
+                  <div className="text-center mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      AI Provider Configuration Missing
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      No API key or URL was detected in the server environment (<code className="bg-gray-100 dark:bg-gray-900 px-1 py-0.5 rounded">.env</code>) for provider: <strong className="capitalize">{formData.llm_provider || "none"}</strong>.
+                    </p>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Provider
-                </label>
-                <select
-                  name="llm_provider"
-                  value={formData.llm_provider}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
-                >
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="ollama">Ollama (Local)</option>
-                </select>
-              </div>
+                  <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                        Important Features Will Be Disabled
+                      </p>
+                      <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 leading-relaxed">
+                        Without a properly configured LLM provider and API key, you will not be able to use key features like <strong>Meeting Edge</strong> (live intelligence), <strong>Meeting Note generation</strong>, and <strong>Speaker Inference</strong>.
+                      </p>
+                    </div>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {["ollama"].includes(formData.llm_provider)
-                    ? "API URL"
-                    : "API Key"}
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type={
-                      ["ollama"].includes(formData.llm_provider)
-                        ? "text"
-                        : "password"
-                    }
-                    name={
-                      formData.llm_provider === "ollama"
-                        ? "ollama_api_url"
-                        : `${formData.llm_provider}_api_key`
-                    }
-                    value={
-                      formData.llm_provider === "ollama"
-                        ? formData.ollama_api_url || ""
-                        : getCurrentCredentials().key || ""
-                    }
-                    onChange={handleInputChange}
-                    className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
-                    placeholder={
-                      formData.llm_provider === "ollama"
-                        ? "http://host.docker.internal:11434"
-                        : `Enter ${formData.llm_provider} API Key`
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={validateAndFetchModels}
-                    disabled={
-                      validatingLLM ||
-                      (!getCurrentCredentials().key &&
-                        !getCurrentCredentials().url)
-                    }
-                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium disabled:opacity-50 transition-colors"
-                  >
-                    {validatingLLM ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      "Validate"
-                    )}
-                  </button>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl text-xs space-y-2 text-gray-600 dark:text-gray-300">
+                    <p className="font-semibold text-gray-900 dark:text-white">To resolve this:</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li>Open your server's <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">.env</code> file.</li>
+                      <li>Set <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">LLM_PROVIDER</code> (e.g. <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">gemini</code>, <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">openai</code>, <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">anthropic</code>, or <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">ollama</code>).</li>
+                      <li>Set the corresponding API key variable (e.g. <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">GEMINI_API_KEY</code>).</li>
+                      <li>Restart your docker containers (e.g. <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">docker compose restart</code>).</li>
+                    </ol>
+                  </div>
+
+                  <div className="flex flex-col gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={handleReloadConfig}
+                      disabled={loading}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      Check Config Again
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmSkipLLM}
+                      className="w-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 py-2.5 rounded-lg font-medium transition-colors"
+                    >
+                      Proceed Without LLM
+                    </button>
+                  </div>
                 </div>
-                {["ollama"].includes(formData.llm_provider) && (
-                  <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Local models run on your hardware. Performance depends on
-                    your GPU/CPU.
-                  </p>
-                )}
-                {llmValidationMsg && (
-                  <p
-                    className={`text-xs mt-1 flex items-center gap-1 ${llmValidationMsg.valid ? "text-green-600" : "text-red-600"}`}
-                  >
-                    {llmValidationMsg.valid ? (
-                      <Check className="w-3 h-3" />
-                    ) : (
-                      <X className="w-3 h-3" />
-                    )}
-                    {llmValidationMsg.msg}
-                  </p>
-                )}
-              </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="text-center mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      AI Configuration
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Active LLM Provider: <strong className="capitalize">{formData.llm_provider}</strong>
+                    </p>
+                    <span className="inline-flex items-center mt-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                      Configured via Server Environment (.env)
+                    </span>
+                  </div>
 
-              {/* Model Selection - Only shown after validation */}
-              {availableModels.length > 0 && (
-                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Select Model
-                  </label>
-                  <select
-                    name="selected_model"
-                    value={formData.selected_model}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
-                  >
-                    {availableModels.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Select the model to use for chat and notes.
-                  </p>
+                  {validatingLLM ? (
+                    <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                      <p className="text-sm text-gray-500">Connecting to provider and loading models...</p>
+                    </div>
+                  ) : (
+                    <>
+                      {llmValidationMsg && !llmValidationMsg.valid && (
+                        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
+                          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                              Connection Validation Failed
+                            </p>
+                            <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                              {llmValidationMsg.msg}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Please verify your API key in the server's <code className="bg-gray-100 dark:bg-gray-900 px-1 py-0.5 rounded">.env</code> and restart the server if needed.
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
-                  {/* Model Recommendations */}
-                  {formData.llm_provider === "gemini" && (
-                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
-                      <p className="font-semibold mb-1">Recommended Models:</p>
-                      <ul className="list-disc list-inside space-y-0.5">
-                        <li>
-                          <strong>gemini-flash-latest</strong>: Faster
-                          responses, good for simple transcripts.
-                        </li>
-                        <li>
-                          <strong>gemini-pro-latest</strong>: Better reasoning,
-                          recommended for complex meetings.
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                  {formData.llm_provider === "openai" && (
-                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
-                      <p className="font-semibold mb-1">Recommended Models:</p>
-                      <ul className="list-disc list-inside space-y-0.5">
-                        <li>
-                          <strong>GPT-5 mini (or later)</strong>: Faster,
-                          cost-effective for simple chat tasks.
-                        </li>
-                        <li>
-                          <strong>GPT-5.1 (or later)</strong>: Higher
-                          intelligence, recommended for complex analysis.
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                  {formData.llm_provider === "anthropic" && (
-                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
-                      <p className="font-semibold mb-1">Recommended Models:</p>
-                      <ul className="list-disc list-inside space-y-0.5">
-                        <li>
-                          <strong>Claude Haiku</strong>: Fast and efficient for
-                          simple chats.
-                        </li>
-                        <li>
-                          <strong>Claude Sonnet</strong>: Good reasoning, best
-                          for medium complexity meetings.
-                        </li>
-                        <li>
-                          <strong>Claude Opus</strong>: Strong reasoning, best
-                          for complex meetings and topics.
-                        </li>
-                      </ul>
-                    </div>
+                      {availableModels.length > 0 && (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Select Model
+                            </label>
+                            <select
+                              name="selected_model"
+                              value={formData.selected_model}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                            >
+                              {availableModels.map((model) => (
+                                <option key={model} value={model}>
+                                  {model}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Select the model to use for chat and notes.
+                            </p>
+                          </div>
+
+                          {/* Model Recommendations */}
+                          {formData.llm_provider === "gemini" && (
+                            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                              <p className="font-semibold mb-1">Recommended Models:</p>
+                              <ul className="list-disc list-inside space-y-0.5">
+                                <li>
+                                  <strong>gemini-flash-latest</strong>: Faster responses, good for simple transcripts.
+                                </li>
+                                <li>
+                                  <strong>gemini-pro-latest</strong>: Better reasoning, recommended for complex meetings.
+                                </li>
+                              </ul>
+                            </div>
+                          )}
+                          {formData.llm_provider === "openai" && (
+                            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                              <p className="font-semibold mb-1">Recommended Models:</p>
+                              <ul className="list-disc list-inside space-y-0.5">
+                                <li>
+                                  <strong>GPT-5 mini (or later)</strong>: Faster, cost-effective for simple chat.
+                                </li>
+                                <li>
+                                  <strong>GPT-5.1 (or later)</strong>: Higher intelligence, recommended for complex analysis.
+                                </li>
+                              </ul>
+                            </div>
+                          )}
+                          {formData.llm_provider === "anthropic" && (
+                            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-200">
+                              <p className="font-semibold mb-1">Recommended Models:</p>
+                              <ul className="list-disc list-inside space-y-0.5">
+                                <li>
+                                  <strong>Claude Haiku</strong>: Fast and efficient for simple chats.
+                                </li>
+                                <li>
+                                  <strong>Claude Sonnet</strong>: Good reasoning, best for medium complexity.
+                                </li>
+                                <li>
+                                  <strong>Claude Opus</strong>: Strong reasoning, best for complex meetings.
+                                </li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          type="button"
+                          onClick={handleSkipLLM}
+                          className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors"
+                        >
+                          Skip for now
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleLLMSubmit}
+                          disabled={!llmValidationMsg?.valid || !formData.selected_model}
+                          className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                          Next Step <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={handleSkipLLM}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg font-medium transition-colors"
-                >
-                  Skip for now
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLLMSubmit}
-                  disabled={
-                    !llmValidationMsg?.valid || !formData.selected_model
-                  }
-                  className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  Next Step <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
             </div>
           )}
 
           {/* Step 3: HuggingFace */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Hugging Face Token
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Optional: Required for speaker identification
-                </p>
-              </div>
+              {!formData.hf_token ? (
+                <div className="space-y-6">
+                  <div className="text-center mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Hugging Face Integration
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Speaker identification token missing
+                    </p>
+                  </div>
 
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  To enable speaker identification (who said what), you need a
-                  Hugging Face token with access to{" "}
-                  <code>pyannote/speaker-diarization-community-1</code>.
-                  <a
-                    href="https://huggingface.co/settings/tokens"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline ml-1 font-medium"
-                  >
-                    Get one here
-                  </a>
-                  .
-                </p>
-                <p className="text-xs text-blue-600 dark:text-blue-300 mt-2">
-                  You can skip this step if you don&apos;t need speaker labels.
-                </p>
-              </div>
+                  <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                        Speaker Diarization Disabled
+                      </p>
+                      <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 leading-relaxed">
+                        Without a Hugging Face token configured in your server environment (.env), Nojoin will record and transcribe meetings, but it will not be able to identify who is speaking (diarization).
+                      </p>
+                    </div>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Access Token
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    name="hf_token"
-                    value={formData.hf_token}
-                    onChange={handleInputChange}
-                    className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
-                    placeholder="hf_..."
-                  />
-                  <button
-                    type="button"
-                    onClick={validateHFToken}
-                    disabled={validatingHF || !formData.hf_token}
-                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium disabled:opacity-50 transition-colors"
-                  >
-                    {validatingHF ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      "Validate"
-                    )}
-                  </button>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl text-xs space-y-2 text-gray-600 dark:text-gray-300">
+                    <p className="font-semibold text-gray-900 dark:text-white">To enable speaker identification:</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li>Create a read token on <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-blue-600 dark:text-blue-400">Hugging Face</a>.</li>
+                      <li>Accept the terms of service for <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">pyannote/speaker-diarization-community-1</code>.</li>
+                      <li>Add <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">HF_TOKEN=your_token</code> to your <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">.env</code>.</li>
+                      <li>Restart your docker containers.</li>
+                    </ol>
+                  </div>
+
+                  <div className="flex flex-col gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={handleReloadConfig}
+                      disabled={loading}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      Check Config Again
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleHFSubmit}
+                      className="w-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 py-2.5 rounded-lg font-medium transition-colors"
+                    >
+                      Finish Setup (Disable Speaker Diarization)
+                    </button>
+                  </div>
                 </div>
-                {hfValidationMsg && (
-                  <p
-                    className={`text-xs mt-1 flex items-center gap-1 ${hfValidationMsg.valid ? "text-green-600" : "text-red-600"}`}
-                  >
-                    {hfValidationMsg.valid ? (
-                      <Check className="w-3 h-3" />
-                    ) : (
-                      <X className="w-3 h-3" />
-                    )}
-                    {hfValidationMsg.msg}
-                  </p>
-                )}
-              </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="text-center mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Hugging Face Integration
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Speaker identification and diarization model downloads
+                    </p>
+                  </div>
 
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={handleHFSubmit}
-                  className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {formData.hf_token ? "Validate & Finish" : "Skip & Finish"}{" "}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3">
+                    <CheckCircle className="w-6 h-6 text-green-500 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-green-800 dark:text-green-300">
+                        Hugging Face Token Configured
+                      </p>
+                      <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+                        Your Hugging Face token was found in the server environment (.env).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-xs text-blue-800 dark:text-blue-200">
+                    Nojoin will use this token during setup to download Pyannote speaker diarization models so you can identify different speakers in your meetings.
+                  </div>
+
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={handleHFSubmit}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      Finish Setup <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -27,9 +27,6 @@ logger = logging.getLogger(__name__)
 INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset({"ollama_api_url"})
 
 class SettingsUpdate(BaseModel):
-    openai_api_key: Optional[str] = None
-    anthropic_api_key: Optional[str] = None
-    gemini_api_key: Optional[str] = None
     llm_provider: Optional[str] = None
     enable_meeting_edge: Optional[bool] = None
     meeting_edge_context_level: Optional[int] = None
@@ -39,7 +36,6 @@ class SettingsUpdate(BaseModel):
     canary_model: Optional[str] = None
     enable_live_transcription: Optional[bool] = None
     theme: Optional[str] = None
-    hf_token: Optional[str] = None
     gemini_model: Optional[str] = None
     gemini_live_model: Optional[str] = None
     openai_model: Optional[str] = None

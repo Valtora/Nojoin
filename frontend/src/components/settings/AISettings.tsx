@@ -80,10 +80,6 @@ export default function AISettings({
   isAdmin = false,
 }: AISettingsProps) {
   const { addNotification } = useNotificationStore();
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
-  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
-  const [showHfToken, setShowHfToken] = useState(false);
   const [showWhisperModal, setShowWhisperModal] = useState(false);
 
   // Validation & Model State
@@ -120,29 +116,14 @@ export default function AISettings({
     });
   };
 
-  const getProviderConnectionDetails = useCallback(
-    (provider: string) => {
-      let rawKey = "";
-      let url = "";
-
-      if (provider === "gemini") rawKey = settings.gemini_api_key || "";
-      else if (provider === "openai") rawKey = settings.openai_api_key || "";
-      else if (provider === "anthropic") rawKey = settings.anthropic_api_key || "";
-      else if (provider === "ollama") url = settings.ollama_api_url || "";
-
-      return {
-        rawKey,
-        key: isMaskedSecret(rawKey) ? "" : rawKey,
-        url,
-      };
-    },
-    [
-      settings.anthropic_api_key,
-      settings.gemini_api_key,
-      settings.ollama_api_url,
-      settings.openai_api_key,
-    ],
-  );
+  const checkLlmConfigured = () => {
+    const provider = settings.llm_provider || "gemini";
+    if (provider === "gemini") return Boolean(settings.gemini_api_key);
+    if (provider === "openai") return Boolean(settings.openai_api_key);
+    if (provider === "anthropic") return Boolean(settings.anthropic_api_key);
+    if (provider === "ollama") return Boolean(settings.ollama_api_url);
+    return false;
+  };
 
   const getSelectedModelForProvider = (kind: "main" | "live") => {
     const provider = settings.llm_provider || "gemini";
@@ -208,21 +189,16 @@ export default function AISettings({
       .catch(console.error);
   }, [settings.whisper_model_size]);
 
-  // Fetch models when provider or key changes (if valid)
+  // Fetch models automatically when provider or ollama_api_url changes
   useEffect(() => {
     const fetchModels = async () => {
       const provider = settings.llm_provider;
-      const { rawKey, key, url } = getProviderConnectionDetails(provider || "");
+      const url = provider === "ollama" ? settings.ollama_api_url || "" : "";
 
-      const needsKey = ["gemini", "openai", "anthropic"].includes(
-        provider || "",
-      );
-      const needsUrl = ["ollama"].includes(provider || "");
-
-      if (provider && ((needsKey && rawKey) || (needsUrl && url))) {
+      if (provider) {
         setFetchingModels(true);
         try {
-          const res = await listModels(provider, key, url);
+          const res = await listModels(provider, "", url);
           setAvailableModels(res.models);
         } catch (e) {
           console.error("Failed to fetch models", e);
@@ -235,15 +211,10 @@ export default function AISettings({
       }
     };
 
-    // Debounce slightly to avoid too many calls while typing
     const timeout = setTimeout(fetchModels, 1000);
     return () => clearTimeout(timeout);
   }, [
-    getProviderConnectionDetails,
     settings.llm_provider,
-    settings.gemini_api_key,
-    settings.openai_api_key,
-    settings.anthropic_api_key,
     settings.ollama_api_url,
   ]);
 
@@ -251,33 +222,25 @@ export default function AISettings({
     setValidating(provider);
     setValidationMsg(null);
     try {
-      const { rawKey, key, url } = getProviderConnectionDetails(provider);
-      const validationKey =
-        provider === "hf" ? settings.hf_token || "" : rawKey;
+      const url = provider === "ollama" ? settings.ollama_api_url || "" : "";
 
-      if (!validationKey && !url) throw new Error("No API key/URL provided");
-
-      let res;
-      if (provider === "hf") {
-        res = await validateHF(validationKey);
+      const res = await validateLLM(provider, "", url);
+      // If models are returned (e.g. from Ollama), update the list
+      if (res.models) {
+        setAvailableModels(res.models);
       } else {
-        res = await validateLLM(provider, validationKey, url);
-        // If models are returned (e.g. from Ollama), update the list
-        if (res.models) {
-          setAvailableModels(res.models);
-        } else {
-          // Otherwise refresh models explicitly
-          const modelsRes = await listModels(provider, key, url);
-          setAvailableModels(modelsRes.models);
-        }
+        // Otherwise refresh models explicitly
+        const modelsRes = await listModels(provider, "", url);
+        setAvailableModels(modelsRes.models);
       }
-      if (onPersist && provider !== "hf") {
+
+      if (onPersist) {
         await onPersist(settings);
       }
 
       setValidationMsg({
         type: "success",
-        msg: `${res.message || "Validation successful"}${onPersist && provider !== "hf" ? " Settings saved." : ""}`,
+        msg: `${res.message || "Validation successful"}${onPersist ? " Settings saved." : ""}`,
         provider,
       });
     } catch (e: any) {
@@ -474,72 +437,53 @@ export default function AISettings({
           <div className="mx-auto max-w-3xl space-y-4">
             <SettingsPanel className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Provider */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <Tooltip
-                    content="Select the AI provider for processing meetings."
-                    position="right"
-                  >
-                    <span className="flex items-center gap-1 cursor-help">
-                      Provider <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+              {/* Provider Information (Read-only) */}
+              <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    Active AI Provider: <span className="capitalize text-orange-600 dark:text-orange-400">{settings.llm_provider || "None"}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    AI services are configured globally in the server's environment variable file (<code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code>).
+                  </p>
+                </div>
+                <div>
+                  {checkLlmConfigured() ? (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
+                      Configured via Server (.env)
                     </span>
-                  </Tooltip>
-                </label>
-                <select
-                  value={settings.llm_provider || "gemini"}
-                  onChange={(e) =>
-                    onUpdate({ ...settings, llm_provider: e.target.value })
-                  }
-                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-                >
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="ollama">Ollama (Local)</option>
-                </select>
+                  ) : (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400">
+                      Not Configured
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* API URL for Local Providers */}
+              {/* API URL Display for Ollama */}
               {settings.llm_provider === "ollama" && (
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API URL
+                    Ollama API URL
                   </label>
                   <div className="relative">
                     <input
                       type="text"
-                      value={
-                        (settings.llm_provider === "ollama"
-                          ? settings.ollama_api_url
-                          : "") || ""
-                      }
-                      onChange={(e) => {
-                        const val = sanitizeUrl(e.target.value);
-                        const updates: any = { ...settings };
-                        if (settings.llm_provider === "ollama")
-                          updates.ollama_api_url = val;
-                        onUpdate(updates);
-                      }}
-                      placeholder={
-                        settings.llm_provider === "ollama"
-                          ? "http://host.docker.internal:11434"
-                          : ""
-                      }
-                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                      value={settings.ollama_api_url || "http://host.docker.internal:11434"}
+                      disabled={true}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 text-gray-500 dark:text-gray-400 cursor-not-allowed outline-none"
                     />
-                    <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   </div>
                   <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
                     <Info className="w-3 h-3" />
-                    Local models run on your hardware. Performance depends on
-                    your GPU/CPU.
+                    Local models run on your hardware. Performance depends on your GPU/CPU.
                   </p>
                 </div>
               )}
 
               {/* Model */}
-              <div>
+              <div className={settings.llm_provider === "ollama" ? "" : "col-span-2 md:col-span-1"}>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
                   <Tooltip
                     content="Select the specific model to use for this provider."
@@ -552,14 +496,14 @@ export default function AISettings({
                   <button
                     onClick={() => {
                       const provider = settings.llm_provider || "gemini";
-                      const { key, rawKey, url } = getProviderConnectionDetails(provider);
-
-                      if (rawKey || url)
-                        listModels(provider, key, url).then((res) =>
-                          setAvailableModels(res.models),
-                        );
+                      const url = provider === "ollama" ? settings.ollama_api_url : undefined;
+                      setFetchingModels(true);
+                      listModels(provider, "", url)
+                        .then((res) => setAvailableModels(res.models))
+                        .catch(console.error)
+                        .finally(() => setFetchingModels(false));
                     }}
-                    disabled={fetchingModels}
+                    disabled={fetchingModels || !checkLlmConfigured()}
                     className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 disabled:opacity-50"
                   >
                     <RefreshCw
@@ -573,8 +517,8 @@ export default function AISettings({
                   onChange={(e) =>
                     updateSelectedModelForProvider("main", e.target.value)
                   }
-                  disabled={mainModelOptions.length === 0}
-                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  disabled={mainModelOptions.length === 0 || !checkLlmConfigured()}
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
                 >
                   <option value="" disabled>
                     Select a model...
@@ -618,9 +562,10 @@ export default function AISettings({
                   }
                   disabled={
                     settings.enable_meeting_edge === false ||
-                    liveModelOptions.length === 0
+                    liveModelOptions.length === 0 ||
+                    !checkLlmConfigured()
                   }
-                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
                 >
                   <option value="">Use main model</option>
                   {liveModelOptions.map((model) => (
@@ -673,128 +618,32 @@ export default function AISettings({
                   {selectedMeetingEdgeContextOption.description}
                 </p>
               </div>
-            </div>
 
-            {/* API Key (Dynamic) */}
-            {!["ollama"].includes(settings.llm_provider || "") && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  <Tooltip
-                    content="Enter the API key for the selected provider."
-                    position="right"
-                  >
-                    <span className="flex items-center gap-1 cursor-help">
-                      API Key <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
-                    </span>
-                  </Tooltip>
-                </label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={
-                        (settings.llm_provider === "gemini" && showGeminiKey) ||
-                        (settings.llm_provider === "openai" && showOpenAIKey) ||
-                        (settings.llm_provider === "anthropic" &&
-                          showAnthropicKey)
-                          ? "text"
-                          : "password"
-                      }
-                      value={
-                        settings.llm_provider === "gemini"
-                          ? settings.gemini_api_key || ""
-                          : settings.llm_provider === "openai"
-                            ? settings.openai_api_key || ""
-                            : settings.anthropic_api_key || ""
-                      }
-                      onChange={(e) => {
-                        const val = trimString(e.target.value);
-                        if (settings.llm_provider === "gemini")
-                          onUpdate({ ...settings, gemini_api_key: val });
-                        else if (settings.llm_provider === "openai")
-                          onUpdate({ ...settings, openai_api_key: val });
-                        else onUpdate({ ...settings, anthropic_api_key: val });
-                      }}
-                      disabled={!isAdmin}
-                      className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-                      placeholder={`Enter ${settings.llm_provider === "gemini" ? "Gemini" : settings.llm_provider === "openai" ? "OpenAI" : "Anthropic"} API Key`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (settings.llm_provider === "gemini")
-                          setShowGeminiKey(!showGeminiKey);
-                        else if (settings.llm_provider === "openai")
-                          setShowOpenAIKey(!showOpenAIKey);
-                        else setShowAnthropicKey(!showAnthropicKey);
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                    >
-                      {(
-                        settings.llm_provider === "gemini"
-                          ? showGeminiKey
-                          : settings.llm_provider === "openai"
-                            ? showOpenAIKey
-                            : showAnthropicKey
-                      ) ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
+              {/* Validation Connection Button */}
+              {checkLlmConfigured() && (
+                <div className="md:col-span-2">
                   <button
-                    onClick={() =>
-                      handleValidate(settings.llm_provider || "gemini")
-                    }
-                    disabled={validating === settings.llm_provider}
-                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    onClick={() => handleValidate(settings.llm_provider || "gemini")}
+                    disabled={Boolean(validating)}
+                    className="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-semibold"
                   >
                     {validating === settings.llm_provider ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Check className="w-4 h-4" />
                     )}
-                    Validate
+                    Validate API Connection
                   </button>
+                  {validationMsg && validationMsg.provider === settings.llm_provider && (
+                    <p
+                      className={`mt-2 text-sm font-semibold ${validationMsg.type === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                    >
+                      {validationMsg.msg}
+                    </p>
+                  )}
                 </div>
-                {validationMsg &&
-                  validationMsg.provider === settings.llm_provider && (
-                    <p
-                      className={`mt-2 text-sm ${validationMsg.type === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-                    >
-                      {validationMsg.msg}
-                    </p>
-                  )}
-              </div>
-            )}
-
-            {/* Validation for Local Providers */}
-            {["ollama"].includes(settings.llm_provider || "") && (
-              <div>
-                <button
-                  onClick={() =>
-                    handleValidate(settings.llm_provider || "ollama")
-                  }
-                  disabled={validating === settings.llm_provider}
-                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-2"
-                >
-                  {validating === settings.llm_provider ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  Validate Connection
-                </button>
-                {validationMsg &&
-                  validationMsg.provider === settings.llm_provider && (
-                    <p
-                      className={`mt-2 text-sm ${validationMsg.type === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-                    >
-                      {validationMsg.msg}
-                    </p>
-                  )}
-              </div>
-            )}
+              )}
+            </div>
             </SettingsPanel>
           </div>
         </SettingsSection>
@@ -831,74 +680,34 @@ export default function AISettings({
         <SettingsSection
           eyebrow="Administration"
           title="Hugging Face access"
-          description="Store and validate the installation token required for diarization and related model downloads."
+          description="View status of the installation token required for diarization and related model downloads."
           width="regular"
         >
           <SettingsPanel className="mx-auto max-w-3xl space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Access Token
-              </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showHfToken ? "text" : "password"}
-                    value={settings.hf_token || ""}
-                    onChange={(e) =>
-                      onUpdate({
-                        ...settings,
-                        hf_token: trimString(e.target.value),
-                      })
-                    }
-                    disabled={!isAdmin}
-                    className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white pr-10 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-                    placeholder="hf_..."
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowHfToken(!showHfToken)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                  >
-                    {showHfToken ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
+            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl">
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  Hugging Face Integration
                 </div>
-                <button
-                  onClick={() => handleValidate("hf")}
-                  disabled={
-                    validating === "hf" || !settings.hf_token || !isAdmin
-                  }
-                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium transition-colors disabled:opacity-50"
-                >
-                  {validating === "hf" ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    "Validate"
-                  )}
-                </button>
-              </div>
-              {validationMsg && validationMsg.provider === "hf" && (
-                <p
-                  className={`text-xs mt-2 flex items-center gap-1 ${validationMsg.type === "success" ? "text-green-600" : "text-red-600"}`}
-                >
-                  {validationMsg.type === "success" ? (
-                    <Check className="w-3 h-3" />
-                  ) : (
-                    <X className="w-3 h-3" />
-                  )}
-                  {validationMsg.msg}
+                <p className="text-xs text-gray-500 mt-1">
+                  The access token is configured globally in the server's environment variable file (<code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code>).
                 </p>
-              )}
-              <p className="mt-2 text-xs contrast-helper">
-                Required for Pyannote speaker diarization. Ensure you have
-                accepted the user agreement for{" "}
-                <code>pyannote/speaker-diarization-community-1</code> on Hugging
-                Face.
-              </p>
+              </div>
+              <div>
+                {settings.hf_token ? (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
+                    Configured via Server (.env)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400">
+                    Missing Config
+                  </span>
+                )}
+              </div>
             </div>
+            <p className="text-xs contrast-helper">
+              Required for Pyannote speaker diarization. Ensure you have accepted the user agreement for <code>pyannote/speaker-diarization-community-1</code> on Hugging Face.
+            </p>
           </SettingsPanel>
         </SettingsSection>
       )}

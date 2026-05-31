@@ -114,6 +114,17 @@ CREATE TABLE recording_speakers (
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL DEFAULT 0
 );
+
+CREATE TABLE context_chunks (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER,
+    document_id INTEGER,
+    content TEXT,
+    embedding JSON,
+    meta JSON
+);
 """
 
 
@@ -208,11 +219,11 @@ def test_generate_notes_task_completes_with_saved_provider_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
     engine = _create_notes_task_database(
         tmp_path,
         owner_settings={
             "llm_provider": "anthropic",
-            "anthropic_api_key": "sk-ant-valid",
             "anthropic_model": "claude-test",
         },
     )
@@ -272,11 +283,12 @@ def test_generate_notes_task_marks_missing_model_as_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
     engine = _create_notes_task_database(
         tmp_path,
         owner_settings={
             "llm_provider": "anthropic",
-            "anthropic_api_key": "sk-ant-valid",
         },
     )
 
