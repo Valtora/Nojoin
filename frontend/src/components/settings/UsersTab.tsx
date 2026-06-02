@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "../ConfirmationModal";
-import { User } from "@/types";
+import { User, UserRole } from "@/types";
 import { trimString } from "@/lib/validation";
 import SettingsPanel from "./SettingsPanel";
 
@@ -104,6 +104,9 @@ export default function UsersTab() {
       setIsCreating(false);
       setNewUser({ ...EMPTY_NEW_USER });
       await fetchUsers();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       addNotification({
         message: err.response?.data?.detail || "Failed to create user",
@@ -133,6 +136,9 @@ export default function UsersTab() {
       } else {
         await fetchUsers();
       }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       addNotification({
         message: err.response?.data?.detail || "Failed to delete user",
@@ -160,7 +166,7 @@ export default function UsersTab() {
     if (!editingUser) return;
 
     try {
-      const updates: any = { ...editForm };
+      const updates: Partial<User> & { password?: string } = { ...editForm };
       if (updates.username) updates.username = trimString(updates.username);
       // Only send password if it's not empty
       if (!updates.password || updates.password.trim() === "") {
@@ -174,6 +180,9 @@ export default function UsersTab() {
       setEditModalOpen(false);
       setEditingUser(null);
       await fetchUsers();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       addNotification({
         message: err.response?.data?.detail || "Failed to update user",
@@ -428,7 +437,7 @@ export default function UsersTab() {
                 <select
                   value={editForm.role || "user"}
                   onChange={(e) =>
-                    setEditForm({ ...editForm, role: e.target.value as any })
+                    setEditForm({ ...editForm, role: e.target.value as UserRole })
                   }
                   className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >

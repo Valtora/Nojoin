@@ -35,6 +35,8 @@ import {
   UserTask,
   ReprocessRequest,
   CalendarEventLink,
+  RecordingInfo,
+  AsyncTaskStatus,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -174,7 +176,10 @@ export const login = async (
 export const logout = async (): Promise<void> => {
   try {
     await api.post("/login/logout");
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
@@ -891,7 +896,10 @@ export const exportAudio = async (
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     console.error("[exportAudio] Error during audio export:", error);
     throw error;
   }
@@ -940,7 +948,10 @@ export const exportContent = async (
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     console.error("[exportContent] Error during export:", error);
     throw error;
   }
@@ -1283,7 +1294,10 @@ export const getTlsFingerprint = async (): Promise<{ fingerprint: string | null 
   try {
     const response = await api.get<{ fingerprint: string | null }>("/system/fingerprint");
     return response.data;
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     console.error("Failed to fetch TLS fingerprint", error);
     return { fingerprint: null };
   }
@@ -1291,8 +1305,8 @@ export const getTlsFingerprint = async (): Promise<{ fingerprint: string | null 
 
 export const getRecordingInfo = async (
   recordingId: RecordingId,
-): Promise<{ original: any; proxy: any }> => {
-  const response = await api.get(`/recordings/${recordingId}/info`);
+): Promise<RecordingInfo> => {
+  const response = await api.get<RecordingInfo>(`/recordings/${recordingId}/info`);
   return response.data;
 };
 
@@ -1313,8 +1327,8 @@ export const downloadModels = async (data: {
   return response.data;
 };
 
-export const getTaskStatus = async (taskId: string): Promise<any> => {
-  const response = await api.get(`/system/tasks/${taskId}`);
+export const getTaskStatus = async (taskId: string): Promise<AsyncTaskStatus> => {
+  const response = await api.get<AsyncTaskStatus>(`/system/tasks/${taskId}`);
   return response.data;
 };
 
@@ -1648,7 +1662,10 @@ export const streamChatMessage = (
               } else if (parsed.error) {
                 onError(parsed.error);
               }
-            } catch (e) {
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+            } catch (e: any) {
               console.error("Failed to parse SSE data", e);
             }
           }
@@ -1715,11 +1732,11 @@ export const exportBackupAsync = async (
 
 export const getBackupStatus = async (
   taskId: string,
-): Promise<{ state: string; status: string; result?: any }> => {
+): Promise<{ state: string; status: string; result?: unknown }> => {
   const response = await api.get<{
     state: string;
     status: string;
-    result?: any;
+    result?: unknown;
   }>(`/backup/export/${taskId}`);
   return response.data;
 };
@@ -1756,7 +1773,7 @@ export const importBackup = async (
 
   try {
     // 1. Upload and Start Job
-    const response = await api.post<any>(
+    const response = await api.post<{ job_id?: string }>(
       `/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`,
       formData,
       {
@@ -1803,6 +1820,9 @@ export const importBackup = async (
               reject(new Error(error || "Restore failed during processing"));
             }
             // If 'pending' or 'processing', continue polling
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           } catch (err: any) {
             // Retries on transient network errors; aborts on 404 (lost job).
             if (err.response && err.response.status === 404) {
@@ -1818,7 +1838,10 @@ export const importBackup = async (
     if (onProgress) onProgress(100);
     // Synchronous completion fallback for older API versions or small files.
     return;
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     throw error;
   }
 };
@@ -1911,6 +1934,9 @@ export const uploadBackupChunked = async (
               clearInterval(pollInterval);
               reject(new Error(error || "Restore failed during processing"));
             }
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
           } catch (err: any) {
             console.warn("Polling status failed", err);
             // If 404, job lost?
@@ -1922,7 +1948,10 @@ export const uploadBackupChunked = async (
         }, 2000);
       });
     }
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     throw error;
   }
 };

@@ -17,6 +17,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       let currentUser = null;
       try {
         currentUser = await getCurrentUser();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       } catch (e: any) {
         currentUser = null;
         if (

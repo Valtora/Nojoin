@@ -455,7 +455,7 @@ async def _transcode_pending_browser_segments_for_finalize(
         try:
             from backend.processing.segment_transcode import transcode_staged_browser_segment
             await asyncio.to_thread(transcode_staged_browser_segment, recording_id, sequence)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             failed_sequences.append(sequence)
             logger.warning(
                 "Failed to transcode pending browser segment %s for recording %s during finalize: %s",
@@ -834,7 +834,7 @@ async def pause_upload(
                 payload={"public_id": recording.public_id},
                 log=logger,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Failed to record pause metric for recording %s: %s",
                 recording.id,
@@ -922,7 +922,7 @@ async def upload_segment(
             await db.commit()
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             try:
                 if segment_path.exists():
                     segment_path.unlink()
@@ -948,7 +948,7 @@ async def upload_segment(
             },
             log=logger,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(
             "Failed to record audio chunk upload metric for recording %s segment %s: %s",
             recording.id,
@@ -965,7 +965,7 @@ async def upload_segment(
                 "backend.processing.live_transcribe.transcribe_segment_live_task",
                 args=[recording.id, sequence]
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 "Failed to dispatch live transcription task for recording %s segment %s: %s",
                 recording.id,
@@ -978,7 +978,7 @@ async def upload_segment(
                 "backend.processing.segment_transcode.transcode_segment_task",
                 args=[recording.id, sequence]
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 "Failed to dispatch segment transcode task for recording %s segment %s: %s",
                 recording.id,
@@ -1088,7 +1088,7 @@ async def finalize_upload(
         failed_root: Path | None = None
         try:
             failed_root = move_recording_upload_to_failed(recording.id, logger=logger)
-        except Exception as move_error:
+        except Exception as move_error:  # noqa: BLE001
             logger.error(f"Failed to move segments to failed dir: {move_error}")
         await _mark_recording_audio_chunks_failed(
             db,
@@ -1105,11 +1105,11 @@ async def finalize_upload(
         )
         await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         failed_root: Path | None = None
         try:
             failed_root = move_recording_upload_to_failed(recording.id, logger=logger)
-        except Exception as move_error:
+        except Exception as move_error:  # noqa: BLE001
             logger.error(f"Failed to move segments to failed dir: {move_error}")
         await _mark_recording_audio_chunks_failed(
             db,
@@ -1214,7 +1214,7 @@ async def import_audio(
                 await out_file.write(chunk)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if os.path.exists(file_path):
             os.remove(file_path)
         raise sanitized_http_exception(
@@ -1233,7 +1233,7 @@ async def import_audio(
     duration = 0.0
     try:
         duration = get_audio_duration(file_path)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
     
     # Determine recording name
@@ -1382,7 +1382,7 @@ async def upload_chunked_segment(
             suffix=".part",
         )
         await db.commit()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         try:
             if segment_path.exists():
                 segment_path.unlink()
@@ -1445,7 +1445,7 @@ async def finalize_chunked_import(
         # Get duration
         try:
             recording.duration_seconds = get_audio_duration(recording.audio_path)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to get duration: {e}")
 
         await db.execute(
@@ -1472,11 +1472,11 @@ async def finalize_chunked_import(
         )
         await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         failed_root: Path | None = None
         try:
             failed_root = move_recording_upload_to_failed(recording.id, logger=logger)
-        except Exception as move_error:
+        except Exception as move_error:  # noqa: BLE001
             logger.error(f"Failed to move failed chunked upload to failed dir: {move_error}")
 
         await _mark_recording_audio_chunks_failed(
@@ -1566,7 +1566,7 @@ async def upload_recording(
             )
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             raise sanitized_http_exception(
                 logger=logger,
                 status_code=500,
@@ -1588,7 +1588,7 @@ async def upload_recording(
     
     try:
         duration = get_audio_duration(file_path)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
     
     # Create DB entry
@@ -2456,7 +2456,7 @@ async def permanently_delete_recording(
     if recording.celery_task_id:
         try:
             celery_app.control.revoke(recording.celery_task_id, terminate=True)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass  # Task might not exist or already finished
 
     delete_recording_artifacts(
@@ -2546,7 +2546,7 @@ async def cancel_processing(
         try:
             # Revoke the task and terminate it immediately
             celery_app.control.revoke(recording.celery_task_id, terminate=True)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass # Ignore if task is not found (maybe already finished or never started)
 
     recording.celery_task_id = None

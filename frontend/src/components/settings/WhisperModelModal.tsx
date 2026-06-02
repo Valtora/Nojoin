@@ -88,7 +88,10 @@ export default function WhisperModelModal({
       try {
         const res = await getModelsStatus(selectedModel);
         setStatus(res);
-      } catch (e) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (e: any) {
         console.error("Failed to check model status", e);
       } finally {
         setLoadingStatus(false);
@@ -141,14 +144,20 @@ export default function WhisperModelModal({
               eta: status.result.eta,
             });
           }
-        } catch (e) {
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+        } catch (e: any) {
           console.error(e);
           clearInterval(pollInterval);
           setDownloading(false);
           setDownloadProgress(null);
         }
       }, 500);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error(e);
       setDownloading(false);
       setDownloadProgress(null);
@@ -170,7 +179,10 @@ export default function WhisperModelModal({
       // Refresh status
       const res = await getModelsStatus(selectedModel);
       setStatus(res);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error(e);
       addNotification({ type: "error", message: "Failed to delete model cache" });
     } finally {

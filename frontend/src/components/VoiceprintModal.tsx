@@ -92,6 +92,9 @@ export default function VoiceprintModal({
       );
       onComplete();
       onClose();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (e: any) {
       setError(e.response?.data?.detail || 'Failed to apply voiceprint action');
     } finally {
@@ -123,6 +126,9 @@ export default function VoiceprintModal({
       }
       onComplete();
       onClose();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (e: any) {
       setError(e.response?.data?.detail || 'Failed to apply voiceprint actions');
     } finally {

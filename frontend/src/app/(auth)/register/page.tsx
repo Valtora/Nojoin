@@ -33,7 +33,10 @@ function RegisterForm() {
       try {
         await validateInvitation(inviteCode);
         setFormData(prev => ({ ...prev, invite_code: inviteCode }));
-      } catch (e) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (e: any) {
         console.error("Invalid invite code", e);
         setError("Invalid or expired invite code.");
       } finally {
@@ -67,6 +70,9 @@ function RegisterForm() {
       
       // Redirect to dashboard (or setup if needed, but usually dashboard)
       router.push('/');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       setError(err.response?.data?.detail || "Registration failed. Please check your details and invite code.");
     } finally {

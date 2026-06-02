@@ -38,7 +38,10 @@ export default function BackupOptionsModal({
       });
 
       onClose();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Backup export failed:", error);
       addNotification({
         type: "error",

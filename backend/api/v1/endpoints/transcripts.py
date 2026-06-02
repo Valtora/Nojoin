@@ -112,7 +112,7 @@ def _dispatch_meeting_edge_refresh(recording_id: int, *, enabled: bool = True) -
             "backend.worker.tasks.refresh_meeting_edge_task",
             args=[recording_id],
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(
             "Failed to dispatch Meeting Edge refresh for recording %s: %s",
             recording_id,
@@ -668,7 +668,7 @@ async def export_content(
                 
             content = "\n".join(sections)
             media_type = "text/plain"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Export generation failed: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Export generation failed")
@@ -1036,7 +1036,7 @@ async def update_segment_speaker(
                         "backend.worker.tasks.update_speaker_embedding_task",
                         args=[recording.id, start, end, target_speaker_id],
                     )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to dispatch embedding update task: {e}")
 
         return {"status": "success", "speaker": refreshed_segment.get("speaker")}
@@ -1273,7 +1273,7 @@ async def update_segment_speaker(
                         target_speaker_id,
                     ],
                 )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to dispatch embedding update task: {e}")
     
     return {"status": "success", "speaker": target_label}
@@ -1861,7 +1861,7 @@ async def chat_with_meeting(
             context_text = "\n\n".join(context_sections)
             logger.info(f"Retrieved {len(relevant_chunks)} context chunks for chat.")
                 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
             logger.error(f"RAG Retrieval failed: {e}")
             # Continue without context rather than failing
             
@@ -1902,7 +1902,7 @@ async def chat_with_meeting(
             log_message=f"Rejected chat request for recording {recording_id} due to invalid AI configuration.",
             exc=e,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to initialize LLM backend: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize AI service")
 
@@ -1928,7 +1928,7 @@ async def chat_with_meeting(
                     # Yield SSE format
                     yield f"data: {json.dumps({'token': str(chunk)})}\n\n"
                  
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Streaming error: {e}")
             error_msg = str(e).lower()
             
@@ -1956,7 +1956,7 @@ async def chat_with_meeting(
                 )
                 session.add(assistant_msg)
                 await session.commit()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to save assistant message: {e}")
             
         yield "data: [DONE]\n\n"

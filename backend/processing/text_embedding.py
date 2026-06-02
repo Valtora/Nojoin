@@ -50,7 +50,7 @@ class TextEmbeddingService:
             embeddings = list(self._model.embed(texts))
             # fastembed returns numpy arrays
             return [e.tolist() for e in embeddings]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to generate embeddings: {e}")
             return []
 

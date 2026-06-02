@@ -71,11 +71,11 @@ class HeartbeatThread(threading.Thread):
             while not self.stop_event.is_set():
                 try:
                     r.set("nojoin:worker:heartbeat", "1", ex=self.expire)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     # Log error but don't crash the thread immediately
                     logger.warning(f"Heartbeat error: {e}")
                 time.sleep(self.interval)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Heartbeat thread failed to start: {e}")
 
     def stop(self):

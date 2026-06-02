@@ -9,6 +9,12 @@ const eslintConfig = defineConfig([
     rules: {
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/exhaustive-deps": "warn",
+      "@typescript-eslint/no-explicit-any": "error"
+    }
+  },
+  {
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+    rules: {
       "@typescript-eslint/no-explicit-any": "off"
     }
   },

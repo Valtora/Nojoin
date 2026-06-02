@@ -200,7 +200,10 @@ export default function AISettings({
         try {
           const res = await listModels(provider, "", url);
           setAvailableModels(res.models);
-        } catch (e) {
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+        } catch (e: any) {
           console.error("Failed to fetch models", e);
           setAvailableModels([]);
         } finally {
@@ -243,6 +246,9 @@ export default function AISettings({
         msg: `${res.message || "Validation successful"}${onPersist ? " Settings saved." : ""}`,
         provider,
       });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (e: any) {
       setValidationMsg({
         type: "error",
@@ -294,14 +300,20 @@ export default function AISettings({
               });
             }
           }
-        } catch (e) {
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+        } catch (e: any) {
           console.error("Polling error", e);
           clearInterval(pollInterval);
           setDownloading(false);
           setDownloadProgress(null);
         }
       }, 1000);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error(e);
       addNotification({
         type: "error",
@@ -328,6 +340,9 @@ export default function AISettings({
         message: `${modelName} model deleted successfully`,
       });
       refreshStatus();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (e: any) {
       console.error(e);
       addNotification({
@@ -444,7 +459,7 @@ export default function AISettings({
                     Active AI Provider: <span className="capitalize text-orange-600 dark:text-orange-400">{settings.llm_provider || "None"}</span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    AI services are configured globally in the server's environment variable file (<code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code>).
+                    AI services are configured globally in the server&apos;s environment variable file (<code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code>).
                   </p>
                 </div>
                 <div>
@@ -690,7 +705,7 @@ export default function AISettings({
                   Hugging Face Integration
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  The access token is configured globally in the server's environment variable file (<code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code>).
+                  The access token is configured globally in the server&apos;s environment variable file (<code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code>).
                 </p>
               </div>
               <div>

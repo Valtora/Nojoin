@@ -157,6 +157,9 @@ export default function DashboardTasksPanel() {
         if (!cancelled) {
           setTasks(sortTasks(data));
         }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       } catch (loadError: any) {
         if (!cancelled) {
           addNotification({
@@ -331,6 +334,9 @@ export default function DashboardTasksPanel() {
         resetEditingTask();
         addNotification({ message: "Task updated.", type: "success" });
         return true;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       } catch (updateError: any) {
         addNotification({
           message:
@@ -427,6 +433,9 @@ export default function DashboardTasksPanel() {
       setTitle("");
       setIsComposerOpen(false);
       addNotification({ message: "Task added.", type: "success" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (createError: any) {
       addNotification({
         type: "error",
@@ -467,6 +476,9 @@ export default function DashboardTasksPanel() {
           ),
         ),
       );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (toggleError: any) {
       addNotification({
         message:
@@ -492,6 +504,9 @@ export default function DashboardTasksPanel() {
         currentTasks.filter((currentTask) => currentTask.id !== taskId),
       );
       addNotification({ message: "Task removed.", type: "success" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (deleteError: any) {
       addNotification({
         message:
@@ -519,6 +534,9 @@ export default function DashboardTasksPanel() {
         currentTasks.filter((currentTask) => currentTask.id !== task.id),
       );
       addNotification({ message: "Task archived.", type: "success" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (archiveError: any) {
       addNotification({
         message:
@@ -554,6 +572,9 @@ export default function DashboardTasksPanel() {
         type: "success",
       });
       return true;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (deadlineError: any) {
       addNotification({
         type: "error",

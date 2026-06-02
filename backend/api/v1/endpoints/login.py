@@ -144,7 +144,7 @@ async def logout_user(
     if cookie_token:
         try:
             payload = security.decode_access_token(cookie_token)
-        except Exception:
+        except Exception:  # noqa: BLE001
             payload = None
         if payload and payload.get("token_type") == security.SESSION_TOKEN_TYPE:
             username = payload.get("sub")

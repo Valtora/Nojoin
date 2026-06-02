@@ -167,7 +167,7 @@ export interface TranscriptUtterance {
   live_source_speaker?: string | null;
   live_source_speakers?: string[];
   source_public_ids?: string[];
-  live_reuse_alignment?: Record<string, any>;
+  live_reuse_alignment?: Record<string, unknown>;
 }
 
 export interface TranscriptUtteranceList {
@@ -202,7 +202,7 @@ export interface TranscriptSegment {
   live_source_speaker?: string | null;
   live_source_speakers?: string[];
   source_public_ids?: string[];
-  live_reuse_alignment?: Record<string, any>;
+  live_reuse_alignment?: Record<string, unknown>;
 }
 
 export interface MeetingEdgeConcept {
@@ -348,6 +348,7 @@ export interface Settings {
   enable_diarization?: boolean;
   spellcheck_language?: string;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
@@ -684,4 +685,35 @@ export interface ReprocessRequest {
   whisper_model_size?: string;
   parakeet_model?: string;
   canary_model?: string;
+}
+
+export interface AudioFileMetadata {
+  format?: string;
+  bitrate?: number;
+  channels?: number;
+  size?: number;
+}
+
+export interface RecordingInfo {
+  original: AudioFileMetadata | null;
+  proxy: AudioFileMetadata | null;
+}
+
+export interface AsyncTaskStatus {
+  task_id: string;
+  status: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  result?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  meta?: any;
+}
+
+export interface AxiosErrorLike {
+  response?: {
+    data?: {
+      detail?: string;
+    };
+    status?: number;
+  };
+  message?: string;
 }

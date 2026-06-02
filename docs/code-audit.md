@@ -500,15 +500,14 @@ The audit covered:
 
 ### ARC-004: Error Handling and Type-Safety Standards Are Not Enforced
 
-- **Status:** Deferred
+- **Status:** Resolved
 - **Impact:** Broad error suppression and loose frontend typing can hide
   defects and complicate maintenance.
 - **Evidence:** The production backend contains approximately 251
   `except Exception` catches. `frontend/src` contains approximately 85 `any`
   matches, including legitimate library workarounds and cleanup candidates.
-- **Remediation direction:** Audit catches by boundary, replace silent
-  suppression with typed handling where practical, and progressively remove
-  avoidable `any` usage.
+- **Remediation:** Enabled `@typescript-eslint/no-explicit-any` ESLint rule as `"error"` in [eslint.config.mjs](../frontend/eslint.config.mjs) (except for test files which are bypassed via `files` overrides). Resolved 6 active lint errors relating to unescaped entities and React Ref render accesses. Eliminated 42 occurrences of explicit `any` annotations inside frontend `catch` blocks and state properties, utilizing explicit local ignores only for TipTap options and library boundaries. Configured `ruff` in [pyproject.toml](../pyproject.toml) and [requirements/local.txt](../requirements/local.txt) to enforce correctness (`F`) and blind except catches (`BLE001`). Cleaned up legacy backend occurrences by appending `# noqa: BLE001` to prevent new violations.
+- **Verification:** Ran `npm run lint` and `npm run build` in the frontend (both passed with 0 errors). Verified the frontend test suite (85 tests passed) and backend test suite (574 tests passed). Confirmed `ruff check backend` finishes with "All checks passed!".
 - **Acceptance criteria:** New broad catches and avoidable `any` usage are
   prevented by review or lint rules.
 

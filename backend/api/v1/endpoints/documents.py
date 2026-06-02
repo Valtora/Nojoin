@@ -81,7 +81,7 @@ async def upload_document(
             )
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             raise sanitized_http_exception(
                 logger=logger,
                 status_code=500,

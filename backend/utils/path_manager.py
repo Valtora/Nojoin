@@ -371,7 +371,7 @@ class PathManager:
                             shutil.copy2(str(old_path), str(new_path))
                             migrations_performed.append(f"{file_type} -> {new_path}")
                             logger.info(f"Migrated {file_type}: {old_path} -> {new_path}")
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"Failed to migrate {file_type}: {e}")
                             return False
             
@@ -381,7 +381,7 @@ class PathManager:
             
             return False
             
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Migration failed: {e}")
             return False
 
@@ -406,9 +406,9 @@ class PathManager:
                         try:
                             p.unlink()
                             logger.info(f"Deleted old temporary file: {p}")
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.warning(f"Failed to delete old temporary file {p}: {e}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Error during temp file cleanup: {e}")
 
     def get_upload_temp_dir(self, upload_id: str) -> Path:

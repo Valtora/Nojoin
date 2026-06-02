@@ -23,7 +23,10 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
     try {
       const data = await getTags();
       setTags(data);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error('Failed to load tags:', error);
     }
   }, []);
@@ -43,7 +46,10 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
       await createTag(inputValue.trim(), randomColor);
       await loadTags();
       setSelectedTag(inputValue.trim());
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error('Failed to create tag:', error);
     }
   };

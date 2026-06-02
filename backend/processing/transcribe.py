@@ -56,5 +56,5 @@ def release_model_cache() -> None:
     for engine in _ENGINE_REGISTRY.values():
         try:
             engine.release()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Error releasing engine '{engine.name}': {e}")

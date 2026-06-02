@@ -62,7 +62,10 @@ export default function PeoplePage() {
         tags: selectedTagIds.length > 0 ? selectedTagIds : undefined,
       });
       setPeople(data);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to fetch people:", error);
       addNotification({ type: "error", message: "Failed to load people." });
     } finally {
@@ -94,7 +97,10 @@ export default function PeoplePage() {
       try {
         await deleteGlobalSpeaker(personToDelete.id);
         fetchPeople();
-      } catch (error) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (error: any) {
         console.error("Failed to delete person:", error);
         addNotification({ type: "error", message: "Failed to delete person." });
       } finally {
@@ -113,7 +119,10 @@ export default function PeoplePage() {
         await createGlobalSpeaker(data);
       }
       fetchPeople();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       throw error;
     }
   };
@@ -193,7 +202,10 @@ export default function PeoplePage() {
       );
       setSelectedIds(new Set());
       fetchPeople();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Batch delete failed", error);
       addNotification({ type: "error", message: "Failed to delete some people." });
     } finally {
@@ -209,7 +221,7 @@ export default function PeoplePage() {
         if (!person) return;
 
         // 1. Prepare data update
-        const data: any = {};
+        const data: Partial<GlobalSpeaker> & { tag_ids?: number[] } = {};
         if (updates.company) data.company = updates.company;
         if (updates.title) data.title = updates.title;
         if (updates.email) data.email = updates.email;
@@ -253,7 +265,10 @@ export default function PeoplePage() {
       await Promise.all(updatePromises);
       fetchPeople();
       setSelectedIds(new Set());
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Batch update failed:", error);
       addNotification({
         type: "error",

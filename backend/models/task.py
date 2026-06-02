@@ -157,7 +157,7 @@ async def register_task_ownership(db: AsyncSession, task_id: str, user_id: int) 
     try:
         # Check if the table exists first to avoid polluting ORM session state if missing
         await db.execute(text("SELECT 1 FROM async_task_ownerships LIMIT 1"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         import logging
         logging.getLogger(__name__).warning("Table 'async_task_ownerships' does not exist, skipping task ownership registration.")
         return

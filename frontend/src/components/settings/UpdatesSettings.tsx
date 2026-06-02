@@ -261,7 +261,10 @@ export default function UpdatesSettings({
       const data = await getVersion({ refresh: isRefresh });
       setVersionInfo(data);
       setError(null);
-    } catch (fetchError) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (fetchError: any) {
       console.error("Failed to fetch update metadata", fetchError);
       setError("Could not load update metadata.");
     } finally {

@@ -58,7 +58,10 @@ export default function AddTagModal({
     try {
       const data = await getTags();
       setAllTags(data);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to load tags:", error);
     }
   }, []);
@@ -88,7 +91,10 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
       setInputValue("");
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to add tag:", error);
     } finally {
       setProcessingTags((prev) => {
@@ -127,7 +133,10 @@ export default function AddTagModal({
         }
       }
       setInputValue("");
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to create tag:", error);
     } finally {
       setProcessingTags((prev) => {
@@ -145,7 +154,10 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
       setEditingTagId(null);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to rename tag:", error);
     }
   };
@@ -160,7 +172,10 @@ export default function AddTagModal({
       await loadAllTags();
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to delete tag:", error);
     }
   };
@@ -173,7 +188,10 @@ export default function AddTagModal({
       await removeTagFromRecording(recordingId, tagName);
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to remove tag:", error);
     } finally {
       setProcessingTags((prev) => {

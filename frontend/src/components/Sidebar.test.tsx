@@ -13,7 +13,7 @@ const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
 
 vi.mock("next/link", () => ({
-  default: ({ children, href, ...props }: any) => (
+  default: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
     <a href={typeof href === "string" ? href : "#"} {...props}>
       {children}
     </a>

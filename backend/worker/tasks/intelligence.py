@@ -292,7 +292,7 @@ def infer_speakers_task(self, recording_id: int):
         try:
             recording = session.get(Recording, recording_id)
             _complete_speaker_inference_task(session, recording)
-        except Exception as db_err:
+        except Exception as db_err:  # noqa: BLE001
             logger.error(f"Failed to revert recording status: {db_err}")
 
 
@@ -323,7 +323,7 @@ def process_document_task(self, document_id: int):
                 doc = fitz.open(document.file_path)
                 for page in doc:
                     content += page.get_text() + "\n\n"
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to extract text from PDF {document.file_path}: {e}")
                 raise Exception(f"PDF extraction failed: {str(e)}")
         

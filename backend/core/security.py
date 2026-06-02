@@ -293,7 +293,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     """
     try:
         unverified_header = jwt.get_unverified_header(token)
-    except Exception:  # pragma: no cover - defensive: jose raises subclass of Exception
+    except Exception:  # pragma: no cover - defensive: jose raises subclass of Exception  # noqa: BLE001
         unverified_header = {}
     kid = unverified_header.get("kid") if isinstance(unverified_header, dict) else None
     signing_key = get_signing_key_for_kid(kid)

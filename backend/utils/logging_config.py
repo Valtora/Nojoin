@@ -11,7 +11,7 @@ LOG_PATH = str(path_manager.log_path)
 if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 100 * 1024:
     try:
         os.remove(LOG_PATH)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
 class CheckpointFilter(logging.Filter):

@@ -620,7 +620,7 @@ class GeminiLLMBackend(LLMBackend):
                         model_list.append(name)
             
             return sorted(model_list)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (list models): {e}")
             return []
 
@@ -655,7 +655,7 @@ class GeminiLLMBackend(LLMBackend):
             )
             text = self._extract_text_from_response(response)
             return self.parse_speaker_inference_result(text, eligible_labels)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (speaker suggestions): {e}")
             raise RuntimeError(f"Gemini API error (speaker suggestions): {e}")
 
@@ -694,7 +694,7 @@ class GeminiLLMBackend(LLMBackend):
             text = self._extract_text_from_response(response)
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (meeting notes): {e}")
             raise RuntimeError(f"Gemini API error (meeting notes): {e}")
 
@@ -717,7 +717,7 @@ class GeminiLLMBackend(LLMBackend):
             )
             text = self._extract_text_from_response(response)
             return self.parse_automatic_meeting_intelligence_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (meeting intelligence): {e}")
             raise RuntimeError(f"Gemini API error (meeting intelligence): {e}")
 
@@ -737,7 +737,7 @@ class GeminiLLMBackend(LLMBackend):
             )
             text = self._extract_text_from_response(response)
             return self.parse_meeting_edge_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (Meeting Edge): {e}")
             raise RuntimeError(f"Gemini API error (Meeting Edge): {e}")
 
@@ -762,7 +762,7 @@ class GeminiLLMBackend(LLMBackend):
                 contents=contents,
             )
             return self._extract_text_from_response(response)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
 
@@ -826,9 +826,9 @@ class GeminiLLMBackend(LLMBackend):
                     
                     if has_text and chunk.text:
                         yield chunk.text
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (streaming chat): {e}")
             # If it's just a property access error because of no text, ignore it
             if "Candidate was blocked" in str(e) or "has no parts" in str(e):
@@ -854,7 +854,7 @@ class GeminiLLMBackend(LLMBackend):
             text = self._extract_text_from_response(response)
             title = self.parse_title(text)
             return title
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (meeting title): {e}")
             raise RuntimeError(f"Gemini API error (meeting title): {e}")
 
@@ -867,7 +867,7 @@ class GeminiLLMBackend(LLMBackend):
             # Simple call to list models to verify key
             self.client.models.list()
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API validation failed: {e}")
             raise ValueError(f"Gemini API validation failed: {e}")
 
@@ -897,7 +897,7 @@ class OpenAILLMBackend(LLMBackend):
                 elif "o1" in m.id: # Add support for reasoning models
                     model_list.append(m.id)
             return sorted(model_list)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"OpenAI API error (list models): {e}")
             return []
 
@@ -939,7 +939,7 @@ class OpenAILLMBackend(LLMBackend):
                     text_chunks.append(chunk.choices[0].delta.content)
             text = "".join(text_chunks)
             return self.parse_speaker_inference_result(text, eligible_labels)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (speaker suggestions): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -988,7 +988,7 @@ class OpenAILLMBackend(LLMBackend):
             text = "".join(text_chunks)
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (meeting notes): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -1018,7 +1018,7 @@ class OpenAILLMBackend(LLMBackend):
             response = self.client.chat.completions.create(**request_kwargs)
             text = response.choices[0].message.content or ""
             return self.parse_automatic_meeting_intelligence_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (meeting intelligence): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -1047,7 +1047,7 @@ class OpenAILLMBackend(LLMBackend):
             response = self.client.chat.completions.create(**request_kwargs)
             text = response.choices[0].message.content or ""
             return self.parse_meeting_edge_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (Meeting Edge): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -1083,7 +1083,7 @@ class OpenAILLMBackend(LLMBackend):
                 timeout=timeout
             )
             return response.choices[0].message.content
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (chat): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -1181,7 +1181,7 @@ class OpenAILLMBackend(LLMBackend):
                     except json.JSONDecodeError:
                         logger.error("Failed to parse tool arguments for update_meeting_notes")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (streaming chat): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -1207,7 +1207,7 @@ class OpenAILLMBackend(LLMBackend):
             )
             title = self.parse_title(response.choices[0].message.content)
             return title
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(f"OpenAI API error (meeting title): Invalid model {self.model}. {e}")
                 raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
@@ -1223,7 +1223,7 @@ class OpenAILLMBackend(LLMBackend):
             # Simple call to list models to verify key
             self.client.models.list()
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"OpenAI API validation failed: {e}")
             raise ValueError(f"OpenAI API validation failed: {e}")
 
@@ -1250,7 +1250,7 @@ class AnthropicLLMBackend(LLMBackend):
                 return sorted([m.id for m in models if "claude" in m.id])
             else:
                 return []
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (list models): {e}")
             return []
 
@@ -1287,7 +1287,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
             return self.parse_speaker_inference_result(text, eligible_labels)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
             raise RuntimeError(f"Anthropic API error (speaker suggestions): {e}")
 
@@ -1328,7 +1328,7 @@ class AnthropicLLMBackend(LLMBackend):
             text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting notes): {e}")
             raise RuntimeError(f"Anthropic API error (meeting notes): {e}")
 
@@ -1353,7 +1353,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
             return self.parse_automatic_meeting_intelligence_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting intelligence): {e}")
             raise RuntimeError(f"Anthropic API error (meeting intelligence): {e}")
 
@@ -1375,7 +1375,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
             return self.parse_meeting_edge_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
             raise RuntimeError(f"Anthropic API error (Meeting Edge): {e}")
 
@@ -1405,7 +1405,7 @@ class AnthropicLLMBackend(LLMBackend):
                 temperature=0.2,
             )
             return response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
 
@@ -1479,7 +1479,7 @@ class AnthropicLLMBackend(LLMBackend):
                             finally:
                                 current_tool_name = None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (streaming chat): {e}")
             raise RuntimeError(f"Anthropic API error (streaming chat): {e}")
 
@@ -1500,7 +1500,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             title = self.parse_title(response.content[0].text if hasattr(response.content[0], 'text') else response.content[0])
             return title
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting title): {e}")
             raise RuntimeError(f"Anthropic API error (meeting title): {e}")
 
@@ -1526,7 +1526,7 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API validation failed: {e}")
             raise ValueError(f"Anthropic API validation failed: {e}")
 
@@ -1573,7 +1573,7 @@ class OllamaLLMBackend(LLMBackend):
             resp.raise_for_status()
             data = resp.json()
             return sorted([m['name'] for m in data.get('models', [])])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (list models): {e}")
             return []
 
@@ -1609,7 +1609,7 @@ class OllamaLLMBackend(LLMBackend):
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_speaker_inference_result(text, eligible_labels)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (speaker suggestions): {e}")
             raise RuntimeError(f"Ollama API error (speaker suggestions): {e}")
 
@@ -1649,7 +1649,7 @@ class OllamaLLMBackend(LLMBackend):
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting notes): {e}")
             raise RuntimeError(f"Ollama API error (meeting notes): {e}")
 
@@ -1677,7 +1677,7 @@ class OllamaLLMBackend(LLMBackend):
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_automatic_meeting_intelligence_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting intelligence): {e}")
             raise RuntimeError(f"Ollama API error (meeting intelligence): {e}")
 
@@ -1702,7 +1702,7 @@ class OllamaLLMBackend(LLMBackend):
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_meeting_edge_result(text, request)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (Meeting Edge): {e}")
             raise RuntimeError(f"Ollama API error (Meeting Edge): {e}")
 
@@ -1733,7 +1733,7 @@ class OllamaLLMBackend(LLMBackend):
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             return resp.json().get('message', {}).get('content', '')
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (chat): {e}")
             raise RuntimeError(f"Ollama API error (chat): {e}")
 
@@ -1774,7 +1774,7 @@ class OllamaLLMBackend(LLMBackend):
                             yield content
                     except json.JSONDecodeError:
                         pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (streaming chat): {e}")
             raise RuntimeError(f"Ollama API error (streaming chat): {e}")
 
@@ -1795,7 +1795,7 @@ class OllamaLLMBackend(LLMBackend):
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
             return self.parse_title(text)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting title): {e}")
             raise RuntimeError(f"Ollama API error (meeting title): {e}")
 
@@ -1803,7 +1803,7 @@ class OllamaLLMBackend(LLMBackend):
         try:
             self.list_models()
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API validation failed: {e}")
             raise ValueError(f"Ollama API validation failed: {e}")
 

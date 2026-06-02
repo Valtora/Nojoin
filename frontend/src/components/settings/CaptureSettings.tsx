@@ -80,7 +80,10 @@ export default function CaptureSettings({
 
         setMicrophones(nextMicrophones);
         setDeviceError(null);
-      } catch (error) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (error: any) {
         if (disposed) {
           return;
         }
@@ -130,7 +133,10 @@ export default function CaptureSettings({
         }));
       setMicrophones(nextMicrophones);
       setDeviceError(null);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       setDeviceError(
         error instanceof Error
           ? error.message

@@ -141,7 +141,7 @@ def transcode_segment_task(recording_id: int, sequence: int):
         if config_manager.get("enable_live_transcription"):
             try:
                 transcribe_segment_live_task.delay(recording_id, sequence)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to dispatch live transcription after transcode for recording %s segment %s: %s",
                     recording_id,
@@ -150,7 +150,7 @@ def transcode_segment_task(recording_id: int, sequence: int):
                 )
 
         return {"status": "received", "segment": sequence}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         try:
             if wav_path.exists():
                 wav_path.unlink()
@@ -182,7 +182,7 @@ def transcode_segment_task(recording_id: int, sequence: int):
                 },
                 log=logger,
             )
-        except Exception as metric_error:
+        except Exception as metric_error:  # noqa: BLE001
             logger.warning(
                 "Failed to record transcode failure metric for recording %s segment %s: %s",
                 recording_id,

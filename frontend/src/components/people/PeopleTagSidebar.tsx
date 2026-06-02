@@ -59,7 +59,10 @@ export function PeopleTagSidebar({
       const data = await getPeopleTags();
       setTags(data);
       onTagsUpdated?.(data);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to fetch tags:", error);
     } finally {
       setIsLoading(false);
@@ -116,7 +119,10 @@ export function PeopleTagSidebar({
       if (parentId) {
         setExpandedTagIds((prev) => new Set(prev).add(parentId));
       }
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to add tag:", error);
     }
   };
@@ -127,7 +133,10 @@ export function PeopleTagSidebar({
       await updatePeopleTag(id, { name: name.trim() });
       await fetchTags();
       setEditingTagId(null);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to update tag:", error);
     }
   };
@@ -137,7 +146,10 @@ export function PeopleTagSidebar({
       await deletePeopleTag(id);
       await fetchTags();
       setConfirmDelete(null);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to delete tag:", error);
     }
   };
@@ -146,7 +158,10 @@ export function PeopleTagSidebar({
     try {
       await updatePeopleTag(id, { color });
       setTags((prev) => prev.map((t) => (t.id === id ? { ...t, color } : t)));
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to update tag color:", error);
     }
   };

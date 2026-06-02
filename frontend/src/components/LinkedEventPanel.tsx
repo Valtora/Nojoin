@@ -47,7 +47,10 @@ export default function LinkedEventPanel({
     try {
       const events = await getRecordingCalendarEventCandidates(recordingId);
       setCandidates(events);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error('Failed to load calendar event candidates:', error);
       setCandidates([]);
     } finally {
@@ -75,7 +78,10 @@ export default function LinkedEventPanel({
       await linkRecordingCalendarEvent(recordingId, calendarEventId);
       setIsPickerOpen(false);
       if (onLinkChanged) onLinkChanged();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error('Failed to update calendar event link:', error);
     } finally {
       setIsSubmitting(false);

@@ -36,7 +36,7 @@ async def init_db():
     # Seed demo data
     try:
         await seed_demo_data()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to seed demo data: {e}")
         
     logger.info("Database initialised successfully.")

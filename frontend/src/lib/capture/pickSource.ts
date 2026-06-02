@@ -74,7 +74,10 @@ export const pickCaptureSource = async (
         selfBrowserSurface: "include",
         surfaceSwitching: "include",
       } as DisplayMediaStreamOptions & Record<string, unknown>);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       throw new PickSourceError(
         "display_denied",
         error instanceof Error
@@ -95,7 +98,10 @@ export const pickCaptureSource = async (
         autoGainControl: false,
       },
     });
-  } catch (error) {
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+  } catch (error: any) {
     stopTracks(displayStream);
     throw new PickSourceError(
       "microphone_denied",

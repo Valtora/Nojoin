@@ -84,7 +84,10 @@ export default function SplitPersonModal({
       setSegments(data);
       setSegmentStates({});
       setNewSpeakerName("");
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to fetch segments", error);
       addNotification({
         type: "error",
@@ -206,6 +209,9 @@ export default function SplitPersonModal({
         type: "success",
         message: `${newSpeakerName} has been created and segments moved!`,
       });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       console.error("Split failed", error);
       addNotification({

@@ -219,7 +219,10 @@ export class CaptureController {
     let initResponse;
     try {
       initResponse = await initRecording(name);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       const detail =
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
@@ -276,7 +279,10 @@ export class CaptureController {
         name: initResponse.name,
         resumed: false,
       };
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       sources?.release();
       await discardRecordingCapture(initResponse.id).catch(() => {});
       this.setState({
@@ -389,7 +395,10 @@ export class CaptureController {
       });
       await this.refreshPausedRecording().catch(() => {});
       return { recordingId: targetRecordingId, resumed: true };
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       sources?.release();
       if (resumeResponse) {
         await pauseRecordingCapture(targetRecordingId).catch(() => {});
@@ -433,7 +442,10 @@ export class CaptureController {
       await this.refreshPausedRecording().catch(() => {});
       this.lifecycle.updateRecordingId(null);
       return recording;
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       const message = formatCaptureError(error);
       this.setState({ status: "error", error: message });
       throw new Error(message);
@@ -564,7 +576,10 @@ export class CaptureController {
       });
       this.stopElapsedTimer();
       await this.refreshPausedRecording().catch(() => {});
-    } catch (pauseError) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (pauseError: any) {
       this.setState({
         status: "error",
         error: formatCaptureError(pauseError),
@@ -576,7 +591,10 @@ export class CaptureController {
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await finalizeRecordingCapture(recordingId);
-      } catch (error) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (error: any) {
         const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
         const canRetry =
           error instanceof AxiosError &&

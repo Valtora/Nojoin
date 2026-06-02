@@ -84,7 +84,7 @@ def resolve_tls_fingerprint() -> str | None:
                         formatted_fp = format_fingerprint(cert_der)
                         logger.info("Retrieved TLS fingerprint from trusted HTTPS origin.")
                         return formatted_fp
-        except Exception:
+        except Exception:  # noqa: BLE001
             logger.warning("Dynamic TLS certificate retrieval failed; falling back to local certificate.")
 
     cert_paths = [
@@ -112,7 +112,7 @@ def resolve_tls_fingerprint() -> str | None:
         formatted_fp = format_fingerprint(der_data)
         logger.info("Retrieved TLS fingerprint from local certificate fallback.")
         return formatted_fp
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.error("Unable to resolve TLS fingerprint from local certificate fallback.")
         return None
 
@@ -176,7 +176,7 @@ def download_logs(
         )
     except NotFound:
         raise HTTPException(status_code=404, detail=f"Container {container} not found")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error fetching logs for {container}: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
 
@@ -225,7 +225,7 @@ async def websocket_logs(
                 formatted_line = f"[{container_name}] {text}"
                 # Schedule put_nowait/put to run in the main loop
                 asyncio.run_coroutine_threadsafe(q.put(formatted_line), loop)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if active:
                 err_msg = f"[{container_name}] Error reading logs: {e}"
                 asyncio.run_coroutine_threadsafe(q.put(err_msg), loop)
@@ -242,7 +242,7 @@ async def websocket_logs(
             ]
             for c_name in containers_list:
                 targets.append(c_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await websocket.send_text(f"Error listing containers: {e}")
             await websocket.close()
             return
@@ -265,7 +265,7 @@ async def websocket_logs(
     except WebSocketDisconnect:
         # Client disconnected
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"WebSocket send error: {e}")
     finally:
         active = False
@@ -391,7 +391,7 @@ async def setup_system(
     else:
         try:
             await seed_demo_data(user.id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to seed demo data during setup: {e}")
 
     return {"initialized": True}
@@ -544,7 +544,7 @@ async def delete_model_endpoint(
             return {"message": f"Model {model_name} deleted successfully"}
         else:
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/seed-demo")

@@ -287,7 +287,7 @@ def refine_utterance_via_segmentation(
             device_str=device_str,
             hf_token=hf_token,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(
             "Segmentation inference failed for utterance %s: %s",
             getattr(utterance, "public_id", "?"),

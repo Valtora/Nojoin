@@ -483,7 +483,7 @@ class BackupManager:
                                 os.remove(opus_path)
                             
                             added_paths.add(arcname)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.error(f"Failed to process audio {file_path}: {e}")
                             # Continue with other files
 
@@ -494,7 +494,7 @@ class BackupManager:
                         # Redact sensitive config
                         config_data = BackupManager._redact_sensitive_data(config_data)
                         zipf.writestr("config.json", json.dumps(config_data, indent=2))
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to back up config: {e}")
 
                 # 4. Add Backup Info
@@ -676,7 +676,7 @@ class BackupManager:
                         logger.info(f"Restoring backup from version {backup_version} to {current_version}")
                         if backup_version > current_version:
                             logger.warning(f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues.")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to read backup info: {e}")
 
             # 1. Clear Existing Data if requested
@@ -787,7 +787,7 @@ class BackupManager:
                                     # Specific delete to trigger cascades if needed (though delete from recordings usually cascades)
                                     session.exec(delete(Recording).where(Recording.id.in_(existing_ids)))
                                     session.commit()
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Pre-flight cleanup failed: {e}")
 
             # 3. Restore Database
@@ -803,7 +803,7 @@ class BackupManager:
                     
                     try:
                         data = json.loads(zipf.read(f"{table_name}.json"))
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to read/parse {table_name}.json: {e}")
                         continue
                     
@@ -1575,7 +1575,7 @@ class BackupManager:
                             with session.begin_nested():
                                 session.add(instance)
                                 session.flush()  # To get the new ID
-                        except Exception as insert_err:
+                        except Exception as insert_err:  # noqa: BLE001
                             logger.error(
                                 f"Failed to insert restored {table_name} row "
                                 f"(old_id={old_id}): {insert_err}. Skipping."
@@ -1628,7 +1628,7 @@ class BackupManager:
             for recording_id in sorted(recordings_requiring_proxy):
                 try:
                     BackupManager._enqueue_proxy_generation(recording_id)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(
                         "Failed to enqueue proxy generation for restored recording %s: %s",
                         recording_id,

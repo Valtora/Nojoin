@@ -43,7 +43,7 @@ def _candidate_version_paths() -> list[Path]:
                 executable_directory / "docs" / "VERSION",
             ]
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     paths.extend(

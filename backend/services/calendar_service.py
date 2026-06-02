@@ -522,7 +522,7 @@ async def _save_oauth_state(state: str, payload: dict[str, Any]) -> None:
         )
         await client.close()
         return
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     _oauth_state_fallback[state] = (expires_at, payload)
@@ -538,7 +538,7 @@ async def _pop_oauth_state(state: str) -> dict[str, Any] | None:
             await client.close()
             return json.loads(stored)
         await client.close()
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     expires_at, payload = _oauth_state_fallback.pop(state, (None, None))
@@ -1630,7 +1630,7 @@ async def handle_callback(db: AsyncSession, provider: str, user: User, code: str
     await _refresh_connection_calendars(db, connection, provider_calendars)
     try:
         await sync_connection_in_session(db, connection.id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.warning(
             "Initial calendar sync failed for connection %s (%s)",
             connection.id,
@@ -1916,7 +1916,7 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         await _reset_connection_requiring_reconnect(db, connection)
         await db.commit()
         return
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(
             "Calendar sync failed for connection %s (%s)",
             connection.id,

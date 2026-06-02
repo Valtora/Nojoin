@@ -36,7 +36,10 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       const docs = await getDocuments(recordingId);
       setDocuments(docs);
       setLoadFailed(false);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to load documents", e);
       setLoadFailed(true);
       addNotification({ type: "error", message: "Failed to load documents." });
@@ -93,7 +96,10 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       await deleteDocument(documentToDelete.id);
       addNotification({ type: "success", message: "Document deleted" });
       setDocuments((prev) => prev.filter((d) => d.id !== documentToDelete.id));
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to delete document", e);
       addNotification({ type: "error", message: "Failed to delete document" });
     } finally {

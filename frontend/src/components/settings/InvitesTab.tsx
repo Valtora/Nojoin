@@ -39,7 +39,10 @@ export default function InvitesTab() {
     try {
       const data = await getInvitations();
       setInvitations(data);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to fetch invitations", e);
       addNotification({
         type: "error",
@@ -64,7 +67,10 @@ export default function InvitesTab() {
         type: "success",
         message: "Invitation created successfully",
       });
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to create invitation", e);
       addNotification({
         type: "error",
@@ -89,7 +95,10 @@ export default function InvitesTab() {
         type: "success",
         message: "Invitation revoked",
       });
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to revoke invitation", e);
       addNotification({
         type: "error",
@@ -115,7 +124,10 @@ export default function InvitesTab() {
         type: "success",
         message: "Invitation deleted",
       });
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to delete invitation", e);
       addNotification({
         type: "error",

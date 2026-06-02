@@ -1531,7 +1531,7 @@ def build_transcript_segments_for_read(
 
     try:
         canonical_segments = serialize_canonical_utterances(session, recording_id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return fallback_segments
 
     if canonical_segments:

@@ -3,7 +3,7 @@ import { Dialog, Transition } from "@headlessui/react";
 import { X, FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { Recording } from "@/types";
+import { Recording, RecordingInfo } from "@/types";
 
 interface RecordingInfoModalProps {
   isOpen: boolean;
@@ -16,7 +16,7 @@ export default function RecordingInfoModal({
   onClose,
   recording,
 }: RecordingInfoModalProps) {
-  const [info, setInfo] = useState<any>(null);
+  const [info, setInfo] = useState<RecordingInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const { addNotification } = useNotificationStore();
@@ -139,7 +139,7 @@ export default function RecordingInfoModal({
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
                       Recording details are temporarily unavailable.
                     </div>
-                  ) : (
+                  ) : info ? (
                     <>
 
 
@@ -195,7 +195,7 @@ export default function RecordingInfoModal({
                         )}
                       </div>
                     </>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="mt-6 flex justify-end">

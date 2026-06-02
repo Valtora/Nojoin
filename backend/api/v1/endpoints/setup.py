@@ -249,7 +249,7 @@ async def validate_llm(
             logger.warning("Public setup LLM validation failed for provider %s.", request.provider)
             raise HTTPException(status_code=400, detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL)
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         _raise_setup_validation_error(
             client_detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL,
             log_message=(
@@ -294,7 +294,7 @@ async def validate_hf(
             logger.warning("Public setup Hugging Face validation failed.")
             raise HTTPException(status_code=400, detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL)
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         _raise_setup_validation_error(
             client_detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL,
             log_message=(
@@ -341,7 +341,7 @@ async def list_models(
             logger.warning("Public setup model listing failed for provider %s.", request.provider)
             raise HTTPException(status_code=400, detail=PUBLIC_MODEL_LIST_ERROR_DETAIL)
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         _raise_setup_validation_error(
             client_detail=PUBLIC_MODEL_LIST_ERROR_DETAIL,
             log_message=(

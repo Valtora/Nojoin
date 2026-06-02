@@ -87,7 +87,7 @@ def refine_recording_utterances_via_segmentation(
             SEGMENTATION_MODEL,
             refine_utterance_via_segmentation,
         )
-    except Exception as exc:  # pragma: no cover - import error path
+    except Exception as exc:  # pragma: no cover - import error path  # noqa: BLE001
         logger.warning(
             "Segmentation refinement module unavailable for recording %s: %s",
             recording_id,
@@ -125,7 +125,7 @@ def refine_recording_utterances_via_segmentation(
                 device_str=device_str,
                 hf_token=hf_token,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Segmentation refinement failed for utterance %s: %s",
                 utterance.public_id,

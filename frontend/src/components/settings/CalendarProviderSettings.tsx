@@ -78,6 +78,9 @@ export default function CalendarProviderSettings() {
       const providerStatuses = await getCalendarProviderStatuses();
       setProviders(providerStatuses);
       setForms(buildInitialForms(providerStatuses));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",
@@ -152,6 +155,9 @@ export default function CalendarProviderSettings() {
         type: "success",
         message: `${updatedProvider.display_name} provider settings saved`,
       });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",

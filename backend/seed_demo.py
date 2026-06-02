@@ -60,7 +60,7 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
                     # Generate 30 seconds of silence
                     n_frames = 16000 * 30
                     wav_file.writeframes(b'\x00' * n_frames * 2)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to create demo audio file: {e}")
                 return
 

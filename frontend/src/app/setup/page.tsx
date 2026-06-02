@@ -88,12 +88,16 @@ export default function SetupPage() {
               : "/",
           );
           return;
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         } catch (err: any) {
           if (err?.response?.status !== 401) {
             throw err;
           }
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ffmpegStatus = await checkFFmpeg().catch((err: any) => {
           if (err?.response?.status === 401 || err?.response?.status === 403) {
             return {
@@ -112,7 +116,10 @@ export default function SetupPage() {
         }
 
         setLoading(false);
-      } catch (err) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (err: any) {
         console.error(err);
         setError("Failed to connect to server");
         setLoading(false);
@@ -184,6 +191,9 @@ export default function SetupPage() {
 
       setInitialConfigLoaded(true);
       return true;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       if (err.response?.status === 403) {
         setError(
@@ -274,6 +284,9 @@ export default function SetupPage() {
         );
       }
       setModelsFetched(true);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       setLlmValidationMsg({
         valid: false,
@@ -366,6 +379,9 @@ export default function SetupPage() {
 
       // 3. Start Download
       startModelDownload();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       console.error("Setup failed:", err);
       if (err.response?.status === 403) {
@@ -403,6 +419,9 @@ export default function SetupPage() {
       });
 
       pollDownloadProgress();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       console.error("Download start failed:", err);
       setDownloadMessage(`Error starting download: ${err.message}`);
@@ -425,7 +444,10 @@ export default function SetupPage() {
           setDownloadStage(progress.stage || "");
           setDownloadMessage(progress.message || "Downloading...");
         }
-      } catch (err) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (err: any) {
         console.error("Polling error:", err);
       }
     }, 1000);
@@ -725,7 +747,7 @@ export default function SetupPage() {
                   <div className="p-4 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl text-xs space-y-2 text-gray-600 dark:text-gray-300">
                     <p className="font-semibold text-gray-900 dark:text-white">To resolve this:</p>
                     <ol className="list-decimal list-inside space-y-1">
-                      <li>Open your server's <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">.env</code> file.</li>
+                      <li>Open your server&apos;s <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">.env</code> file.</li>
                       <li>Set <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">LLM_PROVIDER</code> (e.g. <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">gemini</code>, <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">openai</code>, <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">anthropic</code>, or <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">ollama</code>).</li>
                       <li>Set the corresponding API key variable (e.g. <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">GEMINI_API_KEY</code>).</li>
                       <li>Restart your docker containers (e.g. <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">docker compose restart</code>).</li>
@@ -787,7 +809,7 @@ export default function SetupPage() {
                               {llmValidationMsg.msg}
                             </p>
                             <p className="text-xs text-gray-500 mt-2">
-                              Please verify your API key in the server's <code className="bg-gray-100 dark:bg-gray-900 px-1 py-0.5 rounded">.env</code> and restart the server if needed.
+                              Please verify your API key in the server&apos;s <code className="bg-gray-100 dark:bg-gray-900 px-1 py-0.5 rounded">.env</code> and restart the server if needed.
                             </p>
                           </div>
                         </div>

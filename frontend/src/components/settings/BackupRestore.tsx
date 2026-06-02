@@ -146,6 +146,9 @@ export default function BackupRestore() {
       setTimeout(() => {
         window.location.reload();
       }, 2000);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       console.error("Import failed:", error);
       const errorMsg =

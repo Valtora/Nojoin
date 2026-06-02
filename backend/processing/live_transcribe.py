@@ -163,7 +163,7 @@ def _persist_asr_window_result_best_effort(mutator) -> None:
         mutator(session)
         if hasattr(session, "commit"):
             session.commit()
-    except Exception:
+    except Exception:  # noqa: BLE001
         if hasattr(session, "rollback"):
             session.rollback()
         logger.warning("Failed to persist ASR window result", exc_info=True)
@@ -201,7 +201,7 @@ def _load_recording_audio_window_manifests(session, recording_id: int) -> list[R
             .where(RecordingAudioWindowManifest.recording_id == recording_id)
             .order_by(RecordingAudioWindowManifest.window_index)
         ).all()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return []
 
 
@@ -215,7 +215,7 @@ def _load_recording_audio_chunks(session, recording_id: int) -> list[RecordingAu
             .where(RecordingAudioChunk.recording_id == recording_id)
             .order_by(RecordingAudioChunk.sequence_no)
         ).all()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return []
 
 
@@ -579,7 +579,7 @@ def _load_live_rolling_processing_run_statuses(
                 ProcessingRun.id.in_(sorted(processing_run_ids))
             )
         ).all()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return {}
 
     return {
@@ -603,7 +603,7 @@ def _load_lockable_live_rolling_diarization_manifests(
             .order_by(RecordingAudioWindowManifest.window_index)
             .with_for_update(skip_locked=True)
         ).all()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return _load_recording_audio_window_manifests(session, recording_id)
 
 
@@ -673,7 +673,7 @@ def _count_active_live_rolling_diarization_runs(session) -> int:
                 )
             ).all()
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         if hasattr(session, "rollback"):
             session.rollback()
         logger.warning(
@@ -905,7 +905,7 @@ def _run_live_rolling_diarization_pass(
         session.add(rolling_run)
         session.commit()
         return summary
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         if hasattr(session, "rollback"):
             session.rollback()
         if rolling_run is not None:
@@ -1271,7 +1271,7 @@ def _resolve_live_speaker(
 
         info = sf.info(audio_path)
         duration = float(info.frames) / float(info.samplerate)
-    except Exception:
+    except Exception:  # noqa: BLE001
         duration = 0.0
 
     def _record_resolution(
@@ -1522,7 +1522,7 @@ def _apply_live_voiceprint_learning(
     window_result.raw_payload = raw_payload
     try:
         flag_modified(window_result, "raw_payload")
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     session.add(window_result)
 
@@ -2147,7 +2147,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         source_channel_evidence=source_channel_evidence,
                     )
                     session.commit()
-                except Exception as speaker_exc:
+                except Exception as speaker_exc:  # noqa: BLE001
                     if hasattr(session, "rollback"):
                         session.rollback()
                     logger.warning(
@@ -2439,7 +2439,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     from backend.worker.tasks import refresh_meeting_edge_task
 
                     refresh_meeting_edge_task.delay(recording_id)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "Failed to dispatch Meeting Edge refresh for recording %s: %s",
                         recording_id,

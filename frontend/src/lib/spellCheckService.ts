@@ -91,7 +91,10 @@ class SpellCheckService {
 
       this.loading = false;
       this.notifyReady();
-    } catch (err) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (err: any) {
       console.error(`[SpellCheckService] Failed to load dictionary for '${locale}':`, err);
       this.speller = null;
       this.currentLocale = null;
@@ -134,7 +137,10 @@ class SpellCheckService {
       if (this.speller) {
         this.personalDictionary.forEach((word) => this.speller!.add(word));
       }
-    } catch (err) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (err: any) {
       console.error('[SpellCheckService] Failed to load user data:', err);
     }
   }
@@ -171,7 +177,10 @@ class SpellCheckService {
 
     try {
       await addPersonalDictionaryWord(normalised);
-    } catch (err) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (err: any) {
       console.error('[SpellCheckService] Failed to persist personal dictionary word:', err);
     }
 
@@ -183,7 +192,10 @@ class SpellCheckService {
 
     try {
       await removePersonalDictionaryWord(word);
-    } catch (err) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (err: any) {
       console.error('[SpellCheckService] Failed to remove personal dictionary word:', err);
     }
   }
@@ -196,7 +208,10 @@ class SpellCheckService {
 
     try {
       await addSpellcheckIgnoredWord(normalised);
-    } catch (err) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (err: any) {
       console.error('[SpellCheckService] Failed to persist ignored word:', err);
     }
 
@@ -208,7 +223,10 @@ class SpellCheckService {
 
     try {
       await removeSpellcheckIgnoredWord(word);
-    } catch (err) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (err: any) {
       console.error('[SpellCheckService] Failed to remove ignored word:', err);
     }
   }
@@ -224,7 +242,10 @@ class SpellCheckService {
     for (const word of words) {
       try {
         await removePersonalDictionaryWord(word);
-      } catch (err) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (err: any) {
         console.error('[SpellCheckService] Failed to remove word during clear:', err);
       }
     }

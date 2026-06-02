@@ -73,8 +73,8 @@ export function PersonModal({
     }
   }, [isOpen]);
 
-  const handleCreateTag = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateTag = async (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
     if (!newTagName.trim()) return;
 
     try {
@@ -86,7 +86,10 @@ export function PersonModal({
       }));
       setNewTagName("");
       setShowTagInput(false);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to create tag:", error);
     }
   };
@@ -128,9 +131,13 @@ export function PersonModal({
     }
   }, [isOpen, person]);
 
+interface TagNode extends PeopleTag {
+  children: TagNode[];
+}
+
   const tagTree = useMemo(() => {
-    const tagMap = new Map<number, PeopleTag & { children: any[] }>();
-    const roots: any[] = [];
+    const tagMap = new Map<number, TagNode>();
+    const roots: TagNode[] = [];
     allTags.forEach((tag) => tagMap.set(tag.id, { ...tag, children: [] }));
     allTags.forEach((tag) => {
       const node = tagMap.get(tag.id)!;
@@ -143,7 +150,7 @@ export function PersonModal({
     return roots;
   }, [allTags]);
 
-  const renderTagSelection = (nodes: any[], level = 0): React.ReactNode => {
+  const renderTagSelection = (nodes: TagNode[], level = 0): React.ReactNode => {
     return nodes.map((tag) => (
       <React.Fragment key={tag.id}>
         <button
@@ -175,7 +182,10 @@ export function PersonModal({
     try {
       await onSave(formData);
       onClose();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to save person:", error);
     } finally {
       setIsSubmitting(false);
@@ -211,7 +221,10 @@ export function PersonModal({
       } else {
         window.location.reload();
       }
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Merge failed:", error);
       addNotification({
         type: "error",
@@ -240,7 +253,10 @@ export function PersonModal({
         message: "Voiceprint deleted.",
       });
       onClose();
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to delete voiceprint:", error);
       addNotification({
         type: "error",
@@ -572,7 +588,7 @@ export function PersonModal({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        handleCreateTag(e as any);
+                        handleCreateTag(e);
                       }
                     }}
                   />

@@ -220,7 +220,10 @@ export default function Sidebar() {
       try {
         const data = await getTags();
         setTags(data);
-      } catch (error) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (error: any) {
         console.error("Failed to load tags:", error);
       }
     };
@@ -386,7 +389,10 @@ export default function Sidebar() {
 
       const data = await getRecordings(filters);
       setRecordings(data);
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to fetch recordings:", error);
     }
   }, [
@@ -468,7 +474,10 @@ export default function Sidebar() {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await archiveRecording(id);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to archive", e);
       fetchRecordings();
     }
@@ -478,7 +487,10 @@ export default function Sidebar() {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
     try {
       await restoreRecording(id);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to restore", e);
       fetchRecordings();
     }
@@ -491,7 +503,10 @@ export default function Sidebar() {
       if (pathname === `/recordings/${id}`) {
         router.push("/recordings");
       }
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to delete", e);
       fetchRecordings();
     }
@@ -511,7 +526,10 @@ export default function Sidebar() {
           if (pathname === `/recordings/${id}`) {
             router.push("/recordings");
           }
-        } catch (e) {
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+        } catch (e: any) {
           console.error("Failed to permanently delete", e);
           fetchRecordings();
         }
@@ -542,7 +560,10 @@ export default function Sidebar() {
 
     try {
       await renameRecording(id, renameValue);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to rename", e);
       fetchRecordings();
     }
@@ -559,7 +580,10 @@ export default function Sidebar() {
         new CustomEvent("recording-updated", { detail: { id } }),
       );
       fetchRecordings();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to retry", e);
       addNotification({ message: "Failed to retry processing.", type: "error" });
     }
@@ -588,7 +612,10 @@ export default function Sidebar() {
         new CustomEvent("recording-updated", { detail: { id } }),
       );
       fetchRecordings();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to infer speakers", e);
       addNotification({ message: "Failed to infer speakers.", type: "error" });
     }
@@ -602,7 +629,10 @@ export default function Sidebar() {
         type: "success",
       });
       fetchRecordings();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to cancel processing", e);
       addNotification({
         message: "Failed to cancel processing.",

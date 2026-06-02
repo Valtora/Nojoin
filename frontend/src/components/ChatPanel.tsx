@@ -214,7 +214,10 @@ export default function ChatPanel({
       await clearChatHistory(recordingId);
       setMessages([]);
       addNotification({ type: "success", message: "Chat history cleared" });
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error(e);
       addNotification({ type: "error", message: "Failed to clear chat" });
     } finally {

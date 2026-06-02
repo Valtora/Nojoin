@@ -117,7 +117,7 @@ def get_worker_device_status(self):
         }
     except ImportError:
         return {"device": "cpu", "error": "torch not installed"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"device": "unknown", "error": str(e)}
 
 
@@ -186,7 +186,7 @@ def generate_proxy_task(self, recording_id: int):
         else:
             logger.error(f"Failed to generate proxy for recording {recording_id}")
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error in generate_proxy_task for recording {recording_id}: {e}")
         # Not re-raised because proxy generation is optional/secondary.
 

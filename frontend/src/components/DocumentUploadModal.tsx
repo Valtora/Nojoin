@@ -126,6 +126,9 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 onSuccess?.();
                 handleClose();
             }, 1500);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         } catch (error: any) {
             setUploadState('idle');
             addNotification({

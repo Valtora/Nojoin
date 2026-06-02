@@ -113,7 +113,7 @@ async def register_user(
     # Seed demo data
     try:
         await seed_demo_data(user.id)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to seed demo data: {e}")
     
     return user
@@ -202,7 +202,7 @@ async def create_user(
     # Seed demo data
     try:
         await seed_demo_data(user.id)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to seed demo data: {e}")
 
     return user
@@ -256,7 +256,7 @@ async def delete_user(
         await db.commit()
         logger.info(f"Successfully deleted user {user_id}")
         return user
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await db.rollback()
         raise sanitized_http_exception(
             logger=logger,

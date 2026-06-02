@@ -137,6 +137,9 @@ export default function AccountSettings({
       if (forcePasswordChange) {
         router.push('/');
       }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (err: any) {
       addNotification({ message: err.response?.data?.detail || 'Failed to update password', type: 'error' });
     } finally {

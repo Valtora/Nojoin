@@ -150,7 +150,7 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
             import soundfile as sf
             with sf.SoundFile(audio_path) as f:
                 logger.info(f"Audio file info - samplerate: {f.samplerate}, channels: {f.channels}, duration: {len(f) / f.samplerate:.2f}s")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not read audio file info for logging: {e}")
 
         # Run diarization
@@ -249,6 +249,6 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
     finally:
         try:
             os.remove(output_path)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 

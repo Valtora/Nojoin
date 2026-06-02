@@ -31,7 +31,10 @@ export default function CaptureShell({ children }: CaptureShellProps) {
     try {
       await resume(pausedRecording.id);
       router.push(`/recordings/${pausedRecording.id}`);
-    } catch (resumeError) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (resumeError: any) {
       if (!controller.getState().error) {
         addNotification({
           type: "error",
@@ -55,7 +58,10 @@ export default function CaptureShell({ children }: CaptureShellProps) {
     try {
       await cancel(pausedRecording.id);
       router.push("/recordings");
-    } catch (cancelError) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (cancelError: any) {
       addNotification({
         type: "error",
         message:

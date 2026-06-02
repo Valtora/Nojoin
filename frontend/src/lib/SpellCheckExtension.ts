@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { Decoration, DecorationSet, EditorView } from '@tiptap/pm/view';
+import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { spellCheckService } from './spellCheckService';
 
 export interface SpellCheckError {
@@ -32,11 +33,11 @@ function shouldSkipWord(word: string): boolean {
   return false;
 }
 
-function extractMisspelledWords(doc: any): SpellCheckError[] {
+function extractMisspelledWords(doc: ProseMirrorNode): SpellCheckError[] {
   const errors: SpellCheckError[] = [];
   if (!spellCheckService.isReady() || spellCheckService.isDisabled()) return errors;
 
-  doc.descendants((node: any, pos: number) => {
+  doc.descendants((node: ProseMirrorNode, pos: number) => {
     if (!node.isText) return;
     const text: string = node.text || '';
 
@@ -95,7 +96,7 @@ function extractMisspelledWords(doc: any): SpellCheckError[] {
   return errors;
 }
 
-function buildDecorations(doc: any, errors: SpellCheckError[]): DecorationSet {
+function buildDecorations(doc: ProseMirrorNode, errors: SpellCheckError[]): DecorationSet {
   const decorations = errors.map((err) =>
     Decoration.inline(err.from, err.to, {
       class: 'spellcheck-error',
@@ -107,7 +108,7 @@ function buildDecorations(doc: any, errors: SpellCheckError[]): DecorationSet {
 
 /** Retrieves the spell check error at a given document position, if any. */
 export function getSpellCheckErrorAtPos(
-  view: any,
+  view: EditorView,
   pos: number
 ): SpellCheckError | null {
   const pluginState: SpellCheckPluginState | undefined =

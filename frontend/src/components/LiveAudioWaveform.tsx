@@ -83,6 +83,7 @@ export default function LiveAudioWaveform({
   const lastAudioActivityAtRef = useRef<number>(0);
   const dynamicMinRef = useRef<number>(0);
   const dynamicMaxRef = useRef<number>(20);
+  const [scale, setScale] = useState({ min: 0, max: 20 });
   const suppressQuietAudioWarnings = useAudioWarningStore(
     (state) => state.suppressQuietAudioWarnings,
   );
@@ -112,6 +113,7 @@ export default function LiveAudioWaveform({
       resetActivityTracking();
       dynamicMinRef.current = 0;
       dynamicMaxRef.current = 20;
+      setScale({ min: 0, max: 20 });
       return;
     }
 
@@ -120,6 +122,7 @@ export default function LiveAudioWaveform({
       resetActivityTracking();
       dynamicMinRef.current = 0;
       dynamicMaxRef.current = 20;
+      setScale({ min: 0, max: 20 });
       return;
     }
 
@@ -162,6 +165,8 @@ export default function LiveAudioWaveform({
       );
       return appendSample(displayHistory, smoothedLevel);
     });
+
+    setScale({ min: dynamicMinRef.current, max: dynamicMaxRef.current });
   }, [
     enabled,
     levels.mixed,
@@ -211,8 +216,8 @@ export default function LiveAudioWaveform({
       <WaveformTrack
         history={audioHistory}
         barClassName={AUDIO_BAR_CLASS_NAME}
-        dynamicMin={dynamicMinRef.current}
-        dynamicMax={dynamicMaxRef.current}
+        dynamicMin={scale.min}
+        dynamicMax={scale.max}
       />
     </div>
   );

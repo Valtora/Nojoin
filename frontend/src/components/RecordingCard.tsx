@@ -174,7 +174,10 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       await renameRecording(recording.id, renameValue.trim());
       setIsRenaming(false);
       router.refresh();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to rename recording", e);
       addNotification({
         message: "Failed to rename recording.",
@@ -196,7 +199,10 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         new CustomEvent("recording-updated", { detail: { id: recording.id } }),
       );
       router.refresh();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to retry processing", e);
       addNotification({
         message: "Failed to retry processing.",
@@ -210,7 +216,10 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     try {
       await deleteRecording(recording.id);
       router.refresh();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to delete recording", e);
       addNotification({
         message: "Failed to delete recording.",
@@ -231,7 +240,10 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         new CustomEvent("recording-updated", { detail: { id: recording.id } }),
       );
       router.refresh();
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to infer speakers", e);
       addNotification({ message: "Failed to infer speakers.", type: "error" });
     }
@@ -247,7 +259,10 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       router.refresh();
       // Force reload after short delay to ensure UI updates
       setTimeout(() => router.refresh(), 1000);
-    } catch (e) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (e: any) {
       console.error("Failed to cancel processing", e);
       addNotification({
         message: "Failed to cancel processing.",

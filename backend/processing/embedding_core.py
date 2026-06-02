@@ -182,7 +182,7 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
                         emb = np.mean(emb, axis=0)
                         
                     speaker_embeddings.append(emb)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to extract embedding for speaker {label} segment {seg}: {e}")
             
             if speaker_embeddings:
@@ -266,7 +266,7 @@ def extract_embedding_for_segments(
                     
                 speaker_embeddings.append(emb)
                 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Failed to extract embedding for segment ({start:.2f}, {end:.2f}): {e}")
                 continue
         

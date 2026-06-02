@@ -348,7 +348,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 session.add(recording)
                 session.commit()
                 session.refresh(recording)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Could not determine duration for recording {recording_id}: {e}")
     
         # --- VAD Stage ---
@@ -676,7 +676,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     diarization_result = filter_phantom_speakers(
                         diarization_result, processed_audio_path, config=merged_config
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Phantom speaker filter failed, continuing with unfiltered result: {e}")
         elif enable_diarization:
             logger.info(
@@ -978,7 +978,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                             new_emb = merge_embeddings(best_match.embedding, embedding)
                             best_match.embedding = new_emb
                             session.add(best_match)
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001
                             logger.warning(f"Failed to update embedding for {best_match.name}: {e}")
                     elif not best_match.is_voiceprint_locked:
                         logger.info(
@@ -1156,7 +1156,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                         session,
                         recording.id,
                     )
-            except Exception as seg_exc:
+            except Exception as seg_exc:  # noqa: BLE001
                 logger.warning(
                     "Segmentation refinement pass failed for recording %s: %s",
                     recording.id,
@@ -1232,7 +1232,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         if hasattr(session, "rollback"):
             try:
                 session.rollback()
-            except Exception as rollback_exc:
+            except Exception as rollback_exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to rollback session after audio processing error for %s: %s",
                     recording_id,
@@ -1264,7 +1264,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         if hasattr(session, "rollback"):
             try:
                 session.rollback()
-            except Exception as rollback_exc:
+            except Exception as rollback_exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to rollback session after processing error for %s: %s",
                     recording_id,
@@ -1316,7 +1316,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     torch.cuda.empty_cache()
                     
                 logger.info("VRAM released successfully.")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Error releasing VRAM: {e}")
 
 
@@ -1397,7 +1397,7 @@ def _recording_uses_browser_capture_impl(session, recording_id: int) -> bool:
             .limit(1)
         )
         return session.exec(statement).first() is not None
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -2534,7 +2534,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             recording.id,
         )
         return result
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error(
             "Failed to generate automatic meeting intelligence for recording %s: %s",
             recording.id,

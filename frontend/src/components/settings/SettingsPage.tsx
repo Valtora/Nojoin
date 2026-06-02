@@ -168,7 +168,10 @@ export default function SettingsPage() {
         currentSettings = safeSettings;
         setForcePasswordChange(false);
         markMainAutosaveSaved(safeSettings);
-      } catch (e) {
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      } catch (e: any) {
         console.error("Failed to load settings", e);
       }
 

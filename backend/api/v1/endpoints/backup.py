@@ -40,7 +40,7 @@ async def export_backup(
         from backend.models.task import register_task_ownership
         await register_task_ownership(db, task.id, current_user.id)
         return {"task_id": task.id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -77,7 +77,7 @@ async def get_export_status(task_id: str):
             }
             
         return response
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -120,7 +120,7 @@ async def download_export(
         
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -193,7 +193,7 @@ async def import_backup(
 
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Cleanup on immediate failure
             try:
                 if temp_path.exists():
@@ -258,7 +258,7 @@ async def upload_chunk(
             content = await file.read()
             f.write(content)
         return {"status": "ok", "chunk_index": chunk_index}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -312,7 +312,7 @@ async def complete_upload(
             content={"job_id": job_id, "message": "Restore started"}
         )
         
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         if final_path.exists():
             os.remove(final_path)
         raise sanitized_http_exception(

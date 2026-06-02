@@ -128,7 +128,7 @@ def concatenate_binary_files(segment_paths: List[str], output_path: str):
             for segment_path in segment_paths:
                 with open(segment_path, 'rb') as infile:
                     shutil.copyfileobj(infile, outfile)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise RuntimeError(f"Failed to concatenate binary files: {str(e)}")
 
 def convert_to_mono_16k(input_path: str, output_path: str):
@@ -174,7 +174,7 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to convert audio to MP3: {e.stderr.decode() if e.stderr else str(e)}")
         return False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Unexpected error converting to MP3: {str(e)}")
         return False
 
@@ -199,7 +199,7 @@ def convert_to_wav(input_path: str, output_path: str) -> bool:
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to convert audio to WAV: {e.stderr.decode() if e.stderr else str(e)}")
         return False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Unexpected error converting to WAV: {str(e)}")
         return False
 
@@ -296,7 +296,7 @@ def extract_audio_clip(
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode() if e.stderr else "Unknown ffmpeg error"
         raise RuntimeError(f"Failed to extract audio clip: {error_msg}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Unexpected error converting to proxy MP3: {str(e)}")
         # Cleanup temp file
         if is_same_file and os.path.exists(final_output_path):

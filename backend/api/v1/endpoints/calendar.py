@@ -115,7 +115,7 @@ async def start_calendar_authorisation_redirect(
     except HTTPException as exc:
         status_value = "config-error" if exc.status_code == 400 else "error"
         return RedirectResponse(_build_account_redirect(status_value, provider), status_code=303)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return RedirectResponse(_build_account_redirect("error", provider), status_code=303)
 
     return RedirectResponse(authorisation_url, status_code=303)
@@ -148,7 +148,7 @@ async def calendar_authorisation_callback(
 
     try:
         await handle_callback(db, provider, current_user, code, state)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return RedirectResponse(_build_account_redirect("error", provider), status_code=303)
 
     return RedirectResponse(_build_account_redirect("success", provider), status_code=303)

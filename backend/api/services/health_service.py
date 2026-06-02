@@ -59,7 +59,7 @@ async def _get_db_component() -> tuple[dict[str, Any], bool]:
             ),
             True,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         return (
             _build_component(
                 "error",
@@ -84,7 +84,7 @@ async def _get_queue_component() -> tuple[dict[str, Any], bool]:
             ),
             True,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         return (
             _build_component(
                 "error",
@@ -107,7 +107,7 @@ async def _resolve_worker_status() -> str:
         heartbeat_client = redis.from_url(_get_redis_url())
         if await heartbeat_client.get("nojoin:worker:heartbeat"):
             worker_status = "active"
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     finally:
         if heartbeat_client is not None:
@@ -118,7 +118,7 @@ async def _resolve_worker_status() -> str:
             inspector = celery_app.control.inspect()
             active_workers = inspector.ping()
             worker_status = "active" if active_workers else "inactive"
-        except Exception:
+        except Exception:  # noqa: BLE001
             worker_status = "error"
 
     return worker_status
@@ -164,7 +164,7 @@ def _get_ffmpeg_component() -> tuple[dict[str, Any], bool]:
         from backend.utils.audio import ensure_ffmpeg_in_path
 
         ensure_ffmpeg_in_path()
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     ffmpeg_path = shutil.which("ffmpeg")
@@ -459,7 +459,7 @@ async def _get_device_component(worker_status: str) -> tuple[dict[str, Any], boo
     try:
         task = celery_app.send_task("backend.worker.tasks.get_worker_device_status")
         payload = await asyncio.to_thread(task.get, timeout=5)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return (
             _build_component(
                 "warning",

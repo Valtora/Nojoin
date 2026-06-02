@@ -222,7 +222,7 @@ class OnnxAsrEngine(TranscriptionEngine):
             try:
                 import soundfile
                 audio_duration = soundfile.info(audio_path).duration
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
 
             logger.info(f"Starting {self.name} transcription for {audio_path}")

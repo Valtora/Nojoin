@@ -49,7 +49,7 @@ async def list_models(
             log_message=f"Rejected LLM model listing request for provider '{provider}'.",
             exc=e,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,

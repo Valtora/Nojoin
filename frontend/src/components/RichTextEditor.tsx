@@ -40,6 +40,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
     content: content,
     editable: editable,
     onUpdate: ({ editor }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const markdown = (editor.storage as any).markdown.getMarkdown();
       onChange(markdown);
     },
@@ -56,6 +57,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
 
   // Update content if it changes externally (e.g. reset)
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (editor && content !== (editor.storage as any).markdown.getMarkdown()) {
       editor.commands.setContent(content);
     }

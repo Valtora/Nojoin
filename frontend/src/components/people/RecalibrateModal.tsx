@@ -75,7 +75,10 @@ export default function RecalibrateModal({
       setSegments(data);
       // Reset states
       setSegmentStates({});
-    } catch (error) {
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+    } catch (error: any) {
       console.error("Failed to fetch segments", error);
       addNotification({
         type: "error",
@@ -186,6 +189,9 @@ export default function RecalibrateModal({
           "Voiceprint recalibrated successfully! You can now scan for matches.",
       });
       // Do not auto close, let user decide
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       console.error("Recalibration failed", error);
       addNotification({
@@ -258,7 +264,10 @@ export default function RecalibrateModal({
                         });
                         onComplete();
                         onClose();
-                      } catch (e) {
+
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+                      } catch (e: any) {
                         console.error(e);
                         addNotification({
                           type: "error",

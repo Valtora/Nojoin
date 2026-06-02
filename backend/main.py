@@ -197,7 +197,7 @@ async def lifespan(app: FastAPI):
     # Seed demo data for the initial user if needed
     try:
         await seed_demo_data()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to seed demo data on startup: {e}")
 
     # Auto-start downloading core models in background if not cached
@@ -215,7 +215,7 @@ async def lifespan(app: FastAPI):
                 "backend.worker.tasks.download_models_task",
                 kwargs={"whisper_model_size": "turbo"}
             )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to trigger automatic model download on startup: {e}")
 
     yield

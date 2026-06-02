@@ -1239,7 +1239,7 @@ async def recalibrate_voiceprint(
             emb = await run_in_threadpool(task.get, timeout=120) # 2 min timeout
             if emb:
                 all_embeddings.append(emb)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(
                 f"Failed to extract embedding for recalibration (Rec {recording_public_id}): {e}"
             )
@@ -1428,7 +1428,7 @@ async def split_speaker(
                 emb = await run_in_threadpool(task.get, timeout=60)
                 if emb:
                     new_speaker_embeddings.append(emb)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed embedding extract during split (Rec {rec_id}): {e}")
                 emb = None
 
@@ -1501,7 +1501,7 @@ async def split_speaker(
                 emb = await run_in_threadpool(task.get, timeout=60)
                 if emb:
                     original_speaker_embeddings.append(emb)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed embedding extract for original (Rec {rec_id}): {e}")
 
     if original_speaker_embeddings:
@@ -1739,7 +1739,7 @@ async def extract_voiceprint(
     )
     try:
         embedding = await run_in_threadpool(task.get, timeout=120)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Timeout or error extracting voiceprint: {e}")
         raise HTTPException(
             status_code=504,
@@ -2031,7 +2031,7 @@ async def extract_all_voiceprints(
         )
         try:
             embedding = await run_in_threadpool(task.get, timeout=120)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Timeout or error extracting voiceprint in batch: {e}")
             results.append({
                 "diarization_label": rec_speaker.diarization_label,

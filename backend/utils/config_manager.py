@@ -381,7 +381,7 @@ class ConfigManager:
         if os.path.exists(old_path) and not os.path.exists(new_path):
             try:
                 os.rename(old_path, new_path)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 import shutil
                 shutil.move(old_path, new_path)
 
@@ -441,7 +441,7 @@ def migrate_file_if_needed(old_path, new_path):
     if os.path.exists(old_path) and not os.path.exists(new_path):
         try:
             os.rename(old_path, new_path)
-        except Exception:
+        except Exception:  # noqa: BLE001
             import shutil
             shutil.move(old_path, new_path)
 

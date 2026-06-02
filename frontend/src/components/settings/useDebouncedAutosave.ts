@@ -148,7 +148,10 @@ export default function useDebouncedAutosave<T>({
             status: "saved",
             message: optionsRef.current.savedMessage,
           });
-        } catch (error) {
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+        } catch (error: any) {
           updateAutosaveState({
             status: "error",
             message: getAutosaveErrorMessage(

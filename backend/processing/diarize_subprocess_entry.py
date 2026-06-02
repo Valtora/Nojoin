@@ -65,7 +65,7 @@ def main():
         with open(output_path, 'wb') as f:
             pickle.dump(diarization_result, f)
         print("DONE", flush=True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error in offline diarization subprocess: {e}")
         traceback.print_exc(file=sys.stderr)
         sys.exit(3)

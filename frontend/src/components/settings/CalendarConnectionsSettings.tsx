@@ -98,6 +98,9 @@ export default function CalendarConnectionsSettings() {
     setLoading(true);
     try {
       setOverview(await getCalendarOverview());
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",
@@ -165,6 +168,9 @@ export default function CalendarConnectionsSettings() {
     try {
       const { authorisation_url } = await startCalendarAuthorisation(provider);
       window.location.assign(authorisation_url);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",
@@ -197,6 +203,9 @@ export default function CalendarConnectionsSettings() {
       setOverview((currentOverview) =>
         replaceConnection(currentOverview, updatedConnection),
       );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",
@@ -224,6 +233,9 @@ export default function CalendarConnectionsSettings() {
       setOverview((currentOverview) =>
         replaceConnection(currentOverview, updatedConnection),
       );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",
@@ -247,6 +259,9 @@ export default function CalendarConnectionsSettings() {
         type: "success",
         message: "Calendar sync completed",
       });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",
@@ -279,6 +294,9 @@ export default function CalendarConnectionsSettings() {
         type: "success",
         message: "Calendar connection removed",
       });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     } catch (error: any) {
       addNotification({
         type: "error",

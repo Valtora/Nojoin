@@ -69,7 +69,7 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
                             resume_header = {"Range": f"bytes={downloaded}-"}
                             file_mode = "ab"
                             logger.info(f"Resuming download from byte {downloaded}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Could not check file size: {e}. Restarting download.")
                     if os.path.exists(dest_path):
                         os.remove(dest_path)
@@ -95,7 +95,7 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
                             logger.warning("Server does not support resume. Restarting download.")
                             os.remove(part_path)
                             downloaded = 0
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning(f"Could not check file size: {e}. Restarting download.")
                     os.remove(part_path)
                     downloaded = 0
@@ -216,7 +216,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         report("Logging in to Hugging Face...", 10, stage="init")
         try:
             huggingface_hub.login(token=hf_token)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Hugging Face login failed: {e}")
             raise ValueError(f"Hugging Face login failed: {str(e)}. Please check your token.")
 
@@ -225,7 +225,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
     try:
         silero_vad.load_silero_vad()
         report("Silero VAD model loaded.", 100, stage="vad")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to load Silero VAD: {e}")
         # Don't fail completely, VAD might be optional or retriable
 
@@ -281,7 +281,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
         report("Parakeet model loaded.", 100, stage="parakeet")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # A Parakeet download failure must not abort the whole preload.
         logger.warning(f"Failed to load Parakeet model: {e}")
         report("Skipping Parakeet (download failed).", 100, stage="parakeet")
@@ -298,7 +298,7 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
         report("Canary model loaded.", 100, stage="canary")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # A Canary download failure must not abort the whole preload.
         logger.warning(f"Failed to load Canary model: {e}")
         report("Skipping Canary (download failed).", 100, stage="canary")
@@ -351,12 +351,12 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
                     torch.serialization.add_safe_globals([TorchVersion])
             except ImportError:
                 pass
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning(f"Could not add safe globals: {e}")
 
             Model.from_pretrained(embedding_model_name, token=hf_token)
             report(f"Embedding model ({embedding_model_name}) loaded.", 100, stage="embedding")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load Embedding model: {e}")
             # Don't fail completely
 
