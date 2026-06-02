@@ -1737,7 +1737,14 @@ async def extract_voiceprint(
         "backend.worker.tasks.extract_embedding_task",
         args=[target_audio, speaker_segments, device_str, hf_token]
     )
-    embedding = await run_in_threadpool(task.get)
+    try:
+        embedding = await run_in_threadpool(task.get, timeout=120)
+    except Exception as e:
+        logger.error(f"Timeout or error extracting voiceprint: {e}")
+        raise HTTPException(
+            status_code=504,
+            detail="Voiceprint extraction timed out or failed. Please try again."
+        )
     
     if not embedding:
         raise HTTPException(status_code=500, detail="Failed to extract voiceprint from audio segments")
@@ -2022,7 +2029,17 @@ async def extract_all_voiceprints(
             "backend.worker.tasks.extract_embedding_task",
             args=[target_audio, speaker_segments, device_str, hf_token]
         )
-        embedding = await run_in_threadpool(task.get)
+        try:
+            embedding = await run_in_threadpool(task.get, timeout=120)
+        except Exception as e:
+            logger.error(f"Timeout or error extracting voiceprint in batch: {e}")
+            results.append({
+                "diarization_label": rec_speaker.diarization_label,
+                "speaker_name": speaker_name,
+                "success": False,
+                "error": "Extraction timed out or failed"
+            })
+            continue
         
         if not embedding:
             results.append({

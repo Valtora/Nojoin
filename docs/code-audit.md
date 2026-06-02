@@ -323,7 +323,7 @@ The audit covered:
 
 ### ARC-001: Heavy Inference Work Still Runs Inside API Requests
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Slow model initialisation and inference can block API workers,
   increase latency, and reduce availability.
 - **Evidence:** [`backend/api/v1/endpoints/transcripts.py`](../backend/api/v1/endpoints/transcripts.py#L1805)
@@ -334,6 +334,8 @@ The audit covered:
 - **Remediation direction:** Return task IDs and poll or stream progress.
   Dispatch embedding work to Celery where it is not a bounded lightweight
   request operation.
+- **Remediation:** Offloaded the synchronous text embedding generation in `chat_with_meeting` to a new worker-side Celery task `get_text_embedding_task`, with a 30 second timeout on the API side. Added 120 second timeouts and error/timeout handling to `extract_voiceprint` and `extract_all_voiceprints` Celery task `.get()` calls to prevent indefinite worker-blocking hangs. Removed module-level `get_text_embedding_service` import from `transcripts.py` to keep the API process lightweight.
+- **Verification:** Created unit and integration tests in [`backend/tests/test_inference_work_remediation.py`](../backend/tests/test_inference_work_remediation.py) verifying text embedding delegation to Celery, LLM response generation with mocks, timeout raising/handling in voiceprint extraction endpoints, and correct worker-side task execution. All tests pass successfully.
 - **Acceptance criteria:** API handlers do not load models or wait indefinitely
   for heavy worker operations.
 

@@ -3635,3 +3635,19 @@ def create_backup_task(self, include_audio: bool = True):
     except Exception as e:
         logger.error(f"Backup creation failed: {e}", exc_info=True)
         raise e
+
+
+@celery_app.task
+def get_text_embedding_task(texts):
+    """
+    Generate text embeddings using fastembed. Offloads heavy inference from API.
+    """
+    from backend.processing.text_embedding import get_text_embedding_service
+    from typing import List, Union
+    try:
+        embedding_service = get_text_embedding_service()
+        return embedding_service.embed(texts)
+    except Exception as e:
+        logger.error(f"Failed to generate text embedding on worker: {e}", exc_info=True)
+        return []
+

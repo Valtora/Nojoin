@@ -57,7 +57,6 @@ from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.core.db import async_session_maker
 from backend.models.context_chunk import ContextChunk
 from backend.models.tag import Tag, RecordingTag
-from backend.processing.text_embedding import get_text_embedding_service
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.speaker_assignment import (
@@ -1806,9 +1805,14 @@ async def chat_with_meeting(
     
     # Always attempt RAG, at least for the current recording
     try:
-        # 1. Get embedding for the user query
-        embedding_service = get_text_embedding_service()
-        query_embedding = embedding_service.embed(request.message)[0] # Returns list of lists
+        # 1. Get embedding for the user query via Celery
+        from fastapi.concurrency import run_in_threadpool
+        task = celery_app.send_task(
+            "backend.worker.tasks.get_text_embedding_task",
+            args=[request.message]
+        )
+        embeddings = await run_in_threadpool(task.get, timeout=30)
+        query_embedding = embeddings[0]
         
         # 2. Build Query Condition
         if request.tag_ids:

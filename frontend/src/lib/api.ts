@@ -108,7 +108,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.data) {
+    if (
+      error.response?.data &&
+      typeof error.response.data === "object" &&
+      !Array.isArray(error.response.data)
+    ) {
       error.response.data.detail = formatValidationDetail(
         error.response.data.detail,
       );
