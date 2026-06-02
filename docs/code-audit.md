@@ -29,6 +29,7 @@ The audit covered:
 | Investigate | Evidence of a problem exists, but the correct remediation or full impact needs confirmation. |
 | Deferred | Valid cleanup item intentionally scheduled after higher-impact work. |
 | Resolved | Remediation has been implemented and verified. |
+| Unnecessary for this repo | The issue is deemed low-risk and will not be addressed in this repository. |
 
 ## Priority Summary
 
@@ -355,7 +356,7 @@ The audit covered:
 
 ### REL-002: Dependency and Image Builds Are Not Reproducible
 
-- **Status:** Open
+- **Status:** Unnecessary for this repo
 - **Impact:** Rebuilding the same commit at different times can produce
   different artifacts and inherit upstream changes unexpectedly.
 - **Evidence:** Only 7 of 63 Python requirement entries are exact pins.
