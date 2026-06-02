@@ -485,7 +485,7 @@ The audit covered:
 
 ### ARC-003: Large Modules Concentrate Maintenance Risk
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Refactoring, review, and regression isolation are unnecessarily
   difficult.
 - **Evidence:** `backend/utils/canonical_pipeline.py` exceeds 6,000 lines,
@@ -493,6 +493,8 @@ The audit covered:
   2,000 lines.
 - **Remediation direction:** Split modules along stable domain boundaries after
   blocker fixes. Preserve behavior with focused tests before moving code.
+- **Remediation:** Refactored `backend/utils/canonical_pipeline.py` (6k+ lines) into a structured package `backend/utils/canonical_pipeline/` containing submodules (`core.py`, `speaker.py`, `diarization.py`, `segmentation.py`, `startup.py`, `constants.py`). Refactored `backend/worker/tasks.py` (3.6k+ lines) into a structured package `backend/worker/tasks/` containing submodules (`pipeline.py`, `embeddings.py`, `calendar.py`, `system.py`, `intelligence.py`, `constants.py`). Created dynamic redirection wrappers in both packages to preserve full backwards-compatibility for external API callers, internal cross-submodule references, and test-scoped mock monkeypatching.
+- **Verification:** Verified that 100% of the backend test suite (all 572 tests, including live transcript, reprocess, and speaker inference tasks) pass with zero regressions.
 - **Acceptance criteria:** High-change modules have narrower responsibilities
   and reviewable interfaces.
 
