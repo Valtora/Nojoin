@@ -428,14 +428,13 @@ The audit covered:
 
 ### BUG-002: Processing Device Helper Raises `NameError`
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Any future or external caller of the helper crashes.
 - **Evidence:** [`backend/utils/config_manager.py`](../backend/utils/config_manager.py#L168)
   references `torch` without importing it. A direct runtime invocation
   reproduces `NameError: name 'torch' is not defined`.
-- **Remediation direction:** Decide whether the helper belongs in the API at
-  all. If retained, import lazily in a worker-safe path or replace it with a
-  lightweight capability report.
+- **Remediation:** Removed the unused `get_available_processing_devices()` helper function from [`backend/utils/config_manager.py`](../backend/utils/config_manager.py).
+- **Verification:** Created unit tests in [`backend/tests/test_config_manager_cleanup.py`](../backend/tests/test_config_manager_cleanup.py) verifying that the helper is no longer present and that importing `config_manager.py` works safely when `torch` is not installed.
 - **Acceptance criteria:** The helper has a tested, API-safe implementation or
   is removed.
 

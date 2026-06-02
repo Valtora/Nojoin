@@ -169,12 +169,6 @@ def get_available_themes():
     """Returns a list of available UI themes."""
     return APP_THEMES.copy()
 
-def get_available_processing_devices():
-    """Returns a list of available processing devices (e.g., ["cpu", "cuda"] if CUDA is available)."""
-    devices = ["cpu"]
-    if torch.cuda.is_available():
-        devices.append("cuda")
-    return devices
 
 def get_default_user_settings():
     """Returns the default user settings."""
