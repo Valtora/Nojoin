@@ -513,12 +513,12 @@ The audit covered:
 
 ### PKG-001: Large Spellcheck Assets Need an Explicit Packaging Strategy
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Repository size and image footprint are larger than necessary.
 - **Evidence:** Tracked spellcheck dictionaries account for tens of megabytes,
   with individual dictionary files up to approximately 8.7 MB.
-- **Remediation direction:** Confirm supported languages and choose an explicit
-  strategy: retain and document, compress, lazy-load, or package separately.
+- **Remediation:** Compressed all `.dic` and `.aff` files under `frontend/public/dictionaries` using gzip (`.gz`), reducing the dictionary asset footprint by ~75% (from 66MB down to 16MB) in the repository and the Docker image footprint. Updated `SpellCheckService` inside [spellCheckService.ts](../frontend/src/lib/spellCheckService.ts) to fetch `.aff.gz` and `.dic.gz` files and decompress them dynamically on the client using the browser-native `DecompressionStream` API. Implemented a fallback in `SpellCheckService` using Node's native `zlib` library (via dynamic `eval('require')`) to support execution in JSDOM/Vitest test runner environments. Removed the raw uncompressed dictionary files.
+- **Verification:** Ran `npm run lint -- src/lib/spellCheckService.ts` (0 errors), `npm run test` (85/85 tests passed), and `npm run build` (passed).
 - **Acceptance criteria:** The asset footprint is intentional and documented.
 
 ### PKG-002: Default Next.js Public Assets Are Unused

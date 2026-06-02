@@ -230,6 +230,19 @@ docker compose up -d --build frontend
 
 Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility behavior, or troubleshooting guidance.
 
+### Spellcheck Dictionaries
+
+Spellcheck dictionaries are stored under `frontend/public/dictionaries/` in gzip-compressed format (`index.aff.gz` and `index.dic.gz`) to optimize repository size and container image build footprint. 
+
+If you add a new language or update an existing dictionary:
+1. Obtain the raw `.aff` and `.dic` files.
+2. Compress them using gzip:
+   ```bash
+   gzip -k index.aff
+   gzip -k index.dic
+   ```
+3. Commit only the compressed `.gz` files under `frontend/public/dictionaries/<locale>/`. Do not track the raw uncompressed files.
+
 ## Related Docs
 
 - [CAPTURE.md](CAPTURE.md)

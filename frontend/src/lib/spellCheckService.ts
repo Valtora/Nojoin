@@ -33,6 +33,26 @@ export const SPELLCHECK_LANGUAGES: Record<string, { label: string }> = {
 
 type ReadyCallback = () => void;
 
+async function decompressResponse(response: Response): Promise<string> {
+  if (typeof DecompressionStream !== 'undefined' && response.body) {
+    const ds = new DecompressionStream('gzip');
+    const decompressedStream = response.body.pipeThrough(ds);
+    return await new Response(decompressedStream).text();
+  }
+
+  // Fallback for Vitest/JSDOM/Node.js or if response.body is null
+  try {
+    const zlib = eval('require')('zlib');
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return zlib.gunzipSync(buffer).toString('utf-8');
+  } catch (err) {
+    throw new Error(
+      `DecompressionStream is not supported or body is missing, and fallback decompression failed: ${err}`
+    );
+  }
+}
+
 class SpellCheckService {
   private speller: NSpell | null = null;
   private currentLocale: string | null = null;
@@ -92,9 +112,7 @@ class SpellCheckService {
       this.loading = false;
       this.notifyReady();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+    } catch (err) {
       console.error(`[SpellCheckService] Failed to load dictionary for '${locale}':`, err);
       this.speller = null;
       this.currentLocale = null;
@@ -108,16 +126,18 @@ class SpellCheckService {
 
     const basePath = `/dictionaries/${locale}`;
     const [affResponse, dicResponse] = await Promise.all([
-      fetch(`${basePath}/index.aff`),
-      fetch(`${basePath}/index.dic`),
+      fetch(`${basePath}/index.aff.gz`),
+      fetch(`${basePath}/index.dic.gz`),
     ]);
 
     if (!affResponse.ok || !dicResponse.ok) {
       throw new Error(`Dictionary files not found for locale '${locale}'.`);
     }
 
-    const aff = await affResponse.text();
-    const dic = await dicResponse.text();
+    const [aff, dic] = await Promise.all([
+      decompressResponse(affResponse),
+      decompressResponse(dicResponse),
+    ]);
 
     const data = { aff, dic };
     this.dictionaryCache.set(locale, data);
@@ -138,9 +158,7 @@ class SpellCheckService {
         this.personalDictionary.forEach((word) => this.speller!.add(word));
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+    } catch (err) {
       console.error('[SpellCheckService] Failed to load user data:', err);
     }
   }
@@ -178,9 +196,7 @@ class SpellCheckService {
     try {
       await addPersonalDictionaryWord(normalised);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+    } catch (err) {
       console.error('[SpellCheckService] Failed to persist personal dictionary word:', err);
     }
 
@@ -193,9 +209,7 @@ class SpellCheckService {
     try {
       await removePersonalDictionaryWord(word);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+    } catch (err) {
       console.error('[SpellCheckService] Failed to remove personal dictionary word:', err);
     }
   }
@@ -209,9 +223,7 @@ class SpellCheckService {
     try {
       await addSpellcheckIgnoredWord(normalised);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+    } catch (err) {
       console.error('[SpellCheckService] Failed to persist ignored word:', err);
     }
 
@@ -224,9 +236,7 @@ class SpellCheckService {
     try {
       await removeSpellcheckIgnoredWord(word);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+    } catch (err) {
       console.error('[SpellCheckService] Failed to remove ignored word:', err);
     }
   }
@@ -243,9 +253,7 @@ class SpellCheckService {
       try {
         await removePersonalDictionaryWord(word);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (err: any) {
+      } catch (err) {
         console.error('[SpellCheckService] Failed to remove word during clear:', err);
       }
     }
