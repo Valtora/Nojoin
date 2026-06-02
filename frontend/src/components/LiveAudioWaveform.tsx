@@ -36,27 +36,35 @@ const zeroHistory = () => Array.from({ length: HISTORY_LENGTH }, () => 0);
 function WaveformTrack({
   history,
   barClassName,
+  dynamicMin,
+  dynamicMax,
 }: {
   history: number[];
   barClassName: string;
+  dynamicMin: number;
+  dynamicMax: number;
 }) {
+  const range = dynamicMax - dynamicMin;
   return (
     <div className="rounded-3xl border border-white/60 bg-white/75 p-4 shadow-lg shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/60 dark:shadow-black/20">
       <div className="flex h-24 items-end gap-1 overflow-hidden rounded-2xl bg-gradient-to-b from-orange-100/80 via-white to-white px-2 py-3 dark:from-orange-500/10 dark:via-gray-950 dark:to-gray-950">
-        {history.map((sample, index) => (
-          <div
-            key={`audio-bar-${index}`}
-            className="flex h-full flex-1 items-end justify-center"
-          >
+        {history.map((sample, index) => {
+          const scaled = range > 0 ? Math.max(0, Math.min(100, ((sample - dynamicMin) / range) * 100)) : 0;
+          return (
             <div
-              className={`h-full min-w-[2px] w-[58%] rounded-full transition-[height,opacity] duration-150 ${barClassName}`}
-              style={{
-                height: `${Math.max(6, sample)}%`,
-                opacity: 0.35 + (sample / 140),
-              }}
-            />
-          </div>
-        ))}
+              key={`audio-bar-${index}`}
+              className="flex h-full flex-1 items-end justify-center"
+            >
+              <div
+                className={`h-full min-w-[2px] w-[58%] rounded-full transition-[height,opacity] duration-150 ${barClassName}`}
+                style={{
+                  height: `${Math.max(6, scaled)}%`,
+                  opacity: 0.35 + (scaled / 140),
+                }}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -73,6 +81,8 @@ export default function LiveAudioWaveform({
   const [audioHistory, setAudioHistory] = useState<number[]>(zeroHistory);
   const [showQuietHint, setShowQuietHint] = useState(false);
   const lastAudioActivityAtRef = useRef<number>(0);
+  const dynamicMinRef = useRef<number>(0);
+  const dynamicMaxRef = useRef<number>(20);
   const suppressQuietAudioWarnings = useAudioWarningStore(
     (state) => state.suppressQuietAudioWarnings,
   );
@@ -100,12 +110,16 @@ export default function LiveAudioWaveform({
     if (!enabled) {
       setAudioHistory(zeroHistory());
       resetActivityTracking();
+      dynamicMinRef.current = 0;
+      dynamicMaxRef.current = 20;
       return;
     }
 
     if (!runtimeActive) {
       setAudioHistory((history) => appendSample(history, 0));
       resetActivityTracking();
+      dynamicMinRef.current = 0;
+      dynamicMaxRef.current = 20;
       return;
     }
 
@@ -122,8 +136,23 @@ export default function LiveAudioWaveform({
       }
 
       setShowQuietHint(now - lastAudioActivityAtRef.current >= QUIET_HINT_DELAY_MS);
+
+      // Adapt dynamic min and max to signal levels smoothly
+      if (combinedLevel > dynamicMaxRef.current) {
+        dynamicMaxRef.current = dynamicMaxRef.current + (combinedLevel - dynamicMaxRef.current) * 0.3;
+      } else {
+        dynamicMaxRef.current = Math.max(20, dynamicMaxRef.current - 0.1);
+      }
+
+      if (combinedLevel < dynamicMinRef.current) {
+        dynamicMinRef.current = dynamicMinRef.current - (dynamicMinRef.current - combinedLevel) * 0.3;
+      } else {
+        dynamicMinRef.current = Math.min(5, dynamicMinRef.current + 0.05);
+      }
     } else {
       resetActivityTracking();
+      dynamicMinRef.current = 0;
+      dynamicMaxRef.current = 20;
     }
 
     setAudioHistory((displayHistory) => {
@@ -182,6 +211,8 @@ export default function LiveAudioWaveform({
       <WaveformTrack
         history={audioHistory}
         barClassName={AUDIO_BAR_CLASS_NAME}
+        dynamicMin={dynamicMinRef.current}
+        dynamicMax={dynamicMaxRef.current}
       />
     </div>
   );
