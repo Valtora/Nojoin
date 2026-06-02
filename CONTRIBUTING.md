@@ -25,7 +25,7 @@ We **actively welcome** code contributions, bug fixes, and feature enhancements 
 
 - **Code Contributions:** Submit PRs for bug fixes or new features.
 - **Bug Reports:** If you encounter any issues, please [open an issue](https://github.com/Valtora/Nojoin/issues) with detailed reproduction steps.
-- **Platform Testing:** We specifically need help verifying browser capture on supported Chromium browsers across Windows and Linux, plus unsupported-browser messaging on Firefox, Safari, mobile browsers, and Chromium browsers on macOS.
+- **Platform Testing:** We specifically need help verifying browser capture on supported Chromium-family browsers across Windows and Linux, plus microphone-only capture on Chrome on Android and iOS. We also need verification of unsupported-browser messaging on Firefox, Safari, non-Chrome mobile browsers, and Chromium browsers on macOS.
 - **Documentation:** Improvements to the docs are always welcome.
 
 ## Development Setup

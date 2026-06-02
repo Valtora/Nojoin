@@ -457,15 +457,15 @@ The audit covered:
 
 ### DOC-002: Contributor and Product Documentation Contains Stale Statements
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Contributors and operators receive inaccurate instructions.
 - **Evidence:** [`CONTRIBUTING.md`](../CONTRIBUTING.md#L28) describes browser
   support incompletely. [`docs/DEVELOPMENT.md`](DEVELOPMENT.md#L98) references
   `nginx-dev`, while the template service is `nginx`.
   [`docs/PRD.md`](PRD.md#L195) still describes calendar integration as future
   work.
-- **Remediation direction:** Reconcile documentation against current behavior
-  during the documentation pass.
+- **Remediation:** Updated `CONTRIBUTING.md` to reflect complete browser support, including microphone-only support for Chrome on iOS and Android. Updated `docs/DEVELOPMENT.md` to document the distinction between development `nginx-dev` and production `nginx` configurations and provide command examples for both. Updated `docs/PRD.md` to remove stale text describing external calendar data connection as future work, clarifying that future expansion centers on deriving richer agenda/task automation from outcomes.
+- **Verification:** Verified that updated documentation files are accurate, commands are correct, and browser/calendar statements match current application behavior.
 - **Acceptance criteria:** Commands and product-status statements match the
   current repository.
 
