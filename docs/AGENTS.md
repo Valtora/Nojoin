@@ -84,7 +84,8 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
   - Apply: `alembic upgrade head`
   - Create: `alembic revision --autogenerate -m "message"`
 - **Backend Tests**:
-  - Run: `pytest backend`
+  - Ensure the virtual environment is active (e.g., `source .venv/bin/activate`)
+  - Run: `pytest` or `pytest backend`
 - **Frontend**:
   - Development: `cd frontend && npm install && npm run dev`
   - Verification: `cd frontend && npm run build`

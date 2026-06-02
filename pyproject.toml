@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]
+testpaths = [
+  "backend/tests"
+]
+markers = [
+  "pipeline_baseline: marker for pipeline baseline evaluation metrics"
+]

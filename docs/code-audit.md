@@ -396,7 +396,7 @@ The audit covered:
 
 ### QA-002: Backend Verification Command Is Broken and Pytest Is Unconfigured
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Contributors following project documentation receive collection
   failures, and CI adoption is harder.
 - **Evidence:** [`docs/AGENTS.md`](AGENTS.md#L86) documents `pytest backend`,
@@ -477,7 +477,7 @@ The audit covered:
 
 ### ARC-003: Large Modules Concentrate Maintenance Risk
 
-- **Status:** Deferred
+- **Status:** Open
 - **Impact:** Refactoring, review, and regression isolation are unnecessarily
   difficult.
 - **Evidence:** `backend/utils/canonical_pipeline.py` exceeds 6,000 lines,
@@ -504,7 +504,7 @@ The audit covered:
 
 ### PKG-001: Large Spellcheck Assets Need an Explicit Packaging Strategy
 
-- **Status:** Deferred
+- **Status:** Open
 - **Impact:** Repository size and image footprint are larger than necessary.
 - **Evidence:** Tracked spellcheck dictionaries account for tens of megabytes,
   with individual dictionary files up to approximately 8.7 MB.
