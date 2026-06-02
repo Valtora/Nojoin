@@ -886,6 +886,16 @@ export default function AISettings({
                     desc: "OpenAI Whisper model for speech-to-text. (MIT License)",
                   },
                   {
+                    id: "parakeet",
+                    label: "Parakeet ASR Model (Transcription)",
+                    desc: "NVIDIA FastConformer ASR model.",
+                  },
+                  {
+                    id: "canary",
+                    label: "Canary ASR Model (Transcription)",
+                    desc: "NVIDIA Canary 1B multi-lingual ASR model.",
+                  },
+                  {
                     id: "pyannote",
                     label: "Pyannote (Diarization)",
                     desc: "Speaker diarization model weights.",

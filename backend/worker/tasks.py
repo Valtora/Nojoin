@@ -2980,6 +2980,8 @@ def download_models_task(self, hf_token: str | None = None, whisper_model_size: 
     model_status = check_model_status(whisper_model_size=whisper_model_size or "turbo")
     all_downloaded = (
         model_status.get("whisper", {}).get("downloaded", False) and
+        model_status.get("parakeet", {}).get("downloaded", False) and
+        model_status.get("canary", {}).get("downloaded", False) and
         model_status.get("pyannote", {}).get("downloaded", False) and
         model_status.get("embedding", {}).get("downloaded", False)
     )

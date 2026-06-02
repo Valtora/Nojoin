@@ -199,6 +199,22 @@ async def lifespan(app: FastAPI):
         await seed_demo_data()
     except Exception as e:
         logger.error(f"Failed to seed demo data on startup: {e}")
+
+    # Auto-start downloading core models in background if not cached
+    try:
+        from backend.preload_models import check_model_status
+        status = check_model_status(whisper_model_size="turbo")
+        whisper_ok = status.get("whisper", {}).get("downloaded", False)
+        parakeet_ok = status.get("parakeet", {}).get("downloaded", False)
+        canary_ok = status.get("canary", {}).get("downloaded", False)
+        
+        if not (whisper_ok and parakeet_ok and canary_ok):
+            logger.info("Core speech-to-text models are missing from cache. Triggering background model download...")
+            from backend.worker.tasks import download_models_task
+            download_models_task.delay(whisper_model_size="turbo")
+    except Exception as e:
+        logger.error(f"Failed to trigger automatic model download on startup: {e}")
+
     yield
 
 def create_app(*, app_lifespan=lifespan) -> FastAPI:

@@ -225,19 +225,19 @@ def _get_transcription_component(
         )
         backing_status = model_status.get("parakeet", {})
         model_label = f"Parakeet ({configured_model})"
-        downloading = _is_stage_downloading(download, "whisper", "init")
+        downloading = _is_stage_downloading(download, "parakeet", "init")
     elif transcription_backend == "canary":
         configured_model = str(
             config_manager.get("canary_model", "nemo-canary-1b-v2")
         )
         backing_status = model_status.get("canary", {})
         model_label = f"Canary ({configured_model})"
-        downloading = _is_stage_downloading(download, "whisper", "init")
+        downloading = _is_stage_downloading(download, "canary", "init")
     else:
         configured_model = whisper_model_size
         backing_status = model_status.get("whisper", {})
         model_label = f"Whisper {configured_model}"
-        downloading = _is_stage_downloading(download, "whisper", "init")
+        downloading = _is_stage_downloading(download, "whisper", "whisper_loading", "init")
 
     downloaded = bool(backing_status.get("downloaded"))
 

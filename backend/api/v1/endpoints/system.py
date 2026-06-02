@@ -532,7 +532,7 @@ async def delete_model_endpoint(
     """
     from backend.preload_models import delete_model
     
-    if model_name not in ["whisper", "pyannote", "embedding"]:
+    if model_name not in ["whisper", "pyannote", "embedding", "parakeet", "canary"]:
         raise HTTPException(status_code=400, detail="Invalid model name")
         
     try:

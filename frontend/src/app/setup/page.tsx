@@ -1002,7 +1002,7 @@ export default function SetupPage() {
                 {/* Whisper */}
                 <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
                   <div className="shrink-0">
-                    {["pyannote", "embedding", "complete"].includes(
+                    {["parakeet", "canary", "pyannote", "embedding", "complete"].includes(
                       downloadStage,
                     ) ? (
                       <CheckCircle className="w-6 h-6 text-green-500" />
@@ -1060,6 +1060,82 @@ export default function SetupPage() {
                         <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 overflow-hidden">
                           <div className="bg-orange-400/50 h-1.5 rounded-full w-full animate-pulse" />
                         </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Parakeet */}
+                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div className="shrink-0">
+                    {["canary", "pyannote", "embedding", "complete"].includes(
+                      downloadStage,
+                    ) ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : downloadStage === "parakeet" ? (
+                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        Parakeet ASR Model
+                      </h3>
+                      {downloadStage === "parakeet" && (
+                        <span className="text-xs text-orange-600 font-medium">
+                          {downloadProgress > 0 ? `${Math.round(downloadProgress)}%` : "Loading..."}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">NVIDIA FastConformer (0.6B)</p>
+                    {downloadStage === "parakeet" && (
+                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
+                        <div
+                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
+                          style={{
+                            width: downloadProgress > 0 ? `${downloadProgress}%` : "100%",
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Canary */}
+                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
+                  <div className="shrink-0">
+                    {["pyannote", "embedding", "complete"].includes(
+                      downloadStage,
+                    ) ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : downloadStage === "canary" ? (
+                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        Canary ASR Model
+                      </h3>
+                      {downloadStage === "canary" && (
+                        <span className="text-xs text-orange-600 font-medium">
+                          {downloadProgress > 0 ? `${Math.round(downloadProgress)}%` : "Loading..."}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">NVIDIA Canary (1B)</p>
+                    {downloadStage === "canary" && (
+                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
+                        <div
+                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
+                          style={{
+                            width: downloadProgress > 0 ? `${downloadProgress}%` : "100%",
+                          }}
+                        />
                       </div>
                     )}
                   </div>
