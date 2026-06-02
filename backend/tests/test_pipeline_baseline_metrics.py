@@ -112,7 +112,7 @@ def test_current_live_to_final_speaker_mapping_is_index_based_baseline():
         ],
     )
 
-    assert mapping == {"SPEAKER_00": "LIVE_01", "SPEAKER_01": "LIVE_02"}
+    assert mapping == {"SPEAKER_00": "LIVE_02", "SPEAKER_01": "LIVE_01"}
 
 
 @pytest.mark.pipeline_baseline

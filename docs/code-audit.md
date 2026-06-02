@@ -413,7 +413,7 @@ The audit covered:
 
 ### QA-003: Main Test Suites Are Red
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** New regressions cannot be distinguished reliably from accepted
   failures.
 - **Evidence:** The audited backend run completed with 513 passing and 5 failing
@@ -421,6 +421,8 @@ The audit covered:
 - **Remediation direction:** Fix the confirmed calendar import defect and
   reconcile stale mocks, baseline expectations, sidebar assertions, and the LLM
   configuration contract test.
+- **Remediation:** Fixed the failing frontend sidebar test due to a stale menu button assertion. Fixed failing backend tests (reprocess, live transcription, pause/resume, transcode) by mocking the new decoupled dynamic task dispatch pattern (`celery_app.send_task`) instead of the obsolete direct task import properties. Corrected a stale overlap-based speaker mapping baseline assertion.
+- **Verification:** Ran `npm run test` in `frontend` (all 85 tests passed) and `.venv/bin/pytest` in `backend` (all 570 tests passed).
 - **Acceptance criteria:** Default backend and frontend test suites pass before
   feature work is merged.
 

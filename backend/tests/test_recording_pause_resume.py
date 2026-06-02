@@ -378,9 +378,11 @@ async def api_app(monkeypatch, tmp_path, test_session_maker: sessionmaker) -> Fa
         "recording_upload_temp_dir",
         lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
     )
-    monkeypatch.setattr(recordings_module.transcribe_segment_live_task, "delay", lambda *args, **kwargs: None)
-    monkeypatch.setattr(recordings_module.process_recording_task, "delay", lambda *args, **kwargs: SimpleNamespace(id="task-1"))
-    monkeypatch.setattr(recordings_module.generate_proxy_task, "delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        recordings_module.celery_app,
+        "send_task",
+        lambda *args, **kwargs: SimpleNamespace(id="task-1"),
+    )
 
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
@@ -570,11 +572,6 @@ async def test_get_recording_hides_in_flight_transcript_content(
 ) -> None:
     from backend.api.v1.endpoints import recordings as recordings_module
 
-    monkeypatch.setattr(
-        recordings_module,
-        "get_canonical_transcript_revision",
-        lambda *args, **kwargs: 0,
-    )
     monkeypatch.setattr(
         recordings_module,
         "filter_recording_speakers_for_public_read",

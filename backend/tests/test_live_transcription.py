@@ -3006,11 +3006,12 @@ async def test_segment_upload_dispatches_live_task_when_enabled(
     )
 
     calls = []
-    monkeypatch.setattr(
-        recordings_module.transcribe_segment_live_task,
-        "delay",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
-    )
+    def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
+        from types import SimpleNamespace
+        if name == "backend.processing.live_transcribe.transcribe_segment_live_task":
+            calls.append((tuple(args or []), kwargs or {}))
+        return SimpleNamespace(id="fake-task-id")
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
 
     response = await client.post(
         "/api/v1/recordings/live-rec-public-id/segment",
@@ -3059,11 +3060,12 @@ async def test_segment_upload_skips_live_task_when_disabled(
     )
 
     calls = []
-    monkeypatch.setattr(
-        recordings_module.transcribe_segment_live_task,
-        "delay",
-        lambda *args, **kwargs: calls.append((args, kwargs)),
-    )
+    def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
+        from types import SimpleNamespace
+        if name == "backend.processing.live_transcribe.transcribe_segment_live_task":
+            calls.append((tuple(args or []), kwargs or {}))
+        return SimpleNamespace(id="fake-task-id")
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
 
     response = await client.post(
         "/api/v1/recordings/live-rec-public-id/segment",
@@ -3100,9 +3102,7 @@ async def test_segment_upload_swallows_live_task_dispatch_failure(
     def boom(*args, **kwargs):
         raise RuntimeError("broker unreachable")
 
-    monkeypatch.setattr(
-        recordings_module.transcribe_segment_live_task, "delay", boom
-    )
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", boom)
 
     response = await client.post(
         "/api/v1/recordings/live-rec-public-id/segment",
@@ -3249,12 +3249,13 @@ async def test_segment_upload_persists_chunk_metadata_and_finalize_seals_window_
 
     monkeypatch.setattr(recordings_module, "concatenate_wavs", fake_concatenate_wavs)
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
-    monkeypatch.setattr(
-        recordings_module.process_recording_task,
-        "delay",
-        lambda recording_id: SimpleNamespace(id=f"task-{recording_id}"),
-    )
-    monkeypatch.setattr(recordings_module.generate_proxy_task, "delay", lambda *args, **kwargs: None)
+    def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
+        from types import SimpleNamespace
+        if name == "backend.worker.tasks.process_recording_task":
+            recording_id = args[0]
+            return SimpleNamespace(id=f"task-{recording_id}")
+        return SimpleNamespace(id="fake-task-id")
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
 
     wav_bytes = _make_wav_bytes(duration_s=0.5, sample_rate=16000)
     upload_response = await client.post(
@@ -3418,12 +3419,12 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
         "_list_recording_audio_chunks",
         fake_list_recording_audio_chunks,
     )
-    monkeypatch.setattr(
-        recordings_module.process_recording_task,
-        "delay",
-        lambda recording_id: queued_recordings.append(recording_id),
-    )
-    monkeypatch.setattr(recordings_module.generate_proxy_task, "delay", lambda *args, **kwargs: None)
+    def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
+        from types import SimpleNamespace
+        if name == "backend.worker.tasks.process_recording_task":
+            queued_recordings.append(args[0])
+        return SimpleNamespace(id="fake-task-id")
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
 
     wav_bytes = _make_wav_bytes(duration_s=0.5, sample_rate=16000)
     upload_response = await client.post(

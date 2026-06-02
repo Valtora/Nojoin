@@ -260,7 +260,7 @@ async def _insert_recording(
 
 
 def _patch_delay(monkeypatch):
-    """Patch process_recording_task.delay; return the captured-calls list."""
+    """Patch celery_app.send_task; return the captured-calls list."""
     from backend.api.v1.endpoints import recordings as recordings_module
 
     calls: list = []
@@ -268,11 +268,12 @@ def _patch_delay(monkeypatch):
     class _FakeTask:
         id = "fake-task-id"
 
-    monkeypatch.setattr(
-        recordings_module.process_recording_task,
-        "delay",
-        lambda *args, **kwargs: (calls.append((args, kwargs)), _FakeTask())[1],
-    )
+    def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
+        if name == "backend.worker.tasks.process_recording_task":
+            calls.append((tuple(args or []), kwargs or {}))
+        return _FakeTask()
+
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
     return calls
 
 
@@ -2060,7 +2061,6 @@ async def test_import_audio_bootstraps_durable_import_chunk_and_window(
     from backend.utils import recording_audio_sync as sync_module
 
     calls = _patch_delay(monkeypatch)
-    monkeypatch.setattr(recordings_module, "generate_proxy_task", type("_Task", (), {"delay": staticmethod(lambda *a, **k: None)})())
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda *a, **k: 12.0)
     monkeypatch.setattr(sync_module, "get_audio_duration", lambda *a, **k: 12.0)
     monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
@@ -2101,7 +2101,6 @@ async def test_import_low_bitrate_audio_succeeds(
     from backend.utils import recording_audio_sync as sync_module
 
     calls = _patch_delay(monkeypatch)
-    monkeypatch.setattr(recordings_module, "generate_proxy_task", type("_Task", (), {"delay": staticmethod(lambda *a, **k: None)})())
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda *a, **k: 15.0)
     monkeypatch.setattr(sync_module, "get_audio_duration", lambda *a, **k: 15.0)
     monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))

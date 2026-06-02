@@ -301,23 +301,19 @@ async def api_app(
         "recording_upload_temp_dir",
         lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
     )
-    monkeypatch.setattr(
-        recordings_module.transcribe_segment_live_task,
-        "delay",
-        lambda recording_id, sequence: live_dispatches.append((recording_id, sequence)),
-    )
+    def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
+        if name == "backend.processing.live_transcribe.transcribe_segment_live_task":
+            live_dispatches.append((args[0], args[1]))
+        elif name == "backend.processing.segment_transcode.transcode_segment_task":
+            transcode_dispatches.append((args[0], args[1]))
+        return SimpleNamespace(id="task-1")
+
+    monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
     monkeypatch.setattr(
         segment_transcode_module.transcribe_segment_live_task,
         "delay",
         lambda recording_id, sequence: live_dispatches.append((recording_id, sequence)),
     )
-    monkeypatch.setattr(
-        recordings_module.transcode_segment_task,
-        "delay",
-        lambda recording_id, sequence: transcode_dispatches.append((recording_id, sequence)),
-    )
-    monkeypatch.setattr(recordings_module.process_recording_task, "delay", lambda *args, **kwargs: SimpleNamespace(id="task-1"))
-    monkeypatch.setattr(recordings_module.generate_proxy_task, "delay", lambda *args, **kwargs: None)
     monkeypatch.setattr(segment_transcode_module, "get_sync_session", lambda: Session(sync_engine))
     monkeypatch.setattr(
         segment_transcode_module,

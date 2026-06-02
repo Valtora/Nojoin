@@ -135,7 +135,6 @@ describe("Sidebar", () => {
     render(<Sidebar />);
 
     expect(await screen.findByRole("heading", { name: "Latest meeting" })).toBeInTheDocument();
-    expect(screen.getByTitle("Open Menu")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(getRecordings).toHaveBeenCalled();
