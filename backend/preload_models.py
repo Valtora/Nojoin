@@ -275,7 +275,11 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         # Lazy import keeps onnx-asr out of module-level imports.
         import onnx_asr
         # load_model triggers the ONNX file download from the Hugging Face Hub.
-        onnx_asr.load_model("nemo-parakeet-tdt-0.6b-v3", quantization="int8")
+        onnx_asr.load_model(
+            "nemo-parakeet-tdt-0.6b-v3",
+            quantization="int8",
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
         report("Parakeet model loaded.", 100, stage="parakeet")
     except Exception as e:
         # A Parakeet download failure must not abort the whole preload.
@@ -288,7 +292,11 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
         # Lazy import keeps onnx-asr out of module-level imports.
         import onnx_asr
         # load_model triggers the ONNX file download from the Hugging Face Hub.
-        onnx_asr.load_model("nemo-canary-1b-v2", quantization="int8")
+        onnx_asr.load_model(
+            "nemo-canary-1b-v2",
+            quantization="int8",
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
         report("Canary model loaded.", 100, stage="canary")
     except Exception as e:
         # A Canary download failure must not abort the whole preload.

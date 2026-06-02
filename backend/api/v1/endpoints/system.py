@@ -22,7 +22,7 @@ from backend.api.deps import (
 )
 from backend.core.security import MIN_PASSWORD_LENGTH, hash_user_password, validate_password_policy
 from backend.models.user import User
-from backend.worker.tasks import download_models_task
+from backend.celery_app import celery_app
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
 from backend.preload_models import check_model_status
@@ -411,7 +411,10 @@ async def trigger_model_download(
             configured_hf_token = config_manager.get("hf_token")
             hf_token = configured_hf_token if isinstance(configured_hf_token, str) else None
 
-    task = download_models_task.delay(hf_token=hf_token, whisper_model_size=whisper_model_size) # type: ignore
+    task = celery_app.send_task(
+        "backend.worker.tasks.download_models_task",
+        kwargs={"hf_token": hf_token, "whisper_model_size": whisper_model_size}
+    )
     from backend.models.task import register_task_ownership
     await register_task_ownership(db, task.id, current_user.id)
     return {"task_id": task.id}

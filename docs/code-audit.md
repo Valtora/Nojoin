@@ -341,15 +341,15 @@ The audit covered:
 
 ### ARC-002: API Imports Couple Startup to Worker and ML Modules
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** API startup remains heavier and more fragile than the documented
   service boundary intends.
 - **Evidence:** [`backend/api/v1/endpoints/system.py`](../backend/api/v1/endpoints/system.py#L25)
   imports `download_models_task` from the worker module at API import time.
   `fastembed` is also part of API requirements through
   [`requirements/base.txt`](../requirements/base.txt#L1).
-- **Remediation direction:** Use Celery task names or lightweight dispatch
-  modules and move worker-only dependencies out of API installation paths.
+- **Remediation:** Removed the `fastembed` dependency from `requirements/base.txt` and relocated it to `requirements/worker.txt`. Removed all top-level and dynamic imports of worker task modules (from `backend.worker.tasks`) inside the API endpoint modules (`system.py`, `documents.py`, `recordings.py`, `transcripts.py`), the health service helper (`health_service.py`), and the application startup script (`main.py`). Standardized task execution in these endpoints by dispatching tasks using `celery_app.send_task` referencing task names as strings.
+- **Verification:** Verified by compiling all python files successfully (`python -m compileall -q -f backend`) and running the test suite (`test_inference_work_remediation.py`, `test_health_service.py`, `test_upload_limits.py`, `test_recording_proxy_generation.py`), all of which pass successfully. Verified that `api_router` can be imported without pulling in any worker-only ML modules.
 - **Acceptance criteria:** The API image starts without importing worker task
   implementations or worker-only ML packages.
 

@@ -16,7 +16,7 @@ from backend.models.recording_public import DocumentPublicRead, serialize_docume
 from backend.models.document import Document, DocumentStatus
 from backend.models.user import User
 from backend.services.recording_identity_service import get_recording_by_public_id
-from backend.worker.tasks import process_document_task
+from backend.celery_app import celery_app
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -103,8 +103,10 @@ async def upload_document(
     await db.commit()
     await db.refresh(document)
 
-    # Trigger processing task
-    task = process_document_task.delay(document.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.process_document_task",
+        args=[document.id]
+    )
     from backend.models.task import register_task_ownership
     await register_task_ownership(db, task.id, current_user.id)
 

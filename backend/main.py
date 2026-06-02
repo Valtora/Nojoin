@@ -210,8 +210,11 @@ async def lifespan(app: FastAPI):
         
         if not (whisper_ok and parakeet_ok and canary_ok):
             logger.info("Core speech-to-text models are missing from cache. Triggering background model download...")
-            from backend.worker.tasks import download_models_task
-            download_models_task.delay(whisper_model_size="turbo")
+            from backend.celery_app import celery_app
+            celery_app.send_task(
+                "backend.worker.tasks.download_models_task",
+                kwargs={"whisper_model_size": "turbo"}
+            )
     except Exception as e:
         logger.error(f"Failed to trigger automatic model download on startup: {e}")
 

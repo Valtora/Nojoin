@@ -457,10 +457,8 @@ async def _get_device_component(worker_status: str) -> tuple[dict[str, Any], boo
         )
 
     try:
-        from backend.worker.tasks import get_worker_device_status
-
-        async_result = get_worker_device_status.delay()  # type: ignore[attr-defined]
-        payload = await asyncio.to_thread(async_result.get, timeout=5)
+        task = celery_app.send_task("backend.worker.tasks.get_worker_device_status")
+        payload = await asyncio.to_thread(task.get, timeout=5)
     except Exception:
         return (
             _build_component(

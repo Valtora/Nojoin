@@ -10,4 +10,3 @@ requests
 httpx
 alembic
 pgvector
-fastembed

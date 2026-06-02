@@ -1681,14 +1681,15 @@ async def generate_notes(
         )
     
     # 4. Call Worker Task
-    from backend.worker.tasks import generate_notes_task
-    
     transcript.notes_status = "generating"
     transcript.error_message = None
     db.add(transcript)
     await db.commit()
     
-    task = generate_notes_task.delay(recording.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.generate_notes_task",
+        args=[recording.id]
+    )
     from backend.models.task import register_task_ownership
     await register_task_ownership(db, task.id, current_user.id)
     

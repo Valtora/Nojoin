@@ -35,3 +35,4 @@ soundfile>=0.13.1
 matplotlib>=3.10.0
 pyannoteai-sdk>=0.3.0
 torchcodec==0.7.0
+fastembed

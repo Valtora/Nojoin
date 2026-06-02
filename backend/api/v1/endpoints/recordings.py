@@ -38,7 +38,6 @@ from backend.models.calendar import CalendarDashboardDayCountRead
 from backend.utils.timezones import get_timezone, get_user_timezone_name, utc_naive_to_timezone
 from backend.models.user import User
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
-from backend.worker.tasks import process_recording_task, infer_speakers_task, generate_proxy_task
 from backend.celery_app import celery_app
 from backend.utils.audio import (
     LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND,
@@ -48,8 +47,6 @@ from backend.utils.audio import (
     get_audio_duration,
 )
 from backend.processing.llm_services import get_llm_backend
-from backend.processing.live_transcribe import transcribe_segment_live_task
-from backend.processing.segment_transcode import transcode_segment_task, transcode_staged_browser_segment
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.utils.time import utc_now
@@ -456,6 +453,7 @@ async def _transcode_pending_browser_segments_for_finalize(
     failed_sequences: list[int] = []
     for sequence in pending_sequences:
         try:
+            from backend.processing.segment_transcode import transcode_staged_browser_segment
             await asyncio.to_thread(transcode_staged_browser_segment, recording_id, sequence)
         except Exception as exc:
             failed_sequences.append(sequence)
@@ -563,7 +561,10 @@ async def _requeue_for_processing(
     await db.refresh(recording)
 
     # Trigger Celery task
-    task = process_recording_task.delay(recording.id, True, engine_override)
+    task = celery_app.send_task(
+        "backend.worker.tasks.process_recording_task",
+        args=[recording.id, True, engine_override]
+    )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
@@ -960,7 +961,10 @@ async def upload_segment(
     # authoritative, so a broker failure must not break the segment upload.
     if segment_suffix == ".wav" and config_manager.get("enable_live_transcription"):
         try:
-            transcribe_segment_live_task.delay(recording.id, sequence)
+            celery_app.send_task(
+                "backend.processing.live_transcribe.transcribe_segment_live_task",
+                args=[recording.id, sequence]
+            )
         except Exception as e:
             logger.warning(
                 "Failed to dispatch live transcription task for recording %s segment %s: %s",
@@ -970,7 +974,10 @@ async def upload_segment(
             )
     elif segment_suffix in BROWSER_AUDIO_SEGMENT_SUFFIXES:
         try:
-            transcode_segment_task.delay(recording.id, sequence)
+            celery_app.send_task(
+                "backend.processing.segment_transcode.transcode_segment_task",
+                args=[recording.id, sequence]
+            )
         except Exception as e:
             logger.warning(
                 "Failed to dispatch segment transcode task for recording %s segment %s: %s",
@@ -1153,14 +1160,20 @@ async def finalize_upload(
     await db.refresh(recording)
     
 
-    task = process_recording_task.delay(recording.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.process_recording_task",
+        args=[recording.id]
+    )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
     from backend.models.task import register_task_ownership
     await register_task_ownership(db, task.id, recording.user_id)
 
-    proxy_task = generate_proxy_task.delay(recording.id)
+    proxy_task = celery_app.send_task(
+        "backend.worker.tasks.generate_proxy_task",
+        args=[recording.id]
+    )
     if proxy_task:
         await register_task_ownership(db, proxy_task.id, recording.user_id)
     
@@ -1260,7 +1273,10 @@ async def import_audio(
     await db.commit()
     
     # Trigger processing task
-    task = process_recording_task.delay(recording.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.process_recording_task",
+        args=[recording.id]
+    )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
@@ -1269,7 +1285,10 @@ async def import_audio(
     
     # Trigger proxy generation task
     if not recording.proxy_path:
-        proxy_task = generate_proxy_task.delay(recording.id)
+        proxy_task = celery_app.send_task(
+            "backend.worker.tasks.generate_proxy_task",
+            args=[recording.id]
+        )
         if proxy_task:
             await register_task_ownership(db, proxy_task.id, recording.user_id)
     
@@ -1491,7 +1510,10 @@ async def finalize_chunked_import(
     await db.refresh(recording)
     
 
-    task = process_recording_task.delay(recording.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.process_recording_task",
+        args=[recording.id]
+    )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
@@ -1499,7 +1521,10 @@ async def finalize_chunked_import(
     await register_task_ownership(db, task.id, recording.user_id)
 
     if not recording.proxy_path:
-        proxy_task = generate_proxy_task.delay(recording.id)
+        proxy_task = celery_app.send_task(
+            "backend.worker.tasks.generate_proxy_task",
+            args=[recording.id]
+        )
         if proxy_task:
             await register_task_ownership(db, proxy_task.id, recording.user_id)
     
@@ -1586,7 +1611,10 @@ async def upload_recording(
     await db.refresh(recording)
     
 
-    task = process_recording_task.delay(recording.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.process_recording_task",
+        args=[recording.id]
+    )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
@@ -1594,7 +1622,10 @@ async def upload_recording(
     await register_task_ownership(db, task.id, recording.user_id)
 
     if not recording.proxy_path:
-        proxy_task = generate_proxy_task.delay(recording.id)
+        proxy_task = celery_app.send_task(
+            "backend.worker.tasks.generate_proxy_task",
+            args=[recording.id]
+        )
         if proxy_task:
             await register_task_ownership(db, proxy_task.id, recording.user_id)
     
@@ -2485,7 +2516,10 @@ async def infer_speakers_for_recording(
     await db.refresh(recording)
 
     # Trigger Celery task
-    task = infer_speakers_task.delay(recording.id)
+    task = celery_app.send_task(
+        "backend.worker.tasks.infer_speakers_task",
+        args=[recording.id]
+    )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
