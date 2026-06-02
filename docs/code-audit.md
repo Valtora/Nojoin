@@ -523,23 +523,34 @@ The audit covered:
 
 ### PKG-002: Default Next.js Public Assets Are Unused
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Minor repository noise.
 - **Evidence:** `frontend/public/file.svg`, `globe.svg`, `next.svg`,
   `vercel.svg`, and `window.svg` are tracked but unreferenced.
-- **Remediation direction:** Remove unused starter assets.
+- **Remediation:** Confirmed no references to any of the five files exist in
+  `frontend/src` or any tracked configuration. Deleted `frontend/public/file.svg`,
+  `frontend/public/globe.svg`, `frontend/public/next.svg`,
+  `frontend/public/vercel.svg`, and `frontend/public/window.svg`.
+- **Verification:** `grep -r` across `frontend/src` for all five filenames
+  returned no matches. `frontend/public` now contains only intentional assets
+  (`favicon.ico`, `assets/`, `dictionaries/`).
 - **Acceptance criteria:** Unreferenced default assets are removed.
 
 ### PKG-003: Legacy Dockerfile Is Stale
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Contributors may attempt to build a dead path and receive a
   confusing failure.
-- **Evidence:** [`docker/Dockerfile`](../docker/Dockerfile#L24) copies a root
-  `requirements.txt`, but that file no longer exists. Release builds use
-  `Dockerfile.api` and `Dockerfile.worker`.
-- **Remediation direction:** Remove the obsolete Dockerfile or update and
-  document its intended use.
+- **Evidence:** `docker/Dockerfile` copies a root `requirements.txt`, but that
+  file no longer exists. Release builds use `Dockerfile.api` and
+  `Dockerfile.worker`.
+- **Remediation:** Confirmed no Compose files, workflow definitions, scripts,
+  or documentation reference `docker/Dockerfile` outside the audit tracker
+  itself. Deleted `docker/Dockerfile`. Active image builds continue to use
+  `docker/Dockerfile.api` and `docker/Dockerfile.worker` exclusively.
+- **Verification:** `grep -r "docker/Dockerfile[^.]"` across the repository
+  returned only the audit tracker entry. `docker/` now contains only
+  `Dockerfile.api`, `Dockerfile.worker`, and `init-ssl.sh`.
 - **Acceptance criteria:** Every tracked Dockerfile has a supported,
   reproducible build purpose.
 
