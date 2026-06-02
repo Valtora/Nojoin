@@ -372,7 +372,7 @@ The audit covered:
 
 ### REL-003: Release Trigger Does Not Enforce the Documented Version Contract
 
-- **Status:** Open
+- **Status:** Unnecessary for this repo
 - **Impact:** Manual or malformed-tag releases can publish images that do not
   match the documented strict semantic-version process.
 - **Evidence:** [`.github/workflows/release.yml`](../.github/workflows/release.yml#L5)
