@@ -2069,6 +2069,14 @@ async def _get_dashboard_recording_speaker_names(
         .select_from(RecordingSpeaker)
         .outerjoin(GlobalSpeaker, RecordingSpeaker.global_speaker_id == GlobalSpeaker.id)
         .where(RecordingSpeaker.recording_id.in_(recording_ids))
+        .where(RecordingSpeaker.speaker_status == "active")
+        .where(
+            sa.or_(
+                sa.not_(RecordingSpeaker.diarization_label.like("LIVE_%")),
+                RecordingSpeaker.local_name.isnot(None),
+                RecordingSpeaker.global_speaker_id.isnot(None),
+            )
+        )
     )
     rows = (await db.execute(statement)).all()
 

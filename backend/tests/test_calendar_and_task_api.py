@@ -141,7 +141,8 @@ SCHEMA_STATEMENTS = [
         processing_run_id INTEGER,
         last_speaker_correction_event_id INTEGER,
         last_diarization_window_result_id INTEGER,
-        merged_into_id INTEGER
+        merged_into_id INTEGER,
+        speaker_status VARCHAR(32) NOT NULL DEFAULT 'active'
     )
     """,
     """
@@ -580,6 +581,7 @@ async def seed_recording_speaker(
     local_name: str | None = None,
     name: str | None = None,
     merged_into_id: int | None = None,
+    speaker_status: str | None = None,
 ) -> None:
     await execute_sql(
         session_maker,
@@ -591,7 +593,8 @@ async def seed_recording_speaker(
             diarization_label,
             local_name,
             name,
-            merged_into_id
+            merged_into_id,
+            speaker_status
         ) VALUES (
             :id,
             :recording_id,
@@ -599,7 +602,8 @@ async def seed_recording_speaker(
             :diarization_label,
             :local_name,
             :name,
-            :merged_into_id
+            :merged_into_id,
+            COALESCE(:speaker_status, 'active')
         )
         """,
         {
@@ -610,6 +614,7 @@ async def seed_recording_speaker(
             "local_name": local_name,
             "name": name,
             "merged_into_id": merged_into_id,
+            "speaker_status": speaker_status,
         },
     )
 
@@ -1144,6 +1149,33 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
         diarization_label="SPEAKER_01",
         local_name="Blair Chen",
     )
+    # Seed an inactive speaker (should be excluded)
+    await seed_recording_speaker(
+        test_session_maker,
+        row_id=903,
+        recording_id=601,
+        diarization_label="SPEAKER_02",
+        local_name="Inactive Speaker",
+        speaker_status="inactive",
+    )
+    # Seed an active, unnamed live speaker (should be excluded)
+    await seed_recording_speaker(
+        test_session_maker,
+        row_id=904,
+        recording_id=601,
+        diarization_label="LIVE_01",
+        local_name=None,
+        speaker_status="active",
+    )
+    # Seed an active, named live speaker (should be included)
+    await seed_recording_speaker(
+        test_session_maker,
+        row_id=905,
+        recording_id=601,
+        diarization_label="LIVE_02",
+        local_name="Former UK Government Official",
+        speaker_status="active",
+    )
     await seed_tag(
         test_session_maker,
         tag_id=1001,
@@ -1185,7 +1217,7 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
             "ends_at": "2026-04-18T13:30:00Z",
             "duration_seconds": 1800.0,
             "status": "PROCESSED",
-            "speaker_names": ["Alex Morgan", "Blair Chen"],
+            "speaker_names": ["Alex Morgan", "Blair Chen", "Former UK Government Official"],
             "tags": [
                 {
                     "id": 1001,
