@@ -82,6 +82,18 @@ As Nojoin is in active development, only the latest version is supported. We enc
 
 ## Reporting a Vulnerability
 
-Please report any security vulnerabilities.
+Please report any security vulnerabilities privately. Do not open public GitHub issues or discuss vulnerabilities in public forums before they have been resolved.
 
-You should expect a response within 48 hours. If the issue is confirmed, we will release a patch as soon as possible, depending on the complexity of the issue.
+### Private Reporting Channel
+
+We use GitHub's Private Vulnerability Reporting feature to receive security disclosures securely and privately. 
+
+- **Submit a Report:** Visit [GitHub Private Vulnerability Report](https://github.com/Valtora/Nojoin/security/advisories/new) to submit your report.
+- **Provide Details:** Please include a detailed description of the vulnerability, steps to reproduce, and any proof of concept (PoC) or exploit code.
+
+### Expected Workflow
+
+1. **Acknowledgment:** You will receive an initial response confirming receipt of your report within 48 hours.
+2. **Evaluation:** The maintainers will investigate the report and determine the severity and scope of the vulnerability.
+3. **Remediation:** If the vulnerability is confirmed, we will work on a patch. A security advisory will be drafted, and a fix will be released.
+4. **Disclosure:** Once a patch is available and deployed, we will coordinate public disclosure through a GitHub Security Advisory.

@@ -471,13 +471,15 @@ The audit covered:
 
 ### DOC-003: Security Policy Does Not Provide a Private Disclosure Channel
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Researchers may disclose vulnerabilities publicly or abandon a
   report.
 - **Evidence:** [`docs/SECURITY.md`](SECURITY.md#L78) requests reports but does
   not provide an email address or GitHub Security Advisory link.
 - **Remediation direction:** Add a private reporting channel and expected
   disclosure workflow.
+- **Remediation:** Updated [`docs/SECURITY.md`](SECURITY.md) to specify GitHub's Private Vulnerability Reporting system as the exclusive private disclosure channel.
+- **Verification:** Verified that the updated security policy clearly documents the private reporting link and triage process.
 - **Acceptance criteria:** A reporter can submit a vulnerability privately from
   the published security policy.
 
