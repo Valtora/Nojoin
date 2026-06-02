@@ -19,11 +19,11 @@ MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
 MEETING_EDGE_CONTEXT_LEVEL_DEFAULT = 2
 
 MEETING_EDGE_CONTEXT_GUIDANCE = {
-    1: "Very selective. Only explain rare or highly specialized jargon, project-specific shorthand, or non-obvious acronyms that a strong generalist likely would not know. Do not explain common business, product, or mainstream software terms such as API, backend, frontend, sprint, rollout, owner, or blocker.",
-    2: "Selective. Explain only domain-specific, advanced, or project-specific terms that cross-functional attendees might not understand. Skip common workplace language and broadly known software terms.",
-    3: "Balanced. Explain terms when they are technical, domain-specific, or context-heavy enough that a general professional might miss the meaning. Skip widely known terms.",
-    4: "Helpful. Explain moderately technical or abbreviated terms when a short clarification would help a non-specialist follow along. Still skip plain-language terms and obvious basics.",
-    5: "Detailed. Be generous with clarifications for non-trivial technical, domain-specific, abbreviated, or project-specific terms, while still avoiding obvious plain-language words.",
+    1: "Extremely selective (Most Complex). ONLY explain highly specialized, rare technical terms, advanced domain jargon, or obscure acronyms that an expert would use. Absolutely do not explain common business, general software, product, or workplace terms (such as API, database, backend, frontend, server, sprint, deployment, roadmap, blocker, metrics, or checklist). If in doubt, do not explain the term.",
+    2: "Highly selective. Explain only advanced, domain-specific, or proprietary jargon that cross-functional attendees might not understand. Skip standard industry terms and common workplace language.",
+    3: "Selective. Explain technical or domain-specific terms that a general professional might not know. Skip common professional terminology and widely known software concepts.",
+    4: "Balanced. Explain moderately technical or abbreviated terms when a short clarification would help a non-specialist follow along. Skip plain-language terms.",
+    5: "Detailed (Least Complex). Be generous with clarifications for non-trivial technical, domain-specific, or abbreviated terms, while still avoiding obvious plain-language words.",
 }
 
 DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE = """You are Meeting Edge, a live meeting assistant.
@@ -207,6 +207,45 @@ def serialize_meeting_edge_result(result: MeetingEdgeResult) -> dict[str, Any]:
     }
 
 
+def _are_singular_plural(t1: str, t2: str) -> bool:
+    # Lowercase and strip whitespace comparisons
+    if t1 == t2:
+        return True
+
+    # Identify singular vs plural candidate by length
+    if len(t1) < len(t2):
+        singular, plural = t1, t2
+    else:
+        singular, plural = t2, t1
+
+    # Simple pluralization rules
+    if singular + "s" == plural:
+        return True
+    if singular + "es" == plural:
+        return True
+    if singular.endswith("y") and singular[:-1] + "ies" == plural:
+        return True
+    return False
+
+
+def deduplicate_concepts(concepts: Sequence[MeetingEdgeConcept]) -> list[MeetingEdgeConcept]:
+    deduped: list[MeetingEdgeConcept] = []
+    for concept in concepts:
+        found_idx = -1
+        for i, existing in enumerate(deduped):
+            if _are_singular_plural(existing.term.casefold(), concept.term.casefold()):
+                found_idx = i
+                break
+        if found_idx >= 0:
+            existing = deduped[found_idx]
+            # Keep the shorter (singular) term, but ALWAYS use the newer explanation
+            term = concept.term if len(concept.term) < len(existing.term) else existing.term
+            deduped[found_idx] = MeetingEdgeConcept(term=term, explanation=concept.explanation)
+        else:
+            deduped.append(concept)
+    return deduped
+
+
 def merge_meeting_edge_concept_history(
     previous_payload: Mapping[str, Any] | None,
     current_payload: Mapping[str, Any] | None,
@@ -214,30 +253,16 @@ def merge_meeting_edge_concept_history(
     reset_history: bool = False,
 ) -> list[dict[str, str]]:
     if reset_history:
-        return _serialize_concepts(_read_serialized_concepts(current_payload, "concepts"))
+        current_concepts = _read_serialized_concepts(current_payload, "concepts")
+        return _serialize_concepts(deduplicate_concepts(current_concepts))
 
-    concepts_by_key: dict[str, MeetingEdgeConcept] = {}
-    concept_order: list[str] = []
+    previous_concepts = _read_concept_history_items(previous_payload)
+    current_concepts = _read_serialized_concepts(current_payload, "concepts")
 
-    for concept in _read_concept_history_items(previous_payload):
-        concept_key = concept.term.casefold()
-        if concept_key not in concepts_by_key:
-            concept_order.append(concept_key)
-        concepts_by_key[concept_key] = concept
+    merged = list(previous_concepts) + list(current_concepts)
+    deduped = deduplicate_concepts(merged)
 
-    for concept in _read_serialized_concepts(current_payload, "concepts"):
-        concept_key = concept.term.casefold()
-        if concept_key not in concepts_by_key:
-            concept_order.append(concept_key)
-        concepts_by_key[concept_key] = concept
-
-    return [
-        {
-            "term": concepts_by_key[concept_key].term,
-            "explanation": concepts_by_key[concept_key].explanation,
-        }
-        for concept_key in concept_order
-    ]
+    return _serialize_concepts(deduped)
 
 
 def build_rolling_summary_prompt_section(rolling_summary: str | None) -> str:

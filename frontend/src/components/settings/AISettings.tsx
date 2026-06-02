@@ -587,7 +587,7 @@ export default function AISettings({
                     </p>
                   </div>
                   <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:border-orange-500/20 dark:bg-gray-900 dark:text-orange-300">
-                    {selectedMeetingEdgeContextOption.label}
+                    {selectedMeetingEdgeContextOption.label || `Level ${selectedMeetingEdgeContextOption.value}`}
                   </span>
                 </div>
 

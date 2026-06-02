@@ -21,12 +21,8 @@ describe("MeetingEdgePanel", () => {
 
     expect(slider).toBeInTheDocument();
     expect(slider).toHaveValue("2");
-    expect(screen.getAllByText("Focused")).toHaveLength(1);
-    expect(
-      screen.queryByText(
-        /Explain domain-specific or advanced terms, but skip common software and workplace language\./i,
-      ),
-    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("Most Complex")).toHaveLength(1);
+    expect(screen.getAllByText("Least Complex")).toHaveLength(1);
 
     fireEvent.change(slider, { target: { value: "5" } });
 
