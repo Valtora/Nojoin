@@ -34,14 +34,6 @@ export default function CaptureUnsupportedNotice({
     >
       <p className="font-medium">Browser recording unavailable</p>
       <p className="mt-1 leading-5 opacity-90">{message}</p>
-      <a
-        href="/docs/CAPTURE.md"
-        target="_blank"
-        rel="noreferrer"
-        className="mt-2 inline-flex text-xs font-semibold text-amber-900 underline decoration-amber-400 underline-offset-4 dark:text-amber-100"
-      >
-        Supported browsers and setup guide
-      </a>
     </div>
   );
 }

@@ -440,7 +440,7 @@ The audit covered:
 
 ### DOC-001: Public Capture Documentation Has Drifted
 
-- **Status:** Open
+- **Status:** Resolved
 - **Impact:** Users opening the in-app documentation receive a materially
   shortened and stale capture guide.
 - **Evidence:** [`frontend/public/docs/CAPTURE.md`](../frontend/public/docs/CAPTURE.md)
@@ -448,6 +448,8 @@ The audit covered:
   linked from the frontend.
 - **Remediation direction:** Generate or copy the public guide from the
   canonical documentation source as part of build or verification.
+- **Remediation:** Removed the documentation link in `CaptureUnsupportedNotice.tsx` and deleted the duplicate `frontend/public/docs/CAPTURE.md` file. All documentation resides exclusively in the `/docs` folder of the repository.
+- **Verification:** Verified by running frontend unit tests successfully and confirming that the duplicate public files are deleted.
 - **Acceptance criteria:** CI fails when the public copy diverges from the
   canonical guide.
 
