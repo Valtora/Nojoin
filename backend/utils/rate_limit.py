@@ -47,6 +47,14 @@ def _parse_trusted_proxies(proxies_str: str) -> list:
     return trusted
 
 
+def _mask_hostname(hostname: str) -> str:
+    if not hostname:
+        return ""
+    if len(hostname) <= 2:
+        return "***"
+    return f"{hostname[0]}***{hostname[-1]}"
+
+
 def _resolve_hostname(hostname: str) -> list:
     now = time.time()
     if hostname in _dns_cache:
@@ -64,7 +72,11 @@ def _resolve_hostname(hostname: str) -> list:
             except ValueError:
                 pass
     except socket.gaierror as exc:
-        logger.warning(f"Failed to resolve trusted proxy hostname {hostname}: {exc}")
+        masked = _mask_hostname(hostname)
+        logger.warning(
+            f"Failed to resolve trusted proxy hostname {masked}: "
+            f"[Errno {exc.errno}] {exc.strerror}"
+        )
         
     _dns_cache[hostname] = (ips, now + DNS_CACHE_TTL)
     return ips

@@ -113,3 +113,28 @@ def test_missing_client_info():
         headers_dict={}
     )
     assert get_client_address(req) == "unknown"
+
+
+def test_mask_hostname():
+    from backend.utils.rate_limit import _mask_hostname
+    assert _mask_hostname("") == ""
+    assert _mask_hostname("a") == "***"
+    assert _mask_hostname("ab") == "***"
+    assert _mask_hostname("nginx") == "n***x"
+    assert _mask_hostname("myproxy.internal") == "m***l"
+
+
+def test_hostname_resolution_failure_logging(caplog):
+    from backend.utils.rate_limit import _resolve_hostname
+    import logging
+
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        raise socket.gaierror(-2, "Name or service not known")
+
+    with patch("socket.getaddrinfo", side_effect=mock_getaddrinfo):
+        with caplog.at_level(logging.WARNING):
+            _resolve_hostname("nginx-failed-proxy")
+            
+    assert len(caplog.records) == 1
+    assert "Failed to resolve trusted proxy hostname n***y" in caplog.text
+    assert "[Errno -2] Name or service not known" in caplog.text
