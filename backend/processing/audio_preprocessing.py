@@ -170,7 +170,7 @@ def convert_wav_to_mp3(input_wav_path: str, output_mp3_path: str) -> bool:
         
         subprocess.run(cmd, check=True, capture_output=True)
         
-        logger.info(f"[Audio Conversion] Conversion completed successfully")
+        logger.info("[Audio Conversion] Conversion completed successfully")
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to convert {input_wav_path} to MP3: {e.stderr}", exc_info=True)

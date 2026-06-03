@@ -64,7 +64,7 @@ def mute_non_speech_segments(
         Tuple (success: bool, speech_duration_seconds: float)
     """
     try:
-        logger.info(f"[VAD] Starting VAD processing...")
+        logger.info("[VAD] Starting VAD processing...")
         logger.info(f"[VAD] Input: {input_wav_path}")
         logger.info(f"[VAD] Output: {output_wav_path}")
         logger.info(f"[VAD] Parameters: threshold={threshold}, min_speech={min_speech_duration_ms}ms, "
@@ -124,12 +124,12 @@ def mute_non_speech_segments(
                 device = torch.device("cpu")
                 model = silero_vad.load_silero_vad()
                 model.to(device)
-                logger.info(f"[VAD] Model loaded successfully on CPU (fallback)")
+                logger.info("[VAD] Model loaded successfully on CPU (fallback)")
             else:
                 raise e
 
         # Run VAD
-        logger.info(f"[VAD] Running speech detection...")
+        logger.info("[VAD] Running speech detection...")
         
         # Ensure wav is on the correct device
         wav_tensor = torch.from_numpy(wav_np).to(device)
@@ -167,7 +167,7 @@ def mute_non_speech_segments(
         
         output_file_size = os.path.getsize(output_wav_path)
         logger.info(f"[VAD] Output file size: {output_file_size:,} bytes")
-        logger.info(f"[VAD] VAD processing completed successfully")
+        logger.info("[VAD] VAD processing completed successfully")
         
         return True, vad_metrics['speech_duration_s']
         
@@ -238,7 +238,7 @@ def _calculate_vad_metrics(speech_timestamps: list, total_duration_s: float, sam
 
 def _log_vad_metrics(metrics: Dict[str, Any], input_path: str) -> None:
     """Log detailed VAD metrics at INFO level."""
-    logger.info(f"[VAD] ═══ VAD PROCESSING METRICS ═══")
+    logger.info("[VAD] ═══ VAD PROCESSING METRICS ═══")
     logger.info(f"[VAD] File: {os.path.basename(input_path)}")
     logger.info(f"[VAD] Total Duration: {metrics['total_duration_s']:.2f}s")
     logger.info(f"[VAD] Speech Duration: {metrics['speech_duration_s']:.2f}s ({metrics['speech_percentage']:.1f}%)")
@@ -258,7 +258,7 @@ def _log_vad_metrics(metrics: Dict[str, Any], input_path: str) -> None:
     else:
         logger.info(f"[VAD] Normal speech/silence ratio detected ({metrics['speech_percentage']:.1f}% speech)")
     
-    logger.info(f"[VAD] ═══ END VAD METRICS ═══")
+    logger.info("[VAD] ═══ END VAD METRICS ═══")
 
 
 def _apply_vad_processing(

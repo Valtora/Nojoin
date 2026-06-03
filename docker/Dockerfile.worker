@@ -1,47 +1,65 @@
 # Use PyTorch base image with CUDA 12.6 support
-FROM pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime
+# --- Builder Stage ---
+FROM pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-# We need ffmpeg for audio, git for pip installs, and build tools for some python packages
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
     git \
     libpq-dev \
     libssl-dev \
     libffi-dev \
-    libsndfile1 \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Set work directory
 WORKDIR /app
 
 # Copy requirements folder
 COPY requirements/ /app/requirements/
 
-# Install Python dependencies
-# 1. Generate constraints from the pre-installed system packages (torch, torchaudio)
-#    This prevents pip from downloading a new version of torch/torchaudio that might be incompatible or huge.
+# Create a virtual environment that inherits system-site-packages (to use torch/torchaudio)
+RUN python -m venv --system-site-packages /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Generate constraints and install dependencies
 RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints.txt && \
     python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt || true
 
-# 2. Install dependencies using the constraints to force usage of system torch
-# We install directly into the system python environment to leverage pre-installed torch
+# Install dependencies using the constraints to force usage of system torch
 RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
 # Install pyannote.audio without dependencies to use system torch
 RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2 -c constraints.txt
 
 # Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
-# pulls the CPU-only onnxruntime; replace it with onnxruntime-gpu, which is a
-# drop-in providing both the CPU and CUDA execution providers.
+# pulls the CPU-only onnxruntime; replace it with onnxruntime-gpu
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
     pip install --no-cache-dir onnxruntime-gpu
+
+# --- Runtime Stage ---
+FROM pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime AS runtime
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install system runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+WORKDIR /app
 
 # Copy the rest of the application code
 COPY . .

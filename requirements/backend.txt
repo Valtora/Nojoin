@@ -1,15 +1,15 @@
 -r base.txt
-fastapi
-uvicorn[standard]
+fastapi==0.136.0
+uvicorn[standard]==0.44.0
 # Backend specific dependencies
 docker==7.1.0
-celery[redis]
-numpy
-openai
-anthropic
-google-genai
-reportlab
-python-docx
-markdown
-markdown-pdf
-google-re2
+celery[redis]==5.6.3
+numpy==2.4.4
+openai==2.32.0
+anthropic==0.95.0
+google-genai==1.73.1
+reportlab==4.4.10
+python-docx==1.2.0
+Markdown==3.10.2
+markdown_pdf==1.13.1
+google-re2==1.1.20251105

@@ -4,7 +4,6 @@
 .venv/
 **/.venv/
 frontend/
-companion/
 node_modules/
 **/node_modules/
 **/target/
@@ -27,7 +26,7 @@ docs/*
 Nojoin.py
 README.md
 LICENSE
-.wav
+*.wav
 data/
 .env
 .env.*

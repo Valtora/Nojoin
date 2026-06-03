@@ -318,7 +318,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     logger.info("Successfully restored source audio from proxy.")
                     audio_path = restore_audio_path
                 else:
-                    raise FileNotFoundError(f"Source audio missing and failed to restore from proxy.")
+                    raise FileNotFoundError("Source audio missing and failed to restore from proxy.")
             else:
                 raise FileNotFoundError(f"Audio file not found: {audio_path} and no proxy available.")
 

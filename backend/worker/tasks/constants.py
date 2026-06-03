@@ -407,7 +407,7 @@ def _build_automatic_meeting_intelligence_transcript(*args, **kwargs):
         impl = getattr(tasks, '_build_automatic_meeting_intelligence_transcript_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_build_automatic_meeting_intelligence_transcript_impl not found in tasks module")
+    raise RuntimeError("_build_automatic_meeting_intelligence_transcript_impl not found in tasks module")
 
 def _build_catch_up_segments(*args, **kwargs):
     import sys
@@ -419,7 +419,7 @@ def _build_catch_up_segments(*args, **kwargs):
         impl = getattr(tasks, '_build_catch_up_segments_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_build_catch_up_segments_impl not found in tasks module")
+    raise RuntimeError("_build_catch_up_segments_impl not found in tasks module")
 
 def _build_final_diarization_plan(*args, **kwargs):
     import sys
@@ -431,7 +431,7 @@ def _build_final_diarization_plan(*args, **kwargs):
         impl = getattr(tasks, '_build_final_diarization_plan_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_build_final_diarization_plan_impl not found in tasks module")
+    raise RuntimeError("_build_final_diarization_plan_impl not found in tasks module")
 
 def _has_meeting_edge_signal(*args, **kwargs):
     import sys
@@ -443,7 +443,7 @@ def _has_meeting_edge_signal(*args, **kwargs):
         impl = getattr(tasks, '_has_meeting_edge_signal_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_has_meeting_edge_signal_impl not found in tasks module")
+    raise RuntimeError("_has_meeting_edge_signal_impl not found in tasks module")
 
 def _llm_backend_from_config(*args, **kwargs):
     import sys
@@ -455,7 +455,7 @@ def _llm_backend_from_config(*args, **kwargs):
         impl = getattr(tasks, '_llm_backend_from_config_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_llm_backend_from_config_impl not found in tasks module")
+    raise RuntimeError("_llm_backend_from_config_impl not found in tasks module")
 
 def _load_recording_audio_chunks(*args, **kwargs):
     import sys
@@ -467,7 +467,7 @@ def _load_recording_audio_chunks(*args, **kwargs):
         impl = getattr(tasks, '_load_recording_audio_chunks_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_load_recording_audio_chunks_impl not found in tasks module")
+    raise RuntimeError("_load_recording_audio_chunks_impl not found in tasks module")
 
 def _load_recording_audio_window_manifests(*args, **kwargs):
     import sys
@@ -479,7 +479,7 @@ def _load_recording_audio_window_manifests(*args, **kwargs):
         impl = getattr(tasks, '_load_recording_audio_window_manifests_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_load_recording_audio_window_manifests_impl not found in tasks module")
+    raise RuntimeError("_load_recording_audio_window_manifests_impl not found in tasks module")
 
 def _recording_has_completed_diarization_windows(*args, **kwargs):
     import sys
@@ -491,7 +491,7 @@ def _recording_has_completed_diarization_windows(*args, **kwargs):
         impl = getattr(tasks, '_recording_has_completed_diarization_windows_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_recording_has_completed_diarization_windows_impl not found in tasks module")
+    raise RuntimeError("_recording_has_completed_diarization_windows_impl not found in tasks module")
 
 def _recording_uses_browser_capture(*args, **kwargs):
     import sys
@@ -503,7 +503,7 @@ def _recording_uses_browser_capture(*args, **kwargs):
         impl = getattr(tasks, '_recording_uses_browser_capture_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_recording_uses_browser_capture_impl not found in tasks module")
+    raise RuntimeError("_recording_uses_browser_capture_impl not found in tasks module")
 
 def _resolve_meeting_event_context(*args, **kwargs):
     import sys
@@ -515,7 +515,7 @@ def _resolve_meeting_event_context(*args, **kwargs):
         impl = getattr(tasks, '_resolve_meeting_event_context_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_resolve_meeting_event_context_impl not found in tasks module")
+    raise RuntimeError("_resolve_meeting_event_context_impl not found in tasks module")
 
 def _run_automatic_meeting_intelligence_stage(*args, **kwargs):
     import sys
@@ -527,7 +527,7 @@ def _run_automatic_meeting_intelligence_stage(*args, **kwargs):
         impl = getattr(tasks, '_run_automatic_meeting_intelligence_stage_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_run_automatic_meeting_intelligence_stage_impl not found in tasks module")
+    raise RuntimeError("_run_automatic_meeting_intelligence_stage_impl not found in tasks module")
 
 def _run_catch_up_diarization_windows(*args, **kwargs):
     import sys
@@ -539,7 +539,7 @@ def _run_catch_up_diarization_windows(*args, **kwargs):
         impl = getattr(tasks, '_run_catch_up_diarization_windows_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_run_catch_up_diarization_windows_impl not found in tasks module")
+    raise RuntimeError("_run_catch_up_diarization_windows_impl not found in tasks module")
 
 def _should_refresh_meeting_edge(*args, **kwargs):
     import sys
@@ -551,7 +551,7 @@ def _should_refresh_meeting_edge(*args, **kwargs):
         impl = getattr(tasks, '_should_refresh_meeting_edge_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_should_refresh_meeting_edge_impl not found in tasks module")
+    raise RuntimeError("_should_refresh_meeting_edge_impl not found in tasks module")
 
 def _summarize_completed_diarization_window_speaker_evidence(*args, **kwargs):
     import sys
@@ -563,7 +563,7 @@ def _summarize_completed_diarization_window_speaker_evidence(*args, **kwargs):
         impl = getattr(tasks, '_summarize_completed_diarization_window_speaker_evidence_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_summarize_completed_diarization_window_speaker_evidence_impl not found in tasks module")
+    raise RuntimeError("_summarize_completed_diarization_window_speaker_evidence_impl not found in tasks module")
 
 def _paths_point_to_same_media(*args, **kwargs):
     import sys
@@ -575,7 +575,7 @@ def _paths_point_to_same_media(*args, **kwargs):
         impl = getattr(tasks, '_paths_point_to_same_media_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_paths_point_to_same_media_impl not found in tasks module")
+    raise RuntimeError("_paths_point_to_same_media_impl not found in tasks module")
 
 def _persist_catch_up_diarization_window(*args, **kwargs):
     import sys
@@ -587,7 +587,7 @@ def _persist_catch_up_diarization_window(*args, **kwargs):
         impl = getattr(tasks, '_persist_catch_up_diarization_window_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_persist_catch_up_diarization_window_impl not found in tasks module")
+    raise RuntimeError("_persist_catch_up_diarization_window_impl not found in tasks module")
 
 def _mark_notes_generation_error(*args, **kwargs):
     import sys
@@ -599,7 +599,7 @@ def _mark_notes_generation_error(*args, **kwargs):
         impl = getattr(tasks, '_mark_notes_generation_error_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_mark_notes_generation_error_impl not found in tasks module")
+    raise RuntimeError("_mark_notes_generation_error_impl not found in tasks module")
 
 def _persist_generated_speaker_name_suggestions(*args, **kwargs):
     import sys
@@ -611,7 +611,7 @@ def _persist_generated_speaker_name_suggestions(*args, **kwargs):
         impl = getattr(tasks, '_persist_generated_speaker_name_suggestions_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_persist_generated_speaker_name_suggestions_impl not found in tasks module")
+    raise RuntimeError("_persist_generated_speaker_name_suggestions_impl not found in tasks module")
 
 def _supersede_pending_speaker_name_suggestions_for_labels(*args, **kwargs):
     import sys
@@ -623,7 +623,7 @@ def _supersede_pending_speaker_name_suggestions_for_labels(*args, **kwargs):
         impl = getattr(tasks, '_supersede_pending_speaker_name_suggestions_for_labels_impl', None)
         if impl:
             return impl(*args, **kwargs)
-    raise RuntimeError(f"_supersede_pending_speaker_name_suggestions_for_labels_impl not found in tasks module")
+    raise RuntimeError("_supersede_pending_speaker_name_suggestions_for_labels_impl not found in tasks module")
 
 
 __all__ = [name for name in globals() if not name.startswith('__')]
