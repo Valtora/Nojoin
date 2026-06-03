@@ -433,115 +433,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
 
         transcription_result = None
         reused_live_transcript_segments = []
-        pending_manifest_rows = []
-        if engine_override is None:
-            pending_manifest_rows = [
-                row
-                for row in _load_recording_audio_window_manifests(session, recording.id)
-                if row.id is not None
-                and not window_asr_is_processed(row)
-            ]
-        if pending_manifest_rows:
-            from backend.utils.audio import extract_audio_clip
-
-            self.update_state(state='PROCESSING', meta={'progress': 45, 'stage': 'Catch-up'})
-            recording.processing_step = f"Catching up live audio...{device_suffix}"
-            recording.processing_progress = 45
-            session.add(recording)
-            session.commit()
-
-            catch_up_segments, pending_catch_up_window_ids, catch_up_run = _build_catch_up_segments(
-                session=session,
-                recording=recording,
-                processed_audio_path=processed_audio_path,
-                merged_config=merged_config,
-                transcribe_audio=transcribe_audio,
-                extract_audio_clip=extract_audio_clip,
-                temp_files=temp_files,
-                log=logger,
-            )
-            live_segments_for_reuse = merge_reusable_segments(
-                live_segments_for_reuse,
-                catch_up_segments,
-            )
-            if pending_catch_up_window_ids:
-                manifest_rows = _load_recording_audio_window_manifests(session, recording.id)
-                updated_manifest_rows = mark_audio_windows_processed(
-                    manifest_rows,
-                    window_ids=pending_catch_up_window_ids,
-                    status=WINDOW_STATUS_CATCH_UP_PROCESSED,
-                    processing_run_id=catch_up_run.id if catch_up_run else None,
-                )
-                for manifest_row in updated_manifest_rows:
-                    session.add(manifest_row)
-                session.commit()
-            record_pipeline_metric(
-                stage="catch_up_segments_prepared",
-                recording_id=recording_id,
-                payload={
-                    "segment_count": len(catch_up_segments),
-                    "window_count": len(pending_catch_up_window_ids),
-                },
-                log=logger,
-            )
-        if engine_override is None and merged_config.get("enable_diarization", True):
-            from backend.utils.audio import extract_audio_clip
-
-            self.update_state(state='PROCESSING', meta={'progress': 48, 'stage': 'Catch-up diarization'})
-            recording.processing_step = f"Catching up speaker windows...{device_suffix}"
-            recording.processing_progress = 48
-            session.add(recording)
-            session.commit()
-
-            (
-                catch_up_processed_window_ids,
-                catch_up_failed_window_ids,
-            ) = _run_catch_up_diarization_windows(
-                session=session,
-                recording=recording,
-                processed_audio_path=processed_audio_path,
-                merged_config=merged_config,
-                diarize_audio=diarize_audio,
-                extract_audio_clip=extract_audio_clip,
-                processing_run_id=catch_up_run.id if catch_up_run else None,
-                temp_files=temp_files,
-                log=logger,
-            )
-            record_pipeline_metric(
-                stage="catch_up_diarization_recorded",
-                recording_id=recording_id,
-                payload={
-                    "processed_window_count": len(catch_up_processed_window_ids),
-                    "failed_window_count": len(catch_up_failed_window_ids),
-                },
-                status="error" if catch_up_failed_window_ids else "ok",
-                log=logger,
-            )
-        elif pending_manifest_rows:
-            catch_up_processed_window_ids = set(pending_catch_up_window_ids)
-
-        if live_segments_for_reuse and engine_override is None:
-            transcription_result, reused_live_transcript_segments = (
-                build_transcription_result_from_segments(live_segments_for_reuse)
-            )
-            if transcription_result:
-                recording.processing_step = f"Reusing live transcript...{device_suffix}"
-                session.add(recording)
-                session.commit()
-                record_pipeline_metric(
-                    stage="final_transcription_reused_live",
-                    recording_id=recording_id,
-                    payload={
-                        "segment_count": len(reused_live_transcript_segments),
-                        "text_chars": len(transcription_result.get("text", "")),
-                    },
-                    log=logger,
-                )
-                logger.info(
-                    "Reusing %s live transcript segments for recording %s",
-                    len(reused_live_transcript_segments),
-                    recording_id,
-                )
 
         if not transcription_result:
             # Run the configured transcription engine.
@@ -618,28 +509,14 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
         # --- Diarization Stage ---
         enable_diarization = merged_config.get("enable_diarization", True)
         diarization_result = None
-        completed_window_speaker_evidence = _summarize_completed_diarization_window_speaker_evidence(
-            session,
-            recording_id=recording.id,
-        )
-        completed_window_replay_available = (
-            int(completed_window_speaker_evidence.get("completed_window_count", 0) or 0) > 0
-        )
-        final_diarization_plan = _build_final_diarization_plan(
-            live_segments_for_reuse=live_segments_for_reuse,
-            reused_live_transcript_segments=reused_live_transcript_segments,
-            engine_override=engine_override,
-            completed_window_replay_available=completed_window_replay_available,
-            completed_window_speaker_evidence=completed_window_speaker_evidence,
-        )
-        
-        if enable_diarization and final_diarization_plan["should_run"] is True:
+
+        if enable_diarization:
             self.update_state(state='PROCESSING', meta={'progress': 70, 'stage': 'Diarization'})
             recording.processing_step = f"Determining who said what...{device_suffix}"
             recording.processing_progress = 70
             session.add(recording)
             session.commit()
-            
+
             # Run Pyannote
             with pipeline_metric_timer(
                 stage="final_diarization_invocation",
@@ -647,16 +524,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 payload={
                     "input_path": processed_audio_path,
                     "enabled": True,
-                    "reason": str(final_diarization_plan["reason"]),
-                    "low_confidence_span_count": len(final_diarization_plan["low_confidence_spans"]),
-                    "low_confidence_spans": list(final_diarization_plan["low_confidence_spans"]),
-                    "completed_window_replay_available": completed_window_replay_available,
-                    "completed_window_multi_speaker_count": int(
-                        completed_window_speaker_evidence.get("multi_speaker_window_count", 0) or 0
-                    ),
-                    "completed_window_max_speaker_count": int(
-                        completed_window_speaker_evidence.get("max_speaker_count", 0) or 0
-                    ),
                 },
                 log=logger,
             ) as metric:
@@ -678,28 +545,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                     )
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Phantom speaker filter failed, continuing with unfiltered result: {e}")
-        elif enable_diarization:
-            logger.info(
-                "Skipping final full-recording diarization for recording %s (reason=%s)",
-                recording_id,
-                final_diarization_plan["reason"],
-            )
-            record_pipeline_metric(
-                stage="final_diarization_skipped",
-                recording_id=recording_id,
-                payload={
-                    "reason": str(final_diarization_plan["reason"]),
-                    "low_confidence_span_count": len(final_diarization_plan["low_confidence_spans"]),
-                    "completed_window_replay_available": completed_window_replay_available,
-                    "completed_window_multi_speaker_count": int(
-                        completed_window_speaker_evidence.get("multi_speaker_window_count", 0) or 0
-                    ),
-                    "completed_window_max_speaker_count": int(
-                        completed_window_speaker_evidence.get("max_speaker_count", 0) or 0
-                    ),
-                },
-                log=logger,
-            )
         else:
             logger.info("Diarization disabled, skipping speaker separation.")
 
@@ -748,58 +593,6 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 combined_segments = []
 
         label_map_from_final_to_live = {}
-        if reused_live_transcript_segments and combined_segments:
-            if diarization_result:
-                label_map_from_final_to_live = map_final_speakers_to_live_labels(
-                    live_segments_for_reuse,
-                    combined_segments,
-                )
-
-            if label_map_from_final_to_live:
-                for segment in combined_segments:
-                    current_label = segment.get("speaker")
-                    if current_label in label_map_from_final_to_live:
-                        segment["speaker"] = label_map_from_final_to_live[current_label]
-                    if segment.get("overlapping_speakers"):
-                        segment["overlapping_speakers"] = [
-                            label_map_from_final_to_live.get(label, label)
-                            for label in segment.get("overlapping_speakers", [])
-                        ]
-            combined_segments = apply_live_authority_to_segments(
-                live_segments_for_reuse,
-                combined_segments,
-            )
-            record_pipeline_metric(
-                stage="final_live_reconciliation",
-                recording_id=recording_id,
-                payload={
-                    "live_segment_count": len(live_segments_for_reuse),
-                    "combined_segment_count": len(combined_segments),
-                    "mapped_speaker_count": len(label_map_from_final_to_live),
-                    "used_diarization": bool(diarization_result),
-                    "manual_speaker_edits": sum(
-                        1
-                        for segment in live_segments_for_reuse
-                        if segment.get("speaker_manually_edited") is True
-                    ),
-                    "preserved_manual_speaker_edits": sum(
-                        1
-                        for segment in combined_segments
-                        if segment.get("speaker_manually_edited") is True
-                    ),
-                    "manual_text_edits": sum(
-                        1
-                        for segment in live_segments_for_reuse
-                        if segment.get("text_manually_edited") is True
-                    ),
-                    "preserved_manual_text_edits": sum(
-                        1
-                        for segment in combined_segments
-                        if segment.get("text_manually_edited") is True
-                    ),
-                },
-                log=logger,
-            )
 
         # Consolidate segments
         final_segments = consolidate_diarized_transcript(combined_segments)
@@ -1073,7 +866,28 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             # Register this name as taken
             if resolved_name and current_speaker_id:
                 resolved_names_map[resolved_name] = {'id': current_speaker_id, 'label': label}
-        
+
+        # --- Embedding-based speaker merge pass ---
+        # Catches over-clustered speakers that the name-based auto-merge
+        # above cannot detect (e.g. two clusters both named "Speaker N"
+        # before global identification, or same global speaker split into
+        # two RecordingSpeaker rows).
+        try:
+            from backend.processing.speaker_merge import merge_duplicate_speakers
+            merge_pairs = merge_duplicate_speakers(
+                session,
+                recording_id=recording.id,
+                segments=final_segments,
+            )
+            if merge_pairs:
+                logger.info(
+                    "[SpeakerMerge] Merged %d duplicate speaker(s) in recording %d",
+                    len(merge_pairs),
+                    recording_id,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[SpeakerMerge] Merge pass failed, continuing: %s", e)
+
         # Keep the diarization_label in the segments to maintain the link to RecordingSpeaker
         # The frontend will resolve the display name using the speaker map
         updated_segments = []
@@ -1109,23 +923,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 session,
                 recording.id,
             )
-            if not final_diarization_plan["should_run"] and completed_window_replay_available:
-                replay_summary = reconcile_completed_diarization_windows(
-                    session,
-                    recording_id=recording.id,
-                    effective_from_ms=0,
-                    source="finalize_window_replay",
-                )
-                record_pipeline_metric(
-                    stage="final_diarization_window_replay",
-                    recording_id=recording_id,
-                    payload=replay_summary,
-                    log=logger,
-                )
-                updated_segments = refresh_transcript_projection_from_canonical(
-                    session,
-                    recording.id,
-                )
+
 
             # Phase F4: frame-level segmentation safety net for utterances
             # that span a speaker change but slipped through rolling
@@ -2308,12 +2106,26 @@ def _apply_automatic_meeting_intelligence_result(
         if isinstance(segment, dict)
     ]
     eligible_labels = get_speakers_eligible_for_llm_renaming(speakers)
+
+    embedding_similarity_scores: dict[str, float] = {}
+    for speaker in speakers:
+        if not speaker.embedding or not speaker.diarization_label:
+            continue
+        from backend.models.speaker import GlobalSpeaker
+        global_speaker = None
+        if speaker.global_speaker_id:
+            global_speaker = session.get(GlobalSpeaker, speaker.global_speaker_id)
+        if global_speaker and global_speaker.embedding:
+            score = cosine_similarity(speaker.embedding, global_speaker.embedding)
+            embedding_similarity_scores[speaker.diarization_label] = score
+
     llm_result = build_mapping_based_speaker_suggestions(
         result.speaker_mapping,
         segments=segments,
         eligible_labels=eligible_labels,
         meeting_context=meeting_context,
         source="llm",
+        embedding_similarity_scores=embedding_similarity_scores,
     )
 
     suggestion_count = 0

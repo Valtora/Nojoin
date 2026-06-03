@@ -280,6 +280,7 @@ def build_mapping_based_speaker_suggestions(
     eligible_labels: Sequence[str],
     meeting_context: MeetingEventContext | None = None,
     source: str = "llm",
+    embedding_similarity_scores: Mapping[str, float] | None = None,
 ) -> SpeakerInferenceResult:
     allowed = {label.strip() for label in eligible_labels if str(label).strip()}
     deterministic = {
@@ -329,7 +330,12 @@ def build_mapping_based_speaker_suggestions(
             )
         )
         signals: list[str] = []
-        confidence = 0.55
+        sim_score = (
+            float(embedding_similarity_scores.get(diarization_label, 0.0))
+            if embedding_similarity_scores
+            else 0.0
+        )
+        confidence = max(0.40, min(sim_score * 0.85, 0.70)) if sim_score > 0.0 else 0.50
         rationale = "Persisted as an evidence-backed AI suggestion for user review."
 
         if evidence_spans:

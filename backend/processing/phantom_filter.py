@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 # --- Phantom Speaker Detection Thresholds ---
 # Maximum total speaking duration (seconds) for a speaker to be considered a phantom candidate
-PHANTOM_MAX_DURATION_S = 2.0
+PHANTOM_MAX_DURATION_S = 3.0
 # Maximum segment count for a speaker to be considered a phantom candidate
 PHANTOM_MAX_SEGMENTS = 3
 # Below this cosine similarity to ALL established speakers, confirmed as non-speech
-PHANTOM_EMBEDDING_FLOOR = 0.3
+PHANTOM_EMBEDDING_FLOOR = 0.35
 # Above this similarity to a real speaker, merge into that speaker instead of reassigning
-PHANTOM_MERGE_THRESHOLD = 0.65
+PHANTOM_MERGE_THRESHOLD = 0.60
 
 
 def _get_speaker_stats(diarization: Annotation) -> Dict[str, Dict[str, Any]]:

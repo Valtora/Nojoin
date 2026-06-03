@@ -668,7 +668,13 @@ export default function SpeakerPanel({
                                       Suggestion: {suggestion.suggested_name}
                                     </p>
                                     <p className="text-[11px] opacity-80">
-                                      {Math.round(suggestion.confidence * 100)}% confidence
+                                      {suggestion.signals.includes("self_introduction") || suggestion.signals.includes("self_identification")
+                                        ? "Self-introduction detected"
+                                        : suggestion.signals.includes("transcript_name_mention")
+                                          ? "Name found in transcript"
+                                          : suggestion.signals.includes("meeting_attendee_exact") || suggestion.signals.includes("meeting_attendee_first_name")
+                                            ? "Matches meeting attendees"
+                                            : "AI estimate (no evidence)"}
                                       {entrySuggestions.length > 1
                                         ? ` • ${suggestion.diarization_label}`
                                         : ""}

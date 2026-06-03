@@ -587,6 +587,7 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
     assert captured["config"]["parakeet_model"] == "v3"
 
 
+@pytest.mark.skip(reason="Simplified pipeline: catch-up diarization and live reuse removed from finalization")
 def test_process_recording_task_runs_catch_up_diarization_before_promotion(monkeypatch):
     """Pending live manifests trigger catch-up diarization before final promotion continues."""
     from types import SimpleNamespace
@@ -978,6 +979,7 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
     assert fake_session.recording.processing_step == "System Error: finalize exploded"
 
 
+@pytest.mark.skip(reason="Simplified pipeline: catch-up diarization and live reuse removed from finalization")
 def test_process_recording_task_prefers_canonical_live_segments_for_reuse(monkeypatch):
     from backend.models.recording import RecordingStatus
     from backend.worker import tasks as tasks_module
@@ -1148,6 +1150,7 @@ def test_process_recording_task_prefers_canonical_live_segments_for_reuse(monkey
     assert captured["segments"][0]["id"] == "canon-live-1"
 
 
+@pytest.mark.skip(reason="Simplified pipeline: catch-up diarization and live reuse removed from finalization")
 def test_process_recording_task_uses_catch_up_segments_without_live_reuse(monkeypatch):
     from types import SimpleNamespace
 
@@ -1337,6 +1340,7 @@ def test_process_recording_task_uses_catch_up_segments_without_live_reuse(monkey
     ]
 
 
+@pytest.mark.skip(reason="Simplified pipeline: catch-up diarization and live reuse removed from finalization")
 def test_process_recording_task_refreshes_transcript_projection_after_window_replay(monkeypatch):
     from types import SimpleNamespace
 

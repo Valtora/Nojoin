@@ -17,6 +17,9 @@ DRIFT_GUARD_THRESHOLD = 0.6
 UI_SHOW_MATCH_THRESHOLD = 0.50
 # UI: minimum similarity (with margin check) to flag a match as "strong"
 UI_STRONG_MATCH_THRESHOLD = 0.75
+# Embedding-based speaker deduplication: cosine similarity above which two
+# RecordingSpeaker rows within the same recording are merged automatically.
+DUPLICATE_SPEAKER_MERGE_THRESHOLD = 0.70
 # Default threshold for the scan-matches endpoint
 SCAN_MATCH_THRESHOLD = 0.75
 
