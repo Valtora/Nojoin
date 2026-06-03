@@ -264,12 +264,11 @@ def _combine_word_level(segments, speaker_turns):
         w_end = word_data['end']
         w_text = word_data['word']
         speaker = assignment["speaker"]
-        overlapping_speakers = assignment["overlapping_speakers"]
         
         if i == 0:
             current_segment["start"] = w_start
             current_segment["speaker"] = speaker
-            current_segment["overlapping_speakers"] = overlapping_speakers
+            current_segment["overlapping_speakers"] = []
             # Strip leading space from first word if present
             current_segment["text"] = w_text.lstrip()
             current_segment["end"] = w_end
@@ -279,13 +278,13 @@ def _combine_word_level(segments, speaker_turns):
         gap = w_start - current_segment["end"]
         
         # Split if speaker changes OR gap > 1.0s
-        if speaker != current_segment["speaker"] or gap > 1.0 or set(overlapping_speakers) != set(current_segment.get("overlapping_speakers", [])):
+        if speaker != current_segment["speaker"] or gap > 1.0:
             final_segments.append(_with_word_source_public_ids(current_segment))
             current_segment = {
                 "start": w_start,
                 "end": w_end,
                 "speaker": speaker,
-                "overlapping_speakers": overlapping_speakers,
+                "overlapping_speakers": [],
                 # Strip leading space from first word of new segment
                 "text": w_text.lstrip(),
                 "words": [word_data]
@@ -302,6 +301,36 @@ def _combine_word_level(segments, speaker_turns):
             
     final_segments.append(_with_word_source_public_ids(current_segment))
     
+    # Pass 2: Re-evaluate overlapping speakers for each consolidated segment using segment-level thresholds
+    for segment in final_segments:
+        start = segment["start"]
+        end = segment["end"]
+        segment_duration = max(0.0, end - start)
+        seg_obj = Segment(start, end)
+        
+        speaker_overlaps = {}
+        for turn, _, label in speaker_turns.itertracks(yield_label=True):
+            intersection = seg_obj & turn
+            if intersection:
+                overlap_dur = intersection.duration
+                if overlap_dur > 0:
+                    speaker_overlaps[label] = speaker_overlaps.get(label, 0.0) + overlap_dur
+                    
+        sorted_speakers = sorted(speaker_overlaps.items(), key=lambda x: x[1], reverse=True)
+        if sorted_speakers:
+            segment["overlapping_speakers"] = [
+                spk
+                for spk, duration in sorted_speakers
+                if spk != segment["speaker"] and _speaker_overlap_is_significant(
+                    duration,
+                    segment_duration,
+                    min_duration_s=SEGMENT_OVERLAP_MIN_DURATION_S,
+                    min_ratio=SEGMENT_OVERLAP_MIN_RATIO,
+                )
+            ]
+        else:
+            segment["overlapping_speakers"] = []
+            
     # Log speaker distribution
     speaker_counts = {}
     for seg in final_segments:

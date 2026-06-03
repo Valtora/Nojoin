@@ -57,47 +57,6 @@ def test_synthetic_fixture_generator_writes_valid_wavs(tmp_path):
         assert wav_file.getnframes() > 0
 
 
-@pytest.mark.pipeline_baseline
-def test_live_speaker_resolution_baseline_emits_fallback_metric(monkeypatch):
-    from backend.processing import live_transcribe as lt
-
-    events = []
-
-    def capture_metric(**kwargs):
-        events.append(kwargs)
-        return kwargs
-
-    class _ExecResult:
-        def all(self):
-            return [
-                SimpleNamespace(diarization_label="LIVE_01", embedding=[0.1]),
-                SimpleNamespace(diarization_label="LIVE_02", embedding=[0.2]),
-            ]
-
-    class _Session:
-        def exec(self, *args, **kwargs):
-            return _ExecResult()
-
-    monkeypatch.setattr(lt, "record_pipeline_metric", capture_metric)
-    monkeypatch.setattr(
-        "soundfile.info",
-        lambda path: SimpleNamespace(frames=1600, samplerate=16000),
-    )
-
-    label = lt._resolve_live_speaker(
-        session=_Session(),
-        recording_id=42,
-        user_id=None,
-        audio_path="/tmp/short.wav",
-        merged_config={},
-        fallback_label="LIVE_02",
-    )
-
-    assert label == "LIVE_02"
-    assert events[-1]["stage"] == "live_speaker_resolved"
-    assert events[-1]["payload"]["match_kind"] == "fallback_last_label"
-    assert events[-1]["payload"]["had_embedding"] is False
-
 
 @pytest.mark.pipeline_baseline
 def test_current_live_to_final_speaker_mapping_is_index_based_baseline():

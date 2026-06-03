@@ -398,6 +398,9 @@ def index_transcript_task(self, recording_id: int):
     if not transcript or not segments:
         return
 
+    speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
+    speaker_map = build_recording_speaker_map(speakers)
+
     try:
         # Clear existing transcript chunks for this recording
         # The 'source' metadata field identifies these chunks.
@@ -434,14 +437,15 @@ def index_transcript_task(self, recording_id: int):
             text = seg['text']
             start = seg['start']
             end = seg['end']
-            speaker = seg['speaker']
+            speaker_label = seg['speaker']
+            speaker_name = speaker_map.get(speaker_label, speaker_label)
             
             if current_length == 0:
                 temp_chunk_start = start
             
-            temp_chunk_text += f"{speaker}: {text}\n"
+            temp_chunk_text += f"{speaker_name}: {text}\n"
             current_length += len(text)
-            temp_meta_speakers.add(speaker)
+            temp_meta_speakers.add(speaker_name)
             temp_chunk_end = end
             
             if current_length >= TARGET_LENGTH:

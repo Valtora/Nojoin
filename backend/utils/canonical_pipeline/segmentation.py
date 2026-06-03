@@ -13,6 +13,7 @@ def refine_recording_utterances_via_segmentation(
     candidate_predicate: Callable[[TranscriptUtterance], bool] | None = None,
 ) -> dict[str, Any]:
     from .diarization import _apply_boundary_reconciliation_segments
+    from .core import list_active_utterances
     """Phase F finalize-time pass: re-split ambiguous utterances using
     frame-level segmentation derived turns.
 
