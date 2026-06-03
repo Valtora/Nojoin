@@ -3,10 +3,13 @@
 # Heavy imports (onnx_asr, soundfile) live inside methods, never at module top.
 
 import logging
+import os
 
 from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
+
+os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 
 # Gap (seconds) between consecutive words that starts a new segment.
 SEGMENT_PAUSE_THRESHOLD_S = 0.8

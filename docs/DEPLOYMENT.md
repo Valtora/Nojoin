@@ -94,6 +94,23 @@ The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIV
 - Use Docker Desktop with the WSL 2 backend.
 - Install up-to-date NVIDIA Windows drivers.
 
+## Worker Container Startup
+
+The worker container runs `backend/worker_entrypoint.sh` before starting Celery. The entrypoint:
+
+1. Preloads all ML models (Silero VAD, Whisper, Parakeet, Canary, Pyannote, embedding).
+2. Verifies cached models exist locally before attempting downloads, avoiding unnecessary network calls on restarts.
+3. Reports cumulative download progress to the frontend via Redis.
+4. Hands off to the Celery worker process via `exec`.
+
+### GPU Acceleration
+
+The worker image installs Triton in its virtual environment so Whisper word-level timestamps use GPU-accelerated kernels. Without Triton, `whisper/timing.py` falls back to slower CPU-based implementations for word alignment.
+
+Text embedding (used during AI-generated meeting intelligence) uses the ONNX Runtime CUDA execution provider when available, with an automatic CPU fallback.
+
+The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. Some ONNX graph operations are inherently CPU-pinned; the resulting memcpy overhead is expected and does not indicate a configuration problem.
+
 ## CPU-Only Deployment
 
 If you do not have a compatible NVIDIA GPU:

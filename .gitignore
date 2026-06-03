@@ -19,6 +19,8 @@ backend/tests/pipeline_fixtures/generated/
 .github/copilot-instructions.md
 .agent/*
 *.code-workspace
+*.qwen/
+*.antigravity-cli/
 
 # Logs
 *.log

@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import urllib.request
+import warnings
 import time
 import shutil
 
@@ -35,6 +36,48 @@ WHISPER_FILENAMES = {
     "large": "large-v3.pt",
     "turbo": "large-v3-turbo.pt",
 }
+
+def _is_onnx_asr_model_cached(model_substring: str) -> bool:
+    """Check if an onnx-asr model is present in the Hugging Face hub cache."""
+    hf_cache_base = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
+    hf_cache = os.path.join(hf_cache_base, "hub")
+    for cache_dir in [hf_cache, os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")]:
+        if os.path.isdir(cache_dir):
+            try:
+                for entry in os.listdir(cache_dir):
+                    if model_substring in entry:
+                        return True
+            except OSError:
+                pass
+    return False
+
+
+def _is_whisper_model_cached(model_size: str) -> bool:
+    """Check if a Whisper model file exists in the local cache."""
+    filename = WHISPER_FILENAMES.get(model_size)
+    if not filename:
+        return False
+    download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
+    filepath = os.path.join(download_root, "whisper", filename)
+    if os.path.exists(filepath):
+        return True
+    default_filepath = os.path.join(os.path.expanduser("~"), ".cache", "whisper", filename)
+    return default_filepath != filepath and os.path.exists(default_filepath)
+
+
+def _suppress_ort_warnings():
+    """Suppress non-actionable ONNX Runtime warnings (memcpy node messages)."""
+    os.environ["ORT_LOG_SEVERITY_LEVEL"] = "1"
+
+
+def _suppress_whisper_timing_warnings():
+    """Suppress Triton fallback warnings from whisper/timing.py."""
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*Failed to launch Triton kernels.*",
+        category=UserWarning,
+    )
+
 
 def _download_file(url, dest_path, progress_callback, description, retries=3, stage=None):
     for attempt in range(retries):
@@ -166,187 +209,194 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
     Downloads necessary models.
     progress_callback: function(status_message, percent_complete, speed=None, eta=None, stage=None)
     """
-    # Clear any stale progress from previous runs to prevent progress bar glitches
     clear_download_progress()
 
-    # Lazy imports to avoid loading heavy libraries at module level
     import torch
     import whisper
     import silero_vad
     import huggingface_hub
     from pyannote.audio import Pipeline
 
-    # Add safe globals for Pyannote
     try:
         from pyannote.audio.core.task import Specifications, Problem, Resolution, Task
         torch.serialization.add_safe_globals([Specifications, Problem, Resolution, Task])
     except ImportError:
-        pass 
+        pass
 
     def report(msg, percent, speed=None, eta=None, stage=None):
         logger.info(f"{msg} ({percent}%)")
-        # Write to shared Redis progress for frontend visibility
         set_download_progress(percent, msg, speed, eta, status="downloading", stage=stage)
         if progress_callback:
             try:
                 progress_callback(msg, percent, speed, eta, stage=stage)
             except TypeError:
-                # Fallback for callbacks that don't accept stage
                 try:
                     progress_callback(msg, percent, speed, eta)
                 except TypeError:
                     progress_callback(msg, percent)
 
+    # Cumulative progress ranges per stage:
+    #   init:             0-5
+    #   vad:              5-10
+    #   whisper:         10-35
+    #   parakeet:        35-50
+    #   canary:          50-65
+    #   pyannote:        65-80
+    #   embedding:       80-100
+    STAGE_RANGES = {
+        "init": (0, 5),
+        "vad": (5, 10),
+        "whisper": (10, 35),
+        "whisper_loading": (30, 35),
+        "parakeet": (35, 50),
+        "canary": (50, 65),
+        "pyannote": (65, 80),
+        "embedding": (80, 100),
+        "complete": (100, 100),
+    }
+
+    def stage_percent(stage, local_pct):
+        lo, hi = STAGE_RANGES.get(stage, (0, 100))
+        return lo + int((hi - lo) * local_pct / 100)
+
     report("Starting model download...", 0, stage="init")
 
-    # 1. Load Configuration
     if not hf_token:
         hf_token = config_manager.get("hf_token")
-    
+
     if not whisper_model_size:
         whisper_model_size = str(config_manager.get("whisper_model_size", "turbo"))
-    
+
     device = config_manager.get("processing_device", "auto")
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     if not hf_token:
         logger.warning("HF_TOKEN not found. Pyannote model download might fail if not already cached.")
     else:
-        report("Logging in to Hugging Face...", 10, stage="init")
+        report("Logging in to Hugging Face...", stage_percent("init", 50), stage="init")
         try:
             huggingface_hub.login(token=hf_token)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Hugging Face login failed: {e}")
             raise ValueError(f"Hugging Face login failed: {str(e)}. Please check your token.")
 
-    # 2. Preload Silero VAD
-    report("Downloading Silero VAD model...", 20, stage="vad")
+    report("Logging in to Hugging Face...", stage_percent("init", 100), stage="init")
+
+    # -- Silero VAD --
+    report("Loading Silero VAD model...", stage_percent("vad", 0), stage="vad")
     try:
         silero_vad.load_silero_vad()
-        report("Silero VAD model loaded.", 100, stage="vad")
+        report("Silero VAD model loaded.", stage_percent("vad", 100), stage="vad")
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to load Silero VAD: {e}")
-        # Don't fail completely, VAD might be optional or retriable
 
-    # 3. Preload Whisper Model
-    report(f"Checking Whisper model ({whisper_model_size})...", 0, stage="whisper")
+    # -- Whisper --
+    report(f"Checking Whisper model ({whisper_model_size})...", stage_percent("whisper", 0), stage="whisper")
     try:
-        # Determine download path
         download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
         download_root = os.path.join(download_root, "whisper")
         os.makedirs(download_root, exist_ok=True)
-        
-        # Prefer official whisper._MODELS if available (since we imported whisper)
+
         url = None
         if hasattr(whisper, "_MODELS") and whisper_model_size in whisper._MODELS:
             url = whisper._MODELS[whisper_model_size]
-        
-        # Fallback for turbo if not in installed whisper version
         if not url and whisper_model_size == "turbo":
-             url = "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
-
+            url = "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
         if not url:
-             # Fallback: model size not in local dict; attempt resolution via whisper internals.
-             logger.warning(f"Unknown whisper model size: {whisper_model_size}, letting whisper handle it.")
-             # whisper is already imported; attempt to resolve via whisper._MODELS.
-             if hasattr(whisper, "_MODELS"):
-                 url = whisper._MODELS.get(whisper_model_size)
+            logger.warning(f"Unknown whisper model size: {whisper_model_size}, letting whisper handle it.")
+            if hasattr(whisper, "_MODELS"):
+                url = whisper._MODELS.get(whisper_model_size)
 
-        if url:
+        if url and not _is_whisper_model_cached(whisper_model_size):
             filename = os.path.basename(url)
             filepath = os.path.join(download_root, filename)
-            
-            report(f"Downloading Whisper model ({whisper_model_size})...", 0, stage="whisper")
+            report(f"Downloading Whisper model ({whisper_model_size})...", stage_percent("whisper", 10), stage="whisper")
             _download_file(url, filepath, report, f"Downloading Whisper ({whisper_model_size})", stage="whisper")
+        elif url:
+            report(f"Whisper model ({whisper_model_size}) already cached.", stage_percent("whisper", 50), stage="whisper")
 
-        # Now load it (this verifies checksum and loads into memory)
-        report(f"Loading Whisper model ({whisper_model_size})...", 0, stage="whisper_loading")
+        _suppress_whisper_timing_warnings()
+        report(f"Loading Whisper model ({whisper_model_size})...", stage_percent("whisper_loading", 0), stage="whisper_loading")
         whisper.load_model(whisper_model_size, download_root=download_root)
-        report(f"Whisper model ({whisper_model_size}) loaded.", 100, stage="whisper_loading")
-        
+        report(f"Whisper model ({whisper_model_size}) loaded.", stage_percent("whisper_loading", 100), stage="whisper_loading")
+
     except Exception as e:
         logger.error(f"Failed to load Whisper model: {e}")
         raise e
 
-    # 3b. Preload Parakeet ASR Model (pluggable transcription backend)
-    report("Checking Parakeet model...", 0, stage="parakeet")
+    # -- Parakeet ASR --
+    _suppress_ort_warnings()
+    parakeet_cached = _is_onnx_asr_model_cached("parakeet-tdt-0.6b-v3")
+    if parakeet_cached:
+        report("Parakeet model already cached, loading...", stage_percent("parakeet", 0), stage="parakeet")
+    else:
+        report("Downloading Parakeet model...", stage_percent("parakeet", 0), stage="parakeet")
     try:
-        # Lazy import keeps onnx-asr out of module-level imports.
         import onnx_asr
-        # load_model triggers the ONNX file download from the Hugging Face Hub.
         onnx_asr.load_model(
             "nemo-parakeet-tdt-0.6b-v3",
             quantization="int8",
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
-        report("Parakeet model loaded.", 100, stage="parakeet")
+        report("Parakeet model loaded.", stage_percent("parakeet", 100), stage="parakeet")
     except Exception as e:  # noqa: BLE001
-        # A Parakeet download failure must not abort the whole preload.
         logger.warning(f"Failed to load Parakeet model: {e}")
-        report("Skipping Parakeet (download failed).", 100, stage="parakeet")
+        report("Skipping Parakeet (download failed).", stage_percent("parakeet", 100), stage="parakeet")
 
-    # 3c. Preload Canary ASR Model (pluggable transcription backend)
-    report("Checking Canary model...", 0, stage="canary")
+    # -- Canary ASR --
+    canary_cached = _is_onnx_asr_model_cached("nemo-canary-1b-v2")
+    if canary_cached:
+        report("Canary model already cached, loading...", stage_percent("canary", 0), stage="canary")
+    else:
+        report("Downloading Canary model...", stage_percent("canary", 0), stage="canary")
     try:
-        # Lazy import keeps onnx-asr out of module-level imports.
         import onnx_asr
-        # load_model triggers the ONNX file download from the Hugging Face Hub.
         onnx_asr.load_model(
             "nemo-canary-1b-v2",
             quantization="int8",
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
-        report("Canary model loaded.", 100, stage="canary")
+        report("Canary model loaded.", stage_percent("canary", 100), stage="canary")
     except Exception as e:  # noqa: BLE001
-        # A Canary download failure must not abort the whole preload.
         logger.warning(f"Failed to load Canary model: {e}")
-        report("Skipping Canary (download failed).", 100, stage="canary")
+        report("Skipping Canary (download failed).", stage_percent("canary", 100), stage="canary")
 
-    # 4. Preload Pyannote Diarization Model
+    # -- Pyannote Diarization --
     pipeline_name = "pyannote/speaker-diarization-community-1"
-    report(f"Downloading Pyannote pipeline ({pipeline_name})...", 0, stage="pyannote")
-    
+    report(f"Loading Pyannote pipeline ({pipeline_name})...", stage_percent("pyannote", 0), stage="pyannote")
+
     if hf_token:
         try:
-            # from_pretrained downloads and caches the pipeline.
             Pipeline.from_pretrained(pipeline_name, token=hf_token)
-            report(f"Pyannote pipeline ({pipeline_name}) loaded.", 100, stage="pyannote")
+            report(f"Pyannote pipeline ({pipeline_name}) loaded.", stage_percent("pyannote", 100), stage="pyannote")
         except OSError as e:
-            # This often happens if the user hasn't accepted the terms of use
             error_msg = str(e)
             if "403" in error_msg or "forbidden" in error_msg.lower():
-                 logger.error(f"Permission denied for Pyannote model: {e}")
-                 raise ValueError(
-                     f"Permission denied for {pipeline_name}. "
-                     "Please ensure you have accepted the terms of use on the Hugging Face model page "
-                     "and that your token has the correct permissions."
-                 )
+                logger.error(f"Permission denied for Pyannote model: {e}")
+                raise ValueError(
+                    f"Permission denied for {pipeline_name}. "
+                    "Please ensure you have accepted the terms of use on the Hugging Face model page "
+                    "and that your token has the correct permissions."
+                )
             else:
-                 logger.error(f"Failed to download Pyannote pipeline: {e}")
-                 raise e
+                logger.error(f"Failed to download Pyannote pipeline: {e}")
+                raise e
         except Exception as e:
             logger.error(f"Failed to load Pyannote pipeline: {e}")
             raise e
     else:
         logger.warning("Skipping Pyannote load due to missing HF token.")
-        report("Skipping Pyannote (no token).", 100, stage="pyannote")
+        report("Skipping Pyannote (no token).", stage_percent("pyannote", 100), stage="pyannote")
 
-    # 5. Preload Embedding Model
+    # -- Embedding Model --
     embedding_model_name = "pyannote/wespeaker-voxceleb-resnet34-LM"
-    report(f"Downloading Embedding model ({embedding_model_name})...", 0, stage="embedding")
+    report(f"Loading Embedding model ({embedding_model_name})...", stage_percent("embedding", 0), stage="embedding")
     if hf_token:
         try:
             from pyannote.audio import Model
-            # Add safe globals for Pyannote embedding model loading
-            # The error message suggests adding torch.torch_version.TorchVersion
             try:
-                import torch
-                # Allowlist checkpoint globals required by the Pyannote embedding model.
-                
-                # Note: torch.serialization.add_safe_globals is available in newer torch versions
                 if hasattr(torch.serialization, 'add_safe_globals'):
-                    # Import and register the class with torch safe globals.
                     from torch.torch_version import TorchVersion
                     torch.serialization.add_safe_globals([TorchVersion])
             except ImportError:
@@ -355,13 +405,11 @@ def download_models(progress_callback=None, hf_token=None, whisper_model_size=No
                 logger.warning(f"Could not add safe globals: {e}")
 
             Model.from_pretrained(embedding_model_name, token=hf_token)
-            report(f"Embedding model ({embedding_model_name}) loaded.", 100, stage="embedding")
+            report(f"Embedding model ({embedding_model_name}) loaded.", stage_percent("embedding", 100), stage="embedding")
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load Embedding model: {e}")
-            # Don't fail completely
 
     report("Model download complete.", 100, stage="complete")
-    # Mark download as complete in shared state
     set_download_progress(100, "Model download complete.", status="complete")
 
 def preload_models():

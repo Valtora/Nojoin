@@ -5,6 +5,7 @@
 import whisper
 import logging
 import os
+import warnings
 import torch
 import tqdm
 import threading
@@ -13,6 +14,12 @@ from ...utils.config_manager import config_manager
 from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*Failed to launch Triton kernels.*",
+    category=UserWarning,
+)
 
 # Cache for loaded models to avoid reloading
 _model_cache = {}

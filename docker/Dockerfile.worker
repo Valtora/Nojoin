@@ -40,6 +40,11 @@ RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2 -c constraints.tx
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
     pip install --no-cache-dir onnxruntime-gpu
 
+# Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
+# kernels instead of falling back to slower CPU implementations. The base PyTorch
+# image ships Triton as a system package, but the venv may not inherit it correctly.
+RUN pip install --no-cache-dir triton
+
 # --- Runtime Stage ---
 FROM pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime AS runtime
 
@@ -72,6 +77,9 @@ RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app /home/appuser
 
 USER appuser
+
+# Entrypoint preloads ML models, then hands off to the CMD
+ENTRYPOINT ["backend/worker_entrypoint.sh"]
 
 # Default command for worker
 CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "--loglevel=info", "--pool=solo"]
