@@ -64,6 +64,30 @@ CREATE TABLE transcripts (
     error_message TEXT
 );
 
+CREATE TABLE global_speakers (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    name VARCHAR NOT NULL,
+    embedding JSON,
+    is_voiceprint_locked BOOLEAN NOT NULL DEFAULT 0,
+    color VARCHAR,
+    title VARCHAR,
+    company VARCHAR,
+    email VARCHAR,
+    phone_number VARCHAR,
+    notes TEXT,
+    user_id INTEGER
+);
+
+CREATE TABLE people_tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    global_speaker_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL
+);
+
 CREATE TABLE recording_speakers (
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
@@ -153,6 +177,19 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
         connection.execute(
             text(
                 """
+                INSERT INTO global_speakers (
+                    id, created_at, updated_at, name, embedding,
+                    is_voiceprint_locked, color, user_id
+                ) VALUES (
+                    11, :now, :now, 'Dana', :embedding, 0, NULL, 1
+                )
+                """
+            ),
+            {"now": now, "embedding": json.dumps([1.0, 0.0, 0.0])},
+        )
+        connection.execute(
+            text(
+                """
                 INSERT INTO recording_speakers (
                     id, created_at, updated_at, public_id, recording_id, global_speaker_id,
                     diarization_label, local_name, name, snippet_start,
@@ -176,11 +213,11 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
                     merged_into_id
                 ) VALUES (
                     2, :now, :now, 'recording-speaker-2', 1, 11, 'SPEAKER_01', NULL, 'Dana',
-                    NULL, NULL, NULL, NULL, NULL, NULL
+                    NULL, NULL, NULL, :embedding, NULL, NULL
                 )
                 """
             ),
-            {"now": now},
+            {"now": now, "embedding": json.dumps([1.0, 0.0, 0.0])},
         )
 
     return engine

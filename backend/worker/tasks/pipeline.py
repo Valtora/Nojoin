@@ -2100,6 +2100,8 @@ def _apply_automatic_meeting_intelligence_result(
     meeting_context: MeetingEventContext | None,
     provider: str | None,
 ) -> None:
+    from backend.processing.embedding import cosine_similarity
+
     segments = [
         dict(segment)
         for segment in (transcript.segments or [])
