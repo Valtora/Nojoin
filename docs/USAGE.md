@@ -14,7 +14,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
 7. Stop the recording, open it in the `/recordings` workspace, and wait for processing to complete.
 
-Firefox, Safari, mobile browsers other than Chrome, and Chromium browsers on macOS can review recordings but cannot start live capture. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
+Firefox, Safari, mobile browsers other than Chrome, and Chromium browsers on macOS can review recordings but cannot start live capture. Current builds intentionally block macOS Chromium for recording even if the browser exposes some capture primitives there. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
 
 ## Tours And Onboarding
 

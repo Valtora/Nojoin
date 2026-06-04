@@ -23,9 +23,11 @@ Live capture has two browser modes:
 | Firefox | Not supported for live capture |
 | Safari | Not supported for live capture |
 | Other mobile browsers | Not supported for live capture |
-| Chromium browsers on macOS | Not supported for live capture |
+| Chromium browsers on macOS | Unsupported for live capture in current builds |
 
 Unsupported browsers can still review recordings, play audio, edit transcripts, manage speakers, use search, and administer Nojoin. They cannot start live capture.
+
+Current Nojoin builds intentionally block Chromium on macOS for live capture even if the browser exposes partial capture APIs there. The supported desktop path is the Windows or Linux shared-audio flow.
 
 ## What Nojoin Captures
 

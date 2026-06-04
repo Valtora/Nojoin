@@ -10,7 +10,7 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 - An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported.
 - Shared-audio live recording requires Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux.
 - Chrome on Android and iOS can start microphone-only live recordings.
-- Firefox, Safari, other mobile browsers, and Chromium browsers on macOS can review existing recordings but cannot start live capture.
+- Firefox, Safari, other mobile browsers, and Chromium browsers on macOS can review existing recordings but cannot start live capture. Current builds intentionally block macOS Chromium for recording.
 
 ## 1. Start the Stack
 

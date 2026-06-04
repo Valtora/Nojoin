@@ -98,10 +98,9 @@ a:hover {
 }
 
 .site-brand img {
-  width: 2.35rem;
-  height: 2.35rem;
-  border-radius: 16px;
-  box-shadow: 0 12px 28px rgba(255, 106, 19, 0.25);
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
 }
 
 .site-nav {
@@ -209,11 +208,15 @@ a:hover {
   background: linear-gradient(90deg, transparent, rgba(255, 106, 19, 0.42), transparent);
 }
 
-.markdown-body code {
+.markdown-body :not(pre) > code {
   color: #ffd39b;
   background: rgba(255, 106, 19, 0.1);
   border: 1px solid rgba(255, 106, 19, 0.12);
-  border-radius: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  padding: 0.14em 0.48em 0.22em;
+  line-height: 1.12;
+  vertical-align: baseline;
 }
 
 .markdown-body pre {
@@ -226,6 +229,24 @@ a:hover {
 .markdown-body pre code {
   border: 0;
   background: transparent;
+}
+
+.markdown-body .highlighter-rouge {
+  margin: 0.9rem 0 0;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #0b1120;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.markdown-body .highlighter-rouge div.highlight,
+.markdown-body .highlighter-rouge pre.highlight,
+.markdown-body .highlighter-rouge .highlight {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .markdown-body table {
@@ -289,7 +310,8 @@ a:hover {
 .markdown-body > div[align="center"]:first-child h1 {
   margin: 0;
   font-size: clamp(2.5rem, 5vw, 4.6rem);
-  line-height: 0.95;
+  line-height: 1.02;
+  padding-bottom: 0.12em;
 }
 
 .markdown-body > div[align="center"]:first-child h1 img {
@@ -302,6 +324,7 @@ a:hover {
 .markdown-body > div[align="center"]:first-child h1 span {
   display: inline-block;
   margin-top: 0.35rem;
+  padding-bottom: 0.08em;
   color: var(--text) !important;
   background: linear-gradient(135deg, #ffc054, #ff6a13 48%, #ff3d2e);
   -webkit-background-clip: text;
@@ -382,6 +405,22 @@ a:hover {
   border-radius: 22px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(11, 17, 32, 0.82);
+}
+
+.markdown-body h2#quick-start + ol > li > p:first-of-type {
+  display: flex;
+  align-items: center;
+  min-height: 2.4rem;
+  margin: 0;
+}
+
+.markdown-body h2#quick-start + ol > li > p + .highlighter-rouge,
+.markdown-body h2#quick-start + ol > li > p + pre {
+  margin-top: 0.9rem;
+}
+
+.markdown-body h2#quick-start + ol > li > *:last-child {
+  margin-bottom: 0;
 }
 
 .markdown-body h2#quick-start + ol > li::before {
