@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Nojoin microphone mark</title>
+  <desc id="desc">A rounded microphone icon with an orange to red gradient on a dark background.</desc>
+  <defs>
+    <linearGradient id="g" x1="28" y1="14" x2="101" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffb31a"/>
+      <stop offset="0.52" stop-color="#ff6a13"/>
+      <stop offset="1" stop-color="#ff3e2f"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0.4  0 0 1 0 0.1  0 0 0 0.35 0"/>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#0b1020"/>
+  <g filter="url(#glow)">
+    <path d="M64 16c-11.6 0-21 9.4-21 21v23c0 11.6 9.4 21 21 21s21-9.4 21-21V37c0-11.6-9.4-21-21-21Z" fill="url(#g)"/>
+    <path d="M41 58v9c0 12.7 10.3 23 23 23s23-10.3 23-23v-9" fill="none" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M64 90v16" fill="none" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M46 109h36" fill="none" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M55 38v22M64 30v38M73 40v20" fill="none" stroke="#0b1020" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M33 48v13M95 48v13" fill="none" stroke="url(#g)" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>

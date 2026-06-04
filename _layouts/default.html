@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="{{ site.lang | default: 'en-US' }}">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% seo %}
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}?v={{ site.time | date: '%s' }}">
+    {% include head-custom.html %}
+  </head>
+  <body class="{% if page.url == '/' %}page-home{% endif %}">
+    <div class="site-backdrop" aria-hidden="true"></div>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a class="site-brand" href="{{ '/' | relative_url }}">
+          <img src="{{ '/assets/images/nojoin-mark.svg' | relative_url }}" alt="Nojoin">
+          <span>Nojoin</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="{{ '/docs/' | relative_url }}">Docs</a>
+          <a href="{{ '/#quick-start' | relative_url }}">Quick Start</a>
+          <a href="{{ '/#documentation' | relative_url }}">Guides</a>
+          <a href="https://github.com/Valtora/Nojoin">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page-frame">
+      <article class="content-surface markdown-body">
+        {{ content }}
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <p>Self-hosted meeting transcription and notes without bots in the room.</p>
+        <div class="site-footer__links">
+          <a href="{{ '/docs/' | relative_url }}">Documentation</a>
+          <a href="https://github.com/Valtora/Nojoin">Repository</a>
+          <a href="https://ko-fi.com/valtorra">Support</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

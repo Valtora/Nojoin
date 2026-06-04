@@ -1,0 +1,9 @@
+title: Nojoin
+description: Self-hosted meeting transcription and notes without meeting bots.
+theme: jekyll-theme-cayman
+url: "https://www.nojoin.co.uk"
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
