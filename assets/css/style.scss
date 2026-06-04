@@ -33,6 +33,10 @@ html {
   scroll-behavior: smooth;
 }
 
+html:root {
+  scroll-padding-top: 7rem;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -210,12 +214,12 @@ a:hover {
 
 .markdown-body :not(pre) > code {
   color: #ffd39b;
-  background: rgba(255, 106, 19, 0.1);
-  border: 1px solid rgba(255, 106, 19, 0.12);
+  background: transparent;
+  border: 0;
   border-radius: 0;
-  display: inline-block;
-  padding: 0.14em 0.48em 0.22em;
-  line-height: 1.12;
+  display: inline;
+  padding: 0;
+  line-height: inherit;
   vertical-align: baseline;
 }
 
@@ -253,6 +257,57 @@ a:hover {
 .markdown-body pre.highlight {
   padding-left: 0.95rem;
   padding-right: 0.95rem;
+}
+
+.markdown-body .highlight,
+.markdown-body .highlight pre,
+.markdown-body pre code {
+  color: #d8deef;
+}
+
+.markdown-body .highlight .c,
+.markdown-body .highlight .c1,
+.markdown-body .highlight .cm {
+  color: #7e8aa8;
+}
+
+.markdown-body .highlight .k,
+.markdown-body .highlight .kd,
+.markdown-body .highlight .kn,
+.markdown-body .highlight .kp,
+.markdown-body .highlight .kr,
+.markdown-body .highlight .ow {
+  color: #ff9f5c;
+}
+
+.markdown-body .highlight .nb,
+.markdown-body .highlight .nf,
+.markdown-body .highlight .nt,
+.markdown-body .highlight .nv,
+.markdown-body .highlight .nx {
+  color: #ffd39b;
+}
+
+.markdown-body .highlight .s,
+.markdown-body .highlight .s1,
+.markdown-body .highlight .s2,
+.markdown-body .highlight .sb,
+.markdown-body .highlight .sh,
+.markdown-body .highlight .sx {
+  color: #7ad7ff;
+}
+
+.markdown-body .highlight .o,
+.markdown-body .highlight .p,
+.markdown-body .highlight .w {
+  color: #c6cee5;
+}
+
+.markdown-body h1[id],
+.markdown-body h2[id],
+.markdown-body h3[id],
+.markdown-body h4[id] {
+  scroll-margin-top: 7rem;
 }
 
 .markdown-body table {
