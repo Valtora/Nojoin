@@ -34,7 +34,7 @@ Windows:
 
 ### Browser Capture
 
-- A supported Chromium browser on Windows or Linux for manual shared-audio live-capture validation
+- Chrome on Windows, Linux, or macOS, or another supported desktop Chromium browser, for manual shared-audio live-capture validation
 - Chrome on Android or iOS for manual microphone-only mobile capture validation
 - Browser microphone permission for local smoke tests
 - PipeWire screen capture support when validating Linux shared-screen or system audio behavior
@@ -203,8 +203,8 @@ Browser capture code lives under `frontend/src/lib/capture/` and is exercised by
 
 When changing capture behavior, validate the relevant parts of this path:
 
-- Supported-browser gating for Chromium on Windows and Linux.
-- Unsupported-browser messaging for Firefox, Safari, mobile browsers other than Chrome, and Chromium browsers on macOS.
+- Supported-browser gating for desktop Chromium on Windows, Linux, and macOS.
+- Unsupported-browser messaging for Firefox, Safari, and mobile browsers other than Chrome.
 - Mobile Chrome microphone-only start, waveform, pause/resume, stop/finalize, and clear copy that shared app/tab/system audio is not captured.
 - Browser share picker flow for tab, window, and screen sharing.
 - Shared-audio track detection and missing-audio messaging.

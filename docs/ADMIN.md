@@ -93,9 +93,9 @@ Use **Settings > Updates** to see:
 
 ### Browser Capture Support
 
-- Shared-audio live recording requires a supported Chromium browser on Windows or Linux.
+- Shared-audio live recording requires Chrome on Windows, Linux, or macOS, or another supported desktop Chromium browser. Other Chromium-family browsers on macOS are best-effort.
 - Chrome on Android and iOS can start microphone-only live recordings.
-- Firefox, Safari, other mobile browsers, and Chromium browsers on macOS can review and administer Nojoin but cannot start live capture.
+- Firefox, Safari, and other mobile browsers can review and administer Nojoin but cannot start live capture.
 - Tab sharing with audio enabled is the recommended support path for browser-based meetings.
 - If local microphone audio is missing, ask the user to grant microphone permission and review **Settings > Capture**.
 - If remote participant audio is missing, ask the user to start again and enable shared audio in the browser picker.

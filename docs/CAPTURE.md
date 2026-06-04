@@ -8,7 +8,7 @@ Use this guide when you are preparing a browser for live recording, choosing wha
 
 Live capture has two browser modes:
 
-- **Shared-audio capture** on Chromium-family browsers on Windows and Linux. This captures the shared tab, window, or screen audio plus microphone audio.
+- **Shared-audio capture** on Chrome for Windows, Linux, and macOS, and on Chromium-family browsers for Windows and Linux. Other Chromium-family browsers on macOS are best-effort. This captures the shared tab, window, or screen audio plus microphone audio when the browser grants a shared-audio track.
 - **Microphone-only capture** on Chrome for Android and iOS. This records the phone microphone only; mobile browsers do not expose the shared tab, app, or system audio that Nojoin uses on desktop.
 
 | Browser or OS | Capture support |
@@ -18,16 +18,17 @@ Live capture has two browser modes:
 | Brave on Windows | Shared audio + microphone |
 | Arc on Windows | Shared audio + microphone |
 | Chrome, Edge, Brave, or Arc on Linux with PipeWire screen capture | Shared audio + microphone |
+| Chrome on macOS | Shared audio + microphone |
+| Other Chromium browsers on macOS | Best-effort shared audio + microphone |
 | Chrome on Android | Microphone-only |
 | Chrome on iOS | Microphone-only |
 | Firefox | Not supported for live capture |
 | Safari | Not supported for live capture |
 | Other mobile browsers | Not supported for live capture |
-| Chromium browsers on macOS | Unsupported for live capture in current builds |
 
 Unsupported browsers can still review recordings, play audio, edit transcripts, manage speakers, use search, and administer Nojoin. They cannot start live capture.
 
-Current Nojoin builds intentionally block Chromium on macOS for live capture even if the browser exposes partial capture APIs there. The supported desktop path is the Windows or Linux shared-audio flow.
+Chrome on macOS is a supported desktop capture path. Tab audio is the most reliable macOS option. Window and entire-screen audio should work on current Chrome and current macOS when the browser picker exposes and grants the audio toggle, but older browser or OS versions may return video without a shared-audio track. Other Chromium-family browsers on macOS are allowed by Nojoin but treated as best-effort because their picker behavior can lag Chrome.
 
 ## What Nojoin Captures
 
@@ -44,7 +45,7 @@ For support and debugging, browser recording segments are numbered from `0` and 
 
 ## Before Your First Recording
 
-1. Open Nojoin in Chrome, Edge, Brave, or Arc on Windows or Linux for shared-audio capture, or Chrome on Android/iOS for microphone-only capture.
+1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio capture, in Chrome, Edge, Brave, or Arc on Windows or Linux, or in Chrome on Android/iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
 2. Confirm your meeting platform is open in a browser tab if you want reliable tab audio capture.
 3. Check that your microphone is available to the browser.
 4. Open **Settings > Capture** if you need to choose a microphone or adjust system and microphone gain.
@@ -83,12 +84,15 @@ Window sharing can work, but some Chromium builds and operating systems do not p
 
 Entire-screen sharing is useful when the meeting audio comes from a native app or from multiple windows. On Windows, enable **Also share system audio** in the picker. On Linux, entire-screen audio depends on the browser, desktop environment, and PipeWire support.
 
+On macOS, entire-screen and window audio should work on current Chrome and current macOS when Chrome offers an audio toggle in the picker. If the toggle is absent or Nojoin warns that no shared-audio track was granted, update Chrome and macOS, then retry with tab sharing.
+
 ## Browser Picker Audio Options
 
 The exact wording is browser-dependent:
 
 - Chrome on Windows usually shows **Also share system audio** for entire-screen sharing and **Share tab audio** for tab sharing.
 - Edge on Windows follows the same general behavior as Chrome.
+- Chrome on macOS usually offers reliable tab audio. Window and entire-screen audio should work on latest Chrome and macOS when the picker shows the audio toggle.
 - Brave may require shields or site settings to allow capture prompts on hardened profiles.
 - Linux Chromium builds require working desktop capture through PipeWire for screen capture. PulseAudio-only environments are expected to fail for system or screen audio.
 
@@ -148,6 +152,10 @@ Confirm the waveform shows speech activity. Meeting Edge only updates after Nojo
 
 Use a recent Chromium-family browser and a desktop session with PipeWire screen capture. PulseAudio-only screen capture is not supported for reliable system audio.
 
+### macOS shared audio does not work
+
+Use current Chrome and current macOS, then choose the meeting tab and enable the audio option in the picker. If window or entire-screen audio is missing, retry with tab sharing first. Other Chromium-family browsers on macOS are best-effort, so switch to Chrome when troubleshooting.
+
 ### The browser asks for permissions again on resume
 
 That is expected. Browsers do not let Nojoin silently recreate shared tab, window, screen, or microphone capture after a reload, close, or pause that released the previous tracks.
@@ -158,7 +166,7 @@ Use the resume-or-discard modal. Starting a second recording while a paused uplo
 
 ### Unsupported browser notice appears
 
-Open Nojoin in a supported Chromium browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording. Review and playback still work in unsupported browsers, but live recording does not.
+Open Nojoin in Chrome on desktop for shared-audio recording, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording. Review and playback still work in unsupported browsers, but live recording does not.
 
 ## Privacy Notes
 

@@ -63,8 +63,8 @@ The primary user interface for interacting with the system.
 
 Live recording is owned by the web client through browser capture APIs.
 
-- **Supported capture browsers:** Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux for shared-audio capture, plus Chrome on Android and iOS for microphone-only capture.
-- **Unsupported capture browsers:** Firefox, Safari, other mobile browsers, and Chromium browsers on macOS. These environments can still review, play back, edit, search, and administer recordings.
+- **Supported capture browsers:** Chrome on Windows, Linux, and macOS for shared-audio capture; Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux; plus Chrome on Android and iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
+- **Unsupported capture browsers:** Firefox, Safari, and other mobile browsers. These environments can still review, play back, edit, search, and administer recordings.
 - **Shared audio source:** `getDisplayMedia` captures tab, window, or screen audio when the user enables the browser's audio-sharing option.
 - **Microphone source:** `getUserMedia` captures the local microphone.
 - **Mixing:** The browser combines shared audio and microphone audio with Web Audio gain controls and analyser taps on desktop; mobile Chrome records microphone-only audio.
@@ -80,12 +80,13 @@ Live recording is owned by the web client through browser capture APIs.
 | Brave / Windows | Shared audio + microphone |
 | Arc / Windows | Shared audio + microphone |
 | Chromium-family / Linux with PipeWire | Shared audio + microphone |
+| Chrome / macOS | Shared audio + microphone |
+| Other Chromium-family / macOS | Best-effort shared audio + microphone |
 | Chrome / Android | Microphone-only |
 | Chrome / iOS | Microphone-only |
 | Firefox / any OS | Unsupported notice |
 | Safari / any OS | Unsupported notice |
 | Other mobile browsers | Unsupported notice |
-| Chromium-family / macOS | Unsupported notice |
 
 ### 2.4 Security
 
@@ -231,8 +232,8 @@ The system provides the following core capabilities:
 - **Browser APIs:** `getDisplayMedia`, `getUserMedia`, Web Audio, and MediaRecorder. Mobile Chrome uses `getUserMedia` and MediaRecorder without `getDisplayMedia`.
 - **Frontend modules:** Capture logic lives under `frontend/src/lib/capture/`.
 - **Media transport:** WebM/Opus, Ogg/Opus, or MP4 audio during live recording, transcoded by the worker to 16 kHz, two-channel WAV segments with shared/system audio on channel 0 when available and microphone audio on channel 1.
-- **Supported capture platforms:** Chromium-family browsers on Windows and Linux for shared-audio capture; Chrome on Android and iOS for microphone-only capture.
-- **Unsupported capture platforms:** Firefox, Safari, other mobile browsers, and Chromium browsers on macOS.
+- **Supported capture platforms:** Chrome on Windows, Linux, and macOS for shared-audio capture; Chromium-family browsers on Windows and Linux for shared-audio capture; Chrome on Android and iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
+- **Unsupported capture platforms:** Firefox, Safari, and other mobile browsers.
 - **Validation:** Manual browser matrix testing is required before release sign-off.
 
 ### 4.4 Deployment & Configuration

@@ -30,7 +30,14 @@ describe("capture source picker", () => {
     expect(sources.mode).toBe("shared_audio");
     expect(sources.displayStream).toBe(displayStream);
     expect(sources.microphoneStream).toBe(microphoneStream);
-    expect(mediaDevices.getDisplayMedia).toHaveBeenCalledTimes(1);
+    expect(mediaDevices.getDisplayMedia).toHaveBeenCalledWith({
+      video: true,
+      audio: true,
+      systemAudio: "include",
+      windowAudio: "system",
+      selfBrowserSurface: "include",
+      surfaceSwitching: "include",
+    });
     expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
   });
 

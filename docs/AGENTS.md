@@ -58,7 +58,7 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
 ### Browser Capture
 
 - **Structure**: Browser capture modules live under `frontend/src/lib/capture/`.
-- **Platform Support**: Chrome, Edge, Brave, Arc, and other Chromium-family browsers on Windows and Linux support shared-audio live capture. Chrome on Android and iOS supports microphone-only live capture. Firefox, Safari, other mobile browsers, and Chromium browsers on macOS are not supported for live capture.
+- **Platform Support**: Chrome on Windows, Linux, and macOS supports shared-audio live capture. Edge, Brave, Arc, and other Chromium-family browsers support shared-audio capture on Windows and Linux, with macOS treated as best-effort. Chrome on Android and iOS supports microphone-only live capture. Firefox, Safari, and other mobile browsers are not supported for live capture.
 - **Capture Strategy**:
   - `getDisplayMedia` captures the user-selected tab, window, or screen and its shared audio track when the browser grants one on desktop.
   - `getUserMedia` captures the local microphone. On mobile Chrome, this is the only live capture source.

@@ -6,7 +6,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 
 ## First Run
 
-1. Open Nojoin in a supported Chromium browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording.
+1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording.
 2. Sign in with your account.
 3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Use the **Meet Now** card on the dashboard and click **Start Meeting** to create a short test recording.
@@ -14,7 +14,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
 7. Stop the recording, open it in the `/recordings` workspace, and wait for processing to complete.
 
-Firefox, Safari, mobile browsers other than Chrome, and Chromium browsers on macOS can review recordings but cannot start live capture. Current builds intentionally block macOS Chromium for recording even if the browser exposes some capture primitives there. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
+Firefox, Safari, and mobile browsers other than Chrome can review recordings but cannot start live capture. Chrome on macOS is supported for recording; other Chromium-family browsers on macOS are best-effort. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
 
 ## Tours And Onboarding
 
@@ -191,7 +191,7 @@ Settings are grouped by task.
 
 ## Troubleshooting
 
-- If live capture is unavailable, switch to a supported Chromium browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording.
+- If live capture is unavailable, switch to Chrome on desktop for shared-audio recording or Chrome on Android/iOS for microphone-only recording.
 - If remote participants are missing, start again and enable shared audio in the browser picker.
 - If the microphone is missing, grant microphone permission and check **Settings > Capture**.
 - If Nojoin reports a paused recording, resume or discard it before starting another capture.

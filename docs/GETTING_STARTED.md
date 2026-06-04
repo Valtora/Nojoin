@@ -8,9 +8,9 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 
 - Docker must be installed.
 - An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported.
-- Shared-audio live recording requires Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux.
+- Shared-audio live recording requires Chrome on Windows, Linux, or macOS, or Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux. Other Chromium-family browsers on macOS are best-effort.
 - Chrome on Android and iOS can start microphone-only live recordings.
-- Firefox, Safari, other mobile browsers, and Chromium browsers on macOS can review existing recordings but cannot start live capture. Current builds intentionally block macOS Chromium for recording.
+- Firefox, Safari, and other mobile browsers can review existing recordings but cannot start live capture.
 
 ## 1. Start the Stack
 
@@ -69,7 +69,7 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 ## 4. Prepare Browser Capture
 
-1. Open Nojoin in Chrome, Edge, Brave, Arc, or another supported Chromium-family browser on Windows or Linux for shared-audio capture, or Chrome on Android/iOS for microphone-only capture.
+1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio capture, in another supported Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
 2. Open your meeting in a browser tab when possible. Tab sharing is the most reliable way to capture meeting audio.
 3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Keep the Nojoin tab open during live recording.

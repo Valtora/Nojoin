@@ -4,11 +4,9 @@ import type { CaptureUnsupportedReason } from "@/lib/capture/shared";
 
 const REASON_COPY: Record<CaptureUnsupportedReason | "default", string> = {
   firefox:
-    "Recording capture is not available in Firefox. Use Chrome, Edge, Brave, or Arc on Windows or Linux.",
+    "Recording capture is not available in Firefox. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.",
   safari:
-    "Recording capture is not available in Safari. Use Chrome, Edge, Brave, or Arc on Windows or Linux.",
-  macos_chromium:
-    "Recording capture is not available on macOS Chromium. Open the meeting in Chromium on Windows or Linux instead.",
+    "Recording capture is not available in Safari. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.",
   mobile:
     "Recording capture is not available on mobile browsers.",
   unknown:

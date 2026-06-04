@@ -71,6 +71,7 @@ export const pickCaptureSource = async (
         video: true,
         audio: true,
         systemAudio: "include",
+        windowAudio: "system",
         selfBrowserSurface: "include",
         surfaceSwitching: "include",
       } as DisplayMediaStreamOptions & Record<string, unknown>);

@@ -70,13 +70,13 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 7. Complete the first-run wizard.
 
-8. Open Nojoin in Chrome, Edge, Brave, or another Chromium-family browser on Windows or Linux for shared-audio recording, or Chrome on Android/iOS for microphone-only recording, then start a short test meeting. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
+8. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, in another Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only recording, then start a short test meeting. Other Chromium-family browsers on macOS are best-effort. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
 
 Notes:
 
 - An NVIDIA GPU is strongly recommended for faster processing.
 - CPU-only mode is supported but it is much slower.
-- Browser capture supports shared-audio recording on Chromium-family browsers on Windows and Linux, plus microphone-only recording on Chrome for Android and iOS.
+- Browser capture supports shared-audio recording on Chrome for Windows, Linux, and macOS, Chromium-family browsers on Windows and Linux, and best-effort macOS Chromium-family browsers, plus microphone-only recording on Chrome for Android and iOS.
 - Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
 - For remote access, reverse proxy setup, calendar OAuth, updates, and backup guidance, use the documentation below.
 

@@ -47,10 +47,8 @@ const isChromeMobileUserAgent = (userAgent: string) =>
     !/edg|opr|firefox/i.test(userAgent)) ||
   /crios/i.test(userAgent);
 
-const isMacPlatform = (platform: string) => /mac/i.test(platform);
-
-const isWindowsOrLinuxPlatform = (platform: string) =>
-  /win|windows|linux/i.test(platform);
+const isDesktopCapturePlatform = (platform: string) =>
+  /win|windows|linux|mac/i.test(platform);
 
 const hasChromiumBrand = (brands: UserAgentBrand[] | undefined) => {
   if (!brands || brands.length === 0) {
@@ -100,8 +98,7 @@ export const detectCaptureSupport = (
   const safari = isSafariUserAgent(userAgent);
   const chromium =
     hasChromiumBrand(userAgentData?.brands) || isChromiumUserAgent(userAgent);
-  const macPlatform = isMacPlatform(platform);
-  const supportedPlatform = isWindowsOrLinuxPlatform(platform);
+  const supportedPlatform = isDesktopCapturePlatform(platform);
   const hasDisplayMedia = Boolean(mediaDevices?.getDisplayMedia);
   const hasUserMedia = Boolean(mediaDevices?.getUserMedia);
   const hasMediaRecorder = Boolean(environment.mediaRecorderCtor);
@@ -123,10 +120,6 @@ export const detectCaptureSupport = (
 
   if (safari) {
     return { supported: false, reason: "safari" };
-  }
-
-  if (chromium && macPlatform) {
-    return { supported: false, reason: "macos_chromium" };
   }
 
   if (

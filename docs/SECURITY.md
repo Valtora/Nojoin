@@ -63,7 +63,7 @@ Live recording is initiated and controlled by the authenticated web app.
 - Browser recording endpoints use the normal Secure HttpOnly session cookie and enforce recording ownership on every init, segment, pause, resume, discard, and finalize request.
 - Unsafe cookie-authenticated requests still require the trusted Nojoin web origin through the origin checks described above.
 - Browser capture permissions are mediated by the browser. Nojoin cannot silently capture screen, tab, system audio, or microphone input without the user granting permission.
-- The browser share picker determines the visible surface and whether shared audio is included on desktop. Nojoin validates that an audio track exists before desktop shared-audio capture proceeds. Mobile Chrome capture is microphone-only and does not expose tab, app, or system audio to Nojoin.
+- The browser share picker determines the visible surface and whether shared audio is included on desktop. Nojoin warns when the browser does not grant a shared-audio track and then records microphone audio only. Mobile Chrome capture is microphone-only and does not expose tab, app, or system audio to Nojoin.
 - A paused recording blocks new capture starts for that user until it is resumed or discarded, preventing overlapping segment streams.
 - Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`; uploaded segments remain server-side and only the current in-memory tail is dropped.
 - Switching focus to another tab, window, or application does not pause recording.

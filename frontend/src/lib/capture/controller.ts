@@ -99,11 +99,9 @@ const formatCaptureError = (error: unknown) => {
 const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => {
   switch (reason) {
     case "firefox":
-      return "Recording capture is not supported in Firefox. Use a Chromium browser on Windows or Linux.";
+      return "Recording capture is not supported in Firefox. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
     case "safari":
-      return "Recording capture is not supported in Safari. Use a Chromium browser on Windows or Linux.";
-    case "macos_chromium":
-      return "Recording capture is not supported on macOS Chromium. Use Windows or Linux for native browser capture.";
+      return "Recording capture is not supported in Safari. Use Chrome on desktop or Chrome on Android/iOS for microphone-only capture.";
     case "mobile":
       return "Recording capture is not supported on mobile browsers.";
     default:

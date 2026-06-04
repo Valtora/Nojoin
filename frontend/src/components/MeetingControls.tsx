@@ -60,7 +60,7 @@ export default function MeetingControls({
             buttonMode: "wait",
             buttonDisabled: true,
             buttonTooltip:
-              "Use a Chromium browser on Windows or Linux for browser capture.",
+              "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
           }
         : hasPausedBlock
           ? {

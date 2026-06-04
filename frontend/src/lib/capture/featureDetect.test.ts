@@ -27,6 +27,38 @@ describe("capture feature detection", () => {
     ).toEqual({ supported: true, mode: "shared_audio" });
   });
 
+  it("detects Chrome on macOS as shared-audio capture", () => {
+    expect(
+      detectCaptureSupport({
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+        userAgentData: {
+          brands: [{ brand: "Google Chrome", version: "141" }],
+          mobile: false,
+          platform: "macOS",
+        },
+        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
+        mediaRecorderCtor,
+      }),
+    ).toEqual({ supported: true, mode: "shared_audio" });
+  });
+
+  it("allows non-Chrome Chromium browsers on macOS as best-effort shared-audio capture", () => {
+    expect(
+      detectCaptureSupport({
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/537.36 (KHTML, like Gecko) Edg/141.0.0.0 Safari/537.36",
+        userAgentData: {
+          brands: [{ brand: "Microsoft Edge", version: "141" }],
+          mobile: false,
+          platform: "macOS",
+        },
+        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
+        mediaRecorderCtor,
+      }),
+    ).toEqual({ supported: true, mode: "shared_audio" });
+  });
+
   it.each([
     {
       name: "Firefox",
@@ -47,21 +79,6 @@ describe("capture feature detection", () => {
         mediaRecorderCtor,
       },
       expected: { supported: false, reason: "safari" },
-    },
-    {
-      name: "macOS Chromium",
-      environment: {
-        userAgent:
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-        userAgentData: {
-          brands: [{ brand: "Chromium", version: "136" }],
-          mobile: false,
-          platform: "macOS",
-        },
-        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
-      },
-      expected: { supported: false, reason: "macos_chromium" },
     },
     {
       name: "unsupported mobile browser",

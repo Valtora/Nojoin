@@ -9,7 +9,7 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 - **Recommended:** Linux or Windows with an NVIDIA GPU and CUDA 12.x support.
 - **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote.
 - **macOS hosting:** Not recommended for the backend because Docker on macOS cannot expose Apple Silicon GPU acceleration to the containers.
-- **Capture browser:** Chrome, Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux for shared-audio live recording, or Chrome on Android/iOS for microphone-only live recording.
+- **Capture browser:** Chrome on Windows, Linux, or macOS for shared-audio live recording; Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux; or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort.
 
 ## Core Requirements
 
@@ -45,7 +45,7 @@ The repository does not ship a separate Docker Compose development override.
    ```
 
 8. Open `https://localhost:14443`.
-9. Use a supported Chromium browser on Windows or Linux for shared-audio live recording, or Chrome on Android/iOS for microphone-only live recording. Other browsers can still review and administer Nojoin.
+9. Use Chrome on Windows, Linux, or macOS for shared-audio live recording, another Chromium-family browser on Windows or Linux, or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort. Other browsers can still review and administer Nojoin.
 
 Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
 If you add or change it, redeploy the stack before using the setup wizard.

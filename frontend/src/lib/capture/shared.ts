@@ -3,7 +3,6 @@ import type { Recording, RecordingId } from "@/types";
 export type CaptureUnsupportedReason =
   | "firefox"
   | "safari"
-  | "macos_chromium"
   | "mobile"
   | "unknown";
 
