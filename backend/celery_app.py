@@ -5,7 +5,7 @@ import logging
 import redis
 from celery import Celery, bootsteps
 from backend.core.audio_setup import setup_audio_environment
-from celery.signals import setup_logging, worker_ready
+from celery.signals import setup_logging, task_postrun, worker_ready
 from backend.utils.logging_config import setup_logging as configure_logging
 from backend.utils.deployment_warnings import log_deployment_warnings
 
@@ -25,6 +25,53 @@ def config_loggers(*args, **kwargs):
 @worker_ready.connect
 def log_placeholder_secret_warnings_on_worker_start(**kwargs):
     log_deployment_warnings(startup_path="worker startup", logger_instance=logger)
+
+
+def release_worker_model_caches() -> None:
+    try:
+        import sys
+
+        from backend.utils.config_manager import config_manager
+
+        if config_manager.get("keep_models_loaded", False):
+            return
+
+        logger.info("Releasing worker model caches (keep_models_loaded=False)...")
+
+        loaded_release_hooks = (
+            ("backend.processing.transcribe", "release_model_cache"),
+            ("backend.processing.diarize", "release_pipeline_cache"),
+            ("backend.processing.embedding_core", "release_embedding_model_cache"),
+            ("backend.processing.segmentation_refinement", "release_segmentation_model_cache"),
+            ("backend.processing.text_embedding", "release_embedding_model"),
+        )
+        for module_name, release_name in loaded_release_hooks:
+            module = sys.modules.get(module_name)
+            if module is None:
+                continue
+            release = getattr(module, release_name, None)
+            if callable(release):
+                release()
+
+        import gc
+        gc.collect()
+
+        torch_module = sys.modules.get("torch")
+        if torch_module is not None:
+            try:
+                if torch_module.cuda.is_available():
+                    torch_module.cuda.empty_cache()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("CUDA cache cleanup skipped: %s", exc)
+
+        logger.info("Worker model caches released.")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to release worker model caches: %s", exc)
+
+
+@task_postrun.connect
+def release_model_caches_after_task(**kwargs):
+    release_worker_model_caches()
 
 celery_app = Celery(
     "nojoin_worker",

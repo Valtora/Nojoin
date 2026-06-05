@@ -1103,11 +1103,19 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
                 from backend.processing.diarize import release_pipeline_cache
                 release_pipeline_cache()
                 
-                # 3. Text Embeddings
+                # 3. Speaker Embeddings
+                from backend.processing.embedding_core import release_embedding_model_cache
+                release_embedding_model_cache()
+
+                # 4. Segmentation Refinement
+                from backend.processing.segmentation_refinement import release_segmentation_model_cache
+                release_segmentation_model_cache()
+
+                # 5. Text Embeddings
                 from backend.processing.text_embedding import release_embedding_model
                 release_embedding_model()
                 
-                # 4. Garbage Collection
+                # 6. Garbage Collection
                 import gc
                 gc.collect()
                 if torch.cuda.is_available():

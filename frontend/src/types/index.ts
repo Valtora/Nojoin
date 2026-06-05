@@ -526,18 +526,6 @@ export interface VoiceprintApplyResult {
   message: string | null;
 }
 
-export interface DownloadProgress {
-  status: string;
-  progress: number;
-  model_name: string;
-  file_name: string;
-  downloaded_bytes: number;
-  total_bytes: number;
-  in_progress: boolean;
-  message?: string;
-  stage?: string;
-}
-
 export interface BatchVoiceprintResult {
   diarization_label: string;
   speaker_name: string;
@@ -573,6 +561,16 @@ export interface SystemModelStatus {
   pyannote: ModelStatusInfo;
   embedding: ModelStatusInfo;
   [key: string]: ModelStatusInfo;
+}
+
+export interface DownloadProgress {
+  progress: number;
+  message: string;
+  speed?: string | null;
+  eta?: string | null;
+  status: "idle" | "downloading" | "complete" | "error";
+  stage?: string | null;
+  in_progress: boolean;
 }
 
 export type AdminHealthCheckStatus =

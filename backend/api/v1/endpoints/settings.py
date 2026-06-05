@@ -7,6 +7,7 @@ import logging
 from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
+from backend.services.model_preparation import enqueue_model_preparation
 from backend.utils.config_manager import (
     APP_THEMES,
     INSTALL_WIDE_AI_SETTING_KEYS,
@@ -269,6 +270,23 @@ async def _save_user_settings(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+
+    model_keys = {"whisper_model_size", "transcription_backend", "parakeet_model", "canary_model"}
+    if is_admin and model_keys.intersection(update_data):
+        prepared_settings = dict(current_settings)
+        try:
+            enqueue_model_preparation(
+                whisper_model_size=prepared_settings.get("whisper_model_size"),
+                transcription_backend=prepared_settings.get("transcription_backend"),
+                parakeet_model=prepared_settings.get("parakeet_model"),
+                canary_model=prepared_settings.get("canary_model"),
+                include_core=(
+                    "whisper_model_size" in update_data
+                    or update_data.get("transcription_backend") == "whisper"
+                ),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("Failed to queue model preparation after settings update: %s", e, exc_info=True)
 
     return await _merge_settings(current_user.settings, db)
 

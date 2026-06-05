@@ -5,15 +5,14 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   setupSystem,
-  downloadModels,
   login,
   validateLLM,
   validateHF,
-  getDownloadProgress,
   listModels,
   checkFFmpeg,
   getInitialConfig,
   getCurrentUser,
+  getDownloadProgress,
 } from "@/lib/api";
 import {
   Loader2,
@@ -30,7 +29,7 @@ export default function SetupPage() {
   const router = useRouter();
   const bootstrapPasswordRef = useRef("");
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState(0); // 0: Legal, 1: Account, 2: LLM, 3: HuggingFace, 4: Download
+  const [step, setStep] = useState(0); // 0: Legal, 1: Account, 2: LLM, 3: HuggingFace, 4: Complete
   const [initialConfigLoaded, setInitialConfigLoaded] = useState(false);
 
   // Form Data
@@ -64,14 +63,12 @@ export default function SetupPage() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [llmSkipped, setLlmSkipped] = useState(false);
   const [modelsFetched, setModelsFetched] = useState(false);
-
-  // Download State
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadStage, setDownloadStage] = useState("");
-  const [downloadMessage, setDownloadMessage] = useState(
-    "Checking download status...",
+  const [modelPreparationProgress, setModelPreparationProgress] = useState(0);
+  const [modelPreparationMessage, setModelPreparationMessage] = useState(
+    "Preparing transcription and speaker models...",
   );
-  const [downloadComplete, setDownloadComplete] = useState(false);
+  const [modelPreparationStage, setModelPreparationStage] = useState<string | null>(null);
+  const [modelPreparationComplete, setModelPreparationComplete] = useState(false);
 
   // Modals
   const [showSkipLLMModal, setShowSkipLLMModal] = useState(false);
@@ -363,8 +360,39 @@ export default function SetupPage() {
     await createAccountAndStartDownload();
   };
 
+  const waitForModelPreparation = async () => {
+    const startedAt = Date.now();
+    const timeoutMs = 30 * 60 * 1000;
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const progress = await getDownloadProgress();
+      setModelPreparationProgress(progress.progress);
+      setModelPreparationMessage(progress.message);
+      setModelPreparationStage(progress.stage || null);
+
+      if (progress.status === "complete") {
+        setModelPreparationProgress(100);
+        setModelPreparationComplete(true);
+        return;
+      }
+
+      if (progress.status === "error") {
+        throw new Error(progress.message || "Model preparation failed.");
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    throw new Error("Model preparation timed out. Check the worker logs and model cache status.");
+  };
+
   const createAccountAndStartDownload = async () => {
     setStep(4);
+    setModelPreparationComplete(false);
+    setModelPreparationProgress(0);
+    setModelPreparationMessage("Preparing transcription and speaker models...");
+    setModelPreparationStage("queued");
+    let loggedIn = false;
 
     try {
       // 1. Create Admin Account & Save Settings (Credentials only saved in .env on backend)
@@ -376,9 +404,9 @@ export default function SetupPage() {
 
       // 2. Login
       await login(formData.username, formData.password);
+      loggedIn = true;
 
-      // 3. Start Download
-      startModelDownload();
+      await waitForModelPreparation();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 
@@ -389,76 +417,13 @@ export default function SetupPage() {
           "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
         );
       } else {
-        setError(err.response?.data?.detail || "Setup failed. Please try again.");
+        setError(err.response?.data?.detail || err.message || "Setup failed. Please try again.");
       }
-      setStep(3); // Go back
+
+      if (!loggedIn) {
+        setStep(3); // Go back only if the account/login did not finish.
+      }
     }
-  };
-
-  // --- Step 4: Download ---
-  const startModelDownload = async () => {
-    setDownloadMessage("Checking download status...");
-
-    try {
-      // Check existing progress
-      const sharedProgress = await getDownloadProgress();
-      if (sharedProgress.status === "complete") {
-        completeSetupAndRedirect();
-        return;
-      }
-
-      if (sharedProgress.in_progress) {
-        pollDownloadProgress();
-        return;
-      }
-
-      // Start new download
-      await downloadModels({
-        hf_token: formData.hf_token,
-        whisper_model_size: "turbo", // Default
-      });
-
-      pollDownloadProgress();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
-      console.error("Download start failed:", err);
-      setDownloadMessage(`Error starting download: ${err.message}`);
-    }
-  };
-
-  const pollDownloadProgress = () => {
-    const interval = setInterval(async () => {
-      try {
-        const progress = await getDownloadProgress();
-
-        if (progress.status === "complete") {
-          clearInterval(interval);
-          completeSetupAndRedirect();
-        } else if (progress.status === "error") {
-          clearInterval(interval);
-          setDownloadMessage(`Download failed: ${progress.message}`);
-        } else {
-          setDownloadProgress(progress.progress || 0);
-          setDownloadStage(progress.stage || "");
-          setDownloadMessage(progress.message || "Downloading...");
-        }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (err: any) {
-        console.error("Polling error:", err);
-      }
-    }, 1000);
-  };
-
-  const completeSetupAndRedirect = () => {
-    setDownloadProgress(100);
-    setDownloadStage("complete");
-    setDownloadMessage("All models ready!");
-    setDownloadComplete(true);
-    // Removed automatic redirect
   };
 
   const handleCompleteSetup = () => {
@@ -974,7 +939,7 @@ export default function SetupPage() {
                       Hugging Face Integration
                     </h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                      Speaker identification and diarization model downloads
+                      Speaker identification and diarization model preparation
                     </p>
                   </div>
 
@@ -991,7 +956,7 @@ export default function SetupPage() {
                   </div>
 
                   <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-xs text-blue-800 dark:text-blue-200">
-                    Nojoin will use this token during setup to download Pyannote speaker diarization models so you can identify different speakers in your meetings.
+                    Nojoin will use this token to prepare Pyannote speaker diarization and voice embedding models before your first recording.
                   </div>
 
                   <div className="flex gap-3 mt-6">
@@ -1008,238 +973,61 @@ export default function SetupPage() {
             </div>
           )}
 
-          {/* Step 4: Download */}
+          {/* Step 4: Complete */}
           {step === 4 && (
             <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {downloadComplete ? "Setup Complete!" : "Downloading Models"}
-                </h2>
-                <p className="text-gray-500 dark:text-gray-400 text-sm">
-                  {downloadMessage}
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {/* Whisper */}
-                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <div className="shrink-0">
-                    {["parakeet", "canary", "pyannote", "embedding", "complete"].includes(
-                      downloadStage,
-                    ) ? (
-                      <CheckCircle className="w-6 h-6 text-green-500" />
-                    ) : downloadStage === "whisper" ||
-                      downloadStage === "whisper_loading" ? (
-                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between mb-1">
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        Transcription Model
-                      </h3>
-                      {downloadStage === "whisper" && (
-                        <span className="text-xs text-orange-600 font-medium">
-                          {Math.round(downloadProgress)}%
-                        </span>
-                      )}
-                      {downloadStage === "whisper_loading" && (
-                        <span className="text-xs text-orange-600 font-medium">
-                          Loading...
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      OpenAI Whisper (Turbo)
+              {modelPreparationComplete ? (
+                <>
+                  <div className="text-center mb-6">
+                    <CheckCircle className="mx-auto mb-4 h-12 w-12 text-green-500" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Setup Complete
+                    </h2>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">
+                      Transcription, diarization, and voice embedding models are ready for your first recording.
                     </p>
+                  </div>
 
-                    {/* Download Bar */}
-                    {(downloadStage === "whisper" ||
-                      downloadStage === "whisper_loading") && (
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
-                        <div
-                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
-                          style={{
-                            width:
-                              downloadStage === "whisper_loading"
-                                ? "100%"
-                                : `${downloadProgress}%`,
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {/* Loading Bar */}
-                    {downloadStage === "whisper_loading" && (
-                      <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                        <div className="flex justify-between mb-1">
-                          <span className="text-xs text-gray-500">
-                            Loading into memory...
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 overflow-hidden">
-                          <div className="bg-orange-400/50 h-1.5 rounded-full w-full animate-pulse" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Parakeet */}
-                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <div className="shrink-0">
-                    {["canary", "pyannote", "embedding", "complete"].includes(
-                      downloadStage,
-                    ) ? (
-                      <CheckCircle className="w-6 h-6 text-green-500" />
-                    ) : downloadStage === "parakeet" ? (
-                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between mb-1">
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        Parakeet ASR Model
-                      </h3>
-                      {downloadStage === "parakeet" && (
-                        <span className="text-xs text-orange-600 font-medium">
-                          {downloadProgress > 0 ? `${Math.round(downloadProgress)}%` : "Loading..."}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">NVIDIA FastConformer (0.6B)</p>
-                    {downloadStage === "parakeet" && (
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
-                        <div
-                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
-                          style={{
-                            width: downloadProgress > 0 ? `${downloadProgress}%` : "100%",
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Canary */}
-                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <div className="shrink-0">
-                    {["pyannote", "embedding", "complete"].includes(
-                      downloadStage,
-                    ) ? (
-                      <CheckCircle className="w-6 h-6 text-green-500" />
-                    ) : downloadStage === "canary" ? (
-                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between mb-1">
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        Canary ASR Model
-                      </h3>
-                      {downloadStage === "canary" && (
-                        <span className="text-xs text-orange-600 font-medium">
-                          {downloadProgress > 0 ? `${Math.round(downloadProgress)}%` : "Loading..."}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">NVIDIA Canary (1B)</p>
-                    {downloadStage === "canary" && (
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
-                        <div
-                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
-                          style={{
-                            width: downloadProgress > 0 ? `${downloadProgress}%` : "100%",
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Pyannote */}
-                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <div className="shrink-0">
-                    {["embedding", "complete"].includes(downloadStage) ? (
-                      <CheckCircle className="w-6 h-6 text-green-500" />
-                    ) : downloadStage === "pyannote" ? (
-                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between mb-1">
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        Speaker Diarization
-                      </h3>
-                      {downloadStage === "pyannote" && (
-                        <span className="text-xs text-orange-600 font-medium">
-                          {Math.round(downloadProgress)}%
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">Pyannote Audio</p>
-                    {downloadStage === "pyannote" && (
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
-                        <div
-                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
-                          style={{ width: `${downloadProgress}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Embedding */}
-                <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-700">
-                  <div className="shrink-0">
-                    {downloadStage === "complete" ? (
-                      <CheckCircle className="w-6 h-6 text-green-500" />
-                    ) : downloadStage === "embedding" ? (
-                      <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full border-2 border-gray-200 dark:border-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between mb-1">
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        Voice Embedding
-                      </h3>
-                      {downloadStage === "embedding" && (
-                        <span className="text-xs text-orange-600 font-medium">
-                          {Math.round(downloadProgress)}%
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">SpeechBrain</p>
-                    {downloadStage === "embedding" && (
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mt-2">
-                        <div
-                          className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
-                          style={{ width: `${downloadProgress}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {downloadComplete && (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 text-center">
                   <button
                     onClick={handleCompleteSetup}
                     className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
                   >
                     Complete Setup <ArrowRight className="w-5 h-5" />
                   </button>
+                </>
+              ) : (
+                <div className="space-y-5">
+                  <div className="text-center">
+                    <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-orange-500" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Preparing Models
+                    </h2>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">
+                      {modelPreparationMessage}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div
+                        className="h-full rounded-full bg-orange-600 transition-all"
+                        style={{ width: `${Math.max(0, Math.min(modelPreparationProgress, 100))}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>{modelPreparationStage || "queued"}</span>
+                      <span>{modelPreparationProgress}%</span>
+                    </div>
+                  </div>
+
+                  {error && (
+                    <button
+                      onClick={handleCompleteSetup}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
+                    >
+                      Continue to Dashboard <ArrowRight className="w-5 h-5" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>

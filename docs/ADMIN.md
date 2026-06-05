@@ -58,7 +58,7 @@ Use **Settings > AI** for installation-wide provider defaults, credentials, and 
 - Store provider API keys.
 - Configure Ollama.
 - View installed Whisper models.
-- Download or remove local Whisper models.
+- Remove local model cache entries. Required default models are prepared automatically.
 
 ### Backup and Restore
 

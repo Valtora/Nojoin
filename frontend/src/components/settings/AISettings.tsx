@@ -8,7 +8,6 @@ import {
   Check,
   X,
   Loader2,
-  Download,
   Trash2,
   HelpCircle,
   Info,
@@ -25,9 +24,7 @@ import {
   validateLLM,
   validateHF,
   getModelsStatus,
-  downloadModels,
   deleteModel,
-  getTaskStatus,
   listModels,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -92,13 +89,6 @@ export default function AISettings({
   const [modelStatus, setModelStatus] = useState<SystemModelStatus | null>(
     null,
   );
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<{
-    percent: number;
-    message: string;
-    speed?: string;
-    eta?: string;
-  } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   // Dynamic Model Lists
@@ -260,70 +250,6 @@ export default function AISettings({
     }
   };
 
-  const handleDownloadModels = async () => {
-    setDownloading(true);
-    setDownloadProgress({ percent: 0, message: "Starting download..." });
-    try {
-      const { task_id } = await downloadModels({
-        hf_token: settings.hf_token,
-        whisper_model_size: settings.whisper_model_size,
-      });
-
-      // Poll for status
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await getTaskStatus(task_id);
-          if (status.status === "SUCCESS") {
-            clearInterval(pollInterval);
-            setDownloading(false);
-            setDownloadProgress(null);
-            refreshStatus();
-            addNotification({
-              type: "success",
-              message: "Models downloaded successfully!",
-            });
-          } else if (status.status === "FAILURE") {
-            clearInterval(pollInterval);
-            setDownloading(false);
-            setDownloadProgress(null);
-            addNotification({
-              type: "error",
-              message: `Download failed: ${status.result}`,
-            });
-          } else if (status.status === "PROCESSING") {
-            if (status.result) {
-              setDownloadProgress({
-                percent: status.result.progress || 0,
-                message: status.result.message || "Downloading...",
-                speed: status.result.speed,
-                eta: status.result.eta,
-              });
-            }
-          }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (e: any) {
-          console.error("Polling error", e);
-          clearInterval(pollInterval);
-          setDownloading(false);
-          setDownloadProgress(null);
-        }
-      }, 1000);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
-      console.error(e);
-      addNotification({
-        type: "error",
-        message: "Failed to start download.",
-      });
-      setDownloading(false);
-      setDownloadProgress(null);
-    }
-  };
-
   const handleDeleteModel = async (modelName: string) => {
     if (
       !confirm(
@@ -431,7 +357,7 @@ export default function AISettings({
       <SettingsCallout
         tone="neutral"
         title="No matching settings"
-        message="Try a broader search term for providers, models, tokens, or local model downloads."
+        message="Try a broader search term for providers, models, tokens, or local model assets."
       />
     );
   }
@@ -867,7 +793,7 @@ export default function AISettings({
               </div>
               <p className="mt-2 text-xs contrast-helper">
                 Click &apos;Change Model&apos; to select a different Whisper
-                model variant. You may need to download the new model.
+                model variant. Missing model files are prepared automatically after the change is saved.
               </p>
             </div>
             )}
@@ -876,7 +802,6 @@ export default function AISettings({
               onClose={() => setShowWhisperModal(false)}
               currentSize={settings.whisper_model_size || "turbo"}
               isAdmin={isAdmin}
-              hfToken={settings.hf_token}
               onUpdate={(newSize) =>
                 onUpdate({ ...settings, whisper_model_size: newSize })
               }
@@ -889,7 +814,7 @@ export default function AISettings({
         <SettingsSection
           eyebrow="Administration"
           title="Model dependencies"
-          description="Inspect and manage locally downloaded AI model assets on the server."
+          description="Inspect and manage locally cached AI model assets on the server."
         >
           <SettingsPanel className="mx-auto max-w-3xl space-y-6">
             <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -940,7 +865,7 @@ export default function AISettings({
                           <button
                             onClick={() => handleDeleteModel(model.id)}
                             disabled={
-                              deleting === model.id || downloading || !isAdmin
+                              deleting === model.id || !isAdmin
                             }
                             className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
                             title="Delete Model"
@@ -972,51 +897,10 @@ export default function AISettings({
                 ))}
               </div>
 
-              {downloading && downloadProgress && (
-                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="font-medium text-blue-700 dark:text-blue-300">
-                      {downloadProgress.message}
-                    </span>
-                    <span className="text-blue-600 dark:text-blue-400 font-bold">
-                      {downloadProgress.percent}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2.5 mb-2">
-                    <div
-                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                      style={{ width: `${downloadProgress.percent}%` }}
-                    ></div>
-                  </div>
-                  <div className="flex justify-between text-xs contrast-helper">
-                    <span>
-                      {downloadProgress.speed || "Calculating speed..."}
-                    </span>
-                    <span>ETA: {downloadProgress.eta || "..."}</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={handleDownloadModels}
-                  disabled={downloading || !isAdmin}
-                  className="w-full flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
-                >
-                  {downloading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Download className="w-5 h-5" />
-                  )}
-                  {downloading
-                    ? "Downloading Models..."
-                    : "Download / Update All Models"}
-                </button>
-                <p className="mt-3 text-center text-xs contrast-helper">
-                  This will download any missing models to the server. Large
-                  files (2GB+) may take a while.
-                </p>
-              </div>
+              <p className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 text-center text-xs contrast-helper">
+                Required default models are prepared automatically. Parakeet and
+                Canary models are prepared after their settings are saved.
+              </p>
             </div>
           </SettingsPanel>
         </SettingsSection>

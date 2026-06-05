@@ -129,6 +129,7 @@ from backend.utils.config_manager import (
     get_trusted_web_origin,
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
+from backend.services.model_preparation import enqueue_model_preparation
 
 async def ensure_owner_exists():
     """
@@ -200,23 +201,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to seed demo data on startup: {e}")
 
-    # Auto-start downloading core models in background if not cached
     try:
-        from backend.preload_models import check_model_status
-        status = check_model_status(whisper_model_size="turbo")
-        whisper_ok = status.get("whisper", {}).get("downloaded", False)
-        parakeet_ok = status.get("parakeet", {}).get("downloaded", False)
-        canary_ok = status.get("canary", {}).get("downloaded", False)
-        
-        if not (whisper_ok and parakeet_ok and canary_ok):
-            logger.info("Core speech-to-text models are missing from cache. Triggering background model download...")
-            from backend.celery_app import celery_app
-            celery_app.send_task(
-                "backend.worker.tasks.download_models_task",
-                kwargs={"whisper_model_size": "turbo"}
-            )
+        enqueue_model_preparation(include_core=True)
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Failed to trigger automatic model download on startup: {e}")
+        logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 
     yield
 

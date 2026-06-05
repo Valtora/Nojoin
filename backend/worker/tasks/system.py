@@ -15,90 +15,48 @@ def cleanup_temp_recordings(self):
 
 
 @celery_app.task(name="backend.worker.tasks.download_models_task", bind=True)
-def download_models_task(self, hf_token: str | None = None, whisper_model_size: str | None = None):
+def download_models_task(
+    self,
+    hf_token: str | None = None,
+    whisper_model_size: str | None = None,
+    transcription_backend: str | None = None,
+    parakeet_model: str | None = None,
+    canary_model: str | None = None,
+    include_core: bool = True,
+):
     """
-    Task to download models in the background.
-    Checks for existing downloads from preload_models.py and forwards that progress.
+    Prepare required model assets on disk without retaining models in memory.
     """
-    from backend.preload_models import download_models, check_model_status
-    from backend.utils.download_progress import (
-        get_download_progress,
-        is_download_in_progress,
-        is_download_complete,
-        set_download_progress
+    from backend.preload_models import download_models
+
+    def progress_callback(message, progress, speed=None, eta=None, stage=None):
+        self.update_state(
+            state="PROCESSING",
+            meta={
+                "progress": progress,
+                "message": message,
+                "speed": speed,
+                "eta": eta,
+                "stage": stage,
+            },
+        )
+
+    logger.info(
+        "Starting model preparation task (backend=%s, whisper=%s, include_core=%s).",
+        transcription_backend,
+        whisper_model_size,
+        include_core,
     )
-    
-    # Reload config to ensure we have the latest settings
-    config_manager.reload()
-    
-    # Check if models are already fully downloaded
-    model_status = check_model_status(whisper_model_size=whisper_model_size or "turbo")
-    all_downloaded = (
-        model_status.get("whisper", {}).get("downloaded", False) and
-        model_status.get("parakeet", {}).get("downloaded", False) and
-        model_status.get("canary", {}).get("downloaded", False) and
-        model_status.get("pyannote", {}).get("downloaded", False) and
-        model_status.get("embedding", {}).get("downloaded", False)
+    download_models(
+        progress_callback=progress_callback,
+        hf_token=hf_token,
+        whisper_model_size=whisper_model_size,
+        transcription_backend=transcription_backend,
+        parakeet_model=parakeet_model,
+        canary_model=canary_model,
+        include_core=include_core,
     )
-    
-    if all_downloaded:
-        logger.info("All models already downloaded, skipping download.")
-        self.update_state(state='PROCESSING', meta={
-            'progress': 100,
-            'message': 'All models already downloaded!'
-        })
-        set_download_progress(100, "All models already downloaded!", status="complete")
-        return {"status": "success", "message": "All models already downloaded."}
-    
-    # Check if there's an active download from preload_models.py
-    # If so, poll and forward that progress until it completes
-    if is_download_in_progress():
-        logger.info("Download already in progress (from preload_models.py), forwarding progress...")
-        while True:
-            progress = get_download_progress()
-            if progress is None:
-                break
-            
-            status = progress.get("status", "downloading")
-            if status == "complete":
-                self.update_state(state='PROCESSING', meta={
-                    'progress': 100,
-                    'message': 'All models downloaded!'
-                })
-                return {"status": "success", "message": "All models downloaded successfully."}
-            elif status == "error":
-                error_msg = progress.get("message", "Download failed")
-                raise Exception(error_msg)
-            else:
-                # Forward the progress to the Celery task state
-                meta = {
-                    'progress': progress.get('progress', 0),
-                    'message': progress.get('message', 'Downloading...'),
-                    'stage': progress.get('stage')
-                }
-                if progress.get('speed'):
-                    meta['speed'] = progress['speed']
-                if progress.get('eta'):
-                    meta['eta'] = progress['eta']
-                self.update_state(state='PROCESSING', meta=meta)
-            
-            time.sleep(1)
-    
-    # No active download, proceed with our own download
-    def progress_callback(msg, percent, speed=None, eta=None, stage=None):
-        meta = {'progress': percent, 'message': msg, 'stage': stage}
-        if speed:
-            meta['speed'] = speed
-        if eta:
-            meta['eta'] = eta
-        self.update_state(state='PROCESSING', meta=meta)
-    
-    try:
-        download_models(progress_callback=progress_callback, hf_token=hf_token, whisper_model_size=whisper_model_size)
-        return {"status": "success", "message": "All models downloaded successfully."}
-    except Exception as e:
-        logger.error(f"Model download failed: {e}", exc_info=True)
-        raise e
+    return {"status": "success", "message": "Model preparation complete."}
 
 
 @celery_app.task(name="backend.worker.tasks.get_worker_device_status", bind=True)

@@ -225,19 +225,19 @@ def _get_transcription_component(
         )
         backing_status = model_status.get("parakeet", {})
         model_label = f"Parakeet ({configured_model})"
-        downloading = _is_stage_downloading(download, "parakeet", "init")
+        downloading = _is_stage_downloading(download, "parakeet", "queued", "init")
     elif transcription_backend == "canary":
         configured_model = str(
             config_manager.get("canary_model", "nemo-canary-1b-v2")
         )
         backing_status = model_status.get("canary", {})
         model_label = f"Canary ({configured_model})"
-        downloading = _is_stage_downloading(download, "canary", "init")
+        downloading = _is_stage_downloading(download, "canary", "queued", "init")
     else:
         configured_model = whisper_model_size
         backing_status = model_status.get("whisper", {})
         model_label = f"Whisper {configured_model}"
-        downloading = _is_stage_downloading(download, "whisper", "whisper_loading", "init")
+        downloading = _is_stage_downloading(download, "whisper", "whisper_loading", "queued", "init")
 
     downloaded = bool(backing_status.get("downloaded"))
 
@@ -260,29 +260,29 @@ def _get_transcription_component(
         return (
             _build_component(
                 "warning",
-                "Downloading",
-                f"{model_label} is being downloaded to the local model cache.",
+                "Preparing model",
+                f"{model_label} is being prepared for live and final transcription.",
                 None,
                 backend=transcription_backend,
                 configured_model=configured_model,
                 downloaded=False,
                 path=backing_status.get("path"),
             ),
-            False,
+            True,
         )
 
     return (
         _build_component(
-            "error",
-            "Missing",
+            "warning",
+            "Preparation pending",
             f"{model_label} is not present in the local model cache.",
-            "Download the configured transcription model before starting new recordings.",
+            "Wait for automatic model preparation to complete before relying on live transcription.",
             backend=transcription_backend,
             configured_model=configured_model,
             downloaded=False,
             path=backing_status.get("path"),
         ),
-        False,
+        True,
     )
 
 
@@ -587,6 +587,8 @@ def _build_summary(
         blocking_reasons.append("ffmpeg or ffprobe is missing.")
     if not transcription_ready:
         blocking_reasons.append("The configured transcription model is not ready.")
+    elif checks["transcription_model"]["status"] == "warning":
+        degraded_reasons.append("The configured transcription model is not prepared yet.")
 
     diarization_enabled = checks["diarization"].get("enabled") is not False
     if diarization_enabled and not diarization_ready:

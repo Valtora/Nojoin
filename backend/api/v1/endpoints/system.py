@@ -22,15 +22,18 @@ from backend.api.deps import (
 )
 from backend.core.security import MIN_PASSWORD_LENGTH, hash_user_password, validate_password_policy
 from backend.models.user import User
-from backend.celery_app import celery_app
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
 from backend.preload_models import check_model_status
-from backend.utils.download_progress import get_download_progress, is_download_in_progress
 from backend.seed_demo import seed_demo_data
 from backend.api.services.health_service import (
     get_admin_health_status,
     get_system_health_status,
+)
+from backend.services.model_preparation import enqueue_model_preparation
+from backend.utils.download_progress import (
+    get_download_progress,
+    is_download_in_progress,
 )
 from backend.api.v1.endpoints.setup import (
     FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
@@ -394,68 +397,39 @@ async def setup_system(
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to seed demo data during setup: {e}")
 
-    return {"initialized": True}
+    model_preparation_task_id = None
+    try:
+        model_preparation_task_id = enqueue_model_preparation(
+            whisper_model_size=setup_in.whisper_model_size or "turbo",
+            transcription_backend="whisper",
+            include_core=True,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to queue first-run model preparation: %s", e, exc_info=True)
 
-@router.post("/download-models")
-async def trigger_model_download(
-    hf_token: Optional[str] = None,
-    whisper_model_size: Optional[str] = None,
-    current_user: User = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_db),
-) -> Any:
-    """
-    Trigger the background task to download models.
-    """
-    # Resolve token if masked (e.g. if coming from pre-filled frontend state)
-    if hf_token and "..." in hf_token:
-            configured_hf_token = config_manager.get("hf_token")
-            hf_token = configured_hf_token if isinstance(configured_hf_token, str) else None
+    return {"initialized": True, "model_preparation_task_id": model_preparation_task_id}
 
-    task = celery_app.send_task(
-        "backend.worker.tasks.download_models_task",
-        kwargs={"hf_token": hf_token, "whisper_model_size": whisper_model_size}
-    )
-    from backend.models.task import register_task_ownership
-    await register_task_ownership(db, task.id, current_user.id)
-    return {"task_id": task.id}
 
 @router.get("/download-progress")
-async def get_current_download_progress(
+async def get_download_progress_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Get the current model download progress from shared state.
-    This allows the frontend to see progress from preload_models.py or any active download task.
-    
-    Returns:
-        - progress: percentage (0-100)
-        - message: current status message
-        - speed: download speed (if available)
-        - eta: estimated time remaining (if available)
-        - status: "downloading", "complete", "error", or null if no active download
-        - in_progress: boolean indicating if a download is currently active
+    Get current automatic model preparation progress.
     """
     progress = get_download_progress()
-    
     if progress is None:
         return {
-            "in_progress": False,
-            "progress": None,
-            "message": None,
+            "progress": 0,
+            "message": "No model preparation in progress",
             "speed": None,
             "eta": None,
-            "status": None
+            "status": "idle",
+            "stage": None,
+            "in_progress": False,
         }
-    
-    return {
-        "in_progress": is_download_in_progress(),
-        "progress": min(progress.get("progress", 0), 100),
-        "message": progress.get("message", ""),
-        "speed": progress.get("speed"),
-        "eta": progress.get("eta"),
-        "status": progress.get("status", "downloading"),
-        "stage": progress.get("stage")
-    }
+    progress["in_progress"] = is_download_in_progress()
+    return progress
 
 @router.get("/tasks/{task_id}")
 async def get_task_status(

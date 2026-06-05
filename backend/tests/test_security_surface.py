@@ -379,6 +379,7 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
         return None
 
     monkeypatch.setattr(system, "seed_demo_data", _fake_seed_demo_data)
+    monkeypatch.setattr(system, "enqueue_model_preparation", lambda **kwargs: "model-prep-task")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         response = await client.post(
@@ -393,7 +394,10 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
         )
 
     assert response.status_code == 200
-    assert response.json() == {"initialized": True}
+    assert response.json() == {
+        "initialized": True,
+        "model_preparation_task_id": "model-prep-task",
+    }
 
 
 @pytest.mark.anyio
@@ -629,14 +633,14 @@ async def test_operational_system_endpoints_require_authentication() -> None:
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
         status = await client.get("/api/v1/system/status")
-        download_progress = await client.get("/api/v1/system/download-progress")
         models_status = await client.get("/api/v1/system/models/status")
+        download_progress = await client.get("/api/v1/system/download-progress")
         companion_releases = await client.get("/api/v1/system/companion-releases")
         admin_health = await client.get("/api/v1/system/admin-health")
 
     assert status.status_code == 401
-    assert download_progress.status_code == 401
     assert models_status.status_code == 401
+    assert download_progress.status_code == 401
     assert companion_releases.status_code == 401
     assert admin_health.status_code == 401
 

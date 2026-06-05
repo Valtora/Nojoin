@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import {
   X,
   Check,
-  Download,
   Loader2,
   AlertTriangle,
   Cpu,
@@ -11,8 +10,6 @@ import {
 import { SystemModelStatus } from "@/types";
 import {
   getModelsStatus,
-  downloadModels,
-  getTaskStatus,
   deleteModel,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -23,7 +20,6 @@ interface WhisperModelModalProps {
   currentSize: string;
   isAdmin: boolean;
   onUpdate: (newSize: string) => void;
-  hfToken?: string;
 }
 
 const WHISPER_MODELS = [
@@ -53,20 +49,10 @@ export default function WhisperModelModal({
   currentSize,
   isAdmin,
   onUpdate,
-  hfToken,
 }: WhisperModelModalProps) {
   const [selectedModel, setSelectedModel] = useState(currentSize);
   const [status, setStatus] = useState<SystemModelStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
-
-  // Download State
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<{
-    percent: number;
-    message: string;
-    speed?: string;
-    eta?: string;
-  } | null>(null);
 
   // Deleting State
   const [deleting, setDeleting] = useState(false);
@@ -100,70 +86,7 @@ export default function WhisperModelModal({
 
     checkStatus();
 
-    // Poll status if downloading
-    let interval: NodeJS.Timeout;
-    if (downloading) {
-      interval = setInterval(checkStatus, 2000);
-    }
-    return () => clearInterval(interval);
-  }, [selectedModel, isOpen, downloading]);
-
-  const handleDownload = async () => {
-    setDownloading(true);
-    setDownloadProgress({ percent: 0, message: "Starting download..." });
-
-    try {
-      const { task_id } = await downloadModels({
-        hf_token: hfToken,
-        whisper_model_size: selectedModel,
-      });
-
-      // Poll for progress
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await getTaskStatus(task_id);
-          if (status.status === "SUCCESS") {
-            clearInterval(pollInterval);
-            setDownloading(false);
-            setDownloadProgress(null);
-            // Refresh status one last time
-            getModelsStatus(selectedModel).then(setStatus);
-          } else if (status.status === "FAILURE") {
-            clearInterval(pollInterval);
-            setDownloading(false);
-            setDownloadProgress(null);
-            addNotification({
-              type: "error",
-              message: `Download failed: ${status.result}`,
-            });
-          } else if (status.status === "PROCESSING" && status.result) {
-            setDownloadProgress({
-              percent: status.result.progress || 0,
-              message: status.result.message || "Downloading...",
-              speed: status.result.speed,
-              eta: status.result.eta,
-            });
-          }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (e: any) {
-          console.error(e);
-          clearInterval(pollInterval);
-          setDownloading(false);
-          setDownloadProgress(null);
-        }
-      }, 500);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
-      console.error(e);
-      setDownloading(false);
-      setDownloadProgress(null);
-      addNotification({ type: "error", message: "Failed to start download" });
-    }
-  };
+  }, [selectedModel, isOpen]);
 
   const handleClearCache = async () => {
     if (
@@ -244,7 +167,7 @@ export default function WhisperModelModal({
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              disabled={downloading || !isAdmin}
+              disabled={!isAdmin}
               className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none text-base transition-all"
             >
               {WHISPER_MODELS.map((model) => (
@@ -273,13 +196,13 @@ export default function WhisperModelModal({
                   </span>
                 ) : (
                   <span className="text-sm font-medium text-red-600 dark:text-red-400 flex items-center gap-1 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
-                    <X className="w-3 h-3" /> Missing - Download required
+                    <X className="w-3 h-3" /> Preparation pending
                   </span>
                 )}
               </div>
 
               {/* Clear Cache Button */}
-              {isDownloaded && !downloading && (
+              {isDownloaded && (
                 <button
                   onClick={handleClearCache}
                   disabled={deleting || !isAdmin}
@@ -295,48 +218,11 @@ export default function WhisperModelModal({
               )}
             </div>
 
-            {/* Download Progress */}
-            {downloading && downloadProgress && (
-              <div className="mb-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700 dark:text-blue-300 font-medium">
-                    {downloadProgress.message}
-                  </span>
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">
-                    {downloadProgress.percent}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${downloadProgress.percent}%` }}
-                  ></div>
-                </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>{downloadProgress.speed}</span>
-                  <span>ETA: {downloadProgress.eta}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
             {!isDownloaded && !loadingStatus && (
-              <button
-                onClick={handleDownload}
-                disabled={downloading || !isAdmin}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {downloading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Downloading...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" /> Download {modelInfo?.label}{" "}
-                    Model
-                  </>
-                )}
-              </button>
+              <p className="text-sm contrast-helper">
+                The {modelInfo?.label} model is not cached yet. Nojoin will
+                prepare it automatically after this change is saved.
+              </p>
             )}
           </div>
         </div>
@@ -351,7 +237,7 @@ export default function WhisperModelModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={!isDownloaded || downloading || loadingStatus}
+            disabled={loadingStatus || !isAdmin}
             className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Apply Changes

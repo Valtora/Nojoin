@@ -23,7 +23,6 @@ import {
   ChatMessage,
   User,
   Invitation,
-  DownloadProgress,
   AdminHealthStatus,
   SystemModelStatus,
   VersionInfo,
@@ -37,6 +36,7 @@ import {
   CalendarEventLink,
   RecordingInfo,
   AsyncTaskStatus,
+  DownloadProgress,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -1276,8 +1276,13 @@ export const setupSystem = async (
     selected_model?: string;
   },
   bootstrapPassword?: string,
-): Promise<void> => {
-  await api.post("/system/setup", data, buildFirstRunRequestConfig(bootstrapPassword));
+): Promise<{ initialized: boolean; model_preparation_task_id?: string | null }> => {
+  const response = await api.post<{ initialized: boolean; model_preparation_task_id?: string | null }>(
+    "/system/setup",
+    data,
+    buildFirstRunRequestConfig(bootstrapPassword),
+  );
+  return response.data;
 };
 
 export const checkFFmpeg = async (): Promise<{
@@ -1314,16 +1319,6 @@ export const getDemoRecording = async (): Promise<{ id: RecordingId | null }> =>
   const response = await api.get<{ id: RecordingId | null }>(
     "/system/demo-recording",
   );
-  return response.data;
-};
-
-export const downloadModels = async (data: {
-  hf_token?: string;
-  whisper_model_size?: string;
-}): Promise<{ task_id: string }> => {
-  const response = await api.post("/system/download-models", null, {
-    params: data,
-  });
   return response.data;
 };
 
@@ -1392,6 +1387,11 @@ export const getModelsStatus = async (
   const response = await api.get<SystemModelStatus>(
     `/system/models/status?${params.toString()}`,
   );
+  return response.data;
+};
+
+export const getDownloadProgress = async (): Promise<DownloadProgress> => {
+  const response = await api.get<DownloadProgress>("/system/download-progress");
   return response.data;
 };
 
@@ -1532,11 +1532,6 @@ export const registerUser = async (
     invite_code,
   };
   const response = await api.post<User>("/users/register", payload);
-  return response.data;
-};
-
-export const getDownloadProgress = async (): Promise<DownloadProgress> => {
-  const response = await api.get<DownloadProgress>("/system/download-progress");
   return response.data;
 };
 

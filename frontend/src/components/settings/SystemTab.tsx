@@ -543,7 +543,7 @@ export default function SystemTab() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                Model download in progress
+                Model preparation in progress
               </div>
               <p className="mt-1 text-xs contrast-helper">
                 {adminHealth.download.message ||

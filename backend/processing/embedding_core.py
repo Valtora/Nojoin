@@ -33,6 +33,16 @@ except ImportError:
 
 _embedding_model_cache = {}
 
+def release_embedding_model_cache():
+    """Releases cached speaker embedding models from memory."""
+    global _embedding_model_cache
+    if _embedding_model_cache:
+        logger.info(f"Releasing {_embedding_model_cache.keys()} from speaker embedding model cache.")
+        _embedding_model_cache.clear()
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 def load_embedding_model(device_str: str, hf_token: str = None):
     """Load pyannote embedding model."""
     try:

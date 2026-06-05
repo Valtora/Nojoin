@@ -96,12 +96,18 @@ The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIV
 
 ## Worker Container Startup
 
-The worker container runs `backend/worker_entrypoint.sh` before starting Celery. The entrypoint:
+The worker container starts Celery without preloading inference models. Nojoin
+keeps GPU memory idle at startup, then queues worker-side model preparation for
+the configured Whisper model, Pyannote diarisation, and voice embeddings. The
+worker validates those assets on CPU where possible, caches them on disk, and
+releases model objects and CUDA memory before returning to idle.
 
-1. Preloads all ML models (Silero VAD, Whisper, Parakeet, Canary, Pyannote, embedding).
-2. Verifies cached models exist locally before attempting downloads, avoiding unnecessary network calls on restarts.
-3. Reports cumulative download progress to the frontend via Redis.
-4. Hands off to the Celery worker process via `exec`.
+If an administrator switches transcription to Parakeet or Canary, Nojoin queues
+preparation for the selected ONNX ASR model after the setting is saved. Live and
+final processing still load inference models only for active work. After each
+worker task, Nojoin releases model caches and clears CUDA memory when
+`keep_models_loaded` is unset or false. Set `keep_models_loaded=true` only if you
+deliberately prefer warmer repeated processing over idle VRAM.
 
 ### GPU Acceleration
 
