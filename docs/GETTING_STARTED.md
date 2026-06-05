@@ -57,13 +57,13 @@ Nojoin uses a self-signed certificate by default, so your browser will show a ce
 
 The first user becomes the Owner account.
 
-During setup you will usually want to provide:
+During setup, the system automatically detects configured API keys and Hugging Face tokens from the environment variables (set in `.env` before starting the stack). The setup wizard will:
 
-- A Hugging Face token for diarisation.
-- An AI provider and model for meeting intelligence.
-- Optional API keys for OpenAI, Anthropic, Gemini, or a local Ollama endpoint.
+- Detect active AI provider credentials and Hugging Face tokens.
+- Let you select the default model for your configured AI provider.
+- Warn you if no AI provider credentials are configured, explaining the loss of core intelligence features (Meeting Edge, Notes, and Speaker Inference), and allow you to proceed or reload the configuration.
 
-If you skip AI configuration, Nojoin still records, transcribes, and diarises meetings. The automatic AI enhancement step is simply skipped until you configure a provider later in Settings.
+If you skip AI configuration, Nojoin still records, transcribes, and diarises meetings. The automatic AI enhancement step is simply skipped until you configure a provider later by setting environment variables in `.env` and restarting the server.
 
 You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
 

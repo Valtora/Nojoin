@@ -24,7 +24,7 @@ The following are intentionally not restored from backup:
 - Hugging Face style application keys and tokens.
 - Password material.
 
-These must be re-entered after restore when needed.
+These credentials must be configured in the target installation's environment variables (e.g., `.env`) and the containers restarted if they are not already set.
 
 ## Sensitive Backup Contents
 
@@ -70,7 +70,7 @@ If audio is included, Nojoin compresses it to Opus to reduce archive size.
 - Ownership mappings are preserved so restored records belong to the correct users.
 - Audio and recordings are matched carefully to reduce duplicate restoration.
 - Calendar connections, selections, and cached events can be restored so the dashboard calendar comes back intact.
-- Redacted AI keys must still be re-entered afterwards.
+- Redacted AI credentials (such as LLM API keys and Hugging Face tokens) must be configured in the target server's environment variables (e.g., `.env`) and the containers restarted.
 
 ## Recording Identity and Matching
 

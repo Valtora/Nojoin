@@ -365,6 +365,16 @@ services:
         condition: service_healthy
       socket-proxy:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import json, sys, urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/api/health', headers={'X-Forwarded-Proto': 'https'}); data = json.load(urllib.request.urlopen(req, timeout=3)); sys.exit(0 if data.get('status') == 'ok' else 1)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
@@ -421,12 +431,21 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     image: nojoin-dev-frontend:local
     pull_policy: never
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:14141/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     restart: unless-stopped
     networks:
       - nojoin_net
     logging: *default-logging
 
-  nginx:
+  nginx-dev:
     container_name: nojoin-dev-nginx
     image: nginx:alpine
     ports:
@@ -437,11 +456,26 @@ services:
       - ./nginx:/etc/nginx/certs
       - ./docker/init-ssl.sh:/docker-entrypoint.d/99-init-ssl.sh
     depends_on:
-      - frontend
-      - api
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -k -f -s -o /dev/null https://127.0.0.1/api/health && curl -k -f -s -o /dev/null https://127.0.0.1/",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
     networks:
-      - nojoin_net
+      nojoin_net:
+      proxy_net:
+        aliases:
+          - nojoin-dev-nginx
     logging: *default-logging
 
 volumes:
@@ -453,4 +487,6 @@ volumes:
 networks:
   nojoin_net:
     driver: bridge
+  proxy_net:
+    external: true
 ```

@@ -52,11 +52,15 @@ Read [CALENDAR.md](CALENDAR.md) for the full provider registration and tenant gu
 
 ### AI and Models
 
-Use **Settings > AI** for installation-wide provider defaults, credentials, and model operations. Admin-only sections there let you:
+Use **Settings > AI** for installation-wide provider defaults, model operations, and Ollama configuration. 
+
+> [!IMPORTANT]
+> For security, LLM provider API keys and Hugging Face tokens are server-side environment-only variables and must be configured via environment variables (e.g., `.env`) and the container restarted, rather than through UI settings fields.
+
+Admin-only sections let you:
 
 - Choose the default LLM provider.
-- Store provider API keys.
-- Configure Ollama.
+- Configure the Ollama API URL.
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared automatically.
 
