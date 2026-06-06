@@ -111,7 +111,17 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 
 Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
 
-Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible on every page so you can always see the recording status and control it.
+Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
+
+## Floating Recording Badge
+
+While a recording is active, a floating badge appears at the top-center of the viewport. The badge shows:
+
+- A pulsing red dot and the word **Recording** (or **Paused** when paused).
+- The elapsed recording time.
+- Pause/resume and stop controls.
+
+Clicking the badge navigates directly to the recording detail page. The badge is hidden on the recording detail page itself to avoid duplication. You can pause, resume, or stop the recording from any page without navigating back to the recording workspace first.
 
 ## Paused Recording Lock
 

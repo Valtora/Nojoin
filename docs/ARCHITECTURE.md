@@ -67,7 +67,7 @@ If the user refreshes, closes, or navigates away from the Nojoin tab while recor
 
 Switching focus to another browser tab, window, or application does not pause capture. Navigating between pages within the Nojoin app also does not pause capture. Only a real Nojoin tab unload (pagehide/beforeunload) invokes the guarded pause path.
 
-When a recording is active, a floating badge appears at the bottom of the viewport showing the recording status, elapsed time, and pause/resume/stop controls. This badge remains accessible from any page in Nojoin so the user never loses visibility of the active recording.
+When a recording is active, a floating recording badge appears at the top-center of the viewport showing the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. The badge remains visible on every page except the recording detail page so the user never loses visibility of the active recording while navigating the app.
 
 ## Processing Pipeline
 

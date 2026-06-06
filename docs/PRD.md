@@ -69,7 +69,7 @@ Live recording is owned by the web client through browser capture APIs.
 - **Microphone source:** `getUserMedia` captures the local microphone.
 - **Mixing:** The browser combines shared audio and microphone audio with Web Audio gain controls and analyser taps on desktop; mobile Chrome records microphone-only audio.
 - **Transport:** The browser uploads short WebM/Opus, Ogg/Opus, or MP4 audio segments during live recording. The worker transcodes each segment to 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio.
-- **Lifecycle:** Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`. Uploaded segments remain available, the in-memory tail is dropped, and the user must resume or discard before starting another capture.
+- **Lifecycle:** Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`. Uploaded segments remain available, the in-memory tail is dropped, and the user must resume or discard before starting another capture. Navigating between pages within the Nojoin app does not pause recording; a floating recording badge remains visible at the top of the viewport on every page with elapsed time and pause, resume, and stop controls.
 - **Settings:** Capture settings cover microphone selection and per-source gain. Settings are browser-local for the initial cutover.
 - **Documentation:** [CAPTURE.md](CAPTURE.md) is the canonical browser capture guide.
 
@@ -177,6 +177,7 @@ The system provides the following core capabilities:
   - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
   - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
 - **Meeting Intelligence:** Provider-gated automatic AI enhancement via one LLM call that can return unresolved speaker suggestions, a meeting title, and Markdown meeting notes, plus separate Chat Q&A.
+  - **Secondary LLM Provider Fallback:** A secondary LLM provider can be configured as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat. The secondary provider has its own independent configuration (provider, model, live model, API key, Ollama URL).
   - **Manual AI Actions:** `Generate Notes` remains a notes-only manual action, and `Retry Speaker Inference` remains a speaker-only manual action.
   - **Meeting Edge Live Guidance:** A separate low-latency Meeting Edge flow uses recent live transcript context to generate real-time questions, missed points, and concept help during in-flight meetings.
   - **Separate Live Model Slot:** Each provider can optionally configure a dedicated Meeting Edge model; when unset, Meeting Edge falls back to that provider's main model.

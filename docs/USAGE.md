@@ -88,6 +88,8 @@ On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu 
 
 You can switch to another browser tab, window, or application while recording. Nojoin only pauses automatically when the Nojoin tab is refreshed, closed, or navigated away from the active recording.
 
+While a recording is active, a floating badge appears at the top-center of the viewport on every page. The badge shows the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. You can control the recording from any page without navigating back to the recording workspace first.
+
 ### Pause, Resume, Stop, And Cancel
 
 - **Pause** temporarily stops capture while preserving uploaded segments.
@@ -183,11 +185,23 @@ Settings are grouped by task.
 
 - **Profile**: account details and password changes.
 - **Capture**: microphone selection, shared-audio gain, and microphone gain for browser recording.
-- **AI**: provider configuration, model choices, automatic meeting intelligence, and Meeting Edge model selection.
+- **AI**: provider configuration, model choices, automatic meeting intelligence, Meeting Edge model selection, and secondary LLM provider fallback.
 - **Transcription**: transcription backend and model choices.
 - **Calendar**: user calendar connections and timezone behavior.
 - **Help**: tours and support surfaces.
 - **Admin**: user, system, provider, release, and maintenance settings for administrators.
+
+### Secondary LLM Provider
+
+Nojoin supports configuring a secondary LLM provider as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat.
+
+The secondary provider has its own independent configuration:
+
+- Provider selection (Gemini, OpenAI, Anthropic, or Ollama).
+- Model and live model choices.
+- API key or Ollama URL.
+
+Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI** for administrators.
 
 ## Troubleshooting
 
