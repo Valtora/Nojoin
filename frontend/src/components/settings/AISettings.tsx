@@ -94,6 +94,8 @@ export default function AISettings({
   // Dynamic Model Lists
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [secondaryAvailableModels, setSecondaryAvailableModels] = useState<string[]>([]);
+  const [secondaryFetchingModels, setSecondaryFetchingModels] = useState(false);
 
   const persistSettingsUpdate = (updates: Settings) => {
     onUpdate(updates);
@@ -211,20 +213,61 @@ export default function AISettings({
     settings.ollama_api_url,
   ]);
 
+  // Fetch secondary provider models independently
+  useEffect(() => {
+    const fetchSecondaryModels = async () => {
+      const provider = settings.secondary_llm_provider;
+      if (!provider) {
+        setSecondaryAvailableModels([]);
+        return;
+      }
+      const url = provider === "ollama" ? settings.secondary_ollama_api_url || "" : "";
+
+      setSecondaryFetchingModels(true);
+      try {
+        const res = await listModels(provider, "", url);
+        setSecondaryAvailableModels(res.models);
+      } catch (e: any) {
+        console.error("Failed to fetch secondary models", e);
+        setSecondaryAvailableModels([]);
+      } finally {
+        setSecondaryFetchingModels(false);
+      }
+    };
+
+    const timeout = setTimeout(fetchSecondaryModels, 1000);
+    return () => clearTimeout(timeout);
+  }, [
+    settings.secondary_llm_provider,
+    settings.secondary_ollama_api_url,
+  ]);
+
   const handleValidate = async (provider: string) => {
     setValidating(provider);
     setValidationMsg(null);
-    try {
-      const url = provider === "ollama" ? settings.ollama_api_url || "" : "";
 
+    const isSecondary = provider === settings.secondary_llm_provider && provider !== settings.llm_provider;
+    const url = provider === "ollama"
+      ? (isSecondary ? settings.secondary_ollama_api_url || "" : settings.ollama_api_url || "")
+      : "";
+
+    try {
       const res = await validateLLM(provider, "", url);
-      // If models are returned (e.g. from Ollama), update the list
+      // If models are returned (e.g. from Ollama), update the appropriate list
       if (res.models) {
-        setAvailableModels(res.models);
+        if (isSecondary) {
+          setSecondaryAvailableModels(res.models);
+        } else {
+          setAvailableModels(res.models);
+        }
       } else {
         // Otherwise refresh models explicitly
         const modelsRes = await listModels(provider, "", url);
-        setAvailableModels(modelsRes.models);
+        if (isSecondary) {
+          setSecondaryAvailableModels(modelsRes.models);
+        } else {
+          setAvailableModels(modelsRes.models);
+        }
       }
 
       if (onPersist) {
@@ -587,6 +630,209 @@ export default function AISettings({
             </div>
             </SettingsPanel>
           </div>
+        </SettingsSection>
+      )}
+
+      {showLLMSection && settings.secondary_llm_provider && (
+        <SettingsSection
+          eyebrow="AI"
+          title="Secondary provider"
+          description={
+            isAdmin
+              ? "When the primary provider is unavailable, Nojoin falls back to this secondary provider."
+              : "Configure your preferred secondary provider for when the primary is unavailable."
+          }
+          width="wide"
+        >
+          <div className="mx-auto max-w-3xl space-y-4">
+            <SettingsPanel className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Secondary Provider Information */}
+              <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    Secondary AI Provider: <span className="capitalize text-orange-600 dark:text-orange-400">{settings.secondary_llm_provider}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Configured via <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">SECONDARY_LLM_PROVIDER</code> in the server&apos;s <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code> file.
+                  </p>
+                </div>
+                <div>
+                  {(() => {
+                    const sp = settings.secondary_llm_provider;
+                    const hasKey = sp === "ollama"
+                      ? Boolean(settings.secondary_ollama_api_url)
+                      : Boolean(settings[`secondary_${sp}_api_key`]);
+                    return hasKey ? (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
+                        Configured
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400">
+                        Not Configured
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Secondary Ollama API URL */}
+              {settings.secondary_llm_provider === "ollama" && (
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Secondary Ollama API URL
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={settings.secondary_ollama_api_url || "http://host.docker.internal:11434"}
+                      onChange={(e) => onUpdate({ ...settings, secondary_ollama_api_url: e.target.value })}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    />
+                    <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  </div>
+                </div>
+              )}
+
+              {/* Secondary Model */}
+              <div className={settings.secondary_llm_provider === "ollama" ? "" : "col-span-2 md:col-span-1"}>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
+                  <Tooltip
+                    content="Select the model for the secondary provider. Used when the primary is unavailable."
+                    position="right"
+                  >
+                    <span className="flex items-center gap-1 cursor-help">
+                      Secondary Model <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                    </span>
+                  </Tooltip>
+                  <button
+                    onClick={() => {
+                      const sp = settings.secondary_llm_provider || "gemini";
+                      const url = sp === "ollama" ? settings.secondary_ollama_api_url : undefined;
+                      setSecondaryFetchingModels(true);
+                      listModels(sp, "", url)
+                        .then((res) => setSecondaryAvailableModels(res.models))
+                        .catch(console.error)
+                        .finally(() => setSecondaryFetchingModels(false));
+                    }}
+                    disabled={secondaryFetchingModels}
+                    className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${secondaryFetchingModels ? "animate-spin" : ""}`} /> Refresh
+                  </button>
+                </label>
+                <select
+                  value={(() => {
+                    const sp = settings.secondary_llm_provider;
+                    if (!sp) return "";
+                    return settings[`secondary_${sp}_model`] || "";
+                  })()}
+                  onChange={(e) => {
+                    const sp = settings.secondary_llm_provider;
+                    if (!sp) return;
+                    const key = `secondary_${sp}_model` as keyof typeof settings;
+                    onUpdate({ ...settings, [key]: e.target.value });
+                  }}
+                  disabled={secondaryAvailableModels.length === 0}
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
+                >
+                  <option value="" disabled>
+                    Select a model...
+                  </option>
+                  {secondaryAvailableModels.map((model) => (
+                    <option key={`secondary-${model}`} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="mb-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                    <Tooltip
+                      content="Optional separate model for Meeting Edge when using the secondary provider. Leave it blank to reuse the secondary main model."
+                      position="right"
+                    >
+                      <span className="flex items-center gap-1 cursor-help">
+                        Secondary Meeting Edge model <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                      </span>
+                    </Tooltip>
+                  </label>
+                </div>
+                <select
+                  value={(() => {
+                    const sp = settings.secondary_llm_provider;
+                    if (!sp) return "";
+                    return settings[`secondary_${sp}_live_model` as keyof typeof settings] as string || "";
+                  })()}
+                  onChange={(e) => {
+                    const sp = settings.secondary_llm_provider;
+                    if (!sp) return;
+                    const key = `secondary_${sp}_live_model` as keyof typeof settings;
+                    onUpdate({ ...settings, [key]: e.target.value || null });
+                  }}
+                  disabled={secondaryAvailableModels.length === 0}
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
+                >
+                  <option value="">Use secondary main model</option>
+                  {secondaryAvailableModels.map((model) => (
+                    <option key={`secondary-live-${model}`} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Validate Secondary Connection */}
+              {(() => {
+                const sp = settings.secondary_llm_provider;
+                const hasConfig = sp === "ollama"
+                  ? Boolean(settings.secondary_ollama_api_url)
+                  : Boolean(sp && settings[`secondary_${sp}_api_key`]);
+                return hasConfig ? (
+                  <div className="md:col-span-2">
+                    <button
+                      onClick={() => handleValidate(sp || "gemini")}
+                      disabled={Boolean(validating)}
+                      className="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-semibold"
+                    >
+                      {validating === sp ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      Validate Secondary Connection
+                    </button>
+                    {validationMsg && validationMsg.provider === sp && (
+                      <p
+                        className={`mt-2 text-sm font-semibold ${validationMsg.type === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                      >
+                        {validationMsg.msg}
+                      </p>
+                    )}
+                  </div>
+                ) : null;
+              })()}
+            </div>
+            </SettingsPanel>
+          </div>
+        </SettingsSection>
+      )}
+
+      {!showLLMSection && !settings.secondary_llm_provider && showLLM && (
+        <SettingsSection
+          eyebrow="AI"
+          title="Secondary provider"
+          description="No secondary provider is configured. Add SECONDARY_LLM_PROVIDER to your .env file to enable automatic fallback when the primary provider is unavailable."
+          width="compact"
+        >
+          <SettingsPanel variant="field" className="mx-auto max-w-2xl">
+            <p className="text-xs contrast-helper">
+              The secondary provider is configured via environment variables in the server&apos;s <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">.env</code> file.
+              When set, all AI features (transcription intelligence, Meeting Edge, chat, speaker inference) will automatically fall back to this provider if the primary fails.
+            </p>
+          </SettingsPanel>
         </SettingsSection>
       )}
 

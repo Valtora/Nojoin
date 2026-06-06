@@ -25,7 +25,7 @@ from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset({"ollama_api_url"})
+INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset({"ollama_api_url", "secondary_ollama_api_url"})
 
 class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
@@ -46,6 +46,19 @@ class SettingsUpdate(BaseModel):
     ollama_model: Optional[str] = None
     ollama_live_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
+    secondary_llm_provider: Optional[str] = None
+    secondary_gemini_model: Optional[str] = None
+    secondary_gemini_live_model: Optional[str] = None
+    secondary_openai_model: Optional[str] = None
+    secondary_openai_live_model: Optional[str] = None
+    secondary_anthropic_model: Optional[str] = None
+    secondary_anthropic_live_model: Optional[str] = None
+    secondary_ollama_model: Optional[str] = None
+    secondary_ollama_live_model: Optional[str] = None
+    secondary_ollama_api_url: Optional[str] = None
+    secondary_gemini_api_key: Optional[str] = None
+    secondary_openai_api_key: Optional[str] = None
+    secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     prefer_short_titles: Optional[bool] = None
     enable_vad: Optional[bool] = None
@@ -81,9 +94,26 @@ class SettingsUpdate(BaseModel):
             raise ValueError("Invalid llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
         return value
 
+    @field_validator('secondary_llm_provider')
+    @classmethod
+    def validate_secondary_llm_provider(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value != "" and value not in ["gemini", "openai", "anthropic", "ollama"]:
+            raise ValueError("Invalid secondary_llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama'] or empty")
+        return value
+
     @field_validator('ollama_api_url')
     @classmethod
     def validate_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
+        if value:
+            try:
+                return validate_ollama_api_url(value, allow_private=True)
+            except OllamaURLValidationError as exc:
+                raise ValueError(str(exc)) from exc
+        return value
+
+    @field_validator('secondary_ollama_api_url')
+    @classmethod
+    def validate_secondary_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
         if value:
             try:
                 return validate_ollama_api_url(value, allow_private=True)

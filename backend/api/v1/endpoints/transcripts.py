@@ -52,7 +52,7 @@ from backend.models.user import User
 from backend.models.chat import ChatMessage
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.celery_app import celery_app
-from backend.processing.llm_services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend, get_llm_backend_with_secondary
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.core.db import async_session_maker
 from backend.models.context_chunk import ContextChunk
@@ -1881,19 +1881,14 @@ async def chat_with_meeting(
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
     user_settings = current_user.settings or {}
-    provider = user_settings.get("llm_provider") or owner_settings.get("llm_provider") or config_manager.get("llm_provider") or "gemini"
-    
-    api_key = system_keys.get(f"{provider}_api_key")
-    if not api_key:
-        api_key = user_settings.get(f"{provider}_api_key")
-        
-    model = user_settings.get(f"{provider}_model") or owner_settings.get(f"{provider}_model") or config_manager.get(f"{provider}_model")
-    
-    if not api_key and provider != "ollama":
-        raise HTTPException(status_code=400, detail=f"No API key configured for {provider}. Please configure it in settings.")
+
+    llm_config = await resolve_llm_config_async(db, user_settings)
+
+    if not llm_config.api_key and llm_config.provider != "ollama":
+        raise HTTPException(status_code=400, detail=f"No API key configured for {llm_config.provider}. Please configure it in settings.")
         
     try:
-        llm_backend = get_llm_backend(provider, api_key, model)
+        llm_backend = get_llm_backend_with_secondary(llm_config)
     except ValueError as e:
         raise sanitized_http_exception(
             logger=logger,

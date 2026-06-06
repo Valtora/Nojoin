@@ -26,6 +26,19 @@ SYSTEM_LLM_FIELDS = (
     "ollama_model",
     "ollama_live_model",
     "ollama_api_url",
+    "secondary_llm_provider",
+    "secondary_gemini_model",
+    "secondary_gemini_live_model",
+    "secondary_openai_model",
+    "secondary_openai_live_model",
+    "secondary_anthropic_model",
+    "secondary_anthropic_live_model",
+    "secondary_ollama_model",
+    "secondary_ollama_live_model",
+    "secondary_ollama_api_url",
+    "secondary_gemini_api_key",
+    "secondary_openai_api_key",
+    "secondary_anthropic_api_key",
 )
 
 LLM_PURPOSE_DEFAULT = "default"
@@ -37,7 +50,15 @@ LIVE_MODEL_FIELDS_BY_PROVIDER = {
     "anthropic": "anthropic_live_model",
     "ollama": "ollama_live_model",
 }
-INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset({"ollama_api_url"})
+
+SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER = {
+    "gemini": "secondary_gemini_live_model",
+    "openai": "secondary_openai_live_model",
+    "anthropic": "secondary_anthropic_live_model",
+    "ollama": "secondary_ollama_live_model",
+}
+
+INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset({"ollama_api_url", "secondary_ollama_api_url"})
 
 
 @dataclass(frozen=True)
@@ -47,8 +68,16 @@ class ResolvedLLMConfig:
     model: str | None
     api_url: str | None
     merged_config: dict[str, Any]
+    secondary_provider: str | None = None
+    secondary_api_key: str | None = None
+    secondary_model: str | None = None
+    secondary_api_url: str | None = None
+    secondary_live_model: str | None = None
 
     def missing_configuration_message(self) -> str | None:
+        if self.has_secondary:
+            return None
+
         if self.provider != "ollama" and not self.api_key:
             return f"No API key configured for {self.provider}"
 
@@ -56,6 +85,27 @@ class ResolvedLLMConfig:
             return f"No model selected for {self.provider}"
 
         return None
+
+    @property
+    def has_secondary(self) -> bool:
+        if not self.secondary_provider:
+            return False
+        if self.secondary_provider != "ollama" and not self.secondary_api_key:
+            return False
+        if not self.secondary_model:
+            return False
+        return True
+
+    def secondary_config(self) -> "ResolvedLLMConfig | None":
+        if not self.has_secondary:
+            return None
+        return ResolvedLLMConfig(
+            provider=self.secondary_provider,
+            api_key=self.secondary_api_key,
+            model=self.secondary_model,
+            api_url=self.secondary_api_url,
+            merged_config=self.merged_config,
+        )
 
 
 def _merge_llm_config(
@@ -101,12 +151,32 @@ def _merge_llm_config(
     model = _resolve_model_for_purpose(merged, provider, purpose)
     api_url = merged.get("ollama_api_url")
 
+    # Resolve secondary provider
+    secondary_provider = merged.get("secondary_llm_provider") or None
+    secondary_api_key = None
+    secondary_model = None
+    secondary_api_url = None
+    secondary_live_model = None
+
+    if secondary_provider:
+        secondary_api_key = merged.get(f"secondary_{secondary_provider}_api_key")
+        secondary_model = _resolve_secondary_model_for_purpose(merged, secondary_provider, purpose)
+        secondary_api_url = merged.get("secondary_ollama_api_url") if secondary_provider == "ollama" else None
+        secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
+        if secondary_live_model_field:
+            secondary_live_model = merged.get(secondary_live_model_field)
+
     return ResolvedLLMConfig(
         provider=provider,
         api_key=str(api_key) if api_key else None,
         model=str(model) if model else None,
         api_url=str(api_url) if api_url else None,
         merged_config=merged,
+        secondary_provider=secondary_provider,
+        secondary_api_key=str(secondary_api_key) if secondary_api_key else None,
+        secondary_model=str(secondary_model) if secondary_model else None,
+        secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
+        secondary_live_model=str(secondary_live_model) if secondary_live_model else None,
     )
 
 
@@ -125,6 +195,74 @@ def _resolve_model_for_purpose(
     return merged.get(f"{provider}_model")
 
 
+def _resolve_secondary_model_for_purpose(
+    merged: Mapping[str, Any],
+    secondary_provider: str,
+    purpose: str,
+) -> Any:
+    if purpose == LLM_PURPOSE_MEETING_EDGE:
+        live_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
+        if live_field:
+            live_model = merged.get(live_field)
+            if live_model:
+                return live_model
+
+    main_model_field = f"secondary_{secondary_provider}_model"
+    return merged.get(main_model_field)
+
+
+def _apply_owner_provider_override(
+    config: ResolvedLLMConfig,
+    owner_settings: Mapping[str, Any] | None,
+    purpose: str,
+) -> ResolvedLLMConfig:
+    """Allow owner to override llm_provider/secondary_llm_provider
+    even when the base config already has a value (e.g. from ENV overlay)."""
+    if not owner_settings:
+        return config
+    merged = dict(config.merged_config)
+    overridden = False
+    for field in ("llm_provider", "secondary_llm_provider"):
+        val = owner_settings.get(field)
+        if val is not None and val != "":
+            merged[field] = val
+            overridden = True
+    if not overridden:
+        return config
+
+    provider = str(merged.get("llm_provider") or "gemini")
+    api_key = merged.get(f"{provider}_api_key")
+    model = _resolve_model_for_purpose(merged, provider, purpose)
+    api_url = merged.get("ollama_api_url")
+
+    secondary_provider = merged.get("secondary_llm_provider") or None
+    secondary_api_key = None
+    secondary_model = None
+    secondary_api_url = None
+    secondary_live_model = None
+
+    if secondary_provider:
+        secondary_api_key = merged.get(f"secondary_{secondary_provider}_api_key")
+        secondary_model = _resolve_secondary_model_for_purpose(merged, secondary_provider, purpose)
+        secondary_api_url = merged.get("secondary_ollama_api_url") if secondary_provider == "ollama" else None
+        secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
+        if secondary_live_model_field:
+            secondary_live_model = merged.get(secondary_live_model_field)
+
+    return ResolvedLLMConfig(
+        provider=provider,
+        api_key=str(api_key) if api_key else None,
+        model=str(model) if model else None,
+        api_url=str(api_url) if api_url else None,
+        merged_config=merged,
+        secondary_provider=secondary_provider,
+        secondary_api_key=str(secondary_api_key) if secondary_api_key else None,
+        secondary_model=str(secondary_model) if secondary_model else None,
+        secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
+        secondary_live_model=str(secondary_live_model) if secondary_live_model else None,
+    )
+
+
 def resolve_llm_config(
     session: Session,
     user_settings: Mapping[str, Any] | None = None,
@@ -134,13 +272,14 @@ def resolve_llm_config(
     owner = session.exec(select(User).where(User.role == "owner")).first()
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
-    return _merge_llm_config(
+    merged = _merge_llm_config(
         base_config=config_manager.get_all(),
         system_keys=system_keys,
         owner_settings=owner_settings,
         user_settings=user_settings,
         purpose=purpose,
     )
+    return _apply_owner_provider_override(merged, owner_settings, purpose)
 
 
 async def resolve_llm_config_async(
@@ -153,10 +292,11 @@ async def resolve_llm_config_async(
     owner = result.scalar_one_or_none()
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
-    return _merge_llm_config(
+    merged = _merge_llm_config(
         base_config=config_manager.get_all(),
         system_keys=system_keys,
         owner_settings=owner_settings,
         user_settings=user_settings,
         purpose=purpose,
     )
+    return _apply_owner_provider_override(merged, owner_settings, purpose)

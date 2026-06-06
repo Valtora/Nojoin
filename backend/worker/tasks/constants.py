@@ -125,7 +125,7 @@ if TYPE_CHECKING:
     from backend.processing.embedding import cosine_similarity, merge_embeddings
     from backend.utils.transcript_utils import combine_transcription_diarization, consolidate_diarized_transcript
     from backend.utils.audio import get_audio_duration, convert_to_mp3, convert_to_proxy_mp3
-    from backend.processing.llm_services import get_llm_backend
+    from backend.processing.llm_services import get_llm_backend_with_secondary
     import torch
 
 logger = logging.getLogger(__name__)

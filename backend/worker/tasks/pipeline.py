@@ -1209,14 +1209,9 @@ def _recording_uses_browser_capture_impl(session, recording_id: int) -> bool:
 
 
 def _llm_backend_from_config_impl(llm_config: ResolvedLLMConfig):
-    from backend.processing.llm_services import get_llm_backend
+    from backend.processing.llm_services import get_llm_backend_with_secondary
 
-    return get_llm_backend(
-        llm_config.provider,
-        api_key=llm_config.api_key,
-        model=llm_config.model,
-        api_url=llm_config.api_url,
-    )
+    return get_llm_backend_with_secondary(llm_config)
 
 
 

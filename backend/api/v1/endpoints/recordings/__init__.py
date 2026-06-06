@@ -75,7 +75,7 @@ from backend.utils.audio import (
     concatenate_wavs,
     get_audio_duration,
 )
-from backend.processing.llm_services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend, get_llm_backend_with_secondary
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_label_manager import SpeakerLabelManager
 from backend.utils.time import utc_now

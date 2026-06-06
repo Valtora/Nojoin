@@ -1,4 +1,5 @@
 import logging
+import shutil
 from typing import List, Optional
 from uuid import uuid4
 from fastapi import Depends, HTTPException, Query, Request
@@ -164,7 +165,10 @@ async def init_upload(
     db.add(Transcript(recording_id=recording.id, transcript_status="processing"))
     await db.commit()
 
-    recordings_module.recording_upload_temp_dir(recording.id, create=True)
+    temp_dir = recordings_module.recording_upload_temp_dir(recording.id, create=False)
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+        recordings_module.recording_upload_temp_dir(recording.id, create=True)
 
     return RecordingInitResponse(
         id=recording.public_id,

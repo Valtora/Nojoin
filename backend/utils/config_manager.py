@@ -4,6 +4,9 @@ import json
 import logging
 import os
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
@@ -44,7 +47,10 @@ SENSITIVE_KEYS = {
     "gemini_api_key",
     "openai_api_key",
     "anthropic_api_key",
-    "hf_token"
+    "secondary_gemini_api_key",
+    "secondary_openai_api_key",
+    "secondary_anthropic_api_key",
+    "hf_token",
 }
 
 LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
@@ -67,6 +73,19 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "ollama_model",
     "ollama_live_model",
     "ollama_api_url",
+    "secondary_llm_provider",
+    "secondary_gemini_model",
+    "secondary_gemini_live_model",
+    "secondary_openai_model",
+    "secondary_openai_live_model",
+    "secondary_anthropic_model",
+    "secondary_anthropic_live_model",
+    "secondary_ollama_model",
+    "secondary_ollama_live_model",
+    "secondary_ollama_api_url",
+    "secondary_gemini_api_key",
+    "secondary_openai_api_key",
+    "secondary_anthropic_api_key",
 )
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -144,6 +163,19 @@ DEFAULT_USER_SETTINGS = {
     "ollama_model": None,       # Default Ollama model
     "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
     "ollama_api_url": "http://host.docker.internal:11434", # Default Ollama API URL
+    "secondary_llm_provider": None,  # Secondary LLM provider (used when primary is unavailable)
+    "secondary_gemini_model": None,       # Secondary Gemini model
+    "secondary_gemini_live_model": None,  # Optional secondary Meeting Edge Gemini model
+    "secondary_openai_model": None,       # Secondary OpenAI model
+    "secondary_openai_live_model": None,  # Optional secondary Meeting Edge OpenAI model
+    "secondary_anthropic_model": None,    # Secondary Anthropic model
+    "secondary_anthropic_live_model": None,  # Optional secondary Meeting Edge Anthropic model
+    "secondary_ollama_model": None,       # Secondary Ollama model
+    "secondary_ollama_live_model": None,  # Optional secondary Meeting Edge Ollama model
+    "secondary_ollama_api_url": "http://host.docker.internal:11434",  # Default secondary Ollama URL
+    "secondary_gemini_api_key": None,     # Secondary Gemini API key
+    "secondary_openai_api_key": None,     # Secondary OpenAI API key
+    "secondary_anthropic_api_key": None,  # Secondary Anthropic API key
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "prefer_short_titles": True, # Prefer short (3-5 words) meeting titles
     "enable_vad": True, # Enable Voice Activity Detection (silence filtering)
@@ -270,6 +302,21 @@ class ConfigManager:
             logger.error(f"Error loading configuration: {e}. Using default settings.", exc_info=True)
             config = DEFAULT_SYSTEM_CONFIG.copy() # Reset to defaults on error
             self._ensure_dirs_exist(config)
+
+        # Overlay ENV values for install-wide LLM settings. These take precedence
+        # over config.json so that operators can manage the active provider and
+        # endpoints via .env without having to edit config.json directly.
+        env_overrides = {
+            "llm_provider": "LLM_PROVIDER",
+            "ollama_api_url": "OLLAMA_API_URL",
+            "secondary_llm_provider": "SECONDARY_LLM_PROVIDER",
+            "secondary_ollama_api_url": "SECONDARY_OLLAMA_API_URL",
+        }
+        for config_key, env_key in env_overrides.items():
+            env_val = os.environ.get(env_key)
+            if env_val is not None and env_val != "":
+                config[config_key] = env_val
+
         return config
 
     def save_config(self, config_data):
@@ -323,6 +370,8 @@ class ConfigManager:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:
              raise ValueError(f"Invalid llm_provider: {value}. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
+        if key == "secondary_llm_provider" and value is not None and value != "" and value not in ["gemini", "openai", "anthropic", "ollama"]:
+             raise ValueError(f"Invalid secondary_llm_provider: {value}. Must be one of ['gemini', 'openai', 'anthropic', 'ollama'] or empty")
         if key == "timezone" and value:
             from backend.utils.timezones import validate_timezone_name
 
@@ -332,6 +381,11 @@ class ConfigManager:
                 validate_ollama_api_url(str(value), allow_private=True)
             except OllamaURLValidationError as exc:
                 raise ValueError(f"Invalid ollama_api_url: {value}") from exc
+        if key == "secondary_ollama_api_url" and value:
+            try:
+                validate_ollama_api_url(str(value), allow_private=True)
+            except OllamaURLValidationError as exc:
+                raise ValueError(f"Invalid secondary_ollama_api_url: {value}") from exc
         return True
 
     def get(self, key, default=None):
@@ -454,7 +508,15 @@ def is_llm_available():
     provider = config_manager.get("llm_provider", "gemini")
     api_key = config_manager.get(f"{provider}_api_key")
     model = config_manager.get(f"{provider}_model")
-    return bool(api_key and model)
+    primary_available = bool(api_key and model)
+    secondary_provider = config_manager.get("secondary_llm_provider")
+    if primary_available:
+        return True
+    if not secondary_provider:
+        return False
+    secondary_api_key = config_manager.get(f"secondary_{secondary_provider}_api_key")
+    secondary_model = config_manager.get(f"secondary_{secondary_provider}_model")
+    return bool(secondary_api_key and secondary_model)
 
 def get_system_api_keys(session=None):
     """Retrieves system-wide API keys exclusively from environment variables."""
@@ -464,6 +526,16 @@ def get_system_api_keys(session=None):
         env_val = os.environ.get(sk.upper())
         if env_val:
             keys[sk] = env_val
+    # Also check secondary ENV vars that use a different naming convention
+    env_overrides = {
+        "secondary_gemini_api_key": "SECONDARY_GEMINI_API_KEY",
+        "secondary_openai_api_key": "SECONDARY_OPENAI_API_KEY",
+        "secondary_anthropic_api_key": "SECONDARY_ANTHROPIC_API_KEY",
+    }
+    for key, env_key in env_overrides.items():
+        env_val = os.environ.get(env_key)
+        if env_val:
+            keys[key] = env_val
     return keys
 
 async def async_get_system_api_keys(db=None):

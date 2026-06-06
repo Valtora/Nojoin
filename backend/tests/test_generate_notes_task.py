@@ -247,10 +247,8 @@ def test_generate_notes_task_completes_with_saved_provider_config(
             return "# Meeting Notes\n\n## Summary\nGenerated notes."
 
     def fake_get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
-        captured["provider"] = provider
-        captured["api_key"] = api_key
-        captured["model"] = model
-        captured["api_url"] = api_url
+        calls = captured.setdefault("calls", [])
+        calls.append({"provider": provider, "api_key": api_key, "model": model, "api_url": api_url})
         return FakeLLM()
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
@@ -270,9 +268,10 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         assert row[2] is None
         assert row[3] == "Completed"
         assert row[4] == 100
-        assert captured["provider"] == "anthropic"
-        assert captured["api_key"] == "sk-ant-valid"
-        assert captured["model"] == "claude-test"
+        primary_call = captured["calls"][0]
+        assert primary_call["provider"] == "anthropic"
+        assert primary_call["api_key"] == "sk-ant-valid"
+        assert primary_call["model"] == "claude-test"
         assert captured["timeout"] == 300
         assert captured["user_notes"] == "Remember the launch date"
     finally:

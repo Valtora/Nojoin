@@ -1843,12 +1843,13 @@ def get_llm_backend(
     """
     from backend.utils.config_manager import config_manager
     if model is None:
-        # For local providers, we might have specific model keys
         if provider == "ollama":
             model = config_manager.get("ollama_model")
         else:
             model = config_manager.get(f"{provider}_model")
-    
+
+    logger.info("Creating LLM backend: provider=%s model=%s api_url=%s", provider, model, api_url)
+
     if provider == "gemini":
         return GeminiLLMBackend(api_key=api_key, model=model)
     elif provider == "openai":
@@ -1863,3 +1864,145 @@ def get_llm_backend(
         )
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
+
+
+class SecondaryLLMBackend(LLMBackend):
+    """Wraps a primary and secondary LLM backend. On any error from primary,
+    falls back to the secondary backend. If both fail, raises the primary error."""
+
+    def __init__(self, primary: LLMBackend, secondary: LLMBackend):
+        self._primary = primary
+        self._secondary = secondary
+        logger.info(
+            "SecondaryLLMBackend: primary=%s secondary=%s",
+            getattr(primary, 'model', 'unknown'),
+            getattr(secondary, 'model', 'unknown'),
+        )
+
+    def _call_with_secondary(self, method_name: str, *args, **kwargs):
+        try:
+            result = getattr(self._primary, method_name)(*args, **kwargs)
+            logger.info(
+                "Primary LLM (%s) handled %s successfully.",
+                getattr(self._primary, 'model', 'unknown'),
+                method_name,
+            )
+            return result
+        except Exception as primary_exc:
+            logger.warning(
+                "Primary LLM (%s) failed on %s: %s. Falling back to secondary (%s).",
+                getattr(self._primary, 'model', 'unknown'),
+                method_name,
+                primary_exc,
+                getattr(self._secondary, 'model', 'unknown'),
+            )
+            try:
+                result = getattr(self._secondary, method_name)(*args, **kwargs)
+                logger.info("Secondary LLM call succeeded on %s after primary failure.", method_name)
+                return result
+            except Exception:
+                logger.error("Secondary LLM also failed on %s.", method_name)
+                raise primary_exc
+
+    def _stream_with_secondary(self, method_name: str, *args, **kwargs):
+        try:
+            gen = getattr(self._primary, method_name)(*args, **kwargs)
+            first_chunk = next(gen)
+            has_yielded = False
+            try:
+                yield first_chunk
+                has_yielded = True
+                yield from gen
+            finally:
+                if not has_yielded:
+                    gen.close()
+        except StopIteration:
+            return
+        except Exception as primary_exc:
+            logger.warning(
+                "Primary LLM (%s) failed on streaming %s: %s. Falling back to secondary (%s).",
+                getattr(self._primary, 'model', 'unknown'),
+                method_name,
+                primary_exc,
+                getattr(self._secondary, 'model', 'unknown'),
+            )
+            try:
+                yield from getattr(self._secondary, method_name)(*args, **kwargs)
+            except Exception:
+                raise primary_exc
+
+    def infer_speaker_suggestions(self, transcript, prompt_template=None, timeout=60, user_notes=None, meeting_context=None, eligible_labels=None):
+        return self._call_with_secondary("infer_speaker_suggestions", transcript, prompt_template, timeout, user_notes=user_notes, meeting_context=meeting_context, eligible_labels=eligible_labels)
+
+    def generate_meeting_intelligence(self, request, prompt_template=None, timeout=60):
+        return self._call_with_secondary("generate_meeting_intelligence", request, prompt_template, timeout)
+
+    def generate_meeting_edge(self, request, prompt_template=None, timeout=60):
+        return self._call_with_secondary("generate_meeting_edge", request, prompt_template, timeout)
+
+    def generate_meeting_notes(self, transcript, speaker_mapping, prompt_template=None, timeout=60, user_notes=None, meeting_context=None):
+        return self._call_with_secondary("generate_meeting_notes", transcript, speaker_mapping, prompt_template, timeout, user_notes=user_notes, meeting_context=meeting_context)
+
+    def infer_meeting_title(self, transcript, prompt_template=None, timeout=60):
+        return self._call_with_secondary("infer_meeting_title", transcript, prompt_template, timeout)
+
+    def ask_question_about_meeting(self, user_question, meeting_notes, diarized_transcript, conversation_history=None, timeout=60, recording_id=None):
+        return self._call_with_secondary("ask_question_about_meeting", user_question, meeting_notes, diarized_transcript, conversation_history, timeout, recording_id=recording_id)
+
+    def ask_question_streaming(self, user_question, meeting_notes, diarized_transcript, conversation_history=None, timeout=60, recording_id=None):
+        return self._stream_with_secondary("ask_question_streaming", user_question, meeting_notes, diarized_transcript, conversation_history, timeout, recording_id=recording_id)
+
+    def validate_api_key(self) -> bool:
+        try:
+            return self._primary.validate_api_key()
+        except Exception:
+            return self._secondary.validate_api_key()
+
+    def list_models(self) -> list:
+        try:
+            return self._primary.list_models()
+        except Exception:
+            return self._secondary.list_models()
+
+
+def get_llm_backend_with_secondary(
+    primary_config,
+    purpose: str = "default",
+):
+    """Instantiate primary LLM backend with optional secondary fallback.
+
+    Args:
+        primary_config: A ResolvedLLMConfig (from resolve_llm_config).
+        purpose: "default" or "meeting_edge".
+
+    Returns:
+        An LLMBackend, wrapped in SecondaryLLMBackend if a secondary
+        provider is configured and operational, otherwise just the primary.
+    """
+    primary = get_llm_backend(
+        provider=primary_config.provider,
+        api_key=primary_config.api_key,
+        model=primary_config.model,
+        api_url=primary_config.api_url,
+    )
+
+    secondary_cfg = primary_config.secondary_config()
+    if secondary_cfg is None:
+        return primary
+
+    try:
+        secondary = get_llm_backend(
+            provider=secondary_cfg.provider,
+            api_key=secondary_cfg.api_key,
+            model=secondary_cfg.model,
+            api_url=secondary_cfg.api_url,
+        )
+        return SecondaryLLMBackend(primary=primary, secondary=secondary)
+    except Exception as exc:
+        logger.warning(
+            "Failed to initialise secondary LLM backend (%s): %s. "
+            "Continuing with primary only.",
+            secondary_cfg.provider,
+            exc,
+        )
+        return primary

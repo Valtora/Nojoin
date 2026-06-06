@@ -247,9 +247,9 @@ async def seed_data(test_session_maker: sessionmaker) -> None:
         await session.commit()
 
 @pytest.mark.anyio
-@patch("backend.api.v1.endpoints.transcripts.get_llm_backend")
+@patch("backend.api.v1.endpoints.transcripts.get_llm_backend_with_secondary")
 async def test_chat_delegates_embedding_to_celery(
-    mock_get_llm_backend,
+    mock_get_llm_backend_with_secondary,
     client: AsyncClient,
     override_current_user,
     test_session_maker: sessionmaker,
@@ -263,7 +263,7 @@ async def test_chat_delegates_embedding_to_celery(
     def mock_generator(*args, **kwargs):
         yield "Hello from AI"
     mock_llm.ask_question_streaming.side_effect = mock_generator
-    mock_get_llm_backend.return_value = mock_llm
+    mock_get_llm_backend_with_secondary.return_value = mock_llm
 
     # Track Celery send_task calls
     celery_tasks = []

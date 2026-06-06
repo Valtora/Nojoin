@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional
 from backend.api.error_handling import sanitized_http_exception
-from backend.processing.llm_services import get_llm_backend
+from backend.processing.llm_services import get_llm_backend, get_llm_backend_with_secondary
 from backend.api.deps import get_current_user, get_db
 from backend.utils.config_manager import config_manager
 from backend.utils.ollama_url_policy import validate_ollama_api_url
