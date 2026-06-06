@@ -48,7 +48,7 @@ describe("capture lifecycle", () => {
     expect(onGuardedExit).not.toHaveBeenCalled();
   });
 
-  it("can accept an expected route update without dispatching a guarded exit", () => {
+  it("does not dispatch a guarded exit on route change", () => {
     const onGuardedExit = vi.fn();
     const lifecycle = new CaptureLifecycle({
       getRecordingId: () => 99,
@@ -58,16 +58,10 @@ describe("capture lifecycle", () => {
     });
 
     lifecycle.attach("/");
-    lifecycle.updateRouteSignature("/recordings/99", { guard: false });
-
+    lifecycle.updateRouteSignature("/recordings/99");
     expect(onGuardedExit).not.toHaveBeenCalled();
 
     lifecycle.updateRouteSignature("/recordings");
-
-    expect(onGuardedExit).toHaveBeenCalledTimes(1);
-    expect(onGuardedExit).toHaveBeenCalledWith({
-      reason: "route-change",
-      useBeacon: false,
-    });
+    expect(onGuardedExit).not.toHaveBeenCalled();
   });
 });

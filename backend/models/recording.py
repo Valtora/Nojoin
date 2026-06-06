@@ -92,6 +92,7 @@ class Recording(BaseDBModel, table=True):
     )
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
+    last_activity_at: Optional[datetime] = Field(default=None)
     
     user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")))
     calendar_event_id: Optional[int] = Field(

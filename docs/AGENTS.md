@@ -66,7 +66,7 @@ Nojoin is a distributed meeting intelligence platform. The system records live m
   - MediaRecorder creates short WebM/Opus, Ogg/Opus, or MP4 audio segments that upload sequentially to `/recordings/{id}/segment`.
   - The worker transcodes each browser segment to canonical 16 kHz, two-channel WAV before live transcription and final concatenation. Channel 0 is shared/system audio when available and channel 1 is microphone audio; ASR/VAD may consume a mono derivative from those preserved channels, but the browser-live asset itself is not mono.
 - **Lifecycle**:
-  - Refreshing, closing, or navigating away from the Nojoin tab during capture marks the recording `PAUSED`.
+  - Refreshing or closing the Nojoin tab (actual unload, not in-app navigation) during capture marks the recording `PAUSED`.
   - A paused recording blocks new capture until the user resumes or discards it.
   - Switching to another browser tab, window, or application must not pause capture.
   - Retired native-helper routes should remain terminal and should not issue credentials or accept uploads.

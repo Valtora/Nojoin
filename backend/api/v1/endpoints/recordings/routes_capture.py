@@ -6,6 +6,8 @@ from fastapi import Depends, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.utils.time import utc_now
+
 from backend.api.deps import get_db, get_current_recording_client_user
 from backend.models.user import User
 from backend.models.recording import (
@@ -45,6 +47,7 @@ async def pause_upload(
     if recording.status != RecordingStatus.PAUSED:
         recording.status = RecordingStatus.PAUSED
         recording.client_status = ClientStatus.PAUSED
+        recording.last_activity_at = utc_now()
         db.add(recording)
         await db.commit()
         await db.refresh(recording)
@@ -89,6 +92,7 @@ async def resume_upload(
 
     recording.status = RecordingStatus.UPLOADING
     recording.client_status = ClientStatus.UPLOADING
+    recording.last_activity_at = utc_now()
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
@@ -142,6 +146,8 @@ async def upload_segment(
                     source_kind="browser",
                     seal_tail=False,
                 )
+            recording.last_activity_at = utc_now()
+            db.add(recording)
             await db.commit()
         except HTTPException:
             raise

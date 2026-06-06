@@ -50,7 +50,7 @@ The browser capture stack is responsible for:
 - Recording short WebM/Opus, Ogg/Opus, or MP4 audio slices and uploading them with session-cookie authentication.
 - Preserving the browser-live source layout after worker transcode as 16 kHz, two-channel WAV: channel 0 is shared/system audio when available and channel 1 is microphone audio.
 - Exposing analyser output to the live waveform UI.
-- Moving recordings to `PAUSED` on real tab unload or app navigation away, then requiring resume or discard before another capture starts.
+- Moving recordings to `PAUSED` on real tab unload (pagehide/beforeunload) only, then requiring resume or discard before another capture starts. In-app page navigation does not pause capture.
 
 ## Recording Flow
 
@@ -63,9 +63,11 @@ The browser capture stack is responsible for:
 7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation.
 8. The web client shows a live capture or processing status workspace while the job runs.
 
-If the user refreshes, closes, or navigates away from the Nojoin tab while recording, the browser stops capture, drops only the in-memory tail, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain available. On the next app load, Nojoin blocks new capture behind a mandatory resume-or-discard modal.
+If the user refreshes, closes, or navigates away from the Nojoin tab while recording (actual tab unload, not in-app navigation), the browser stops capture, drops only the in-memory tail, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain available. On the next app load, Nojoin blocks new capture behind a mandatory resume-or-discard modal.
 
-Switching focus to another tab, window, or application does not pause capture. Only a real Nojoin tab unload or an intentional Nojoin route change away from the active recording invokes the guarded pause path.
+Switching focus to another browser tab, window, or application does not pause capture. Navigating between pages within the Nojoin app also does not pause capture. Only a real Nojoin tab unload (pagehide/beforeunload) invokes the guarded pause path.
+
+When a recording is active, a floating badge appears at the bottom of the viewport showing the recording status, elapsed time, and pause/resume/stop controls. This badge remains accessible from any page in Nojoin so the user never loses visibility of the active recording.
 
 ## Processing Pipeline
 

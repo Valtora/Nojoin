@@ -211,7 +211,7 @@ When changing capture behavior, validate the relevant parts of this path:
 - Microphone permission and selected-device behavior.
 - Per-source gain controls in **Settings > Capture**.
 - Segment creation, sequential upload, worker transcode, live transcript dispatch, stop/finalize, pause/resume, and discard.
-- The paused-recording lock after refresh, close, or in-app navigation away from the active recording.
+- The paused-recording lock after refresh or close (actual tab unload, not in-app navigation).
 - Focus changes to another tab, window, or application; these should not pause capture.
 
 Useful focused checks:

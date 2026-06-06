@@ -109,9 +109,9 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 - **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing.
 - **Cancel** discards an uploading or paused recording and clears the capture lock.
 
-Refreshing, closing, or navigating away from the Nojoin tab during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
+Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
 
-Switching to another browser tab, changing the active window, or using another application does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded or when you intentionally navigate away inside the Nojoin app.
+Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible on every page so you can always see the recording status and control it.
 
 ## Paused Recording Lock
 

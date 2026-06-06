@@ -136,6 +136,7 @@ class RecordingPublicRead(PublicModel):
     processing_eta_sample_size: int = 0
     is_archived: bool = False
     is_deleted: bool = False
+    last_activity_at: Optional[datetime] = None
     transcript: Optional[TranscriptPublicRead] = None
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
@@ -317,6 +318,7 @@ def serialize_recording(
         processing_eta_sample_size=processing_eta_sample_size,
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
+        last_activity_at=recording.last_activity_at,
         transcript=transcript,
         speakers=speakers,
         tags=tags,

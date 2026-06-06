@@ -6,6 +6,8 @@ from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
+from backend.utils.time import utc_now
+
 from backend.api.deps import get_db, get_current_user, get_current_recording_client_user
 from backend.models.user import User
 from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus
@@ -155,7 +157,8 @@ async def init_upload(
         name=name,
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
-        user_id=current_user.id
+        user_id=current_user.id,
+        last_activity_at=utc_now(),
     )
     
     db.add(recording)

@@ -8,6 +8,7 @@ import TopBar from "@/components/TopBar";
 import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
 import TourGuide from "@/components/TourGuide";
 import CaptureShell from "@/components/CaptureShell";
+import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 
 export default function DashboardLayout({
@@ -46,6 +47,7 @@ export default function DashboardLayout({
             <ServiceStatusAlerts />
           </main>
         </div>
+        <RecordingFloatingBadge />
       </CaptureShell>
     </CaptureProvider>
   );

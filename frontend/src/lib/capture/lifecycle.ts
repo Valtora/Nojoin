@@ -10,10 +10,6 @@ export interface CaptureLifecycleOptions {
   windowRef?: Window;
 }
 
-export interface CaptureRouteUpdateOptions {
-  guard?: boolean;
-}
-
 export class CaptureLifecycle {
   private readonly getRecordingId: CaptureLifecycleOptions["getRecordingId"];
 
@@ -66,25 +62,13 @@ export class CaptureLifecycle {
     }
   }
 
-  updateRouteSignature(
-    routeSignature: string,
-    options: CaptureRouteUpdateOptions = {},
-  ) {
+  updateRouteSignature(routeSignature: string) {
     if (!this.routeSignature) {
       this.routeSignature = routeSignature;
       return;
     }
 
-    if (this.routeSignature === routeSignature) {
-      return;
-    }
-
     this.routeSignature = routeSignature;
-    if (options.guard === false) {
-      return;
-    }
-
-    this.triggerGuardedExit("route-change", false);
   }
 
   resetGuard() {

@@ -163,12 +163,6 @@ export class CaptureController {
   };
 
   updateRouteSignature = (routeSignature: string) => {
-    const routePath = routeSignature.split("?", 1)[0];
-    if (this.state.recordingId && routePath === `/recordings/${this.state.recordingId}`) {
-      this.lifecycle.updateRouteSignature(routeSignature, { guard: false });
-      return;
-    }
-
     this.lifecycle.updateRouteSignature(routeSignature);
   };
 
