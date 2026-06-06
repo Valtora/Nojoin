@@ -34,8 +34,15 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 - Works across any meeting platform, Google Meet, Microsoft Teams, Zoom, Webex, and more. If you can hear it, Nojoin can capture it.
 - Local transcription and speaker attribution on your own infrastructure.
 - Optional cloud LLMs, or fully local AI with Ollama.
-- Web dashboard with recordings, calendar context, a Task List, and a fuller Tasks workspace.
+- Web dashboard with recordings, calendar, and a Tasks workspace.
 - Browser-native capture for system audio and microphone input.
+
+## Supported Browsers and OSes
+
+- Chrome for Windows, Linux, and macOS (shared-audio recording)
+- Chromium-family browsers on Windows and Linux (shared-audio recording)
+- Chromium-family browsers on macOS (best-effort shared-audio recording)
+- Chrome (mobile) for Android and iOS (microphone-only recording)
 
 ## Quick Start
 
@@ -53,24 +60,27 @@ Nojoin is built for people who want the usefulness of meeting assistants without
    cp .env.example .env
    ```
 
-3. Set `FIRST_RUN_PASSWORD` in `.env`.
-4. Set `DATA_ENCRYPTION_KEY` in `.env` for any persistent deployment.
+3. Set required environment variables in `.env`.
+   - `FIRST_RUN_PASSWORD`
+   - `DATA_ENCRYPTION_KEY` (for any persistent deployment)
+   - `HF_TOKEN` (for Hugging Face API access, optional but recommended for better transcription quality and features)
+   - And other API keys as needed for your desired features.
 
-5. Start Nojoin.
+4. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-6. Open the web app.
+5. Open the web app.
 
    ```text
    https://localhost:14443
    ```
 
-7. Complete the first-run wizard.
+6. Complete the first-run wizard.
 
-8. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, in another Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only recording, then start a short test meeting. Other Chromium-family browsers on macOS are best-effort. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
+7. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, in another Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only recording, then start a short test meeting. Other Chromium-family browsers on macOS are best-effort. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
 
 Notes:
 
