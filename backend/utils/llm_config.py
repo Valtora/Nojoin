@@ -58,7 +58,7 @@ SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER = {
     "ollama": "secondary_ollama_live_model",
 }
 
-INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset({"ollama_api_url", "secondary_ollama_api_url"})
+INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset(SYSTEM_LLM_FIELDS)
 
 
 @dataclass(frozen=True)
@@ -216,13 +216,14 @@ def _apply_owner_provider_override(
     owner_settings: Mapping[str, Any] | None,
     purpose: str,
 ) -> ResolvedLLMConfig:
-    """Allow owner to override llm_provider/secondary_llm_provider
-    even when the base config already has a value (e.g. from ENV overlay)."""
+    """Fill missing provider selections from owner settings without overriding install-wide config."""
     if not owner_settings:
         return config
     merged = dict(config.merged_config)
     overridden = False
     for field in ("llm_provider", "secondary_llm_provider"):
+        if merged.get(field) not in (None, ""):
+            continue
         val = owner_settings.get(field)
         if val is not None and val != "":
             merged[field] = val

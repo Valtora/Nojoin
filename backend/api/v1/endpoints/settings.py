@@ -25,7 +25,7 @@ from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset({"ollama_api_url", "secondary_ollama_api_url"})
+INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset(INSTALL_WIDE_AI_SETTING_KEYS)
 
 class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
@@ -294,7 +294,10 @@ async def _save_user_settings(
     if is_admin:
         _persist_install_wide_ai_settings(update_data)
 
-    current_settings.update(update_data)
+    user_scoped_updates = {
+        key: value for key, value in update_data.items() if key not in INSTALL_WIDE_AI_SETTING_KEYS
+    }
+    current_settings.update(user_scoped_updates)
     current_user.settings = current_settings
 
     db.add(current_user)
