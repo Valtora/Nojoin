@@ -45,6 +45,7 @@ CREATE TABLE recordings (
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
+    last_activity_at DATETIME,
     user_id INTEGER,
     calendar_event_id INTEGER
 )
@@ -92,7 +93,9 @@ CREATE TABLE recording_audio_chunks (
     upload_status VARCHAR(32) NOT NULL,
     idempotency_key VARCHAR(255),
     received_at DATETIME NOT NULL,
-    cleanup_eligible_at DATETIME
+    cleanup_eligible_at DATETIME,
+    UNIQUE(recording_id, sequence_no),
+    UNIQUE(recording_id, idempotency_key)
 )
 """
 
@@ -123,7 +126,8 @@ CREATE TABLE recording_audio_window_manifests (
     is_partial BOOLEAN NOT NULL,
     is_sealed BOOLEAN NOT NULL,
     processing_run_id INTEGER,
-    last_error TEXT
+    last_error TEXT,
+    UNIQUE(recording_id, window_index)
 )
 """
 

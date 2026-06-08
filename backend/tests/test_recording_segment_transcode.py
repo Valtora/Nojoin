@@ -42,6 +42,7 @@ CREATE TABLE recordings (
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
+    last_activity_at DATETIME,
     user_id INTEGER,
     calendar_event_id INTEGER
 )
@@ -89,7 +90,9 @@ CREATE TABLE recording_audio_chunks (
     upload_status VARCHAR(32) NOT NULL,
     idempotency_key VARCHAR(255),
     received_at DATETIME NOT NULL,
-    cleanup_eligible_at DATETIME
+    cleanup_eligible_at DATETIME,
+    UNIQUE(recording_id, sequence_no),
+    UNIQUE(recording_id, idempotency_key)
 )
 """
 
@@ -120,7 +123,8 @@ CREATE TABLE recording_audio_window_manifests (
     is_partial BOOLEAN NOT NULL,
     is_sealed BOOLEAN NOT NULL,
     processing_run_id INTEGER,
-    last_error TEXT
+    last_error TEXT,
+    UNIQUE(recording_id, window_index)
 )
 """
 
@@ -388,6 +392,77 @@ async def _chunk_metadata_rows_for_recording(
             (int(sequence_no), int(sample_rate_hz), int(channel_count), str(storage_path))
             for sequence_no, sample_rate_hz, channel_count, storage_path in rows.all()
         ]
+
+
+def test_sync_recording_audio_chunks_upserts_existing_sequence(sync_engine, tmp_path) -> None:
+    from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
+    from backend.utils.time import utc_now
+
+    upload_dir = tmp_path / "upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = upload_dir / "986.wav"
+    wav_path.write_bytes(make_wav_bytes(duration_s=3.0, sample_rate=16000, channels=2))
+
+    with sync_engine.begin() as connection:
+        connection.execute(text(RECORDINGS_SCHEMA))
+        connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
+
+    now = utc_now()
+    with Session(sync_engine) as session:
+        session.execute(
+            text(
+                """
+                INSERT INTO recording_audio_chunks (
+                    id, created_at, updated_at, public_id, recording_id, sequence_no,
+                    source_kind, absolute_start_ms, absolute_end_ms, duration_ms,
+                    sample_rate_hz, channel_count, byte_size, sha256, storage_path,
+                    upload_status, idempotency_key, received_at, cleanup_eligible_at
+                ) VALUES (
+                    1, :created_at, :updated_at, :public_id, :recording_id, :sequence_no,
+                    'browser', 0, 1, 1, 1, 1, 1, :sha256, :storage_path,
+                    'received', :idempotency_key, :received_at, NULL
+                )
+                """
+            ),
+            {
+                "created_at": now,
+                "updated_at": now,
+                "public_id": "existing-chunk-public-id",
+                "recording_id": 24,
+                "sequence_no": 986,
+                "sha256": "stale",
+                "storage_path": "data/recordings/temp/24/986-stale.wav",
+                "idempotency_key": "browser:986:stale",
+                "received_at": now,
+            },
+        )
+
+        sync_recording_audio_chunks_from_directory(
+            session,
+            recording_id=24,
+            source_kind="browser",
+            suffix=".wav",
+            temp_dir=upload_dir,
+        )
+        session.commit()
+
+        row = session.execute(
+            text(
+                """
+                SELECT COUNT(*), storage_path, sample_rate_hz, channel_count, duration_ms
+                FROM recording_audio_chunks
+                WHERE recording_id = :recording_id AND sequence_no = :sequence_no
+                GROUP BY storage_path, sample_rate_hz, channel_count, duration_ms
+                """
+            ),
+            {"recording_id": 24, "sequence_no": 986},
+        ).one()
+
+    assert row[0] == 1
+    assert row[1] == str(wav_path)
+    assert row[2] == 16000
+    assert row[3] == 2
+    assert row[4] == 3000
 
 
 @pytest.mark.anyio
