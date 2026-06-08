@@ -361,8 +361,17 @@ async def _get_diarization_component(
     download: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
     diarization_enabled = bool(config_manager.get("enable_diarization", True))
-    pyannote_ready = bool(model_status.get("pyannote", {}).get("downloaded"))
-    embedding_ready = bool(model_status.get("embedding", {}).get("downloaded"))
+    pyannote_status = model_status.get("pyannote", {})
+    embedding_status = model_status.get("embedding", {})
+    segmentation_status = model_status.get("segmentation", {})
+    pyannote_ready = bool(pyannote_status.get("downloaded"))
+    embedding_ready = bool(embedding_status.get("downloaded"))
+    segmentation_ready = bool(segmentation_status.get("downloaded"))
+    using_local_assets = all(
+        status.get("source") in {"bundled", "cache"}
+        for status in (pyannote_status, embedding_status)
+        if status
+    ) and pyannote_ready and embedding_ready
     system_keys = await async_get_system_api_keys(db)
     hf_token_status = await _validate_hf_token(system_keys.get("hf_token"))
     downloading = _is_stage_downloading(download, "pyannote", "embedding", "init")
@@ -383,18 +392,23 @@ async def _get_diarization_component(
             False,
         )
 
-    if pyannote_ready and embedding_ready and hf_token_status["valid"] is True:
+    if pyannote_ready and embedding_ready and (hf_token_status["valid"] is True or using_local_assets):
+        detail = "Pyannote diarization and speaker embeddings are ready."
+        if segmentation_ready:
+            detail = "Pyannote diarization, speaker embeddings, and segmentation refinement are ready."
         return (
             _build_component(
                 "ok",
                 "Ready",
-                "Pyannote diarization, speaker embeddings, and Hugging Face access are ready.",
+                detail,
                 None,
                 enabled=True,
-                token_configured=True,
-                token_valid=True,
+                token_configured=hf_token_status["configured"],
+                token_valid=hf_token_status["valid"],
                 pyannote_downloaded=True,
                 embedding_downloaded=True,
+                segmentation_downloaded=segmentation_ready,
+                using_local_assets=using_local_assets,
             ),
             True,
         )
@@ -405,6 +419,9 @@ async def _get_diarization_component(
     elif not hf_token_status["configured"]:
         detail = "Speaker diarization is enabled, but no Hugging Face token is configured. Core transcription can still run without speaker separation."
         action = hf_token_status["action"]
+        if using_local_assets:
+            detail = "Speaker diarization is running from local bundled or cached assets. A Hugging Face token is only needed to refresh those assets from upstream."
+            action = None
     elif hf_token_status["valid"] is False:
         detail = "Speaker diarization is enabled, but the configured Hugging Face token is not valid."
         action = hf_token_status["action"]
@@ -431,6 +448,8 @@ async def _get_diarization_component(
             token_valid=hf_token_status["valid"],
             pyannote_downloaded=pyannote_ready,
             embedding_downloaded=embedding_ready,
+            segmentation_downloaded=segmentation_ready,
+            using_local_assets=using_local_assets,
         ),
         False,
     )

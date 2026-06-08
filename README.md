@@ -63,7 +63,6 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 3. Set required environment variables in `.env`.
    - `FIRST_RUN_PASSWORD`
    - `DATA_ENCRYPTION_KEY` (for any persistent deployment)
-   - `HF_TOKEN` (for Hugging Face API access, optional but recommended for better transcription quality and features)
    - And other API keys as needed for your desired features.
 
 4. Start Nojoin.

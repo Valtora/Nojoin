@@ -65,3 +65,37 @@ async def test_validate_hf_token_revalidates_when_token_changes(monkeypatch) -> 
     assert first["valid"] is True
     assert second["valid"] is False
     assert calls == ["hf-valid", "hf-invalid"]
+
+
+@pytest.mark.anyio
+async def test_get_diarization_component_accepts_local_assets_without_hf_token(monkeypatch) -> None:
+    async def _fake_keys(_db):
+        return {"hf_token": None}
+
+    async def _fake_validate(_token):
+        return {
+            "configured": False,
+            "valid": None,
+            "status": "info",
+            "detail": "No Hugging Face token is configured for Pyannote.",
+            "action": "Add a Hugging Face token and accept the Pyannote model terms.",
+        }
+
+    monkeypatch.setattr(health_service, "async_get_system_api_keys", _fake_keys)
+    monkeypatch.setattr(health_service, "_validate_hf_token", _fake_validate)
+
+    component, ready = await health_service._get_diarization_component(
+        db=None,
+        model_status={
+            "pyannote": {"downloaded": True, "source": "bundled"},
+            "embedding": {"downloaded": True, "source": "bundled"},
+            "segmentation": {"downloaded": True, "source": "bundled"},
+        },
+        download={"in_progress": False, "stage": None, "status": None},
+    )
+
+    assert ready is True
+    assert component["status"] == "ok"
+    assert component["label"] == "Ready"
+    assert component["using_local_assets"] is True
+    assert component["token_configured"] is False

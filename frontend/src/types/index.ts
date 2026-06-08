@@ -567,6 +567,7 @@ export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
   checked_paths: string[];
+  source?: string;
 }
 
 export interface SystemModelStatus {

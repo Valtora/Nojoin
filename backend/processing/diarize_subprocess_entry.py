@@ -18,6 +18,7 @@ if project_root not in sys.path:
 # Setup logging to stdout (must be before any logger usage)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
+cwd = os.getcwd()
 
 # Ensure audio environment is setup
 try:
@@ -55,8 +56,14 @@ def main():
         sys.exit(2)
 
     try:
+        from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
+
         device = torch.device(device_str)
-        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=hf_token)
+        resolved_model = resolve_local_pyannote_model("pyannote/speaker-diarization-community-1")
+        if resolved_model.source == "remote":
+            pipeline = Pipeline.from_pretrained(resolved_model.load_ref, token=hf_token)
+        else:
+            pipeline = Pipeline.from_pretrained(resolved_model.load_ref)
         pipeline.to(device)
         file = {"audio": audio_path}
         hook = StdoutProgressHook()

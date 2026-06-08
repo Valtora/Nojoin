@@ -12,6 +12,7 @@ import pandas as pd # Optional, useful if manipulating results
 from dotenv import load_dotenv
 from pyannote.audio.pipelines.utils.hook import ProgressHook
 import contextlib
+from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 from ..utils.config_manager import config_manager
 
@@ -78,17 +79,25 @@ def _filter_short_segments(annotation: Annotation, min_duration_s: float = 0.1) 
 def load_diarization_pipeline(device_str: str, hf_token: str = None):
     """Load pyannote diarization pipeline from Hugging Face and move to device."""
     try:
-        if not hf_token:
-            hf_token = config_manager.get("hf_token")
-        
-        if not hf_token:
-            raise ValueError("Hugging Face token (hf_token) not found in configuration.")
+        resolved_model = resolve_local_pyannote_model(DEFAULT_PIPELINE)
 
-        # Login to Hugging Face to ensure internal calls (like Inference) have access
-        huggingface_hub.login(token=hf_token)
+        if resolved_model.source == "remote":
+            if not hf_token:
+                hf_token = config_manager.get("hf_token")
 
-        # Pyannote 3.1+ and HuggingFace Hub use 'token' instead of 'use_auth_token'
-        pipeline = Pipeline.from_pretrained(DEFAULT_PIPELINE, token=hf_token)
+            if not hf_token:
+                raise ValueError("Hugging Face token (hf_token) not found and no local Pyannote model is available.")
+
+            # Login to Hugging Face to ensure internal calls (like Inference) have access
+            huggingface_hub.login(token=hf_token)
+            pipeline = Pipeline.from_pretrained(resolved_model.load_ref, token=hf_token)
+        else:
+            logger.info(
+                "Loading diarization pipeline from %s model path: %s",
+                resolved_model.source,
+                resolved_model.load_ref,
+            )
+            pipeline = Pipeline.from_pretrained(resolved_model.load_ref)
         pipeline.to(torch.device(device_str))
         return pipeline
     except OSError as e:
@@ -105,7 +114,9 @@ def load_diarization_pipeline(device_str: str, hf_token: str = None):
              raise RuntimeError(f"Could not load diarization pipeline: {e}") from e
     except Exception as e:
         logger.error(f"Failed to load diarization pipeline: {e}", exc_info=True)
-        raise RuntimeError("Could not load diarization pipeline. Please check your HF token and internet connection.") from e
+        raise RuntimeError(
+            "Could not load diarization pipeline. Please check your HF token, local bundled assets, or network access."
+        ) from e
 
 def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
     """Performs speaker diarization on the given audio file using pyannote.audio.
@@ -251,4 +262,3 @@ def diarize_audio_with_progress(audio_path: str, progress_callback=None, cancel_
             os.remove(output_path)
         except Exception:  # noqa: BLE001
             pass
-

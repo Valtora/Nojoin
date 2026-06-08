@@ -150,7 +150,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 ### Common Optional Values
 
 - `REDIS_PASSWORD`: Password for the internal Redis service.
-- `HF_TOKEN`: Hugging Face token used to download diarisation models.
+- `HF_TOKEN`: Optional Hugging Face token used only when you want to refresh the bundled Pyannote diarisation assets from upstream.
 - `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
 - `LLM_PROVIDER`: Default LLM provider such as `gemini`, `openai`, `anthropic`, or `ollama`.
 - `GEMINI_API_KEY`: Gemini API key.

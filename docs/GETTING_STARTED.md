@@ -60,6 +60,7 @@ The first user becomes the Owner account.
 During setup, the system automatically detects configured API keys and Hugging Face tokens from the environment variables (set in `.env` before starting the stack). The setup wizard will:
 
 - Detect active AI provider credentials and Hugging Face tokens.
+- Detect whether the bundled local Pyannote speaker models are already present.
 - Let you select the default model for your configured AI provider.
 - Warn you if no AI provider credentials are configured, explaining the loss of core intelligence features (Meeting Edge, Notes, and Speaker Inference), and allow you to proceed or reload the configuration.
 

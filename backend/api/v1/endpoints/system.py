@@ -518,6 +518,8 @@ async def delete_model_endpoint(
             return {"message": f"Model {model_name} deleted successfully"}
         else:
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 

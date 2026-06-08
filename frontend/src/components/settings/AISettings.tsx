@@ -1060,7 +1060,7 @@ export default function AISettings({
         <SettingsSection
           eyebrow="Administration"
           title="Model dependencies"
-          description="Inspect and manage locally cached AI model assets on the server."
+          description="Inspect and manage local AI model assets on the server."
         >
           <SettingsPanel className="mx-auto max-w-3xl space-y-6">
             <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -1091,6 +1091,11 @@ export default function AISettings({
                     label: "Voice Embedding",
                     desc: "Speaker identification model weights.",
                   },
+                  {
+                    id: "segmentation",
+                    label: "Segmentation Refinement",
+                    desc: "Pyannote segmentation-3.0 model weights.",
+                  },
                 ].map((model) => (
                   <div
                     key={model.id}
@@ -1108,13 +1113,24 @@ export default function AISettings({
                           <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
                             <Check className="w-3 h-3" /> Ready
                           </span>
+                          {modelStatus?.[model.id]?.source === "bundled" && (
+                            <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 px-2.5 py-1 rounded-full font-medium">
+                              Bundled
+                            </span>
+                          )}
                           <button
                             onClick={() => handleDeleteModel(model.id)}
                             disabled={
-                              deleting === model.id || !isAdmin
+                              deleting === model.id ||
+                              !isAdmin ||
+                              modelStatus?.[model.id]?.source === "bundled"
                             }
                             className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
-                            title="Delete Model"
+                            title={
+                              modelStatus?.[model.id]?.source === "bundled"
+                                ? "Bundled repo asset"
+                                : "Delete Model"
+                            }
                           >
                             {deleting === model.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />

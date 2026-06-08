@@ -6,6 +6,7 @@ from pyannote.core import Segment
 from typing import Dict, List, Optional, Tuple
 from backend.utils.config_manager import config_manager
 from backend.processing.embedding import cosine_similarity
+from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 logger = logging.getLogger(__name__)
 
@@ -46,20 +47,25 @@ def release_embedding_model_cache():
 def load_embedding_model(device_str: str, hf_token: str = None):
     """Load pyannote embedding model."""
     try:
-        if not hf_token:
-            hf_token = config_manager.get("hf_token")
-            
-        if not hf_token:
-            raise ValueError("Hugging Face token (hf_token) not found in configuration.")
+        resolved_model = resolve_local_pyannote_model(DEFAULT_EMBEDDING_MODEL)
+        if resolved_model.source == "remote":
+            if not hf_token:
+                hf_token = config_manager.get("hf_token")
+
+            if not hf_token:
+                raise ValueError("Hugging Face token (hf_token) not found and no local embedding model is available.")
 
         # Explicitly load the model first using Model.from_pretrained
-        logger.info(f"Loading embedding model: {DEFAULT_EMBEDDING_MODEL}")
+        logger.info("Loading embedding model from %s source: %s", resolved_model.source, resolved_model.load_ref)
         
         # Trusts model source (pyannote/wespeaker-voxceleb-resnet34-LM).
         # Safe globals are added at module level.
         # Note: Passing weights_only=False to Model.from_pretrained does NOT work because 
         # Requires safe_globals as pyannote excludes it from torch.load.
-        loaded_model = Model.from_pretrained(DEFAULT_EMBEDDING_MODEL, token=hf_token)
+        if resolved_model.source == "remote":
+            loaded_model = Model.from_pretrained(resolved_model.load_ref, token=hf_token)
+        else:
+            loaded_model = Model.from_pretrained(resolved_model.load_ref)
         
         model = Inference(loaded_model, window="sliding")
         model.to(torch.device(device_str))
@@ -78,7 +84,7 @@ def load_embedding_model(device_str: str, hf_token: str = None):
              raise RuntimeError(f"Could not load embedding model: {e}") from e
     except Exception as e:
         logger.error(f"Failed to load embedding model: {e}", exc_info=True)
-        raise RuntimeError("Could not load embedding model.") from e
+        raise RuntimeError("Could not load embedding model from the configured or bundled source.") from e
 
 def _filter_outlier_embeddings(embeddings: list) -> list:
     """

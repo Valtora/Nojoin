@@ -31,6 +31,8 @@ export default function SetupPage() {
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(0); // 0: Legal, 1: Account, 2: LLM, 3: HuggingFace, 4: Complete
   const [initialConfigLoaded, setInitialConfigLoaded] = useState(false);
+  const [pyannoteModelsReady, setPyannoteModelsReady] = useState(false);
+  const [bundledPyannoteModelsReady, setBundledPyannoteModelsReady] = useState(false);
 
   // Form Data
   const [formData, setFormData] = useState({
@@ -184,6 +186,9 @@ export default function SetupPage() {
         if (initialConfig.selected_model) {
           setAvailableModels([initialConfig.selected_model]);
         }
+
+        setPyannoteModelsReady(Boolean(initialConfig.pyannote_models_ready));
+        setBundledPyannoteModelsReady(Boolean(initialConfig.bundled_pyannote_models_ready));
       }
 
       setInitialConfigLoaded(true);
@@ -876,7 +881,7 @@ export default function SetupPage() {
           {/* Step 3: HuggingFace */}
           {step === 3 && (
             <div className="space-y-4">
-              {!formData.hf_token ? (
+              {!formData.hf_token && !pyannoteModelsReady ? (
                 <div className="space-y-6">
                   <div className="text-center mb-6">
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -929,6 +934,50 @@ export default function SetupPage() {
                       className="w-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 py-2.5 rounded-lg font-medium transition-colors"
                     >
                       Finish Setup (Disable Speaker Diarization)
+                    </button>
+                  </div>
+                </div>
+              ) : !formData.hf_token ? (
+                <div className="space-y-6">
+                  <div className="text-center mb-6">
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Hugging Face Integration
+                    </h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Local speaker models detected
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-green-800 dark:text-green-300">
+                        Speaker Diarization Ready
+                      </p>
+                      <p className="text-xs text-green-700 dark:text-green-400 mt-1 leading-relaxed">
+                        Nojoin found local Pyannote model assets on the server, so speaker diarization can run without a Hugging Face token.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl text-xs space-y-2 text-gray-600 dark:text-gray-300">
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      {bundledPyannoteModelsReady
+                        ? "Bundled repo models are available."
+                        : "Local cached models are available."}
+                    </p>
+                    <p>
+                      A Hugging Face token is optional here. You only need one later if you want to refresh these Pyannote assets from upstream.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      type="button"
+                      onClick={handleHFSubmit}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      Finish Setup <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>

@@ -191,9 +191,18 @@ async def get_initial_config(
         return f"{key[:3]}...{key[-4:]}"
 
     from backend.utils.config_manager import async_get_system_api_keys
+    from backend.preload_models import check_model_status
     system_keys = await async_get_system_api_keys(db)
     llm_provider = config_manager.get("llm_provider", "gemini")
     selected_model_key = "ollama_model" if llm_provider == "ollama" else f"{llm_provider}_model"
+    model_status = check_model_status()
+    pyannote_models_ready = bool(model_status.get("pyannote", {}).get("downloaded")) and bool(
+        model_status.get("embedding", {}).get("downloaded")
+    )
+    bundled_pyannote_models_ready = pyannote_models_ready and all(
+        model_status.get(key, {}).get("source") == "bundled"
+        for key in ("pyannote", "embedding")
+    )
 
     return {
         "llm_provider": llm_provider,
@@ -203,6 +212,8 @@ async def get_initial_config(
         "ollama_api_url": config_manager.get("ollama_api_url"),
         "hf_token": mask_key(system_keys.get("hf_token")),
         "selected_model": config_manager.get(selected_model_key),
+        "pyannote_models_ready": pyannote_models_ready,
+        "bundled_pyannote_models_ready": bundled_pyannote_models_ready,
     }
 
 @router.post("/validate-llm")

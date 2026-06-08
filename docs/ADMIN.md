@@ -63,7 +63,7 @@ Admin-only sections let you:
 - Configure the Ollama API URL.
 - Configure a secondary LLM provider for fallback. When the primary provider fails, the system automatically retries with the secondary provider. The secondary provider has its own independent configuration (provider, model, API key, Ollama URL) set through `SECONDARY_` prefixed environment variables.
 - View installed Whisper models.
-- Remove local model cache entries. Required default models are prepared automatically.
+- Remove local model cache entries. Required default models are prepared automatically, and repo-bundled model assets remain read-only in the UI.
 
 ### Backup and Restore
 

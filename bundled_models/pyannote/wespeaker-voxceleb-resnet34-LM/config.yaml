@@ -1,0 +1,10 @@
+model:
+  _target_: pyannote.audio.models.embedding.WeSpeakerResNet34
+  sample_rate: 16000
+  num_channels: 1
+  num_mel_bins: 80
+  frame_length: 25
+  frame_shift: 10
+  dither: 0.0
+  window_type: hamming
+  use_energy: false

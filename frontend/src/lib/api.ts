@@ -1335,6 +1335,8 @@ export const getInitialConfig = async (bootstrapPassword?: string): Promise<{
   ollama_api_url?: string;
   hf_token?: string;
   selected_model?: string;
+  pyannote_models_ready?: boolean;
+  bundled_pyannote_models_ready?: boolean;
 }> => {
   const response = await api.get(
     "/setup/initial-config",

@@ -16,6 +16,7 @@ from backend.utils.download_progress import (
     clear_download_progress,
     is_download_in_progress
 )
+from backend.utils.pyannote_model_utils import resolve_local_pyannote_model, is_repo_bundled_pyannote_path
 
 setup_logging()
 logger = logging.getLogger("backend.preload_models")
@@ -258,13 +259,9 @@ def _prepare_whisper_model(model_size: str) -> None:
 
 
 def _prepare_pyannote_models(hf_token: str | None) -> None:
-    if not hf_token:
-        hf_token = config_manager.get("hf_token")
-    if not hf_token:
-        raise ValueError("Hugging Face token (hf_token) is required to prepare Pyannote models.")
-
     from backend.processing.diarize import load_diarization_pipeline
     from backend.processing.embedding_core import load_embedding_model
+    from backend.processing.segmentation_refinement import load_segmentation_model
 
     device = _default_device_for_validation()
     logger.info("Preparing Pyannote diarization pipeline.")
@@ -274,6 +271,10 @@ def _prepare_pyannote_models(hf_token: str | None) -> None:
     logger.info("Preparing Pyannote speaker embedding model.")
     embedding_model = load_embedding_model(device, hf_token)
     del embedding_model
+
+    logger.info("Preparing Pyannote segmentation refinement model.")
+    segmentation_model = load_segmentation_model(device, hf_token)
+    del segmentation_model
 
 
 def _prepare_onnx_asr_model(model_id: str) -> None:
@@ -355,16 +356,16 @@ def download_models(
             )
 
             report(
-                "Preparing Pyannote diarization and voice embedding models...",
+                "Preparing Pyannote diarization, voice embedding, and segmentation models...",
                 40,
                 stage="pyannote",
                 status="downloading",
             )
             _prepare_pyannote_models(hf_token)
             report(
-                "Pyannote diarization and voice embedding models are ready.",
+                "Pyannote diarization, voice embedding, and segmentation models are ready.",
                 80,
-                stage="embedding",
+                stage="segmentation",
                 status="downloading",
             )
 
@@ -409,7 +410,8 @@ def check_model_status(whisper_model_size=None):
         "parakeet": {"downloaded": False, "path": None, "checked_paths": []},
         "canary": {"downloaded": False, "path": None, "checked_paths": []},
         "pyannote": {"downloaded": False, "path": None, "checked_paths": []},
-        "embedding": {"downloaded": False, "path": None, "checked_paths": []}
+        "embedding": {"downloaded": False, "path": None, "checked_paths": []},
+        "segmentation": {"downloaded": False, "path": None, "checked_paths": []},
     }
     
     # Check Whisper
@@ -482,53 +484,17 @@ def check_model_status(whisper_model_size=None):
         if status["canary"]["downloaded"]:
             break
 
-    # Check Pyannote
-    # 1. Check HF_HOME location (Primary)
-    pyannote_path = os.path.join(hf_cache, "models--pyannote--speaker-diarization-community-1")
-    
-    status["pyannote"]["checked_paths"].append(pyannote_path)
-    # Check if directory exists and has content (snapshots)
-    if os.path.exists(pyannote_path) and (
-        os.path.exists(os.path.join(pyannote_path, "snapshots")) or 
-        os.path.exists(os.path.join(pyannote_path, "refs"))
+    for status_key, model_id in (
+        ("pyannote", "pyannote/speaker-diarization-community-1"),
+        ("embedding", "pyannote/wespeaker-voxceleb-resnet34-LM"),
+        ("segmentation", "pyannote/segmentation-3.0"),
     ):
-        status["pyannote"]["downloaded"] = True
-        status["pyannote"]["path"] = pyannote_path
-    else:
-        # 2. Fallback: Check default ~/.cache/huggingface/hub
-        default_hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
-        default_pyannote_path = os.path.join(default_hf_cache, "models--pyannote--speaker-diarization-community-1")
-        if default_pyannote_path != pyannote_path:
-            status["pyannote"]["checked_paths"].append(default_pyannote_path)
-            if os.path.exists(default_pyannote_path) and (
-                os.path.exists(os.path.join(default_pyannote_path, "snapshots")) or 
-                os.path.exists(os.path.join(default_pyannote_path, "refs"))
-            ):
-                status["pyannote"]["downloaded"] = True
-                status["pyannote"]["path"] = default_pyannote_path
-        
-    # Check Embedding
-    embedding_path = os.path.join(hf_cache, "models--pyannote--wespeaker-voxceleb-resnet34-LM")
-    status["embedding"]["checked_paths"].append(embedding_path)
-    
-    if os.path.exists(embedding_path) and (
-        os.path.exists(os.path.join(embedding_path, "snapshots")) or 
-        os.path.exists(os.path.join(embedding_path, "refs"))
-    ):
-        status["embedding"]["downloaded"] = True
-        status["embedding"]["path"] = embedding_path
-    else:
-        # 2. Fallback
-        default_hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
-        default_embedding_path = os.path.join(default_hf_cache, "models--pyannote--wespeaker-voxceleb-resnet34-LM")
-        if default_embedding_path != embedding_path:
-            status["embedding"]["checked_paths"].append(default_embedding_path)
-            if os.path.exists(default_embedding_path) and (
-                os.path.exists(os.path.join(default_embedding_path, "snapshots")) or 
-                os.path.exists(os.path.join(default_embedding_path, "refs"))
-            ):
-                status["embedding"]["downloaded"] = True
-                status["embedding"]["path"] = default_embedding_path
+        resolved = resolve_local_pyannote_model(model_id)
+        status[status_key]["checked_paths"] = resolved.checked_paths
+        if resolved.path:
+            status[status_key]["downloaded"] = True
+            status[status_key]["path"] = resolved.path
+            status[status_key]["source"] = resolved.source
 
     return status
 
@@ -545,6 +511,10 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
         return False
 
     path = model_info["path"]
+    if is_repo_bundled_pyannote_path(path):
+        raise ValueError(
+            f"Model {model_name} is bundled with the repository at {path} and cannot be deleted from the runtime cache UI."
+        )
     try:
         if os.path.isfile(path):
             os.remove(path)

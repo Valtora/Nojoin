@@ -23,6 +23,8 @@ import torch
 
 from backend.processing.embedding import cosine_similarity
 from backend.processing.embedding_core import extract_embedding_for_segments
+from backend.utils.config_manager import config_manager
+from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 logger = logging.getLogger(__name__)
 
@@ -71,14 +73,29 @@ def release_segmentation_model_cache() -> None:
         torch.cuda.empty_cache()
 
 
-def _load_segmentation_model(device_str: str, hf_token: str | None):
+def load_segmentation_model(device_str: str, hf_token: str | None = None):
     from pyannote.audio import Model
 
-    cache_key = (SEGMENTATION_MODEL, device_str)
+    resolved_model = resolve_local_pyannote_model(SEGMENTATION_MODEL)
+    cache_key = (resolved_model.load_ref, device_str)
     cached = _model_cache.get(cache_key)
     if cached is not None:
         return cached
-    model = Model.from_pretrained(SEGMENTATION_MODEL, use_auth_token=hf_token)
+
+    if resolved_model.source == "remote":
+        if not hf_token:
+            hf_token = config_manager.get("hf_token")
+        if not hf_token:
+            raise ValueError("Hugging Face token (hf_token) not found and no local segmentation model is available.")
+        model = Model.from_pretrained(resolved_model.load_ref, token=hf_token)
+    else:
+        logger.info(
+            "Loading segmentation model from %s source: %s",
+            resolved_model.source,
+            resolved_model.load_ref,
+        )
+        model = Model.from_pretrained(resolved_model.load_ref)
+
     model.to(torch.device(device_str))
     _model_cache[cache_key] = model
     return model
@@ -96,7 +113,7 @@ def _run_segmentation_inference(
     from pyannote.audio import Inference
     from pyannote.core import Segment
 
-    model = _load_segmentation_model(device_str, hf_token)
+    model = load_segmentation_model(device_str, hf_token)
     # NOTE: pyannote recommends sliding-window inference for the frame-based
     # segmentation-3.0 model — "whole" works but warns about accuracy /
     # memory issues on longer spans.
