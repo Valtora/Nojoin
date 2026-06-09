@@ -30,6 +30,61 @@ def test_build_meeting_edge_prompt_includes_focus_and_recent_transcript() -> Non
     assert "Absolutely do not explain common business" in prompt
 
 
+def test_build_meeting_edge_prompt_includes_previous_suggestions() -> None:
+    request = MeetingEdgeRequest(
+        recent_transcript="Speaker A: Let's review the budget line items.",
+        previous_questions=("Who owns the final go-live decision?",),
+        previous_points=("Flag the dependency on finance approval.",),
+    )
+
+    prompt = build_meeting_edge_prompt(request)
+
+    assert "Questions already suggested:" in prompt
+    assert "- Who owns the final go-live decision?" in prompt
+    assert "Points already suggested:" in prompt
+    assert "- Flag the dependency on finance approval." in prompt
+
+
+def test_build_meeting_edge_prompt_handles_no_previous_suggestions() -> None:
+    request = MeetingEdgeRequest(
+        recent_transcript="Speaker A: Let's review the budget line items.",
+    )
+
+    prompt = build_meeting_edge_prompt(request)
+
+    assert "No suggestions have been made yet." in prompt
+    assert "rolling_summary" in prompt
+
+
+def test_parse_meeting_edge_response_reads_rolling_summary() -> None:
+    response = (
+        '{"summary": "Budget review is underway.",'
+        ' "rolling_summary": "The team reviewed Q3 spend, agreed to cut travel by 10%,'
+        ' and left headcount open pending finance input.",'
+        ' "questions": ["What is the finance deadline?"],'
+        ' "points": [], "concepts": []}'
+    )
+
+    result = parse_meeting_edge_response(response)
+
+    assert result.rolling_summary is not None
+    assert result.rolling_summary.startswith("The team reviewed Q3 spend")
+    assert serialize_meeting_edge_result(result)["rolling_summary"] == result.rolling_summary
+
+
+def test_parse_meeting_edge_response_tolerates_missing_rolling_summary() -> None:
+    response = (
+        '{"summary": "Budget review is underway.",'
+        ' "questions": ["What is the finance deadline?"],'
+        ' "points": [], "concepts": []}'
+    )
+
+    result = parse_meeting_edge_response(response)
+
+    assert result.rolling_summary is None
+    assert serialize_meeting_edge_result(result)["rolling_summary"] is None
+
+
 def test_parse_meeting_edge_response_accepts_fenced_json() -> None:
     response = """
     Here is the guidance.
@@ -152,6 +207,43 @@ def test_are_singular_plural() -> None:
     assert _are_singular_plural("subsidy", "subsidies")
     assert not _are_singular_plural("choke", "point")
     assert not _are_singular_plural("rise", "raise")
+
+
+def test_are_equivalent_concept_terms_acronym_and_hyphen_variants() -> None:
+    from backend.utils.meeting_edge import _are_equivalent_concept_terms
+
+    assert _are_equivalent_concept_terms("LLM", "Large Language Model")
+    assert _are_equivalent_concept_terms("Large Language Model", "LLM")
+    assert _are_equivalent_concept_terms("real-time", "real time")
+    assert _are_equivalent_concept_terms("Real Time", "real-time")
+    assert not _are_equivalent_concept_terms("LLM", "Low Latency")
+    assert not _are_equivalent_concept_terms("API", "Application Performance")
+    assert not _are_equivalent_concept_terms("rise", "raise")
+
+
+def test_merge_meeting_edge_concept_history_deduplicates_acronyms() -> None:
+    previous_payload = {
+        "concepts": [
+            {
+                "term": "Large Language Model",
+                "explanation": "A neural network trained on large text corpora.",
+            }
+        ]
+    }
+    current_payload = {
+        "concepts": [
+            {
+                "term": "LLM",
+                "explanation": "A model that generates text from learned patterns.",
+            }
+        ]
+    }
+
+    result = merge_meeting_edge_concept_history(previous_payload, current_payload)
+
+    assert len(result) == 1
+    assert result[0]["term"] == "LLM"
+    assert result[0]["explanation"] == "A model that generates text from learned patterns."
 
 
 def test_merge_meeting_edge_concept_history_deduplicates_plurals() -> None:

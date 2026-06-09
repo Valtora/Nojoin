@@ -32,6 +32,7 @@ Your task is to produce concise, high-signal, real-time guidance that helps the 
 
 Return one valid JSON object with these keys:
 - `summary`: 1-2 sentences on what matters right now.
+- `rolling_summary`: a 150-300 word running context of the meeting so far. Capture decisions made, open threads, action items, and the key positions of named speakers. Carry forward still-relevant facts from the Earlier Context Summary and fold in what changed in the recent transcript. This is internal working memory for your future turns, not user-facing text.
 - `questions`: 0-3 smart clarifying or high-leverage questions the user could ask next.
 - `points`: 0-3 overlooked points, risks, or considerations the user could raise.
 - `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion, but only when they meet the Technical Context Policy below.
@@ -40,6 +41,10 @@ Return one valid JSON object with these keys:
 - Be tactful, professional, constructive, and non-manipulative.
 - Do not invent facts, commitments, requirements, or attendee intent.
 - Prefer fewer items over weak items.
+- Anchor guidance to the most recent exchanges at the end of the transcript; treat earlier material as supporting context only.
+- Questions must be specific and answerable by the people in this meeting. Avoid generic filler such as "What are the next steps?".
+- Points must reference something concrete from the discussion: a decision, claim, number, risk, contradiction, or omission.
+- Treat the Previously Suggested section as your own prior output. Keep an item verbatim only if it is still clearly relevant and unaddressed; drop items overtaken by the discussion; add fresh items for new developments. Never rephrase a previous item just to make it look new.
 - Align suggestions with the user's stated focus when provided.
 - Only explain concepts that were actually mentioned or clearly implied by the recent transcript.
 - Include all distinct concepts from the recent transcript that materially help comprehension, not just the top one or two.
@@ -51,7 +56,8 @@ Return one valid JSON object with these keys:
 
 # Required JSON Schema
 {{
-    "summary": "One or two sentence read of the meeting.",
+    "summary": "One or two sentence read of the meeting right now.",
+    "rolling_summary": "150-300 word running context of the meeting so far.",
     "questions": ["Question the user could ask"],
     "points": ["Point the user could raise"],
     "concepts": [
@@ -64,6 +70,9 @@ Return one valid JSON object with these keys:
 
 # Earlier Context Summary
 {rolling_summary_section}
+
+# Previously Suggested
+{previous_suggestions_section}
 
 # User Focus
 {focus_text_section}
@@ -91,6 +100,8 @@ class MeetingEdgeRequest:
     user_notes: str | None = None
     meeting_context: MeetingEventContext | None = None
     context_level: int = MEETING_EDGE_CONTEXT_LEVEL_DEFAULT
+    previous_questions: tuple[str, ...] = ()
+    previous_points: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         transcript = self.recent_transcript.strip()
@@ -108,6 +119,16 @@ class MeetingEdgeRequest:
         object.__setattr__(self, "focus_text", _normalize_optional_text(self.focus_text))
         object.__setattr__(self, "user_notes", _normalize_optional_text(self.user_notes))
         object.__setattr__(self, "context_level", _normalize_context_level(self.context_level))
+        object.__setattr__(
+            self,
+            "previous_questions",
+            _normalize_string_items(tuple(self.previous_questions or ()), max_items=3),
+        )
+        object.__setattr__(
+            self,
+            "previous_points",
+            _normalize_string_items(tuple(self.previous_points or ()), max_items=3),
+        )
 
 
 @dataclass(frozen=True)
@@ -135,6 +156,7 @@ class MeetingEdgeResult:
     questions: tuple[str, ...]
     points: tuple[str, ...]
     concepts: tuple[MeetingEdgeConcept, ...]
+    rolling_summary: str | None = None
 
     def __post_init__(self) -> None:
         summary = re.sub(r"\s+", " ", self.summary.strip())
@@ -149,6 +171,11 @@ class MeetingEdgeResult:
         object.__setattr__(self, "questions", questions)
         object.__setattr__(self, "points", points)
         object.__setattr__(self, "concepts", concepts)
+        object.__setattr__(
+            self,
+            "rolling_summary",
+            _normalize_optional_text(self.rolling_summary),
+        )
 
 
 def get_default_meeting_edge_prompt_template() -> str:
@@ -171,6 +198,10 @@ def build_meeting_edge_prompt(
             request.meeting_context
         ),
         concept_guidance_section=build_concept_guidance_prompt_section(request.context_level),
+        previous_suggestions_section=build_previous_suggestions_prompt_section(
+            request.previous_questions,
+            request.previous_points,
+        ),
     )
 
 
@@ -185,6 +216,7 @@ def parse_meeting_edge_response(
         questions=_read_string_list(payload, "questions", max_items=3),
         points=_read_string_list(payload, "points", max_items=3),
         concepts=_read_concepts(payload),
+        rolling_summary=_read_optional_string(payload, "rolling_summary"),
     )
 
     if request is not None and not result.questions and not result.points and not result.concepts:
@@ -198,6 +230,7 @@ def parse_meeting_edge_response(
 def serialize_meeting_edge_result(result: MeetingEdgeResult) -> dict[str, Any]:
     return {
         "summary": result.summary,
+        "rolling_summary": result.rolling_summary,
         "questions": list(result.questions),
         "points": list(result.points),
         "concepts": [
@@ -228,12 +261,44 @@ def _are_singular_plural(t1: str, t2: str) -> bool:
     return False
 
 
+def _normalize_concept_term(term: str) -> str:
+    # Casefold and collapse hyphen/whitespace variants ("real-time" == "real time").
+    cleaned = re.sub(r"[\s\-_]+", " ", term.casefold()).strip()
+    return re.sub(r"[.]", "", cleaned)
+
+
+def _acronym_of(term: str) -> str | None:
+    words = [word for word in re.split(r"[\s\-_/]+", term.strip()) if word]
+    if len(words) < 2:
+        return None
+    return "".join(word[0] for word in words).casefold()
+
+
+def _are_acronym_and_expansion(t1: str, t2: str) -> bool:
+    # "LLM" vs "Large Language Model" (compact term must look like an acronym).
+    if len(t1) > len(t2):
+        t1, t2 = t2, t1
+    compact = re.sub(r"[.\s]", "", t1)
+    if not (2 <= len(compact) <= 8) or not compact.isalpha():
+        return False
+    expansion_acronym = _acronym_of(t2)
+    return expansion_acronym is not None and compact.casefold() == expansion_acronym
+
+
+def _are_equivalent_concept_terms(t1: str, t2: str) -> bool:
+    n1 = _normalize_concept_term(t1)
+    n2 = _normalize_concept_term(t2)
+    if _are_singular_plural(n1, n2):
+        return True
+    return _are_acronym_and_expansion(t1, t2)
+
+
 def deduplicate_concepts(concepts: Sequence[MeetingEdgeConcept]) -> list[MeetingEdgeConcept]:
     deduped: list[MeetingEdgeConcept] = []
     for concept in concepts:
         found_idx = -1
         for i, existing in enumerate(deduped):
-            if _are_singular_plural(existing.term.casefold(), concept.term.casefold()):
+            if _are_equivalent_concept_terms(existing.term, concept.term):
                 found_idx = i
                 break
         if found_idx >= 0:
@@ -269,6 +334,28 @@ def build_rolling_summary_prompt_section(rolling_summary: str | None) -> str:
     if not rolling_summary:
         return "No earlier summary is available yet. Infer context from the recent transcript only."
     return rolling_summary
+
+
+def build_previous_suggestions_prompt_section(
+    previous_questions: Sequence[str],
+    previous_points: Sequence[str],
+) -> str:
+    questions = [str(item).strip() for item in previous_questions or () if str(item).strip()]
+    points = [str(item).strip() for item in previous_points or () if str(item).strip()]
+
+    if not questions and not points:
+        return "No suggestions have been made yet."
+
+    lines: list[str] = []
+    if questions:
+        lines.append("Questions already suggested:")
+        lines.extend(f"- {question}" for question in questions)
+    if points:
+        if lines:
+            lines.append("")
+        lines.append("Points already suggested:")
+        lines.extend(f"- {point}" for point in points)
+    return "\n".join(lines)
 
 
 def build_focus_text_prompt_section(focus_text: str | None) -> str:
@@ -389,6 +476,14 @@ def _read_required_string(payload: Mapping[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise MeetingEdgeContractError(f"{key} must be a non-empty string")
     return value
+
+
+def _read_optional_string(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
 
 
 def _read_string_list(

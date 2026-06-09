@@ -109,7 +109,7 @@ That live lane now works in the background to support Meeting Edge and to speed 
 
 ### Meeting Edge
 
-Meeting Edge uses the recent live transcript window, the latest saved live guidance summary, your optional focus text, your manual notes, and linked calendar context when available.
+Meeting Edge uses the recent live transcript window, an internally maintained rolling summary of the meeting so far (decisions, open threads, and action items), its own previous suggestions (so guidance stays fresh instead of repeating), your optional focus text, your manual notes, and linked calendar context when available.
 
 It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > AI**, you can optionally choose a separate Meeting Edge model for the current provider and tune the **Meeting Edge Technical Context** slider to make concept explanations stricter or more detailed. If the model field is empty, Nojoin reuses your main AI model.
 

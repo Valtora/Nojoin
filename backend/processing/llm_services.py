@@ -734,6 +734,13 @@ class GeminiLLMBackend(LLMBackend):
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=prompt,
+                config=self.genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                    http_options=self.genai.types.HttpOptions(
+                        timeout=int(timeout * 1000),
+                    ),
+                ),
             )
             text = self._extract_text_from_response(response)
             return self.parse_meeting_edge_result(text, request)
@@ -1044,7 +1051,18 @@ class OpenAILLMBackend(LLMBackend):
             request_kwargs["temperature"] = 0.2
 
         try:
-            response = self.client.chat.completions.create(**request_kwargs)
+            try:
+                response = self.client.chat.completions.create(
+                    **request_kwargs,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as json_mode_error:  # noqa: BLE001
+                # OpenAI-compatible endpoints may reject response_format; retry without it.
+                logger.warning(
+                    "OpenAI JSON mode failed for Meeting Edge (%s); retrying without response_format.",
+                    json_mode_error,
+                )
+                response = self.client.chat.completions.create(**request_kwargs)
             text = response.choices[0].message.content or ""
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
@@ -1369,11 +1387,18 @@ class AnthropicLLMBackend(LLMBackend):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2048,
+                messages=[
+                    {"role": "user", "content": prompt},
+                    # Assistant prefill steers Claude into emitting raw JSON.
+                    {"role": "assistant", "content": "{"},
+                ],
                 temperature=0.2,
+                timeout=timeout,
             )
             text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            # Re-attach the prefilled opening brace.
+            text = "{" + str(text)
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
@@ -1696,6 +1721,7 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
+                "format": "json",
                 "options": {"temperature": 0.2}
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)

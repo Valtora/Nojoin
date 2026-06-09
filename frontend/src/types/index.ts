@@ -212,6 +212,7 @@ export interface MeetingEdgeConcept {
 
 export interface MeetingEdgePayload {
   summary: string;
+  rolling_summary?: string | null;
   questions: string[];
   points: string[];
   concepts: MeetingEdgeConcept[];

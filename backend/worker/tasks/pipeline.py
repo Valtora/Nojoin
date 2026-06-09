@@ -102,11 +102,13 @@ def refresh_meeting_edge_task(self, recording_id: int):
         ).all()
         speaker_map = build_recording_speaker_map(speakers)
         recent_transcript = _build_recent_meeting_edge_transcript(segments, speaker_map)
+        context_level = get_meeting_edge_context_level(user_settings)
         source_signature = _build_meeting_edge_source_signature(
             recent_transcript=recent_transcript,
             focus_text=focus_text,
             user_notes=user_notes,
             config_signature=config_signature,
+            context_level=context_level,
         )
 
         if not _should_refresh_meeting_edge(
@@ -116,6 +118,7 @@ def refresh_meeting_edge_task(self, recording_id: int):
             current_word_count=word_count,
             focus_text=focus_text,
             user_notes=user_notes,
+            context_level=context_level,
         ):
             return None
 
@@ -133,14 +136,18 @@ def refresh_meeting_edge_task(self, recording_id: int):
         previous_payload = (
             transcript.meeting_edge_payload if isinstance(transcript.meeting_edge_payload, dict) else {}
         )
-        context_level = get_meeting_edge_context_level(user_settings)
         request = MeetingEdgeRequest(
             recent_transcript=recent_transcript,
-            rolling_summary=(previous_payload or {}).get("summary"),
+            rolling_summary=(
+                (previous_payload or {}).get("rolling_summary")
+                or (previous_payload or {}).get("summary")
+            ),
             focus_text=focus_text,
             user_notes=user_notes,
             meeting_context=_resolve_meeting_event_context(session, recording),
             context_level=context_level,
+            previous_questions=_read_meeting_edge_payload_items(previous_payload, "questions"),
+            previous_points=_read_meeting_edge_payload_items(previous_payload, "points"),
         )
 
         _set_meeting_edge_state(
@@ -1272,11 +1279,27 @@ def _build_meeting_edge_source_signature(
     focus_text: str | None,
     user_notes: str | None,
     config_signature: str,
+    context_level: int | None = None,
 ) -> str:
-    payload = "\n||\n".join(
-        [recent_transcript.strip(), (focus_text or "").strip(), (user_notes or "").strip(), config_signature]
-    )
+    parts = [
+        recent_transcript.strip(),
+        (focus_text or "").strip(),
+        (user_notes or "").strip(),
+        config_signature,
+    ]
+    if context_level is not None:
+        parts.append(str(context_level))
+    payload = "\n||\n".join(parts)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _read_meeting_edge_payload_items(payload: dict | None, key: str) -> tuple[str, ...]:
+    if not isinstance(payload, dict):
+        return ()
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item).strip() for item in value if str(item).strip())
 
 
 
@@ -1305,6 +1328,7 @@ def _should_refresh_meeting_edge_impl(
     current_word_count: int,
     focus_text: str | None,
     user_notes: str | None,
+    context_level: int | None = None,
 ) -> bool:
     if transcript.meeting_edge_source_signature == source_signature and transcript.meeting_edge_status in {
         MEETING_EDGE_STATUS_READY,
@@ -1321,8 +1345,13 @@ def _should_refresh_meeting_edge_impl(
     previous_word_count = int(previous_payload.get("source_word_count") or 0)
     focus_changed = previous_payload.get("focus_hash") != _hash_meeting_edge_text(focus_text)
     user_notes_changed = previous_payload.get("user_notes_hash") != _hash_meeting_edge_text(user_notes)
+    context_level_changed = (
+        context_level is not None
+        and previous_payload.get("context_level") is not None
+        and previous_payload.get("context_level") != context_level
+    )
 
-    if focus_changed or user_notes_changed or not previous_generated_at:
+    if focus_changed or user_notes_changed or context_level_changed or not previous_generated_at:
         return True
 
     elapsed_seconds = max((utc_now() - previous_generated_at).total_seconds(), 0.0)

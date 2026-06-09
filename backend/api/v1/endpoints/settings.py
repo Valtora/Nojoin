@@ -6,6 +6,8 @@ import logging
 
 from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_current_user, get_db
+from backend.celery_app import celery_app
+from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
 from backend.services.model_preparation import enqueue_model_preparation
 from backend.utils.config_manager import (
@@ -265,6 +267,43 @@ def _build_settings_update_data(
     return update_data
 
 
+async def _dispatch_meeting_edge_refresh_for_active_recordings(
+    db: AsyncSession,
+    current_user: User,
+) -> None:
+    """Best-effort Meeting Edge refresh for the user's in-flight recordings.
+
+    Lets context-level / enable-toggle changes take effect promptly instead of
+    waiting for the next transcript-driven refresh.
+    """
+    from sqlalchemy import select as sa_select
+
+    try:
+        result = await db.execute(
+            sa_select(Recording.id).where(
+                Recording.user_id == current_user.id,
+                Recording.status.in_(
+                    [
+                        RecordingStatus.UPLOADING,
+                        RecordingStatus.QUEUED,
+                        RecordingStatus.PROCESSING,
+                    ]
+                ),
+            )
+        )
+        recording_ids = [row[0] for row in result.all()]
+        for recording_id in recording_ids:
+            celery_app.send_task(
+                "backend.worker.tasks.refresh_meeting_edge_task",
+                args=[recording_id],
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to dispatch Meeting Edge refresh after settings update: %s",
+            exc,
+        )
+
+
 async def _save_user_settings(
     settings: SettingsUpdate,
     current_user: User,
@@ -303,6 +342,10 @@ async def _save_user_settings(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+
+    meeting_edge_keys = {"meeting_edge_context_level", "enable_meeting_edge"}
+    if meeting_edge_keys.intersection(update_data):
+        await _dispatch_meeting_edge_refresh_for_active_recordings(db, current_user)
 
     model_keys = {"whisper_model_size", "transcription_backend", "parakeet_model", "canary_model"}
     if is_admin and model_keys.intersection(update_data):

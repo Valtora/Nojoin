@@ -122,10 +122,21 @@ runs:
    authoritative.
 5. After new live segments land, the API/worker layer best-effort dispatches a
    separate `refresh_meeting_edge_task`. That task builds a bounded recent
-   transcript window, reuses the previous Meeting Edge summary as rolling
-   context, folds in user-authored notes, optional user focus text, and linked
-   calendar context, then requests a strict JSON response from the configured
-   LLM provider.
+   transcript window, reuses the previous run's dedicated rolling summary (a
+   model-maintained 150-300 word running context of decisions, open threads,
+   and action items, falling back to the short displayed summary for older
+   payloads) as rolling context, passes the previously suggested questions and
+   points back to the model so still-relevant items are retained and stale or
+   duplicate ones are replaced, folds in user-authored notes, optional user
+   focus text, and linked calendar context, then requests a strict JSON
+   response from the configured LLM provider. Provider-native JSON output
+   modes are used where available (Gemini `response_mime_type`, OpenAI
+   `response_format` with a plain retry for incompatible OpenAI-compatible
+   endpoints, Anthropic assistant prefill, Ollama `format: json`), with the
+   tolerant fenced/inline JSON parser retained as a fallback. Changing the
+   Meeting Edge context-level slider or the enable toggle also dispatches a
+   refresh for the user's in-flight recordings, and the context level is part
+   of the refresh source signature so slider changes take effect immediately.
 6. Meeting Edge uses the same configured provider as the rest of Nojoin AI, but
    resolves a separate provider-specific live model when one is set. If no
    Meeting Edge model is configured for that provider, the worker falls back to

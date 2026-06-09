@@ -90,6 +90,135 @@ def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(monkey
     assert session.commit_count == 1
 
 
+def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestions(monkeypatch):
+    recording = SimpleNamespace(
+        id=1,
+        status=tasks_module.RecordingStatus.UPLOADING,
+        user_id=7,
+    )
+    transcript = SimpleNamespace(
+        meeting_edge_status=tasks_module.MEETING_EDGE_STATUS_READY,
+        meeting_edge_error_message=None,
+        meeting_edge_payload={
+            "summary": "Short read.",
+            "rolling_summary": "Rich running context with decisions and threads.",
+            "questions": ["Previously asked question?"],
+            "points": ["Previously raised point."],
+        },
+        meeting_edge_source_signature="old-signature",
+        segments=[],
+        meeting_edge_focus=None,
+        user_notes=None,
+    )
+    user = SimpleNamespace(id=7, settings={"enable_meeting_edge": True})
+    session = _FakeSession(recording, transcript, user)
+    captured: dict[str, object] = {}
+
+    class FakeLLM:
+        def generate_meeting_edge(self, request, timeout):
+            captured["rolling_summary"] = request.rolling_summary
+            captured["previous_questions"] = request.previous_questions
+            captured["previous_points"] = request.previous_points
+            return "Updated guidance"
+
+    monkeypatch.setattr(tasks_module, "flag_modified", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tasks_module,
+        "build_transcript_segments_for_read",
+        lambda *args, **kwargs: [
+            {
+                "start": 0.0,
+                "end": 1.2,
+                "speaker": "SPEAKER_00",
+                "text": "Fresh agenda update",
+            }
+        ],
+    )
+    monkeypatch.setattr(tasks_module, "_has_meeting_edge_signal", lambda **kwargs: True)
+    monkeypatch.setattr(tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True)
+    monkeypatch.setattr(tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tasks_module, "build_recording_speaker_map", lambda speakers: {})
+    monkeypatch.setattr(tasks_module, "serialize_meeting_edge_result", lambda result: {"summary": result})
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module,
+        "resolve_llm_config",
+        lambda *args, **kwargs: SimpleNamespace(
+            provider="openai",
+            model="gpt-test",
+            api_url=None,
+            missing_configuration_message=lambda: None,
+        ),
+    )
+
+    task = tasks_module.refresh_meeting_edge_task
+    original_session = task._session
+    task._session = session
+    try:
+        result = task.run(1)
+    finally:
+        task._session = original_session
+
+    assert result is not None
+    assert captured["rolling_summary"] == "Rich running context with decisions and threads."
+    assert captured["previous_questions"] == ("Previously asked question?",)
+    assert captured["previous_points"] == ("Previously raised point.",)
+
+
+def test_should_refresh_meeting_edge_on_context_level_change():
+    transcript = SimpleNamespace(
+        meeting_edge_status=tasks_module.MEETING_EDGE_STATUS_READY,
+        meeting_edge_source_signature="other-signature",
+        meeting_edge_payload={
+            "generated_at": "2099-01-01T00:00:00+00:00",
+            "source_segment_count": 10,
+            "source_word_count": 200,
+            "focus_hash": tasks_module._hash_meeting_edge_text(None),
+            "user_notes_hash": tasks_module._hash_meeting_edge_text(None),
+            "context_level": 2,
+        },
+    )
+
+    # Same context level, future generated_at, no new content: no refresh.
+    assert not tasks_module._should_refresh_meeting_edge_impl(
+        transcript=transcript,
+        source_signature="new-signature",
+        current_segment_count=10,
+        current_word_count=200,
+        focus_text=None,
+        user_notes=None,
+        context_level=2,
+    )
+
+    # Context level change forces an immediate refresh.
+    assert tasks_module._should_refresh_meeting_edge_impl(
+        transcript=transcript,
+        source_signature="new-signature",
+        current_segment_count=10,
+        current_word_count=200,
+        focus_text=None,
+        user_notes=None,
+        context_level=4,
+    )
+
+
+def test_meeting_edge_source_signature_includes_context_level():
+    base_kwargs = {
+        "recent_transcript": "Speaker A: hello",
+        "focus_text": None,
+        "user_notes": None,
+        "config_signature": "openai:gpt-test:",
+    }
+    signature_level_2 = tasks_module._build_meeting_edge_source_signature(
+        **base_kwargs, context_level=2
+    )
+    signature_level_3 = tasks_module._build_meeting_edge_source_signature(
+        **base_kwargs, context_level=3
+    )
+
+    assert signature_level_2 != signature_level_3
+
+
 def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_empty(monkeypatch):
     recording = SimpleNamespace(
         id=1,
