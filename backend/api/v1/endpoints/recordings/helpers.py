@@ -519,6 +519,9 @@ def get_ordinal_suffix(day: int) -> str:
 
 
 def _ensure_recording_accepts_uploads(recording: Recording) -> None:
+    # A pause stops new capture, but the browser may still be flushing the
+    # in-memory tail that was already recorded. Keep accepting uploads in the
+    # paused state so that late-arriving tail segments are preserved.
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409,

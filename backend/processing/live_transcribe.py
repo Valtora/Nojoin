@@ -953,14 +953,18 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         log=logger,
     )
 
-    # The live lane is only meaningful while the recording is uploading. Once
-    # finalize() changes the recording status, queued live work must stop even
-    # though uploaded chunk files may remain on disk until lifecycle cleanup.
-    # The final pipeline is authoritative after the status flip.
+    # The live lane is still meaningful for already-uploaded tail segments
+    # while a recording is paused. Once finalize() or a terminal state flips
+    # the recording out of the in-flight states, queued live work must stop
+    # even though uploaded chunk files may remain on disk until lifecycle
+    # cleanup. The final pipeline is authoritative after that status flip.
     session = get_sync_session()
     try:
         recording = session.get(Recording, recording_id)
-        if not recording or recording.status != RecordingStatus.UPLOADING:
+        if not recording or recording.status not in {
+            RecordingStatus.UPLOADING,
+            RecordingStatus.PAUSED,
+        }:
             record_pipeline_metric(
                 stage="live_task_skipped",
                 recording_id=recording_id,
@@ -1453,7 +1457,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         session = get_sync_session()
         try:
             recording = session.get(Recording, recording_id)
-            if recording and recording.status == RecordingStatus.UPLOADING:
+            if recording and recording.status in {
+                RecordingStatus.UPLOADING,
+                RecordingStatus.PAUSED,
+            }:
                 if new_segments:
                     created_utterances = []
                     created_public_ids: set[str] = set()

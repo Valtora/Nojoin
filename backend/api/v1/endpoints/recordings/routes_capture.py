@@ -91,7 +91,7 @@ async def resume_upload(
         )
 
     recording.status = RecordingStatus.UPLOADING
-    recording.client_status = ClientStatus.UPLOADING
+    recording.client_status = ClientStatus.RECORDING
     recording.last_activity_at = utc_now()
     db.add(recording)
     await db.commit()

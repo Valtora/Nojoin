@@ -6,6 +6,8 @@ import wave
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -22,6 +24,7 @@ from backend.utils.audio_windows import (
     WINDOW_DIARIZATION_STATUS_PENDING,
     WINDOW_STATUS_PENDING,
     AudioWindowSpec,
+    apply_audio_window_specs,
     build_audio_window_specs,
 )
 from backend.utils.config_manager import config_manager
@@ -126,54 +129,79 @@ def _build_recording_audio_chunk_fields(
         "cleanup_eligible_at": None,
     }
 
-
-def _upsert_recording_audio_chunks(
+def _select_recording_audio_chunk(
     session: Session,
     *,
     recording_id: int,
     source_kind: str,
-    chunk_payloads: list[dict[str, Any]],
-) -> list[RecordingAudioChunk]:
-    if not chunk_payloads:
-        return []
+    sequence: int,
+    idempotency_key: str | None,
+) -> RecordingAudioChunk | None:
+    statement = (
+        select(RecordingAudioChunk)
+        .where(RecordingAudioChunk.recording_id == recording_id)
+        .where(RecordingAudioChunk.source_kind == source_kind)
+    )
 
-    table = RecordingAudioChunk.__table__
-    insert_stmt = _build_insert_statement(session, table).values(chunk_payloads)
-    excluded = insert_stmt.excluded
-    update_columns = {
-        "updated_at": excluded.updated_at,
-        "source_kind": excluded.source_kind,
-        "absolute_start_ms": excluded.absolute_start_ms,
-        "absolute_end_ms": excluded.absolute_end_ms,
-        "duration_ms": excluded.duration_ms,
-        "sample_rate_hz": excluded.sample_rate_hz,
-        "channel_count": excluded.channel_count,
-        "byte_size": excluded.byte_size,
-        "sha256": excluded.sha256,
-        "storage_path": excluded.storage_path,
-        "upload_status": excluded.upload_status,
-        "idempotency_key": excluded.idempotency_key,
-        "received_at": excluded.received_at,
-        "cleanup_eligible_at": excluded.cleanup_eligible_at,
-    }
-    dialect = _dialect_name(session)
-    if dialect == "postgresql":
-        statement = insert_stmt.on_conflict_do_update(
-            constraint="uq_recording_audio_chunks_recording_sequence",
-            set_=update_columns,
+    if idempotency_key:
+        statement = statement.where(
+            or_(
+                RecordingAudioChunk.sequence_no == sequence,
+                RecordingAudioChunk.idempotency_key == idempotency_key,
+            )
         )
     else:
-        statement = insert_stmt.on_conflict_do_update(
-            index_elements=["recording_id", "sequence_no"],
-            set_=update_columns,
-        )
+        statement = statement.where(RecordingAudioChunk.sequence_no == sequence)
 
-    session.execute(statement)
-    return list_recording_audio_chunks(
+    return session.execute(statement).scalars().first()
+
+
+def _get_or_create_recording_audio_chunk(
+    session: Session,
+    *,
+    recording_id: int,
+    source_kind: str,
+    fields: dict[str, Any],
+) -> RecordingAudioChunk:
+    sequence = int(fields["sequence_no"])
+    idempotency_key = fields.get("idempotency_key")
+
+    existing_row = _select_recording_audio_chunk(
         session,
-        recording_id,
+        recording_id=recording_id,
         source_kind=source_kind,
+        sequence=sequence,
+        idempotency_key=idempotency_key,
     )
+    if existing_row is not None:
+        return existing_row
+
+    row = RecordingAudioChunk(recording_id=recording_id, **fields)
+    try:
+        # Finalize and the browser-segment transcode worker can discover the same
+        # canonical WAV concurrently. Flush the insert inside a savepoint so a
+        # duplicate-key race falls back to reloading the winner instead of
+        # leaving a pending duplicate row for later autoflush.
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+        return row
+    except IntegrityError:
+        try:
+            session.expunge(row)
+        except InvalidRequestError:
+            pass
+
+        existing_row = _select_recording_audio_chunk(
+            session,
+            recording_id=recording_id,
+            source_kind=source_kind,
+            sequence=sequence,
+            idempotency_key=idempotency_key,
+        )
+        if existing_row is None:
+            raise
+        return existing_row
 
 
 def _window_row_signature(row: RecordingAudioWindowManifest) -> tuple[Any, ...]:
@@ -364,36 +392,7 @@ def sync_recording_audio_chunks_from_entries(
 ) -> list[RecordingAudioChunk]:
     if not disk_entries:
         return []
-
-    if _supports_native_upsert(session):
-        chunk_payloads: list[dict[str, Any]] = []
-        absolute_start_ms = 0
-        for sequence, storage_path in sorted(disk_entries, key=lambda item: item[0]):
-            fields = _build_recording_audio_chunk_fields(
-                sequence=sequence,
-                source_kind=source_kind,
-                storage_path=storage_path,
-            )
-            fields["absolute_start_ms"] = absolute_start_ms
-            fields["absolute_end_ms"] = absolute_start_ms + int(fields["duration_ms"])
-            absolute_start_ms = int(fields["absolute_end_ms"])
-            now = utc_now()
-            chunk_payloads.append(
-                {
-                    "created_at": now,
-                    "updated_at": now,
-                    "public_id": generate_pipeline_public_id(),
-                    "recording_id": recording_id,
-                    **fields,
-                }
-            )
-
-        return _upsert_recording_audio_chunks(
-            session,
-            recording_id=recording_id,
-            source_kind=source_kind,
-            chunk_payloads=chunk_payloads,
-        )
+    ordered_entries = sorted(disk_entries, key=lambda item: item[0])
 
     existing_rows = (
         session.execute(
@@ -413,9 +412,8 @@ def sync_recording_audio_chunks_from_entries(
         if row.source_kind == source_kind and row.idempotency_key
     }
 
-    synced_rows: list[RecordingAudioChunk] = []
-    absolute_start_ms = 0
-    for sequence, storage_path in sorted(disk_entries, key=lambda item: item[0]):
+    synced_rows: list[tuple[RecordingAudioChunk, dict[str, Any]]] = []
+    for sequence, storage_path in ordered_entries:
         fields = _build_recording_audio_chunk_fields(
             sequence=sequence,
             source_kind=source_kind,
@@ -424,21 +422,46 @@ def sync_recording_audio_chunks_from_entries(
         row = existing_by_sequence.get(sequence) or existing_by_idempotency.get(fields["idempotency_key"])
 
         if row is None:
-            row = RecordingAudioChunk(recording_id=recording_id, **fields)
-        else:
-            for field_name, field_value in fields.items():
-                setattr(row, field_name, field_value)
+            row = _get_or_create_recording_audio_chunk(
+                session,
+                recording_id=recording_id,
+                source_kind=source_kind,
+                fields=fields,
+            )
 
-        row.absolute_start_ms = absolute_start_ms
-        row.absolute_end_ms = absolute_start_ms + row.duration_ms
-        absolute_start_ms = row.absolute_end_ms
-        session.add(row)
-        synced_rows.append(row)
+        synced_rows.append((row, fields))
         existing_by_sequence[row.sequence_no] = row
         if row.idempotency_key:
             existing_by_idempotency[row.idempotency_key] = row
 
-    return synced_rows
+    absolute_start_ms = 0
+    persisted_rows: list[RecordingAudioChunk] = []
+    for row, fields in synced_rows:
+        row_changed = False
+        for field_name, field_value in fields.items():
+            if field_name == "received_at" and row.received_at is not None:
+                continue
+            if getattr(row, field_name) != field_value:
+                setattr(row, field_name, field_value)
+                row_changed = True
+
+        absolute_end_ms = absolute_start_ms + int(row.duration_ms)
+        if int(row.absolute_start_ms) != absolute_start_ms:
+            row.absolute_start_ms = absolute_start_ms
+            row_changed = True
+        if int(row.absolute_end_ms) != absolute_end_ms:
+            row.absolute_end_ms = absolute_end_ms
+            row_changed = True
+        absolute_start_ms = absolute_end_ms
+
+        if row_changed:
+            session.add(row)
+        existing_by_sequence[row.sequence_no] = row
+        if row.idempotency_key:
+            existing_by_idempotency[row.idempotency_key] = row
+        persisted_rows.append(row)
+
+    return persisted_rows
 
 
 def sync_recording_audio_chunks_from_directory(

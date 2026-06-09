@@ -9,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -393,7 +394,6 @@ async def _chunk_metadata_rows_for_recording(
             for sequence_no, sample_rate_hz, channel_count, storage_path in rows.all()
         ]
 
-
 def test_sync_recording_audio_chunks_upserts_existing_sequence(sync_engine, tmp_path) -> None:
     from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
     from backend.utils.time import utc_now
@@ -463,6 +463,21 @@ def test_sync_recording_audio_chunks_upserts_existing_sequence(sync_engine, tmp_
     assert row[2] == 16000
     assert row[3] == 2
     assert row[4] == 3000
+
+
+def _chunk_received_at_for_recording(
+    session: Session,
+    *,
+    recording_id: int,
+) -> list[tuple[int, str]]:
+    rows = session.execute(
+        text(
+            "SELECT sequence_no, received_at FROM recording_audio_chunks "
+            "WHERE recording_id = :recording_id ORDER BY sequence_no"
+        ),
+        {"recording_id": recording_id},
+    )
+    return [(int(sequence_no), str(received_at)) for sequence_no, received_at in rows.all()]
 
 
 @pytest.mark.anyio
@@ -753,6 +768,135 @@ async def test_finalize_upload_transcodes_pending_m4a_segments(
     ]
 
 
+def test_sync_recording_audio_chunks_recovers_when_competing_session_wins_insert_race(
+    sync_engine,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from backend.models.pipeline import RecordingAudioChunk
+    from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
+
+    upload_dir = tmp_path / "race-upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = upload_dir / "0.wav"
+    wav_path.write_bytes(make_wav_bytes(duration_s=0.5))
+
+    with sync_engine.begin() as connection:
+        connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
+
+    with Session(sync_engine) as schema_session:
+        schema_session.execute(
+            text(
+                "CREATE UNIQUE INDEX uq_chunks_recording_sequence_test "
+                "ON recording_audio_chunks (recording_id, sequence_no)"
+            )
+        )
+        schema_session.commit()
+
+    with Session(sync_engine) as session:
+        original_flush = session.flush
+        competing_inserted = False
+
+        def fake_flush(*args, **kwargs):
+            nonlocal competing_inserted
+
+            pending_row = next(
+                (
+                    obj
+                    for obj in session.new
+                    if isinstance(obj, RecordingAudioChunk)
+                    and int(obj.recording_id) == 101
+                    and int(obj.sequence_no) == 0
+                ),
+                None,
+            )
+            if pending_row is not None and not competing_inserted:
+                competing_inserted = True
+                with Session(sync_engine) as competing_session:
+                    competing_session.add(
+                        RecordingAudioChunk(
+                            recording_id=int(pending_row.recording_id),
+                            sequence_no=int(pending_row.sequence_no),
+                            source_kind=str(pending_row.source_kind),
+                            absolute_start_ms=int(pending_row.absolute_start_ms),
+                            absolute_end_ms=int(pending_row.absolute_end_ms),
+                            duration_ms=int(pending_row.duration_ms),
+                            sample_rate_hz=int(pending_row.sample_rate_hz),
+                            channel_count=int(pending_row.channel_count),
+                            byte_size=int(pending_row.byte_size),
+                            sha256=str(pending_row.sha256),
+                            storage_path=str(pending_row.storage_path),
+                            upload_status=str(pending_row.upload_status),
+                            idempotency_key=str(pending_row.idempotency_key),
+                            received_at=pending_row.received_at,
+                            cleanup_eligible_at=pending_row.cleanup_eligible_at,
+                        )
+                    )
+                    competing_session.commit()
+                raise IntegrityError("insert", None, Exception("duplicate key"))
+
+            return original_flush(*args, **kwargs)
+
+        monkeypatch.setattr(session, "flush", fake_flush)
+
+        rows = sync_recording_audio_chunks_from_directory(
+            session,
+            recording_id=101,
+            source_kind="browser",
+            suffix=".wav",
+            temp_dir=upload_dir,
+        )
+        session.commit()
+
+        assert [int(row.sequence_no) for row in rows] == [0]
+        persisted_rows = session.execute(
+            text(
+                "SELECT COUNT(*), MIN(sequence_no), MAX(sequence_no) "
+                "FROM recording_audio_chunks WHERE recording_id = :recording_id"
+            ),
+            {"recording_id": 101},
+        ).one()
+        assert persisted_rows == (1, 0, 0)
+
+
+def test_sync_recording_audio_chunks_preserves_received_at_on_rescan(
+    sync_engine,
+    tmp_path,
+) -> None:
+    from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
+
+    upload_dir = tmp_path / "received-at-upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = upload_dir / "0.wav"
+    wav_path.write_bytes(make_wav_bytes(duration_s=0.5))
+
+    with sync_engine.begin() as connection:
+        connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
+
+    with Session(sync_engine) as session:
+        sync_recording_audio_chunks_from_directory(
+            session,
+            recording_id=202,
+            source_kind="browser",
+            suffix=".wav",
+            temp_dir=upload_dir,
+        )
+        session.commit()
+        first_rows = _chunk_received_at_for_recording(session, recording_id=202)
+
+        sync_recording_audio_chunks_from_directory(
+            session,
+            recording_id=202,
+            source_kind="browser",
+            suffix=".wav",
+            temp_dir=upload_dir,
+        )
+        session.commit()
+        second_rows = _chunk_received_at_for_recording(session, recording_id=202)
+
+    assert first_rows == second_rows == [(0, first_rows[0][1])]
+
+
 @pytest.mark.anyio
 async def test_failed_webm_transcode_marks_sequence_incomplete_for_finalize(
     client: AsyncClient,
@@ -823,6 +967,94 @@ async def test_failed_webm_transcode_marks_sequence_incomplete_for_finalize(
     assert finalize_response.json()["detail"] == (
         "Recording upload is still in progress; finalize after all segment uploads complete."
     )
+
+
+@pytest.mark.anyio
+async def test_pause_resume_finalize_transcodes_pending_browser_segments_without_sequence_conflict(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    transcode_dispatches,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Pause resume browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker,
+        public_id=recording_public_id,
+    )
+
+    first_segment = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.webm", b"webm-opus-segment-0", "audio/webm")},
+    )
+    assert first_segment.status_code == 200
+
+    pause_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/pause",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert pause_response.status_code == 200
+    assert pause_response.json()["last_sequence"] == 0
+
+    resume_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/resume",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert resume_response.status_code == 200
+    assert resume_response.json()["last_sequence"] == 0
+
+    second_segment = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 1},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("1.webm", b"webm-opus-segment-1", "audio/webm")},
+    )
+    assert second_segment.status_code == 200
+    assert transcode_dispatches == [(recording_id, 0), (recording_id, 1)]
+
+    monkeypatch.setattr(
+        segment_transcode_module,
+        "_run_ffmpeg_transcode",
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
+    )
+    monkeypatch.setattr(
+        recordings_module,
+        "concatenate_media_files",
+        lambda paths, destination: Path(destination).write_bytes(b"joined-browser-master"),
+    )
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 2.5)
+    monkeypatch.setattr(recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None)
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
+    assert finalize_response.status_code == 200
+    assert finalize_response.json()["status"] == "QUEUED"
+    assert (upload_dir / "0.wav").exists()
+    assert (upload_dir / "1.wav").exists()
+    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
+        (0, str(upload_dir / "0.wav")),
+        (1, str(upload_dir / "1.wav")),
+    ]
 
 
 @pytest.mark.anyio

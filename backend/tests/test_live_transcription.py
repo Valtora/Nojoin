@@ -1440,6 +1440,29 @@ def test_live_entry_guard_bails_when_not_uploading(monkeypatch, tmp_path):
     assert not (temp_dir / "live").exists()
 
 
+def test_live_entry_guard_accepts_paused_recording_tail(monkeypatch, tmp_path):
+    """A paused recording still drains already-uploaded tail audio."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "15"
+    temp_dir.mkdir()
+    audio_store = _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}])
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+
+    monkeypatch.setattr(lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir)
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.PAUSED, transcript)
+    session = _FakeSession(recording)
+
+    _run_live_task(monkeypatch, 15, 0, session)
+
+    assert len(transcript.segments) == 1
+    assert session.committed is True
+    assert lt.read_live_state(temp_dir / "live")["next_expected"] == 1
+
+
 def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_path):
     """finalize() landing mid-run (UPLOADING at entry, PROCESSING at the DB
     write) skips the provisional write but still advances the lane cleanly."""

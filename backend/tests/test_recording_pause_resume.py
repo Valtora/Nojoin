@@ -413,6 +413,7 @@ async def client(api_app: FastAPI) -> AsyncClient:
 @pytest.mark.anyio
 async def test_session_init_pause_resume_finalize_round_trip(
     client: AsyncClient,
+    test_session_maker: sessionmaker,
 ) -> None:
     set_session_cookie(client)
 
@@ -466,6 +467,17 @@ async def test_session_init_pause_resume_finalize_round_trip(
         "status": "UPLOADING",
         "last_sequence": 0,
     }
+
+    async with test_session_maker() as session:
+        client_status_row = (
+            await session.execute(
+                text(
+                    "SELECT client_status FROM recordings WHERE public_id = :public_id"
+                ),
+                {"public_id": recording_id},
+            )
+        ).one()
+    assert client_status_row[0] == "RECORDING"
 
     second_segment = await client.post(
         f"/api/v1/recordings/{recording_id}/segment",
