@@ -180,6 +180,7 @@ CALENDAR_SCHEMA = [
         pipeline_generation VARCHAR(32) DEFAULT 'unified',
         is_archived BOOLEAN NOT NULL,
         is_deleted BOOLEAN NOT NULL,
+        last_activity_at DATETIME,
         user_id INTEGER,
         calendar_event_id INTEGER
     )

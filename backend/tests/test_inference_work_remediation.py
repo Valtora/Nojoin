@@ -58,6 +58,7 @@ SCHEMA_STATEMENTS = [
         pipeline_generation VARCHAR,
         is_archived BOOLEAN,
         is_deleted BOOLEAN,
+        last_activity_at DATETIME,
         user_id INTEGER,
         calendar_event_id INTEGER
     )

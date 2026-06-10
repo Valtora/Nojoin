@@ -58,7 +58,15 @@ SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER = {
     "ollama": "secondary_ollama_live_model",
 }
 
-INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset(SYSTEM_LLM_FIELDS)
+INSTALL_WIDE_ONLY_USER_LLM_FIELDS = frozenset(
+    field
+    for field in SYSTEM_LLM_FIELDS
+    if field
+    not in {
+        *LIVE_MODEL_FIELDS_BY_PROVIDER.values(),
+        *SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.values(),
+    }
+)
 
 
 @dataclass(frozen=True)

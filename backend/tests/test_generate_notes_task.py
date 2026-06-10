@@ -64,6 +64,7 @@ CREATE TABLE recordings (
     pipeline_generation VARCHAR(32) DEFAULT 'unified',
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
+    last_activity_at DATETIME,
     user_id INTEGER,
     calendar_event_id INTEGER
 );
@@ -219,6 +220,7 @@ def test_generate_notes_task_completes_with_saved_provider_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
     engine = _create_notes_task_database(
         tmp_path,
@@ -317,6 +319,7 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
     engine = _create_notes_task_database(
         tmp_path,
         owner_settings={
