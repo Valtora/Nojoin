@@ -233,7 +233,7 @@ export default function ChatPanel({
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-gray-900">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-orange-500" />
-          Chat ({provider})
+          Chat
         </h2>
         <div className="flex items-center gap-1">
           {recordingId && (

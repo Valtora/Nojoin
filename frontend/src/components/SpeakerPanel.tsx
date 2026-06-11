@@ -654,7 +654,6 @@ export default function SpeakerPanel({
                       {entrySuggestions.length > 0 && (
                         <div className="mt-2 space-y-2">
                           {entrySuggestions.map((suggestion) => {
-                            const primaryEvidence = suggestion.evidence_spans[0];
                             const isResolving = resolvingSuggestionId === suggestion.id;
 
                             return (
@@ -662,22 +661,15 @@ export default function SpeakerPanel({
                                 key={suggestion.id}
                                 className="rounded-md border border-amber-200 bg-amber-50/80 px-2 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
                               >
-                                <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center justify-between gap-2">
                                   <div className="min-w-0">
                                     <p className="font-semibold">
                                       Suggestion: {suggestion.suggested_name}
-                                    </p>
-                                    <p className="text-[11px] opacity-80">
-                                      {suggestion.signals.includes("self_introduction") || suggestion.signals.includes("self_identification")
-                                        ? "Self-introduction detected"
-                                        : suggestion.signals.includes("transcript_name_mention")
-                                          ? "Name found in transcript"
-                                          : suggestion.signals.includes("meeting_attendee_exact") || suggestion.signals.includes("meeting_attendee_first_name")
-                                            ? "Matches meeting attendees"
-                                            : "AI estimate (no evidence)"}
-                                      {entrySuggestions.length > 1
-                                        ? ` • ${suggestion.diarization_label}`
-                                        : ""}
+                                      {entrySuggestions.length > 1 && (
+                                        <span className="ml-1 text-[11px] font-normal opacity-80">
+                                          ({suggestion.diarization_label})
+                                        </span>
+                                      )}
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
@@ -701,14 +693,6 @@ export default function SpeakerPanel({
                                     </button>
                                   </div>
                                 </div>
-                                {suggestion.rationale && (
-                                  <p className="mt-1 opacity-85">{suggestion.rationale}</p>
-                                )}
-                                {primaryEvidence?.quote && (
-                                  <p className="mt-1 italic opacity-80">
-                                    “{primaryEvidence.quote}”
-                                  </p>
-                                )}
                               </div>
                             );
                           })}
