@@ -108,6 +108,7 @@ export default function RecordingStatusDisplay({
     <AmbientWorkspace
       wrapperClassName="flex-1 overflow-visible"
       backgroundClassName="bg-transparent"
+      contentClassName="workspace-shell workspace-shell-feature"
     >
       {showMobileBackButton && onBack ? (
         <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-40 lg:hidden">
@@ -125,7 +126,7 @@ export default function RecordingStatusDisplay({
       ) : null}
 
       <div className={showMobileBackButton && onBack ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0" : ""}>
-      <section className="mx-auto flex min-w-0 w-full max-w-5xl flex-col rounded-[2rem] border border-white/60 bg-white/82 p-6 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+      <section className="density-surface mx-auto flex min-w-0 w-full max-w-5xl flex-col border border-white/60 bg-white/82 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
                 <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
@@ -141,17 +142,17 @@ export default function RecordingStatusDisplay({
                   {isActiveRecording ? "Live Capture" : "Meeting Processing"}
                 </span>
                 <div>
-                  <h2 className="text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
+                  <h2 className="density-heading-page text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
                     {heading}
                   </h2>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300 md:text-base">
+                  <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300 md:text-base">
                     {subheading}
                   </p>
                 </div>
               </div>
 
               {!isActiveRecording && progressValue !== null ? (
-                <div className="flex min-h-[4.75rem] min-w-[7.5rem] flex-col items-center justify-center rounded-[1.5rem] border border-orange-200/70 bg-orange-50/85 px-4 py-3 text-center dark:border-orange-500/20 dark:bg-orange-500/10">
+                <div className="density-surface-panel flex min-h-[4.75rem] min-w-[7.5rem] flex-col items-center justify-center border border-orange-200/70 bg-orange-50/85 px-4 py-3 text-center dark:border-orange-500/20 dark:bg-orange-500/10">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">
                     Progress
                   </div>
@@ -202,7 +203,7 @@ export default function RecordingStatusDisplay({
                     </div>
                   ) : null}
 
-                  <div className="rounded-[1.5rem] border border-white/60 bg-white/70 p-4 dark:border-white/10 dark:bg-gray-900/60">
+                  <div className="density-surface-panel border border-white/60 bg-white/70 p-4 dark:border-white/10 dark:bg-gray-900/60">
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
                       Recording Length
                     </div>
@@ -216,7 +217,7 @@ export default function RecordingStatusDisplay({
             </div>
       </section>
 
-      <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className="mx-auto w-full max-w-5xl space-y-[var(--workspace-gap)]">
         {showMeetingEdge ? (
           <MeetingEdgePanel
             payload={recording.transcript?.meeting_edge_payload}

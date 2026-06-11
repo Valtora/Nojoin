@@ -126,14 +126,14 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     return (
-      <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
+      <div className="density-surface border border-orange-100 bg-white shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
         <div className="flex flex-col gap-5">
           <div className="mt-2 flex items-start gap-3">
             <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
               <Mic className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+              <h2 className="density-heading-section text-2xl font-semibold text-gray-950 dark:text-white">
                 Meet Now
               </h2>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
@@ -162,7 +162,7 @@ export default function MeetingControls({
               disabled={meetingSurfaceState.buttonDisabled}
               title={meetingSurfaceState.buttonTooltip}
               aria-label={meetingSurfaceState.buttonLabel}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
+              className="density-control-lg flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
             >
               <Mic className="h-4 w-4" />
               {meetingSurfaceState.buttonLabel}

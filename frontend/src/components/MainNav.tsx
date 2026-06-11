@@ -37,6 +37,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNavigationStore, ViewType } from "@/lib/store";
+import { DESKTOP_BREAKPOINT } from "@/lib/viewportDensity";
 import {
   getTags,
   updateTag,
@@ -53,6 +54,7 @@ import ConfirmationModal from "./ConfirmationModal";
 import CreateTagModal from "./CreateTagModal";
 import NotificationHistoryModal from "./NotificationHistoryModal";
 import ContextMenu from "./ContextMenu";
+import { useViewportDensity } from "./ViewportDensityProvider";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -311,10 +313,10 @@ function TagItem({
 }
 
 export default function MainNav() {
-  const DESKTOP_BREAKPOINT = 1024;
   const router = useRouter();
   const pathname = usePathname();
   const { pausedRecording, runtimeActive } = useCapture();
+  const { isCompact } = useViewportDensity();
   const {
     currentView,
     setCurrentView,
@@ -331,9 +333,10 @@ export default function MainNav() {
     setMobileNavOpen,
   } = useNavigationStore();
   const [isResizing, setIsResizing] = useState(false);
-  const MIN_WIDTH = 224;
-  const MAX_WIDTH = 400;
-  const COLLAPSED_WIDTH = 64;
+  const MIN_WIDTH = isCompact ? 208 : 224;
+  const MAX_WIDTH = isCompact ? 360 : 400;
+  const COLLAPSED_WIDTH = isCompact ? 60 : 64;
+  const resolvedNavWidth = isCompact ? Math.min(navWidth, 248) : navWidth;
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -421,7 +424,7 @@ export default function MainNav() {
     window.addEventListener("resize", syncViewport);
 
     return () => window.removeEventListener("resize", syncViewport);
-  }, [DESKTOP_BREAKPOINT]);
+  }, []);
 
   // Handle resize
   useEffect(() => {
@@ -447,7 +450,7 @@ export default function MainNav() {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isResizing, setNavWidth]);
+  }, [isResizing, MAX_WIDTH, MIN_WIDTH, setNavWidth]);
 
   // Close mobile nav on route change
   useEffect(() => {
@@ -770,7 +773,7 @@ export default function MainNav() {
           width: isDesktop
             ? collapsed
               ? `${COLLAPSED_WIDTH}px`
-              : `${navWidth}px`
+              : `${resolvedNavWidth}px`
             : "min(22rem, calc(100vw - 1rem))",
         }}
       >

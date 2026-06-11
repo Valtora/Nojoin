@@ -193,7 +193,7 @@ function MeetingEdgePanel({
           : "Autosaves";
 
   return (
-    <section className="rounded-[2rem] border border-white/60 bg-white/84 p-5 shadow-xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/68 dark:shadow-black/20">
+    <section className="density-surface border border-white/60 bg-white/84 shadow-xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/68 dark:shadow-black/20">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
           {status === "updating" ? (
@@ -213,7 +213,7 @@ function MeetingEdgePanel({
       {hasPayload ? (
         <div className="mt-5 space-y-4">
           {payload?.summary ? (
-            <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
+            <div className="density-surface-panel border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
                 Current read
               </div>
@@ -224,7 +224,7 @@ function MeetingEdgePanel({
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
+            <div className="density-surface-panel border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                 <MessageSquareQuote className="h-4 w-4 text-orange-600 dark:text-orange-300" />
                 Questions to ask
@@ -244,7 +244,7 @@ function MeetingEdgePanel({
               </ul>
             </div>
 
-            <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
+            <div className="density-surface-panel border border-white/70 bg-white/80 p-4 dark:border-white/10 dark:bg-gray-900/70">
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
                 <Lightbulb className="h-4 w-4 text-orange-600 dark:text-orange-300" />
                 Points to raise
@@ -296,7 +296,7 @@ function MeetingEdgePanel({
           ) : null}
         </div>
       ) : (
-        <div className="mt-5 rounded-[1.5rem] border border-dashed border-orange-200/80 bg-white/65 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-orange-500/20 dark:bg-gray-900/60 dark:text-gray-300">
+        <div className="density-surface-panel mt-5 border border-dashed border-orange-200/80 bg-white/65 px-4 py-5 text-sm leading-6 text-gray-600 dark:border-orange-500/20 dark:bg-gray-900/60 dark:text-gray-300">
           {status === "updating"
             ? "Meeting Edge is building the first guidance pass from the live meeting."
             : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
@@ -304,7 +304,7 @@ function MeetingEdgePanel({
       )}
 
       {onSaveContextLevel ? (
-        <div className="mt-5 rounded-[1.5rem] border border-orange-200/70 bg-orange-50/45 p-4 dark:border-orange-500/20 dark:bg-orange-500/5">
+        <div className="density-surface-panel mt-5 border border-orange-200/70 bg-orange-50/45 p-4 dark:border-orange-500/20 dark:bg-orange-500/5">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-900 dark:text-white">
               Meeting Edge Technical Context

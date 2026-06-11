@@ -872,7 +872,7 @@ export default function TranscriptView({
       {/* Toolbar */}
       <div className="z-10 flex flex-col border-b-2 border-gray-200 bg-gray-50 shadow-sm dark:border-gray-700 dark:bg-gray-900/95">
         {/* Row 1: Header & Global Actions */}
-        <div className="flex items-center justify-end overflow-x-auto px-2 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3">
+        <div className="flex items-center justify-end overflow-x-auto px-2 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3">
           <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               onClick={onUndo}
@@ -931,7 +931,7 @@ export default function TranscriptView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-gray-400/30 px-2 pb-2 pt-2 duration-200 dark:border-gray-700/50 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-6">
+          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-gray-400/30 px-2 pb-2 pt-2 duration-200 dark:border-gray-700/50 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input

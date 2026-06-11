@@ -73,6 +73,7 @@ import {
   flushDeferredTranscriptState,
   type LocalTranscriptState,
 } from "@/lib/transcriptState";
+import { useViewportDensity } from "@/components/ViewportDensityProvider";
 
 const isDemoRecording = (recording: Recording) =>
   recording.name === "Welcome to Nojoin";
@@ -176,6 +177,7 @@ export default function RecordingPage({ params }: PageProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [isMobileHeaderActionsOpen, setIsMobileHeaderActionsOpen] = useState(false);
+  const { isCompact } = useViewportDensity();
 
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
@@ -183,6 +185,9 @@ export default function RecordingPage({ params }: PageProps) {
   const lastNotesErrorRef = useRef<string | null>(null);
   const lastMeetingEdgeErrorRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
+  const compactChatPanelHeight = isCompact
+    ? Math.min(chatPanelHeight, 42)
+    : chatPanelHeight;
   const navigateToRecordings = useCallback(() => {
     router.push("/recordings");
   }, [router]);
@@ -1238,7 +1243,7 @@ export default function RecordingPage({ params }: PageProps) {
       ) : null}
 
       {/* Header (Title, Tags, Audio Player) */}
-      <header className={`sticky top-0 z-10 shrink-0 border-b-2 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-6"}`}>
+      <header className={`sticky top-0 z-10 shrink-0 border-b-2 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-5 lg:p-6"}`}>
         {isMobile ? (
           <>
             <div className="rounded-2xl border border-gray-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur dark:border-gray-700/80 dark:bg-gray-800/90">
@@ -1298,11 +1303,11 @@ export default function RecordingPage({ params }: PageProps) {
                       setTitleValue(recording?.name || "");
                     }
                   }}
-                  className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-2 w-full bg-transparent border-b-2 border-orange-500 focus:outline-none"
+                  className="density-heading-section mb-2 w-full border-b-2 border-orange-500 bg-transparent text-xl font-bold text-gray-900 focus:outline-none dark:text-white md:text-2xl"
                 />
               ) : (
                 <h1
-                  className="mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 group md:text-2xl"
+                  className="density-heading-section group mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 md:text-2xl"
                   onClick={() => setIsEditingTitle(true)}
                   title="Click to rename"
                 >
@@ -1555,10 +1560,10 @@ export default function RecordingPage({ params }: PageProps) {
         ) : (
           <PanelGroup
             direction="horizontal"
-            autoSaveId="recording-layout-persistence"
+            autoSaveId={`recording-layout-persistence-${isCompact ? "compact" : "comfortable"}`}
             className="h-full flex-1 min-w-0"
           >
-            <Panel defaultSize={75} minSize={30}>
+            <Panel defaultSize={isCompact ? 78 : 75} minSize={30}>
               {renderMainContent()}
             </Panel>
 
@@ -1567,7 +1572,7 @@ export default function RecordingPage({ params }: PageProps) {
             </PanelResizeHandle>
 
             {/* Sidebar: Stacked Speaker and Chat panels */}
-            <Panel defaultSize={25} minSize={20}>
+            <Panel defaultSize={isCompact ? 22 : 25} minSize={18}>
               <PanelGroup
                 direction="vertical"
                 onLayout={(sizes) => {
@@ -1576,7 +1581,7 @@ export default function RecordingPage({ params }: PageProps) {
                   }
                 }}
               >
-                <Panel defaultSize={100 - chatPanelHeight} minSize={20}>
+                <Panel defaultSize={100 - compactChatPanelHeight} minSize={20}>
                   <SpeakerPanel
                     speakers={recording.speakers || []}
                     speakerNameSuggestions={
@@ -1609,7 +1614,7 @@ export default function RecordingPage({ params }: PageProps) {
                   <div className="w-8 h-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
                 </PanelResizeHandle>
 
-                <Panel defaultSize={chatPanelHeight} minSize={20}>
+                <Panel defaultSize={compactChatPanelHeight} minSize={18}>
                   <ChatPanel onNotesUpdate={fetchRecording} />
                 </Panel>
               </PanelGroup>

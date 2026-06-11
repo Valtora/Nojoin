@@ -468,16 +468,16 @@ export default function TasksWorkspace() {
 
   return (
     <AmbientWorkspace
-      contentClassName="max-w-7xl gap-6"
-      paddingClassName="py-6 md:py-8"
+      contentClassName="workspace-shell workspace-shell-wide"
+      paddingClassName="workspace-pad-y"
     >
-      <section className="rounded-[2rem] border border-white/60 bg-white/85 p-6 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/65 dark:shadow-black/20 md:p-8">
+      <section className="density-surface density-surface-lg border border-white/60 bg-white/85 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/65 dark:shadow-black/20">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-4xl font-semibold tracking-tight text-gray-950 dark:text-white">
+            <h1 className="density-heading-page text-4xl font-semibold tracking-tight text-gray-950 dark:text-white">
               Manage Tasks
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+            <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">
               Capture follow-ups, add shared recording tags, archive stale work, and restore archived tasks when they become relevant again.
             </p>
           </div>
@@ -503,7 +503,7 @@ export default function TasksWorkspace() {
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="inline-flex h-[3.625rem] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-orange-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-orange-700"
+                className="density-control-lg inline-flex h-[var(--control-height-lg)] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-orange-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-orange-700"
               >
                 <Plus className="h-4 w-4" />
                 Create Task
@@ -515,7 +515,7 @@ export default function TasksWorkspace() {
         {isCreateOpen && (
           <form
             onSubmit={handleCreateTask}
-            className="mt-8 grid items-stretch gap-4 rounded-[1.75rem] border border-orange-100 bg-orange-50/50 p-4 dark:border-orange-500/15 dark:bg-orange-500/5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.42fr)]"
+            className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-orange-100 bg-orange-50/50 p-4 dark:border-orange-500/15 dark:bg-orange-500/5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)]"
           >
             <div className="flex flex-col gap-3">
               <input
@@ -588,12 +588,12 @@ export default function TasksWorkspace() {
 
       <section className="grid gap-4">
         {loading ? (
-          <div className="rounded-[1.75rem] border border-gray-200 bg-white/85 p-6 text-sm text-gray-600 shadow-lg shadow-orange-950/5 dark:border-gray-700 dark:bg-gray-950/65 dark:text-gray-300">
+          <div className="density-surface-subtle border border-gray-200 bg-white/85 p-6 text-sm text-gray-600 shadow-lg shadow-orange-950/5 dark:border-gray-700 dark:bg-gray-950/65 dark:text-gray-300">
             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
             Loading tasks...
           </div>
         ) : visibleTasks.length === 0 ? (
-          <div className="rounded-[1.75rem] border border-dashed border-gray-300 bg-white/70 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-950/50 dark:text-gray-300">
+          <div className="density-surface-subtle border border-dashed border-gray-300 bg-white/70 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-950/50 dark:text-gray-300">
             No {view} tasks.
           </div>
         ) : (
@@ -606,7 +606,7 @@ export default function TasksWorkspace() {
             return (
               <article
                 key={task.id}
-                className="rounded-[1.75rem] border border-gray-200 bg-white/85 p-5 shadow-lg shadow-orange-950/5 dark:border-gray-700 dark:bg-gray-950/65 dark:shadow-black/20"
+                className="density-surface-subtle border border-gray-200 bg-white/85 p-5 shadow-lg shadow-orange-950/5 dark:border-gray-700 dark:bg-gray-950/65 dark:shadow-black/20"
               >
                 {isEditing ? (
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.45fr)]">

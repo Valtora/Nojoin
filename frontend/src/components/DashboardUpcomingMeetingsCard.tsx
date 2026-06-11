@@ -1342,14 +1342,14 @@ export default function DashboardUpcomingMeetingsCard() {
   };
 
   return (
-    <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
+    <div className="density-surface border border-orange-100 bg-white shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
       <div className="mt-2 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
             <CalendarRange className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+            <h2 className="density-heading-section text-2xl font-semibold text-gray-950 dark:text-white">
               Calendar
             </h2>
             <p
@@ -1379,7 +1379,7 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-[1.75rem] border border-gray-200 bg-white p-4 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
+      <div className="density-surface-subtle mt-6 border border-gray-200 bg-white p-4 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
@@ -1471,7 +1471,7 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
 
         {viewMode === "month" ? (
-          <div className="mt-5 rounded-[1.5rem] border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/70">
+          <div className="density-surface-panel mt-5 border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/70">
             <div className="grid grid-cols-7 gap-2 text-center">
               {WEEK_DAYS.map((day) => (
                 <div
@@ -1547,7 +1547,7 @@ export default function DashboardUpcomingMeetingsCard() {
             </div>
           </div>
         ) : (
-          <div className="mt-5 rounded-[1.5rem] border border-gray-200 bg-white p-5 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
+          <div className="density-surface-panel mt-5 border border-gray-200 bg-white p-5 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
             <div className="text-sm font-semibold text-gray-950 dark:text-white">
               Agenda
             </div>
@@ -1581,7 +1581,7 @@ export default function DashboardUpcomingMeetingsCard() {
       </div>
 
       {viewMode === "month" && (
-        <div className="mt-4 rounded-[1.5rem] border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70 dark:text-gray-300">
+        <div className="density-surface-panel mt-4 border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70 dark:text-gray-300">
           {calendarLoading ? (
             <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1660,7 +1660,7 @@ export default function DashboardUpcomingMeetingsCard() {
                           </div>
 
                           <div
-                            className="relative overflow-hidden rounded-[1.5rem] border border-gray-200 bg-white px-2 dark:border-gray-700/70 dark:bg-gray-800/80"
+                            className="density-surface-panel relative overflow-hidden border border-gray-200 bg-white px-2 dark:border-gray-700/70 dark:bg-gray-800/80"
                             style={{ height: `${selectedDayTimeline.height}px` }}
                           >
                             {Array.from(

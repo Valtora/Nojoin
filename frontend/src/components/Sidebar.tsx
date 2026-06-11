@@ -45,6 +45,7 @@ import { useNavigationStore } from "@/lib/store";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
+import { useViewportDensity } from "./ViewportDensityProvider";
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return "0s";
@@ -111,6 +112,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { addNotification } = useNotificationStore();
+  const { isCompact } = useViewportDensity();
   const prevRecordingsRef = useRef<Map<RecordingId, RecordingStatus>>(new Map());
   const prevNotesStatusRef = useRef<Map<RecordingId, string>>(new Map());
   const prevTranscriptStatusRef = useRef<Map<RecordingId, string>>(new Map());
@@ -130,6 +132,7 @@ export default function Sidebar() {
 
   const [mounted, setMounted] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
     null,
   );
@@ -145,8 +148,11 @@ export default function Sidebar() {
     useState<Recording | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [reprocessRecordingId, setReprocessRecordingId] = useState<RecordingId | null>(null);
-  const MIN_SIDEBAR_WIDTH = 256; // 16rem (w-64)
-  const MAX_SIDEBAR_WIDTH = 600;
+  const MIN_SIDEBAR_WIDTH = isCompact ? 240 : 256;
+  const MAX_SIDEBAR_WIDTH = isCompact ? 520 : 600;
+  const resolvedSidebarWidth = isCompact
+    ? Math.min(recordingsSidebarWidth, 304)
+    : recordingsSidebarWidth;
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -412,6 +418,17 @@ export default function Sidebar() {
   useEffect(() => {
     setMounted(true);
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      setIsDesktopLayout(window.innerWidth >= 1024);
+    };
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   // Listen for recording-updated events
@@ -774,7 +791,7 @@ export default function Sidebar() {
       className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-100dvh relative transition-opacity ${
         isRecordingView ? "hidden lg:flex" : "w-full lg:flex"
       }`}
-      style={window.innerWidth >= 1024 ? { width: `${recordingsSidebarWidth}px` } : {}}
+      style={mounted && isDesktopLayout ? { width: `${resolvedSidebarWidth}px` } : {}}
     >
       <div className="flex-1 overflow-y-auto">
       {view === "recordings" && (

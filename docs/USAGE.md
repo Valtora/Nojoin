@@ -34,6 +34,8 @@ It brings together:
 - **Calendar context** through month and agenda views, including recorded meeting history.
 - **Task List** for quick personal follow-up capture.
 
+On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout.
+
 ### Calendar Surface
 
 - Switch between month and agenda views.

@@ -8,6 +8,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --app-root-font-size: 16px;
   --contrast-muted: #374151;
   --contrast-helper: #4b5563;
   --contrast-icon-muted: #52525b;
@@ -21,6 +22,20 @@
   --settings-tab-active-text: #9a3412;
   --settings-tab-idle-text: #1f2937;
   --settings-tab-idle-hover: #f3f4f6;
+  --workspace-gap: 1.5rem;
+  --workspace-padding-x: 1rem;
+  --workspace-padding-x-md: 2rem;
+  --workspace-padding-y: 1.5rem;
+  --workspace-padding-y-md: 2.5rem;
+  --workspace-max-width: 72rem;
+  --workspace-max-width-wide: 80rem;
+  --workspace-max-width-feature: 64rem;
+  --surface-radius: 2rem;
+  --surface-radius-subtle: 1.75rem;
+  --surface-radius-panel: 1.5rem;
+  --surface-padding: 1.5rem;
+  --surface-padding-lg: 2rem;
+  --control-height-lg: 3.625rem;
 }
 
 .dark {
@@ -41,6 +56,24 @@
   --settings-tab-idle-hover: rgba(31, 41, 55, 0.9);
 }
 
+html[data-ui-density="compact"] {
+  --app-root-font-size: 15px;
+  --workspace-gap: 1.125rem;
+  --workspace-padding-x: 0.875rem;
+  --workspace-padding-x-md: 1.5rem;
+  --workspace-padding-y: 1rem;
+  --workspace-padding-y-md: 1.5rem;
+  --workspace-max-width: 68rem;
+  --workspace-max-width-wide: 74rem;
+  --workspace-max-width-feature: 60rem;
+  --surface-radius: 1.5rem;
+  --surface-radius-subtle: 1.375rem;
+  --surface-radius-panel: 1.25rem;
+  --surface-padding: 1.25rem;
+  --surface-padding-lg: 1.5rem;
+  --control-height-lg: 3.25rem;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -52,6 +85,10 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+html {
+  font-size: var(--app-root-font-size);
 }
 
 @layer base {
@@ -152,6 +189,75 @@ body {
 
   .settings-tab-inactive:hover {
     background-color: var(--settings-tab-idle-hover);
+  }
+
+  .workspace-shell {
+    max-width: var(--workspace-max-width);
+    gap: var(--workspace-gap);
+  }
+
+  .workspace-shell-wide {
+    max-width: var(--workspace-max-width-wide);
+  }
+
+  .workspace-shell-feature {
+    max-width: var(--workspace-max-width-feature);
+  }
+
+  .workspace-pad-x {
+    padding-inline: var(--workspace-padding-x);
+  }
+
+  .workspace-pad-y {
+    padding-block: var(--workspace-padding-y);
+  }
+
+  .density-surface {
+    border-radius: var(--surface-radius);
+    padding: var(--surface-padding);
+  }
+
+  .density-surface-subtle {
+    border-radius: var(--surface-radius-subtle);
+  }
+
+  .density-surface-panel {
+    border-radius: var(--surface-radius-panel);
+  }
+
+  .density-control-lg {
+    min-height: var(--control-height-lg);
+  }
+
+  .density-heading-page {
+    line-height: 1.05;
+  }
+
+  html[data-ui-density="compact"] .density-heading-page {
+    font-size: clamp(2rem, 2vw + 1.35rem, 2.75rem);
+  }
+
+  html[data-ui-density="compact"] .density-heading-section {
+    font-size: clamp(1.375rem, 1vw + 1rem, 1.875rem);
+    line-height: 1.1;
+  }
+
+  html[data-ui-density="compact"] .density-body-copy {
+    line-height: 1.55;
+  }
+}
+
+@media (min-width: 768px) {
+  .workspace-pad-x {
+    padding-inline: var(--workspace-padding-x-md);
+  }
+
+  .workspace-pad-y {
+    padding-block: var(--workspace-padding-y-md);
+  }
+
+  .density-surface-lg {
+    padding: var(--surface-padding-lg);
   }
 }
 

@@ -588,13 +588,13 @@ export default function DashboardTasksPanel() {
   };
 
   return (
-    <div className="rounded-[2rem] border border-orange-100 bg-white p-6 shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
+    <div className="density-surface border border-orange-100 bg-white shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
       <div className="space-y-2">
         <div className="mt-2 flex items-start gap-3">
           <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
             <Check className="h-5 w-5" />
           </div>
-          <h2 className="text-2xl font-semibold text-gray-950 dark:text-white">
+          <h2 className="density-heading-section text-2xl font-semibold text-gray-950 dark:text-white">
             Task List
           </h2>
         </div>
@@ -639,7 +639,7 @@ export default function DashboardTasksPanel() {
 
       <div className="mt-6 space-y-6">
         {loading ? (
-          <div className="flex items-center gap-3 rounded-[1.5rem] border border-gray-200 bg-white/90 px-4 py-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
+          <div className="density-surface-panel flex items-center gap-3 border border-gray-200 bg-white/90 px-4 py-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your tasks...
           </div>
@@ -657,7 +657,7 @@ export default function DashboardTasksPanel() {
                   return (
                     <div
                       key={task.id}
-                      className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-[1.75rem] border border-gray-200 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-gray-700/70 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10"
+                      className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 border border-gray-200 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-gray-700/70 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10"
                     >
                       <button
                         type="button"
@@ -741,7 +741,7 @@ export default function DashboardTasksPanel() {
                         </div>
                       </div>
 
-                      <div className="flex shrink-0 self-center rounded-2xl border border-transparent bg-white/80 dark:bg-white/5">
+                      <div className="density-surface-panel flex shrink-0 self-center border border-transparent bg-white/80 dark:bg-white/5">
                         <button
                           type="button"
                           onClick={() => void handleArchiveTask(task)}
@@ -788,7 +788,7 @@ export default function DashboardTasksPanel() {
                   return (
                     <div
                       key={task.id}
-                      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-[1.75rem] border border-gray-200 bg-white/80 px-4 py-4 dark:border-gray-700 dark:bg-gray-900/60"
+                      className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 border border-gray-200 bg-white/80 px-4 py-4 dark:border-gray-700 dark:bg-gray-900/60"
                     >
                       <button
                         type="button"

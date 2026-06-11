@@ -36,12 +36,12 @@ export default function RecordingsLanding() {
 
   return (
     <AmbientWorkspace
-      contentClassName="max-w-4xl gap-6"
-      paddingClassName="py-6 md:py-8"
+      contentClassName="workspace-shell workspace-shell-feature"
+      paddingClassName="workspace-pad-y"
     >
       <section
         id="recordings-landing-panel"
-        className="rounded-[2rem] border border-white/60 bg-white/82 p-8 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20 md:p-10"
+        className="density-surface density-surface-lg border border-white/60 bg-white/82 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20"
       >
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
@@ -49,11 +49,11 @@ export default function RecordingsLanding() {
             Recordings Workspace
           </div>
 
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
+          <h1 className="density-heading-page mt-4 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
             {copy.title}
           </h1>
 
-          <div className="mt-6 space-y-3 text-base leading-7 text-gray-600 dark:text-gray-300">
+          <div className="density-body-copy mt-6 space-y-3 text-base leading-7 text-gray-600 dark:text-gray-300">
             <p>{copy.description}</p>
             <p>{copy.detail}</p>
           </div>

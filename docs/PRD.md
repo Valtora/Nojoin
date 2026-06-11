@@ -39,6 +39,7 @@ The primary user interface for interacting with the system.
 
 - **Framework:** Next.js (React) with TypeScript.
 - **Styling:** Tailwind CSS for a fully responsive design, including mobile-optimized views.
+- **Desktop Density Scaling:** The authenticated workspace automatically shifts to a denser layout on smaller desktop viewports such as `1920x1080`, preserving more usable transcript and workspace area while keeping the larger-monitor layout unchanged.
 - **Functionality:** Dashboard, playback, transcript editing, speaker management, system configuration, and a dedicated live capture / processing workspace for in-flight meetings.
 - **Dashboard Iteration Two:** The root route now serves as an operational dashboard with `Meet Now` capture controls, recent-meeting access, an interactive calendar shell, an inline personal Task List, and clear routing into the tasks and recordings workspaces.
   - **Calendar Shell:** Users can browse prior and future months, jump back to today with a dedicated `Today` action, and switch between Month and Agenda modes. When calendar integrations are connected, month dots and agenda markers use per-calendar colours so different sources remain visually distinct. Until a real calendar integration is connected, the dashboard shows honest empty states rather than mock events.

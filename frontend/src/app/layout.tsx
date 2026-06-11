@@ -7,6 +7,7 @@ import { themeScript } from "@/lib/theme-script";
 import NotificationToast from "@/components/NotificationToast";
 import AuthGuard from "@/components/AuthGuard";
 import BackupPoller from "@/components/BackupPoller";
+import { ViewportDensityProvider } from "@/components/ViewportDensityProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,11 +48,13 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white dark:bg-black text-gray-900 dark:text-gray-100 overflow-hidden`}
       >
         <ThemeProvider>
-          <AuthGuard>
-            {children}
-          </AuthGuard>
-          <NotificationToast />
-          <BackupPoller />
+          <ViewportDensityProvider>
+            <AuthGuard>
+              {children}
+            </AuthGuard>
+            <NotificationToast />
+            <BackupPoller />
+          </ViewportDensityProvider>
         </ThemeProvider>
       </body>
     </html>
