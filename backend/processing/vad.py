@@ -348,6 +348,42 @@ def detect_speech_segments(
     Returns: list[dict] of {"start": float_seconds, "end": float_seconds}.
     """
     from pathlib import Path
+    from backend.utils.config_manager import config_manager
+
+    # Resolve processing device
+    device_str = config_manager.get("processing_device", "auto")
+    device = torch.device("cpu")
+
+    if device_str == "auto":
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            logger.info("[VAD] Auto-detected GPU available, using CUDA")
+        else:
+            logger.info("[VAD] Auto-detected GPU unavailable, using CPU")
+    elif device_str == "cuda":
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            logger.info("[VAD] Configured for CUDA, using GPU")
+        else:
+            logger.warning("[VAD] Configured for CUDA but not available, falling back to CPU")
+
+    # Load the VAD model.
+    try:
+        model = silero_vad.load_silero_vad()
+        if hasattr(model, "to"):
+            model.to(device)
+        logger.info(f"[VAD] Model loaded successfully on {device}")
+    except Exception as e:
+        logger.error(f"[VAD] Failed to load model on {device}: {e}")
+        if device.type == 'cuda':
+            logger.warning("[VAD] Attempting fallback to CPU")
+            device = torch.device("cpu")
+            model = silero_vad.load_silero_vad()
+            if hasattr(model, "to"):
+                model.to(device)
+            logger.info("[VAD] Model loaded successfully on CPU (fallback)")
+        else:
+            raise e
 
     # Resolve the input into a tensor.
     if isinstance(audio, (str, Path)):
@@ -355,8 +391,10 @@ def detect_speech_segments(
     else:
         tensor = audio
 
-    # Load the VAD model.
-    model = silero_vad.load_silero_vad()
+    # Ensure the tensor is a PyTorch tensor and move to the resolved device
+    if not isinstance(tensor, torch.Tensor):
+        tensor = torch.from_numpy(np.array(tensor))
+    tensor = tensor.to(device)
 
     # Merge VAD parameters from settings, falling back to sensible defaults.
     vad_config = get_vad_config_from_settings()

@@ -631,6 +631,154 @@ def test_detect_speech_segments_silence_returns_empty(monkeypatch):
     assert result == []
 
 
+def test_detect_speech_segments_device_cpu(monkeypatch):
+    """detect_speech_segments uses CPU device when explicitly configured."""
+    import torch
+
+    from backend.processing import vad as vad_module
+    from backend.utils.config_manager import config_manager
+
+    # Configured for "cpu"
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: "cpu" if key == "processing_device" else default,
+    )
+
+    to_calls = []
+
+    class MockModel:
+        def to(self, device):
+            to_calls.append(("model", device))
+            return self
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "load_silero_vad", lambda *a, **k: MockModel()
+    )
+
+    get_speech_timestamps_calls = []
+
+    def fake_get_speech_timestamps(tensor, model, **kwargs):
+        get_speech_timestamps_calls.append(tensor.device)
+        return [{"start": 0, "end": 16000}]
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "get_speech_timestamps", fake_get_speech_timestamps
+    )
+
+    buffer = torch.zeros(16000)
+    result = vad_module.detect_speech_segments(buffer, sample_rate=16000)
+
+    assert len(to_calls) == 1
+    assert to_calls[0] == ("model", torch.device("cpu"))
+    assert len(get_speech_timestamps_calls) == 1
+    assert get_speech_timestamps_calls[0] == torch.device("cpu")
+
+
+def test_detect_speech_segments_device_cuda_fallback_to_cpu(monkeypatch):
+    """detect_speech_segments falls back to CPU when CUDA is configured but unavailable."""
+    import torch
+
+    from backend.processing import vad as vad_module
+    from backend.utils.config_manager import config_manager
+
+    # Configured for "cuda" but unavailable
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: "cuda" if key == "processing_device" else default,
+    )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    to_calls = []
+
+    class MockModel:
+        def to(self, device):
+            to_calls.append(("model", device))
+            return self
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "load_silero_vad", lambda *a, **k: MockModel()
+    )
+
+    get_speech_timestamps_calls = []
+
+    def fake_get_speech_timestamps(tensor, model, **kwargs):
+        get_speech_timestamps_calls.append(tensor.device)
+        return [{"start": 0, "end": 16000}]
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "get_speech_timestamps", fake_get_speech_timestamps
+    )
+
+    buffer = torch.zeros(16000)
+    result = vad_module.detect_speech_segments(buffer, sample_rate=16000)
+
+    assert len(to_calls) == 1
+    assert to_calls[0] == ("model", torch.device("cpu"))
+    assert len(get_speech_timestamps_calls) == 1
+    assert get_speech_timestamps_calls[0] == torch.device("cpu")
+
+
+def test_detect_speech_segments_device_cuda_migration_failure_fallback(
+    monkeypatch,
+):
+    """detect_speech_segments falls back to CPU when model.to(cuda) raises an exception."""
+    import torch
+
+    from backend.processing import vad as vad_module
+    from backend.utils.config_manager import config_manager
+
+    # Configured for "cuda"
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: "cuda" if key == "processing_device" else default,
+    )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+
+    to_calls = []
+
+    class MockModel:
+        def to(self, device):
+            to_calls.append(("model", device))
+            if device.type == "cuda":
+                raise RuntimeError("Mock CUDA migration failure")
+            return self
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "load_silero_vad", lambda *a, **k: MockModel()
+    )
+
+    get_speech_timestamps_calls = []
+
+    def fake_get_speech_timestamps(tensor, model, **kwargs):
+        get_speech_timestamps_calls.append(tensor.device)
+        return [{"start": 0, "end": 16000}]
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "get_speech_timestamps", fake_get_speech_timestamps
+    )
+
+    buffer = torch.zeros(16000)
+
+    original_to = torch.Tensor.to
+
+    def fake_tensor_to(self, device, *args, **kwargs):
+        return original_to(self, device, *args, **kwargs)
+
+    monkeypatch.setattr(torch.Tensor, "to", fake_tensor_to)
+
+    result = vad_module.detect_speech_segments(buffer, sample_rate=16000)
+
+    # Should attempt model.to(cuda), fail, then fallback to model.to(cpu)
+    assert len(to_calls) == 2
+    assert to_calls[0] == ("model", torch.device("cuda"))
+    assert to_calls[1] == ("model", torch.device("cpu"))
+    assert len(get_speech_timestamps_calls) == 1
+    assert get_speech_timestamps_calls[0] == torch.device("cpu")
+
+
 # --- live_transcribe helper + task tests -----------------------------------
 
 
