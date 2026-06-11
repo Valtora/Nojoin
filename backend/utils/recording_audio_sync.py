@@ -63,6 +63,16 @@ def _build_insert_statement(session: Session, table):
     raise ValueError(f"Unsupported upsert dialect: {dialect}")
 
 
+def _lock_recording(session: Session, recording_id: int) -> None:
+    try:
+        from backend.models.recording import Recording
+        session.execute(
+            select(Recording.id).where(Recording.id == recording_id).with_for_update()
+        )
+    except Exception:
+        pass
+
+
 def _sha256_for_path(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -392,6 +402,7 @@ def sync_recording_audio_chunks_from_entries(
 ) -> list[RecordingAudioChunk]:
     if not disk_entries:
         return []
+    _lock_recording(session, recording_id)
     ordered_entries = sorted(disk_entries, key=lambda item: item[0])
 
     existing_rows = (
@@ -516,6 +527,7 @@ def sync_recording_audio_window_manifests(
     source_kind: str,
     seal_tail: bool,
 ) -> list[RecordingAudioWindowManifest]:
+    _lock_recording(session, recording_id)
     chunk_rows = list_recording_audio_chunks(
         session,
         recording_id,
