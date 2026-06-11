@@ -845,6 +845,15 @@ export default function MainNav() {
             collapsed={collapsed}
           />
 
+          <NavItem
+            id="nav-people"
+            icon={<Users className="w-5 h-5" />}
+            label="People"
+            onClick={() => router.push("/people")}
+            isActive={pathname.startsWith("/people")}
+            collapsed={collapsed}
+          />
+
           {navItems.map(({ view, icon, label, id }) => (
             <NavItem
               key={view}
@@ -1084,14 +1093,6 @@ export default function MainNav() {
 
         {/* Action Buttons */}
         <div className="p-2 space-y-1">
-          <NavItem
-            id="nav-people"
-            icon={<Users className="w-5 h-5" />}
-            label="People"
-            onClick={() => router.push("/people")}
-            isActive={pathname.startsWith("/people")}
-            collapsed={collapsed}
-          />
           <NavItem
             id="nav-import"
             icon={<FilePlus className="w-5 h-5" />}

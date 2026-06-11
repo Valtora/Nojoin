@@ -56,7 +56,7 @@ You can create, rename, complete, reopen, archive, delete, and schedule tasks. A
 
 ## Tasks Workspace
 
-The dedicated **Tasks** page sits in the main navigation between **Dashboard** and **Recordings**.
+The dedicated **Tasks** page sits in the main navigation between **Dashboard** and **People**.
 
 Use it to manage tasks more holistically:
 
@@ -67,6 +67,17 @@ Use it to manage tasks more holistically:
 - Task cards support a title, body, deadline, permanent delete, direct recording links, and the same recording tag taxonomy used elsewhere in Nojoin.
 
 Delete remains permanent. Use archive when you want to hide a task without losing it.
+
+## People Workspace
+
+The dedicated **People** page sits in the main navigation between **Tasks** and **Recordings**.
+
+Use it to manage your shared speaker library:
+
+- Review people records and stored voiceprints in one place.
+- Search and filter the library when you need to find a known speaker quickly.
+- Organize people with reusable people tags.
+- Open batch editing and cleanup flows for broader speaker-library maintenance.
 
 ## Live Recording
 
