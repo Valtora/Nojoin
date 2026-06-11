@@ -6,7 +6,7 @@
             </p>
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
-        <img src="https://img.shields.io/badge/Latest%20Version-v1.3.3-0969da.svg" alt="Latest Version">
+        <img src="https://img.shields.io/github/v/release/Valtora/Nojoin" alt="Latest Version">
         <img src="https://github.com/Valtora/Nojoin/actions/workflows/release.yml/badge.svg" alt="Release">
     </p>
 </div>
