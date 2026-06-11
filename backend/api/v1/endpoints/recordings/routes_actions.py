@@ -108,34 +108,6 @@ async def delete_recording(
     return {"ok": True}
 
 
-@router.post("/{recording_id}/retry", response_model=RecordingPublicRead)
-async def retry_processing(
-    recording_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Reset generated processing state and re-run the pipeline from the original audio.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    if recording.is_deleted:
-        raise HTTPException(status_code=400, detail="Cannot retry a deleted recording")
-
-    if recording.status in {
-        RecordingStatus.UPLOADING,
-        RecordingStatus.QUEUED,
-        RecordingStatus.PROCESSING,
-    }:
-        raise HTTPException(
-            status_code=400,
-            detail="Recording is already uploading or processing",
-        )
-
-    await _requeue_for_processing(db, recording)
-
-    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
-
 
 class ReprocessRequest(BaseModel):
     transcription_backend: str

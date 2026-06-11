@@ -35,10 +35,9 @@ import NotesView from "@/components/NotesView";
 import DocumentsView from "@/components/DocumentsView";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
-import ReprocessDialog from "@/components/ReprocessDialog";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
-import { ArrowLeft, Edit2, MessageSquare, MoreHorizontal, RefreshCw } from "lucide-react";
+import { ArrowLeft, Edit2, MessageSquare, MoreHorizontal } from "lucide-react";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Recording,
@@ -172,8 +171,6 @@ export default function RecordingPage({ params }: PageProps) {
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Reprocess Dialog State
-  const [showReprocessDialog, setShowReprocessDialog] = useState(false);
 
   // Mobile State
   const [isMobile, setIsMobile] = useState(false);
@@ -1210,18 +1207,7 @@ export default function RecordingPage({ params }: PageProps) {
             .catch(console.error);
         }}
       />
-      {recording &&
-        (recording.status === RecordingStatus.PROCESSED ||
-          recording.status === RecordingStatus.ERROR) && (
-            <button
-              onClick={() => setShowReprocessDialog(true)}
-              className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              title="Reprocess this recording at higher quality"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reprocess
-            </button>
-          )}
+
     </div>
   );
 
@@ -1349,20 +1335,7 @@ export default function RecordingPage({ params }: PageProps) {
               </div>
             </div>
 
-            {recording &&
-              (recording.status === RecordingStatus.PROCESSED ||
-                recording.status === RecordingStatus.ERROR) && (
-                  <div className="flex items-center gap-2 shrink-0 md:pt-1">
-                  <button
-                    onClick={() => setShowReprocessDialog(true)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
-                    title="Reprocess this recording at higher quality"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Reprocess
-                  </button>
-                </div>
-              )}
+
           </div>
         )}
 
@@ -1653,22 +1626,7 @@ export default function RecordingPage({ params }: PageProps) {
         hasNotes={!!recording?.transcript?.notes}
       />
 
-      {/* Reprocess Dialog */}
-      {recording && (
-        <ReprocessDialog
-          recordingId={recording.id}
-          isOpen={showReprocessDialog}
-          onClose={() => setShowReprocessDialog(false)}
-          onReprocessed={(updatedRecording) => {
-            setRecording(updatedRecording);
-            window.dispatchEvent(
-              new CustomEvent("recording-updated", {
-                detail: { id: updatedRecording.id },
-              }),
-            );
-          }}
-        />
-      )}
+
     </div>
   );
 }

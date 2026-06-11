@@ -11,11 +11,10 @@ import {
   Pause,
 } from "lucide-react";
 import RecordingInfoModal from "./RecordingInfoModal";
-import ConfirmationModal from "./ConfirmationModal";
+import ReprocessDialog from "./ReprocessDialog";
 import { useState } from "react";
 import ContextMenu from "./ContextMenu";
 import {
-  retryProcessing,
   deleteRecording,
   inferSpeakers,
   renameRecording,
@@ -139,15 +138,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     y: number;
   } | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [showRetryConfirm, setShowRetryConfirm] = useState(false);
+  const [showReprocessDialog, setShowReprocessDialog] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { addNotification } = useNotificationStore();
-
-  const retryResetMessage =
-    "Retry processing will clear the transcript, speakers, notes, and meeting chat, then rebuild them from the original audio. Tags, uploaded documents, and recording metadata are preserved. The meeting title may be re-inferred during processing.";
 
   const isDemo = recording.name === "Welcome to Nojoin";
 
@@ -188,28 +184,6 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     }
   };
 
-  const handleRetry = async () => {
-    try {
-      await retryProcessing(recording.id);
-      addNotification({
-        message: "Recording reset. Processing restarted.",
-        type: "success",
-      });
-      window.dispatchEvent(
-        new CustomEvent("recording-updated", { detail: { id: recording.id } }),
-      );
-      router.refresh();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
-      console.error("Failed to retry processing", e);
-      addNotification({
-        message: "Failed to retry processing.",
-        type: "error",
-      });
-    }
-  };
 
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this recording?")) return;
@@ -385,7 +359,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
               ? [
                   {
                     label: "Retry Processing",
-                    onClick: () => setShowRetryConfirm(true),
+                    onClick: () => setShowReprocessDialog(true),
                     className: "text-blue-600 dark:text-blue-400",
                   },
                 ]
@@ -405,14 +379,25 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         recording={recording}
       />
 
-      <ConfirmationModal
-        isOpen={showRetryConfirm}
-        onClose={() => setShowRetryConfirm(false)}
-        onConfirm={handleRetry}
-        title="Reset and Retry Processing"
-        message={retryResetMessage}
-        confirmText="Reset and Retry"
-      />
+      {showReprocessDialog && (
+        <ReprocessDialog
+          recordingId={recording.id}
+          isOpen={showReprocessDialog}
+          onClose={() => setShowReprocessDialog(false)}
+          onReprocessed={(updatedRecording) => {
+            addNotification({
+              message: "Recording reprocessing started.",
+              type: "success",
+            });
+            window.dispatchEvent(
+              new CustomEvent("recording-updated", {
+                detail: { id: updatedRecording.id },
+              }),
+            );
+            router.refresh();
+          }}
+        />
+      )}
     </>
   );
 }

@@ -401,23 +401,6 @@ async def test_reprocess_optional_model_keys_only_when_provided(
 
 
 @pytest.mark.anyio
-async def test_retry_still_dispatches_without_override(
-    client: AsyncClient,
-    test_session_maker: sessionmaker,
-    monkeypatch,
-) -> None:
-    """Regression: /retry still dispatches process_recording_task with (id, True, None)."""
-    await _insert_recording(test_session_maker, recording_id=206, public_id="rec-206")
-    calls = _patch_delay(monkeypatch)
-
-    response = await client.post("/api/v1/recordings/rec-206/retry")
-
-    assert response.status_code == 200
-    assert len(calls) == 1
-    assert calls[0][0] == (206, True, None)
-
-
-@pytest.mark.anyio
 async def test_reprocess_promotes_legacy_recording_to_unified(
     client: AsyncClient,
     test_session_maker: sessionmaker,

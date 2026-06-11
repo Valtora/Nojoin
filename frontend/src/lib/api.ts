@@ -422,11 +422,6 @@ export const renameRecording = async (
   return response.data;
 };
 
-export const retryProcessing = async (id: RecordingId): Promise<Recording> => {
-  const response = await api.post<Recording>(`/recordings/${id}/retry`);
-  return response.data;
-};
-
 export const reprocessRecording = async (
   id: RecordingId,
   body: ReprocessRequest,

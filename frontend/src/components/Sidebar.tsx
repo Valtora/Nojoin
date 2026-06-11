@@ -22,7 +22,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   getRecordings,
   renameRecording,
-  retryProcessing,
   inferSpeakers,
   getGlobalSpeakers,
   RecordingFilters,
@@ -40,6 +39,7 @@ import { format, startOfMonth } from "date-fns";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import BatchActionBar from "./BatchActionBar";
+import ReprocessDialog from "./ReprocessDialog";
 import { GlobalSpeaker } from "@/types";
 import { useNavigationStore } from "@/lib/store";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -144,6 +144,7 @@ export default function Sidebar() {
   const [infoModalRecording, setInfoModalRecording] =
     useState<Recording | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [reprocessRecordingId, setReprocessRecordingId] = useState<RecordingId | null>(null);
   const MIN_SIDEBAR_WIDTH = 256; // 16rem (w-64)
   const MAX_SIDEBAR_WIDTH = 600;
 
@@ -343,8 +344,6 @@ export default function Sidebar() {
     onConfirm: () => {},
   });
 
-  const retryResetMessage =
-    "Retry processing will clear the transcript, speakers, notes, and meeting chat, then rebuild them from the original audio. Tags, uploaded documents, and recording metadata are preserved. The meeting title may be re-inferred during processing.";
 
   const fetchRecordings = useCallback(async () => {
     try {
@@ -569,35 +568,6 @@ export default function Sidebar() {
     }
   };
 
-  const handleRetry = async (id: RecordingId) => {
-    try {
-      await retryProcessing(id);
-      addNotification({
-        message: "Recording reset. Processing restarted.",
-        type: "success",
-      });
-      window.dispatchEvent(
-        new CustomEvent("recording-updated", { detail: { id } }),
-      );
-      fetchRecordings();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
-      console.error("Failed to retry", e);
-      addNotification({ message: "Failed to retry processing.", type: "error" });
-    }
-  };
-
-  const confirmRetry = (recording: Recording) => {
-    setConfirmModal({
-      isOpen: true,
-      title: "Reset and Retry Processing",
-      message: retryResetMessage,
-      confirmText: "Reset and Retry",
-      onConfirm: () => handleRetry(recording.id),
-    });
-  };
 
   const handleInferSpeakers = async (id: RecordingId) => {
     try {
@@ -710,7 +680,7 @@ export default function Sidebar() {
           ? [
               {
                 label: "Retry Processing",
-                onClick: () => confirmRetry(recording),
+                onClick: () => setReprocessRecordingId(recording.id),
               },
             ]
           : []),
@@ -1164,6 +1134,26 @@ export default function Sidebar() {
         cancelText={confirmModal.cancelText}
         isDangerous={confirmModal.isDangerous}
       />
+
+      {reprocessRecordingId && (
+        <ReprocessDialog
+          recordingId={reprocessRecordingId}
+          isOpen={!!reprocessRecordingId}
+          onClose={() => setReprocessRecordingId(null)}
+          onReprocessed={(updatedRecording) => {
+            addNotification({
+              message: "Recording reprocessing started.",
+              type: "success",
+            });
+            window.dispatchEvent(
+              new CustomEvent("recording-updated", {
+                detail: { id: updatedRecording.id },
+              }),
+            );
+            fetchRecordings();
+          }}
+        />
+      )}
         {/* Footer/Empty States could go here if needed */}
       </div>
 
