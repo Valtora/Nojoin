@@ -49,6 +49,7 @@ interface ActiveRuntime {
   recorder: BrowserRecorder;
   uploader: SegmentUploader;
   waveform: WaveformMonitor;
+  displayTracksCleanup?: () => void;
 }
 
 const sequenceToElapsedSeconds = (lastSequence: number) =>
@@ -609,6 +610,45 @@ export class CaptureController {
 
     recorder.start();
     waveform.start();
+
+    let displayTracksCleanup: (() => void) | undefined;
+    if (options.sources.displayStream) {
+      const displayStream = options.sources.displayStream;
+      const tracks = [...displayStream.getAudioTracks(), ...displayStream.getVideoTracks()];
+      let displaySharingEndedHandled = false;
+
+      const handleEnded = () => {
+        if (displaySharingEndedHandled) return;
+
+        const currentRecordingId = this.state.recordingId;
+        const status = this.state.status;
+        if (
+          currentRecordingId === options.recordingId &&
+          (status === "recording" || status === "paused") &&
+          this.runtime
+        ) {
+          displaySharingEndedHandled = true;
+          useNotificationStore.getState().addNotification({
+            type: "info",
+            message: "Screen sharing ended. The recording has been stopped and saved.",
+          });
+          this.stop().catch((err) => {
+            console.error("[capture] failed to stop recording after sharing ended", err);
+          });
+        }
+      };
+
+      for (const track of tracks) {
+        track.addEventListener("ended", handleEnded);
+      }
+
+      displayTracksCleanup = () => {
+        for (const track of tracks) {
+          track.removeEventListener("ended", handleEnded);
+        }
+      };
+    }
+
     this.runtime = {
       recordingId: options.recordingId,
       sources: options.sources,
@@ -617,6 +657,7 @@ export class CaptureController {
       recorder,
       uploader,
       waveform,
+      displayTracksCleanup,
     };
     this.setState({ runtimeActive: true });
     this.startElapsedTimer(options.elapsedSeconds ?? this.state.elapsedSeconds);
@@ -739,6 +780,7 @@ export class CaptureController {
     this.stopElapsedTimer();
     runtime.waveform.stop();
     runtime.uploader.dispose();
+    runtime.displayTracksCleanup?.();
     runtime.sources.release();
     await runtime.mixer.dispose();
     this.setState({ levels: DEFAULT_CAPTURE_LEVELS, runtimeActive: false });

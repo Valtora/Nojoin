@@ -69,6 +69,52 @@ vi.mock("./shared", () => ({
   writePausedCaptureContext: vi.fn(),
 }));
 
+const notificationMocks = vi.hoisted(() => ({
+  addNotification: vi.fn(),
+}));
+
+vi.mock("@/lib/notificationStore", () => ({
+  useNotificationStore: {
+    getState: () => ({
+      addNotification: notificationMocks.addNotification,
+    }),
+  },
+}));
+
+vi.mock("./mixer", () => ({
+  createCaptureMixer: vi.fn(() => Promise.resolve({
+    systemAnalyser: {},
+    microphoneAnalyser: {},
+    mixedAnalyser: {},
+    updateAutomaticGain: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("./recorder", () => ({
+  createBrowserRecorder: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+  })),
+}));
+
+vi.mock("./uploader", () => ({
+  createSegmentUploader: vi.fn(() => ({
+    enqueue: vi.fn(),
+    waitForIdle: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("./waveform", () => ({
+  createWaveformMonitor: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+  })),
+}));
+
 const buildConflictError = (detail: string) => {
   const error = new AxiosError("Request failed with status code 409");
   Object.assign(error, {
@@ -97,6 +143,7 @@ describe("capture controller", () => {
       mode: "shared_audio",
     });
     pickSourceMocks.pickCaptureSource.mockReset();
+    notificationMocks.addNotification.mockReset();
   });
 
   afterEach(() => {
@@ -289,5 +336,202 @@ describe("capture controller", () => {
       lastSequence: -1,
       elapsedSeconds: 0,
     });
+  });
+
+  it("auto-stops recording when a display track ends", async () => {
+    const trackEndedListeners = new Set<() => void>();
+    const mockTrack = {
+      addEventListener: vi.fn((event, cb) => {
+        if (event === "ended") trackEndedListeners.add(cb);
+      }),
+      removeEventListener: vi.fn((event, cb) => {
+        if (event === "ended") trackEndedListeners.delete(cb);
+      }),
+      stop: vi.fn(),
+    };
+
+    const mockDisplayStream = {
+      getAudioTracks: () => [mockTrack],
+      getVideoTracks: () => [],
+    };
+
+    const sources = {
+      mode: "shared_audio",
+      displayStream: mockDisplayStream,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "shared_audio",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: true,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-123", name: "Test meeting" });
+
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+
+    expect(controller.getState().status).toBe("recording");
+    expect(mockTrack.addEventListener).toHaveBeenCalledWith("ended", expect.any(Function));
+
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-123", status: "QUEUED" });
+
+    trackEndedListeners.forEach((cb) => cb());
+
+    expect(controller.getState().status).toBe("finalizing");
+
+    await vi.waitFor(() => {
+      expect(controller.getState().status).toBe("idle");
+    });
+
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith({
+      type: "info",
+      message: "Screen sharing ended. The recording has been stopped and saved.",
+    });
+  });
+
+  it("does not auto-stop when the recording is already finalizing", async () => {
+    const trackEndedListeners = new Set<() => void>();
+    const mockTrack = {
+      addEventListener: vi.fn((event, cb) => {
+        if (event === "ended") trackEndedListeners.add(cb);
+      }),
+      removeEventListener: vi.fn((event, cb) => {
+        if (event === "ended") trackEndedListeners.delete(cb);
+      }),
+      stop: vi.fn(),
+    };
+
+    const mockDisplayStream = {
+      getAudioTracks: () => [mockTrack],
+      getVideoTracks: () => [],
+    };
+
+    const sources = {
+      mode: "shared_audio",
+      displayStream: mockDisplayStream,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "shared_audio",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: true,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-123", name: "Test meeting" });
+
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+
+    let resolveFinalize: any;
+    const finalizePromise = new Promise((resolve) => {
+      resolveFinalize = resolve;
+    });
+    apiMocks.finalizeRecordingCapture.mockReturnValue(finalizePromise);
+
+    const stopPromise = controller.stop();
+    expect(controller.getState().status).toBe("finalizing");
+
+    const stopSpy = vi.spyOn(controller, "stop");
+
+    trackEndedListeners.forEach((cb) => cb());
+
+    expect(stopSpy).not.toHaveBeenCalled();
+
+    resolveFinalize({ id: "rec-123", status: "QUEUED" });
+    await stopPromise;
+  });
+
+  it("does not attach listeners when displayStream is null (microphone-only)", async () => {
+    const sources = {
+      mode: "microphone_only",
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "microphone_only",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: false,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-123", name: "Test meeting" });
+
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+
+    expect(controller.getState().status).toBe("recording");
+  });
+
+  it("cleans up display track listeners on disposeRuntime", async () => {
+    const trackEndedListeners = new Set<() => void>();
+    const mockTrack = {
+      addEventListener: vi.fn((event, cb) => {
+        if (event === "ended") trackEndedListeners.add(cb);
+      }),
+      removeEventListener: vi.fn((event, cb) => {
+        if (event === "ended") trackEndedListeners.delete(cb);
+      }),
+      stop: vi.fn(),
+    };
+
+    const mockDisplayStream = {
+      getAudioTracks: () => [mockTrack],
+      getVideoTracks: () => [],
+    };
+
+    const sources = {
+      mode: "shared_audio",
+      displayStream: mockDisplayStream,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "shared_audio",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: true,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-123", name: "Test meeting" });
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-123", status: "QUEUED" });
+
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+
+    expect(mockTrack.addEventListener).toHaveBeenCalledWith("ended", expect.any(Function));
+
+    await controller.stop();
+
+    expect(mockTrack.removeEventListener).toHaveBeenCalledWith("ended", expect.any(Function));
   });
 });
