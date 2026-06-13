@@ -73,6 +73,7 @@ import {
   flushDeferredTranscriptState,
   type LocalTranscriptState,
 } from "@/lib/transcriptState";
+import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
 
 const isDemoRecording = (recording: Recording) =>
@@ -177,7 +178,9 @@ export default function RecordingPage({ params }: PageProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [isMobileHeaderActionsOpen, setIsMobileHeaderActionsOpen] = useState(false);
+  const [isPanelResizing, setIsPanelResizing] = useState(false);
   const { isCompact } = useViewportDensity();
+  useDragSelectionLock(isPanelResizing);
 
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
@@ -1567,7 +1570,10 @@ export default function RecordingPage({ params }: PageProps) {
               {renderMainContent()}
             </Panel>
 
-            <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+            <PanelResizeHandle
+              className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group"
+              onDragging={setIsPanelResizing}
+            >
               <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
             </PanelResizeHandle>
 
@@ -1610,7 +1616,10 @@ export default function RecordingPage({ params }: PageProps) {
                   />
                 </Panel>
 
-                <PanelResizeHandle className="bg-gray-200 dark:bg-gray-900 border-t border-gray-400 dark:border-gray-800 h-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group">
+                <PanelResizeHandle
+                  className="bg-gray-200 dark:bg-gray-900 border-t border-gray-400 dark:border-gray-800 h-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group"
+                  onDragging={setIsPanelResizing}
+                >
                   <div className="w-8 h-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
                 </PanelResizeHandle>
 

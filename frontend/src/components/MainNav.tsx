@@ -55,6 +55,7 @@ import CreateTagModal from "./CreateTagModal";
 import NotificationHistoryModal from "./NotificationHistoryModal";
 import ContextMenu from "./ContextMenu";
 import { useViewportDensity } from "./ViewportDensityProvider";
+import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -333,6 +334,7 @@ export default function MainNav() {
     setMobileNavOpen,
   } = useNavigationStore();
   const [isResizing, setIsResizing] = useState(false);
+  useDragSelectionLock(isResizing);
   const MIN_WIDTH = isCompact ? 208 : 224;
   const MAX_WIDTH = isCompact ? 360 : 400;
   const COLLAPSED_WIDTH = isCompact ? 60 : 64;
@@ -430,7 +432,7 @@ export default function MainNav() {
   useEffect(() => {
     if (!isResizing) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       // Limit width on desktop, don't resize on mobile
       if (window.innerWidth < DESKTOP_BREAKPOINT) return;
       const newWidth = e.clientX;
@@ -439,18 +441,27 @@ export default function MainNav() {
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsResizing(false);
     };
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("pointercancel", handlePointerUp);
 
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [isResizing, MAX_WIDTH, MIN_WIDTH, setNavWidth]);
+
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    setIsResizing(true);
+  };
 
   // Close mobile nav on route change
   useEffect(() => {
@@ -1127,8 +1138,8 @@ export default function MainNav() {
         {/* Resize Handle - Hidden on Mobile */}
         {!collapsed && (
           <div
-            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden lg:block"
-            onMouseDown={() => setIsResizing(true)}
+            className="absolute right-0 top-0 bottom-0 hidden w-1 cursor-col-resize touch-none hover:bg-orange-500/50 active:bg-orange-500 lg:block"
+            onPointerDown={handleResizePointerDown}
           >
             <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 group-hover:bg-orange-500 transition-colors" />
           </div>

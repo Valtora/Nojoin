@@ -45,6 +45,7 @@ import { useNavigationStore } from "@/lib/store";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
+import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { useViewportDensity } from "./ViewportDensityProvider";
 
 const formatDurationString = (seconds?: number) => {
@@ -451,7 +452,7 @@ export default function Sidebar() {
   useEffect(() => {
     if (!isResizing) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       // Don't resize on mobile
       if (window.innerWidth < 1024) return;
       
@@ -467,18 +468,27 @@ export default function Sidebar() {
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsResizing(false);
     };
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("pointercancel", handlePointerUp);
 
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointercancel", handlePointerUp);
     };
   }, [isResizing, setRecordingsSidebarWidth, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]);
+
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    setIsResizing(true);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
@@ -776,6 +786,8 @@ export default function Sidebar() {
     dateRange.end ||
     selectedSpeakers.length > 0 ||
     selectedTagIds.length > 0;
+
+  useDragSelectionLock(isResizing);
 
   // Prevent hydration mismatch
   const view = mounted ? currentView : "recordings";
@@ -1176,8 +1188,8 @@ export default function Sidebar() {
 
       {/* Resize Handle - Hidden on Mobile */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-orange-500/50 active:bg-orange-500 hidden lg:block z-10"
-        onMouseDown={() => setIsResizing(true)}
+        className="absolute right-0 top-0 bottom-0 z-10 hidden w-1 cursor-col-resize touch-none hover:bg-orange-500/50 active:bg-orange-500 lg:block"
+        onPointerDown={handleResizePointerDown}
       >
         <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 hover:bg-orange-500 transition-colors" />
       </div>
