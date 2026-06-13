@@ -1,6 +1,7 @@
 import type { CaptureMode } from "./shared";
 
 export type PickSourceErrorCode =
+  | "display_cancelled"
   | "display_denied"
   | "microphone_denied"
   | "missing_display_audio"
@@ -37,6 +38,26 @@ const stopTracks = (stream: MediaStream | null | undefined) => {
   }
 
   stream.getTracks().forEach((track) => track.stop());
+};
+
+const isDisplayCaptureCancellation = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as Partial<DOMException> & { message?: unknown };
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  const message =
+    typeof candidate.message === "string"
+      ? candidate.message.toLowerCase()
+      : "";
+
+  return (
+    name === "AbortError" ||
+    name === "NotAllowedError" ||
+    message.includes("permission denied by user") ||
+    message.includes("cancelled before the recording started")
+  );
 };
 
 const readMediaDevices = (
@@ -79,11 +100,18 @@ export const pickCaptureSource = async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 
     } catch (error: any) {
+      if (isDisplayCaptureCancellation(error)) {
+        throw new PickSourceError(
+          "display_cancelled",
+          "Display capture was cancelled before the recording started.",
+        );
+      }
+
       throw new PickSourceError(
         "display_denied",
         error instanceof Error
           ? error.message
-          : "Display capture was cancelled before the recording started.",
+          : "Display capture permission was denied before the recording started.",
       );
     }
   }

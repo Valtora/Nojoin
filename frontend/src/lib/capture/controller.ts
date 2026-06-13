@@ -22,6 +22,7 @@ import {
   DEFAULT_CAPTURE_LEVELS,
   type CaptureSettings,
   type CaptureState,
+  type StartCaptureResponse,
   type StartCaptureResult,
   readCaptureSettings,
   readPausedCaptureContext,
@@ -197,7 +198,7 @@ export class CaptureController {
     this.setState({ error: null });
   };
 
-  start = async (name?: string): Promise<StartCaptureResult> => {
+  start = async (name?: string): Promise<StartCaptureResponse> => {
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
@@ -276,7 +277,25 @@ export class CaptureController {
 
     } catch (error: any) {
       sources?.release();
-      await discardRecordingCapture(initResponse.id).catch(() => {});
+      const cancelledByUser =
+        error instanceof PickSourceError && error.code === "display_cancelled";
+      await discardRecordingCapture(
+        initResponse.id,
+        cancelledByUser ? "display_picker_cancelled" : undefined,
+      ).catch(() => {});
+
+      if (cancelledByUser) {
+        this.setState({
+          status: "idle",
+          error: null,
+          recordingId: null,
+          lastSequence: -1,
+          elapsedSeconds: 0,
+        });
+        await this.refreshPausedRecording().catch(() => {});
+        return null;
+      }
+
       this.setState({
         status: "error",
         error: formatCaptureError(error),

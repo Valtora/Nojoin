@@ -10,7 +10,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 2. Sign in with your account.
 3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Use the **Meet Now** card on the dashboard and click **Start Meeting** to create a short test recording.
-5. In the browser share picker, choose the meeting tab, window, or screen and enable shared audio.
+5. In the browser share picker, choose the meeting tab, window, or screen and enable the browser's audio-sharing or system-audio option when it is offered.
 6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
 7. Stop the recording, open it in the `/recordings` workspace, and wait for processing to complete.
 
@@ -86,12 +86,14 @@ Live recording is browser-native. On supported desktop Chromium browsers, Nojoin
 1. Open the dashboard.
 2. In the **Meet Now** card, click **Start Meeting**.
 3. On desktop, select a meeting tab, application window, or entire screen in the browser share picker.
-4. On desktop, enable the browser's shared-audio option before selecting **Share**.
+4. On desktop, enable the browser's audio-sharing or system-audio option when it is offered before selecting **Share**.
 5. Allow microphone access if prompted.
 6. On mobile Chrome, keep the phone close enough for the microphone to hear the meeting audio.
 7. Keep the Nojoin tab open and the device awake until the meeting ends.
 
 Tab sharing is usually the best choice for browser-based meetings because it most reliably exposes meeting audio. Window and screen sharing can work, but audio availability depends on browser and operating-system support.
+
+If you close the browser share picker with **Cancel**, Nojoin silently returns to the pre-start state and no recording begins.
 
 Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is useful for microphone or in-room speakerphone capture only.
 

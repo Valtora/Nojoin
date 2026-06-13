@@ -73,4 +73,19 @@ describe("MeetingControls", () => {
     expect(screen.queryByText("Permission denied by user")).not.toBeInTheDocument();
     expect(routerPush).not.toHaveBeenCalled();
   });
+
+  it("does not toast or navigate when the share picker is cancelled", async () => {
+    start.mockResolvedValue(null);
+
+    render(<MeetingControls variant="dashboard" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Meeting" }));
+
+    await waitFor(() => {
+      expect(start).toHaveBeenCalledWith("");
+    });
+
+    expect(addNotification).not.toHaveBeenCalled();
+    expect(routerPush).not.toHaveBeenCalled();
+  });
 });

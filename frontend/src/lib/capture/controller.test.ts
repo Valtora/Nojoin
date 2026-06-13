@@ -2,6 +2,7 @@ import { AxiosError } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureController } from "./controller";
+import { PickSourceError } from "./pickSource";
 
 const apiMocks = vi.hoisted(() => ({
   discardRecordingCapture: vi.fn(),
@@ -80,6 +81,7 @@ const buildConflictError = (detail: string) => {
 describe("capture controller", () => {
   beforeEach(() => {
     apiMocks.discardRecordingCapture.mockReset();
+    apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
     apiMocks.finalizeRecordingCapture.mockReset();
     apiMocks.pauseRecordingCapture.mockReset();
     apiMocks.getPausedRecordings.mockReset();
@@ -240,6 +242,35 @@ describe("capture controller", () => {
       recordingId: "rec-1",
       startSequence: 0,
       sources,
+      elapsedSeconds: 0,
+    });
+  });
+
+  it("silently rolls back when the display picker is cancelled", async () => {
+    apiMocks.initRecording.mockResolvedValue({
+      id: "rec-1",
+      name: "Cancelled meeting",
+    });
+    pickSourceMocks.pickCaptureSource.mockRejectedValue(
+      new PickSourceError(
+        "display_cancelled",
+        "Display capture was cancelled before the recording started.",
+      ),
+    );
+
+    const controller = new CaptureController();
+
+    await expect(controller.start("Cancelled meeting")).resolves.toBeNull();
+
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith(
+      "rec-1",
+      "display_picker_cancelled",
+    );
+    expect(controller.getState()).toMatchObject({
+      status: "idle",
+      error: null,
+      recordingId: null,
+      lastSequence: -1,
       elapsedSeconds: 0,
     });
   });

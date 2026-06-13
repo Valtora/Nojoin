@@ -280,8 +280,15 @@ export const finalizeRecordingCapture = async (
 
 export const discardRecordingCapture = async (
   recordingId: RecordingId,
+  discardReason?: string,
 ): Promise<void> => {
-  await api.post(`/recordings/${recordingId}/discard`);
+  const params = new URLSearchParams();
+  if (discardReason?.trim()) {
+    params.set("reason", discardReason.trim());
+  }
+
+  const suffix = params.toString();
+  await api.post(`/recordings/${recordingId}/discard${suffix ? `?${suffix}` : ""}`);
 };
 
 const resolveRecordingSegmentExtension = (contentType: string | undefined) => {

@@ -408,6 +408,7 @@ async def finalize_upload(
 @router.post("/{recording_id}/discard")
 async def discard_upload(
     recording_id: str,
+    reason: Optional[str] = Query(None, description="Optional client-provided discard reason"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user)
 ):
@@ -420,6 +421,20 @@ async def discard_upload(
         raise HTTPException(
             status_code=400,
             detail="Only in-flight uploads can be discarded",
+        )
+
+    if reason:
+        logger.info(
+            "Discarding in-flight recording %s for user %s with reason=%s",
+            recording.public_id,
+            current_user.id,
+            reason,
+        )
+    else:
+        logger.info(
+            "Discarding in-flight recording %s for user %s",
+            recording.public_id,
+            current_user.id,
         )
 
     recordings_module.delete_recording_artifacts(

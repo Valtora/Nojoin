@@ -57,6 +57,8 @@ export interface StartCaptureResult {
   resumed: boolean;
 }
 
+export type StartCaptureResponse = StartCaptureResult | null;
+
 export interface GuardedExitRequest {
   reason: "pagehide" | "beforeunload" | "route-change";
   useBeacon: boolean;

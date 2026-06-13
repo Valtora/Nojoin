@@ -56,12 +56,14 @@ For support and debugging, browser recording segments are numbered from `0` and 
 1. Open the Nojoin dashboard.
 2. Select **Start Meeting**.
 3. On desktop, when the browser share picker opens, choose the meeting tab, application window, or entire screen you want Nojoin to hear.
-4. On desktop, enable the browser's audio-sharing option before selecting **Share**.
+4. On desktop, enable the browser's audio-sharing or system-audio option when the picker offers one, then select **Share**.
 5. Allow microphone access if prompted.
 6. On mobile Chrome, keep the phone close enough for the microphone to hear the meeting audio.
 7. Keep the Nojoin tab open and the device awake while recording.
 
 Chrome and Edge may focus the chosen tab, window, or screen after you select **Share**. That is normal. You can continue using your computer, switch windows, or interact with the meeting while Nojoin keeps recording in the original browser tab.
+
+If you close the browser share picker with **Cancel** instead of **Share**, Nojoin silently returns to the pre-start state and no recording is started.
 
 Mobile Chrome does not show a share picker for Nojoin because the mobile path is microphone-only.
 
@@ -108,6 +110,8 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 - **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
 - **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing.
 - **Cancel** discards an uploading or paused recording and clears the capture lock.
+
+Closing the browser share picker with **Cancel** is different from using Nojoin's in-app **Cancel** action. Picker cancel simply backs out of starting or resuming capture without creating a visible error in the UI.
 
 Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
 

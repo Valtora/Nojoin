@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { pickCaptureSource } from "./pickSource";
+import { PickSourceError, pickCaptureSource } from "./pickSource";
 
 const buildStream = (audioTrackCount: number) => {
   const tracks = Array.from({ length: audioTrackCount }, () => ({
@@ -58,5 +58,28 @@ describe("capture source picker", () => {
     expect(sources.microphoneStream).toBe(microphoneStream);
     expect(mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
     expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a cancelled display picker as display_cancelled", async () => {
+    const mediaDevices = {
+      getDisplayMedia: vi.fn().mockRejectedValue(
+        Object.assign(new Error("Permission denied by user"), {
+          name: "NotAllowedError",
+        }),
+      ),
+      getUserMedia: vi.fn(),
+    } as unknown as MediaDevices;
+
+    await expect(
+      pickCaptureSource({
+        mode: "shared_audio",
+        mediaDevices,
+      }),
+    ).rejects.toMatchObject<Partial<PickSourceError>>({
+      code: "display_cancelled",
+      message: "Display capture was cancelled before the recording started.",
+    });
+
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
 });
