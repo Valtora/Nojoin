@@ -11,6 +11,7 @@ from backend.utils.time import utc_now
 from backend.api.deps import get_db, get_current_recording_client_user
 from backend.models.user import User
 from backend.models.recording import (
+    CaptureSourceReportCreate,
     Recording,
     RecordingCaptureLifecycleResponse,
     RecordingStatus,
@@ -28,6 +29,19 @@ from .router import router
 import backend.api.v1.endpoints.recordings as recordings_module
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_capture_track(track_payload):
+    if track_payload is None:
+        return None
+    return {
+        "kind": track_payload.kind,
+        "label": track_payload.label,
+        "enabled": track_payload.enabled,
+        "muted": track_payload.muted,
+        "ready_state": track_payload.ready_state,
+        "settings": track_payload.settings,
+    }
 
 
 @router.post("/{recording_id}/pause", response_model=RecordingCaptureLifecycleResponse)
@@ -214,6 +228,46 @@ async def upload_segment(
             )
 
     return {"status": "received", "segment": sequence}
+
+
+@router.post("/{recording_id}/capture-source-report")
+async def log_capture_source_report(
+    recording_id: str,
+    payload: CaptureSourceReportCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_recording_client_user),
+):
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
+
+    logger.info(
+        (
+            "Capture source report for recording %s (user %s): "
+            "attempt=%s outcome=%s mode=%s requested_microphone_device_id=%s "
+            "requested_microphone_label=%s shared_audio_available=%s "
+            "failure_code=%s failure_message=%s available_microphones=%s "
+            "browser_microphone_track=%s browser_display_audio_track=%s "
+            "browser_display_video_track=%s notes=%s"
+        ),
+        recording.public_id,
+        current_user.id,
+        payload.attempt_kind,
+        payload.outcome,
+        payload.mode,
+        payload.requested_microphone_device_id,
+        payload.requested_microphone_label,
+        payload.shared_audio_available,
+        payload.failure_code,
+        payload.failure_message,
+        [device.model_dump() for device in payload.available_microphones],
+        _serialize_capture_track(payload.browser_microphone_track),
+        _serialize_capture_track(payload.browser_display_audio_track),
+        _serialize_capture_track(payload.browser_display_video_track),
+        payload.notes,
+    )
+
+    return {"status": "logged"}
 
 
 @router.post("/{recording_id}/finalize", response_model=RecordingPublicRead)

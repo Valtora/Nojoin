@@ -146,6 +146,10 @@ Open **Settings > Capture** to configure:
 
 These settings are stored in browser-local storage for the current cutover. They do not roam between browsers or devices.
 
+If you explicitly choose a microphone and that device is no longer available when a recording starts or resumes, Nojoin now fails closed. It does not silently fall back to the system default microphone. Choose another device in **Settings > Capture** before retrying.
+
+Nojoin logs the requested microphone, the browser-granted microphone track metadata, whether shared audio was granted, and the backend browser-live source-channel analysis. Browser APIs still do not reliably expose the physical OS speaker or headset name behind shared system audio, so those logs describe the granted browser capture surface and track metadata rather than a guaranteed output-device identity.
+
 Nojoin intentionally does not include a settings-page capture preview. Validate capture by recording a short test meeting.
 
 ## Troubleshooting

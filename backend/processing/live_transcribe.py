@@ -1147,6 +1147,14 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         combined = _mix_live_audio_channels(combined_channels)
         combined_len = combined.numel() / LIVE_SAMPLE_RATE
         combined_abs_start = buffer_abs_start
+        combined_source_activity = _analyze_live_source_channels(combined_channels)
+        logger.info(
+            "Live capture channel analysis for recording %s sequence %s run %s: %s",
+            recording_id,
+            sequence,
+            run,
+            combined_source_activity,
+        )
 
         # --- Build the live engine config (needed before the VAD call) ---
         live_config = _build_live_config()
@@ -1253,6 +1261,19 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             source_channel_evidence = _build_live_source_channel_evidence(
                 source_activity,
                 source_channel_labels,
+            )
+            logger.info(
+                (
+                    "Live speech region source analysis for recording %s sequence %s "
+                    "region_start_ms=%s region_end_ms=%s source_activity=%s "
+                    "source_channel_evidence=%s"
+                ),
+                recording_id,
+                sequence,
+                int(round((combined_abs_start + sp["start"]) * 1000.0)),
+                int(round((combined_abs_start + sp["end"]) * 1000.0)),
+                source_activity,
+                source_channel_evidence.to_payload(),
             )
 
             # Prepend a rolling audio context window so the engine has run-up.

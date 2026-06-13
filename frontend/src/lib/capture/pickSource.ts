@@ -1,19 +1,32 @@
 import type { CaptureMode } from "./shared";
+import {
+  describeTrack,
+  listAvailableMicrophones,
+  type CaptureSourceReportSnapshot,
+} from "./sourceReport";
 
 export type PickSourceErrorCode =
   | "display_cancelled"
   | "display_denied"
   | "microphone_denied"
+  | "selected_microphone_unavailable"
+  | "microphone_mismatch"
   | "missing_display_audio"
   | "unsupported";
 
 export class PickSourceError extends Error {
   code: PickSourceErrorCode;
+  captureReport: CaptureSourceReportSnapshot | null;
 
-  constructor(code: PickSourceErrorCode, message: string) {
+  constructor(
+    code: PickSourceErrorCode,
+    message: string,
+    captureReport: CaptureSourceReportSnapshot | null = null,
+  ) {
     super(message);
     this.message = message;
     this.code = code;
+    this.captureReport = captureReport;
     this.name = "PickSourceError";
     Object.setPrototypeOf(this, PickSourceError.prototype);
   }
@@ -29,6 +42,7 @@ export interface PickedCaptureSources {
   mode: CaptureMode;
   displayStream: MediaStream | null;
   microphoneStream: MediaStream;
+  captureReport: CaptureSourceReportSnapshot;
   release: () => void;
 }
 
@@ -60,6 +74,54 @@ const isDisplayCaptureCancellation = (error: unknown) => {
   );
 };
 
+const isUnavailableDeviceError = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as Partial<DOMException> & { message?: unknown };
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  const message =
+    typeof candidate.message === "string"
+      ? candidate.message.toLowerCase()
+      : "";
+
+  return (
+    name === "NotFoundError" ||
+    name === "OverconstrainedError" ||
+    message.includes("not found") ||
+    message.includes("requested device not found") ||
+    message.includes("could not start video source")
+  );
+};
+
+const buildCaptureReportSnapshot = (options: {
+  mode: CaptureMode;
+  requestedMicrophoneDeviceId: string | null;
+  requestedMicrophoneLabel: string | null;
+  availableMicrophones: Awaited<ReturnType<typeof listAvailableMicrophones>>;
+  displayStream: MediaStream | null;
+  microphoneStream: MediaStream | null;
+  notes?: string[];
+}): CaptureSourceReportSnapshot => ({
+  mode: options.mode,
+  requested_microphone_device_id: options.requestedMicrophoneDeviceId,
+  requested_microphone_label: options.requestedMicrophoneLabel,
+  available_microphones: options.availableMicrophones,
+  browser_microphone_track: describeTrack(
+    options.microphoneStream?.getAudioTracks()[0],
+  ),
+  browser_display_audio_track: describeTrack(
+    options.displayStream?.getAudioTracks()[0],
+  ),
+  browser_display_video_track: describeTrack(
+    options.displayStream?.getVideoTracks?.()[0],
+  ),
+  shared_audio_available:
+    (options.displayStream?.getAudioTracks().length ?? 0) > 0,
+  notes: [...(options.notes ?? [])],
+});
+
 const readMediaDevices = (
   mode: CaptureMode,
   mediaDevices?: MediaDevices,
@@ -85,6 +147,41 @@ export const pickCaptureSource = async (
   const mediaDevices = readMediaDevices(mode, options.mediaDevices);
   let displayStream: MediaStream | null = null;
   let microphoneStream: MediaStream | null = null;
+  let availableMicrophones = [] as Awaited<
+    ReturnType<typeof listAvailableMicrophones>
+  >;
+  try {
+    availableMicrophones = await listAvailableMicrophones(mediaDevices);
+  } catch {
+    availableMicrophones = [];
+  }
+
+  const requestedMicrophoneLabel =
+    availableMicrophones.find(
+      (device) => device.device_id === options.microphoneDeviceId,
+    )?.label ?? null;
+
+  if (
+    options.microphoneDeviceId &&
+    availableMicrophones.length > 0 &&
+    !availableMicrophones.some(
+      (device) => device.device_id === options.microphoneDeviceId,
+    )
+  ) {
+    throw new PickSourceError(
+      "selected_microphone_unavailable",
+      "The selected microphone is not available to the browser. Choose another microphone in Settings > Capture before starting the recording.",
+      buildCaptureReportSnapshot({
+        mode,
+        requestedMicrophoneDeviceId: options.microphoneDeviceId,
+        requestedMicrophoneLabel,
+        availableMicrophones,
+        displayStream: null,
+        microphoneStream: null,
+        notes: ["selected_microphone_missing_from_enumerated_devices"],
+      }),
+    );
+  }
 
   if (mode === "shared_audio") {
     try {
@@ -97,13 +194,20 @@ export const pickCaptureSource = async (
         surfaceSwitching: "include",
       } as DisplayMediaStreamOptions & Record<string, unknown>);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (isDisplayCaptureCancellation(error)) {
         throw new PickSourceError(
           "display_cancelled",
           "Display capture was cancelled before the recording started.",
+          buildCaptureReportSnapshot({
+            mode,
+            requestedMicrophoneDeviceId: options.microphoneDeviceId ?? null,
+            requestedMicrophoneLabel,
+            availableMicrophones,
+            displayStream: null,
+            microphoneStream: null,
+            notes: ["display_picker_cancelled"],
+          }),
         );
       }
 
@@ -112,6 +216,15 @@ export const pickCaptureSource = async (
         error instanceof Error
           ? error.message
           : "Display capture permission was denied before the recording started.",
+        buildCaptureReportSnapshot({
+          mode,
+          requestedMicrophoneDeviceId: options.microphoneDeviceId ?? null,
+          requestedMicrophoneLabel,
+          availableMicrophones,
+          displayStream: null,
+          microphoneStream: null,
+          notes: ["display_capture_denied"],
+        }),
       );
     }
   }
@@ -120,7 +233,7 @@ export const pickCaptureSource = async (
     microphoneStream = await mediaDevices.getUserMedia({
       audio: {
         deviceId: options.microphoneDeviceId
-          ? { ideal: options.microphoneDeviceId }
+          ? { exact: options.microphoneDeviceId }
           : undefined,
         echoCancellation: false,
         noiseSuppression: false,
@@ -128,22 +241,81 @@ export const pickCaptureSource = async (
       },
     });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     stopTracks(displayStream);
+    const selectedDeviceUnavailable =
+      Boolean(options.microphoneDeviceId) && isUnavailableDeviceError(error);
     throw new PickSourceError(
-      "microphone_denied",
-      error instanceof Error
-        ? error.message
-        : "Microphone capture was cancelled before the recording started.",
+      selectedDeviceUnavailable
+        ? "selected_microphone_unavailable"
+        : "microphone_denied",
+      selectedDeviceUnavailable
+        ? "The selected microphone is not available to the browser. Choose another microphone in Settings > Capture before starting the recording."
+        : error instanceof Error
+          ? error.message
+          : "Microphone capture was cancelled before the recording started.",
+      buildCaptureReportSnapshot({
+        mode,
+        requestedMicrophoneDeviceId: options.microphoneDeviceId ?? null,
+        requestedMicrophoneLabel,
+        availableMicrophones,
+        displayStream,
+        microphoneStream: null,
+        notes: [
+          selectedDeviceUnavailable
+            ? "selected_microphone_rejected_by_getUserMedia"
+            : "microphone_capture_denied",
+        ],
+      }),
     );
   }
+
+  const microphoneTrack = microphoneStream.getAudioTracks()[0] ?? null;
+  const microphoneSettings =
+    typeof microphoneTrack?.getSettings === "function"
+      ? microphoneTrack.getSettings()
+      : undefined;
+  const actualMicrophoneDeviceId =
+    typeof microphoneSettings?.deviceId === "string"
+      ? microphoneSettings.deviceId
+      : null;
+  if (
+    options.microphoneDeviceId &&
+    actualMicrophoneDeviceId &&
+    actualMicrophoneDeviceId !== options.microphoneDeviceId
+  ) {
+    const captureReport = buildCaptureReportSnapshot({
+      mode,
+      requestedMicrophoneDeviceId: options.microphoneDeviceId,
+      requestedMicrophoneLabel,
+      availableMicrophones,
+      displayStream,
+      microphoneStream,
+      notes: ["microphone_device_id_mismatch_after_grant"],
+    });
+    stopTracks(displayStream);
+    stopTracks(microphoneStream);
+    throw new PickSourceError(
+      "microphone_mismatch",
+      "The browser did not grant the selected microphone. Recording was stopped to avoid using the wrong input.",
+      captureReport,
+    );
+  }
+
+  const captureReport = buildCaptureReportSnapshot({
+    mode,
+    requestedMicrophoneDeviceId: options.microphoneDeviceId ?? null,
+    requestedMicrophoneLabel,
+    availableMicrophones,
+    displayStream,
+    microphoneStream,
+  });
 
   return {
     mode,
     displayStream,
     microphoneStream,
+    captureReport,
     release: () => {
       stopTracks(displayStream);
       stopTracks(microphoneStream);

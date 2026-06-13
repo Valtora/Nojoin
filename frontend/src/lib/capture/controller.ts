@@ -7,6 +7,7 @@ import {
   initRecording,
   isActiveRecordingConflictDetail,
   pauseRecordingCapture,
+  reportRecordingCaptureSources,
   resumeRecordingCapture,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -17,6 +18,12 @@ import { CaptureLifecycle, sendPauseBeacon } from "./lifecycle";
 import { createCaptureMixer, type CaptureMixer } from "./mixer";
 import { pickCaptureSource, PickSourceError, type PickedCaptureSources } from "./pickSource";
 import { createBrowserRecorder, type BrowserRecorder } from "./recorder";
+import {
+  buildCaptureSourceReportPayload,
+  logCaptureSourceReport,
+  type CaptureSourceReportPayload,
+  type CaptureSourceReportSnapshot,
+} from "./sourceReport";
 import {
   clearPausedCaptureContext,
   DEFAULT_CAPTURE_LEVELS,
@@ -37,6 +44,7 @@ type StateListener = (state: CaptureState) => void;
 interface ActiveRuntime {
   recordingId: RecordingId;
   sources: PickedCaptureSources;
+  captureReport: CaptureSourceReportSnapshot;
   mixer: CaptureMixer;
   recorder: BrowserRecorder;
   uploader: SegmentUploader;
@@ -198,6 +206,22 @@ export class CaptureController {
     this.setState({ error: null });
   };
 
+  private reportCaptureSourceAttempt = async (
+    recordingId: RecordingId,
+    payload: CaptureSourceReportPayload,
+  ) => {
+    logCaptureSourceReport(payload);
+    try {
+      await reportRecordingCaptureSources(recordingId, payload);
+    } catch (error) {
+      console.warn(
+        "[capture] failed to send capture source report",
+        recordingId,
+        error,
+      );
+    }
+  };
+
   start = async (name?: string): Promise<StartCaptureResponse> => {
     const support = detectCaptureSupport();
     this.setState({ support });
@@ -213,9 +237,7 @@ export class CaptureController {
     try {
       initResponse = await initRecording(name);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+    } catch (error: unknown) {
       const detail =
         error instanceof AxiosError ? error.response?.data?.detail : null;
 
@@ -257,14 +279,23 @@ export class CaptureController {
         recordingId: initResponse.id,
         startSequence: 0,
         sources,
+        captureReport: sources.captureReport,
         elapsedSeconds: 0,
       });
+      const captureReport = sources.captureReport;
       sources = null;
       this.setState({
         status: "recording",
         recordingId: initResponse.id,
         error: null,
       });
+      await this.reportCaptureSourceAttempt(
+        initResponse.id,
+        buildCaptureSourceReportPayload(captureReport, {
+          attempt_kind: "start",
+          outcome: "success",
+        }),
+      );
       clearPausedCaptureContext();
       await this.refreshPausedRecording().catch(() => {});
       return {
@@ -273,9 +304,18 @@ export class CaptureController {
         resumed: false,
       };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+    } catch (error: unknown) {
+      if (error instanceof PickSourceError && error.captureReport) {
+        await this.reportCaptureSourceAttempt(
+          initResponse.id,
+          buildCaptureSourceReportPayload(error.captureReport, {
+            attempt_kind: "start",
+            outcome: "failure",
+            failure_code: error.code,
+            failure_message: error.message,
+          }),
+        );
+      }
       sources?.release();
       const cancelledByUser =
         error instanceof PickSourceError && error.code === "display_cancelled";
@@ -354,6 +394,14 @@ export class CaptureController {
         lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
         error: null,
       });
+      await this.reportCaptureSourceAttempt(
+        targetRecordingId,
+        buildCaptureSourceReportPayload(this.runtime.captureReport, {
+          attempt_kind: "resume",
+          outcome: "success",
+          notes: ["reused_existing_browser_tracks"],
+        }),
+      );
       await this.refreshPausedRecording().catch(() => {});
       return { recordingId: targetRecordingId, resumed: true };
     }
@@ -393,8 +441,10 @@ export class CaptureController {
         recordingId: targetRecordingId,
         startSequence: resumeResponse.last_sequence + 1,
         sources,
+        captureReport: sources.captureReport,
         elapsedSeconds: sequenceToElapsedSeconds(resumeResponse.last_sequence),
       });
+      const captureReport = sources.captureReport;
       sources = null;
       clearPausedCaptureContext();
       this.setState({
@@ -404,12 +454,28 @@ export class CaptureController {
         elapsedSeconds: sequenceToElapsedSeconds(resumeResponse.last_sequence),
         error: null,
       });
+      await this.reportCaptureSourceAttempt(
+        targetRecordingId,
+        buildCaptureSourceReportPayload(captureReport, {
+          attempt_kind: "resume",
+          outcome: "success",
+        }),
+      );
       await this.refreshPausedRecording().catch(() => {});
       return { recordingId: targetRecordingId, resumed: true };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+    } catch (error: unknown) {
+      if (error instanceof PickSourceError && error.captureReport) {
+        await this.reportCaptureSourceAttempt(
+          targetRecordingId,
+          buildCaptureSourceReportPayload(error.captureReport, {
+            attempt_kind: "resume",
+            outcome: "failure",
+            failure_code: error.code,
+            failure_message: error.message,
+          }),
+        );
+      }
       sources?.release();
       if (resumeResponse) {
         await pauseRecordingCapture(targetRecordingId).catch(() => {});
@@ -454,9 +520,7 @@ export class CaptureController {
       this.lifecycle.updateRecordingId(null);
       return recording;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+    } catch (error: unknown) {
       const message = formatCaptureError(error);
       this.setState({ status: "error", error: message });
       throw new Error(message);
@@ -495,6 +559,7 @@ export class CaptureController {
     recordingId: RecordingId;
     startSequence: number;
     sources: PickedCaptureSources;
+    captureReport: CaptureSourceReportSnapshot;
     elapsedSeconds?: number;
   }) => {
     await this.disposeRuntime();
@@ -547,6 +612,7 @@ export class CaptureController {
     this.runtime = {
       recordingId: options.recordingId,
       sources: options.sources,
+      captureReport: options.captureReport,
       mixer,
       recorder,
       uploader,
@@ -588,9 +654,7 @@ export class CaptureController {
       this.stopElapsedTimer();
       await this.refreshPausedRecording().catch(() => {});
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (pauseError: any) {
+    } catch (pauseError: unknown) {
       this.setState({
         status: "error",
         error: formatCaptureError(pauseError),
@@ -603,9 +667,7 @@ export class CaptureController {
       try {
         return await finalizeRecordingCapture(recordingId);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+      } catch (error: unknown) {
         const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
         const canRetry =
           error instanceof AxiosError &&

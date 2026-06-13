@@ -177,6 +177,36 @@ class RecordingCaptureLifecycleResponse(SQLModel):
     last_sequence: int
 
 
+class CaptureTrackReport(SQLModel):
+    kind: str
+    label: Optional[str] = None
+    enabled: bool = True
+    muted: bool = False
+    ready_state: str
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CaptureDeviceReport(SQLModel):
+    device_id: str
+    label: str
+
+
+class CaptureSourceReportCreate(SQLModel):
+    attempt_kind: str
+    outcome: str
+    mode: str
+    requested_microphone_device_id: Optional[str] = None
+    requested_microphone_label: Optional[str] = None
+    available_microphones: List[CaptureDeviceReport] = Field(default_factory=list)
+    browser_microphone_track: Optional[CaptureTrackReport] = None
+    browser_display_audio_track: Optional[CaptureTrackReport] = None
+    browser_display_video_track: Optional[CaptureTrackReport] = None
+    shared_audio_available: bool = False
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
+    notes: List[str] = Field(default_factory=list)
+
+
 def recording_supports_unified_mutations(recording: Optional["Recording"]) -> bool:
     if recording is None:
         return False

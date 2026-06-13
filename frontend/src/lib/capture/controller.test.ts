@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   pauseRecordingCapture: vi.fn(),
   getPausedRecordings: vi.fn(),
   initRecording: vi.fn(),
+  reportRecordingCaptureSources: vi.fn(),
 }));
 
 const featureDetectMocks = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ vi.mock("@/lib/api", () => ({
   initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
+  reportRecordingCaptureSources: apiMocks.reportRecordingCaptureSources,
   resumeRecordingCapture: vi.fn(),
 }));
 
@@ -86,6 +88,8 @@ describe("capture controller", () => {
     apiMocks.pauseRecordingCapture.mockReset();
     apiMocks.getPausedRecordings.mockReset();
     apiMocks.initRecording.mockReset();
+    apiMocks.reportRecordingCaptureSources.mockReset();
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
     apiMocks.getPausedRecordings.mockResolvedValue([]);
     featureDetectMocks.detectCaptureSupport.mockReset();
     featureDetectMocks.detectCaptureSupport.mockReturnValue({
@@ -213,6 +217,17 @@ describe("capture controller", () => {
       mode: "microphone_only",
       displayStream: null,
       microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "microphone_only",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: false,
+        notes: [],
+      },
       release: vi.fn(),
     };
     featureDetectMocks.detectCaptureSupport.mockReturnValue({
@@ -242,6 +257,7 @@ describe("capture controller", () => {
       recordingId: "rec-1",
       startSequence: 0,
       sources,
+      captureReport: sources.captureReport,
       elapsedSeconds: 0,
     });
   });

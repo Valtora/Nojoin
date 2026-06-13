@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { CaptureSourceReportPayload } from "@/lib/capture/sourceReport";
 import {
   ActiveRecordingConflictDetail,
   CalendarConnection,
@@ -260,6 +261,13 @@ export const pauseRecordingCapture = async (
     `/recordings/${recordingId}/pause`,
   );
   return response.data;
+};
+
+export const reportRecordingCaptureSources = async (
+  recordingId: RecordingId,
+  payload: CaptureSourceReportPayload,
+): Promise<void> => {
+  await api.post(`/recordings/${recordingId}/capture-source-report`, payload);
 };
 
 export const resumeRecordingCapture = async (

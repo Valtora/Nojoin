@@ -8,6 +8,8 @@ from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
 from backend.processing.browser_live_audio import (
     BROWSER_LIVE_CHANNEL_COUNT,
+    BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX,
+    BROWSER_LIVE_SYSTEM_CHANNEL_INDEX,
     BROWSER_LIVE_SAMPLE_RATE_HZ,
 )
 from backend.processing.live_transcribe import transcribe_segment_live_task
@@ -115,6 +117,18 @@ def transcode_segment_task(recording_id: int, sequence: int):
 
     try:
         transcode_staged_browser_segment(recording_id, sequence)
+        logger.info(
+            (
+                "Browser segment transcoded for recording %s segment %s: "
+                "sample_rate_hz=%s channel_count=%s system_channel=%s microphone_channel=%s"
+            ),
+            recording_id,
+            sequence,
+            BROWSER_LIVE_SAMPLE_RATE_HZ,
+            BROWSER_LIVE_CHANNEL_COUNT,
+            BROWSER_LIVE_SYSTEM_CHANNEL_INDEX,
+            BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX,
+        )
 
         session = get_sync_session()
         try:
