@@ -162,10 +162,11 @@ npm install
 NEXT_PUBLIC_API_URL=/api npm run dev -- --hostname 0.0.0.0 -p 14141
 ```
 
-After frontend changes, still run a production build check because development mode is more forgiving:
+After frontend changes, run production build and lint checks since development mode is more forgiving:
 
 ```bash
 cd frontend
+npm run lint
 npm run build
 ```
 
@@ -179,12 +180,21 @@ If you do not have an NVIDIA GPU, use CPU-only mode as described in [DEPLOYMENT.
 - If you want host-based tooling or host-run services to talk to containerised PostgreSQL or Redis, add the required `ports` entries in your local `docker-compose.yml`.
 - Heavy ML libraries must stay inside worker task functions, not API startup paths.
 
-Useful migration commands:
+Useful migration and testing commands:
 
 ```bash
+# Run database migrations
 alembic upgrade head
+
+# Create a new migration revision
 alembic revision --autogenerate -m "message"
+
+# Sweep legacy recordings (manual run)
 python -m backend.startup_canonical_cutover
+
+# Run backend tests (ensure the virtual environment is active first)
+source .venv/bin/activate
+pytest
 ```
 
 Development guardrails:
@@ -243,12 +253,67 @@ If you add a new language or update an existing dictionary:
    ```
 3. Commit only the compressed `.gz` files under `frontend/public/dictionaries/<locale>/`. Do not track the raw uncompressed files.
 
+## Backend Coding Conventions
+
+### Language & Formatting
+- **Type Hints**: Mandatory for all function arguments and return values.
+- **Imports**: Group standard library, third-party library, and local imports clearly.
+- **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues.
+
+### Data Access & Dependency Injection
+- **Data Access**: `SQLModel` is used for ORM. All model files are located in [backend/models/](file:///home/msadmin/Nojoin/backend/models/).
+- **Dependency Injection**: Use `backend.api.deps` for DB sessions (`SessionDep`) and retrieving the current user (`CurrentUser`).
+
+### System Configuration
+- **Configuration Management**: `backend.utils.config_manager` is the central utility handling system and user settings persisted in `data/config.json`. Do not implement parallel ad-hoc configuration storage mechanisms.
+
+### Audio Processing & ML Operations
+- **Library Imports**: ML libraries (such as `torch`, `whisper`, `pyannote`) are computationally heavy and must be imported **inside** Celery task functions (under [backend/worker/tasks.py](file:///home/msadmin/Nojoin/backend/worker/tasks.py)) to ensure quick backend API startup.
+- **Pluggable ASR Engines**: The ASR Transcribe step dispatches to a pluggable engine under [backend/processing/engines/](file:///home/msadmin/Nojoin/backend/processing/engines/), determined by the `transcription_backend` configuration key. Pluggable engines (e.g. Whisper, or onnx-asr engines like Parakeet and Canary) share the `OnnxAsrEngine` base class. Note that Parakeet offers faster transcription on compatible NVIDIA systems but trades off accuracy and language coverage compared to Whisper.
+- **Diarization manifests**: `RecordingAudioWindowManifest.status` is a legacy compatibility projection. Use `asr_status` for live/catch-up ASR coverage and `diarization_status`, `diarization_config_hash`, and `diarization_window_result_id` for rolling or catch-up speaker-window coverage. Never treat legacy `live_processed` as diarization-complete.
+- **Phantom Speaker Filter**: The post-diarization stage [backend/processing/phantom_filter.py](file:///home/msadmin/Nojoin/backend/processing/phantom_filter.py) filters and reassigns speech segments caused by non-speech notification sounds or background noise. It uses heuristic duration/segment count checks followed by embedding-based validation. Constant thresholds (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, and `PHANTOM_MERGE_THRESHOLD`) are defined in that file.
+- **Speaker Identification Constants**: All speaker matching thresholds are centralized in [backend/processing/embedding.py](file:///home/msadmin/Nojoin/backend/processing/embedding.py). Do not hardcode threshold values elsewhere; import and reference the named constants (such as `IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD`, `SCAN_MATCH_THRESHOLD`, `UI_SHOW_MATCH_THRESHOLD`, and `UI_STRONG_MATCH_THRESHOLD`).
+- **PyTorch 2.6+ safe globals**: PyTorch 2.6+ defaults to `weights_only=True` in `torch.load` for security, blocking loading of custom classes (like `pyannote.audio.core.task.Specifications` and `torch.torch_version.TorchVersion`) from model checkpoints. These classes must be explicitly registered prior to loading models via `torch.serialization.add_safe_globals([...])` at the module level in `embedding_core.py` and `diarize.py`.
+
+## Frontend Coding Conventions
+
+### Architecture & UI Guidelines
+- **State Management**: **Zustand** (defined in [frontend/src/lib/store.ts](file:///home/msadmin/Nojoin/frontend/src/lib/store.ts)) is the global UI state manager (handling navigation, selection, and filters). Avoid prop drilling wherever possible.
+- **API Client Layer**: All API communication must go through [frontend/src/lib/api.ts](file:///home/msadmin/Nojoin/frontend/src/lib/api.ts).
+- **Security & Tokens**:
+  - Browser auth uses HttpOnly session cookies issued by `/api/v1/login/session`.
+  - Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
+  - Never expose bearer tokens in URL query strings or other browser-visible areas.
+- **Routing & Framework**: Use the Next.js App Router ([frontend/src/app/](file:///home/msadmin/Nojoin/frontend/src/app/)) and Tailwind CSS for styling. Prefer functional components inside [frontend/src/components/](file:///home/msadmin/Nojoin/frontend/src/components/).
+- **Strict TypeScript**: Avoid the use of `any` types. Ensure TS interfaces in `frontend/src/types/index.ts` are updated first when adding settings or model fields.
+
+### UI Duplication Rules
+- **Context Menus warning**: When modifying the context menu options for recording cards/rows, you **must** update both of the following files to prevent UI divergence:
+  - [frontend/src/components/RecordingCard.tsx](file:///home/msadmin/Nojoin/frontend/src/components/RecordingCard.tsx) (handles the recording grid view).
+  - [frontend/src/components/Sidebar.tsx](file:///home/msadmin/Nojoin/frontend/src/components/Sidebar.tsx) (handles the sidebar recording list view).
+
+## Release Workflow and Version Detection
+
+### Unified Release Process
+Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step:
+1. **Update Version**: Update [docs/VERSION](file:///home/msadmin/Nojoin/docs/VERSION) to the new version string (e.g. `0.6.0`).
+2. **Commit and Tag**: Commit the version file change and create/push the tag:
+   ```bash
+   git add docs/VERSION
+   git commit -m "chore: bump version to 0.6.0"
+   git tag v0.6.0
+   git push origin v0.6.0
+   ```
+3. **CI/CD Pipeline**: The push of `v*` tag triggers [.github/workflows/release.yml](file:///home/msadmin/Nojoin/.github/workflows/release.yml) to build and push Docker images to GHCR, embedding the version for runtime display in Settings. Update release notes manually in the GitHub Releases interface.
+
+### Runtime Version Detection
+The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
+
 ## Related Docs
 
 - [CAPTURE.md](CAPTURE.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
-- [AGENTS.md](AGENTS.md)
 
 ## Localhost Dev Compose Template
 

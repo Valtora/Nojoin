@@ -76,7 +76,7 @@ The normal backend processing path is:
 1. Validation.
 2. VAD and audio preprocessing.
 3. Proxy creation for web playback.
-4. Transcription via a pluggable engine (Whisper by default, Parakeet or Canary via onnx-asr selectable).
+4. Transcription via a pluggable engine under [backend/processing/engines/](file:///home/msadmin/Nojoin/backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`).
 5. Pyannote diarisation.
 6. Phantom speaker filtering.
 7. Merge, voiceprint extraction, and deterministic speaker resolution.
@@ -89,7 +89,7 @@ Manual user notes can be captured during recording or processing and are fed int
 
 If AI configuration is missing, the recording still completes with transcript, diarisation, and deterministic speaker resolution intact. Automatic AI enhancement is skipped rather than failing the meeting. Manual `Generate Notes` and `Retry Speaker Inference` remain available once AI is configured.
 
-A secondary LLM provider can be configured via the `SECONDARY_LLM_PROVIDER` environment variable. When set, all AI features (meeting intelligence, Meeting Edge, speaker inference, chat) automatically fall back to the secondary provider if the primary provider fails with any error. The secondary provider has its own model, live model, and API key settings, configured independently. Fallback is transparent: the primary provider is tried first, and on failure the system logs a warning and retries with the secondary provider. If both fail, the primary provider's error is raised.
+A secondary LLM provider can be configured via the `SECONDARY_LLM_PROVIDER` environment variable. When set, all AI features (meeting intelligence, Meeting Edge, speaker inference, chat) automatically fall back to the secondary provider if the primary provider fails with any error, handled by `SecondaryLLMBackend`. The secondary provider has its own model, live model, and API key settings, configured independently. Fallback is transparent: the primary provider is tried first, and on failure the system logs a warning and retries with the secondary provider. If both fail, the primary provider's error is raised.
 
 Playback, transcript viewing, and export all operate on the full recording timeline without applying persisted trim offsets.
 
@@ -118,8 +118,9 @@ runs:
 4. Live speaker assignment uses online voice embeddings. Matching regions are
    merged into stable `LIVE_XX` speaker labels; short or embedding-less regions
    reuse the most recent stable label instead of creating new speaker churn.
-   Live speaker names and transcript edits made by the user are treated as
-   authoritative.
+   Embedding extraction uses a centred window trimmed away from segment edges
+   to reduce noise-pickup bias. Live speaker names and transcript edits made by
+   the user are treated as authoritative.
 5. After new live segments land, the API/worker layer best-effort dispatches a
    separate `refresh_meeting_edge_task`. That task builds a bounded recent
    transcript window, reuses the previous run's dedicated rolling summary (a
@@ -150,7 +151,8 @@ drains the contiguous run of segments present on disk. Audio from the trailing,
 not-yet-complete utterance is **carried over** in `live/buffer.wav` and joined
 to the next run, so an utterance split across a segment boundary is normally
 transcribed once as a whole. If speech continues past the live forced-emission
-window, the lane emits the current speech region and starts a new live segment.
+window, the lane force-emits continuous speech after about 8 seconds, updating
+the current speech region and starting a new live segment.
 
 Browser-live audio window manifests track two independent processing lanes. The
 ASR lane records whether live or catch-up ASR consumed the window audio. The
@@ -242,4 +244,3 @@ Nojoin follows a unified release model:
 - [USAGE.md](USAGE.md)
 - [CALENDAR.md](CALENDAR.md)
 - [PRD.md](PRD.md)
-- [AGENTS.md](AGENTS.md)
