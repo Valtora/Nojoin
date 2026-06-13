@@ -6,8 +6,13 @@ from backend.processing.llm_services import (
     GeminiLLMBackend,
     OllamaLLMBackend,
     OpenAILLMBackend,
+    SecondaryLLMBackend,
 )
-from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceRequest
+from backend.utils.meeting_edge import MeetingEdgeRequest
+from backend.utils.meeting_intelligence import (
+    AutomaticMeetingIntelligenceRequest,
+    AutomaticMeetingIntelligenceResult,
+)
 
 
 def _sample_request() -> AutomaticMeetingIntelligenceRequest:
@@ -25,6 +30,18 @@ def _sample_payload() -> str:
             "speaker_mapping": {"SPEAKER_00": "Alex"},
             "title": "Launch Readiness Review",
             "notes_markdown": "# Meeting Notes\n\n## Summary\nAll teams are ready.",
+        }
+    )
+
+
+def _sample_meeting_edge_payload() -> str:
+    return json.dumps(
+        {
+            "summary": "Launch timing is the active thread.",
+            "rolling_summary": "The team is reviewing launch readiness and open risks.",
+            "questions": ["Who owns final launch approval?"],
+            "points": [],
+            "concepts": [],
         }
     )
 
@@ -140,3 +157,171 @@ def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert capture["allow_redirects"] is False
     assert capture["url"] == "http://ollama.local/api/chat"
     assert capture["json"]["stream"] is False
+    assert capture["json"]["format"] == "json"
+
+
+def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeRequests:
+        def post(
+            self,
+            url: str,
+            json: dict,
+            timeout: int,
+            allow_redirects: bool,
+        ):
+            calls.append(
+                {
+                    "url": url,
+                    "json": json,
+                    "timeout": timeout,
+                    "allow_redirects": allow_redirects,
+                }
+            )
+            if len(calls) == 1:
+                return _FakeOllamaResponse('{"speaker_mapping": {"SPEAKER_00": "Alex"}')
+            return _FakeOllamaResponse(_sample_payload())
+
+    backend = object.__new__(OllamaLLMBackend)
+    backend.model = "gemma4:latest"
+    backend.api_url = "http://ollama.local"
+    backend.requests = FakeRequests()
+
+    result = backend.generate_meeting_intelligence(_sample_request(), timeout=30)
+
+    assert result.title == "Launch Readiness Review"
+    assert len(calls) == 2
+    assert calls[0]["json"]["format"] == "json"
+    assert calls[1]["json"]["format"] == "json"
+    assert calls[1]["json"]["options"]["temperature"] == 0.0
+    repair_prompt = calls[1]["json"]["messages"][0]["content"]
+    assert "Validation error:" in repair_prompt
+    assert "Previous Invalid Response" in repair_prompt
+    assert "Return a corrected response" in repair_prompt
+
+
+def test_ollama_generate_meeting_edge_accepts_empty_signal_payload() -> None:
+    calls: list[dict[str, object]] = []
+    empty_signal_payload = json.dumps(
+        {
+            "summary": "Budget is being discussed.",
+            "rolling_summary": "The meeting is in a short budget discussion.",
+            "questions": [],
+            "points": [],
+            "concepts": [],
+        }
+    )
+
+    class FakeRequests:
+        def post(
+            self,
+            url: str,
+            json: dict,
+            timeout: int,
+            allow_redirects: bool,
+        ):
+            calls.append(
+                {
+                    "url": url,
+                    "json": json,
+                    "timeout": timeout,
+                    "allow_redirects": allow_redirects,
+                }
+            )
+            return _FakeOllamaResponse(empty_signal_payload)
+
+    backend = object.__new__(OllamaLLMBackend)
+    backend.model = "gemma4:latest"
+    backend.api_url = "http://ollama.local"
+    backend.requests = FakeRequests()
+
+    result = backend.generate_meeting_edge(
+        MeetingEdgeRequest(recent_transcript="Speaker A: We need final approval before launch."),
+        timeout=20,
+    )
+
+    assert result.summary == "Budget is being discussed."
+    assert result.questions == ()
+    assert result.points == ()
+    assert result.concepts == ()
+    assert len(calls) == 1
+    assert calls[0]["json"]["format"] == "json"
+
+
+def test_ollama_generate_meeting_edge_repairs_malformed_payload() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeRequests:
+        def post(
+            self,
+            url: str,
+            json: dict,
+            timeout: int,
+            allow_redirects: bool,
+        ):
+            calls.append(
+                {
+                    "url": url,
+                    "json": json,
+                    "timeout": timeout,
+                    "allow_redirects": allow_redirects,
+                }
+            )
+            if len(calls) == 1:
+                return _FakeOllamaResponse('{"summary": "Budget is being discussed."')
+            return _FakeOllamaResponse(_sample_meeting_edge_payload())
+
+    backend = object.__new__(OllamaLLMBackend)
+    backend.model = "gemma4:latest"
+    backend.api_url = "http://ollama.local"
+    backend.requests = FakeRequests()
+
+    result = backend.generate_meeting_edge(
+        MeetingEdgeRequest(recent_transcript="Speaker A: We need final approval before launch."),
+        timeout=20,
+    )
+
+    assert result.questions == ("Who owns final launch approval?",)
+    assert len(calls) == 2
+    assert calls[0]["json"]["format"] == "json"
+    assert calls[1]["json"]["format"] == "json"
+    assert "Could not parse a Meeting Edge JSON object" in calls[1]["json"]["messages"][0]["content"]
+
+
+def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeRequests:
+        def post(
+            self,
+            url: str,
+            json: dict,
+            timeout: int,
+            allow_redirects: bool,
+        ):
+            calls.append({"url": url, "json": json})
+            return _FakeOllamaResponse('{"speaker_mapping": {"SPEAKER_00": "Alex"}')
+
+    primary = object.__new__(OllamaLLMBackend)
+    primary.model = "gemma4:latest"
+    primary.api_url = "http://ollama.local"
+    primary.requests = FakeRequests()
+
+    class FakeSecondary:
+        model = "gemini-flash-lite-latest"
+
+        def generate_meeting_intelligence(self, request, prompt_template=None, timeout=60):
+            return AutomaticMeetingIntelligenceResult(
+                speaker_mapping={"SPEAKER_00": "Jordan"},
+                title="Fallback Notes",
+                notes_markdown="# Meeting Notes\n\n## Summary\nFallback succeeded.",
+            )
+
+    backend = SecondaryLLMBackend(primary=primary, secondary=FakeSecondary())
+
+    result = backend.generate_meeting_intelligence(_sample_request(), timeout=30)
+
+    assert result.title == "Fallback Notes"
+    assert result.speaker_mapping == {"SPEAKER_00": "Jordan"}
+    assert len(calls) == 2

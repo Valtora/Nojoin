@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
 from backend.utils.meeting_edge import (
-    MeetingEdgeContractError,
     MeetingEdgeRequest,
     build_meeting_edge_prompt,
     merge_meeting_edge_concept_history,
@@ -124,14 +121,18 @@ def test_parse_meeting_edge_response_accepts_fenced_json() -> None:
     ]
 
 
-def test_parse_meeting_edge_response_requires_at_least_one_signal_item() -> None:
+def test_parse_meeting_edge_response_accepts_summary_only_payload() -> None:
     request = MeetingEdgeRequest(recent_transcript="Speaker A: We should revisit budget.")
 
-    with pytest.raises(MeetingEdgeContractError):
-        parse_meeting_edge_response(
-            '{"summary": "Budget came up.", "questions": [], "points": [], "concepts": []}',
-            request=request,
-        )
+    result = parse_meeting_edge_response(
+        '{"summary": "Budget came up.", "questions": [], "points": [], "concepts": []}',
+        request=request,
+    )
+
+    assert result.summary == "Budget came up."
+    assert result.questions == ()
+    assert result.points == ()
+    assert result.concepts == ()
 
 
 def test_merge_meeting_edge_concept_history_preserves_prior_terms() -> None:

@@ -219,11 +219,6 @@ def parse_meeting_edge_response(
         rolling_summary=_read_optional_string(payload, "rolling_summary"),
     )
 
-    if request is not None and not result.questions and not result.points and not result.concepts:
-        raise MeetingEdgeContractError(
-            "Meeting Edge response must include at least one question, point, or concept"
-        )
-
     return result
 
 

@@ -17,12 +17,14 @@ from backend.utils.meeting_notes import (
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
+    MeetingIntelligenceContractError,
     build_automatic_meeting_intelligence_prompt as build_automatic_meeting_intelligence_prompt_text,
     finalise_automatic_meeting_intelligence_result as finalise_automatic_meeting_intelligence_payload,
     get_default_automatic_meeting_intelligence_prompt_template,
     parse_automatic_meeting_intelligence_response as parse_automatic_meeting_intelligence_payload,
 )
 from backend.utils.meeting_edge import (
+    MeetingEdgeContractError,
     MeetingEdgeRequest,
     MeetingEdgeResult,
     build_meeting_edge_prompt as build_meeting_edge_prompt_text,
@@ -37,6 +39,22 @@ from backend.utils.ollama_url_policy import validate_ollama_api_url
 import os
 
 logger = logging.getLogger(__name__)
+
+JSON_CONTRACT_ERRORS = (MeetingIntelligenceContractError, MeetingEdgeContractError)
+
+
+def summarize_llm_response_shape(response_text: str) -> Dict[str, Any]:
+    """Return non-content diagnostics for malformed structured LLM responses."""
+    stripped = response_text.strip()
+    return {
+        "chars": len(response_text),
+        "starts_with": stripped[:1],
+        "ends_with": stripped[-1:] if stripped else "",
+        "first_brace": response_text.find("{"),
+        "last_brace": response_text.rfind("}"),
+        "has_fence": "```" in response_text,
+        "has_think_tag": "<think>" in response_text or "</think>" in response_text,
+    }
 
 
 def build_eligible_speaker_labels_prompt_section(
@@ -499,6 +517,29 @@ Now generate the meeting notes following the exact format specified above. Be co
         request: MeetingEdgeRequest,
     ) -> MeetingEdgeResult:
         return parse_meeting_edge_payload(response_text, request=request)
+
+    @staticmethod
+    def build_json_repair_prompt(
+        *,
+        original_prompt: str,
+        invalid_response: str,
+        validation_error: Exception,
+    ) -> str:
+        return f"""Your previous response did not satisfy Nojoin's strict JSON contract.
+
+Validation error:
+{validation_error}
+
+Return a corrected response for the original task as one valid JSON object only.
+Do not include Markdown code fences, commentary, or prose before or after the JSON object.
+Preserve the same schema and do not invent facts not supported by the original task.
+
+# Original Task
+{original_prompt}
+
+# Previous Invalid Response
+{invalid_response}
+"""
 
     @staticmethod
     def get_mapped_transcript_for_llm(recording_id: int) -> str:
@@ -1696,12 +1737,40 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
+                "format": "json",
                 "options": {"temperature": 0.2}
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
-            return self.parse_automatic_meeting_intelligence_result(text, request)
+            try:
+                return self.parse_automatic_meeting_intelligence_result(text, request)
+            except JSON_CONTRACT_ERRORS as parse_error:
+                logger.warning(
+                    "Ollama meeting intelligence response failed JSON contract; retrying repair: %s; response_shape=%s",
+                    parse_error,
+                    summarize_llm_response_shape(text),
+                )
+                repair_payload = {
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": self.build_json_repair_prompt(
+                                original_prompt=prompt,
+                                invalid_response=text,
+                                validation_error=parse_error,
+                            ),
+                        }
+                    ],
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.0},
+                }
+                repair_resp = self._post("/api/chat", json=repair_payload, timeout=timeout)
+                repair_resp.raise_for_status()
+                repair_text = repair_resp.json().get('message', {}).get('content', '')
+                return self.parse_automatic_meeting_intelligence_result(repair_text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting intelligence): {e}")
             raise RuntimeError(f"Ollama API error (meeting intelligence): {e}")
@@ -1727,7 +1796,34 @@ class OllamaLLMBackend(LLMBackend):
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             text = resp.json().get('message', {}).get('content', '')
-            return self.parse_meeting_edge_result(text, request)
+            try:
+                return self.parse_meeting_edge_result(text, request)
+            except JSON_CONTRACT_ERRORS as parse_error:
+                logger.warning(
+                    "Ollama Meeting Edge response failed JSON contract; retrying repair: %s; response_shape=%s",
+                    parse_error,
+                    summarize_llm_response_shape(text),
+                )
+                repair_payload = {
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": self.build_json_repair_prompt(
+                                original_prompt=prompt,
+                                invalid_response=text,
+                                validation_error=parse_error,
+                            ),
+                        }
+                    ],
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.0},
+                }
+                repair_resp = self._post("/api/chat", json=repair_payload, timeout=timeout)
+                repair_resp.raise_for_status()
+                repair_text = repair_resp.json().get('message', {}).get('content', '')
+                return self.parse_meeting_edge_result(repair_text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (Meeting Edge): {e}")
             raise RuntimeError(f"Ollama API error (Meeting Edge): {e}")
