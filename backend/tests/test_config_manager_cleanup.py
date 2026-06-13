@@ -1,6 +1,10 @@
+from pathlib import Path
 import subprocess
 import sys
 import pytest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def test_get_available_processing_devices_removed() -> None:
     # Ensure config_manager is imported
@@ -27,7 +31,7 @@ except Exception as e:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        cwd="/home/msadmin/Nojoin-dev"
+        cwd=REPO_ROOT,
     )
     assert result.returncode == 0
     assert "SUCCESS" in result.stdout
