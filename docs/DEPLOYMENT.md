@@ -223,13 +223,21 @@ By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to
 2. By default that means the host-facing port `14443`.
 3. Disable upstream certificate verification because Nojoin uses a self-signed internal certificate by default.
 4. Keep `WEB_APP_URL` aligned with the public origin.
-5. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
+5. Preserve the public browser host when forwarding requests. The upstream `Host` and `X-Forwarded-Host` values should match the hostname in `WEB_APP_URL`.
+6. Forward `X-Forwarded-Proto: https` so Nojoin can recognise secure browser requests through the proxy chain.
+7. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
+
+If API requests fail with `400 Invalid host header`, the edge proxy is usually forwarding an internal upstream host such as `nojoin-nginx:443` instead of the public `WEB_APP_URL` host.
 
 ### Caddy Example
 
 ```caddy
 nojoin.yourdomain.com {
     reverse_proxy localhost:14443 {
+        header_up Host nojoin.yourdomain.com
+        header_up X-Forwarded-Host nojoin.yourdomain.com
+        header_up X-Forwarded-Proto https
+
         transport http {
             tls_insecure_skip_verify
         }
@@ -244,6 +252,10 @@ location / {
     proxy_pass https://localhost:14443;
     proxy_ssl_verify off;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
 
