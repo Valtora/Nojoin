@@ -29,13 +29,17 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 ## Why Nojoin?
 
-- It is free, self-hosted, and open-source.
-- No meeting bot awkwardly joins your calls.
-- Works across any meeting platform, Google Meet, Microsoft Teams, Zoom, Webex, and more. If you can hear it, Nojoin can capture it.
-- Local transcription and speaker attribution on your own infrastructure.
-- Optional cloud LLMs, or fully local AI with Ollama.
-- Web dashboard with recordings, calendar, and a Tasks workspace.
-- Browser-native capture for system audio and microphone input.
+- No meeting bot awkwardly joins your calls
+- Works across Google Meet, Microsoft Teams, Zoom, etc. without any integration or meeting links
+- Built-in transcription and speaker attribution.
+- Optional fully local AI with Ollama
+- `Meeting Edge` live meeting guidance with questions, missed points, and concept help
+- AI-generated meeting notes
+- AI-powered Meeting Chat grounded in the transcript, notes, and uploaded documents
+- Global speaker library with voiceprints and speaker matching
+- Google and Outlook calendar sync with meeting context in the dashboard
+- Search across recordings, notes, and document
+- Dedicated Task workspace
 
 ## Supported Browsers and OSes
 
