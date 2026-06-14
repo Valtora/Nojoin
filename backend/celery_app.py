@@ -30,6 +30,7 @@ def log_placeholder_secret_warnings_on_worker_start(**kwargs):
 def release_worker_model_caches() -> None:
     try:
         import sys
+        import ctypes
 
         from backend.utils.config_manager import config_manager
 
@@ -63,6 +64,13 @@ def release_worker_model_caches() -> None:
                     torch_module.cuda.empty_cache()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("CUDA cache cleanup skipped: %s", exc)
+
+        # Force glibc allocator to release freed pages back to OS
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+            logger.info("Forced glibc malloc_trim cleanup successfully.")
+        except Exception as trim_exc:
+            logger.debug("malloc_trim skipped or failed: %s", trim_exc)
 
         logger.info("Worker model caches released.")
     except Exception as exc:  # noqa: BLE001
