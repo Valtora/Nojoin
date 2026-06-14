@@ -72,6 +72,7 @@ CREATE TABLE chat_messages (
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     recording_id INTEGER NOT NULL,
+    user_id INTEGER,
     role VARCHAR(32) NOT NULL,
     content TEXT
 )
@@ -85,7 +86,8 @@ CREATE TABLE context_chunks (
     recording_id INTEGER NOT NULL,
     document_id INTEGER,
     content TEXT,
-    embedding JSON
+    embedding JSON,
+    meta JSON
 )
 """
 
@@ -94,17 +96,27 @@ CREATE TABLE recording_speakers (
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
     recording_id INTEGER NOT NULL,
     global_speaker_id INTEGER,
     diarization_label VARCHAR(255),
     local_name VARCHAR(255),
     name VARCHAR(255),
+    snippet_start FLOAT,
+    snippet_end FLOAT,
+    voice_snippet_path VARCHAR(1024),
+    embedding JSON,
+    color VARCHAR(32),
+    merged_into_id INTEGER,
+    speaker_status VARCHAR(32) NOT NULL,
+    speaker_kind VARCHAR(32) NOT NULL,
     processing_run_id INTEGER,
     last_speaker_correction_event_id INTEGER,
     last_diarization_window_result_id INTEGER,
-    snippet_start FLOAT,
-    snippet_end FLOAT,
-    voice_snippet_path VARCHAR(1024)
+    first_seen_ms INTEGER,
+    last_seen_ms INTEGER,
+    identity_confidence FLOAT,
+    identity_locked BOOLEAN NOT NULL
 )
 """
 
@@ -164,6 +176,185 @@ CREATE TABLE recording_audio_window_manifests (
 )
 """
 
+GLOBAL_SPEAKERS_SCHEMA = """
+CREATE TABLE global_speakers (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    user_id INTEGER,
+    name VARCHAR(255),
+    embedding JSON,
+    is_voiceprint_locked BOOLEAN NOT NULL DEFAULT 0,
+    color VARCHAR(32),
+    title VARCHAR(255),
+    company VARCHAR(255),
+    email VARCHAR(255),
+    phone_number VARCHAR(255),
+    notes TEXT,
+    description TEXT
+)
+"""
+
+PROCESSING_RUNS_SCHEMA = """
+CREATE TABLE processing_runs (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    parent_run_id INTEGER,
+    run_kind VARCHAR(32) NOT NULL,
+    trigger_source VARCHAR(32) NOT NULL,
+    requested_by_user_id INTEGER,
+    status VARCHAR(32) NOT NULL,
+    config_hash VARCHAR(255),
+    transcription_backend VARCHAR(255),
+    diarization_backend VARCHAR(255),
+    model_metadata JSON,
+    span_start_ms INTEGER,
+    span_end_ms INTEGER,
+    reused_live_asr BOOLEAN NOT NULL,
+    idempotency_key VARCHAR(255),
+    metrics JSON,
+    error_summary TEXT,
+    started_at DATETIME,
+    completed_at DATETIME
+)
+"""
+
+DIARIZATION_WINDOW_RESULTS_SCHEMA = """
+CREATE TABLE diarization_window_results (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    processing_run_id INTEGER,
+    window_index INTEGER NOT NULL,
+    window_start_ms INTEGER NOT NULL,
+    window_end_ms INTEGER NOT NULL,
+    chunk_start_sequence INTEGER,
+    chunk_end_sequence INTEGER,
+    model_name VARCHAR(255),
+    model_version VARCHAR(255),
+    device VARCHAR(255),
+    config_hash VARCHAR(255),
+    status VARCHAR(32) NOT NULL,
+    raw_payload JSON
+)
+"""
+
+TRANSCRIPT_UTTERANCES_SCHEMA = """
+CREATE TABLE transcript_utterances (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    sort_key VARCHAR(64) NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    speaker_label VARCHAR(255),
+    recording_speaker_id INTEGER,
+    state VARCHAR(32) NOT NULL,
+    source_kind VARCHAR(255) NOT NULL,
+    processing_run_id INTEGER,
+    last_utterance_event_id INTEGER,
+    last_diarization_window_result_id INTEGER,
+    revision INTEGER NOT NULL,
+    overlap_group_id VARCHAR(64),
+    overlap_rank INTEGER NOT NULL,
+    manual_text_locked BOOLEAN NOT NULL,
+    manual_speaker_locked BOOLEAN NOT NULL,
+    speaker_assignment_source VARCHAR(32) NOT NULL,
+    speaker_assignment_authority VARCHAR(32) NOT NULL,
+    text_confidence FLOAT,
+    speaker_confidence FLOAT,
+    confidence_payload JSON
+)
+"""
+
+TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA = """
+CREATE TABLE transcript_utterance_events (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER NOT NULL,
+    utterance_id INTEGER NOT NULL,
+    processing_run_id INTEGER,
+    actor_user_id INTEGER,
+    event_type VARCHAR(64) NOT NULL,
+    source VARCHAR(64) NOT NULL,
+    old_values JSON,
+    new_values JSON,
+    resulting_revision INTEGER NOT NULL
+)
+"""
+
+RECORDING_SPEAKER_ALIASES_SCHEMA = """
+CREATE TABLE recording_speaker_aliases (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_speaker_id INTEGER NOT NULL,
+    alias_type VARCHAR(32) NOT NULL,
+    alias_value VARCHAR(255) NOT NULL,
+    source_run_id INTEGER,
+    active BOOLEAN NOT NULL,
+    valid_from_ms INTEGER,
+    valid_to_ms INTEGER,
+    confidence FLOAT
+)
+"""
+
+SPEAKER_CORRECTION_EVENTS_SCHEMA = """
+CREATE TABLE speaker_correction_events (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    actor_user_id INTEGER,
+    utterance_id INTEGER,
+    source_recording_speaker_id INTEGER,
+    target_recording_speaker_id INTEGER,
+    target_global_speaker_id INTEGER,
+    event_type VARCHAR(64) NOT NULL,
+    scope VARCHAR(64) NOT NULL,
+    effective_from_ms INTEGER,
+    payload JSON
+)
+"""
+
+RECORDING_ASR_WINDOW_RESULTS_SCHEMA = """
+CREATE TABLE recording_asr_window_results (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    processing_run_id INTEGER,
+    source_kind VARCHAR(255) NOT NULL,
+    span_start_ms INTEGER NOT NULL,
+    span_end_ms INTEGER NOT NULL,
+    chunk_start_sequence INTEGER,
+    chunk_end_sequence INTEGER,
+    transcription_backend VARCHAR(255) NOT NULL,
+    model_name VARCHAR(255),
+    config_hash VARCHAR(255) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    idempotency_key VARCHAR(255) NOT NULL,
+    error_summary TEXT,
+    error_payload JSON,
+    result_payload JSON,
+    produced_utterance_public_ids JSON,
+    started_at DATETIME,
+    completed_at DATETIME,
+    UNIQUE(recording_id, idempotency_key)
+)
+"""
+
 
 def build_test_user(user_id: int = 1, username: str = "alice"):
     from types import SimpleNamespace
@@ -189,9 +380,17 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
+        await connection.execute(text(GLOBAL_SPEAKENS_SCHEMA if "GLOBAL_SPEAKENS_SCHEMA" in globals() else GLOBAL_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
+        await connection.execute(text(PROCESSING_RUNS_SCHEMA))
+        await connection.execute(text(DIARIZATION_WINDOW_RESULTS_SCHEMA))
+        await connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
+        await connection.execute(text(TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA))
+        await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
+        await connection.execute(text(SPEAKER_CORRECTION_EVENTS_SCHEMA))
+        await connection.execute(text(RECORDING_ASR_WINDOW_RESULTS_SCHEMA))
 
     try:
         yield session_maker
@@ -1251,3 +1450,83 @@ async def test_import_low_bitrate_audio_succeeds(
     assert chunk_rows[0][1] == "import"
     assert chunk_rows[0][3] == 15000
     assert manifest_rows == [("import", 0, 15000, 0, 0)]
+
+
+@pytest.mark.anyio
+async def test_reprocess_resets_and_rebuilds_pipeline_state(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    """Reprocessing a recording clears all its pipeline tables and artifacts."""
+    from backend.models.chat import ChatMessage
+    from backend.models.context_chunk import ContextChunk
+    from backend.models.speaker import RecordingSpeaker
+    from backend.models.pipeline import (
+        ProcessingRun,
+        ProcessingRunKind,
+        ProcessingRunStatus,
+        TranscriptUtterance,
+        TranscriptUtteranceState,
+        SpeakerCorrectionEvent,
+        SpeakerCorrectionScope,
+        SpeakerCorrectionEventType,
+        DiarizationWindowResult,
+        RecordingAsrWindowResult,
+        RecordingAsrWindowResultStatus,
+    )
+    from backend.models.transcript import Transcript
+
+    # 1. Setup a processed recording with pipeline metadata
+    await _insert_recording(test_session_maker, recording_id=201, public_id="rec-201")
+
+    # 2. Insert ChatMessage, ContextChunk, RecordingSpeaker, ProcessingRun, TranscriptUtterance,
+    # SpeakerCorrectionEvent, DiarizationWindowResult, RecordingAsrWindowResult
+    async with test_session_maker() as session:
+        session.add(Transcript(recording_id=201, text="test", segments=[], transcript_status="completed"))
+        session.add(ChatMessage(recording_id=201, role="user", content="hello", user_id=1))
+        session.add(ContextChunk(recording_id=201, text="text"))
+        session.add(RecordingSpeaker(id=2010, recording_id=201, diarization_label="SPEAKER_00", name="Speaker 1", speaker_status="active"))
+        session.add(ProcessingRun(id=20100, recording_id=201, run_kind=ProcessingRunKind.FINALIZE, status=ProcessingRunStatus.COMPLETED, idempotency_key="finalize:key"))
+        session.add(TranscriptUtterance(id=201000, public_id="utt-1", recording_id=201, sort_key="a", start_ms=0, end_ms=1000, text="hello", state=TranscriptUtteranceState.FINALIZED, recording_speaker_id=2010))
+        session.add(SpeakerCorrectionEvent(public_id="corr-1", recording_id=201, event_type=SpeakerCorrectionEventType.ASSIGN_UTTERANCE, scope=SpeakerCorrectionScope.UTTERANCE_ONLY))
+        session.add(DiarizationWindowResult(id=2010000, public_id="diar-1", recording_id=201, window_start_ms=0, window_end_ms=1000, status="completed"))
+        session.add(RecordingAsrWindowResult(public_id="asr-1", recording_id=201, span_start_ms=0, span_end_ms=1000, transcription_backend="whisper", config_hash="hash", status=RecordingAsrWindowResultStatus.COMPLETED, idempotency_key="key"))
+        await session.commit()
+
+    # 3. Call reprocess endpoint
+    _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-201/reprocess",
+        json={"transcription_backend": "whisper"},
+    )
+
+    assert response.status_code == 200
+
+    # 4. Verify that generated artifacts and pipeline tables are completely cleared
+    async with test_session_maker() as session:
+        res = await session.execute(text("SELECT COUNT(*) FROM chat_messages WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM context_chunks WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM recording_speakers WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM speaker_correction_events WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM diarization_window_results WHERE recording_id = 201"))
+        assert res.scalar() == 0
+
+        res = await session.execute(text("SELECT COUNT(*) FROM recording_asr_window_results WHERE recording_id = 201"))
+        assert res.scalar() == 0
+

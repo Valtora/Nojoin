@@ -248,9 +248,9 @@ def test_generate_notes_task_completes_with_saved_provider_config(
             captured["meeting_context"] = meeting_context
             return "# Meeting Notes\n\n## Summary\nGenerated notes."
 
-    def fake_get_llm_backend(provider: str, api_key=None, model=None, api_url=None):
+    def fake_get_llm_backend(provider: str, api_key=None, model=None, api_url=None, **kwargs):
         calls = captured.setdefault("calls", [])
-        calls.append({"provider": provider, "api_key": api_key, "model": model, "api_url": api_url})
+        calls.append({"provider": provider, "api_key": api_key, "model": model, "api_url": api_url, **kwargs})
         return FakeLLM()
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))

@@ -27,7 +27,15 @@ from backend.utils.recording_storage import (
 )
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.services.recording_identity_service import get_recording_by_public_id
-from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
+from backend.models.pipeline import (
+    RecordingAudioChunk,
+    RecordingAudioWindowManifest,
+    ProcessingRun,
+    TranscriptUtterance,
+    SpeakerCorrectionEvent,
+    DiarizationWindowResult,
+    RecordingAsrWindowResult,
+)
 from backend.utils.recording_audio_sync import (
     BROWSER_AUDIO_SEGMENT_SUFFIXES,
     find_missing_chunk_sequences,
@@ -468,6 +476,21 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     )
     await db.execute(
         delete(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(ProcessingRun).where(ProcessingRun.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(TranscriptUtterance).where(TranscriptUtterance.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(SpeakerCorrectionEvent).where(SpeakerCorrectionEvent.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(DiarizationWindowResult).where(DiarizationWindowResult.recording_id == recording_id)
+    )
+    await db.execute(
+        delete(RecordingAsrWindowResult).where(RecordingAsrWindowResult.recording_id == recording_id)
     )
     if existing_transcript:
         await db.delete(existing_transcript)
