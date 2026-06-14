@@ -157,11 +157,13 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `OPENAI_API_KEY`: OpenAI API key.
 - `ANTHROPIC_API_KEY`: Anthropic API key.
 - `OLLAMA_API_URL`: Local or remote Ollama endpoint.
+- `OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value used for full-context meeting prompts. Defaults to `131072`; ensure the selected model and hardware can support the requested context.
 - `SECONDARY_LLM_PROVIDER`: Secondary LLM provider used when the primary fails. Same values as `LLM_PROVIDER`. Leave empty to disable fallback.
 - `SECONDARY_GEMINI_API_KEY`: Gemini API key for the secondary provider.
 - `SECONDARY_OPENAI_API_KEY`: OpenAI API key for the secondary provider.
 - `SECONDARY_ANTHROPIC_API_KEY`: Anthropic API key for the secondary provider.
 - `SECONDARY_OLLAMA_API_URL`: Ollama endpoint for the secondary provider.
+- `SECONDARY_OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value for the secondary Ollama provider. Defaults to `131072`.
 - `GOOGLE_OAUTH_CLIENT_ID`: Google calendar OAuth client ID.
 - `GOOGLE_OAUTH_CLIENT_SECRET`: Google calendar OAuth client secret.
 - `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft calendar OAuth client ID.

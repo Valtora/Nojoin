@@ -1,6 +1,8 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from backend.processing.llm_services import (
     AnthropicLLMBackend,
     GeminiLLMBackend,
@@ -55,6 +57,18 @@ class _FakeOllamaResponse:
 
     def json(self) -> dict:
         return {"message": {"content": self._payload}}
+
+
+class _FakeOllamaStreamResponse:
+    def __init__(self, chunks: list[dict[str, object]]):
+        self._chunks = chunks
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_lines(self):
+        for chunk in self._chunks:
+            yield json.dumps(chunk).encode("utf-8")
 
 
 def test_gemini_generate_meeting_intelligence_uses_shared_contract() -> None:
@@ -147,6 +161,7 @@ def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
     backend = object.__new__(OllamaLLMBackend)
     backend.model = "llama3"
     backend.api_url = "http://ollama.local"
+    backend.context_window = 131072
     backend.requests = FakeRequests()
 
     result = backend.generate_meeting_intelligence(_sample_request(), timeout=30)
@@ -158,6 +173,8 @@ def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert capture["url"] == "http://ollama.local/api/chat"
     assert capture["json"]["stream"] is False
     assert capture["json"]["format"] == "json"
+    assert capture["json"]["options"]["temperature"] == 0.3
+    assert capture["json"]["options"]["num_ctx"] == 131072
 
 
 def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None:
@@ -199,6 +216,54 @@ def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None
     assert "Validation error:" in repair_prompt
     assert "Previous Invalid Response" in repair_prompt
     assert "Return a corrected response" in repair_prompt
+
+
+def test_ollama_streaming_chat_raises_when_context_exhausted() -> None:
+    capture: dict[str, object] = {}
+
+    class FakeRequests:
+        def post(
+            self,
+            url: str,
+            json: dict,
+            stream: bool,
+            timeout: int,
+            allow_redirects: bool,
+        ):
+            capture["json"] = json
+            return _FakeOllamaStreamResponse(
+                [
+                    {
+                        "message": {"role": "assistant", "content": "Based"},
+                        "done": False,
+                    },
+                    {
+                        "message": {"role": "assistant", "content": ""},
+                        "done": True,
+                        "done_reason": "length",
+                        "prompt_eval_count": 4095,
+                        "eval_count": 1,
+                    },
+                ]
+            )
+
+    backend = object.__new__(OllamaLLMBackend)
+    backend.model = "gemma4:latest"
+    backend.api_url = "http://ollama.local"
+    backend.context_window = 131072
+    backend.requests = FakeRequests()
+
+    with pytest.raises(RuntimeError, match="context window was exhausted"):
+        list(
+            backend.ask_question_streaming(
+                user_question="What should I do next?",
+                meeting_notes="",
+                diarized_transcript="Full transcript",
+            )
+        )
+
+    assert capture["json"]["options"]["temperature"] == 0.3
+    assert capture["json"]["options"]["num_ctx"] == 131072
 
 
 def test_ollama_generate_meeting_edge_accepts_empty_signal_payload() -> None:

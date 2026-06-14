@@ -65,6 +65,7 @@ def test_merge_llm_config_prefers_user_meeting_edge_override() -> None:
             "ollama_model": "llama3.1:70b",
             "ollama_live_model": "llama3.1:8b",
             "ollama_api_url": "http://localhost:11434",
+            "ollama_context_window": 131072,
         },
         system_keys={},
         owner_settings={"ollama_live_model": "phi4:mini"},
@@ -75,6 +76,7 @@ def test_merge_llm_config_prefers_user_meeting_edge_override() -> None:
     assert resolved.provider == "ollama"
     assert resolved.api_url == "http://localhost:11434"
     assert resolved.model == "qwen2.5:3b"
+    assert resolved.context_window == 131072
 
 
 def test_merge_llm_config_ignores_user_ollama_api_url_override() -> None:
@@ -92,6 +94,29 @@ def test_merge_llm_config_ignores_user_ollama_api_url_override() -> None:
 
     assert resolved.provider == "ollama"
     assert resolved.api_url == "http://localhost:11434"
+
+
+def test_merge_llm_config_resolves_secondary_ollama_context_window() -> None:
+    resolved = _merge_llm_config(
+        base_config={
+            "llm_provider": "openai",
+            "openai_model": "gpt-4.1",
+            "secondary_llm_provider": "ollama",
+            "secondary_ollama_model": "llama3.1:70b",
+            "secondary_ollama_api_url": "http://localhost:11434",
+            "secondary_ollama_context_window": "65536",
+        },
+        system_keys={"openai_api_key": "sk-system"},
+        owner_settings=None,
+        user_settings=None,
+        purpose=LLM_PURPOSE_DEFAULT,
+    )
+
+    secondary = resolved.secondary_config()
+
+    assert secondary is not None
+    assert secondary.provider == "ollama"
+    assert secondary.context_window == 65536
 
 
 def test_merge_llm_config_prefers_config_backed_model_defaults_over_owner_settings() -> None:

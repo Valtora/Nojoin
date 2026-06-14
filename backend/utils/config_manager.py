@@ -73,6 +73,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "ollama_model",
     "ollama_live_model",
     "ollama_api_url",
+    "ollama_context_window",
     "secondary_llm_provider",
     "secondary_gemini_model",
     "secondary_gemini_live_model",
@@ -83,6 +84,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "secondary_ollama_model",
     "secondary_ollama_live_model",
     "secondary_ollama_api_url",
+    "secondary_ollama_context_window",
     "secondary_gemini_api_key",
     "secondary_openai_api_key",
     "secondary_anthropic_api_key",
@@ -131,6 +133,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "transcription_backend": "whisper",          # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
+    "ollama_context_window": 131072,
+    "secondary_ollama_context_window": 131072,
     "enable_live_transcription": True,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
@@ -163,6 +167,7 @@ DEFAULT_USER_SETTINGS = {
     "ollama_model": None,       # Default Ollama model
     "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
     "ollama_api_url": "http://host.docker.internal:11434", # Default Ollama API URL
+    "ollama_context_window": 131072,  # Ollama num_ctx for full-context meeting chat
     "secondary_llm_provider": None,  # Secondary LLM provider (used when primary is unavailable)
     "secondary_gemini_model": None,       # Secondary Gemini model
     "secondary_gemini_live_model": None,  # Optional secondary Meeting Edge Gemini model
@@ -173,6 +178,7 @@ DEFAULT_USER_SETTINGS = {
     "secondary_ollama_model": None,       # Secondary Ollama model
     "secondary_ollama_live_model": None,  # Optional secondary Meeting Edge Ollama model
     "secondary_ollama_api_url": "http://host.docker.internal:11434",  # Default secondary Ollama URL
+    "secondary_ollama_context_window": 131072,  # Secondary Ollama num_ctx
     "secondary_gemini_api_key": None,     # Secondary Gemini API key
     "secondary_openai_api_key": None,     # Secondary OpenAI API key
     "secondary_anthropic_api_key": None,  # Secondary Anthropic API key
@@ -309,13 +315,21 @@ class ConfigManager:
         env_overrides = {
             "llm_provider": "LLM_PROVIDER",
             "ollama_api_url": "OLLAMA_API_URL",
+            "ollama_context_window": "OLLAMA_CONTEXT_WINDOW",
             "secondary_llm_provider": "SECONDARY_LLM_PROVIDER",
             "secondary_ollama_api_url": "SECONDARY_OLLAMA_API_URL",
+            "secondary_ollama_context_window": "SECONDARY_OLLAMA_CONTEXT_WINDOW",
         }
         for config_key, env_key in env_overrides.items():
             env_val = os.environ.get(env_key)
             if env_val is not None and env_val != "":
-                config[config_key] = env_val
+                if config_key.endswith("_context_window"):
+                    try:
+                        config[config_key] = int(env_val)
+                    except ValueError:
+                        logger.warning("Ignoring invalid integer value for %s.", env_key)
+                else:
+                    config[config_key] = env_val
 
         return config
 
@@ -366,6 +380,10 @@ class ConfigManager:
             return isinstance(value, (int, float)) and float(value) > 0
         if key == "live_speech_pad_ms":
             return isinstance(value, int) and value >= 0
+        if key in {"ollama_context_window", "secondary_ollama_context_window"}:
+            if value is None:
+                return True
+            return isinstance(value, int) and value >= 1024
         if key == "theme" and value not in APP_THEMES:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in ["gemini", "openai", "anthropic", "ollama"]:

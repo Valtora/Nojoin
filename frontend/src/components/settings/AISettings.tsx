@@ -57,6 +57,8 @@ const WHISPER_MODELS = [
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
 
+const DEFAULT_OLLAMA_CONTEXT_WINDOW = 131072;
+
 function isMaskedSecret(value: string | null | undefined): boolean {
   return Boolean(value && (value.includes("...") || value.includes("***")));
 }
@@ -137,6 +139,14 @@ export default function AISettings({
     return kind === "live"
       ? settings.gemini_live_model || ""
       : settings.gemini_model || "";
+  };
+
+  const parseContextWindow = (value: string): number => {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed)) {
+      return DEFAULT_OLLAMA_CONTEXT_WINDOW;
+    }
+    return Math.max(1024, parsed);
   };
 
   const updateSelectedModelForProvider = (
@@ -466,6 +476,30 @@ export default function AISettings({
                 </div>
               )}
 
+              {settings.llm_provider === "ollama" && (
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Ollama context window
+                  </label>
+                  <input
+                    type="number"
+                    min={1024}
+                    step={1024}
+                    value={settings.ollama_context_window || DEFAULT_OLLAMA_CONTEXT_WINDOW}
+                    onChange={(e) =>
+                      persistSettingsUpdate({
+                        ...settings,
+                        ollama_context_window: parseContextWindow(e.target.value),
+                      })
+                    }
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Passed to Ollama as <code>num_ctx</code> for full-context meeting prompts.
+                  </p>
+                </div>
+              )}
+
               {/* Model */}
               <div className={settings.llm_provider === "ollama" ? "" : "col-span-2 md:col-span-1"}>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
@@ -691,6 +725,27 @@ export default function AISettings({
                     />
                     <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   </div>
+                </div>
+              )}
+
+              {settings.secondary_llm_provider === "ollama" && (
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Secondary Ollama context window
+                  </label>
+                  <input
+                    type="number"
+                    min={1024}
+                    step={1024}
+                    value={settings.secondary_ollama_context_window || DEFAULT_OLLAMA_CONTEXT_WINDOW}
+                    onChange={(e) =>
+                      persistSettingsUpdate({
+                        ...settings,
+                        secondary_ollama_context_window: parseContextWindow(e.target.value),
+                      })
+                    }
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  />
                 </div>
               )}
 

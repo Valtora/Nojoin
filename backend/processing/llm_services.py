@@ -1601,6 +1601,7 @@ class OllamaLLMBackend(LLMBackend):
         self,
         api_url=None,
         model=None,
+        context_window: int | None = None,
         allow_private_api_url: bool = False,
     ):
         import requests
@@ -1618,6 +1619,26 @@ class OllamaLLMBackend(LLMBackend):
             trusted_url=trusted_api_url,
         )
         self.model = model or config_manager.get("ollama_model")
+        self.context_window = context_window or config_manager.get("ollama_context_window")
+
+    def _chat_options(self, *, temperature: float) -> dict[str, object]:
+        options: dict[str, object] = {"temperature": temperature}
+        context_window = getattr(self, "context_window", None)
+        if context_window:
+            options["num_ctx"] = int(context_window)
+        return options
+
+    @staticmethod
+    def _raise_if_truncated(response_metadata: dict | None) -> None:
+        if not response_metadata or response_metadata.get("done_reason") != "length":
+            return
+        prompt_eval_count = response_metadata.get("prompt_eval_count")
+        eval_count = response_metadata.get("eval_count")
+        raise RuntimeError(
+            "Ollama stopped because the context window was exhausted "
+            f"(prompt_eval_count={prompt_eval_count}, eval_count={eval_count}). "
+            "Increase the Ollama context window or select a model with a larger context."
+        )
 
     def _get(self, path: str, **kwargs):
         return self.requests.get(
@@ -1669,11 +1690,13 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
-            text = resp.json().get('message', {}).get('content', '')
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            text = response_json.get('message', {}).get('content', '')
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (speaker suggestions): {e}")
@@ -1709,11 +1732,13 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
-            text = resp.json().get('message', {}).get('content', '')
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            text = response_json.get('message', {}).get('content', '')
             return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting notes): {e}")
@@ -1738,11 +1763,13 @@ class OllamaLLMBackend(LLMBackend):
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
-            text = resp.json().get('message', {}).get('content', '')
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            text = response_json.get('message', {}).get('content', '')
             try:
                 return self.parse_automatic_meeting_intelligence_result(text, request)
             except JSON_CONTRACT_ERRORS as parse_error:
@@ -1765,11 +1792,13 @@ class OllamaLLMBackend(LLMBackend):
                     ],
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0.0},
+                    "options": self._chat_options(temperature=0.0),
                 }
                 repair_resp = self._post("/api/chat", json=repair_payload, timeout=timeout)
                 repair_resp.raise_for_status()
-                repair_text = repair_resp.json().get('message', {}).get('content', '')
+                repair_json = repair_resp.json()
+                self._raise_if_truncated(repair_json)
+                repair_text = repair_json.get('message', {}).get('content', '')
                 return self.parse_automatic_meeting_intelligence_result(repair_text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting intelligence): {e}")
@@ -1791,11 +1820,13 @@ class OllamaLLMBackend(LLMBackend):
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
-            text = resp.json().get('message', {}).get('content', '')
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            text = response_json.get('message', {}).get('content', '')
             try:
                 return self.parse_meeting_edge_result(text, request)
             except JSON_CONTRACT_ERRORS as parse_error:
@@ -1818,11 +1849,13 @@ class OllamaLLMBackend(LLMBackend):
                     ],
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0.0},
+                    "options": self._chat_options(temperature=0.0),
                 }
                 repair_resp = self._post("/api/chat", json=repair_payload, timeout=timeout)
                 repair_resp.raise_for_status()
-                repair_text = repair_resp.json().get('message', {}).get('content', '')
+                repair_json = repair_resp.json()
+                self._raise_if_truncated(repair_json)
+                repair_text = repair_json.get('message', {}).get('content', '')
                 return self.parse_meeting_edge_result(repair_text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (Meeting Edge): {e}")
@@ -1850,11 +1883,13 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
-            return resp.json().get('message', {}).get('content', '')
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            return response_json.get('message', {}).get('content', '')
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (chat): {e}")
             raise RuntimeError(f"Ollama API error (chat): {e}")
@@ -1881,21 +1916,25 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": messages,
                 "stream": True,
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, stream=True, timeout=timeout)
             resp.raise_for_status()
             
             import json
+            final_metadata = None
             for line in resp.iter_lines():
                 if line:
                     try:
                         chunk = json.loads(line)
+                        if chunk.get("done"):
+                            final_metadata = chunk
                         content = chunk.get('message', {}).get('content', '')
                         if content:
                             yield content
                     except json.JSONDecodeError:
                         pass
+            self._raise_if_truncated(final_metadata)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (streaming chat): {e}")
             raise RuntimeError(f"Ollama API error (streaming chat): {e}")
@@ -1911,11 +1950,13 @@ class OllamaLLMBackend(LLMBackend):
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.2}
+                "options": self._chat_options(temperature=0.3)
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
-            text = resp.json().get('message', {}).get('content', '')
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            text = response_json.get('message', {}).get('content', '')
             return self.parse_title(text)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting title): {e}")
@@ -1948,6 +1989,7 @@ def get_llm_backend(
     api_key=None,
     model=None,
     api_url=None,
+    context_window: int | None = None,
     allow_private_api_url: bool = False,
 ):
     """
@@ -1982,6 +2024,7 @@ def get_llm_backend(
         return OllamaLLMBackend(
             api_url=api_url,
             model=model,
+            context_window=context_window,
             allow_private_api_url=allow_private_api_url,
         )
     else:
@@ -2027,10 +2070,10 @@ class SecondaryLLMBackend(LLMBackend):
                 raise primary_exc
 
     def _stream_with_secondary(self, method_name: str, *args, **kwargs):
+        has_yielded = False
         try:
             gen = getattr(self._primary, method_name)(*args, **kwargs)
             first_chunk = next(gen)
-            has_yielded = False
             try:
                 yield first_chunk
                 has_yielded = True
@@ -2041,6 +2084,8 @@ class SecondaryLLMBackend(LLMBackend):
         except StopIteration:
             return
         except Exception as primary_exc:
+            if has_yielded:
+                raise primary_exc
             logger.warning(
                 "Primary LLM (%s) failed on streaming %s: %s. Falling back to secondary (%s).",
                 getattr(self._primary, 'model', 'unknown'),
@@ -2106,6 +2151,7 @@ def get_llm_backend_with_secondary(
         api_key=primary_config.api_key,
         model=primary_config.model,
         api_url=primary_config.api_url,
+        context_window=primary_config.context_window,
     )
 
     secondary_cfg = primary_config.secondary_config()
@@ -2118,6 +2164,7 @@ def get_llm_backend_with_secondary(
             api_key=secondary_cfg.api_key,
             model=secondary_cfg.model,
             api_url=secondary_cfg.api_url,
+            context_window=secondary_cfg.context_window,
         )
         return SecondaryLLMBackend(primary=primary, secondary=secondary)
     except Exception as exc:

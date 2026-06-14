@@ -1934,6 +1934,8 @@ async def chat_with_meeting(
                 user_msg = "You have exceeded your AI provider's rate limit or quota. Please check your billing or try again later."
             elif "timeout" in error_msg or "deadline" in error_msg:
                 user_msg = "The AI provider took too long to respond. Please try again."
+            elif "context window was exhausted" in error_msg or "done_reason=length" in error_msg:
+                user_msg = "The Ollama context window was exhausted before a full answer could be generated. Increase the Ollama context window or choose a larger-context model."
             else:
                 user_msg = "An internal error occurred while communicating with the AI service. Please try again."
                 

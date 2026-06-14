@@ -48,6 +48,7 @@ class SettingsUpdate(BaseModel):
     ollama_model: Optional[str] = None
     ollama_live_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
+    ollama_context_window: Optional[int] = None
     secondary_llm_provider: Optional[str] = None
     secondary_gemini_model: Optional[str] = None
     secondary_gemini_live_model: Optional[str] = None
@@ -58,6 +59,7 @@ class SettingsUpdate(BaseModel):
     secondary_ollama_model: Optional[str] = None
     secondary_ollama_live_model: Optional[str] = None
     secondary_ollama_api_url: Optional[str] = None
+    secondary_ollama_context_window: Optional[int] = None
     secondary_gemini_api_key: Optional[str] = None
     secondary_openai_api_key: Optional[str] = None
     secondary_anthropic_api_key: Optional[str] = None
@@ -121,6 +123,15 @@ class SettingsUpdate(BaseModel):
                 return validate_ollama_api_url(value, allow_private=True)
             except OllamaURLValidationError as exc:
                 raise ValueError(str(exc)) from exc
+        return value
+
+    @field_validator('ollama_context_window', 'secondary_ollama_context_window')
+    @classmethod
+    def validate_ollama_context_window(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return value
+        if value < 1024:
+            raise ValueError("Ollama context window must be at least 1024 tokens.")
         return value
 
     @field_validator('timezone')

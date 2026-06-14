@@ -26,6 +26,7 @@ SYSTEM_LLM_FIELDS = (
     "ollama_model",
     "ollama_live_model",
     "ollama_api_url",
+    "ollama_context_window",
     "secondary_llm_provider",
     "secondary_gemini_model",
     "secondary_gemini_live_model",
@@ -36,6 +37,7 @@ SYSTEM_LLM_FIELDS = (
     "secondary_ollama_model",
     "secondary_ollama_live_model",
     "secondary_ollama_api_url",
+    "secondary_ollama_context_window",
     "secondary_gemini_api_key",
     "secondary_openai_api_key",
     "secondary_anthropic_api_key",
@@ -76,10 +78,12 @@ class ResolvedLLMConfig:
     model: str | None
     api_url: str | None
     merged_config: dict[str, Any]
+    context_window: int | None = None
     secondary_provider: str | None = None
     secondary_api_key: str | None = None
     secondary_model: str | None = None
     secondary_api_url: str | None = None
+    secondary_context_window: int | None = None
     secondary_live_model: str | None = None
 
     def missing_configuration_message(self) -> str | None:
@@ -112,6 +116,7 @@ class ResolvedLLMConfig:
             api_key=self.secondary_api_key,
             model=self.secondary_model,
             api_url=self.secondary_api_url,
+            context_window=self.secondary_context_window,
             merged_config=self.merged_config,
         )
 
@@ -158,18 +163,23 @@ def _merge_llm_config(
     api_key = merged.get(f"{provider}_api_key")
     model = _resolve_model_for_purpose(merged, provider, purpose)
     api_url = merged.get("ollama_api_url")
+    context_window = _normalise_context_window(merged.get("ollama_context_window")) if provider == "ollama" else None
 
     # Resolve secondary provider
     secondary_provider = merged.get("secondary_llm_provider") or None
     secondary_api_key = None
     secondary_model = None
     secondary_api_url = None
+    secondary_context_window = None
     secondary_live_model = None
 
     if secondary_provider:
         secondary_api_key = merged.get(f"secondary_{secondary_provider}_api_key")
         secondary_model = _resolve_secondary_model_for_purpose(merged, secondary_provider, purpose)
         secondary_api_url = merged.get("secondary_ollama_api_url") if secondary_provider == "ollama" else None
+        secondary_context_window = _normalise_context_window(
+            merged.get("secondary_ollama_context_window")
+        ) if secondary_provider == "ollama" else None
         secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
         if secondary_live_model_field:
             secondary_live_model = merged.get(secondary_live_model_field)
@@ -179,11 +189,13 @@ def _merge_llm_config(
         api_key=str(api_key) if api_key else None,
         model=str(model) if model else None,
         api_url=str(api_url) if api_url else None,
+        context_window=context_window,
         merged_config=merged,
         secondary_provider=secondary_provider,
         secondary_api_key=str(secondary_api_key) if secondary_api_key else None,
         secondary_model=str(secondary_model) if secondary_model else None,
         secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
+        secondary_context_window=secondary_context_window,
         secondary_live_model=str(secondary_live_model) if secondary_live_model else None,
     )
 
@@ -219,6 +231,18 @@ def _resolve_secondary_model_for_purpose(
     return merged.get(main_model_field)
 
 
+def _normalise_context_window(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        context_window = int(value)
+    except (TypeError, ValueError):
+        return None
+    if context_window < 1024:
+        return None
+    return context_window
+
+
 def _apply_owner_provider_override(
     config: ResolvedLLMConfig,
     owner_settings: Mapping[str, Any] | None,
@@ -243,17 +267,22 @@ def _apply_owner_provider_override(
     api_key = merged.get(f"{provider}_api_key")
     model = _resolve_model_for_purpose(merged, provider, purpose)
     api_url = merged.get("ollama_api_url")
+    context_window = _normalise_context_window(merged.get("ollama_context_window")) if provider == "ollama" else None
 
     secondary_provider = merged.get("secondary_llm_provider") or None
     secondary_api_key = None
     secondary_model = None
     secondary_api_url = None
+    secondary_context_window = None
     secondary_live_model = None
 
     if secondary_provider:
         secondary_api_key = merged.get(f"secondary_{secondary_provider}_api_key")
         secondary_model = _resolve_secondary_model_for_purpose(merged, secondary_provider, purpose)
         secondary_api_url = merged.get("secondary_ollama_api_url") if secondary_provider == "ollama" else None
+        secondary_context_window = _normalise_context_window(
+            merged.get("secondary_ollama_context_window")
+        ) if secondary_provider == "ollama" else None
         secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
         if secondary_live_model_field:
             secondary_live_model = merged.get(secondary_live_model_field)
@@ -263,11 +292,13 @@ def _apply_owner_provider_override(
         api_key=str(api_key) if api_key else None,
         model=str(model) if model else None,
         api_url=str(api_url) if api_url else None,
+        context_window=context_window,
         merged_config=merged,
         secondary_provider=secondary_provider,
         secondary_api_key=str(secondary_api_key) if secondary_api_key else None,
         secondary_model=str(secondary_model) if secondary_model else None,
         secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
+        secondary_context_window=secondary_context_window,
         secondary_live_model=str(secondary_live_model) if secondary_live_model else None,
     )
 

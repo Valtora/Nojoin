@@ -341,6 +341,7 @@ export interface Settings {
   ollama_model?: string;
   ollama_live_model?: string | null;
   ollama_api_url?: string;
+  ollama_context_window?: number;
   secondary_llm_provider?: string | null;
   secondary_gemini_model?: string | null;
   secondary_gemini_live_model?: string | null;
@@ -351,6 +352,7 @@ export interface Settings {
   secondary_ollama_model?: string | null;
   secondary_ollama_live_model?: string | null;
   secondary_ollama_api_url?: string;
+  secondary_ollama_context_window?: number;
   secondary_gemini_api_key?: string;
   secondary_openai_api_key?: string;
   secondary_anthropic_api_key?: string;
