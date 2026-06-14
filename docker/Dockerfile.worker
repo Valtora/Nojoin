@@ -53,12 +53,15 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
+ENV MALLOC_ARENA_MAX=2
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 # Install system runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     libpq5 \
+    libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy virtual environment from builder
@@ -82,4 +85,4 @@ USER appuser
 ENTRYPOINT ["backend/worker_entrypoint.sh"]
 
 # Default command for worker
-CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "--loglevel=info", "--pool=solo", "--concurrency=1"]

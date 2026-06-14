@@ -141,6 +141,11 @@ services:
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
       XDG_CACHE_HOME: /home/appuser/.cache
       HF_HOME: /home/appuser/.cache/huggingface
+      OMP_NUM_THREADS: 2
+      MKL_NUM_THREADS: 2
+      OPENBLAS_NUM_THREADS: 2
+      VECLIB_MAXIMUM_THREADS: 2
+      NUMEXPR_NUM_THREADS: 2
     # Remove this block for CPU-only deployments.
     deploy:
       resources:
