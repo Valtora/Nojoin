@@ -246,6 +246,9 @@ async def log_capture_source_report(
             "Capture source report for recording %s (user %s): "
             "attempt=%s outcome=%s mode=%s requested_microphone_device_id=%s "
             "requested_microphone_label=%s shared_audio_available=%s "
+            "configured_microphone_gain=%s configured_system_gain=%s "
+            "configured_echo_cancellation=%s configured_noise_suppression=%s "
+            "configured_auto_gain_control=%s "
             "failure_code=%s failure_message=%s available_microphones=%s "
             "browser_microphone_track=%s browser_display_audio_track=%s "
             "browser_display_video_track=%s notes=%s"
@@ -258,6 +261,11 @@ async def log_capture_source_report(
         payload.requested_microphone_device_id,
         payload.requested_microphone_label,
         payload.shared_audio_available,
+        payload.configured_microphone_gain,
+        payload.configured_system_gain,
+        payload.configured_echo_cancellation,
+        payload.configured_noise_suppression,
+        payload.configured_auto_gain_control,
         payload.failure_code,
         payload.failure_message,
         [device.model_dump() for device in payload.available_microphones],

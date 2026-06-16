@@ -1,5 +1,10 @@
-import type { CaptureMode } from "./shared";
 import {
+  DEFAULT_CAPTURE_SETTINGS,
+  type CaptureMode,
+  type CaptureSettings,
+} from "./shared";
+import {
+  describeCaptureSettings,
   describeTrack,
   listAvailableMicrophones,
   type CaptureSourceReportSnapshot,
@@ -35,6 +40,7 @@ export class PickSourceError extends Error {
 export interface PickSourceOptions {
   mode?: CaptureMode;
   microphoneDeviceId?: string | null;
+  settings: CaptureSettings;
   mediaDevices?: MediaDevices;
 }
 
@@ -102,6 +108,7 @@ const buildCaptureReportSnapshot = (options: {
   availableMicrophones: Awaited<ReturnType<typeof listAvailableMicrophones>>;
   displayStream: MediaStream | null;
   microphoneStream: MediaStream | null;
+  settings: CaptureSettings;
   notes?: string[];
 }): CaptureSourceReportSnapshot => ({
   mode: options.mode,
@@ -119,6 +126,7 @@ const buildCaptureReportSnapshot = (options: {
   ),
   shared_audio_available:
     (options.displayStream?.getAudioTracks().length ?? 0) > 0,
+  ...describeCaptureSettings(options.settings),
   notes: [...(options.notes ?? [])],
 });
 
@@ -141,7 +149,7 @@ const readMediaDevices = (
 };
 
 export const pickCaptureSource = async (
-  options: PickSourceOptions = {},
+  options: PickSourceOptions = { settings: DEFAULT_CAPTURE_SETTINGS },
 ): Promise<PickedCaptureSources> => {
   const mode = options.mode ?? "shared_audio";
   const mediaDevices = readMediaDevices(mode, options.mediaDevices);
@@ -178,6 +186,7 @@ export const pickCaptureSource = async (
         availableMicrophones,
         displayStream: null,
         microphoneStream: null,
+        settings: options.settings,
         notes: ["selected_microphone_missing_from_enumerated_devices"],
       }),
     );
@@ -206,6 +215,7 @@ export const pickCaptureSource = async (
             availableMicrophones,
             displayStream: null,
             microphoneStream: null,
+            settings: options.settings,
             notes: ["display_picker_cancelled"],
           }),
         );
@@ -223,6 +233,7 @@ export const pickCaptureSource = async (
           availableMicrophones,
           displayStream: null,
           microphoneStream: null,
+          settings: options.settings,
           notes: ["display_capture_denied"],
         }),
       );
@@ -235,9 +246,9 @@ export const pickCaptureSource = async (
         deviceId: options.microphoneDeviceId
           ? { exact: options.microphoneDeviceId }
           : undefined,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
+        echoCancellation: options.settings.echoCancellation,
+        noiseSuppression: options.settings.noiseSuppression,
+        autoGainControl: options.settings.autoGainControl,
       },
     });
 
@@ -261,6 +272,7 @@ export const pickCaptureSource = async (
         availableMicrophones,
         displayStream,
         microphoneStream: null,
+        settings: options.settings,
         notes: [
           selectedDeviceUnavailable
             ? "selected_microphone_rejected_by_getUserMedia"
@@ -291,6 +303,7 @@ export const pickCaptureSource = async (
       availableMicrophones,
       displayStream,
       microphoneStream,
+      settings: options.settings,
       notes: ["microphone_device_id_mismatch_after_grant"],
     });
     stopTracks(displayStream);
@@ -309,6 +322,7 @@ export const pickCaptureSource = async (
     availableMicrophones,
     displayStream,
     microphoneStream,
+    settings: options.settings,
   });
 
   return {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { PickSourceError, pickCaptureSource } from "./pickSource";
+import { DEFAULT_CAPTURE_SETTINGS } from "./shared";
 
 const buildTrack = (kind: "audio" | "video", label: string, settings = {}) =>
   ({
@@ -59,6 +60,11 @@ describe("capture source picker", () => {
       mode: "shared_audio",
       mediaDevices,
       microphoneDeviceId: "mic-1",
+      settings: {
+        ...DEFAULT_CAPTURE_SETTINGS,
+        microphoneGain: 1.4,
+        systemGain: 0.9,
+      },
     });
 
     expect(sources.mode).toBe("shared_audio");
@@ -75,13 +81,15 @@ describe("capture source picker", () => {
       surfaceSwitching: "include",
     });
     expect(mediaDevices.getUserMedia).toHaveBeenCalledWith({
-      audio: {
-        deviceId: { exact: "mic-1" },
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-    });
+        audio: {
+          deviceId: { exact: "mic-1" },
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+    expect(sources.captureReport.configured_microphone_gain).toBe(1.4);
+    expect(sources.captureReport.configured_system_gain).toBe(0.9);
   });
 
   it("uses only the microphone source for microphone-only capture", async () => {
@@ -97,6 +105,7 @@ describe("capture source picker", () => {
     const sources = await pickCaptureSource({
       mode: "microphone_only",
       mediaDevices,
+      settings: DEFAULT_CAPTURE_SETTINGS,
     });
 
     expect(sources.mode).toBe("microphone_only");
@@ -121,6 +130,7 @@ describe("capture source picker", () => {
       pickCaptureSource({
         mode: "shared_audio",
         mediaDevices,
+        settings: DEFAULT_CAPTURE_SETTINGS,
       }),
     ).rejects.toMatchObject<Partial<PickSourceError>>({
       code: "display_cancelled",
@@ -148,6 +158,7 @@ describe("capture source picker", () => {
         mode: "microphone_only",
         mediaDevices,
         microphoneDeviceId: "mic-1",
+        settings: DEFAULT_CAPTURE_SETTINGS,
       }),
     ).rejects.toMatchObject<Partial<PickSourceError>>({
       code: "selected_microphone_unavailable",

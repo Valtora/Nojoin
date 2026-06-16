@@ -30,6 +30,11 @@ export interface CaptureLevels {
 
 export interface CaptureSettings {
   microphoneDeviceId: string | null;
+  microphoneGain: number;
+  systemGain: number;
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
 }
 
 export interface PausedCaptureContext {
@@ -72,6 +77,11 @@ export const DEFAULT_CAPTURE_LEVELS: CaptureLevels = {
 
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   microphoneDeviceId: null,
+  microphoneGain: 1,
+  systemGain: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
 };
 
 const CAPTURE_SETTINGS_STORAGE_KEY = "nojoin.capture.settings";
@@ -94,6 +104,28 @@ export const readCaptureSettings = (): CaptureSettings => {
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId
           : null,
+      microphoneGain:
+        typeof parsed.microphoneGain === "number" &&
+        Number.isFinite(parsed.microphoneGain)
+          ? parsed.microphoneGain
+          : DEFAULT_CAPTURE_SETTINGS.microphoneGain,
+      systemGain:
+        typeof parsed.systemGain === "number" &&
+        Number.isFinite(parsed.systemGain)
+          ? parsed.systemGain
+          : DEFAULT_CAPTURE_SETTINGS.systemGain,
+      echoCancellation:
+        typeof parsed.echoCancellation === "boolean"
+          ? parsed.echoCancellation
+          : DEFAULT_CAPTURE_SETTINGS.echoCancellation,
+      noiseSuppression:
+        typeof parsed.noiseSuppression === "boolean"
+          ? parsed.noiseSuppression
+          : DEFAULT_CAPTURE_SETTINGS.noiseSuppression,
+      autoGainControl:
+        typeof parsed.autoGainControl === "boolean"
+          ? parsed.autoGainControl
+          : DEFAULT_CAPTURE_SETTINGS.autoGainControl,
     };
   } catch {
     return DEFAULT_CAPTURE_SETTINGS;

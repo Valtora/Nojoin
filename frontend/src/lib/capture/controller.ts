@@ -196,6 +196,10 @@ export class CaptureController {
     };
 
     writeCaptureSettings(nextSettings);
+    this.runtime?.mixer.applySettings({
+      systemGain: nextSettings.systemGain,
+      microphoneGain: nextSettings.microphoneGain,
+    });
     this.setState({ settings: nextSettings });
   };
 
@@ -267,6 +271,7 @@ export class CaptureController {
       sources = await pickCaptureSource({
         mode: resolveCaptureMode(support),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
+        settings: this.state.settings,
       });
 
       if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
@@ -428,6 +433,7 @@ export class CaptureController {
       sources = await pickCaptureSource({
         mode: resolveCaptureMode(support),
         microphoneDeviceId: this.state.settings.microphoneDeviceId,
+        settings: this.state.settings,
       });
 
       if (sources.displayStream && sources.displayStream.getAudioTracks().length === 0) {
@@ -568,6 +574,8 @@ export class CaptureController {
     const mixer = await createCaptureMixer({
       displayStream: options.sources.displayStream,
       microphoneStream: options.sources.microphoneStream,
+      systemGain: this.state.settings.systemGain,
+      microphoneGain: this.state.settings.microphoneGain,
     });
 
     const uploader = createSegmentUploader({

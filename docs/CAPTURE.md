@@ -145,6 +145,11 @@ Open **Settings > Capture** to configure:
 - Microphone device.
 - Shared audio gain.
 - Microphone gain.
+- Browser echo cancellation.
+- Browser noise suppression.
+- Browser automatic gain control.
+
+The Capture settings page also includes a local microphone input test so you can watch raw and gain-adjusted levels in real time before recording.
 
 These settings are stored in browser-local storage for the current cutover. They do not roam between browsers or devices.
 
@@ -162,7 +167,7 @@ The browser granted screen or tab visibility but no audio track. Start again and
 
 ### Live waveform is quiet
 
-Check that the meeting is producing audible sound, verify the browser share picker audio option, then adjust gain in **Settings > Capture**. If only your microphone appears, the shared tab/window/screen audio was not granted.
+Check that the meeting is producing audible sound, verify the browser share picker audio option, then adjust gain in **Settings > Capture**. Use the local microphone input test to verify mic lift before recording. If only your microphone appears, the shared tab/window/screen audio was not granted.
 
 ### Meeting Edge is still empty during capture
 

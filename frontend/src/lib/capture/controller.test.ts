@@ -63,7 +63,14 @@ vi.mock("./lifecycle", () => ({
 vi.mock("./shared", () => ({
   clearPausedCaptureContext: vi.fn(),
   DEFAULT_CAPTURE_LEVELS: { system: 0, microphone: 0, mixed: 0 },
-  readCaptureSettings: vi.fn(() => ({ microphoneDeviceId: null })),
+  readCaptureSettings: vi.fn(() => ({
+    microphoneDeviceId: null,
+    microphoneGain: 1,
+    systemGain: 1,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  })),
   readPausedCaptureContext: vi.fn(() => null),
   writeCaptureSettings: vi.fn(),
   writePausedCaptureContext: vi.fn(),
@@ -299,6 +306,14 @@ describe("capture controller", () => {
     expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledWith({
       mode: "microphone_only",
       microphoneDeviceId: null,
+      settings: {
+        microphoneDeviceId: null,
+        microphoneGain: 1,
+        systemGain: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
     });
     expect(controller.activateRuntime).toHaveBeenCalledWith({
       recordingId: "rec-1",

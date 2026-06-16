@@ -5,6 +5,7 @@ export interface CaptureMixer {
   microphoneAnalyser: AnalyserNode;
   mixedAnalyser: AnalyserNode;
   updateAutomaticGain: () => void;
+  applySettings: (settings: Pick<CreateCaptureMixerOptions, "systemGain" | "microphoneGain">) => void;
   getSystemGain: () => number;
   getMicrophoneGain: () => number;
   dispose: () => Promise<void>;
@@ -13,6 +14,8 @@ export interface CaptureMixer {
 export interface CreateCaptureMixerOptions {
   displayStream?: MediaStream | null;
   microphoneStream: MediaStream;
+  systemGain?: number;
+  microphoneGain?: number;
   audioContextFactory?: () => AudioContext;
 }
 
@@ -30,6 +33,7 @@ const AUTO_GAIN_SILENCE_PEAK = 0.03;
 const AUTO_GAIN_REDUCTION_BLEND = 0.3;
 const AUTO_GAIN_BOOST_BLEND = 0.04;
 const MIX_PEAK_TARGET = 0.9;
+const LOUDER_SOURCE_DOMINANCE_RATIO = 1.15;
 
 export const clampGain = (value: number) => {
   if (Number.isNaN(value)) {
@@ -40,8 +44,8 @@ export const clampGain = (value: number) => {
     return 0;
   }
 
-  if (value > 2) {
-    return 2;
+  if (value > 3) {
+    return 3;
   }
 
   return value;
@@ -153,10 +157,14 @@ export const createCaptureMixer = async (
   configureAnalyser(mixedAnalyser);
 
   const systemGainNode = context.createGain();
-  systemGainNode.gain.value = 1;
+  systemGainNode.gain.value = clampGain(options.systemGain ?? 1);
+  const systemAutomaticGainNode = context.createGain();
+  systemAutomaticGainNode.gain.value = 1;
 
   const microphoneGainNode = context.createGain();
-  microphoneGainNode.gain.value = 1;
+  microphoneGainNode.gain.value = clampGain(options.microphoneGain ?? 1);
+  const microphoneAutomaticGainNode = context.createGain();
+  microphoneAutomaticGainNode.gain.value = 1;
 
   const sourceMerger = context.createChannelMerger(2);
 
@@ -164,8 +172,10 @@ export const createCaptureMixer = async (
   microphoneSource.connect(microphoneAnalyser);
   systemSource.connect(systemGainNode);
   microphoneSource.connect(microphoneGainNode);
-  systemGainNode.connect(sourceMerger, 0, 0);
-  microphoneGainNode.connect(sourceMerger, 0, 1);
+  systemGainNode.connect(systemAutomaticGainNode);
+  microphoneGainNode.connect(microphoneAutomaticGainNode);
+  systemAutomaticGainNode.connect(sourceMerger, 0, 0);
+  microphoneAutomaticGainNode.connect(sourceMerger, 0, 1);
   sourceMerger.connect(mixedAnalyser);
   mixedAnalyser.connect(destination);
 
@@ -186,22 +196,31 @@ export const createCaptureMixer = async (
 
     if (mixedMetrics.peak > MIX_PEAK_TARGET) {
       const reduction = MIX_PEAK_TARGET / mixedMetrics.peak;
-      nextSystemGain = Math.min(
-        nextSystemGain,
-        systemGainNode.gain.value * reduction,
-      );
-      nextMicrophoneGain = Math.min(
-        nextMicrophoneGain,
-        microphoneGainNode.gain.value * reduction,
-      );
+      const systemDominant =
+        systemMetrics.peak >= microphoneMetrics.peak * LOUDER_SOURCE_DOMINANCE_RATIO;
+      const microphoneDominant =
+        microphoneMetrics.peak >= systemMetrics.peak * LOUDER_SOURCE_DOMINANCE_RATIO;
+
+      if (systemDominant || !microphoneDominant) {
+        nextSystemGain = Math.min(
+          nextSystemGain,
+          systemAutomaticGainNode.gain.value * reduction,
+        );
+      }
+      if (microphoneDominant) {
+        nextMicrophoneGain = Math.min(
+          nextMicrophoneGain,
+          microphoneAutomaticGainNode.gain.value * reduction,
+        );
+      }
     }
 
-    systemGainNode.gain.value = smoothAutomaticGain(
-      systemGainNode.gain.value,
+    systemAutomaticGainNode.gain.value = smoothAutomaticGain(
+      systemAutomaticGainNode.gain.value,
       nextSystemGain,
     );
-    microphoneGainNode.gain.value = smoothAutomaticGain(
-      microphoneGainNode.gain.value,
+    microphoneAutomaticGainNode.gain.value = smoothAutomaticGain(
+      microphoneAutomaticGainNode.gain.value,
       nextMicrophoneGain,
     );
   };
@@ -213,14 +232,24 @@ export const createCaptureMixer = async (
     microphoneAnalyser,
     mixedAnalyser,
     updateAutomaticGain,
-    getSystemGain: () => systemGainNode.gain.value,
-    getMicrophoneGain: () => microphoneGainNode.gain.value,
+    applySettings: (settings) => {
+      systemGainNode.gain.value = clampGain(settings.systemGain ?? 1);
+      microphoneGainNode.gain.value = clampGain(settings.microphoneGain ?? 1);
+    },
+    getSystemGain: () =>
+      clampGain(systemGainNode.gain.value * systemAutomaticGainNode.gain.value),
+    getMicrophoneGain: () =>
+      clampGain(
+        microphoneGainNode.gain.value * microphoneAutomaticGainNode.gain.value,
+      ),
     dispose: async () => {
       mixedAnalyser.disconnect();
       systemAnalyser.disconnect();
       microphoneAnalyser.disconnect();
       systemGainNode.disconnect();
       microphoneGainNode.disconnect();
+      systemAutomaticGainNode.disconnect();
+      microphoneAutomaticGainNode.disconnect();
       sourceMerger.disconnect();
       systemSource.disconnect();
       microphoneSource.disconnect();

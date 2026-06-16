@@ -202,6 +202,11 @@ class CaptureSourceReportCreate(SQLModel):
     browser_display_audio_track: Optional[CaptureTrackReport] = None
     browser_display_video_track: Optional[CaptureTrackReport] = None
     shared_audio_available: bool = False
+    configured_microphone_gain: float = 1.0
+    configured_system_gain: float = 1.0
+    configured_echo_cancellation: bool = True
+    configured_noise_suppression: bool = True
+    configured_auto_gain_control: bool = True
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None
     notes: List[str] = Field(default_factory=list)

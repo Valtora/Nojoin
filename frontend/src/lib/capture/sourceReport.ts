@@ -1,4 +1,5 @@
 import type { CaptureMode } from "./shared";
+import type { CaptureSettings } from "./shared";
 
 export interface CaptureDeviceReport {
   device_id: string;
@@ -23,6 +24,11 @@ export interface CaptureSourceReportSnapshot {
   browser_display_audio_track: CaptureTrackReport | null;
   browser_display_video_track: CaptureTrackReport | null;
   shared_audio_available: boolean;
+  configured_microphone_gain: number;
+  configured_system_gain: number;
+  configured_echo_cancellation: boolean;
+  configured_noise_suppression: boolean;
+  configured_auto_gain_control: boolean;
   notes: string[];
 }
 
@@ -143,3 +149,20 @@ export const logCaptureSourceReport = (
     report.outcome === "failure" ? console.warn : console.info;
   log("[capture] source report", report);
 };
+
+export const describeCaptureSettings = (
+  settings: CaptureSettings,
+): Pick<
+  CaptureSourceReportSnapshot,
+  | "configured_microphone_gain"
+  | "configured_system_gain"
+  | "configured_echo_cancellation"
+  | "configured_noise_suppression"
+  | "configured_auto_gain_control"
+> => ({
+  configured_microphone_gain: settings.microphoneGain,
+  configured_system_gain: settings.systemGain,
+  configured_echo_cancellation: settings.echoCancellation,
+  configured_noise_suppression: settings.noiseSuppression,
+  configured_auto_gain_control: settings.autoGainControl,
+});

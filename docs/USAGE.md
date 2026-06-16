@@ -199,7 +199,7 @@ Calendar events can provide meeting context, dashboard agenda views, linked reco
 Settings are grouped by task.
 
 - **Profile**: account details and password changes.
-- **Capture**: microphone selection, shared-audio gain, and microphone gain for browser recording.
+- **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
 - **AI**: provider configuration, model choices, automatic meeting intelligence, Meeting Edge model selection, and secondary LLM provider fallback.
 - **Transcription**: transcription backend and model choices.
 - **Calendar**: user calendar connections and timezone behavior.

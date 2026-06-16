@@ -153,6 +153,24 @@ describe("capture mixer", () => {
     expect(mixer.getMicrophoneGain()).toBeGreaterThan(1);
   });
 
+  it("applies explicit baseline source gains", async () => {
+    const mixer = await createCaptureMixer({
+      displayStream: {} as MediaStream,
+      microphoneStream: {} as MediaStream,
+      systemGain: 1.6,
+      microphoneGain: 2.2,
+      audioContextFactory: () => new FakeAudioContext() as unknown as AudioContext,
+    });
+
+    expect(mixer.getSystemGain()).toBeCloseTo(1.6, 5);
+    expect(mixer.getMicrophoneGain()).toBeCloseTo(2.2, 5);
+
+    mixer.applySettings({ systemGain: 0.75, microphoneGain: 1.25 });
+
+    expect(mixer.getSystemGain()).toBeCloseTo(0.75, 5);
+    expect(mixer.getMicrophoneGain()).toBeCloseTo(1.25, 5);
+  });
+
   it("computes bounded automatic gain targets", () => {
     expect(computeAutomaticGainTarget({ rms: 0, peak: 0 })).toBe(1);
     expect(computeAutomaticGainTarget({ rms: 0.02, peak: 0.04 })).toBe(1.8);
@@ -161,6 +179,6 @@ describe("capture mixer", () => {
 
   it("downmixes a synthetic two-source fixture into mono amplitude", () => {
     expect(mixToMonoAmplitude(0.8, 0.2, 1.5, 0.5)).toBeCloseTo(0.65, 5);
-    expect(mixToMonoAmplitude(0.6, 0.4, 2.5, -1)).toBeCloseTo(0.6, 5);
+    expect(mixToMonoAmplitude(0.6, 0.4, 2.5, -1)).toBeCloseTo(0.75, 5);
   });
 });
