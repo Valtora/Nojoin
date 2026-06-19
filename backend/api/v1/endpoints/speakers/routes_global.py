@@ -43,6 +43,7 @@ from .helpers import (
     _persist_segments_for_speaker_work,
 )
 import backend.api.v1.endpoints.speakers as speakers_module
+from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -471,7 +472,7 @@ async def recalibrate_voiceprint(
         user_settings = current_user.settings or {}
         hf_token = user_settings.get("hf_token") or speakers_module.config_manager.get("hf_token")
         
-        target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
+        target_audio = select_recording_audio_for_embedding(rec)
         if not target_audio:
             logger.warning(
                 f"Skipping recalibration segments for recording {recording_public_id}: no audio file available"
@@ -648,7 +649,7 @@ async def split_speaker(
         
         if not existing_rs:
             seg_tuples = [(s.start, s.end) for s in segments]
-            target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
+            target_audio = select_recording_audio_for_embedding(rec)
             
             task = speakers_module.celery_app.send_task(
                 "backend.worker.tasks.extract_embedding_task",
@@ -716,7 +717,7 @@ async def split_speaker(
                 remaining_seg_tuples.append((t_seg['start'], t_seg['end']))
         
         if remaining_seg_tuples:
-            target_audio = rec.audio_path if rec.audio_path and os.path.exists(rec.audio_path) else rec.proxy_path
+            target_audio = select_recording_audio_for_embedding(rec)
             task = speakers_module.celery_app.send_task(
                 "backend.worker.tasks.extract_embedding_task",
                 args=[target_audio, remaining_seg_tuples, device_str, hf_token]

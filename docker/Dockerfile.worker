@@ -36,9 +36,10 @@ RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2 -c constraints.txt
 
 # Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
-# pulls the CPU-only onnxruntime; replace it with onnxruntime-gpu
+# pulls the CPU-only onnxruntime; replace it with a CUDA-12-compatible
+# onnxruntime-gpu build that matches this image's CUDA 12.6 runtime.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
-    pip install --no-cache-dir onnxruntime-gpu
+    pip install --no-cache-dir onnxruntime-gpu==1.20.2
 
 # Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
 # kernels instead of falling back to slower CPU implementations. The base PyTorch

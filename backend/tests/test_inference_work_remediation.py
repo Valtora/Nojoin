@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -133,6 +134,28 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE p_tags (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME,
+        updated_at DATETIME,
+        name VARCHAR,
+        color VARCHAR,
+        user_id INTEGER,
+        parent_id INTEGER
+    )
+    """,
+    """
+    CREATE TABLE people_tags (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME,
+        updated_at DATETIME,
+        global_speaker_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        FOREIGN KEY(global_speaker_id) REFERENCES global_speakers(id),
+        FOREIGN KEY(tag_id) REFERENCES p_tags(id)
+    )
+    """,
+    """
     CREATE TABLE chat_messages (
         id INTEGER PRIMARY KEY,
         created_at DATETIME,
@@ -247,6 +270,22 @@ async def seed_data(test_session_maker: sessionmaker) -> None:
         )
         await session.commit()
 
+
+async def set_recording_media_paths(
+    test_session_maker: sessionmaker,
+    *,
+    audio_path: str,
+    proxy_path: str | None,
+) -> None:
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recordings SET audio_path = :audio_path, proxy_path = :proxy_path WHERE id = 21"
+            ),
+            {"audio_path": audio_path, "proxy_path": proxy_path},
+        )
+        await session.commit()
+
 @pytest.mark.anyio
 @patch("backend.api.v1.endpoints.transcripts.get_llm_backend_with_secondary")
 async def test_chat_delegates_embedding_to_celery(
@@ -350,6 +389,107 @@ async def test_extract_all_voiceprints_timeout(
     assert len(res_data["results"]) == 1
     assert res_data["results"][0]["success"] is False
     assert "timed out" in res_data["results"][0]["error"]
+
+
+@pytest.mark.anyio
+async def test_voiceprint_extract_prefers_proxy_for_browser_capture_audio(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    await seed_data(test_session_maker)
+    override_current_user(1)
+
+    audio_path = tmp_path / "recording.webm"
+    proxy_path = tmp_path / "recording.mp3"
+    audio_path.write_bytes(b"webm")
+    proxy_path.write_bytes(b"mp3")
+    await set_recording_media_paths(
+        test_session_maker,
+        audio_path=str(audio_path),
+        proxy_path=str(proxy_path),
+    )
+
+    captured_args: list[list] = []
+
+    def fake_send_task(task_name: str, args: list | None = None, **_: object):
+        captured_args.append(list(args or []))
+
+        class _TaskResult:
+            def get(self, timeout=None):
+                return [0.1, 0.2]
+
+        return _TaskResult()
+
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    monkeypatch.setattr(speakers_module.celery_app, "send_task", fake_send_task)
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/rec-public-21/speakers/LIVE_00/voiceprint/extract"
+    )
+
+    assert response.status_code == 200
+    assert captured_args
+    assert captured_args[0][0] == str(proxy_path)
+
+
+@pytest.mark.anyio
+async def test_global_recalibrate_prefers_proxy_for_browser_capture_audio(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    await seed_data(test_session_maker)
+    override_current_user(1)
+
+    audio_path = tmp_path / "recording.webm"
+    proxy_path = tmp_path / "recording.mp3"
+    audio_path.write_bytes(b"webm")
+    proxy_path.write_bytes(b"mp3")
+    await set_recording_media_paths(
+        test_session_maker,
+        audio_path=str(audio_path),
+        proxy_path=str(proxy_path),
+    )
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO global_speakers (id, created_at, updated_at, name, embedding, user_id, is_voiceprint_locked) "
+                "VALUES (51, :now, :now, 'Dana', '[0.9, 0.8]', 1, 0)"
+            ),
+            {"now": TEST_TIMESTAMP},
+        )
+        await session.commit()
+
+    captured_args: list[list] = []
+
+    def fake_send_task(task_name: str, args: list | None = None, **_: object):
+        captured_args.append(list(args or []))
+
+        class _TaskResult:
+            def get(self, timeout=None):
+                return [0.1, 0.2]
+
+        return _TaskResult()
+
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    monkeypatch.setattr(speakers_module.celery_app, "send_task", fake_send_task)
+
+    response = await client.post(
+        "/api/v1/speakers/51/recalibrate",
+        json=[{"recording_id": "rec-public-21", "start": 0.0, "end": 5.0}],
+    )
+
+    assert response.status_code == 200
+    assert captured_args
+    assert captured_args[0][0] == str(proxy_path)
 
 @patch("backend.processing.text_embedding.get_text_embedding_service")
 def test_worker_text_embedding_task(mock_get_service):

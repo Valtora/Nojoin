@@ -1,7 +1,7 @@
 import logging
 import os
+from typing import Any
 from typing import List, Union
-from fastembed import TextEmbedding
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 
 class TextEmbeddingService:
     _instance = None
-    _model = None
+    _model: Any = None
 
     @classmethod
     def get_instance(cls):
@@ -25,6 +25,7 @@ class TextEmbeddingService:
         if self._model is None:
             logger.info(f"Loading text embedding model: {MODEL_NAME}")
             try:
+                from fastembed import TextEmbedding
                 self._model = TextEmbedding(
                     model_name=MODEL_NAME,
                     providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -34,6 +35,7 @@ class TextEmbeddingService:
                     f"Failed to load text embedding model with GPU, falling back to CPU: {e}"
                 )
                 try:
+                    from fastembed import TextEmbedding
                     self._model = TextEmbedding(model_name=MODEL_NAME)
                 except Exception as e_cpu:
                     logger.error(f"Failed to load text embedding model: {e_cpu}")

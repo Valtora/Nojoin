@@ -29,6 +29,7 @@ from .helpers import (
     _load_segments_for_speaker_work,
 )
 import backend.api.v1.endpoints.speakers as speakers_module
+from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ async def extract_voiceprint(
     user_settings = current_user.settings or {}
     hf_token = user_settings.get("hf_token") or speakers_module.config_manager.get("hf_token")
     
-    target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
+    target_audio = select_recording_audio_for_embedding(recording)
     task = speakers_module.celery_app.send_task(
         "backend.worker.tasks.extract_embedding_task",
         args=[target_audio, speaker_segments, device_str, hf_token]
@@ -343,7 +344,7 @@ async def extract_all_voiceprints(
         user_settings = current_user.settings or {}
         hf_token = user_settings.get("hf_token") or speakers_module.config_manager.get("hf_token")
         
-        target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
+        target_audio = select_recording_audio_for_embedding(recording)
         task = speakers_module.celery_app.send_task(
             "backend.worker.tasks.extract_embedding_task",
             args=[target_audio, speaker_segments, device_str, hf_token]

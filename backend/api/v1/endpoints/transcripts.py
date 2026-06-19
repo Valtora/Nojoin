@@ -1025,9 +1025,8 @@ async def update_segment_speaker(
         )
 
         try:
-            target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
             target_speaker_id = refreshed_segment.get("recording_speaker_id")
-            if target_audio and target_speaker_id is not None:
+            if target_speaker_id is not None:
                 start = refreshed_segment["start"]
                 end = refreshed_segment["end"]
                 duration = end - start
@@ -1257,8 +1256,7 @@ async def update_segment_speaker(
 
     # 6. Update Embeddings (Active Learning)
     try:
-        target_audio = recording.audio_path if recording.audio_path and os.path.exists(recording.audio_path) else recording.proxy_path
-        if target_audio and target_speaker_id is not None:
+        if target_speaker_id is not None:
             start = segment['start']
             end = segment['end']
             duration = end - start

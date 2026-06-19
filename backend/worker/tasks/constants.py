@@ -119,7 +119,6 @@ from backend.utils.rolling_diarization import (
     get_rolling_diarization_model_name,
     persist_diarization_window_result,
 )
-from backend.processing.text_embedding import get_text_embedding_service
 
 if TYPE_CHECKING:
     from backend.processing.embedding import cosine_similarity, merge_embeddings

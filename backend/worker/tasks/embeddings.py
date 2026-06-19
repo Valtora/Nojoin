@@ -1,4 +1,5 @@
 from .constants import *
+from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
 @celery_app.task(name="backend.worker.tasks.update_speaker_embedding_task", base=DatabaseTask, bind=True)
 def update_speaker_embedding_task(self, recording_id: int, start: float, end: float, recording_speaker_id: int):
@@ -11,13 +12,10 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
     try:
         recording = session.get(Recording, recording_id)
         
-        target_audio = recording.audio_path
-        if not target_audio or not os.path.exists(target_audio):
-            if recording.proxy_path and os.path.exists(recording.proxy_path):
-                target_audio = recording.proxy_path
-            else:
-                logger.warning(f"Recording {recording_id} not found or audio missing.")
-                return
+        target_audio = select_recording_audio_for_embedding(recording)
+        if not target_audio:
+            logger.warning(f"Recording {recording_id} not found or audio missing.")
+            return
 
         target_recording_speaker = session.get(RecordingSpeaker, recording_speaker_id)
         if not target_recording_speaker:
