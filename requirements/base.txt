@@ -4,7 +4,7 @@ asyncpg==0.31.0
 python-dotenv==1.2.2
 python-jose[cryptography]==3.5.0
 argon2-cffi==25.1.0
-python-multipart==0.0.27
+python-multipart==0.0.31
 aiofiles==25.1.0
 requests==2.33.1
 httpx==0.28.1
