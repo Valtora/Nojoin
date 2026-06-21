@@ -23,6 +23,9 @@ def _sample_request() -> AutomaticMeetingIntelligenceRequest:
         unresolved_speakers=("SPEAKER_00",),
         user_notes="Confirm the rollout date",
         prefer_short_titles=True,
+        output_language_instruction=(
+            "Write the meeting title and notes in English (British). Use British spelling."
+        ),
     )
 
 
@@ -71,6 +74,28 @@ class _FakeOllamaStreamResponse:
             yield json.dumps(chunk).encode("utf-8")
 
 
+def test_gemini_title_prompt_includes_output_language_instruction() -> None:
+    capture: dict[str, object] = {}
+
+    class FakeModels:
+        def generate_content(self, *, model: str, contents: str):
+            capture["contents"] = contents
+            return SimpleNamespace(text="Préparation du lancement")
+
+    backend = object.__new__(GeminiLLMBackend)
+    backend.model = "gemini-test"
+    backend.client = SimpleNamespace(models=FakeModels())
+
+    title = backend.infer_meeting_title(
+        "SPEAKER_00: Bonjour.",
+        output_language_instruction="Write the meeting title in French.",
+    )
+
+    assert title == "Préparation du lancement"
+    assert "# Output Language" in str(capture["contents"])
+    assert "in French" in str(capture["contents"])
+
+
 def test_gemini_generate_meeting_intelligence_uses_shared_contract() -> None:
     capture: dict[str, object] = {}
 
@@ -90,6 +115,7 @@ def test_gemini_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert result.title == "Launch Readiness Review"
     assert "## User Notes" in result.notes_markdown
     assert "- SPEAKER_00" in str(capture["contents"])
+    assert "English (British)" in str(capture["contents"])
 
 
 def test_openai_generate_meeting_intelligence_uses_shared_contract() -> None:
@@ -377,6 +403,7 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
         model = "gemini-flash-lite-latest"
 
         def generate_meeting_intelligence(self, request, prompt_template=None, timeout=60):
+            calls.append({"secondary_request": request})
             return AutomaticMeetingIntelligenceResult(
                 speaker_mapping={"SPEAKER_00": "Jordan"},
                 title="Fallback Notes",
@@ -389,4 +416,6 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
 
     assert result.title == "Fallback Notes"
     assert result.speaker_mapping == {"SPEAKER_00": "Jordan"}
-    assert len(calls) == 2
+    assert len(calls) == 3
+    assert calls[-1]["secondary_request"].output_language_instruction is not None
+    assert "English (British)" in calls[-1]["secondary_request"].output_language_instruction

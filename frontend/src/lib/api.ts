@@ -38,6 +38,7 @@ import {
   RecordingInfo,
   AsyncTaskStatus,
   DownloadProgress,
+  LanguageRegistry,
 } from "@/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -699,6 +700,11 @@ export const getSettings = async (): Promise<Settings> => {
 
 export const updateSettings = async (settings: Settings): Promise<Settings> => {
   const response = await api.post<Settings>("/settings", settings);
+  return response.data;
+};
+
+export const getLanguageOptions = async (): Promise<LanguageRegistry> => {
+  const response = await api.get<LanguageRegistry>("/settings/languages");
   return response.data;
 };
 

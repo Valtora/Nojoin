@@ -702,7 +702,9 @@ def _build_live_config() -> dict:
     return {
         "transcription_backend": backend,
         "parakeet_model": config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3"),
+        "canary_model": config_manager.get("canary_model", "nemo-canary-1b-v2"),
         "whisper_model_size": config_manager.get("whisper_model_size", "turbo"),
+        "transcription_language": config_manager.get("transcription_language", "auto"),
         "processing_device": config_manager.get("processing_device", "auto"),
         "context_window_s": config_manager.get("live_context_window_s", 5.0),
         "forced_max_s": config_manager.get("live_forced_max_s", DEFAULT_FORCED_MAX),
@@ -1186,9 +1188,17 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                             "parakeet_model",
                             live_config["parakeet_model"],
                         ),
+                        "canary_model": merged_config.get(
+                            "canary_model",
+                            live_config["canary_model"],
+                        ),
                         "whisper_model_size": merged_config.get(
                             "whisper_model_size",
                             live_config["whisper_model_size"],
+                        ),
+                        "transcription_language": merged_config.get(
+                            "transcription_language",
+                            live_config["transcription_language"],
                         ),
                         "processing_device": merged_config.get(
                             "processing_device",

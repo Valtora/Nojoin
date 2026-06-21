@@ -991,6 +991,7 @@ def process_recording_task(self, recording_id: int, force_title_regeneration: bo
             llm_config=llm_config,
             prefer_short_titles=merged_config.get("prefer_short_titles", True),
             device_suffix=device_suffix,
+            detected_transcription_language=(transcription_result or {}).get("language"),
         )
 
         # Update Recording Status
@@ -1162,15 +1163,23 @@ def check_queued_recordings(sender, **kwargs):
 
 
 def _final_asr_config_hash(merged_config: dict) -> str:
+    transcription_backend = str(
+        merged_config.get("transcription_backend", "whisper")
+    )
+    effective_language = resolve_transcription_language_code(
+        merged_config,
+        transcription_backend,
+    )
     return hashlib.sha256(
         "|".join(
             [
-                str(merged_config.get("transcription_backend", "whisper")),
+                transcription_backend,
                 str(merged_config.get("whisper_model_size", "turbo")),
                 str(merged_config.get("parakeet_model", "parakeet-tdt-0.6b-v3")),
                 str(merged_config.get("canary_model", "nemo-canary-1b-v2")),
                 str(merged_config.get("processing_device", "auto")),
                 str(bool(merged_config.get("use_gpu", True))),
+                str(effective_language or "auto"),
             ]
         ).encode("utf-8")
     ).hexdigest()
@@ -2260,6 +2269,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
     llm_config: ResolvedLLMConfig,
     prefer_short_titles: bool,
     device_suffix: str,
+    detected_transcription_language: str | None = None,
 ) -> AutomaticMeetingIntelligenceResult | None:
     cleaned_transcript = transcript_text.strip()
     meeting_context = _resolve_meeting_event_context(session, recording)
@@ -2334,12 +2344,18 @@ def _run_automatic_meeting_intelligence_stage_impl(
             )
         return None
 
+    language_preferences = resolve_language_preferences(
+        llm_config.merged_config,
+        transcription_backend=llm_config.merged_config.get("transcription_backend"),
+        detected_transcription_language=detected_transcription_language,
+    )
     request = AutomaticMeetingIntelligenceRequest(
         resolved_transcript=cleaned_transcript,
         unresolved_speakers=tuple(unresolved_speakers),
         user_notes=transcript.user_notes,
         prefer_short_titles=prefer_short_titles,
         meeting_context=meeting_context,
+        output_language_instruction=language_preferences.notes_language_instruction,
     )
 
     if task is not None:

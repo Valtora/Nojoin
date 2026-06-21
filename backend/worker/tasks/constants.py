@@ -52,6 +52,10 @@ from backend.utils.llm_config import (
     ResolvedLLMConfig,
     resolve_llm_config,
 )
+from backend.utils.languages import (
+    resolve_language_preferences,
+    resolve_transcription_language_code,
+)
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     merge_meeting_edge_concept_history,

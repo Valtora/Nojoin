@@ -59,12 +59,17 @@ def generate_notes_task(self, recording_id: int):
 
         # Call LLM Service
         llm = _llm_backend_from_config(llm_config)
+        language_preferences = resolve_language_preferences(
+            llm_config.merged_config,
+            transcription_backend=llm_config.merged_config.get("transcription_backend"),
+        )
         notes = llm.generate_meeting_notes(
             transcript_text,
             speaker_map,
             timeout=300,
             user_notes=transcript.user_notes,
             meeting_context=_resolve_meeting_event_context(session, recording),
+            output_language_instruction=language_preferences.notes_language_instruction,
         )
 
         # Save Notes

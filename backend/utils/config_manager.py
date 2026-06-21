@@ -12,6 +12,13 @@ from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
 )
+from backend.utils.languages import (
+    AUTO_TRANSCRIPTION_LANGUAGE,
+    DEFAULT_NOTES_LANGUAGE,
+    validate_custom_notes_language_instruction,
+    validate_notes_language,
+    validate_transcription_language,
+)
 from backend.utils.timezones import get_default_timezone_name
 from .path_manager import path_manager
 
@@ -184,6 +191,9 @@ DEFAULT_USER_SETTINGS = {
     "secondary_anthropic_api_key": None,  # Secondary Anthropic API key
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "prefer_short_titles": True, # Prefer short (3-5 words) meeting titles
+    "transcription_language": AUTO_TRANSCRIPTION_LANGUAGE,
+    "notes_language": DEFAULT_NOTES_LANGUAGE,
+    "notes_language_custom_instruction": "",
     "enable_vad": True, # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True, # Enable Speaker Diarization (who said what)
     "spellcheck_language": "en-GB", # Default spell check language for meeting notes
@@ -368,6 +378,12 @@ class ConfigManager:
             raise ValueError(f"Invalid whisper_model_size: {value}. Must be one of {WHISPER_MODEL_SIZES}")
         if key == "transcription_backend":
             return value in TRANSCRIPTION_BACKENDS
+        if key == "transcription_language":
+            validate_transcription_language(str(value))
+        if key == "notes_language":
+            validate_notes_language(str(value))
+        if key == "notes_language_custom_instruction":
+            validate_custom_notes_language_instruction(None if value is None else str(value))
         if key == "meeting_edge_context_level":
             return (
                 isinstance(value, int)

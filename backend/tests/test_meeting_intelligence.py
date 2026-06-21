@@ -115,7 +115,7 @@ def test_automatic_meeting_intelligence_request_rejects_duplicate_labels() -> No
         raise AssertionError("Expected MeetingIntelligenceContractError")
 
 
-def test_automatic_meeting_intelligence_result_requires_meeting_notes_header() -> None:
+def test_automatic_meeting_intelligence_result_requires_top_level_markdown_heading() -> None:
     try:
         AutomaticMeetingIntelligenceResult(
             speaker_mapping={"SPEAKER_00": "Alex"},
@@ -123,7 +123,7 @@ def test_automatic_meeting_intelligence_result_requires_meeting_notes_header() -
             notes_markdown="## Summary\nAll teams are ready.",
         )
     except MeetingIntelligenceContractError as exc:
-        assert "# Meeting Notes" in str(exc)
+        assert "top-level Markdown heading" in str(exc)
     else:
         raise AssertionError("Expected MeetingIntelligenceContractError")
 
@@ -134,6 +134,9 @@ def test_build_automatic_meeting_intelligence_prompt_includes_shared_sections() 
         unresolved_speakers=("SPEAKER_00", "SPEAKER_02"),
         user_notes="Confirm the rollout date",
         prefer_short_titles=True,
+        output_language_instruction=(
+            "Write the meeting title and notes in English (British). Use British spelling."
+        ),
     )
 
     prompt = build_automatic_meeting_intelligence_prompt(request)
@@ -144,6 +147,18 @@ def test_build_automatic_meeting_intelligence_prompt_includes_shared_sections() 
     assert "Confirm the rollout date" in prompt
     assert "3-5 words" in prompt
     assert "Return valid JSON only" in prompt
+    assert "English (British)" in prompt
+    assert "Keep any JSON keys exactly as specified" in prompt
+
+
+def test_automatic_meeting_intelligence_accepts_localized_top_level_heading() -> None:
+    result = AutomaticMeetingIntelligenceResult(
+        speaker_mapping={},
+        title="Préparation du lancement",
+        notes_markdown="# Notes de réunion\n\n## Résumé\nToutes les équipes sont prêtes.",
+    )
+
+    assert result.notes_markdown.startswith("# Notes de réunion")
 
 
 def test_get_speakers_eligible_for_llm_renaming_excludes_trusted_speakers() -> None:

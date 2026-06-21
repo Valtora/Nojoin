@@ -14,6 +14,7 @@ from backend.utils.meeting_notes import (
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
 )
+from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
@@ -112,7 +113,7 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping to replace generic labels.
         Returns the meeting notes as a string.
@@ -172,7 +173,7 @@ class LLMBackend:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
@@ -263,11 +264,11 @@ You are an expert meeting assistant. Analyze the diarized meeting transcript bel
 
 # CRITICAL FORMATTING REQUIREMENTS
 You MUST follow these formatting rules EXACTLY. Do not deviate:
-1. Use ONLY the section headers specified below, in the exact order given
+1. Use ONLY the section structure specified below, with headings translated into the requested output language
 2. Use Markdown formatting throughout
 3. Be thorough and detailed - notes may be as lengthy as required to capture all important content
 4. Do NOT add any introductory text, concluding remarks, or sections not specified below
-5. Start your response with "# Meeting Notes" - nothing before it
+5. Start your response with one top-level Markdown heading (`# ...`) in the requested output language - nothing before it
 6. Incorporate relevant user-authored notes into the appropriate sections when they add useful context or action items
 7. Do NOT add a separate appendix or label LLM-generated content as such; the application will surface the user-authored notes separately
 
@@ -280,24 +281,26 @@ You MUST follow these formatting rules EXACTLY. Do not deviate:
 # Meeting Context
 {meeting_context_section}
 
+{output_language_section}
+
 # OUTPUT FORMAT - Follow this EXACT structure:
 
-# Meeting Notes
+# [Localized meeting-notes heading]
 
-## Topics Discussed
+## [Localized Topics Discussed heading]
 List each major topic or theme discussed in the meeting as a bullet point. Be specific and descriptive.
 - Topic 1: Brief description
 - Topic 2: Brief description
 (continue for all topics)
 
-## Summary
+## [Localized Summary heading]
 Provide a comprehensive summary of the meeting covering:
 - The main purpose and context of the meeting
 - Key points raised by participants
 - Important information shared
 - Overall conclusions or outcomes reached
 
-## Detailed Notes
+## [Localized Detailed Notes heading]
 
 ### [Topic Name 1]
 Provide detailed notes on this topic including:
@@ -312,12 +315,12 @@ Provide detailed notes on this topic including:
 
 (Continue for all topics discussed)
 
-## Action Items / Tasks
+## [Localized Action Items / Tasks heading]
 List all tasks, action items, or follow-ups mentioned, formatted as:
 - [ ] Task description - Assigned to: [Person] - Due: [Date if mentioned, otherwise "TBD"]
 (If no tasks were discussed, write: "No specific action items were identified in this meeting.")
 
-## Miscellaneous
+## [Localized Miscellaneous heading]
 Capture any additional important information that doesn't fit the above categories:
 - Side discussions or tangential points of interest
 - Announcements or FYIs mentioned
@@ -333,7 +336,7 @@ Capture any additional important information that doesn't fit the above categori
 
 ---
 
-Now generate the meeting notes following the exact format specified above. Be comprehensive and capture all important details."""
+Now generate the meeting notes following the exact structure specified above, replacing bracketed heading descriptions with headings in the requested output language. Be comprehensive and capture all important details."""
 
     @staticmethod
     def get_default_title_prompt_template():
@@ -341,6 +344,7 @@ Now generate the meeting notes following the exact format specified above. Be co
             "You are an expert meeting assistant. Given the full meeting transcript below, "
             "provide a concise, descriptive title that summarises the main topic or purpose of the meeting. "
             "Limit the title to at most 12 words. Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
+            "{output_language_section}\n\n"
             "# Transcript\n\n{transcript}\n"
         )
 
@@ -428,12 +432,16 @@ Now generate the meeting notes following the exact format specified above. Be co
         speaker_mapping: Dict[str, str],
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
     ) -> str:
         return prompt_template.format(
             transcript=transcript,
             mapping_table=LLMBackend.mapping_to_markdown_table(speaker_mapping),
             user_notes_section=build_user_notes_prompt_section(user_notes),
             meeting_context_section=build_meeting_context_prompt_section(meeting_context),
+            output_language_section=build_output_language_prompt_section(
+                output_language_instruction
+            ),
         )
 
     @staticmethod
@@ -718,13 +726,13 @@ class GeminiLLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
         if not self.model:
             raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
@@ -884,14 +892,19 @@ class GeminiLLMBackend(LLMBackend):
             else:
                 raise RuntimeError(f"Gemini API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
         """
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(transcript=transcript)
+        prompt = prompt_template.format(
+            transcript=transcript,
+            output_language_section=build_output_language_prompt_section(
+                output_language_instruction
+            ),
+        )
         if not self.model:
             raise ValueError("No Gemini model configured. Please select a model in Settings.")
         try:
@@ -1012,13 +1025,13 @@ class OpenAILLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
@@ -1247,14 +1260,19 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API error (streaming chat): {e}")
             raise RuntimeError(f"OpenAI API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
         """
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(transcript=transcript)
+        prompt = prompt_template.format(
+            transcript=transcript,
+            output_language_section=build_output_language_prompt_section(
+                output_language_instruction
+            ),
+        )
         if not self.model:
             raise ValueError("No OpenAI model configured. Please select a model in Settings.")
         try:
@@ -1368,13 +1386,13 @@ class AnthropicLLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
         if not self.model:
             raise ValueError("No Anthropic model configured. Please select a model in Settings.")
         try:
@@ -1549,14 +1567,19 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (streaming chat): {e}")
             raise RuntimeError(f"Anthropic API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
         """
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(transcript=transcript)
+        prompt = prompt_template.format(
+            transcript=transcript,
+            output_language_section=build_output_language_prompt_section(
+                output_language_instruction
+            ),
+        )
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -1720,10 +1743,10 @@ class OllamaLLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None) -> str:
+    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context)
+        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
         if not self.model:
             raise ValueError("No Ollama model configured. Please select a model in Settings.")
         
@@ -1939,10 +1962,15 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API error (streaming chat): {e}")
             raise RuntimeError(f"Ollama API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60) -> str:
+    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(transcript=transcript)
+        prompt = prompt_template.format(
+            transcript=transcript,
+            output_language_section=build_output_language_prompt_section(
+                output_language_instruction
+            ),
+        )
         if not self.model:
             raise ValueError("No Ollama model configured. Please select a model in Settings.")
         try:
@@ -2107,11 +2135,11 @@ class SecondaryLLMBackend(LLMBackend):
     def generate_meeting_edge(self, request, prompt_template=None, timeout=60):
         return self._call_with_secondary("generate_meeting_edge", request, prompt_template, timeout)
 
-    def generate_meeting_notes(self, transcript, speaker_mapping, prompt_template=None, timeout=60, user_notes=None, meeting_context=None):
-        return self._call_with_secondary("generate_meeting_notes", transcript, speaker_mapping, prompt_template, timeout, user_notes=user_notes, meeting_context=meeting_context)
+    def generate_meeting_notes(self, transcript, speaker_mapping, prompt_template=None, timeout=60, user_notes=None, meeting_context=None, output_language_instruction=None):
+        return self._call_with_secondary("generate_meeting_notes", transcript, speaker_mapping, prompt_template, timeout, user_notes=user_notes, meeting_context=meeting_context, output_language_instruction=output_language_instruction)
 
-    def infer_meeting_title(self, transcript, prompt_template=None, timeout=60):
-        return self._call_with_secondary("infer_meeting_title", transcript, prompt_template, timeout)
+    def infer_meeting_title(self, transcript, prompt_template=None, timeout=60, output_language_instruction=None):
+        return self._call_with_secondary("infer_meeting_title", transcript, prompt_template, timeout, output_language_instruction=output_language_instruction)
 
     def ask_question_about_meeting(self, user_question, meeting_notes, diarized_transcript, conversation_history=None, timeout=60, recording_id=None):
         return self._call_with_secondary("ask_question_about_meeting", user_question, meeting_notes, diarized_transcript, conversation_history, timeout, recording_id=recording_id)

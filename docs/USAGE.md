@@ -206,6 +206,19 @@ Settings are grouped by task.
 - **Help**: tours and support surfaces.
 - **Admin**: user, system, provider, release, and maintenance settings for administrators.
 
+### Language Preferences
+
+Use **Settings > AI > Language preferences** to configure two independent choices:
+
+- **Transcription language** controls ASR. The default is **Auto-detect**. Whisper supports auto-detection or a forced language, Canary supports the listed forced languages, and Parakeet continues to use multilingual auto-detection without forced-language support.
+- **Notes generation language** controls AI-generated meeting titles, Markdown headings, summaries, detailed notes, and action items. The default is **English**. British English, American English, the transcription language, another listed language, or a custom language/style instruction can be selected.
+
+The LLM prompt and machine-readable response contract remain stable even when generated content is localized: JSON keys, speaker labels, and application-owned metadata are not translated.
+
+Changing the transcription language affects new transcription work. Use **Reprocess at higher quality** to rebuild an existing recording under a different transcription-language preference. Changing the notes language does not translate saved notes automatically; run **Generate Notes** or reprocess the meeting to generate new notes.
+
+Language preferences are per-user. Per-meeting overrides, full interface translation, Meeting Edge/chat language controls, and speech translation are not part of this setting.
+
 ### Secondary LLM Provider
 
 Nojoin supports configuring a secondary LLM provider as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat.

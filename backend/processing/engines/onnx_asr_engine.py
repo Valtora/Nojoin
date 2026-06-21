@@ -6,6 +6,7 @@ import logging
 import os
 
 from .base import TranscriptionEngine
+from ...utils.languages import resolve_transcription_language_code
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,13 @@ MAX_CHUNK_DURATION_S = 240.0
 CHUNK_SNAP_RADIUS_S = 18.0
 
 
-def map_onnx_asr_result(text: str, tokens: list[str] | None, timestamps: list[float] | None,
-                        audio_duration: float | None = None) -> dict:
+def map_onnx_asr_result(
+    text: str,
+    tokens: list[str] | None,
+    timestamps: list[float] | None,
+    audio_duration: float | None = None,
+    language: str | None = None,
+) -> dict:
     """Map an onnx-asr timestamped result into the canonical transcription schema.
 
     Args:
@@ -43,7 +49,7 @@ def map_onnx_asr_result(text: str, tokens: list[str] | None, timestamps: list[fl
     if not tokens or not timestamps or len(tokens) != len(timestamps):
         return {
             "text": text,
-            "language": None,
+            "language": language,
             "segments": ([{"start": 0.0, "end": audio_duration or 0.0, "text": text}] if text else []),
         }
 
@@ -82,7 +88,7 @@ def map_onnx_asr_result(text: str, tokens: list[str] | None, timestamps: list[fl
     if not words:
         return {
             "text": text,
-            "language": None,
+            "language": language,
             "segments": ([{"start": 0.0, "end": audio_duration or 0.0, "text": text}] if text else []),
         }
 
@@ -106,7 +112,7 @@ def map_onnx_asr_result(text: str, tokens: list[str] | None, timestamps: list[fl
             "words": [{"start": w["start"], "end": w["end"], "word": w["word"]} for w in group],
         })
 
-    return {"text": text, "language": None, "segments": result_segments}
+    return {"text": text, "language": language, "segments": result_segments}
 
 
 def _shift_segment(segment: dict, offset_s: float) -> dict:
@@ -171,6 +177,7 @@ class OnnxAsrEngine(TranscriptionEngine):
     default_model_id: str = ""
     # Optional Nojoin-id -> onnx-asr-id map. Empty when ids already match.
     onnx_id_map: dict[str, str] = {}
+    supports_forced_language: bool = False
 
     def __init__(self) -> None:
         # Cache for loaded models, keyed by onnx-asr model id.
@@ -218,6 +225,11 @@ class OnnxAsrEngine(TranscriptionEngine):
         try:
             model = self._get_model(config or {})
             recognizer = model.with_timestamps()
+            language_code = (
+                resolve_transcription_language_code(config, self.name)
+                if self.supports_forced_language
+                else None
+            )
 
             # Audio duration is optional; failure to read it must not abort, but
             # without it the audio cannot be safely chunked (single-pass only).
@@ -231,11 +243,21 @@ class OnnxAsrEngine(TranscriptionEngine):
             logger.info(f"Starting {self.name} transcription for {audio_path}")
 
             if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
-                result = self._transcribe_chunked(recognizer, audio_path, audio_duration)
+                result = self._transcribe_chunked(
+                    recognizer,
+                    audio_path,
+                    audio_duration,
+                    language_code=language_code,
+                )
             else:
-                recognized = recognizer.recognize(audio_path)
+                recognize_kwargs = {"language": language_code} if language_code else {}
+                recognized = recognizer.recognize(audio_path, **recognize_kwargs)
                 result = map_onnx_asr_result(
-                    recognized.text, recognized.tokens, recognized.timestamps, audio_duration
+                    recognized.text,
+                    recognized.tokens,
+                    recognized.timestamps,
+                    audio_duration,
+                    language_code,
                 )
 
             logger.info(f"{self.name} transcription completed for {audio_path}")
@@ -245,7 +267,14 @@ class OnnxAsrEngine(TranscriptionEngine):
             logger.error(f"Error during {self.name} transcription for {audio_path}: {e}", exc_info=True)
             return None
 
-    def _transcribe_chunked(self, recognizer, audio_path: str, audio_duration: float) -> dict:
+    def _transcribe_chunked(
+        self,
+        recognizer,
+        audio_path: str,
+        audio_duration: float,
+        *,
+        language_code: str | None = None,
+    ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
         Each window is at most MAX_CHUNK_DURATION_S long and its boundaries snap
@@ -280,7 +309,8 @@ class OnnxAsrEngine(TranscriptionEngine):
             handle.close()
             try:
                 soundfile.write(chunk_path, chunk, sample_rate)
-                recognized = recognizer.recognize(chunk_path)
+                recognize_kwargs = {"language": language_code} if language_code else {}
+                recognized = recognizer.recognize(chunk_path, **recognize_kwargs)
             finally:
                 try:
                     os.remove(chunk_path)
@@ -288,7 +318,11 @@ class OnnxAsrEngine(TranscriptionEngine):
                     pass
 
             chunk_result = map_onnx_asr_result(
-                recognized.text, recognized.tokens, recognized.timestamps, chunk_duration
+                recognized.text,
+                recognized.tokens,
+                recognized.timestamps,
+                chunk_duration,
+                language_code,
             )
             if chunk_result["text"]:
                 texts.append(chunk_result["text"])
@@ -298,7 +332,11 @@ class OnnxAsrEngine(TranscriptionEngine):
                 f"({offset_s:.0f}s +{chunk_duration:.0f}s)."
             )
 
-        return {"text": " ".join(texts), "language": None, "segments": segments}
+        return {
+            "text": " ".join(texts),
+            "language": language_code,
+            "segments": segments,
+        }
 
     def release(self) -> None:
         """Release all loaded models from memory."""

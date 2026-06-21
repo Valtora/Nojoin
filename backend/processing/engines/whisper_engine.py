@@ -11,6 +11,7 @@ import tqdm
 import threading
 
 from ...utils.config_manager import config_manager
+from ...utils.languages import resolve_transcription_language_code
 from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
@@ -233,12 +234,16 @@ class WhisperEngine(TranscriptionEngine):
 
             # condition_on_previous_text=False helps prevent hallucinations (e.g. "Thank you")
             # especially when there are silence gaps or non-speech segments.
-            result = model.transcribe(
-                audio_path,
-                fp16=use_fp16,
-                word_timestamps=enable_word_timestamps,
-                condition_on_previous_text=False
-            )
+            transcribe_kwargs = {
+                "fp16": use_fp16,
+                "word_timestamps": enable_word_timestamps,
+                "condition_on_previous_text": False,
+            }
+            language_code = resolve_transcription_language_code(config, self.name)
+            if language_code:
+                transcribe_kwargs["language"] = language_code
+
+            result = model.transcribe(audio_path, **transcribe_kwargs)
 
             logger.info(f"Transcription completed for {audio_path}. Detected language: {result.get('language')}")
             # logger.debug(f"Transcription result: {result}") # Can be very verbose

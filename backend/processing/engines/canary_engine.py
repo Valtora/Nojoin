@@ -11,4 +11,5 @@ class CanaryEngine(OnnxAsrEngine):
     name = "canary"
     config_key = "canary_model"
     default_model_id = "nemo-canary-1b-v2"
+    supports_forced_language = True
     # onnx_id_map empty: the Nojoin model id is already the onnx-asr name.

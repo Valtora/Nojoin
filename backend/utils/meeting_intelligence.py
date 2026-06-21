@@ -14,6 +14,7 @@ from backend.utils.meeting_notes import (
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
 )
+from backend.utils.languages import build_output_language_prompt_section
 
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
@@ -46,24 +47,26 @@ Your task is to produce one valid JSON object that combines:
 # Meeting Context
 {meeting_context_section}
 
+{output_language_section}
+
 # Required JSON Schema
 {{
     "speaker_mapping": {{
         "SPEAKER_00": "Person name or role"
     }},
     "title": "Meeting title",
-    "notes_markdown": "# Meeting Notes\\n\\n## Topics Discussed\\n..."
+    "notes_markdown": "# Localized meeting-notes heading\\n\\n## Localized section heading\\n..."
 }}
 
 # Notes Markdown Requirements
 - Use Markdown.
-- Start with `# Meeting Notes`.
-- Use this exact section order:
-    1. `## Topics Discussed`
-    2. `## Summary`
-    3. `## Detailed Notes`
-    4. `## Action Items / Tasks`
-    5. `## Miscellaneous`
+- Start with exactly one top-level Markdown heading (`# ...`) in the requested output language.
+- Use localized equivalents of this section order:
+    1. Topics Discussed
+    2. Summary
+    3. Detailed Notes
+    4. Action Items / Tasks
+    5. Miscellaneous
 - Incorporate relevant user-authored notes into the body where they materially improve accuracy.
 - Do not add a separate appendix for user notes.
 
@@ -101,6 +104,7 @@ class AutomaticMeetingIntelligenceRequest:
     user_notes: str | None = None
     prefer_short_titles: bool = True
     meeting_context: MeetingEventContext | None = None
+    output_language_instruction: str | None = None
 
     def __post_init__(self) -> None:
         transcript = self.resolved_transcript.strip()
@@ -118,10 +122,20 @@ class AutomaticMeetingIntelligenceRequest:
             )
 
         normalized_user_notes = self.user_notes.strip() if self.user_notes else None
+        normalized_output_language_instruction = (
+            self.output_language_instruction.strip()
+            if self.output_language_instruction
+            else None
+        )
 
         object.__setattr__(self, "resolved_transcript", transcript)
         object.__setattr__(self, "unresolved_speakers", normalized_labels)
         object.__setattr__(self, "user_notes", normalized_user_notes or None)
+        object.__setattr__(
+            self,
+            "output_language_instruction",
+            normalized_output_language_instruction or None,
+        )
 
     @property
     def has_unresolved_speakers(self) -> bool:
@@ -153,9 +167,9 @@ class AutomaticMeetingIntelligenceResult:
                 "notes_markdown must be a non-empty string"
             )
 
-        if not notes_markdown.startswith("# Meeting Notes"):
+        if not re.match(r"^#\s+\S", notes_markdown):
             raise MeetingIntelligenceContractError(
-                "notes_markdown must start with '# Meeting Notes'"
+                "notes_markdown must start with a top-level Markdown heading"
             )
 
         object.__setattr__(self, "speaker_mapping", normalized_mapping)
@@ -187,6 +201,7 @@ def build_automatic_meeting_intelligence_request(
     user_notes: str | None = None,
     prefer_short_titles: bool = True,
     meeting_context: MeetingEventContext | None = None,
+    output_language_instruction: str | None = None,
 ) -> AutomaticMeetingIntelligenceRequest:
     return AutomaticMeetingIntelligenceRequest(
         resolved_transcript=resolved_transcript,
@@ -194,6 +209,7 @@ def build_automatic_meeting_intelligence_request(
         user_notes=user_notes,
         prefer_short_titles=prefer_short_titles,
         meeting_context=meeting_context,
+        output_language_instruction=output_language_instruction,
     )
 
 
@@ -242,6 +258,9 @@ def build_automatic_meeting_intelligence_prompt(
         ),
         title_preference_instruction=build_title_preference_instruction(
             request.prefer_short_titles
+        ),
+        output_language_section=build_output_language_prompt_section(
+            request.output_language_instruction
         ),
     )
 

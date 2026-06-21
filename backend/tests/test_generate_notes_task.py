@@ -240,12 +240,14 @@ def test_generate_notes_task_completes_with_saved_provider_config(
             timeout: int = 60,
             user_notes: str | None = None,
             meeting_context=None,
+            output_language_instruction: str | None = None,
         ) -> str:
             captured["transcript"] = transcript
             captured["speaker_mapping"] = speaker_mapping
             captured["timeout"] = timeout
             captured["user_notes"] = user_notes
             captured["meeting_context"] = meeting_context
+            captured["output_language_instruction"] = output_language_instruction
             return "# Meeting Notes\n\n## Summary\nGenerated notes."
 
     def fake_get_llm_backend(provider: str, api_key=None, model=None, api_url=None, **kwargs):
@@ -276,6 +278,7 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         assert primary_call["model"] == "claude-test"
         assert captured["timeout"] == 300
         assert captured["user_notes"] == "Remember the launch date"
+        assert "English" in captured["output_language_instruction"]
     finally:
         verification_engine.dispose()
 
@@ -344,6 +347,7 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
             timeout: int = 60,
             user_notes: str | None = None,
             meeting_context=None,
+            output_language_instruction: str | None = None,
         ) -> str:
             captured["transcript"] = transcript
             captured["speaker_mapping"] = speaker_mapping

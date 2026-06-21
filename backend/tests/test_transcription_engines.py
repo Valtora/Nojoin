@@ -107,6 +107,30 @@ def test_whisper_engine_emits_canonical_schema(monkeypatch):
         assert "text" in segment
 
 
+def test_whisper_engine_passes_forced_language(monkeypatch):
+    from backend.processing.engines import whisper_engine
+    from backend.processing.engines.whisper_engine import WhisperEngine
+
+    captured = {}
+
+    class _FakeModel:
+        def transcribe(self, audio_path, **kwargs):
+            captured.update(kwargs)
+            return {"text": "bonjour", "language": "fr", "segments": []}
+
+    monkeypatch.setattr(whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel())
+    monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(whisper_engine, "_model_cache", {})
+
+    result = WhisperEngine().transcribe(
+        "meeting.wav",
+        {"transcription_language": "fr"},
+    )
+
+    assert result["language"] == "fr"
+    assert captured["language"] == "fr"
+
+
 def test_release_model_cache_calls_engines():
     """release_model_cache delegates to every instantiated engine."""
     fake = _FakeEngine("whisper")
@@ -287,3 +311,59 @@ def test_onnx_asr_chunks_long_audio(tmp_path, monkeypatch):
     assert starts == sorted(starts)
     assert starts[0] == 0.0
     assert starts[1] >= onnx_asr_engine.MAX_CHUNK_DURATION_S - onnx_asr_engine.CHUNK_SNAP_RADIUS_S
+
+
+def test_canary_passes_forced_language_to_recognizer(tmp_path, monkeypatch):
+    from backend.processing.engines.canary_engine import CanaryEngine
+
+    audio_path = tmp_path / "canary.wav"
+    _write_silence(audio_path, 1)
+    calls = []
+
+    class _Recognizer:
+        def recognize(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return _FakeRecognized()
+
+    class _Model:
+        def with_timestamps(self):
+            return _Recognizer()
+
+    engine = CanaryEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _Model())
+
+    result = engine.transcribe(
+        str(audio_path),
+        {"transcription_language": "fr"},
+    )
+
+    assert calls == [(str(audio_path), {"language": "fr"})]
+    assert result["language"] == "fr"
+
+
+def test_parakeet_ignores_forced_language(tmp_path, monkeypatch):
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    audio_path = tmp_path / "parakeet.wav"
+    _write_silence(audio_path, 1)
+    calls = []
+
+    class _Recognizer:
+        def recognize(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return _FakeRecognized()
+
+    class _Model:
+        def with_timestamps(self):
+            return _Recognizer()
+
+    engine = ParakeetEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _Model())
+
+    result = engine.transcribe(
+        str(audio_path),
+        {"transcription_language": "fr"},
+    )
+
+    assert calls == [(str(audio_path), {})]
+    assert result["language"] is None

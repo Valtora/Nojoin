@@ -166,6 +166,7 @@ The system provides the following core capabilities:
   - **No Upload Limits:** Large files are automatically split into 10MB chunks during upload to bypass proxy limits and ensure reliability. There are no artificial file size caps.
 - **Transcription & Diarization:** Async processing using Whisper (Transcription) and Pyannote (Diarization).
   - **Transcription Engine Choices:** Whisper remains the broad-coverage default. Parakeet provides much faster transcription on supported NVIDIA systems, with a tradeoff of slightly lower accuracy and fewer supported languages. Normal live and final transcription use the same selected engine so live transcript work can be reused; different-engine transcription is handled through manual reprocessing.
+  - **Transcription Language Preference:** Each user can leave source language on automatic detection or select a supported language. Whisper and Canary support forced-language operation; Parakeet remains automatic-only. The effective language participates in ASR reuse and cache identity.
   - **Live Pipeline Coverage:** Browser-live ASR coverage and rolling speaker-window diarization coverage are tracked independently, so live transcript availability does not imply every speaker-window pass has completed.
   - **Live/Final Reuse:** Final processing may reuse live text and speaker decisions only after stable-id or clear overlap alignment. Manual transcript and speaker edits remain authoritative.
   - **Phantom Speaker Filter:** Post-diarization stage that detects and reassigns segments caused by non-speech audio (notification sounds, background noise) to prevent phantom "UNKNOWN" speaker assignments. Uses heuristic detection validated by embedding similarity analysis.
@@ -179,6 +180,7 @@ The system provides the following core capabilities:
   - **Recalibrate Voiceprint:** Manual flow to select "Gold Standard" audio samples to redefine a speaker's voiceprint.
   - **Voiceprint Locking:** Prevent automated updates to manually verified voiceprints.
 - **Meeting Intelligence:** Provider-gated automatic AI enhancement via one LLM call that can return unresolved speaker suggestions, a meeting title, and Markdown meeting notes, plus separate Chat Q&A.
+  - **Generated Content Language:** Users can independently choose English, British English, American English, the transcription language, another supported language, or a validated custom language/style requirement for generated titles and notes. Prompt control instructions and JSON keys remain stable while user-visible title and Markdown content localize.
   - **Secondary LLM Provider Fallback:** A secondary LLM provider can be configured as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat. The secondary provider has its own independent configuration (provider, model, live model, API key, Ollama URL).
   - **Manual AI Actions:** `Generate Notes` remains a notes-only manual action, and `Retry Speaker Inference` remains a speaker-only manual action.
   - **Meeting Edge Live Guidance:** A separate low-latency Meeting Edge flow uses recent live transcript context to generate real-time questions, missed points, and concept help during in-flight meetings.
@@ -199,6 +201,7 @@ The system provides the following core capabilities:
   - **People Page:** The main navigation exposes **People** between **Tasks** and **Recordings**. This page supports shared speaker-library management, including people tags and batch maintenance workflows.
   - **Planned Expansion:** Future iterations are expected to derive richer agenda/task automation (such as auto-creating dashboard tasks) directly from meeting outcomes and action items.
 - **Settings:** Comprehensive server and user configuration.
+  - **Language Scope:** Language preferences are per-user and apply to ASR plus generated meeting titles/notes. Per-meeting overrides, interface localization, Meeting Edge/chat language controls, speech translation, and automatic translation of existing notes remain out of scope.
 - **Updates & Releases:** Built-in Settings page for installed version visibility from the current API build, release history, and release notes sourced from GitHub Releases.
 - **Backup & Restore:** Full system backup capabilities including database records, Task List and Tasks page items, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
 

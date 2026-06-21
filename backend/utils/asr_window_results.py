@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from backend.models.pipeline import RecordingAsrWindowResult, RecordingAsrWindowResultStatus
 from backend.utils.time import utc_now
+from backend.utils.languages import resolve_transcription_language_code
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,13 @@ def get_transcription_model_name(config: dict[str, Any] | None) -> str | None:
 def build_recording_asr_window_result_config_hash(config: dict[str, Any] | None) -> str:
     normalized = dict(config or {})
     backend = str(normalized.get("transcription_backend") or "whisper")
+    effective_language = resolve_transcription_language_code(normalized, backend)
     payload = {
         "transcription_backend": backend,
         "model_name": get_transcription_model_name(normalized),
         "processing_device": normalized.get("processing_device", "auto"),
         "use_gpu": bool(normalized.get("use_gpu", True)),
+        "transcription_language": effective_language or "auto",
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")

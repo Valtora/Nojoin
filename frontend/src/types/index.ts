@@ -322,6 +322,9 @@ export interface Settings {
   transcription_backend?: string;
   parakeet_model?: string;
   canary_model?: string;
+  transcription_language?: string;
+  notes_language?: string;
+  notes_language_custom_instruction?: string;
   enable_live_transcription?: boolean;
   enable_meeting_edge?: boolean;
   meeting_edge_context_level?: number;
@@ -366,6 +369,27 @@ export interface Settings {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
+}
+
+export interface LanguageChoice {
+  code: string;
+  label: string;
+  forced_engines?: string[];
+}
+
+export interface TranscriptionEngineLanguageCapability {
+  forced_language: boolean;
+  guidance: string;
+}
+
+export interface LanguageRegistry {
+  transcription_languages: LanguageChoice[];
+  notes_languages: LanguageChoice[];
+  custom_instruction_max_length: number;
+  engine_capabilities: Record<
+    "whisper" | "canary" | "parakeet",
+    TranscriptionEngineLanguageCapability
+  >;
 }
 
 export type CalendarProvider = "google" | "microsoft";

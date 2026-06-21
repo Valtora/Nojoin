@@ -65,6 +65,10 @@ Admin-only sections let you:
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared automatically, and repo-bundled model assets remain read-only in the UI.
 
+Each user can also configure **Language preferences** in **Settings > AI**. Transcription defaults to automatic language detection, while generated meeting titles and notes default to English. Whisper supports forced language selection, Canary supports its listed language set, and Parakeet remains automatic-only. The selected effective transcription language is part of the ASR reuse key, so cached/live transcript work is not reused across incompatible language settings.
+
+Notes-language choices include British and American English, the transcription language, listed languages, and a validated custom language/style instruction. These choices localize generated content while preserving machine-readable JSON keys and speaker labels. Existing saved transcripts and notes are not translated in place; users must reprocess or run **Generate Notes** after changing the relevant preference.
+
 ### Backup and Restore
 
 Use **Settings > Administration > Backup and restore** for export and restore operations.

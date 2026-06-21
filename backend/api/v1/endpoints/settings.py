@@ -23,6 +23,13 @@ from backend.utils.config_manager import (
     strip_legacy_automatic_ai_settings,
 )
 from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
+from backend.utils.languages import (
+    get_language_registry_payload,
+    validate_custom_notes_language_instruction,
+    validate_language_settings,
+    validate_notes_language,
+    validate_transcription_language,
+)
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
@@ -37,6 +44,9 @@ class SettingsUpdate(BaseModel):
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None
     canary_model: Optional[str] = None
+    transcription_language: Optional[str] = None
+    notes_language: Optional[str] = None
+    notes_language_custom_instruction: Optional[str] = None
     enable_live_transcription: Optional[bool] = None
     theme: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -83,6 +93,27 @@ class SettingsUpdate(BaseModel):
         if value and value not in TRANSCRIPTION_BACKENDS:
             raise ValueError(f"Invalid transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}")
         return value
+
+    @field_validator('transcription_language')
+    @classmethod
+    def validate_transcription_language(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return validate_transcription_language(value)
+
+    @field_validator('notes_language')
+    @classmethod
+    def validate_notes_language(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return validate_notes_language(value)
+
+    @field_validator('notes_language_custom_instruction')
+    @classmethod
+    def validate_notes_language_custom_instruction(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return validate_custom_notes_language_instruction(value)
 
     @field_validator('theme')
     @classmethod
@@ -332,6 +363,10 @@ async def _save_user_settings(
             )
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
+        candidate_language_settings = get_default_user_settings()
+        candidate_language_settings.update(current_settings)
+        candidate_language_settings.update(update_data)
+        validate_language_settings(candidate_language_settings)
     except ValueError as e:
         raise sanitized_http_exception(
             logger=logger,
@@ -420,6 +455,15 @@ async def update_settings(
     Update user settings.
     """
     return await _save_user_settings(settings, current_user, db)
+
+
+@router.get("/languages", response_model=Any)
+async def get_language_options(
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Return the language choices and ASR capability metadata used by Settings."""
+    del current_user
+    return get_language_registry_payload()
 
 
 # --- Personal Dictionary ---
