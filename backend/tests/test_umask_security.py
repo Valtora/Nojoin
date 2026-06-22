@@ -1,7 +1,5 @@
 import os
-import stat
-from pathlib import Path
-import pytest
+
 from backend import setup_secure_umask
 from backend.utils.path_manager import PathManager
 
@@ -61,7 +59,7 @@ def test_repair_data_permissions(tmp_path, monkeypatch):
     _reset_path_manager_singleton()
     monkeypatch.setattr(PathManager, "_get_project_root", lambda self: tmp_path)
     monkeypatch.setattr(PathManager, "_is_containerized_runtime", lambda self: True)
-    
+
     manager = PathManager()
     # Override user data directory to a temp path we control
     user_data_dir = tmp_path / "data"

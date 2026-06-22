@@ -19,7 +19,6 @@ from backend.core.security import (
 from backend.main import create_app
 from backend.models.user import UserCreate, UserPasswordUpdate, UserUpdate
 
-
 SECURE_TEST_BASE_URL = "https://test"
 
 
@@ -65,7 +64,9 @@ def _has_validation_error(
     return False
 
 
-def _has_response_validation_error(response, *, field_name: str, message_fragment: str) -> bool:
+def _has_response_validation_error(
+    response, *, field_name: str, message_fragment: str
+) -> bool:
     detail = response.json().get("detail", [])
     return any(
         isinstance(item, dict)
@@ -129,7 +130,9 @@ def test_user_update_rejects_short_passwords() -> None:
     )
 
 
-def test_user_password_update_allows_short_current_password_for_grandfathered_users() -> None:
+def test_user_password_update_allows_short_current_password_for_grandfathered_users() -> (
+    None
+):
     password_update = UserPasswordUpdate(
         current_password="short",
         new_password="validpass",
@@ -158,7 +161,9 @@ async def test_register_rejects_all_whitespace_passwords() -> None:
     app = create_app(app_lifespan=None)
     app.dependency_overrides[get_db] = _override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         response = await client.post(
             "/api/v1/users/register",
             json={
@@ -187,7 +192,9 @@ async def test_create_user_rejects_short_passwords() -> None:
         force_password_change=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         response = await client.post(
             "/api/v1/users/",
             json={
@@ -216,7 +223,9 @@ async def test_update_user_password_rejects_all_whitespace_passwords() -> None:
         force_password_change=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         response = await client.patch(
             "/api/v1/users/1",
             json={
@@ -245,7 +254,9 @@ async def test_update_password_me_rejects_all_whitespace_new_passwords() -> None
         hashed_password=get_password_hash("legacy1"),
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         response = await client.put(
             "/api/v1/users/me/password",
             json={
@@ -268,7 +279,9 @@ async def test_setup_rejects_short_passwords(monkeypatch) -> None:
     app.dependency_overrides[get_db] = _override_get_db
     monkeypatch.setenv("FIRST_RUN_PASSWORD", "bootstrap-secret")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         response = await client.post(
             "/api/v1/system/setup",
             headers={"Authorization": "Bootstrap bootstrap-secret"},
@@ -287,7 +300,9 @@ async def test_setup_rejects_short_passwords(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
-async def test_update_password_me_accepts_grandfathered_short_current_passwords() -> None:
+async def test_update_password_me_accepts_grandfathered_short_current_passwords() -> (
+    None
+):
     app = create_app(app_lifespan=None)
     session = _WritableSession()
 
@@ -307,7 +322,9 @@ async def test_update_password_me_accepts_grandfathered_short_current_passwords(
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = lambda: current_user
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         response = await client.put(
             "/api/v1/users/me/password",
             json={

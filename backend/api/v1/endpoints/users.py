@@ -1,17 +1,25 @@
-from typing import List, Any, Optional
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from sqlmodel import select
-from sqlalchemy import func, or_
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
 import logging
+from typing import Any, Optional
 
-from backend.api.deps import get_db, get_current_active_superuser, get_current_user
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+
+from backend.api.deps import get_current_active_superuser, get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.core.security import hash_user_password, verify_password
-from backend.models.user import User, UserCreate, UserRead, UserUpdate, UserPasswordUpdate, UserRole, UserList
 from backend.models.invitation import Invitation
 from backend.models.recording import Recording
+from backend.models.user import (
+    User,
+    UserCreate,
+    UserList,
+    UserPasswordUpdate,
+    UserRead,
+    UserRole,
+    UserUpdate,
+)
 from backend.seed_demo import seed_demo_data
 from backend.services.jwt_revocation_service import bump_user_token_version
 from backend.utils.invitation_roles import resolve_invitation_role
@@ -43,6 +51,7 @@ def resolve_created_user_privileges(
 
     return requested_role, bool(user_in.is_superuser and current_user.is_superuser)
 
+
 @router.post("/register", response_model=UserRead)
 async def register_user(
     *,
@@ -63,12 +72,16 @@ async def register_user(
 
     if not user_in.invite_code:
         raise HTTPException(status_code=400, detail="Invitation code required")
-        
+
     # Validate invite
-    query = select(Invitation).where(Invitation.code == user_in.invite_code).with_for_update()
+    query = (
+        select(Invitation)
+        .where(Invitation.code == user_in.invite_code)
+        .with_for_update()
+    )
     result = await db.execute(query)
     invitation = result.scalar_one_or_none()
-    
+
     if not invitation:
         raise HTTPException(status_code=404, detail="Invalid invitation code")
     if invitation.is_revoked:
@@ -83,7 +96,7 @@ async def register_user(
         invalid_detail="Invitation is invalid",
         owner_detail="Invitation is invalid",
     )
-        
+
     # Check if user exists
     query = select(User).where(User.username == user_in.username)
     result = await db.execute(query)
@@ -92,7 +105,7 @@ async def register_user(
             status_code=400,
             detail="The user with this username already exists in the system.",
         )
-    
+
     user = User(
         username=user_in.username,
         hashed_password=hash_user_password(user_in.password),
@@ -102,21 +115,22 @@ async def register_user(
         force_password_change=False,
     )
     db.add(user)
-    
+
     # Update invitation usage
     invitation.used_count += 1
     db.add(invitation)
-    
+
     await db.commit()
     await db.refresh(user)
-    
+
     # Seed demo data
     try:
         await seed_demo_data(user.id)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to seed demo data: {e}")
-    
+
     return user
+
 
 @router.get("", response_model=UserList)
 async def read_users_root(
@@ -129,9 +143,15 @@ async def read_users_root(
     """
     Retrieve users (root path). Only for admins and owners.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
         raise HTTPException(status_code=403, detail="Not authorized")
-    return await read_users(skip=skip, limit=limit, search=search, current_user=current_user, db=db)
+    return await read_users(
+        skip=skip, limit=limit, search=search, current_user=current_user, db=db
+    )
+
 
 @router.get("/", response_model=UserList)
 async def read_users(
@@ -144,15 +164,16 @@ async def read_users(
     """
     Retrieve users. Only for admins and owners.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
         raise HTTPException(status_code=403, detail="Not authorized")
-        
+
     query = select(User)
     if search:
-        query = query.where(
-            User.username.ilike(f"%{search}%")
-        )
-    
+        query = query.where(User.username.ilike(f"%{search}%"))
+
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar_one()
@@ -161,8 +182,9 @@ async def read_users(
     query = query.offset(skip).limit(limit).order_by(User.id)
     result = await db.execute(query)
     users = result.scalars().all()
-    
+
     return UserList(items=users, total=total)
+
 
 @router.post("/", response_model=UserRead)
 async def create_user(
@@ -174,7 +196,10 @@ async def create_user(
     """
     Create new user manually. Only for admins and owners.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Check if user exists
@@ -187,18 +212,18 @@ async def create_user(
         )
 
     role, is_superuser = resolve_created_user_privileges(current_user, user_in)
-    
+
     user = User(
         username=user_in.username,
         hashed_password=hash_user_password(user_in.password),
         is_superuser=is_superuser,
         role=role,
-        force_password_change=True, # Force password change for new users created by admin
+        force_password_change=True,  # Force password change for new users created by admin
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    
+
     # Seed demo data
     try:
         await seed_demo_data(user.id)
@@ -206,6 +231,7 @@ async def create_user(
         logger.warning(f"Failed to seed demo data: {e}")
 
     return user
+
 
 @router.delete("/{user_id}", response_model=UserRead)
 async def delete_user(
@@ -217,17 +243,20 @@ async def delete_user(
     """
     Delete a user. Only Admins and Owners.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
         raise HTTPException(status_code=403, detail="Not authorized")
-        
+
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-        
+
     # Prevent deleting self
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
-        
+
     # Prevent deleting owner (unless you are owner?)
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot delete the owner")
@@ -237,9 +266,13 @@ async def delete_user(
         result = await db.execute(query)
         admin_count = result.scalar_one()
         if admin_count <= 1:
-            raise HTTPException(status_code=400, detail="Cannot delete the last admin account")
+            raise HTTPException(
+                status_code=400, detail="Cannot delete the last admin account"
+            )
 
-    recordings_result = await db.execute(select(Recording).where(Recording.user_id == user_id))
+    recordings_result = await db.execute(
+        select(Recording).where(Recording.user_id == user_id)
+    )
     recordings = recordings_result.scalars().all()
 
     for recording in recordings:
@@ -249,7 +282,7 @@ async def delete_user(
             proxy_path=recording.proxy_path,
             logger=logger,
         )
-        
+
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")
         await db.delete(user)
@@ -266,6 +299,7 @@ async def delete_user(
             exc=e,
         )
 
+
 @router.patch("/{user_id}/role", response_model=UserRead)
 async def update_user_role(
     *,
@@ -277,20 +311,23 @@ async def update_user_role(
     """
     Update user role. Only Admins and Owners.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.OWNER] and not current_user.is_superuser:
+    if (
+        current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
+        and not current_user.is_superuser
+    ):
         raise HTTPException(status_code=403, detail="Not authorized")
-        
+
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     if role not in [UserRole.ADMIN, UserRole.USER, UserRole.OWNER]:
         raise HTTPException(status_code=400, detail="Invalid role")
-        
+
     # Prevent modifying owner
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot modify the owner")
-        
+
     # Prevent promoting to owner (only one owner usually, or manual DB change)
     if role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot promote to owner")
@@ -311,6 +348,7 @@ async def read_user_me(
     """
     return current_user
 
+
 @router.put("/me", response_model=UserRead)
 async def update_user_me(
     *,
@@ -327,16 +365,17 @@ async def update_user_me(
         result = await db.execute(query)
         existing_user = result.scalar_one_or_none()
         if existing_user and existing_user.id != current_user.id:
-             raise HTTPException(
+            raise HTTPException(
                 status_code=400,
                 detail="The user with this username already exists in the system.",
             )
         current_user.username = user_in.username
-        
+
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
 
 @router.put("/me/password", response_model=Any)
 async def update_password_me(
@@ -350,13 +389,14 @@ async def update_password_me(
     """
     if not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect password")
-    
+
     current_user.hashed_password = hash_user_password(body.new_password)
     current_user.force_password_change = False
     db.add(current_user)
     await bump_user_token_version(db, current_user, commit=False)
     await db.commit()
     return {"message": "Password updated successfully"}
+
 
 @router.patch("/{user_id}", response_model=UserRead)
 async def update_user(
@@ -375,13 +415,13 @@ async def update_user(
             status_code=404,
             detail="The user with this id does not exist in the system",
         )
-    
+
     if user_in.username:
         query = select(User).where(User.username == user_in.username)
         result = await db.execute(query)
         existing_user = result.scalar_one_or_none()
         if existing_user and existing_user.id != user_id:
-             raise HTTPException(
+            raise HTTPException(
                 status_code=400,
                 detail="The user with this username already exists in the system.",
             )
@@ -390,9 +430,9 @@ async def update_user(
     bump_required = False
     if user_in.password:
         user.hashed_password = hash_user_password(user_in.password)
-        user.force_password_change = True # Force change if admin resets it
+        user.force_password_change = True  # Force change if admin resets it
         bump_required = True
-        
+
     if user_in.is_active is not None:
         if user.is_active and not user_in.is_active:
             bump_required = True

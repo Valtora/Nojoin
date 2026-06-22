@@ -37,7 +37,7 @@ def test_sensitive_data_filter_redacts_secret_strings() -> None:
         lineno=30,
         msg=(
             'payload={"password":"super-secret","token":"hf-secret","api_key":"openai-secret"} '
-            'authorization=Bootstrap bootstrap-secret'
+            "authorization=Bootstrap bootstrap-secret"
         ),
         args=(),
         exc_info=None,

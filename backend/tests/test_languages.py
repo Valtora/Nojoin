@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from backend.utils.asr_window_results import build_recording_asr_window_result_config_hash
+from backend.processing.llm_services import LLMBackend
+from backend.utils.asr_window_results import (
+    build_recording_asr_window_result_config_hash,
+)
 from backend.utils.config_manager import get_default_user_settings
 from backend.utils.languages import (
     get_language_registry_payload,
@@ -10,7 +13,6 @@ from backend.utils.languages import (
     resolve_transcription_language_code,
     validate_language_settings,
 )
-from backend.processing.llm_services import LLMBackend
 
 
 def test_default_language_settings_preserve_existing_behaviour() -> None:
@@ -54,9 +56,7 @@ def test_manual_notes_prompt_includes_output_language_instruction() -> None:
         LLMBackend.get_default_notes_prompt_template(),
         "SPEAKER_00: Bonjour.",
         {},
-        output_language_instruction=(
-            "Write the meeting title and notes in French."
-        ),
+        output_language_instruction=("Write the meeting title and notes in French."),
     )
 
     assert "# Output Language" in prompt

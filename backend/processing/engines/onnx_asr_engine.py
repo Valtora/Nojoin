@@ -5,8 +5,8 @@
 import logging
 import os
 
-from .base import TranscriptionEngine
 from ...utils.languages import resolve_transcription_language_code
+from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,11 @@ def map_onnx_asr_result(
         return {
             "text": text,
             "language": language,
-            "segments": ([{"start": 0.0, "end": audio_duration or 0.0, "text": text}] if text else []),
+            "segments": (
+                [{"start": 0.0, "end": audio_duration or 0.0, "text": text}]
+                if text
+                else []
+            ),
         }
 
     # Build words by grouping subword tokens. A new word begins at index 0 and at
@@ -89,7 +93,11 @@ def map_onnx_asr_result(
         return {
             "text": text,
             "language": language,
-            "segments": ([{"start": 0.0, "end": audio_duration or 0.0, "text": text}] if text else []),
+            "segments": (
+                [{"start": 0.0, "end": audio_duration or 0.0, "text": text}]
+                if text
+                else []
+            ),
         }
 
     # Group words into segments separated by pauses.
@@ -105,12 +113,17 @@ def map_onnx_asr_result(
 
     result_segments: list[dict] = []
     for group in segments:
-        result_segments.append({
-            "start": group[0]["start"],
-            "end": group[-1]["end"],
-            "text": "".join(word["word"] for word in group),
-            "words": [{"start": w["start"], "end": w["end"], "word": w["word"]} for w in group],
-        })
+        result_segments.append(
+            {
+                "start": group[0]["start"],
+                "end": group[-1]["end"],
+                "text": "".join(word["word"] for word in group),
+                "words": [
+                    {"start": w["start"], "end": w["end"], "word": w["word"]}
+                    for w in group
+                ],
+            }
+        )
 
     return {"text": text, "language": language, "segments": result_segments}
 
@@ -124,7 +137,11 @@ def _shift_segment(segment: dict, offset_s: float) -> dict:
     }
     if segment.get("words"):
         shifted["words"] = [
-            {"start": w["start"] + offset_s, "end": w["end"] + offset_s, "word": w["word"]}
+            {
+                "start": w["start"] + offset_s,
+                "end": w["end"] + offset_s,
+                "word": w["word"],
+            }
             for w in segment["words"]
         ]
     return shifted
@@ -152,7 +169,7 @@ def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
         if high > low:
             quietest = None
             for pos in range(low, high, max(1, probe // 2)):
-                energy = float(abs(audio[pos:pos + probe]).mean())
+                energy = float(abs(audio[pos : pos + probe]).mean())
                 if quietest is None or energy < quietest:
                     quietest = energy
                     cut = pos
@@ -189,10 +206,15 @@ class OnnxAsrEngine(TranscriptionEngine):
 
     def _get_model(self, config: dict):
         """Load (once, lazily) and return the onnx-asr model for the given config."""
-        nojoin_id = config.get(self.config_key, self.default_model_id) if config else self.default_model_id
+        nojoin_id = (
+            config.get(self.config_key, self.default_model_id)
+            if config
+            else self.default_model_id
+        )
         onnx_id = self._to_onnx_asr_id(nojoin_id)
         if onnx_id not in self._model_cache:
             import onnx_asr
+
             logger.info(f"Loading {self.name} model: {onnx_id}")
             self._model_cache[onnx_id] = onnx_asr.load_model(
                 onnx_id,
@@ -236,6 +258,7 @@ class OnnxAsrEngine(TranscriptionEngine):
             audio_duration: float | None = None
             try:
                 import soundfile
+
                 audio_duration = soundfile.info(audio_path).duration
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
@@ -264,7 +287,10 @@ class OnnxAsrEngine(TranscriptionEngine):
             return result
 
         except Exception as e:
-            logger.error(f"Error during {self.name} transcription for {audio_path}: {e}", exc_info=True)
+            logger.error(
+                f"Error during {self.name} transcription for {audio_path}: {e}",
+                exc_info=True,
+            )
             return None
 
     def _transcribe_chunked(
@@ -286,7 +312,9 @@ class OnnxAsrEngine(TranscriptionEngine):
 
         import soundfile
 
-        audio, sample_rate = soundfile.read(audio_path, dtype="float32", always_2d=False)
+        audio, sample_rate = soundfile.read(
+            audio_path, dtype="float32", always_2d=False
+        )
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
 
@@ -326,7 +354,9 @@ class OnnxAsrEngine(TranscriptionEngine):
             )
             if chunk_result["text"]:
                 texts.append(chunk_result["text"])
-            segments.extend(_shift_segment(s, offset_s) for s in chunk_result["segments"])
+            segments.extend(
+                _shift_segment(s, offset_s) for s in chunk_result["segments"]
+            )
             logger.info(
                 f"{self.name}: window {index + 1}/{len(boundaries)} done "
                 f"({offset_s:.0f}s +{chunk_duration:.0f}s)."
@@ -341,5 +371,7 @@ class OnnxAsrEngine(TranscriptionEngine):
     def release(self) -> None:
         """Release all loaded models from memory."""
         if self._model_cache:
-            logger.info(f"Releasing {list(self._model_cache.keys())} from {self.name} model cache.")
+            logger.info(
+                f"Releasing {list(self._model_cache.keys())} from {self.name} model cache."
+            )
             self._model_cache.clear()

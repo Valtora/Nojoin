@@ -35,12 +35,14 @@ from backend.models.recording import (
     RecordingStatus,
 )
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.models.transcript import Transcript
 from backend.processing.embedding import merge_embeddings
-from backend.utils.speaker_assignment import matches_speaker_name, reconcile_segment_assignment
+from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.utils.speaker_assignment import (
+    matches_speaker_name,
+    reconcile_segment_assignment,
+)
 from backend.utils.time import utc_now
-
 
 IN_FLIGHT_RECORDING_STATUSES = {
     RecordingStatus.UPLOADING.value,
@@ -111,7 +113,6 @@ SPEAKER_ASSIGNMENT_AUTHORITY_RANK = {
 logger = logging.getLogger(__name__)
 
 
-
 def _to_optional_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -119,7 +120,6 @@ def _to_optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 
 def _to_optional_int(value: Any) -> int | None:
@@ -131,7 +131,6 @@ def _to_optional_int(value: Any) -> int | None:
         return None
 
 
-
 def _range_overlap_ms(
     start_a: int,
     end_a: int,
@@ -141,15 +140,12 @@ def _range_overlap_ms(
     return max(0, min(int(end_a), int(end_b)) - max(int(start_a), int(start_b)))
 
 
-
 def _segment_to_ms(value: Any) -> int:
     return int(round(float(value or 0.0) * 1000.0))
 
 
-
 def _sort_key_for_index(index: int) -> str:
     return f"{index:012d}"
-
 
 
 def _segments_overlap(first: dict[str, Any], second: dict[str, Any]) -> bool:
@@ -160,8 +156,9 @@ def _segments_overlap(first: dict[str, Any], second: dict[str, Any]) -> bool:
     return first_start < second_end and second_start < first_end
 
 
-
-def _build_overlap_groups(segments: Sequence[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+def _build_overlap_groups(
+    segments: Sequence[dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
     adjacency: dict[int, set[int]] = defaultdict(set)
     for index, segment in enumerate(segments):
         for other_index in range(index + 1, len(segments)):
@@ -191,7 +188,6 @@ def _build_overlap_groups(segments: Sequence[dict[str, Any]]) -> dict[int, dict[
     return groups
 
 
-
 def _alias_type_for_value(value: str) -> RecordingSpeakerAliasType:
     if value.startswith("LIVE_"):
         return RecordingSpeakerAliasType.LIVE_LABEL
@@ -200,7 +196,6 @@ def _alias_type_for_value(value: str) -> RecordingSpeakerAliasType:
     if value.startswith("SPEAKER_"):
         return RecordingSpeakerAliasType.DIARIZATION_LABEL
     return RecordingSpeakerAliasType.IMPORT_LABEL
-
 
 
 def _speaker_kind_for_label(label: str, source_segment: dict[str, Any]) -> str:
@@ -213,8 +208,9 @@ def _speaker_kind_for_label(label: str, source_segment: dict[str, Any]) -> str:
     return "automated"
 
 
-
-def _get_utterance(session, recording_id: int, utterance_public_id: str) -> TranscriptUtterance | None:
+def _get_utterance(
+    session, recording_id: int, utterance_public_id: str
+) -> TranscriptUtterance | None:
     statement = (
         select(TranscriptUtterance)
         .where(TranscriptUtterance.recording_id == recording_id)
@@ -223,11 +219,9 @@ def _get_utterance(session, recording_id: int, utterance_public_id: str) -> Tran
     return session.execute(statement).scalar_one_or_none()
 
 
-
 def _load_transcript(session, recording_id: int) -> Transcript | None:
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
     return session.execute(statement).scalar_one_or_none()
-
 
 
 def _load_recording_speakers(session, recording_id: int) -> list[RecordingSpeaker]:
@@ -237,7 +231,6 @@ def _load_recording_speakers(session, recording_id: int) -> list[RecordingSpeake
         .options(selectinload(RecordingSpeaker.global_speaker))
     )
     return list(session.execute(statement).scalars().all())
-
 
 
 def _creation_event_type(
@@ -253,15 +246,13 @@ def _creation_event_type(
     return "created"
 
 
-
 def _compatibility_replace_event_type(
     old_values: dict[str, Any],
     new_values: dict[str, Any],
 ) -> str:
-    timing_changed = (
-        old_values.get("start_ms") != new_values.get("start_ms")
-        or old_values.get("end_ms") != new_values.get("end_ms")
-    )
+    timing_changed = old_values.get("start_ms") != new_values.get(
+        "start_ms"
+    ) or old_values.get("end_ms") != new_values.get("end_ms")
     text_changed = old_values.get("text") != new_values.get("text")
     speaker_changed = old_values.get("speaker") != new_values.get("speaker")
 
@@ -274,7 +265,6 @@ def _compatibility_replace_event_type(
     return "compatibility_replace"
 
 
-
 def _event_type_for_scope(scope: SpeakerCorrectionScope) -> SpeakerCorrectionEventType:
     if scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER:
         return SpeakerCorrectionEventType.MERGE_SPEAKERS
@@ -284,7 +274,10 @@ def _event_type_for_scope(scope: SpeakerCorrectionScope) -> SpeakerCorrectionEve
         return SpeakerCorrectionEventType.ASSIGN_RECORDING_SPEAKER
     return SpeakerCorrectionEventType.ASSIGN_UTTERANCE
 
-def _recording_speaker_display_name(session, recording_speaker: RecordingSpeaker) -> str:
+
+def _recording_speaker_display_name(
+    session, recording_speaker: RecordingSpeaker
+) -> str:
     if recording_speaker.local_name:
         return recording_speaker.local_name
     global_speaker = getattr(recording_speaker, "global_speaker", None)
@@ -297,7 +290,6 @@ def _recording_speaker_display_name(session, recording_speaker: RecordingSpeaker
     return recording_speaker.diarization_label or UNKNOWN_SPEAKER
 
 
-
 def _utterance_ranges_overlap(
     first: TranscriptUtterance,
     second: TranscriptUtterance,
@@ -305,7 +297,6 @@ def _utterance_ranges_overlap(
     if first.start_ms == second.start_ms and first.end_ms == second.end_ms:
         return True
     return first.start_ms < second.end_ms and second.start_ms < first.end_ms
-
 
 
 def _append_utterance_event(
@@ -336,7 +327,6 @@ def _append_utterance_event(
     utterance.last_utterance_event_id = event.id
     session.add(utterance)
     return event
-
 
 
 def _record_manual_lock_events(
@@ -375,6 +365,4 @@ def _record_manual_lock_events(
         )
 
 
-
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

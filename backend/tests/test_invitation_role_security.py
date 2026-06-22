@@ -7,15 +7,13 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from backend.api.v1.endpoints import invitations, users
-from backend.models.user import UserCreate, UserRole
-from backend.models.invitation import Invitation
-from backend.models.tag import RecordingTag  # noqa: F401
-from backend.models.speaker import RecordingSpeaker  # noqa: F401
-from backend.models.transcript import Transcript  # noqa: F401
 from backend.models.chat import ChatMessage  # noqa: F401
-from backend.models.document import Document  # noqa: F401
 from backend.models.context_chunk import ContextChunk  # noqa: F401
-from backend.utils.time import utc_now
+from backend.models.document import Document  # noqa: F401
+from backend.models.speaker import RecordingSpeaker  # noqa: F401
+from backend.models.tag import RecordingTag  # noqa: F401
+from backend.models.transcript import Transcript  # noqa: F401
+from backend.models.user import UserCreate, UserRole
 
 
 class _ScalarResult:
@@ -211,11 +209,13 @@ async def test_registration_rejects_invalid_persisted_invitation_roles(
 
 
 @pytest.mark.anyio
-async def test_register_user_uses_with_for_update(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_register_user_uses_with_for_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(users, "enforce_rate_limit", _allow_request)
-    
+
     executed_queries = []
-    
+
     class InterceptingSession:
         def __init__(self):
             self.invitation = SimpleNamespace(
@@ -228,25 +228,25 @@ async def test_register_user_uses_with_for_update(monkeypatch: pytest.MonkeyPatc
                 used_count=0,
             )
             self.added = []
-            
+
         async def execute(self, statement):
             executed_queries.append(statement)
             if "invitations" in str(statement.compile()):
                 return _ScalarResult(self.invitation)
             else:
                 return _ScalarResult(None)
-                
+
         def add(self, value):
             self.added.append(value)
-            
+
         async def commit(self):
             pass
-            
+
         async def refresh(self, value):
             value.id = 1
 
     session = InterceptingSession()
-    
+
     await users.register_user(
         request=_make_request("POST", "/api/v1/users/register"),
         db=session,
@@ -256,8 +256,10 @@ async def test_register_user_uses_with_for_update(monkeypatch: pytest.MonkeyPatc
             invite_code="invite123",
         ),
     )
-    
+
     # Assert that the invitation query had with_for_update called on it
-    invitation_queries = [q for q in executed_queries if "invitations" in str(q.compile())]
+    invitation_queries = [
+        q for q in executed_queries if "invitations" in str(q.compile())
+    ]
     assert len(invitation_queries) == 1
     assert invitation_queries[0]._for_update_arg is not None

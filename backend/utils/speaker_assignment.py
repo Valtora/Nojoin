@@ -8,7 +8,9 @@ def normalise_speaker_name(name: str) -> str:
 
 
 def matches_speaker_name(candidate: str | None, target: str) -> bool:
-    return bool(candidate) and normalise_speaker_name(candidate) == normalise_speaker_name(target)
+    return bool(candidate) and normalise_speaker_name(
+        candidate
+    ) == normalise_speaker_name(target)
 
 
 def segment_references_label(segment: dict[str, Any], label: str) -> bool:
@@ -38,7 +40,9 @@ def _canonicalise_overlapping_speakers(
     primary_label = segment.get("speaker")
 
     for label in overlapping_labels:
-        next_label = replace_to if replace_from is not None and label == replace_from else label
+        next_label = (
+            replace_to if replace_from is not None and label == replace_from else label
+        )
 
         if next_label != label:
             changed = True
@@ -74,7 +78,9 @@ def reconcile_segment_assignment(
         return changed
 
     for index, other_segment in enumerate(segments):
-        if index == segment_index or not segments_overlap(current_segment, other_segment):
+        if index == segment_index or not segments_overlap(
+            current_segment, other_segment
+        ):
             continue
 
         if _canonicalise_overlapping_speakers(other_segment, replace_from, new_label):

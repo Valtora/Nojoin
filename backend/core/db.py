@@ -1,10 +1,11 @@
 import os
 from typing import AsyncGenerator
-from sqlmodel import SQLModel, Session
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session
 
 load_dotenv()
 
@@ -21,28 +22,26 @@ if not DATABASE_URL:
 
 # Ensures usage of the async driver
 if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
-    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-    SYNC_DATABASE_URL = DATABASE_URL # Keep original for sync
+    ASYNC_DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
+    SYNC_DATABASE_URL = DATABASE_URL  # Keep original for sync
 else:
     ASYNC_DATABASE_URL = DATABASE_URL
     SYNC_DATABASE_URL = DATABASE_URL
 
 engine = create_async_engine(ASYNC_DATABASE_URL, echo=False, future=True)
 sync_engine = create_engine(
-    SYNC_DATABASE_URL, 
-    echo=False, 
-    future=True,
-    pool_pre_ping=True,
-    pool_recycle=3600
+    SYNC_DATABASE_URL, echo=False, future=True, pool_pre_ping=True, pool_recycle=3600
 )
 
-async_session_maker = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_maker() as session:
         yield session
+
 
 def get_sync_session() -> Session:
     """

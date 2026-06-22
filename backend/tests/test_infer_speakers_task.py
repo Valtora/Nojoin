@@ -18,7 +18,6 @@ from backend.utils.speaker_name_suggestions import (
     detect_rule_based_speaker_suggestions,
 )
 
-
 BASE_SCHEMA = """
 CREATE TABLE users (
     id INTEGER PRIMARY KEY,
@@ -127,7 +126,12 @@ def _create_infer_speakers_task_database(
     now = _utc_now_naive()
     segments = transcript_segments or [
         {"start": 0.0, "end": 1.5, "speaker": "SPEAKER_00", "text": "Hello team."},
-        {"start": 1.5, "end": 4.0, "speaker": "SPEAKER_01", "text": "The rollout is on Friday."},
+        {
+            "start": 1.5,
+            "end": 4.0,
+            "speaker": "SPEAKER_01",
+            "text": "The rollout is on Friday.",
+        },
     ]
 
     with engine.begin() as connection:
@@ -310,7 +314,9 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
 
     verification_engine = create_engine(str(engine.url), future=True)
     try:
@@ -328,7 +334,9 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
                 )
             ).all()
             raw_suggestions = session.exec(
-                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
             ).one()[0]
             suggestions = (
                 json.loads(raw_suggestions)
@@ -412,7 +420,9 @@ def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
 
     verification_engine = create_engine(str(engine.url), future=True)
     try:
@@ -420,7 +430,9 @@ def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
 
         with Session(verification_engine) as session:
             raw_suggestions = session.exec(
-                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
             ).one()[0]
             suggestions = (
                 json.loads(raw_suggestions)
@@ -512,7 +524,9 @@ def test_infer_speakers_task_supersedes_pending_suggestion_omitted_by_llm(
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
 
     verification_engine = create_engine(str(engine.url), future=True)
     try:
@@ -520,7 +534,9 @@ def test_infer_speakers_task_supersedes_pending_suggestion_omitted_by_llm(
 
         with Session(verification_engine) as session:
             raw_suggestions = session.exec(
-                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
             ).one()[0]
             suggestions = (
                 json.loads(raw_suggestions)
@@ -549,7 +565,9 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
     )
 
     def fail_if_called(_config):
-        raise AssertionError("LLM backend should not be created when model configuration is missing")
+        raise AssertionError(
+            "LLM backend should not be created when model configuration is missing"
+        )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
@@ -562,9 +580,7 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
 
         with Session(verification_engine) as session:
             recording_row = session.exec(
-                text(
-                    "SELECT status, processing_step FROM recordings WHERE id = 1"
-                )
+                text("SELECT status, processing_step FROM recordings WHERE id = 1")
             ).one()
             speaker_rows = session.exec(
                 text(
@@ -572,7 +588,9 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
                 )
             ).all()
             raw_suggestions = session.exec(
-                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
             ).one()[0]
             suggestions = (
                 json.loads(raw_suggestions)
@@ -617,7 +635,9 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
     )
 
     def fail_if_called(_config):
-        raise AssertionError("LLM backend should not be created when model configuration is missing")
+        raise AssertionError(
+            "LLM backend should not be created when model configuration is missing"
+        )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
@@ -630,7 +650,9 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
 
         with Session(verification_engine) as session:
             raw_suggestions = session.exec(
-                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
             ).one()[0]
             suggestions = (
                 json.loads(raw_suggestions)
@@ -664,7 +686,12 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
     captured: dict[str, Any] = {}
     canonical_segments = [
         {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00", "text": "Canonical intro."},
-        {"start": 1.0, "end": 2.5, "speaker": "SPEAKER_01", "text": "Canonical rollout plan."},
+        {
+            "start": 1.0,
+            "end": 2.5,
+            "speaker": "SPEAKER_01",
+            "text": "Canonical rollout plan.",
+        },
     ]
 
     class FakeLLM:
@@ -705,7 +732,9 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
         "build_transcript_segments_for_read",
         lambda *args, **kwargs: [dict(segment) for segment in canonical_segments],
     )
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
 
     verification_engine = create_engine(str(engine.url), future=True)
     try:
@@ -718,7 +747,9 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
                 )
             ).all()
             raw_suggestions = session.exec(
-                text("SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1")
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
             ).one()[0]
             suggestions = (
                 json.loads(raw_suggestions)

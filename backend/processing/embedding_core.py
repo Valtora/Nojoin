@@ -6,7 +6,6 @@ import torch
 from pyannote.core import Segment
 
 from backend.utils.config_manager import config_manager
-from backend.processing.embedding import cosine_similarity
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 logger = logging.getLogger(__name__)
@@ -46,15 +45,19 @@ def _load_pyannote_audio_types():
 
     return Inference, Model
 
+
 def release_embedding_model_cache():
     """Releases cached speaker embedding models from memory."""
     global _embedding_model_cache
     if _embedding_model_cache:
-        logger.info(f"Releasing {_embedding_model_cache.keys()} from speaker embedding model cache.")
+        logger.info(
+            f"Releasing {_embedding_model_cache.keys()} from speaker embedding model cache."
+        )
         _embedding_model_cache.clear()
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
 
 def load_embedding_model(device_str: str, hf_token: str = None):
     """Load pyannote embedding model."""
@@ -66,38 +69,51 @@ def load_embedding_model(device_str: str, hf_token: str = None):
                 hf_token = config_manager.get("hf_token")
 
             if not hf_token:
-                raise ValueError("Hugging Face token (hf_token) not found and no local embedding model is available.")
+                raise ValueError(
+                    "Hugging Face token (hf_token) not found and no local embedding model is available."
+                )
 
         # Explicitly load the model first using Model.from_pretrained
-        logger.info("Loading embedding model from %s source: %s", resolved_model.source, resolved_model.load_ref)
-        
+        logger.info(
+            "Loading embedding model from %s source: %s",
+            resolved_model.source,
+            resolved_model.load_ref,
+        )
+
         # Trusts model source (pyannote/wespeaker-voxceleb-resnet34-LM).
         # Safe globals are added at module level.
-        # Note: Passing weights_only=False to Model.from_pretrained does NOT work because 
+        # Note: Passing weights_only=False to Model.from_pretrained does NOT work because
         # Requires safe_globals as pyannote excludes it from torch.load.
         if resolved_model.source == "remote":
-            loaded_model = Model.from_pretrained(resolved_model.load_ref, token=hf_token)
+            loaded_model = Model.from_pretrained(
+                resolved_model.load_ref, token=hf_token
+            )
         else:
             loaded_model = Model.from_pretrained(resolved_model.load_ref)
-        
+
         model = Inference(loaded_model, window="sliding")
         model.to(torch.device(device_str))
         return model
     except OSError as e:
         error_msg = str(e)
         if "403" in error_msg or "forbidden" in error_msg.lower():
-             logger.error(f"Permission denied for Embedding model: {e}")
-             raise RuntimeError(
-                 "Permission denied for Embedding model. "
-                 "Please ensure you have accepted the terms of use on the Hugging Face model page "
-                 "and that your token has the correct permissions."
-             ) from e
+            logger.error(f"Permission denied for Embedding model: {e}")
+            raise RuntimeError(
+                "Permission denied for Embedding model. "
+                "Please ensure you have accepted the terms of use on the Hugging Face model page "
+                "and that your token has the correct permissions."
+            ) from e
         else:
-             logger.error(f"Failed to load embedding model (OSError): {e}", exc_info=True)
-             raise RuntimeError(f"Could not load embedding model: {e}") from e
+            logger.error(
+                f"Failed to load embedding model (OSError): {e}", exc_info=True
+            )
+            raise RuntimeError(f"Could not load embedding model: {e}") from e
     except Exception as e:
         logger.error(f"Failed to load embedding model: {e}", exc_info=True)
-        raise RuntimeError("Could not load embedding model from the configured or bundled source.") from e
+        raise RuntimeError(
+            "Could not load embedding model from the configured or bundled source."
+        ) from e
+
 
 def _filter_outlier_embeddings(embeddings: list) -> list:
     """
@@ -141,7 +157,9 @@ def _filter_outlier_embeddings(embeddings: list) -> list:
     return filtered
 
 
-def extract_embeddings(audio_path: str, diarization_result, device_str: str = "auto", config: dict = None) -> Dict[str, List[float]]:
+def extract_embeddings(
+    audio_path: str, diarization_result, device_str: str = "auto", config: dict = None
+) -> Dict[str, List[float]]:
     """
     Extracts embeddings for each speaker in the diarization result.
     Returns a dictionary mapping speaker label to embedding vector (list of floats).
@@ -151,43 +169,45 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
         return {}
 
     logger.info(f"Starting embedding extraction for {audio_path}")
-    
+
     # Use provided config or fall back to system config
     get_config = config.get if config else config_manager.get
     hf_token = get_config("hf_token")
-    
+
     if device_str == "auto":
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     try:
         cache_key = (DEFAULT_EMBEDDING_MODEL, device_str)
         if cache_key not in _embedding_model_cache:
-            _embedding_model_cache[cache_key] = load_embedding_model(device_str, hf_token)
+            _embedding_model_cache[cache_key] = load_embedding_model(
+                device_str, hf_token
+            )
         model = _embedding_model_cache[cache_key]
-        
+
         embeddings = {}
-        
+
         # Group segments by speaker
         speaker_segments = {}
         for turn, _, label in diarization_result.itertracks(yield_label=True):
             if label not in speaker_segments:
                 speaker_segments[label] = []
             speaker_segments[label].append(turn)
-            
+
         # For each speaker, extract embedding from the longest high-quality segment(s).
         # Averages embeddings from multiple segments for robustness.
         for label, segments in speaker_segments.items():
             # Filter out segments that are too short to provide a reliable voiceprint (< 0.5s)
             valid_segments = [s for s in segments if s.duration >= 0.5]
-            
+
             # If no valid segments exist, fall back to whatever segments are available
             if not valid_segments:
                 valid_segments = segments
-                
+
             # Sort by duration, take top 10 segments for a more robust average
             valid_segments.sort(key=lambda s: s.duration, reverse=True)
             top_segments = valid_segments[:10]
-            
+
             speaker_embeddings = []
             for seg in top_segments:
                 # Inference takes a path and a window (Segment)
@@ -196,24 +216,26 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
                 try:
                     # Pyannote 3.1 / SpeechBrain 1.0+ change:
                     # Extracts embedding for segment using model.crop (correct usage for Inference wrapper).
-                    
+
                     emb = model.crop(audio_path, seg)
-                    
-                    if hasattr(emb, 'data'):
+
+                    if hasattr(emb, "data"):
                         emb = emb.data
-                        
+
                     # Ensure it's a numpy array
                     emb = np.array(emb)
-                    
+
                     # emb is (1, dimension) or (dimension,) or (frames, dimension)
                     # If it returns multiple frames for the segment, we should average them.
                     if len(emb.shape) == 2:
                         emb = np.mean(emb, axis=0)
-                        
+
                     speaker_embeddings.append(emb)
                 except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Failed to extract embedding for speaker {label} segment {seg}: {e}")
-            
+                    logger.warning(
+                        f"Failed to extract embedding for speaker {label} segment {seg}: {e}"
+                    )
+
             if speaker_embeddings:
                 # Filter outlier segments before averaging. A mis-diarised segment
                 # from a different speaker would corrupt the mean embedding.
@@ -222,91 +244,98 @@ def extract_embeddings(audio_path: str, diarization_result, device_str: str = "a
 
                 avg_embedding = np.mean(np.array(speaker_embeddings), axis=0)
                 embeddings[label] = avg_embedding.tolist()
-                
+
         return embeddings
 
     except Exception as e:
         logger.error(f"Embedding extraction failed: {e}", exc_info=True)
         return {}
 
+
 def extract_embedding_for_segments(
     audio_path: str,
     segments: List[Tuple[float, float]],
     device_str: str = "auto",
-    hf_token: str = None
+    hf_token: str = None,
 ) -> Optional[List[float]]:
     """
     Extract a single aggregated embedding from specific time segments.
-    
+
     This is used for on-demand voiceprint creation when a user manually
     triggers voiceprint extraction for a specific speaker.
-    
+
     Args:
         audio_path: Path to the audio file.
         segments: List of (start_time, end_time) tuples in seconds.
         device_str: Device to use for inference ("cpu" or "cuda").
         hf_token: Hugging Face token.
-        
+
     Returns:
         Aggregated embedding vector as a list of floats, or None if extraction fails.
     """
     if not segments:
         logger.warning("No segments provided for embedding extraction")
         return None
-    
+
     if device_str == "auto":
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
-        
+
     # fallback if not provided
     if not hf_token:
         hf_token = config_manager.get("hf_token")
-    
+
     logger.info(f"Extracting embedding from {len(segments)} segments in {audio_path}")
-    
+
     try:
         cache_key = (DEFAULT_EMBEDDING_MODEL, device_str)
         if cache_key not in _embedding_model_cache:
-            _embedding_model_cache[cache_key] = load_embedding_model(device_str, hf_token)
+            _embedding_model_cache[cache_key] = load_embedding_model(
+                device_str, hf_token
+            )
         model = _embedding_model_cache[cache_key]
-        
+
         # Sort segments by duration (longest first) and take top segments
         sorted_segments = sorted(segments, key=lambda s: s[1] - s[0], reverse=True)
         top_segments = sorted_segments[:5]  # Use up to 5 best segments
-        
+
         speaker_embeddings = []
-        
+
         for start, end in top_segments:
             # Skip very short segments (< 0.5 seconds)
             if end - start < 0.5:
                 continue
-                
+
             try:
                 seg = Segment(start, end)
                 emb = model.crop(audio_path, seg)
-                
-                if hasattr(emb, 'data'):
+
+                if hasattr(emb, "data"):
                     emb = emb.data
-                    
+
                 emb = np.array(emb)
-                
+
                 # Average over frames if multi-dimensional
                 if len(emb.shape) == 2:
                     emb = np.mean(emb, axis=0)
-                    
+
                 speaker_embeddings.append(emb)
-                
+
             except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to extract embedding for segment ({start:.2f}, {end:.2f}): {e}")
+                logger.warning(
+                    f"Failed to extract embedding for segment ({start:.2f}, {end:.2f}): {e}"
+                )
                 continue
-        
+
         if not speaker_embeddings:
-            logger.warning("No embeddings could be extracted from the provided segments")
+            logger.warning(
+                "No embeddings could be extracted from the provided segments"
+            )
             return None
-            
+
         # Average all extracted embeddings
         avg_embedding = np.mean(np.array(speaker_embeddings), axis=0)
         return avg_embedding.tolist()
-        
+
     except Exception as e:
         logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)
         return None

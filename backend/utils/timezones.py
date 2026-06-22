@@ -5,7 +5,6 @@ from datetime import UTC, date, datetime
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-
 DEFAULT_TIMEZONE_ENV_KEY = "DEFAULT_TIMEZONE"
 UTC_TIMEZONE = "UTC"
 
@@ -48,7 +47,9 @@ def get_user_timezone_name(
     fallback: str | None = None,
 ) -> str:
     if user_settings:
-        user_timezone = normalise_timezone_name(str(user_settings.get("timezone") or ""))
+        user_timezone = normalise_timezone_name(
+            str(user_settings.get("timezone") or "")
+        )
         if user_timezone is not None:
             return user_timezone
 
@@ -87,7 +88,9 @@ def utc_naive_to_aware(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
-def utc_naive_to_timezone(value: datetime | None, timezone_name: str) -> datetime | None:
+def utc_naive_to_timezone(
+    value: datetime | None, timezone_name: str
+) -> datetime | None:
     aware_value = utc_naive_to_aware(value)
     if aware_value is None:
         return None

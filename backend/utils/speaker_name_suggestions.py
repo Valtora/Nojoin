@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from backend.utils.meeting_notes import MeetingEventContext, is_placeholder_speaker_name
 
-
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 SELF_INTRO_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
@@ -102,7 +101,9 @@ class SpeakerInferenceSuggestion:
     suggested_name: str
     confidence: float
     rationale: str | None = None
-    evidence_spans: tuple[SpeakerSuggestionEvidenceSpan, ...] = field(default_factory=tuple)
+    evidence_spans: tuple[SpeakerSuggestionEvidenceSpan, ...] = field(
+        default_factory=tuple
+    )
     signals: tuple[str, ...] = field(default_factory=tuple)
     source: str = "llm"
 
@@ -115,16 +116,16 @@ class SpeakerInferenceSuggestion:
         if not suggested_name:
             raise SpeakerSuggestionContractError("suggested_name must be non-empty")
         if not 0.0 <= confidence <= 1.0:
-            raise SpeakerSuggestionContractError("confidence must be between 0.0 and 1.0")
+            raise SpeakerSuggestionContractError(
+                "confidence must be between 0.0 and 1.0"
+            )
 
         rationale = str(self.rationale).strip() if self.rationale else None
         source = str(self.source).strip() or "llm"
         evidence_spans = tuple(self.evidence_spans or ())
         signals = tuple(
             dict.fromkeys(
-                signal.strip()
-                for signal in self.signals or ()
-                if str(signal).strip()
+                signal.strip() for signal in self.signals or () if str(signal).strip()
             )
         )
 
@@ -552,13 +553,13 @@ def _read_string_list(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise SpeakerSuggestionContractError("'signals' must be an array when present")
     return tuple(
-        dict.fromkeys(
-            str(item).strip() for item in value if str(item).strip()
-        )
+        dict.fromkeys(str(item).strip() for item in value if str(item).strip())
     )
 
 
-def _read_evidence_spans(payload: Mapping[str, Any]) -> tuple[SpeakerSuggestionEvidenceSpan, ...]:
+def _read_evidence_spans(
+    payload: Mapping[str, Any],
+) -> tuple[SpeakerSuggestionEvidenceSpan, ...]:
     raw_evidence = payload.get("evidence_spans")
     if not isinstance(raw_evidence, list):
         raise SpeakerSuggestionContractError("'evidence_spans' must be an array")
@@ -717,7 +718,8 @@ def _match_candidate_to_attendees(
     first_name_matches = [
         attendee
         for attendee in attendees
-        if _normalize_name(attendee).split() and _normalize_name(attendee).split()[0] == candidate_first
+        if _normalize_name(attendee).split()
+        and _normalize_name(attendee).split()[0] == candidate_first
     ]
     if len(first_name_matches) == 1:
         return first_name_matches[0], "meeting_attendee_first_name"

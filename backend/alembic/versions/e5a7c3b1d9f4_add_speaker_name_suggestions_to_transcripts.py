@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "e5a7c3b1d9f4"
 down_revision: Union[str, Sequence[str], None] = "d1a4c7b9e2f1"

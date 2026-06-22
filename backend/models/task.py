@@ -1,9 +1,9 @@
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import Field, Relationship, SQLModel, select
+from sqlmodel import Field, Relationship, SQLModel
 
 from backend.models.base import BaseDBModel
 from backend.models.tag import TagRead
@@ -154,12 +154,16 @@ class AsyncTaskOwnership(BaseDBModel, table=True):
 async def register_task_ownership(db: AsyncSession, task_id: str, user_id: int) -> None:
     """Record the ownership of a Celery task."""
     from sqlalchemy import text
+
     try:
         # Check if the table exists first to avoid polluting ORM session state if missing
         await db.execute(text("SELECT 1 FROM async_task_ownerships LIMIT 1"))
     except Exception as e:  # noqa: BLE001
         import logging
-        logging.getLogger(__name__).warning("Table 'async_task_ownerships' does not exist, skipping task ownership registration.")
+
+        logging.getLogger(__name__).warning(
+            "Table 'async_task_ownerships' does not exist, skipping task ownership registration."
+        )
         return
 
     try:
@@ -184,15 +188,18 @@ async def check_task_ownership(db: AsyncSession, task_id: str, user) -> bool:
     role = getattr(user, "role", "user")
     if is_superuser or role in ("owner", "admin"):
         return True
-        
+
     try:
         from sqlmodel import select
+
         stmt = select(AsyncTaskOwnership).where(AsyncTaskOwnership.task_id == task_id)
         result = await db.execute(stmt)
         ownership = result.scalar_one_or_none()
     except Exception as e:
         err_msg = str(e).lower()
-        if "no such table" in err_msg or ("relation" in err_msg and "does not exist" in err_msg):
+        if "no such table" in err_msg or (
+            "relation" in err_msg and "does not exist" in err_msg
+        ):
             try:
                 await db.rollback()
             except:
@@ -202,5 +209,5 @@ async def check_task_ownership(db: AsyncSession, task_id: str, user) -> bool:
 
     if not ownership:
         return False
-        
+
     return ownership.user_id == getattr(user, "id", None)

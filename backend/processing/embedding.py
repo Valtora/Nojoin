@@ -1,6 +1,7 @@
 import logging
-import numpy as np
 from typing import List, Optional
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def cosine_similarity(v1: Optional[List[float]], v2: Optional[List[float]]) -> f
     """Compute cosine similarity between two vectors."""
     if v1 is None or v2 is None:
         return 0.0
-        
+
     # Check for None values inside the lists which can cause numpy errors
     if any(x is None for x in v1) or any(x is None for x in v2):
         return 0.0
@@ -45,11 +46,12 @@ def cosine_similarity(v1: Optional[List[float]], v2: Optional[List[float]]) -> f
         return 0.0
     return float(np.dot(a, b) / (norm_a * norm_b))
 
+
 def merge_embeddings(
     current_embedding: List[float],
     new_embedding: List[float],
     alpha: float = 0.1,
-    drift_guard: bool = True
+    drift_guard: bool = True,
 ) -> List[float]:
     """
     Merges a new embedding into an existing one using a weighted moving average.
@@ -86,47 +88,51 @@ def merge_embeddings(
 
     return merged.tolist()
 
+
 def find_matching_global_speaker(
     embedding: List[float],
     global_speakers: List,
     threshold: float = IDENTIFICATION_THRESHOLD,
-    margin: float = MARGIN_OF_VICTORY
+    margin: float = MARGIN_OF_VICTORY,
 ):
     """
     Find the best matching GlobalSpeaker for a given embedding.
-    
+
     Args:
         embedding: The embedding vector to match.
         global_speakers: List of GlobalSpeaker objects with embeddings.
         threshold: Minimum similarity score to consider a match.
         margin: The minimum difference required between the best and second best match
                 to avoid ambiguous assignments.
-        
+
     Returns:
         Tuple of (best_matching_speaker, similarity_score).
         Returns (None, 0.0) if no match above threshold or if match is ambiguous.
     """
     import re
-    placeholder_pattern = re.compile(r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE)
-    
+
+    placeholder_pattern = re.compile(
+        r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE
+    )
+
     best_match = None
     best_score = 0.0
     second_best_score = 0.0
-    
+
     for gs in global_speakers:
         # Skip placeholder names and speakers without embeddings
         if not gs.embedding or placeholder_pattern.match(gs.name):
             continue
-            
+
         score = cosine_similarity(embedding, gs.embedding)
-        
+
         if score > best_score:
             second_best_score = best_score
             best_score = score
             best_match = gs
         elif score > second_best_score:
             second_best_score = score
-            
+
     # Check if the best match passes the threshold
     if best_match and best_score >= threshold:
         # Check for ambiguity using the margin of victory
@@ -135,5 +141,5 @@ def find_matching_global_speaker(
         else:
             # It's an ambiguous match, better to return nothing than a false positive
             return None, 0.0
-            
+
     return None, best_score

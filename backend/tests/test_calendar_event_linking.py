@@ -31,7 +31,6 @@ from backend.utils.meeting_notes import (
     meeting_event_context_from_calendar_event,
 )
 
-
 # ---------------------------------------------------------------------------
 # score_event_match - pure helper
 # ---------------------------------------------------------------------------
@@ -444,9 +443,7 @@ def test_auto_link_noop_without_duration(sync_session) -> None:
 
 
 def build_test_user(user_id: int = 1, username: str = "alice"):
-    return SimpleNamespace(
-        id=user_id, username=username, force_password_change=False
-    )
+    return SimpleNamespace(id=user_id, username=username, force_password_change=False)
 
 
 @pytest.fixture

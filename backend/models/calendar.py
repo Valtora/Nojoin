@@ -3,7 +3,16 @@ from enum import Enum
 from typing import List, Optional
 
 import sqlalchemy as sa
-from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlmodel import Field, Relationship, SQLModel
 
 from backend.models.base import BaseDBModel
@@ -34,10 +43,18 @@ class CalendarDashboardState(str, Enum):
 class CalendarProviderConfig(BaseDBModel, table=True):
     __tablename__ = "calendar_provider_configs"
 
-    provider: str = Field(sa_column=Column(String(32), nullable=False, unique=True, index=True))
-    client_id: Optional[str] = Field(default=None, sa_column=Column(String(512), nullable=True))
-    client_secret_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    tenant_id: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
+    provider: str = Field(
+        sa_column=Column(String(32), nullable=False, unique=True, index=True)
+    )
+    client_id: Optional[str] = Field(
+        default=None, sa_column=Column(String(512), nullable=True)
+    )
+    client_secret_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    tenant_id: Optional[str] = Field(
+        default=None, sa_column=Column(String(255), nullable=True)
+    )
     enabled: bool = Field(default=True, nullable=False)
 
 
@@ -61,24 +78,44 @@ class CalendarConnection(BaseDBModel, table=True):
         )
     )
     provider: str = Field(sa_column=Column(String(32), nullable=False, index=True))
-    provider_account_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
-    email: Optional[str] = Field(default=None, sa_column=Column(String(320), nullable=True, index=True))
-    display_name: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
-    access_token_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    refresh_token_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    provider_account_id: str = Field(
+        sa_column=Column(String(255), nullable=False, index=True)
+    )
+    email: Optional[str] = Field(
+        default=None, sa_column=Column(String(320), nullable=True, index=True)
+    )
+    display_name: Optional[str] = Field(
+        default=None, sa_column=Column(String(255), nullable=True)
+    )
+    access_token_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    refresh_token_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     granted_scopes: List[str] = Field(
         default_factory=list,
         sa_column=Column(sa.JSON, nullable=False, server_default=sa.text("'[]'::json")),
     )
-    token_expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    token_expires_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
     sync_status: str = Field(
         default=CalendarSyncStatus.IDLE.value,
         sa_column=Column(String(32), nullable=False, index=True),
     )
-    sync_error: Optional[str] = Field(default=None, sa_column=Column(String(512), nullable=True))
-    last_sync_started_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
-    last_sync_completed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
-    last_synced_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    sync_error: Optional[str] = Field(
+        default=None, sa_column=Column(String(512), nullable=True)
+    )
+    last_sync_started_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    last_sync_completed_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    last_synced_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
 
     calendars: List["CalendarSource"] = Relationship(
         back_populates="connection",
@@ -104,19 +141,37 @@ class CalendarSource(BaseDBModel, table=True):
             index=True,
         )
     )
-    provider_calendar_id: str = Field(sa_column=Column(String(512), nullable=False, index=True))
+    provider_calendar_id: str = Field(
+        sa_column=Column(String(512), nullable=False, index=True)
+    )
     name: str = Field(sa_column=Column(String(255), nullable=False))
-    description: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    time_zone: Optional[str] = Field(default=None, sa_column=Column(String(128), nullable=True))
-    colour: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))
-    user_colour: Optional[str] = Field(default=None, sa_column=Column(String(32), nullable=True))
+    description: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    time_zone: Optional[str] = Field(
+        default=None, sa_column=Column(String(128), nullable=True)
+    )
+    colour: Optional[str] = Field(
+        default=None, sa_column=Column(String(32), nullable=True)
+    )
+    user_colour: Optional[str] = Field(
+        default=None, sa_column=Column(String(32), nullable=True)
+    )
     is_primary: bool = Field(default=False, nullable=False)
     is_read_only: bool = Field(default=False, nullable=False)
     is_selected: bool = Field(default=False, nullable=False, index=True)
-    sync_cursor: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    last_synced_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
-    sync_window_start: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
-    sync_window_end: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    sync_cursor: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    last_synced_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    sync_window_start: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    sync_window_end: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
 
     connection: Optional[CalendarConnection] = Relationship(back_populates="calendars")
     events: List["CalendarEvent"] = Relationship(
@@ -143,20 +198,44 @@ class CalendarEvent(BaseDBModel, table=True):
             index=True,
         )
     )
-    provider_event_id: str = Field(sa_column=Column(String(512), nullable=False, index=True))
+    provider_event_id: str = Field(
+        sa_column=Column(String(512), nullable=False, index=True)
+    )
     title: str = Field(sa_column=Column(String(512), nullable=False))
-    status: str = Field(default="confirmed", sa_column=Column(String(32), nullable=False, index=True))
+    status: str = Field(
+        default="confirmed", sa_column=Column(String(32), nullable=False, index=True)
+    )
     is_all_day: bool = Field(default=False, nullable=False, index=True)
-    starts_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True, index=True))
-    ends_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True, index=True))
-    start_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True, index=True))
-    end_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True, index=True))
-    location_text: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    description: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    attendees: Optional[list] = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
-    meeting_url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
-    source_url: Optional[str] = Field(default=None, sa_column=Column(String(2048), nullable=True))
-    external_updated_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    starts_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True, index=True)
+    )
+    ends_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True, index=True)
+    )
+    start_date: Optional[date] = Field(
+        default=None, sa_column=Column(Date, nullable=True, index=True)
+    )
+    end_date: Optional[date] = Field(
+        default=None, sa_column=Column(Date, nullable=True, index=True)
+    )
+    location_text: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    description: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    attendees: Optional[list] = Field(
+        default=None, sa_column=Column(sa.JSON, nullable=True)
+    )
+    meeting_url: Optional[str] = Field(
+        default=None, sa_column=Column(String(2048), nullable=True)
+    )
+    source_url: Optional[str] = Field(
+        default=None, sa_column=Column(String(2048), nullable=True)
+    )
+    external_updated_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
 
     calendar: Optional[CalendarSource] = Relationship(back_populates="events")
 
@@ -277,7 +356,9 @@ class CalendarDashboardEventRead(SQLModel):
     ends_at: Optional[datetime] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    linked_recordings: List[CalendarDashboardRecordingRead] = Field(default_factory=list)
+    linked_recordings: List[CalendarDashboardRecordingRead] = Field(
+        default_factory=list
+    )
 
 
 class CalendarDashboardSummaryRead(SQLModel):

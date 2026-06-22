@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import base64
 import calendar as month_calendar
-import html
 import hashlib
+import html
 import json
 import logging
 import os
@@ -33,6 +33,7 @@ from backend.models.calendar import (
     CalendarDashboardState,
     CalendarDashboardSummaryRead,
     CalendarDashboardTagRead,
+    CalendarEvent,
     CalendarOverviewRead,
     CalendarProvider,
     CalendarProviderAvailabilityRead,
@@ -43,7 +44,6 @@ from backend.models.calendar import (
     CalendarSourceColourUpdate,
     CalendarSourceRead,
     CalendarSyncStatus,
-    CalendarEvent,
 )
 from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
@@ -59,7 +59,6 @@ from backend.utils.timezones import (
     utc_naive_to_timezone,
 )
 
-
 logger = logging.getLogger(__name__)
 
 GOOGLE_SCOPE = "openid email profile https://www.googleapis.com/auth/calendar.readonly"
@@ -67,8 +66,12 @@ MICROSOFT_SCOPE = "openid profile email offline_access User.Read Calendars.Read"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-GOOGLE_CALENDAR_LIST_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList"
-GOOGLE_EVENTS_URL_TEMPLATE = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
+GOOGLE_CALENDAR_LIST_URL = (
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList"
+)
+GOOGLE_EVENTS_URL_TEMPLATE = (
+    "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
+)
 MICROSOFT_GRAPH_URL = "https://graph.microsoft.com/v1.0"
 MICROSOFT_COMMON_TENANT = "common"
 OAUTH_STATE_TTL_SECONDS = 10 * 60
@@ -131,9 +134,7 @@ TRUSTED_MEETING_HOSTS = {
     "teams.live.com",
     "zoom.us",
 }
-TRUSTED_MEETING_HOST_SUFFIXES = (
-    ".zoom.us",
-)
+TRUSTED_MEETING_HOST_SUFFIXES = (".zoom.us",)
 MICROSOFT_EVENT_SELECT = ",".join(
     [
         "id",
@@ -234,7 +235,9 @@ def _utc_now() -> datetime:
     return utc_now()
 
 
-def _parse_iso_datetime(value: str | None, *, default_tz: timezone | None = timezone.utc) -> datetime | None:
+def _parse_iso_datetime(
+    value: str | None, *, default_tz: timezone | None = timezone.utc
+) -> datetime | None:
     if not value:
         return None
     normalised = value.replace("Z", "+00:00")
@@ -287,7 +290,10 @@ def _extract_urls_from_text(value: str | None) -> list[str]:
     text = html.unescape(str(value))
     seen: set[str] = set()
     urls: list[str] = []
-    for candidate in [*HREF_URL_PATTERN.findall(text), *PLAIN_URL_PATTERN.findall(text)]:
+    for candidate in [
+        *HREF_URL_PATTERN.findall(text),
+        *PLAIN_URL_PATTERN.findall(text),
+    ]:
         cleaned = _clean_url(candidate)
         if cleaned and cleaned not in seen:
             seen.add(cleaned)
@@ -324,8 +330,7 @@ def _is_trusted_meeting_url(url: str | None) -> bool:
         return False
 
     return hostname in TRUSTED_MEETING_HOSTS or any(
-        hostname.endswith(suffix)
-        for suffix in TRUSTED_MEETING_HOST_SUFFIXES
+        hostname.endswith(suffix) for suffix in TRUSTED_MEETING_HOST_SUFFIXES
     )
 
 
@@ -391,7 +396,11 @@ def _extract_error_text_from_payload(payload: Any) -> str | None:
     if isinstance(payload, str):
         return _clean_error_text(payload)
     if isinstance(payload, dict):
-        direct_message = payload.get("error_description") or payload.get("message") or payload.get("detail")
+        direct_message = (
+            payload.get("error_description")
+            or payload.get("message")
+            or payload.get("detail")
+        )
         cleaned_direct_message = _clean_error_text(direct_message)
         if cleaned_direct_message:
             return cleaned_direct_message
@@ -400,7 +409,11 @@ def _extract_error_text_from_payload(payload: Any) -> str | None:
         if isinstance(nested_error, str):
             return _clean_error_text(nested_error)
         if isinstance(nested_error, dict):
-            nested_message = nested_error.get("message") or nested_error.get("description") or nested_error.get("detail")
+            nested_message = (
+                nested_error.get("message")
+                or nested_error.get("description")
+                or nested_error.get("detail")
+            )
             cleaned_nested_message = _clean_error_text(nested_message)
             if cleaned_nested_message:
                 return cleaned_nested_message
@@ -457,10 +470,18 @@ def _classify_sync_failure(exc: Exception) -> tuple[str, str]:
             "reauthorisation",
             "reauthorization",
         )
-        is_auth_error = status_code == 401 or any(hint in lower_http_message for hint in auth_hints)
+        is_auth_error = status_code == 401 or any(
+            hint in lower_http_message for hint in auth_hints
+        )
         if status_code == 403 and any(
             hint in lower_http_message
-            for hint in ("admin approval", "consent", "insufficient privileges", "access is denied", "forbidden")
+            for hint in (
+                "admin approval",
+                "consent",
+                "insufficient privileges",
+                "access is denied",
+                "forbidden",
+            )
         ):
             return (
                 CalendarSyncStatus.REAUTHORISATION_REQUIRED.value,
@@ -624,13 +645,19 @@ async def _prune_unreadable_connections(db: AsyncSession, *, user_id: int) -> No
         await db.commit()
 
 
-async def get_provider_runtime_config(db: AsyncSession, provider: str) -> ProviderRuntimeConfig:
-    statement = select(CalendarProviderConfig).where(CalendarProviderConfig.provider == provider)
+async def get_provider_runtime_config(
+    db: AsyncSession, provider: str
+) -> ProviderRuntimeConfig:
+    statement = select(CalendarProviderConfig).where(
+        CalendarProviderConfig.provider == provider
+    )
     row = (await db.execute(statement)).scalar_one_or_none()
 
     env_keys = PROVIDER_ENV_KEYS[provider]
     env_client_id = os.getenv(env_keys["client_id"]) if env_keys["client_id"] else None
-    env_client_secret = os.getenv(env_keys["client_secret"]) if env_keys["client_secret"] else None
+    env_client_secret = (
+        os.getenv(env_keys["client_secret"]) if env_keys["client_secret"] else None
+    )
     env_tenant_id = os.getenv(env_keys["tenant_id"]) if env_keys["tenant_id"] else None
 
     if row is not None:
@@ -658,8 +685,7 @@ async def get_provider_runtime_config(db: AsyncSession, provider: str) -> Provid
             )
 
         uses_database_values = any(
-            value
-            for value in (row.client_id, db_client_secret, row.tenant_id)
+            value for value in (row.client_id, db_client_secret, row.tenant_id)
         )
         return ProviderRuntimeConfig(
             provider=provider,
@@ -667,7 +693,9 @@ async def get_provider_runtime_config(db: AsyncSession, provider: str) -> Provid
             client_secret=db_client_secret or env_client_secret,
             tenant_id=row.tenant_id or env_tenant_id or MICROSOFT_COMMON_TENANT,
             enabled=True,
-            source="database" if uses_database_values else ("environment" if env_client_id or env_client_secret else "none"),
+            source="database"
+            if uses_database_values
+            else ("environment" if env_client_id or env_client_secret else "none"),
         )
 
     return ProviderRuntimeConfig(
@@ -693,7 +721,9 @@ async def list_provider_statuses(db: AsyncSession) -> list[CalendarProviderStatu
                 enabled=runtime_config.enabled,
                 redirect_uri=_build_redirect_uri(provider),
                 client_id=runtime_config.client_id,
-                tenant_id=runtime_config.tenant_id if provider == CalendarProvider.MICROSOFT.value else None,
+                tenant_id=runtime_config.tenant_id
+                if provider == CalendarProvider.MICROSOFT.value
+                else None,
                 has_client_secret=bool(runtime_config.client_secret),
             )
         )
@@ -720,7 +750,9 @@ async def update_provider_configuration(
     enabled: bool | None,
     clear_client_secret: bool,
 ) -> CalendarProviderStatusRead:
-    statement = select(CalendarProviderConfig).where(CalendarProviderConfig.provider == provider)
+    statement = select(CalendarProviderConfig).where(
+        CalendarProviderConfig.provider == provider
+    )
     row = (await db.execute(statement)).scalar_one_or_none()
     if row is None:
         row = CalendarProviderConfig(provider=provider)
@@ -738,13 +770,17 @@ async def update_provider_configuration(
         row.client_secret_encrypted = None
     elif client_secret is not None:
         stripped_secret = client_secret.strip()
-        row.client_secret_encrypted = encrypt_secret(stripped_secret) if stripped_secret else None
+        row.client_secret_encrypted = (
+            encrypt_secret(stripped_secret) if stripped_secret else None
+        )
 
     db.add(row)
     await db.commit()
 
     refreshed = await list_provider_statuses(db)
-    return next(status_item for status_item in refreshed if status_item.provider == provider)
+    return next(
+        status_item for status_item in refreshed if status_item.provider == provider
+    )
 
 
 async def start_authorisation(db: AsyncSession, provider: str, user: User) -> str:
@@ -797,7 +833,9 @@ async def start_authorisation(db: AsyncSession, provider: str, user: User) -> st
     return f"{auth_url}?{urlencode(params)}"
 
 
-async def _exchange_google_code(runtime_config: ProviderRuntimeConfig, code: str, code_verifier: str) -> TokenBundle:
+async def _exchange_google_code(
+    runtime_config: ProviderRuntimeConfig, code: str, code_verifier: str
+) -> TokenBundle:
     token_data = await _request_json(
         "POST",
         GOOGLE_TOKEN_URL,
@@ -815,12 +853,16 @@ async def _exchange_google_code(runtime_config: ProviderRuntimeConfig, code: str
     return TokenBundle(
         access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token"),
-        expires_at=_utc_now() + timedelta(seconds=int(expires_in)) if expires_in else None,
+        expires_at=_utc_now() + timedelta(seconds=int(expires_in))
+        if expires_in
+        else None,
         scopes=scopes,
     )
 
 
-async def _exchange_microsoft_code(runtime_config: ProviderRuntimeConfig, code: str, code_verifier: str) -> TokenBundle:
+async def _exchange_microsoft_code(
+    runtime_config: ProviderRuntimeConfig, code: str, code_verifier: str
+) -> TokenBundle:
     tenant_id = runtime_config.tenant_id or MICROSOFT_COMMON_TENANT
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     token_data = await _request_json(
@@ -841,12 +883,16 @@ async def _exchange_microsoft_code(runtime_config: ProviderRuntimeConfig, code: 
     return TokenBundle(
         access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token"),
-        expires_at=_utc_now() + timedelta(seconds=int(expires_in)) if expires_in else None,
+        expires_at=_utc_now() + timedelta(seconds=int(expires_in))
+        if expires_in
+        else None,
         scopes=scopes,
     )
 
 
-async def _refresh_google_access_token(runtime_config: ProviderRuntimeConfig, refresh_token: str) -> TokenBundle:
+async def _refresh_google_access_token(
+    runtime_config: ProviderRuntimeConfig, refresh_token: str
+) -> TokenBundle:
     token_data = await _request_json(
         "POST",
         GOOGLE_TOKEN_URL,
@@ -862,12 +908,16 @@ async def _refresh_google_access_token(runtime_config: ProviderRuntimeConfig, re
     return TokenBundle(
         access_token=token_data["access_token"],
         refresh_token=refresh_token,
-        expires_at=_utc_now() + timedelta(seconds=int(expires_in)) if expires_in else None,
+        expires_at=_utc_now() + timedelta(seconds=int(expires_in))
+        if expires_in
+        else None,
         scopes=scopes,
     )
 
 
-async def _refresh_microsoft_access_token(runtime_config: ProviderRuntimeConfig, refresh_token: str) -> TokenBundle:
+async def _refresh_microsoft_access_token(
+    runtime_config: ProviderRuntimeConfig, refresh_token: str
+) -> TokenBundle:
     tenant_id = runtime_config.tenant_id or MICROSOFT_COMMON_TENANT
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     token_data = await _request_json(
@@ -886,7 +936,9 @@ async def _refresh_microsoft_access_token(runtime_config: ProviderRuntimeConfig,
     return TokenBundle(
         access_token=token_data["access_token"],
         refresh_token=token_data.get("refresh_token") or refresh_token,
-        expires_at=_utc_now() + timedelta(seconds=int(expires_in)) if expires_in else None,
+        expires_at=_utc_now() + timedelta(seconds=int(expires_in))
+        if expires_in
+        else None,
         scopes=scopes,
     )
 
@@ -953,7 +1005,9 @@ async def _list_google_calendars(access_token: str) -> list[ProviderCalendarReco
 
 
 async def _list_microsoft_calendars(access_token: str) -> list[ProviderCalendarRecord]:
-    next_url: str | None = f"{MICROSOFT_GRAPH_URL}/me/calendars?$select=id,name,hexColor,canEdit,isDefaultCalendar"
+    next_url: str | None = (
+        f"{MICROSOFT_GRAPH_URL}/me/calendars?$select=id,name,hexColor,canEdit,isDefaultCalendar"
+    )
     calendars: list[ProviderCalendarRecord] = []
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -985,9 +1039,7 @@ def _normalise_google_event(item: dict[str, Any]) -> ProviderEventRecord | None:
     location_text = _normalise_text(item.get("location"))
     conference_entry_points = item.get("conferenceData", {}).get("entryPoints", [])
     conference_urls = [
-        entry.get("uri")
-        for entry in conference_entry_points
-        if isinstance(entry, dict)
+        entry.get("uri") for entry in conference_entry_points if isinstance(entry, dict)
     ]
     meeting_url = _pick_preferred_meeting_url(
         item.get("hangoutLink"),
@@ -1125,7 +1177,9 @@ def _normalise_microsoft_event(item: dict[str, Any]) -> ProviderEventRecord | No
     body = item.get("body")
     body_content = body.get("content") if isinstance(body, dict) else None
     online_meeting = item.get("onlineMeeting")
-    join_url = online_meeting.get("joinUrl") if isinstance(online_meeting, dict) else None
+    join_url = (
+        online_meeting.get("joinUrl") if isinstance(online_meeting, dict) else None
+    )
     meeting_url = _pick_preferred_meeting_url(
         join_url,
         item.get("onlineMeetingUrl"),
@@ -1215,7 +1269,9 @@ def _build_microsoft_calendar_view_url(
     )
 
 
-def _build_microsoft_delta_url(calendar_id: str, window_start: datetime, window_end: datetime) -> str:
+def _build_microsoft_delta_url(
+    calendar_id: str, window_start: datetime, window_end: datetime
+) -> str:
     return _build_microsoft_calendar_view_url(
         calendar_id,
         window_start,
@@ -1263,7 +1319,9 @@ async def _get_microsoft_delta_cursor(
     window_start: datetime,
     window_end: datetime,
 ) -> str | None:
-    next_url: str | None = _build_microsoft_delta_url(calendar_id, window_start, window_end)
+    next_url: str | None = _build_microsoft_delta_url(
+        calendar_id, window_start, window_end
+    )
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
@@ -1288,7 +1346,9 @@ async def _sync_microsoft_events(
     *,
     sync_cursor: str | None,
 ) -> ProviderEventSyncResult:
-    next_url: str | None = sync_cursor or _build_microsoft_delta_url(calendar_id, window_start, window_end)
+    next_url: str | None = sync_cursor or _build_microsoft_delta_url(
+        calendar_id, window_start, window_end
+    )
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
@@ -1299,7 +1359,10 @@ async def _sync_microsoft_events(
     async with httpx.AsyncClient(timeout=30.0) as client:
         while next_url:
             response = await client.get(next_url, headers=headers)
-            if sync_cursor and response.status_code in {status.HTTP_404_NOT_FOUND, status.HTTP_410_GONE}:
+            if sync_cursor and response.status_code in {
+                status.HTTP_404_NOT_FOUND,
+                status.HTTP_410_GONE,
+            }:
                 raise IncrementalSyncResetRequired("Microsoft delta cursor expired")
             response.raise_for_status()
             payload = response.json()
@@ -1309,8 +1372,12 @@ async def _sync_microsoft_events(
                     if remote_id:
                         deleted_remote_ids.append(str(remote_id))
                     continue
-                if item.get("type") == "seriesMaster" or _is_partial_microsoft_occurrence(item):
-                    raise IncrementalSyncResetRequired("Microsoft recurring event delta requires full resync")
+                if item.get(
+                    "type"
+                ) == "seriesMaster" or _is_partial_microsoft_occurrence(item):
+                    raise IncrementalSyncResetRequired(
+                        "Microsoft recurring event delta requires full resync"
+                    )
                 event = _normalise_microsoft_event(item)
                 if event is not None:
                     events.append(event)
@@ -1321,7 +1388,9 @@ async def _sync_microsoft_events(
                     deleted_remote_ids=deleted_remote_ids,
                     cursor=payload.get("@odata.deltaLink"),
                 )
-    return ProviderEventSyncResult(events=events, deleted_remote_ids=deleted_remote_ids, cursor=sync_cursor)
+    return ProviderEventSyncResult(
+        events=events, deleted_remote_ids=deleted_remote_ids, cursor=sync_cursor
+    )
 
 
 async def _get_access_token_for_connection(
@@ -1331,7 +1400,11 @@ async def _get_access_token_for_connection(
 ) -> str:
     access_token, refresh_token = _load_connection_token_bundle(connection)
     now = _utc_now()
-    if access_token and connection.token_expires_at and connection.token_expires_at > now + timedelta(minutes=2):
+    if (
+        access_token
+        and connection.token_expires_at
+        and connection.token_expires_at > now + timedelta(minutes=2)
+    ):
         return access_token
     if access_token and connection.token_expires_at is None:
         return access_token
@@ -1344,7 +1417,11 @@ async def _get_access_token_for_connection(
         refreshed = await _refresh_microsoft_access_token(runtime_config, refresh_token)
 
     connection.access_token_encrypted = encrypt_secret(refreshed.access_token)
-    connection.refresh_token_encrypted = encrypt_secret(refreshed.refresh_token) if refreshed.refresh_token else connection.refresh_token_encrypted
+    connection.refresh_token_encrypted = (
+        encrypt_secret(refreshed.refresh_token)
+        if refreshed.refresh_token
+        else connection.refresh_token_encrypted
+    )
     connection.token_expires_at = refreshed.expires_at
     connection.granted_scopes = refreshed.scopes
     db.add(connection)
@@ -1393,10 +1470,18 @@ async def _refresh_connection_calendars(
     connection: CalendarConnection,
     provider_calendars: Iterable[ProviderCalendarRecord],
 ) -> list[CalendarSource]:
-    statement = select(CalendarSource).where(CalendarSource.connection_id == connection.id)
+    statement = select(CalendarSource).where(
+        CalendarSource.connection_id == connection.id
+    )
     existing_calendars = list((await db.execute(statement)).scalars().all())
-    existing_by_remote_id = {calendar.provider_calendar_id: calendar for calendar in existing_calendars}
-    selected_existing = {calendar.provider_calendar_id for calendar in existing_calendars if calendar.is_selected}
+    existing_by_remote_id = {
+        calendar.provider_calendar_id: calendar for calendar in existing_calendars
+    }
+    selected_existing = {
+        calendar.provider_calendar_id
+        for calendar in existing_calendars
+        if calendar.is_selected
+    }
     seen_remote_ids: set[str] = set()
 
     for provider_calendar in provider_calendars:
@@ -1416,7 +1501,9 @@ async def _refresh_connection_calendars(
         calendar.is_primary = provider_calendar.is_primary
         calendar.is_read_only = provider_calendar.is_read_only
         if is_new:
-            calendar.is_selected = provider_calendar.is_primary and not selected_existing
+            calendar.is_selected = (
+                provider_calendar.is_primary and not selected_existing
+            )
         db.add(calendar)
 
     for calendar in existing_calendars:
@@ -1458,7 +1545,11 @@ def _build_calendar_event_model(
     provider_event: ProviderEventRecord,
 ) -> CalendarEvent:
     return _apply_provider_event_to_model(
-        CalendarEvent(calendar_id=calendar_id, provider_event_id=provider_event.remote_id, title=provider_event.title),
+        CalendarEvent(
+            calendar_id=calendar_id,
+            provider_event_id=provider_event.remote_id,
+            title=provider_event.title,
+        ),
         provider_event,
     )
 
@@ -1468,7 +1559,9 @@ async def _replace_calendar_events(
     calendar_id: int,
     provider_events: list[ProviderEventRecord],
 ) -> None:
-    await db.execute(delete(CalendarEvent).where(CalendarEvent.calendar_id == calendar_id))
+    await db.execute(
+        delete(CalendarEvent).where(CalendarEvent.calendar_id == calendar_id)
+    )
     for provider_event in provider_events:
         db.add(_build_calendar_event_model(calendar_id, provider_event))
 
@@ -1491,7 +1584,9 @@ async def _apply_incremental_calendar_events(
     if not provider_events:
         return
 
-    changed_remote_ids = sorted({provider_event.remote_id for provider_event in provider_events})
+    changed_remote_ids = sorted(
+        {provider_event.remote_id for provider_event in provider_events}
+    )
     existing_events = list(
         (
             await db.execute(
@@ -1500,7 +1595,9 @@ async def _apply_incremental_calendar_events(
                     CalendarEvent.provider_event_id.in_(changed_remote_ids),
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     existing_by_remote_id = {
         existing_event.provider_event_id: existing_event
@@ -1576,7 +1673,9 @@ def _serialise_connection(connection: CalendarConnection) -> CalendarConnectionR
         last_sync_started_at=utc_naive_to_aware(connection.last_sync_started_at),
         last_sync_completed_at=utc_naive_to_aware(connection.last_sync_completed_at),
         last_synced_at=utc_naive_to_aware(connection.last_synced_at),
-        selected_calendar_count=sum(1 for calendar in calendars if calendar.is_selected),
+        selected_calendar_count=sum(
+            1 for calendar in calendars if calendar.is_selected
+        ),
         calendars=[_serialise_source(calendar) for calendar in calendars],
     )
 
@@ -1588,7 +1687,9 @@ async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
         select(CalendarConnection)
         .options(selectinload(CalendarConnection.calendars))
         .where(CalendarConnection.user_id == user.id)
-        .order_by(CalendarConnection.provider.asc(), CalendarConnection.created_at.asc())
+        .order_by(
+            CalendarConnection.provider.asc(), CalendarConnection.created_at.asc()
+        )
     )
     connections = list((await db.execute(statement)).scalars().unique().all())
     return CalendarOverviewRead(
@@ -1600,23 +1701,38 @@ async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
     )
 
 
-async def handle_callback(db: AsyncSession, provider: str, user: User, code: str, state: str) -> CalendarConnection:
+async def handle_callback(
+    db: AsyncSession, provider: str, user: User, code: str, state: str
+) -> CalendarConnection:
     runtime_config = await get_provider_runtime_config(db, provider)
     if not runtime_config.configured:
-        raise HTTPException(status_code=400, detail="Calendar integration is not configured")
+        raise HTTPException(
+            status_code=400, detail="Calendar integration is not configured"
+        )
 
     state_payload = await _pop_oauth_state(state)
     if not state_payload:
-        raise HTTPException(status_code=400, detail="The calendar connection session expired")
-    if int(state_payload.get("user_id", -1)) != user.id or state_payload.get("provider") != provider:
-        raise HTTPException(status_code=400, detail="The calendar connection session is invalid")
+        raise HTTPException(
+            status_code=400, detail="The calendar connection session expired"
+        )
+    if (
+        int(state_payload.get("user_id", -1)) != user.id
+        or state_payload.get("provider") != provider
+    ):
+        raise HTTPException(
+            status_code=400, detail="The calendar connection session is invalid"
+        )
 
     if provider == CalendarProvider.GOOGLE.value:
-        token_bundle = await _exchange_google_code(runtime_config, code, str(state_payload["code_verifier"]))
+        token_bundle = await _exchange_google_code(
+            runtime_config, code, str(state_payload["code_verifier"])
+        )
         identity = await _fetch_google_identity(token_bundle.access_token)
         provider_calendars = await _list_google_calendars(token_bundle.access_token)
     else:
-        token_bundle = await _exchange_microsoft_code(runtime_config, code, str(state_payload["code_verifier"]))
+        token_bundle = await _exchange_microsoft_code(
+            runtime_config, code, str(state_payload["code_verifier"])
+        )
         identity = await _fetch_microsoft_identity(token_bundle.access_token)
         provider_calendars = await _list_microsoft_calendars(token_bundle.access_token)
 
@@ -1649,7 +1765,10 @@ async def update_connection_selection(
     statement = (
         select(CalendarConnection)
         .options(selectinload(CalendarConnection.calendars))
-        .where(CalendarConnection.id == connection_id, CalendarConnection.user_id == user.id)
+        .where(
+            CalendarConnection.id == connection_id,
+            CalendarConnection.user_id == user.id,
+        )
     )
     connection = (await db.execute(statement)).scalars().unique().one_or_none()
     if connection is None:
@@ -1659,7 +1778,9 @@ async def update_connection_selection(
     for calendar in connection.calendars:
         calendar.is_selected = calendar.id in selected_ids
         db.add(calendar)
-    connection.sync_status = CalendarSyncStatus.IDLE.value if not selected_ids else connection.sync_status
+    connection.sync_status = (
+        CalendarSyncStatus.IDLE.value if not selected_ids else connection.sync_status
+    )
     if not selected_ids:
         connection.sync_error = None
     db.add(connection)
@@ -1669,12 +1790,17 @@ async def update_connection_selection(
         await sync_connection_in_session(db, connection.id)
 
     refreshed = (
-        await db.execute(
-            select(CalendarConnection)
-            .options(selectinload(CalendarConnection.calendars))
-            .where(CalendarConnection.id == connection.id)
+        (
+            await db.execute(
+                select(CalendarConnection)
+                .options(selectinload(CalendarConnection.calendars))
+                .where(CalendarConnection.id == connection.id)
+            )
         )
-    ).scalars().unique().one_or_none()
+        .scalars()
+        .unique()
+        .one_or_none()
+    )
     if refreshed is None:
         raise HTTPException(
             status_code=409,
@@ -1693,7 +1819,10 @@ async def update_calendar_source_colour(
     statement = (
         select(CalendarConnection)
         .options(selectinload(CalendarConnection.calendars))
-        .where(CalendarConnection.id == connection_id, CalendarConnection.user_id == user.id)
+        .where(
+            CalendarConnection.id == connection_id,
+            CalendarConnection.user_id == user.id,
+        )
     )
     connection = (await db.execute(statement)).scalars().unique().one_or_none()
     if connection is None:
@@ -1711,16 +1840,23 @@ async def update_calendar_source_colour(
     await db.commit()
 
     refreshed = (
-        await db.execute(
-            select(CalendarConnection)
-            .options(selectinload(CalendarConnection.calendars))
-            .where(CalendarConnection.id == connection.id)
+        (
+            await db.execute(
+                select(CalendarConnection)
+                .options(selectinload(CalendarConnection.calendars))
+                .where(CalendarConnection.id == connection.id)
+            )
         )
-    ).scalars().unique().one()
+        .scalars()
+        .unique()
+        .one()
+    )
     return _serialise_connection(refreshed)
 
 
-async def disconnect_connection(db: AsyncSession, user: User, connection_id: int) -> None:
+async def disconnect_connection(
+    db: AsyncSession, user: User, connection_id: int
+) -> None:
     statement = select(CalendarConnection).where(
         CalendarConnection.id == connection_id,
         CalendarConnection.user_id == user.id,
@@ -1732,11 +1868,16 @@ async def disconnect_connection(db: AsyncSession, user: User, connection_id: int
     await db.commit()
 
 
-async def refresh_connection_now(db: AsyncSession, user: User, connection_id: int) -> CalendarConnectionRead:
+async def refresh_connection_now(
+    db: AsyncSession, user: User, connection_id: int
+) -> CalendarConnectionRead:
     statement = (
         select(CalendarConnection)
         .options(selectinload(CalendarConnection.calendars))
-        .where(CalendarConnection.id == connection_id, CalendarConnection.user_id == user.id)
+        .where(
+            CalendarConnection.id == connection_id,
+            CalendarConnection.user_id == user.id,
+        )
     )
     connection = (await db.execute(statement)).scalars().unique().one_or_none()
     if connection is None:
@@ -1745,12 +1886,17 @@ async def refresh_connection_now(db: AsyncSession, user: User, connection_id: in
     await sync_connection_in_session(db, connection.id)
 
     refreshed = (
-        await db.execute(
-            select(CalendarConnection)
-            .options(selectinload(CalendarConnection.calendars))
-            .where(CalendarConnection.id == connection.id)
+        (
+            await db.execute(
+                select(CalendarConnection)
+                .options(selectinload(CalendarConnection.calendars))
+                .where(CalendarConnection.id == connection.id)
+            )
         )
-    ).scalars().unique().one_or_none()
+        .scalars()
+        .unique()
+        .one_or_none()
+    )
     if refreshed is None:
         raise HTTPException(
             status_code=409,
@@ -1769,7 +1915,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
     if connection is None:
         return
 
-    selected_calendars = [calendar for calendar in connection.calendars if calendar.is_selected]
+    selected_calendars = [
+        calendar for calendar in connection.calendars if calendar.is_selected
+    ]
     if not selected_calendars:
         connection.sync_status = CalendarSyncStatus.IDLE.value
         connection.sync_error = None
@@ -1780,7 +1928,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
     runtime_config = await get_provider_runtime_config(db, connection.provider)
     if not runtime_config.configured:
         connection.sync_status = CalendarSyncStatus.ERROR.value
-        connection.sync_error = f"{PROVIDER_DISPLAY_NAMES[connection.provider]} is not configured"
+        connection.sync_error = (
+            f"{PROVIDER_DISPLAY_NAMES[connection.provider]} is not configured"
+        )
         db.add(connection)
         await db.commit()
         return
@@ -1793,14 +1943,20 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
     await db.commit()
 
     try:
-        access_token = await _get_access_token_for_connection(db, connection, runtime_config)
+        access_token = await _get_access_token_for_connection(
+            db, connection, runtime_config
+        )
         if connection.provider == CalendarProvider.GOOGLE.value:
             provider_calendars = await _list_google_calendars(access_token)
         else:
             provider_calendars = await _list_microsoft_calendars(access_token)
 
-        refreshed_calendars = await _refresh_connection_calendars(db, connection, provider_calendars)
-        selected_calendars = [calendar for calendar in refreshed_calendars if calendar.is_selected]
+        refreshed_calendars = await _refresh_connection_calendars(
+            db, connection, provider_calendars
+        )
+        selected_calendars = [
+            calendar for calendar in refreshed_calendars if calendar.is_selected
+        ]
         window_start, window_end = _build_sync_window()
 
         for calendar in selected_calendars:
@@ -1813,7 +1969,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
             if (
                 connection.provider == CalendarProvider.MICROSOFT.value
                 and use_incremental_sync
-                and await _microsoft_calendar_has_partial_occurrence_artifacts(db, calendar.id)
+                and await _microsoft_calendar_has_partial_occurrence_artifacts(
+                    db, calendar.id
+                )
             ):
                 use_incremental_sync = False
 
@@ -1824,7 +1982,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         calendar.provider_calendar_id,
                         window_start,
                         window_end,
-                        sync_cursor=calendar.sync_cursor if use_incremental_sync else None,
+                        sync_cursor=calendar.sync_cursor
+                        if use_incremental_sync
+                        else None,
                     )
                     if use_incremental_sync:
                         await _apply_incremental_calendar_events(
@@ -1834,7 +1994,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             sync_result.deleted_remote_ids,
                         )
                     else:
-                        await _replace_calendar_events(db, calendar.id, sync_result.events)
+                        await _replace_calendar_events(
+                            db, calendar.id, sync_result.events
+                        )
                 except IncrementalSyncResetRequired:
                     sync_result = await _sync_google_events(
                         access_token,
@@ -1878,7 +2040,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             deleted_remote_ids=[],
                             cursor=delta_cursor,
                         )
-                        await _replace_calendar_events(db, calendar.id, sync_result.events)
+                        await _replace_calendar_events(
+                            db, calendar.id, sync_result.events
+                        )
                 else:
                     provider_events = await _list_microsoft_events(
                         access_token,
@@ -1956,7 +2120,9 @@ async def sync_all_connections() -> int:
 
 def _event_sort_key(event: CalendarEvent) -> tuple[datetime, str]:
     if event.is_all_day and event.start_date is not None:
-        return datetime.combine(event.start_date, datetime.min.time()), event.title.lower()
+        return datetime.combine(
+            event.start_date, datetime.min.time()
+        ), event.title.lower()
     if event.starts_at is not None:
         return event.starts_at, event.title.lower()
     return datetime.max, event.title.lower()
@@ -2001,7 +2167,9 @@ def _to_dashboard_event(
     connection = accounts_by_connection_id[calendar.connection_id]
     account_label = connection.email or connection.display_name
     meeting_url_host = _get_meeting_url_host(event.meeting_url)
-    calendar_colour = getattr(calendar, "user_colour", None) or getattr(calendar, "colour", None)
+    calendar_colour = getattr(calendar, "user_colour", None) or getattr(
+        calendar, "colour", None
+    )
     return CalendarDashboardEventRead(
         id=event.id,
         title=event.title,
@@ -2067,7 +2235,9 @@ async def _get_dashboard_recording_speaker_names(
             GlobalSpeaker.name,
         )
         .select_from(RecordingSpeaker)
-        .outerjoin(GlobalSpeaker, RecordingSpeaker.global_speaker_id == GlobalSpeaker.id)
+        .outerjoin(
+            GlobalSpeaker, RecordingSpeaker.global_speaker_id == GlobalSpeaker.id
+        )
         .where(RecordingSpeaker.recording_id.in_(recording_ids))
         .where(RecordingSpeaker.speaker_status == "active")
         .where(
@@ -2082,7 +2252,14 @@ async def _get_dashboard_recording_speaker_names(
 
     names_by_recording_id: dict[int, list[str]] = {}
     seen_by_recording_id: dict[int, set[str]] = {}
-    for recording_id, local_name, deprecated_name, diarization_label, merged_into_id, global_name in rows:
+    for (
+        recording_id,
+        local_name,
+        deprecated_name,
+        diarization_label,
+        merged_into_id,
+        global_name,
+    ) in rows:
         if merged_into_id is not None:
             continue
 
@@ -2173,7 +2350,9 @@ async def get_dashboard_summary(
     try:
         viewed_month = datetime.strptime(month, "%Y-%m")
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Month must use YYYY-MM format") from exc
+        raise HTTPException(
+            status_code=400, detail="Month must use YYYY-MM format"
+        ) from exc
 
     effective_timezone = get_user_timezone_name(
         user.settings or {},
@@ -2190,13 +2369,20 @@ async def get_dashboard_summary(
         .where(CalendarConnection.user_id == user.id)
     )
     connections = list((await db.execute(statement)).scalars().unique().all())
-    selected_calendars = [calendar for connection in connections for calendar in connection.calendars if calendar.is_selected]
+    selected_calendars = [
+        calendar
+        for connection in connections
+        for calendar in connection.calendars
+        if calendar.is_selected
+    ]
 
     month_start_local = datetime(viewed_month.year, viewed_month.month, 1, tzinfo=tz)
     if viewed_month.month == 12:
         month_end_local = datetime(viewed_month.year + 1, 1, 1, tzinfo=tz)
     else:
-        month_end_local = datetime(viewed_month.year, viewed_month.month + 1, 1, tzinfo=tz)
+        month_end_local = datetime(
+            viewed_month.year, viewed_month.month + 1, 1, tzinfo=tz
+        )
 
     month_start = month_start_local.astimezone(timezone.utc).replace(tzinfo=None)
     month_end = month_end_local.astimezone(timezone.utc).replace(tzinfo=None)
@@ -2219,11 +2405,15 @@ async def get_dashboard_summary(
         Recording.created_at >= month_start,
         Recording.created_at < month_end,
     )
-    unlinked_recordings = list((await db.execute(unlinked_recordings_statement)).scalars().all())
+    unlinked_recordings = list(
+        (await db.execute(unlinked_recordings_statement)).scalars().all()
+    )
 
     events: list[CalendarEvent] = []
     calendars_by_id = {calendar.id: calendar for calendar in selected_calendars}
-    accounts_by_connection_id = {connection.id: connection for connection in connections}
+    accounts_by_connection_id = {
+        connection.id: connection for connection in connections
+    }
     if selected_calendars:
         calendar_ids = list(calendars_by_id.keys())
         overlap_statement = select(CalendarEvent).where(
@@ -2252,14 +2442,20 @@ async def get_dashboard_summary(
             Recording.is_archived.is_(False),
             Recording.calendar_event_id.in_([event.id for event in events]),
         )
-        linked_recordings = list((await db.execute(linked_recordings_statement)).scalars().all())
+        linked_recordings = list(
+            (await db.execute(linked_recordings_statement)).scalars().all()
+        )
         for recording in linked_recordings:
             if recording.calendar_event_id is None:
                 continue
-            linked_recordings_by_event_id.setdefault(recording.calendar_event_id, []).append(recording)
+            linked_recordings_by_event_id.setdefault(
+                recording.calendar_event_id, []
+            ).append(recording)
 
     all_dashboard_recordings = [*unlinked_recordings, *linked_recordings]
-    all_dashboard_recording_ids = [recording.id for recording in all_dashboard_recordings]
+    all_dashboard_recording_ids = [
+        recording.id for recording in all_dashboard_recordings
+    ]
     recording_speaker_names_by_id = await _get_dashboard_recording_speaker_names(
         db,
         all_dashboard_recording_ids,
@@ -2272,7 +2468,10 @@ async def get_dashboard_summary(
     if events or unlinked_recordings:
         state = CalendarDashboardState.READY.value
     elif selected_calendars and not events:
-        if any(connection.sync_status == CalendarSyncStatus.SYNCING.value for connection in connections):
+        if any(
+            connection.sync_status == CalendarSyncStatus.SYNCING.value
+            for connection in connections
+        ):
             state = CalendarDashboardState.SYNC_IN_PROGRESS.value
         else:
             state = CalendarDashboardState.NO_EVENTS.value
@@ -2286,7 +2485,9 @@ async def get_dashboard_summary(
     for recording in unlinked_recordings:
         if recording.created_at is None:
             continue
-        recording_date = utc_naive_to_timezone(recording.created_at, effective_timezone).date()
+        recording_date = utc_naive_to_timezone(
+            recording.created_at, effective_timezone
+        ).date()
         if month_start_date <= recording_date < month_end_date:
             day_counts[recording_date] = day_counts.get(recording_date, 0) + 1
 
@@ -2324,20 +2525,33 @@ async def get_dashboard_summary(
         future_statement = select(CalendarEvent).where(
             CalendarEvent.calendar_id.in_(list(calendars_by_id.keys())),
             sa.or_(
-                sa.and_(CalendarEvent.is_all_day.is_(True), CalendarEvent.end_date > today),
-                sa.and_(CalendarEvent.is_all_day.is_(False), CalendarEvent.ends_at >= now),
+                sa.and_(
+                    CalendarEvent.is_all_day.is_(True), CalendarEvent.end_date > today
+                ),
+                sa.and_(
+                    CalendarEvent.is_all_day.is_(False), CalendarEvent.ends_at >= now
+                ),
             ),
         )
         future_events = list((await db.execute(future_statement)).scalars().all())
         if future_events:
             next_event = sorted(future_events, key=_event_sort_key)[0]
-            next_event_obj = _to_dashboard_event(next_event, calendars_by_id, accounts_by_connection_id)
+            next_event_obj = _to_dashboard_event(
+                next_event, calendars_by_id, accounts_by_connection_id
+            )
 
     last_synced_at = max(
-        (connection.last_synced_at for connection in connections if connection.last_synced_at is not None),
+        (
+            connection.last_synced_at
+            for connection in connections
+            if connection.last_synced_at is not None
+        ),
         default=None,
     )
-    is_syncing = any(connection.sync_status == CalendarSyncStatus.SYNCING.value for connection in connections)
+    is_syncing = any(
+        connection.sync_status == CalendarSyncStatus.SYNCING.value
+        for connection in connections
+    )
     return CalendarDashboardSummaryRead(
         month=month,
         timezone=effective_timezone,

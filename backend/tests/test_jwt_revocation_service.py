@@ -4,14 +4,15 @@ from datetime import timedelta
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.core import security
-from backend.models.invitation import Invitation  # noqa: F401 - register relationship target
+from backend.models.invitation import (
+    Invitation,  # noqa: F401 - register relationship target
+)
 from backend.models.revoked_jwt import RevokedJwt
 from backend.models.user import User
 from backend.services.jwt_revocation_service import (
@@ -20,7 +21,6 @@ from backend.services.jwt_revocation_service import (
     revoke_jwt_by_payload,
 )
 from backend.utils.time import utc_now
-
 
 SCHEMA_STATEMENTS = [
     """
@@ -101,13 +101,17 @@ async def test_bump_user_token_version_increments_and_persists(session_maker):
     assert user.token_version == 0
 
     async with session_maker() as session:
-        managed = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
+        managed = (
+            await session.execute(select(User).where(User.id == user.id))
+        ).scalar_one()
         new_value = await bump_user_token_version(session, managed)
 
     assert new_value == 1
 
     async with session_maker() as session:
-        refreshed = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
+        refreshed = (
+            await session.execute(select(User).where(User.id == user.id))
+        ).scalar_one()
         assert refreshed.token_version == 1
 
 
@@ -126,11 +130,15 @@ async def test_revoke_jwt_by_payload_inserts_jti_and_is_idempotent(
     payload = security.decode_access_token(token)
 
     async with session_maker() as session:
-        managed = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
+        managed = (
+            await session.execute(select(User).where(User.id == user.id))
+        ).scalar_one()
         first = await revoke_jwt_by_payload(session, payload, managed, reason="logout")
         # Repeat in a fresh session to exercise the lookup branch.
     async with session_maker() as session:
-        managed = (await session.execute(select(User).where(User.id == user.id))).scalar_one()
+        managed = (
+            await session.execute(select(User).where(User.id == user.id))
+        ).scalar_one()
         second = await revoke_jwt_by_payload(session, payload, managed, reason="logout")
 
     assert first is True

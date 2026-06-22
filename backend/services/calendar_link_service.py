@@ -5,13 +5,13 @@ function. :func:`auto_link_recording` is the conservative worker-side hook
 that runs at the PROCESSED transition; it never overwrites an existing link
 and never raises out of the worker.
 """
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-import sqlalchemy as sa
 from sqlmodel import select
 
 from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
@@ -126,7 +126,12 @@ def auto_link_recording(session, recording: Recording) -> None:
 
         scored = sorted(
             (
-                (event, score_event_match(window_start, window_end, event.starts_at, event.ends_at))
+                (
+                    event,
+                    score_event_match(
+                        window_start, window_end, event.starts_at, event.ends_at
+                    ),
+                )
                 for event in events
             ),
             key=lambda pair: pair[1],
@@ -161,4 +166,6 @@ def auto_link_recording(session, recording: Recording) -> None:
             best_score,
         )
     except Exception:  # noqa: BLE001 - linking must never break the pipeline
-        logger.exception("Auto-linking failed for recording %s", getattr(recording, "id", None))
+        logger.exception(
+            "Auto-linking failed for recording %s", getattr(recording, "id", None)
+        )

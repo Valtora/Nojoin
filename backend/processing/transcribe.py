@@ -21,12 +21,15 @@ def _get_engine(name: str):
         return _ENGINE_REGISTRY[name]
     if name == "whisper":
         from .engines.whisper_engine import WhisperEngine
+
         engine = WhisperEngine()
     elif name == "parakeet":
         from .engines.parakeet_engine import ParakeetEngine
+
         engine = ParakeetEngine()
     elif name == "canary":
         from .engines.canary_engine import CanaryEngine
+
         engine = CanaryEngine()
     else:
         raise ValueError(f"Unknown transcription backend: {name}")

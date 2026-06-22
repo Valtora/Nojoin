@@ -1,15 +1,19 @@
-import os
 import logging
-from fastapi import HTTPException, UploadFile
+import os
+
 import aiofiles
+from fastapi import HTTPException, UploadFile
 
 logger = logging.getLogger(__name__)
 
 # Size limit configuration (defaults in bytes)
 UPLOAD_LIMIT_SEGMENT = int(os.getenv("UPLOAD_LIMIT_SEGMENT", 15 * 1024 * 1024))
-UPLOAD_LIMIT_LEGACY_RECORDING = int(os.getenv("UPLOAD_LIMIT_LEGACY_RECORDING", 250 * 1024 * 1024))
+UPLOAD_LIMIT_LEGACY_RECORDING = int(
+    os.getenv("UPLOAD_LIMIT_LEGACY_RECORDING", 250 * 1024 * 1024)
+)
 UPLOAD_LIMIT_DOCUMENT = int(os.getenv("UPLOAD_LIMIT_DOCUMENT", 20 * 1024 * 1024))
 UPLOAD_LIMIT_BACKUP = int(os.getenv("UPLOAD_LIMIT_BACKUP", 300 * 1024 * 1024))
+
 
 async def stream_and_validate_upload(
     file: UploadFile,
@@ -33,7 +37,7 @@ async def stream_and_validate_upload(
                 )
                 raise HTTPException(
                     status_code=413,
-                    detail=f"Upload size exceeds the maximum limit of {max_size} bytes."
+                    detail=f"Upload size exceeds the maximum limit of {max_size} bytes.",
                 )
         except ValueError:
             pass
@@ -52,7 +56,7 @@ async def stream_and_validate_upload(
                     )
                     raise HTTPException(
                         status_code=413,
-                        detail=f"Upload size exceeds the maximum limit of {max_size} bytes."
+                        detail=f"Upload size exceeds the maximum limit of {max_size} bytes.",
                     )
                 await out_file.write(chunk)
     except Exception as e:
@@ -61,7 +65,9 @@ async def stream_and_validate_upload(
             if os.path.exists(dest_path):
                 os.unlink(dest_path)
         except OSError as cleanup_err:
-            logger.error(f"Failed to clean up partial upload file {dest_path}: {cleanup_err}")
+            logger.error(
+                f"Failed to clean up partial upload file {dest_path}: {cleanup_err}"
+            )
         raise e
 
     return size_so_far

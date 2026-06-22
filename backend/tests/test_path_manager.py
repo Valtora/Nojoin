@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from backend.core.security import _migrate_legacy_secret_file
 from backend.utils.path_manager import PathManager
 

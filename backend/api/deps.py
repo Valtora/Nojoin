@@ -1,7 +1,7 @@
 from typing import Any, AsyncGenerator, Optional
 from urllib.parse import urlparse
 
-from fastapi import Depends, HTTPException, status, Request, WebSocket
+from fastapi import Depends, HTTPException, Request, WebSocket, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from pydantic import ValidationError
@@ -21,8 +21,7 @@ from backend.models.user import User
 from backend.utils.config_manager import LOCAL_WEB_ORIGINS, get_trusted_web_origin
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/login/access-token",
-    auto_error=False
+    tokenUrl="/api/v1/login/access-token", auto_error=False
 )
 
 STANDARD_USER_TOKEN_TYPES = {SESSION_TOKEN_TYPE, API_TOKEN_TYPE}
@@ -43,7 +42,14 @@ BROWSER_SESSION_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 BROWSER_SESSION_TRUST_ERROR_DETAIL = (
     "Browser session requests must originate from the trusted Nojoin web origin."
 )
-LOCAL_BROWSER_SESSION_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "test", "testserver"}
+LOCAL_BROWSER_SESSION_HOSTNAMES = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "test",
+    "testserver",
+}
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_session():
@@ -225,13 +231,14 @@ async def get_authenticated_user_from_token(
     )
     return user
 
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(reusable_oauth2)
+    token: Optional[str] = Depends(reusable_oauth2),
 ) -> User:
     actual_token, used_cookie_auth = _resolve_request_token(request, token)
-    
+
     if not actual_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -251,13 +258,14 @@ async def get_current_user(
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
     return user
 
+
 async def get_current_user_stream(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    token: Optional[str] = Depends(reusable_oauth2)
+    token: Optional[str] = Depends(reusable_oauth2),
 ) -> User:
     actual_token, used_cookie_auth = _resolve_request_token(request, token)
-    
+
     if not actual_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -327,6 +335,7 @@ async def get_current_recording_client_details(
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
     return user, payload
 
+
 async def get_current_active_superuser(
     current_user: User = Depends(get_current_user),
 ) -> User:
@@ -336,6 +345,7 @@ async def get_current_active_superuser(
         )
     return current_user
 
+
 async def get_current_admin_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
@@ -344,10 +354,9 @@ async def get_current_admin_user(
     """
     allowed_roles = ["owner", "admin"]
     if current_user.role not in allowed_roles and not current_user.is_superuser:
-         raise HTTPException(
-            status_code=403, detail="Not authorized"
-        )
+        raise HTTPException(status_code=403, detail="Not authorized")
     return current_user
+
 
 async def get_current_user_ws(
     websocket: WebSocket,
@@ -357,14 +366,15 @@ async def get_current_user_ws(
     Dedicated dependency for WebSocket authentication.
     Bypasses OAuth2PasswordBearer which fails in WS context.
     """
-    actual_token = _get_bearer_token(websocket.headers.get("authorization")) or websocket.cookies.get("access_token")
+    actual_token = _get_bearer_token(
+        websocket.headers.get("authorization")
+    ) or websocket.cookies.get("access_token")
     if not actual_token:
         # For WebSockets, we can't easily raise HTTPException with headers.
         # We'll just raise a standard 401/403 which FastAPI WS handles by closing connection usually,
         # or handle gracefully in the endpoint.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
 
     user = await get_authenticated_user_from_token(
@@ -375,10 +385,10 @@ async def get_current_user_ws(
     )
     if user.force_password_change:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Password change required"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Password change required"
         )
     return user
+
 
 async def get_current_active_superuser_ws(
     current_user: User = Depends(get_current_user_ws),

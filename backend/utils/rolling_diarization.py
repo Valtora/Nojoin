@@ -11,7 +11,6 @@ from backend.models.pipeline import (
     RecordingAudioWindowManifest,
 )
 
-
 DEFAULT_ROLLING_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 MIN_ROLLING_DIARIZATION_EMBEDDING_DURATION_S = 0.5
 ROLLING_DIARIZATION_OVERLAP_EPSILON_S = 0.05
@@ -47,8 +46,16 @@ def build_rolling_diarization_config_hash(
             str(config.get("enable_diarization", True)),
             str(config.get("processing_device", "auto")),
             str(bool(config.get("use_gpu", True))),
-            str(target_window_ms if target_window_ms is not None else config.get("rolling_diarization_window_ms", 20_000)),
-            str(hop_ms if hop_ms is not None else config.get("rolling_diarization_hop_ms", 5_000)),
+            str(
+                target_window_ms
+                if target_window_ms is not None
+                else config.get("rolling_diarization_window_ms", 20_000)
+            ),
+            str(
+                hop_ms
+                if hop_ms is not None
+                else config.get("rolling_diarization_hop_ms", 5_000)
+            ),
             get_rolling_diarization_model_name(),
         ]
     )
@@ -72,7 +79,9 @@ def build_diarization_window_payload(
             turn_payloads.append(
                 {
                     "local_speaker_key": local_speaker_key,
-                    "start_ms": int(round(window_start_ms + (float(turn.start) * 1000.0))),
+                    "start_ms": int(
+                        round(window_start_ms + (float(turn.start) * 1000.0))
+                    ),
                     "end_ms": int(round(window_start_ms + (float(turn.end) * 1000.0))),
                     "track": str(track),
                 }
@@ -155,7 +164,9 @@ def persist_diarization_window_result(
     existing_result.chunk_start_sequence = manifest_row.chunk_start_sequence
     existing_result.chunk_end_sequence = manifest_row.chunk_end_sequence
     existing_result.model_name = model_name
-    existing_result.model_version = model_version or get_rolling_diarization_model_version(model_name)
+    existing_result.model_version = (
+        model_version or get_rolling_diarization_model_version(model_name)
+    )
     existing_result.device = device
     existing_result.config_hash = config_hash
     existing_result.status = "failed" if error_message else "completed"
@@ -349,7 +360,9 @@ def analyze_window_speakers(
         ):
             metadata["best_recording_speaker_id"] = int(best_recording_speaker.id)
         if best_recording_speaker is not None:
-            metadata["best_recording_speaker_score"] = round(float(best_recording_score), 4)
+            metadata["best_recording_speaker_score"] = round(
+                float(best_recording_score), 4
+            )
 
         best_global_speaker = None
         best_global_score = 0.0

@@ -1,6 +1,7 @@
 from .constants import *
-from .speaker import *
 from .segmentation import *
+from .speaker import *
+
 
 def reconcile_completed_diarization_windows(
     session,
@@ -11,6 +12,7 @@ def reconcile_completed_diarization_windows(
     processing_run_id: int | None = None,
 ) -> dict[str, int]:
     from .core import _reconcile_completed_windows_from_effective_point
+
     return _reconcile_completed_windows_from_effective_point(
         session,
         recording_id=recording_id,
@@ -18,7 +20,6 @@ def reconcile_completed_diarization_windows(
         source=source,
         processing_run_id=processing_run_id,
     )
-
 
 
 def reconcile_diarization_window_result(
@@ -32,33 +33,57 @@ def reconcile_diarization_window_result(
     allow_speaker_reassignment: bool = True,
     replay_policy: SpeakerReplayPolicy | None = None,
 ) -> dict[str, int]:
-    from .core import refresh_transcript_projection_from_canonical, list_active_utterances
+    from .core import (
+        list_active_utterances,
+        refresh_transcript_projection_from_canonical,
+    )
+
     window_result = session.get(DiarizationWindowResult, window_result_id)
     if window_result is None or window_result.recording_id != recording_id:
-        return {"matched_turn_count": 0, "updated_utterance_count": 0, "preserved_manual_lock_count": 0}
+        return {
+            "matched_turn_count": 0,
+            "updated_utterance_count": 0,
+            "preserved_manual_lock_count": 0,
+        }
 
     turn_rows = list(
         session.execute(
             select(DiarizationWindowTurn)
             .where(DiarizationWindowTurn.window_result_id == window_result.id)
-            .order_by(DiarizationWindowTurn.start_ms, DiarizationWindowTurn.end_ms, DiarizationWindowTurn.id)
-        ).scalars().all()
+            .order_by(
+                DiarizationWindowTurn.start_ms,
+                DiarizationWindowTurn.end_ms,
+                DiarizationWindowTurn.id,
+            )
+        )
+        .scalars()
+        .all()
     )
     if not turn_rows:
-        return {"matched_turn_count": 0, "updated_utterance_count": 0, "preserved_manual_lock_count": 0}
+        return {
+            "matched_turn_count": 0,
+            "updated_utterance_count": 0,
+            "preserved_manual_lock_count": 0,
+        }
 
     effective_policy = _effective_speaker_replay_policy(
         replay_policy,
         allow_speaker_reassignment=allow_speaker_reassignment,
     )
     transcript = _load_transcript(session, recording_id)
-    projection_by_public_id = {
-        str(segment.get("id")): segment
-        for segment in (transcript.segments or [])
-        if isinstance(segment, dict) and segment.get("id")
-    } if transcript is not None else {}
+    projection_by_public_id = (
+        {
+            str(segment.get("id")): segment
+            for segment in (transcript.segments or [])
+            if isinstance(segment, dict) and segment.get("id")
+        }
+        if transcript is not None
+        else {}
+    )
     recording_speakers = _load_recording_speakers(session, recording_id)
-    recording_speakers_by_id = {speaker.id: speaker for speaker in recording_speakers if speaker.id is not None}
+    recording_speakers_by_id = {
+        speaker.id: speaker for speaker in recording_speakers if speaker.id is not None
+    }
     overlap_start_ms = int(window_result.window_start_ms)
     if effective_from_ms is not None:
         overlap_start_ms = max(overlap_start_ms, int(effective_from_ms))
@@ -70,7 +95,9 @@ def reconcile_diarization_window_result(
             .where(TranscriptUtterance.start_ms < int(window_result.window_end_ms))
             .where(TranscriptUtterance.end_ms > overlap_start_ms)
             .order_by(TranscriptUtterance.sort_key, TranscriptUtterance.id)
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     previous_turn_rows = list(
         session.execute(
@@ -85,13 +112,17 @@ def reconcile_diarization_window_result(
             .where(DiarizationWindowTurn.matched_recording_speaker_id.is_not(None))
             .where(DiarizationWindowTurn.end_ms > int(window_result.window_start_ms))
             .where(DiarizationWindowTurn.start_ms < int(window_result.window_end_ms))
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
 
     raw_payload = dict(window_result.raw_payload or {})
     speaker_metadata_by_key = {
         str(local_speaker_key): dict(metadata or {})
-        for local_speaker_key, metadata in (raw_payload.get("speaker_metadata") or {}).items()
+        for local_speaker_key, metadata in (
+            raw_payload.get("speaker_metadata") or {}
+        ).items()
     }
 
     turns_by_local_speaker: dict[str, list[DiarizationWindowTurn]] = defaultdict(list)
@@ -100,13 +131,15 @@ def reconcile_diarization_window_result(
 
     local_speaker_matches: dict[str, dict[str, Any]] = {}
     for local_speaker_key, local_turn_rows in turns_by_local_speaker.items():
-        matched_speaker, turn_confidence, evidence_payload = _match_window_local_speaker(
-            session,
-            local_turn_rows=local_turn_rows,
-            speaker_metadata=speaker_metadata_by_key.get(local_speaker_key, {}),
-            overlapping_utterances=overlapping_utterances,
-            previous_turn_rows=previous_turn_rows,
-            recording_speakers_by_id=recording_speakers_by_id,
+        matched_speaker, turn_confidence, evidence_payload = (
+            _match_window_local_speaker(
+                session,
+                local_turn_rows=local_turn_rows,
+                speaker_metadata=speaker_metadata_by_key.get(local_speaker_key, {}),
+                overlapping_utterances=overlapping_utterances,
+                previous_turn_rows=previous_turn_rows,
+                recording_speakers_by_id=recording_speakers_by_id,
+            )
         )
         local_speaker_matches[local_speaker_key] = {
             "matched_speaker": matched_speaker,
@@ -139,10 +172,11 @@ def reconcile_diarization_window_result(
         if (
             matched_speaker is not None
             and match_payload.get("matched_speaker") is not None
-            and getattr(match_payload.get("matched_speaker"), "id", None) != getattr(matched_speaker, "id", None)
+            and getattr(match_payload.get("matched_speaker"), "id", None)
+            != getattr(matched_speaker, "id", None)
         ):
-            evidence_payload["identity_replay_normalized_from_recording_speaker_id"] = int(
-                match_payload["matched_speaker"].id
+            evidence_payload["identity_replay_normalized_from_recording_speaker_id"] = (
+                int(match_payload["matched_speaker"].id)
             )
             evidence_payload["identity_replay_anchor_recording_speaker_id"] = int(
                 matched_speaker.id
@@ -151,7 +185,9 @@ def reconcile_diarization_window_result(
         metadata_payload = dict(speaker_metadata_by_key.get(local_speaker_key, {}))
         metadata_payload.update(
             {
-                "matched_recording_speaker_id": int(matched_speaker.id) if matched_speaker is not None else None,
+                "matched_recording_speaker_id": int(matched_speaker.id)
+                if matched_speaker is not None
+                else None,
                 "match_confidence": round(float(turn_confidence), 4),
                 "provisional": matched_speaker is None,
                 "evidence": evidence_payload,
@@ -164,7 +200,9 @@ def reconcile_diarization_window_result(
             turn_metadata["match"] = metadata_payload
             turn_row.metadata_payload = turn_metadata
             turn_row.confidence = round(float(turn_confidence), 4)
-            turn_row.matched_recording_speaker_id = matched_speaker.id if matched_speaker is not None else None
+            turn_row.matched_recording_speaker_id = (
+                matched_speaker.id if matched_speaker is not None else None
+            )
             session.add(turn_row)
 
         if matched_speaker is not None:
@@ -219,7 +257,9 @@ def reconcile_diarization_window_result(
             replay_policy=effective_policy,
         )
         existing_payload = dict(utterance.confidence_payload or {})
-        existing_rolling_payload = dict(existing_payload.get("rolling_diarization") or {})
+        existing_rolling_payload = dict(
+            existing_payload.get("rolling_diarization") or {}
+        )
         current_overlap_labels = _rolling_overlap_labels_for_utterance(
             utterance,
             projection=projection,
@@ -228,16 +268,20 @@ def reconcile_diarization_window_result(
         has_existing_overlap = bool(
             current_overlap_labels
             or list(projection.get("overlapping_speakers") or [])
-            or list(existing_rolling_payload.get("overlapping_recording_speaker_ids") or [])
+            or list(
+                existing_rolling_payload.get("overlapping_recording_speaker_ids") or []
+            )
             or list(existing_rolling_payload.get("overlapping_speakers") or [])
             or utterance.overlap_group_id
         )
         if not _is_identity_replay_policy(effective_policy):
-            split_replacement_segments = _build_split_replacement_segments_from_diarization(
-                utterance,
-                turn_rows=turn_rows,
-                recording_speakers_by_id=recording_speakers_by_id,
-                window_result_id=int(window_result.id),
+            split_replacement_segments = (
+                _build_split_replacement_segments_from_diarization(
+                    utterance,
+                    turn_rows=turn_rows,
+                    recording_speakers_by_id=recording_speakers_by_id,
+                    window_result_id=int(window_result.id),
+                )
             )
             if split_replacement_segments:
                 replacement_utterances = _apply_boundary_reconciliation_segments(
@@ -273,19 +317,25 @@ def reconcile_diarization_window_result(
                     updated_utterance_count += len(replacement_utterances)
                 continue
 
-        candidate_speaker, candidate_confidence, candidate_payload = _match_utterance_from_diarization_turns(
-            utterance,
-            turn_rows=turn_rows,
-            recording_speakers_by_id=recording_speakers_by_id,
-            replay_policy=effective_policy,
+        candidate_speaker, candidate_confidence, candidate_payload = (
+            _match_utterance_from_diarization_turns(
+                utterance,
+                turn_rows=turn_rows,
+                recording_speakers_by_id=recording_speakers_by_id,
+                replay_policy=effective_policy,
+            )
         )
         current_speaker_id = utterance.recording_speaker_id
-        identity_anchor_speaker_id = _identity_replay_anchor_recording_speaker_id(effective_policy)
+        identity_anchor_speaker_id = _identity_replay_anchor_recording_speaker_id(
+            effective_policy
+        )
         current_is_identity_cluster_member = _identity_replay_scope_contains(
             effective_policy,
             current_speaker_id,
         )
-        existing_speaker_confidence = _to_optional_float(utterance.speaker_confidence) or 0.0
+        existing_speaker_confidence = (
+            _to_optional_float(utterance.speaker_confidence) or 0.0
+        )
 
         def overlap_payload_for(applied_speaker_id: int | None) -> dict[str, Any]:
             return _build_utterance_overlap_projection_payload(
@@ -300,8 +350,12 @@ def reconcile_diarization_window_result(
             )
 
         if candidate_speaker is None:
-            overlap_payload = overlap_payload_for(int(current_speaker_id) if current_speaker_id is not None else None)
-            if not _rolling_overlap_payload_changed(existing_rolling_payload, overlap_payload):
+            overlap_payload = overlap_payload_for(
+                int(current_speaker_id) if current_speaker_id is not None else None
+            )
+            if not _rolling_overlap_payload_changed(
+                existing_rolling_payload, overlap_payload
+            ):
                 continue
             rolling_payload = dict(existing_rolling_payload)
             rolling_payload["window_result_id"] = int(window_result.id)
@@ -361,13 +415,19 @@ def reconcile_diarization_window_result(
             rolling_payload["applied_recording_speaker_id"] = (
                 int(current_speaker_id) if current_speaker_id is not None else None
             )
-            rolling_payload["candidate_recording_speaker_id"] = int(candidate_speaker.id)
-            rolling_payload["candidate_confidence"] = round(float(candidate_confidence), 4)
+            rolling_payload["candidate_recording_speaker_id"] = int(
+                candidate_speaker.id
+            )
+            rolling_payload["candidate_confidence"] = round(
+                float(candidate_confidence), 4
+            )
             rolling_payload["candidate_rejected"] = True
             rolling_payload["rejection_reason"] = rejection_reason
             _merge_overlap_payload_into_rolling(
                 rolling_payload,
-                overlap_payload_for(int(current_speaker_id) if current_speaker_id is not None else None),
+                overlap_payload_for(
+                    int(current_speaker_id) if current_speaker_id is not None else None
+                ),
             )
             existing_payload["rolling_diarization"] = rolling_payload
             utterance.confidence_payload = existing_payload
@@ -382,7 +442,9 @@ def reconcile_diarization_window_result(
                     utterance=utterance,
                     candidate_speaker_id=int(candidate_speaker.id),
                     current_speaker_id=(
-                        int(current_speaker_id) if current_speaker_id is not None else None
+                        int(current_speaker_id)
+                        if current_speaker_id is not None
+                        else None
                     ),
                 )
 
@@ -392,7 +454,11 @@ def reconcile_diarization_window_result(
                 current_state_payload
                 or _build_utterance_speaker_state_payload(
                     utterance,
-                    speaker_id=(int(current_speaker_id) if current_speaker_id is not None else int(candidate_speaker.id)),
+                    speaker_id=(
+                        int(current_speaker_id)
+                        if current_speaker_id is not None
+                        else int(candidate_speaker.id)
+                    ),
                     confidence=existing_speaker_confidence or candidate_confidence,
                     support_summary=support_summary,
                     manual_override=True,
@@ -401,10 +467,14 @@ def reconcile_diarization_window_result(
             rolling_payload["applied_recording_speaker_id"] = (
                 int(current_speaker_id) if current_speaker_id is not None else None
             )
-            rolling_payload["candidate_recording_speaker_id"] = int(candidate_speaker.id)
+            rolling_payload["candidate_recording_speaker_id"] = int(
+                candidate_speaker.id
+            )
             _merge_overlap_payload_into_rolling(
                 rolling_payload,
-                overlap_payload_for(int(current_speaker_id) if current_speaker_id is not None else None),
+                overlap_payload_for(
+                    int(current_speaker_id) if current_speaker_id is not None else None
+                ),
             )
             existing_payload["rolling_diarization"] = rolling_payload
             utterance.confidence_payload = existing_payload
@@ -420,7 +490,9 @@ def reconcile_diarization_window_result(
                 rolling_payload,
                 overlap_payload_for(int(candidate_speaker.id)),
             )
-            utterance.speaker_confidence = max(existing_speaker_confidence, candidate_confidence)
+            utterance.speaker_confidence = max(
+                existing_speaker_confidence, candidate_confidence
+            )
             utterance.last_diarization_window_result_id = window_result.id
             existing_payload["rolling_diarization"] = rolling_payload
             utterance.confidence_payload = existing_payload
@@ -428,7 +500,9 @@ def reconcile_diarization_window_result(
                 utterance,
                 source=source,
                 authority=_max_speaker_assignment_authority(
-                    _utterance_speaker_assignment_authority(utterance, projection=projection),
+                    _utterance_speaker_assignment_authority(
+                        utterance, projection=projection
+                    ),
                     _derive_default_speaker_assignment_authority(
                         state=utterance.state,
                         manual_speaker_locked=bool(utterance.manual_speaker_locked),
@@ -485,7 +559,9 @@ def reconcile_diarization_window_result(
             and identity_anchor_speaker_id is not None
             and int(candidate_speaker.id) != int(identity_anchor_speaker_id)
         ):
-            candidate_status = str(getattr(candidate_speaker, "speaker_status", "") or "")
+            candidate_status = str(
+                getattr(candidate_speaker, "speaker_status", "") or ""
+            )
             if (
                 not effective_policy.allow_inactive_candidate_reactivation
                 and candidate_status not in {"", "active"}
@@ -505,11 +581,12 @@ def reconcile_diarization_window_result(
 
         if (
             not cluster_normalization
-            and
-            current_speaker_id is not None
+            and current_speaker_id is not None
             and current_state_payload is not None
-            and current_state_payload.get("speaker_state") == ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
-            and int(candidate_state_payload.get("supporting_window_count", 0)) < ROLLING_DIARIZATION_STABLE_WINDOW_COUNT
+            and current_state_payload.get("speaker_state")
+            == ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
+            and int(candidate_state_payload.get("supporting_window_count", 0))
+            < ROLLING_DIARIZATION_STABLE_WINDOW_COUNT
         ):
             rolling_payload["candidate_supporting_window_count"] = int(
                 candidate_state_payload.get("supporting_window_count", 0)
@@ -518,13 +595,15 @@ def reconcile_diarization_window_result(
             projection_dirty = True
             continue
 
-        if (
-            not cluster_normalization
-            and existing_speaker_confidence
-            >= (candidate_confidence + ROLLING_DIARIZATION_EXISTING_CONFIDENCE_MARGIN)
+        if not cluster_normalization and existing_speaker_confidence >= (
+            candidate_confidence + ROLLING_DIARIZATION_EXISTING_CONFIDENCE_MARGIN
         ):
-            overlap_payload = overlap_payload_for(int(current_speaker_id) if current_speaker_id is not None else None)
-            if not _rolling_overlap_payload_changed(existing_rolling_payload, overlap_payload):
+            overlap_payload = overlap_payload_for(
+                int(current_speaker_id) if current_speaker_id is not None else None
+            )
+            if not _rolling_overlap_payload_changed(
+                existing_rolling_payload, overlap_payload
+            ):
                 continue
             reject_candidate("existing_speaker_confidence_higher")
             projection_dirty = True
@@ -552,7 +631,9 @@ def reconcile_diarization_window_result(
             utterance,
             source=source,
             authority=_max_speaker_assignment_authority(
-                _utterance_speaker_assignment_authority(utterance, projection=projection),
+                _utterance_speaker_assignment_authority(
+                    utterance, projection=projection
+                ),
                 _derive_default_speaker_assignment_authority(
                     state=utterance.state,
                     manual_speaker_locked=bool(utterance.manual_speaker_locked),
@@ -590,7 +671,6 @@ def reconcile_diarization_window_result(
     }
 
 
-
 def _enforce_distinct_window_local_speaker_matches(
     session,
     *,
@@ -608,9 +688,14 @@ def _enforce_distinct_window_local_speaker_matches(
         matched_speaker = match_payload.get("matched_speaker")
         if matched_speaker is None or getattr(matched_speaker, "id", None) is None:
             continue
-        matched_local_keys_by_speaker_id[int(matched_speaker.id)].append(local_speaker_key)
+        matched_local_keys_by_speaker_id[int(matched_speaker.id)].append(
+            local_speaker_key
+        )
 
-    for contested_speaker_id, local_speaker_keys in matched_local_keys_by_speaker_id.items():
+    for (
+        contested_speaker_id,
+        local_speaker_keys,
+    ) in matched_local_keys_by_speaker_id.items():
         if len(local_speaker_keys) < 2:
             continue
 
@@ -639,10 +724,17 @@ def _enforce_distinct_window_local_speaker_matches(
                 )
             )
 
-            if alternate_speaker is None and _local_turn_total_duration_ms(
-                turns_by_local_speaker.get(local_speaker_key, [])
-            ) >= ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS:
-                if replay_policy is not None and not replay_policy.allow_new_recording_speakers:
+            if (
+                alternate_speaker is None
+                and _local_turn_total_duration_ms(
+                    turns_by_local_speaker.get(local_speaker_key, [])
+                )
+                >= ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS
+            ):
+                if (
+                    replay_policy is not None
+                    and not replay_policy.allow_new_recording_speakers
+                ):
                     alternate_evidence = {
                         "reason": "distinct_local_speaker_new_recording_speaker_blocked",
                         "provisional": True,
@@ -652,16 +744,22 @@ def _enforce_distinct_window_local_speaker_matches(
                         session,
                         recording_id=recording_id,
                         processing_run_id=processing_run_id,
-                        local_turn_rows=turns_by_local_speaker.get(local_speaker_key, []),
+                        local_turn_rows=turns_by_local_speaker.get(
+                            local_speaker_key, []
+                        ),
                     )
-                    recording_speakers_by_id[int(alternate_speaker.id)] = alternate_speaker
+                    recording_speakers_by_id[int(alternate_speaker.id)] = (
+                        alternate_speaker
+                    )
                     alternate_confidence = ROLLING_DIARIZATION_CONFIDENCE_FLOOR
                     alternate_evidence = {
                         "reason": "distinct_local_speaker_new_recording_speaker",
                         "provisional": False,
                     }
 
-            existing_evidence = dict(local_speaker_matches[local_speaker_key].get("evidence") or {})
+            existing_evidence = dict(
+                local_speaker_matches[local_speaker_key].get("evidence") or {}
+            )
             if alternate_speaker is None:
                 existing_evidence.update(
                     {
@@ -675,7 +773,12 @@ def _enforce_distinct_window_local_speaker_matches(
                     {
                         "matched_speaker": None,
                         "confidence": min(
-                            float(local_speaker_matches[local_speaker_key].get("confidence") or 0.0),
+                            float(
+                                local_speaker_matches[local_speaker_key].get(
+                                    "confidence"
+                                )
+                                or 0.0
+                            ),
                             ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
                         ),
                         "evidence": existing_evidence,
@@ -730,7 +833,10 @@ def _enforce_distinct_window_local_speaker_matches(
                 < ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS
             ):
                 continue
-            if replay_policy is not None and not replay_policy.allow_new_recording_speakers:
+            if (
+                replay_policy is not None
+                and not replay_policy.allow_new_recording_speakers
+            ):
                 alternate_evidence = {
                     "reason": "distinct_unmatched_local_speaker_new_recording_speaker_blocked",
                     "provisional": True,
@@ -787,7 +893,6 @@ def _enforce_distinct_window_local_speaker_matches(
         assigned_recording_speaker_ids.add(int(alternate_speaker.id))
 
 
-
 def _window_local_speaker_contested_claim_score(
     local_speaker_key: str,
     *,
@@ -796,13 +901,21 @@ def _window_local_speaker_contested_claim_score(
     turns_by_local_speaker: dict[str, list[DiarizationWindowTurn]],
 ) -> float:
     metadata = dict(speaker_metadata_by_key.get(local_speaker_key, {}) or {})
-    score = float(_local_turn_total_duration_ms(turns_by_local_speaker.get(local_speaker_key, [])))
-    best_recording_speaker_id = _to_optional_int(metadata.get("best_recording_speaker_id"))
-    best_recording_speaker_score = _to_optional_float(metadata.get("best_recording_speaker_score"))
-    if best_recording_speaker_id == int(contested_speaker_id) and best_recording_speaker_score is not None:
+    score = float(
+        _local_turn_total_duration_ms(turns_by_local_speaker.get(local_speaker_key, []))
+    )
+    best_recording_speaker_id = _to_optional_int(
+        metadata.get("best_recording_speaker_id")
+    )
+    best_recording_speaker_score = _to_optional_float(
+        metadata.get("best_recording_speaker_score")
+    )
+    if (
+        best_recording_speaker_id == int(contested_speaker_id)
+        and best_recording_speaker_score is not None
+    ):
         score += float(best_recording_speaker_score) * 100_000.0
     return score
-
 
 
 def _select_distinct_alternate_window_speaker(
@@ -814,7 +927,9 @@ def _select_distinct_alternate_window_speaker(
     recording_speakers_by_id: dict[int, RecordingSpeaker],
     excluded_recording_speaker_ids: set[int],
 ) -> tuple[RecordingSpeaker | None, float, dict[str, Any]]:
-    best_recording_speaker_id = _to_optional_int(speaker_metadata.get("best_recording_speaker_id"))
+    best_recording_speaker_id = _to_optional_int(
+        speaker_metadata.get("best_recording_speaker_id")
+    )
     best_recording_speaker_score = _to_optional_float(
         speaker_metadata.get("best_recording_speaker_score")
     )
@@ -823,7 +938,8 @@ def _select_distinct_alternate_window_speaker(
         and best_recording_speaker_id not in excluded_recording_speaker_ids
         and best_recording_speaker_id in recording_speakers_by_id
         and best_recording_speaker_score is not None
-        and best_recording_speaker_score >= ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_EMBEDDING_THRESHOLD
+        and best_recording_speaker_score
+        >= ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_EMBEDDING_THRESHOLD
     ):
         return (
             _resolve_active_recording_speaker(
@@ -833,7 +949,9 @@ def _select_distinct_alternate_window_speaker(
             float(best_recording_speaker_score),
             {
                 "reason": "distinct_local_speaker_embedding_match",
-                "alternate_recording_speaker_score": round(float(best_recording_speaker_score), 4),
+                "alternate_recording_speaker_score": round(
+                    float(best_recording_speaker_score), 4
+                ),
             },
         )
 
@@ -841,7 +959,10 @@ def _select_distinct_alternate_window_speaker(
     for local_turn_row in local_turn_rows:
         for previous_turn_row in previous_turn_rows:
             previous_speaker_id = previous_turn_row.matched_recording_speaker_id
-            if previous_speaker_id is None or int(previous_speaker_id) in excluded_recording_speaker_ids:
+            if (
+                previous_speaker_id is None
+                or int(previous_speaker_id) in excluded_recording_speaker_ids
+            ):
                 continue
             overlap_ms = _range_overlap_ms(
                 local_turn_row.start_ms,
@@ -862,8 +983,12 @@ def _select_distinct_alternate_window_speaker(
         top_speaker_id, top_overlap_ms = ranked_previous[0]
         second_overlap_ms = ranked_previous[1][1] if len(ranked_previous) > 1 else 0
         if top_overlap_ms >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS:
-            total_overlap_ms = sum(previous_overlap_by_speaker_id.values()) or top_overlap_ms
-            confidence = round(float(top_overlap_ms) / float(total_overlap_ms or 1.0), 4)
+            total_overlap_ms = (
+                sum(previous_overlap_by_speaker_id.values()) or top_overlap_ms
+            )
+            confidence = round(
+                float(top_overlap_ms) / float(total_overlap_ms or 1.0), 4
+            )
             recording_speaker = recording_speakers_by_id.get(int(top_speaker_id))
             if recording_speaker is not None:
                 return (
@@ -879,13 +1004,15 @@ def _select_distinct_alternate_window_speaker(
     return None, 0.0, {"reason": "distinct_local_speaker_no_alternate"}
 
 
-
 def _local_turn_total_duration_ms(turn_rows: Sequence[DiarizationWindowTurn]) -> int:
-    return sum(max(0, int(turn_row.end_ms) - int(turn_row.start_ms)) for turn_row in turn_rows)
+    return sum(
+        max(0, int(turn_row.end_ms) - int(turn_row.start_ms)) for turn_row in turn_rows
+    )
 
 
-
-def _next_live_recording_speaker_index(recording_speakers_by_id: dict[int, RecordingSpeaker]) -> int:
+def _next_live_recording_speaker_index(
+    recording_speakers_by_id: dict[int, RecordingSpeaker],
+) -> int:
     indexes: list[int] = []
     for recording_speaker in recording_speakers_by_id.values():
         label = str(recording_speaker.diarization_label or "")
@@ -894,7 +1021,6 @@ def _next_live_recording_speaker_index(recording_speakers_by_id: dict[int, Recor
             continue
         indexes.append(int(match.group(1)))
     return (max(indexes) + 1) if indexes else 1
-
 
 
 def _create_rolling_diarization_recording_speaker(
@@ -906,10 +1032,14 @@ def _create_rolling_diarization_recording_speaker(
 ) -> RecordingSpeaker:
     recording_speakers = _load_recording_speakers(session, recording_id)
     recording_speakers_by_id = {
-        int(speaker.id): speaker for speaker in recording_speakers if speaker.id is not None
+        int(speaker.id): speaker
+        for speaker in recording_speakers
+        if speaker.id is not None
     }
     next_index = _next_live_recording_speaker_index(recording_speakers_by_id)
-    start_ms = min((int(turn_row.start_ms) for turn_row in local_turn_rows), default=None)
+    start_ms = min(
+        (int(turn_row.start_ms) for turn_row in local_turn_rows), default=None
+    )
     end_ms = max((int(turn_row.end_ms) for turn_row in local_turn_rows), default=None)
     recording_speaker = RecordingSpeaker(
         recording_id=recording_id,
@@ -930,7 +1060,6 @@ def _create_rolling_diarization_recording_speaker(
         source_run_id=processing_run_id,
     )
     return recording_speaker
-
 
 
 def _match_window_local_speaker_impl(
@@ -966,17 +1095,29 @@ def _match_window_local_speaker_impl(
             if overlap_ms <= 0:
                 continue
 
-            resolved_speaker = recording_speakers_by_id.get(utterance.recording_speaker_id)
+            resolved_speaker = recording_speakers_by_id.get(
+                utterance.recording_speaker_id
+            )
             if resolved_speaker is None:
                 continue
-            resolved_speaker = _resolve_active_recording_speaker(session, resolved_speaker)
+            resolved_speaker = _resolve_active_recording_speaker(
+                session, resolved_speaker
+            )
 
             if utterance.manual_speaker_locked:
-                evidence_by_speaker_id[resolved_speaker.id] += overlap_ms * ROLLING_DIARIZATION_MANUAL_WEIGHT
-                detail_by_speaker_id[resolved_speaker.id]["manual_overlap_ms"] += overlap_ms
+                evidence_by_speaker_id[resolved_speaker.id] += (
+                    overlap_ms * ROLLING_DIARIZATION_MANUAL_WEIGHT
+                )
+                detail_by_speaker_id[resolved_speaker.id]["manual_overlap_ms"] += (
+                    overlap_ms
+                )
             else:
-                evidence_by_speaker_id[resolved_speaker.id] += overlap_ms * ROLLING_DIARIZATION_UTTERANCE_WEIGHT
-                detail_by_speaker_id[resolved_speaker.id]["utterance_overlap_ms"] += overlap_ms
+                evidence_by_speaker_id[resolved_speaker.id] += (
+                    overlap_ms * ROLLING_DIARIZATION_UTTERANCE_WEIGHT
+                )
+                detail_by_speaker_id[resolved_speaker.id]["utterance_overlap_ms"] += (
+                    overlap_ms
+                )
 
         for previous_turn_row in previous_turn_rows:
             if previous_turn_row.matched_recording_speaker_id is None:
@@ -989,9 +1130,9 @@ def _match_window_local_speaker_impl(
             )
             if overlap_ms <= 0:
                 continue
-            evidence_by_speaker_id[int(previous_turn_row.matched_recording_speaker_id)] += (
-                overlap_ms * ROLLING_DIARIZATION_CONTINUITY_WEIGHT
-            )
+            evidence_by_speaker_id[
+                int(previous_turn_row.matched_recording_speaker_id)
+            ] += overlap_ms * ROLLING_DIARIZATION_CONTINUITY_WEIGHT
             detail_by_speaker_id[int(previous_turn_row.matched_recording_speaker_id)][
                 "continuity_overlap_ms"
             ] += overlap_ms
@@ -1013,7 +1154,9 @@ def _match_window_local_speaker_impl(
         evidence_by_speaker_id[int(best_recording_speaker_id)] += (
             best_recording_speaker_score * ROLLING_DIARIZATION_EMBEDDING_WEIGHT
         )
-        detail_by_speaker_id[int(best_recording_speaker_id)]["embedding_score"] = best_recording_speaker_score
+        detail_by_speaker_id[int(best_recording_speaker_id)]["embedding_score"] = (
+            best_recording_speaker_score
+        )
 
     best_global_speaker_id = speaker_metadata.get("best_global_speaker_id")
     if best_global_speaker_id is not None:
@@ -1028,11 +1171,15 @@ def _match_window_local_speaker_impl(
         for recording_speaker in recording_speakers_by_id.values():
             if recording_speaker.global_speaker_id != int(best_global_speaker_id):
                 continue
-            resolved_speaker = _resolve_active_recording_speaker(session, recording_speaker)
+            resolved_speaker = _resolve_active_recording_speaker(
+                session, recording_speaker
+            )
             evidence_by_speaker_id[int(resolved_speaker.id)] += (
                 best_global_speaker_score * ROLLING_DIARIZATION_GLOBAL_WEIGHT
             )
-            detail_by_speaker_id[int(resolved_speaker.id)]["global_score"] = best_global_speaker_score
+            detail_by_speaker_id[int(resolved_speaker.id)]["global_score"] = (
+                best_global_speaker_score
+            )
             break
 
     if not evidence_by_speaker_id:
@@ -1052,9 +1199,15 @@ def _match_window_local_speaker_impl(
     evidence_detail["weighted_score"] = round(float(top_score), 3)
 
     matched = False
-    if evidence_detail["manual_overlap_ms"] >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS:
+    if (
+        evidence_detail["manual_overlap_ms"]
+        >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS
+    ):
         matched = True
-    elif evidence_detail["continuity_overlap_ms"] >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS:
+    elif (
+        evidence_detail["continuity_overlap_ms"]
+        >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS
+    ):
         matched = True
     elif (
         best_recording_speaker_id == top_speaker_id
@@ -1063,12 +1216,16 @@ def _match_window_local_speaker_impl(
     ):
         matched = True
     elif (
-        evidence_detail["utterance_overlap_ms"] >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS
+        evidence_detail["utterance_overlap_ms"]
+        >= ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS
         and confidence >= ROLLING_DIARIZATION_CONFIDENCE_FLOOR
         and (top_score - second_score) >= ROLLING_DIARIZATION_MIN_TURN_MATCH_MARGIN
     ):
         matched = True
-    elif confidence >= 0.8 and (top_score - second_score) >= ROLLING_DIARIZATION_MIN_TURN_MATCH_MARGIN:
+    elif (
+        confidence >= 0.8
+        and (top_score - second_score) >= ROLLING_DIARIZATION_MIN_TURN_MATCH_MARGIN
+    ):
         matched = True
 
     if not matched:
@@ -1081,8 +1238,11 @@ def _match_window_local_speaker_impl(
         return None, confidence, evidence_detail
 
     evidence_detail["provisional"] = False
-    return _resolve_active_recording_speaker(session, matched_speaker), confidence, evidence_detail
-
+    return (
+        _resolve_active_recording_speaker(session, matched_speaker),
+        confidence,
+        evidence_detail,
+    )
 
 
 def _match_utterance_from_diarization_turns(
@@ -1177,8 +1337,11 @@ def _match_utterance_from_diarization_turns(
         base_evidence["boundary_dampened"] = True
         base_evidence["raw_confidence"] = confidence
 
-    return matched_speaker, effective_confidence, {**base_evidence, "provisional": False}
-
+    return (
+        matched_speaker,
+        effective_confidence,
+        {**base_evidence, "provisional": False},
+    )
 
 
 def _build_utterance_overlap_projection_payload(
@@ -1218,7 +1381,9 @@ def _build_utterance_overlap_projection_payload(
     overlapping_speakers: list[str] = []
 
     for speaker_id, overlap_ms in ranked_speakers:
-        if primary_speaker_id is not None and int(speaker_id) == int(primary_speaker_id):
+        if primary_speaker_id is not None and int(speaker_id) == int(
+            primary_speaker_id
+        ):
             continue
         if int(overlap_ms) < ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS:
             continue
@@ -1238,7 +1403,6 @@ def _build_utterance_overlap_projection_payload(
     }
 
 
-
 def _merge_overlap_payload_into_rolling(
     rolling_payload: dict[str, Any],
     overlap_payload: dict[str, Any],
@@ -1251,18 +1415,15 @@ def _merge_overlap_payload_into_rolling(
     )
 
 
-
 def _rolling_overlap_payload_changed(
     existing_rolling_payload: dict[str, Any],
     overlap_payload: dict[str, Any],
 ) -> bool:
-    return (
-        list(existing_rolling_payload.get("overlapping_recording_speaker_ids") or [])
-        != list(overlap_payload.get("overlapping_recording_speaker_ids") or [])
-        or list(existing_rolling_payload.get("overlapping_speakers") or [])
-        != list(overlap_payload.get("overlapping_speakers") or [])
-    )
-
+    return list(
+        existing_rolling_payload.get("overlapping_recording_speaker_ids") or []
+    ) != list(overlap_payload.get("overlapping_recording_speaker_ids") or []) or list(
+        existing_rolling_payload.get("overlapping_speakers") or []
+    ) != list(overlap_payload.get("overlapping_speakers") or [])
 
 
 def _build_split_replacement_segments_from_diarization(
@@ -1379,7 +1540,9 @@ def _build_split_replacement_segments_from_diarization(
                 "recording_speaker_id": int(recording_speaker.id),
                 "segment_source": utterance.source_kind,
                 "provisional": utterance.state == TranscriptUtteranceState.PROVISIONAL,
-                "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
+                "state": utterance.state.value
+                if hasattr(utterance.state, "value")
+                else str(utterance.state),
                 "speaker_manually_edited": False,
                 "text_manually_edited": False,
                 "speaker_confidence": utterance.speaker_confidence,
@@ -1390,7 +1553,6 @@ def _build_split_replacement_segments_from_diarization(
         )
 
     return replacement_segments
-
 
 
 def _build_turn_boundary_split_segments_from_diarization(
@@ -1439,7 +1601,11 @@ def _build_turn_boundary_split_segments_from_diarization(
 
     runs: list[dict[str, int]] = []
     for start_ms, end_ms, speaker_id in clipped_turns:
-        if runs and int(runs[-1]["speaker_id"]) == speaker_id and start_ms <= int(runs[-1]["end_ms"]):
+        if (
+            runs
+            and int(runs[-1]["speaker_id"]) == speaker_id
+            and start_ms <= int(runs[-1]["end_ms"])
+        ):
             runs[-1]["end_ms"] = max(int(runs[-1]["end_ms"]), end_ms)
             continue
         runs.append({"start_ms": start_ms, "end_ms": end_ms, "speaker_id": speaker_id})
@@ -1453,11 +1619,15 @@ def _build_turn_boundary_split_segments_from_diarization(
 
     overlap_by_speaker_id: dict[int, int] = defaultdict(int)
     for run in runs:
-        overlap_by_speaker_id[int(run["speaker_id"])] += int(run["end_ms"]) - int(run["start_ms"])
+        overlap_by_speaker_id[int(run["speaker_id"])] += int(run["end_ms"]) - int(
+            run["start_ms"]
+        )
 
     min_overlap_ms = max(
         ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_OVERLAP_MS,
-        int(round(ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_RATIO * utterance_duration_ms)),
+        int(
+            round(ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_RATIO * utterance_duration_ms)
+        ),
     )
     qualifying_speaker_ids = {
         speaker_id
@@ -1472,9 +1642,8 @@ def _build_turn_boundary_split_segments_from_diarization(
     coalesced_runs: list[dict[str, int]] = []
     for run in runs:
         if int(run["speaker_id"]) in qualifying_speaker_ids:
-            if (
-                coalesced_runs
-                and int(coalesced_runs[-1]["speaker_id"]) == int(run["speaker_id"])
+            if coalesced_runs and int(coalesced_runs[-1]["speaker_id"]) == int(
+                run["speaker_id"]
             ):
                 coalesced_runs[-1]["end_ms"] = max(
                     int(coalesced_runs[-1]["end_ms"]), int(run["end_ms"])
@@ -1568,7 +1737,9 @@ def _build_turn_boundary_split_segments_from_diarization(
                 "recording_speaker_id": int(recording_speaker.id),
                 "segment_source": utterance.source_kind,
                 "provisional": utterance.state == TranscriptUtteranceState.PROVISIONAL,
-                "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
+                "state": utterance.state.value
+                if hasattr(utterance.state, "value")
+                else str(utterance.state),
                 "speaker_manually_edited": False,
                 "text_manually_edited": False,
                 "speaker_confidence": utterance.speaker_confidence,
@@ -1579,7 +1750,6 @@ def _build_turn_boundary_split_segments_from_diarization(
         )
 
     return replacement_segments
-
 
 
 def _split_text_by_word_timestamps(
@@ -1609,7 +1779,6 @@ def _split_text_by_word_timestamps(
     return [" ".join(words) for words in grouped]
 
 
-
 def _split_text_proportionally(
     text: str,
     runs: Sequence[dict[str, int]],
@@ -1617,9 +1786,7 @@ def _split_text_proportionally(
     tokens = (text or "").split()
     if not tokens:
         return []
-    total_duration_ms = sum(
-        int(run["end_ms"]) - int(run["start_ms"]) for run in runs
-    )
+    total_duration_ms = sum(int(run["end_ms"]) - int(run["start_ms"]) for run in runs)
     if total_duration_ms <= 0:
         return []
     total_tokens = len(tokens)
@@ -1642,7 +1809,6 @@ def _split_text_proportionally(
     if any(not chunk.strip() for chunk in chunks):
         return []
     return chunks
-
 
 
 def _build_merge_replacement_plans_from_diarization(
@@ -1699,16 +1865,19 @@ def _build_merge_replacement_plans_from_diarization(
 
     for utterance in overlapping_utterances:
         if (
-            utterance.id is not None
-            and int(utterance.id) in split_candidate_ids
-        ) or utterance.manual_text_locked or utterance.manual_speaker_locked:
+            (utterance.id is not None and int(utterance.id) in split_candidate_ids)
+            or utterance.manual_text_locked
+            or utterance.manual_speaker_locked
+        ):
             flush_group()
             continue
 
-        candidate_speaker, candidate_confidence, _candidate_payload = _match_utterance_from_diarization_turns(
-            utterance,
-            turn_rows=turn_rows,
-            recording_speakers_by_id=recording_speakers_by_id,
+        candidate_speaker, candidate_confidence, _candidate_payload = (
+            _match_utterance_from_diarization_turns(
+                utterance,
+                turn_rows=turn_rows,
+                recording_speakers_by_id=recording_speakers_by_id,
+            )
         )
         if candidate_speaker is None:
             flush_group()
@@ -1744,7 +1913,6 @@ def _build_merge_replacement_plans_from_diarization(
 
     flush_group()
     return merge_plans
-
 
 
 def _boundary_supported_by_same_speaker_turns(
@@ -1787,7 +1955,6 @@ def _boundary_supported_by_same_speaker_turns(
     return supporting_overlap_ms >= required_overlap_ms and conflicting_overlap_ms == 0
 
 
-
 def _build_merge_replacement_segments_from_diarization(
     *,
     source_utterances: Sequence[TranscriptUtterance],
@@ -1811,7 +1978,8 @@ def _build_merge_replacement_segments_from_diarization(
     speaker_confidence = None
     if speaker_confidences:
         speaker_confidence = round(
-            sum(float(confidence) for confidence in speaker_confidences) / float(len(speaker_confidences)),
+            sum(float(confidence) for confidence in speaker_confidences)
+            / float(len(speaker_confidences)),
             4,
         )
 
@@ -1830,7 +1998,8 @@ def _build_merge_replacement_segments_from_diarization(
             "speaker": recording_speaker.diarization_label,
             "recording_speaker_id": int(recording_speaker.id),
             "segment_source": first_utterance.source_kind,
-            "provisional": _merged_boundary_state_value(source_utterances) == TranscriptUtteranceState.PROVISIONAL.value,
+            "provisional": _merged_boundary_state_value(source_utterances)
+            == TranscriptUtteranceState.PROVISIONAL.value,
             "state": _merged_boundary_state_value(source_utterances),
             "speaker_manually_edited": False,
             "text_manually_edited": False,
@@ -1849,10 +2018,13 @@ def _build_merge_replacement_segments_from_diarization(
     ]
 
 
-
-def _merged_boundary_state_value(source_utterances: Sequence[TranscriptUtterance]) -> str:
+def _merged_boundary_state_value(
+    source_utterances: Sequence[TranscriptUtterance],
+) -> str:
     state_values = {
-        utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)
+        utterance.state.value
+        if hasattr(utterance.state, "value")
+        else str(utterance.state)
         for utterance in source_utterances
     }
     if state_values == {TranscriptUtteranceState.FINALIZED.value}:
@@ -1860,7 +2032,6 @@ def _merged_boundary_state_value(source_utterances: Sequence[TranscriptUtterance
     if TranscriptUtteranceState.PROVISIONAL.value in state_values:
         return TranscriptUtteranceState.PROVISIONAL.value
     return TranscriptUtteranceState.STABLE.value
-
 
 
 def _merge_boundary_confidence_payload(
@@ -1872,8 +2043,7 @@ def _merge_boundary_confidence_payload(
     merged_asr_segments: list[dict[str, Any]] = []
     has_word_timestamps = False
     speaker_states = {
-        _speaker_state_for_utterance(utterance)
-        for utterance in source_utterances
+        _speaker_state_for_utterance(utterance) for utterance in source_utterances
     }
 
     for utterance in source_utterances:
@@ -1903,7 +2073,9 @@ def _merge_boundary_confidence_payload(
         "rolling_diarization": {
             "window_result_id": int(window_result_id),
             "matched_recording_speaker_id": int(matched_recording_speaker_id),
-            "merged_from_public_ids": [utterance.public_id for utterance in source_utterances],
+            "merged_from_public_ids": [
+                utterance.public_id for utterance in source_utterances
+            ],
             "speaker_state": speaker_state,
         },
     }
@@ -1912,7 +2084,6 @@ def _merge_boundary_confidence_payload(
     if has_word_timestamps or merged_asr_segments:
         payload["asr_word_timestamps_available"] = bool(has_word_timestamps)
     return payload
-
 
 
 def _clone_asr_segment_payload(asr_segment: dict[str, Any]) -> dict[str, Any]:
@@ -1938,7 +2109,6 @@ def _clone_asr_segment_payload(asr_segment: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-
 def _apply_boundary_reconciliation_segments(
     session,
     *,
@@ -1948,14 +2118,27 @@ def _apply_boundary_reconciliation_segments(
     processing_run_id: int | None,
     source: str,
 ) -> list[TranscriptUtterance]:
-    from .core import _build_projection_segment, _state_for_segment, _projection_overlap_labels, list_active_utterances
+    from .core import (
+        _build_projection_segment,
+        _projection_overlap_labels,
+        _state_for_segment,
+        list_active_utterances,
+    )
+
     transcript = _load_transcript(session, recording_id)
     recording = session.get(Recording, recording_id)
-    if transcript is None or recording is None or not source_utterances or not replacement_segments:
+    if (
+        transcript is None
+        or recording is None
+        or not source_utterances
+        or not replacement_segments
+    ):
         return []
 
     active_utterances = list_active_utterances(session, recording_id)
-    source_utterance_ids = {int(utterance.id) for utterance in source_utterances if utterance.id is not None}
+    source_utterance_ids = {
+        int(utterance.id) for utterance in source_utterances if utterance.id is not None
+    }
     if not source_utterance_ids:
         return []
 
@@ -1965,7 +2148,9 @@ def _apply_boundary_reconciliation_segments(
         source_run_id=processing_run_id,
     )
     recording_speakers_by_id = {
-        int(speaker.id): speaker for speaker in recording_speakers if speaker.id is not None
+        int(speaker.id): speaker
+        for speaker in recording_speakers
+        if speaker.id is not None
     }
 
     source_inserted = False
@@ -1977,7 +2162,9 @@ def _apply_boundary_reconciliation_segments(
     for active_utterance in ordered_active_utterances:
         if int(active_utterance.id or 0) in source_utterance_ids:
             if not source_inserted:
-                resulting_segments.extend(dict(segment) for segment in replacement_segments)
+                resulting_segments.extend(
+                    dict(segment) for segment in replacement_segments
+                )
                 source_inserted = True
             continue
         resulting_segments.append(_segment_payload_from_utterance(active_utterance))
@@ -1995,7 +2182,11 @@ def _apply_boundary_reconciliation_segments(
     }
 
     for source_utterance in source_utterances:
-        old_state = source_utterance.state.value if hasattr(source_utterance.state, "value") else str(source_utterance.state)
+        old_state = (
+            source_utterance.state.value
+            if hasattr(source_utterance.state, "value")
+            else str(source_utterance.state)
+        )
         source_utterance.state = TranscriptUtteranceState.SUPERSEDED
         session.add(source_utterance)
         session.flush()
@@ -2012,14 +2203,18 @@ def _apply_boundary_reconciliation_segments(
 
     for index, segment in enumerate(resulting_segments):
         overlap_group = overlap_groups.get(index, {})
-        existing_utterance = remaining_existing_utterances.get(str(segment.get("id") or ""))
+        existing_utterance = remaining_existing_utterances.get(
+            str(segment.get("id") or "")
+        )
         if existing_utterance is not None:
             existing_utterance.sort_key = _sort_key_for_index(index)
             existing_utterance.overlap_group_id = overlap_group.get("group_id")
             existing_utterance.overlap_rank = overlap_group.get("rank", 0)
             session.add(existing_utterance)
             recording_speaker = (
-                recording_speakers_by_id.get(int(existing_utterance.recording_speaker_id))
+                recording_speakers_by_id.get(
+                    int(existing_utterance.recording_speaker_id)
+                )
                 if existing_utterance.recording_speaker_id is not None
                 else None
             )
@@ -2055,7 +2250,9 @@ def _apply_boundary_reconciliation_segments(
                 if recording_speaker is not None
                 else str(segment.get("speaker") or UNKNOWN_SPEAKER)
             ),
-            recording_speaker_id=(recording_speaker.id if recording_speaker is not None else None),
+            recording_speaker_id=(
+                recording_speaker.id if recording_speaker is not None else None
+            ),
             state=_state_for_segment(recording, segment),
             source_kind=str(segment.get("segment_source") or source),
             processing_run_id=processing_run_id,
@@ -2068,17 +2265,27 @@ def _apply_boundary_reconciliation_segments(
                 segment,
                 source=source,
                 state=_state_for_segment(recording, segment),
-                manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
+                manual_speaker_locked=bool(
+                    segment.get("speaker_manually_edited") is True
+                ),
             ),
             speaker_assignment_authority=_resolve_segment_speaker_assignment_authority(
                 segment,
                 state=_state_for_segment(recording, segment),
-                manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
+                manual_speaker_locked=bool(
+                    segment.get("speaker_manually_edited") is True
+                ),
             ),
             text_confidence=_to_optional_float(segment.get("text_confidence")),
             speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
-            confidence_payload=(dict(segment.get("confidence_payload")) if isinstance(segment.get("confidence_payload"), dict) else None),
-            last_diarization_window_result_id=segment.get("last_diarization_window_result_id"),
+            confidence_payload=(
+                dict(segment.get("confidence_payload"))
+                if isinstance(segment.get("confidence_payload"), dict)
+                else None
+            ),
+            last_diarization_window_result_id=segment.get(
+                "last_diarization_window_result_id"
+            ),
         )
         session.add(utterance)
         session.flush()
@@ -2113,7 +2320,9 @@ def _apply_boundary_reconciliation_segments(
         )
 
     transcript.segments = projection_segments
-    transcript.text = " ".join(segment.get("text", "") for segment in projection_segments).strip()
+    transcript.text = " ".join(
+        segment.get("text", "") for segment in projection_segments
+    ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
     refresh_recording_speaker_usage_state(session, recording_id)
@@ -2129,16 +2338,15 @@ def _apply_boundary_reconciliation_segments(
     return replacement_utterances
 
 
-
-
 def _match_window_local_speaker(*args, **kwargs):
     import sys
-    cp = sys.modules.get('backend.utils.canonical_pipeline')
-    if cp and hasattr(cp, '_match_window_local_speaker'):
+
+    cp = sys.modules.get("backend.utils.canonical_pipeline")
+    if cp and hasattr(cp, "_match_window_local_speaker"):
         actual = cp._match_window_local_speaker
         if actual.__code__ is not _match_window_local_speaker.__code__:
             return actual(*args, **kwargs)
     return _match_window_local_speaker_impl(*args, **kwargs)
 
 
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

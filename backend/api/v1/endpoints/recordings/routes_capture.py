@@ -1,32 +1,31 @@
-import os
 import logging
-import asyncio
+import os
 from typing import Optional
-from fastapi import Depends, HTTPException, Query, Request, UploadFile, File
+
+from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.utils.time import utc_now
-
-from backend.api.deps import get_db, get_current_recording_client_user
-from backend.models.user import User
+import backend.api.v1.endpoints.recordings as recordings_module
+from backend.api.deps import get_current_recording_client_user, get_db
+from backend.api.error_handling import sanitized_http_exception
+from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import (
     CaptureSourceReportCreate,
+    ClientStatus,
     Recording,
     RecordingCaptureLifecycleResponse,
     RecordingStatus,
-    ClientStatus,
 )
+from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.transcript import Transcript
-from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
-from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
+from backend.models.user import User
 from backend.utils.rate_limit import enforce_upload_concurrency
-from backend.utils.upload_limit import stream_and_validate_upload, UPLOAD_LIMIT_SEGMENT
-from backend.api.error_handling import sanitized_http_exception
-from backend.models.recording_public import serialize_recording, RecordingPublicRead
+from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
+from backend.utils.time import utc_now
+from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
 from .router import router
-import backend.api.v1.endpoints.recordings as recordings_module
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +52,14 @@ async def pause_upload(
     """
     Pause an in-flight recording session while retaining uploaded chunks.
     """
-    recording = await recordings_module._get_owned_recording(db, recording_id, current_user.id)
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
-        raise HTTPException(status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL)
+        raise HTTPException(
+            status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
+        )
 
     if recording.status != RecordingStatus.PAUSED:
         recording.status = RecordingStatus.PAUSED
@@ -96,7 +99,9 @@ async def resume_upload(
     """
     Resume a paused recording session.
     """
-    recording = await recordings_module._get_owned_recording(db, recording_id, current_user.id)
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
 
     if recording.status != RecordingStatus.PAUSED:
         raise HTTPException(
@@ -125,22 +130,28 @@ async def upload_segment(
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_recording_client_user)
+    current_user: User = Depends(get_current_recording_client_user),
 ):
     """
     Upload a segment for a recording.
     """
-    async with enforce_upload_concurrency(request, "upload_segment", str(current_user.id), 5):
-        recording = await recordings_module._get_owned_recording(db, recording_id, current_user.id)
+    async with enforce_upload_concurrency(
+        request, "upload_segment", str(current_user.id), 5
+    ):
+        recording = await recordings_module._get_owned_recording(
+            db, recording_id, current_user.id
+        )
         segment_suffix = recordings_module._resolve_segment_upload_suffix(file)
 
         recordings_module._ensure_recording_accepts_uploads(recording)
-        
-        recording_temp_dir = recordings_module.recording_upload_temp_dir(recording.id, create=True)
-            
+
+        recording_temp_dir = recordings_module.recording_upload_temp_dir(
+            recording.id, create=True
+        )
+
         filename = os.path.basename(f"{int(sequence)}{segment_suffix}")
         segment_path = recording_temp_dir / filename
-        
+
         try:
             await stream_and_validate_upload(
                 file=file,
@@ -200,11 +211,13 @@ async def upload_segment(
         )
 
     # Dispatch the live transcription task.
-    if segment_suffix == ".wav" and recordings_module.config_manager.get("enable_live_transcription"):
+    if segment_suffix == ".wav" and recordings_module.config_manager.get(
+        "enable_live_transcription"
+    ):
         try:
             recordings_module.celery_app.send_task(
                 "backend.processing.live_transcribe.transcribe_segment_live_task",
-                args=[recording.id, sequence]
+                args=[recording.id, sequence],
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(
@@ -217,7 +230,7 @@ async def upload_segment(
         try:
             recordings_module.celery_app.send_task(
                 "backend.processing.segment_transcode.transcode_segment_task",
-                args=[recording.id, sequence]
+                args=[recording.id, sequence],
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(
@@ -282,12 +295,14 @@ async def log_capture_source_report(
 async def finalize_upload(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_recording_client_user)
+    current_user: User = Depends(get_current_recording_client_user),
 ):
     """
     Finalize the upload, concatenate segments, and trigger processing.
     """
-    recording = await recordings_module._get_owned_recording(db, recording_id, current_user.id)
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
 
     recordings_module._ensure_recording_can_finalize_upload(recording)
 
@@ -334,9 +349,11 @@ async def finalize_upload(
             recording_id=recording.id,
             source_kind="browser",
         )
-        pending_transcode_sequences = recordings_module._find_pending_transcode_sequences(
-            recording.id,
-            chunk_rows=chunk_rows,
+        pending_transcode_sequences = (
+            recordings_module._find_pending_transcode_sequences(
+                recording.id,
+                chunk_rows=chunk_rows,
+            )
         )
 
     if pending_transcode_sequences:
@@ -357,7 +374,9 @@ async def finalize_upload(
     final_audio_path = recording.audio_path
 
     try:
-        master_segment_paths = recordings_module._list_staged_browser_master_segments(recording.id)
+        master_segment_paths = recordings_module._list_staged_browser_master_segments(
+            recording.id
+        )
         if master_segment_paths:
             final_audio_path = recordings_module._browser_master_output_path(
                 recording,
@@ -376,7 +395,9 @@ async def finalize_upload(
     except HTTPException as exc:
         failed_root: Path | None = None
         try:
-            failed_root = recordings_module.move_recording_upload_to_failed(recording.id, logger=logger)
+            failed_root = recordings_module.move_recording_upload_to_failed(
+                recording.id, logger=logger
+            )
         except Exception as move_error:  # noqa: BLE001
             logger.error(f"Failed to move segments to failed dir: {move_error}")
         await recordings_module._mark_recording_audio_chunks_failed(
@@ -392,12 +413,16 @@ async def finalize_upload(
             proxy_path=None,
             logger=logger,
         )
-        await recordings_module._mark_recording_upload_error(db, recording, str(exc.detail))
+        await recordings_module._mark_recording_upload_error(
+            db, recording, str(exc.detail)
+        )
         raise
     except Exception as e:  # noqa: BLE001
         failed_root: Path | None = None
         try:
-            failed_root = recordings_module.move_recording_upload_to_failed(recording.id, logger=logger)
+            failed_root = recordings_module.move_recording_upload_to_failed(
+                recording.id, logger=logger
+            )
         except Exception as move_error:  # noqa: BLE001
             logger.error(f"Failed to move segments to failed dir: {move_error}")
         await recordings_module._mark_recording_audio_chunks_failed(
@@ -406,14 +431,14 @@ async def finalize_upload(
             failed_root=failed_root,
         )
         await db.commit()
-            
+
         recordings_module.delete_recording_artifacts(
             recording_id=recording.id,
             audio_path=final_audio_path,
             proxy_path=None,
             logger=logger,
         )
-            
+
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -421,7 +446,7 @@ async def finalize_upload(
             log_message=f"Failed to finalize segmented upload for recording {recording_id}.",
             exc=e,
         )
-        
+
     file_stats = os.stat(final_audio_path)
     await db.refresh(recording)
     recording.audio_path = final_audio_path
@@ -442,42 +467,47 @@ async def finalize_upload(
     recording.client_status = ClientStatus.IDLE
     recording.processing_started_at = None
     recording.processing_completed_at = None
-    
+
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
 
     task = recordings_module.celery_app.send_task(
-        "backend.worker.tasks.process_recording_task",
-        args=[recording.id]
+        "backend.worker.tasks.process_recording_task", args=[recording.id]
     )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
     from backend.models.task import register_task_ownership
+
     await register_task_ownership(db, task.id, recording.user_id)
 
     proxy_task = recordings_module.celery_app.send_task(
-        "backend.worker.tasks.generate_proxy_task",
-        args=[recording.id]
+        "backend.worker.tasks.generate_proxy_task", args=[recording.id]
     )
     if proxy_task:
         await register_task_ownership(db, proxy_task.id, recording.user_id)
-    
-    return serialize_recording(recording, has_proxy=recordings_module._recording_has_proxy(recording))
+
+    return serialize_recording(
+        recording, has_proxy=recordings_module._recording_has_proxy(recording)
+    )
 
 
 @router.post("/{recording_id}/discard")
 async def discard_upload(
     recording_id: str,
-    reason: Optional[str] = Query(None, description="Optional client-provided discard reason"),
+    reason: Optional[str] = Query(
+        None, description="Optional client-provided discard reason"
+    ),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_recording_client_user)
+    current_user: User = Depends(get_current_recording_client_user),
 ):
     """
     Discard an in-flight recording before it is finalised.
     """
-    recording = await recordings_module._get_owned_recording(db, recording_id, current_user.id)
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
@@ -507,7 +537,9 @@ async def discard_upload(
     )
 
     await db.execute(
-        delete(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording.id)
+        delete(RecordingAudioChunk).where(
+            RecordingAudioChunk.recording_id == recording.id
+        )
     )
     await db.execute(
         delete(RecordingAudioWindowManifest).where(
@@ -525,14 +557,18 @@ async def discard_upload(
 async def update_client_status(
     recording_id: str,
     status: ClientStatus = Query(..., description="Current status of the client"),
-    upload_progress: Optional[int] = Query(None, description="Upload progress percentage (0-100)"),
+    upload_progress: Optional[int] = Query(
+        None, description="Upload progress percentage (0-100)"
+    ),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_recording_client_user)
+    current_user: User = Depends(get_current_recording_client_user),
 ):
     """
     Update the client status (e.g. RECORDING, PAUSED) for a recording.
     """
-    recording = await recordings_module._get_owned_recording(db, recording_id, current_user.id)
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
 
     recordings_module._ensure_recording_accepts_status_updates(recording)
 
@@ -542,4 +578,6 @@ async def update_client_status(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    return serialize_recording(recording, has_proxy=recordings_module._recording_has_proxy(recording))
+    return serialize_recording(
+        recording, has_proxy=recordings_module._recording_has_proxy(recording)
+    )

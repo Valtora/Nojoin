@@ -20,13 +20,19 @@ def enqueue_model_preparation(
 ) -> str:
     """Queue worker-side model preparation without importing inference code."""
     kwargs: dict[str, Any] = {
-        "whisper_model_size": whisper_model_size or str(config_manager.get("whisper_model_size", "turbo")),
-        "transcription_backend": transcription_backend or str(config_manager.get("transcription_backend", "whisper")),
-        "parakeet_model": parakeet_model or str(config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3")),
-        "canary_model": canary_model or str(config_manager.get("canary_model", "nemo-canary-1b-v2")),
+        "whisper_model_size": whisper_model_size
+        or str(config_manager.get("whisper_model_size", "turbo")),
+        "transcription_backend": transcription_backend
+        or str(config_manager.get("transcription_backend", "whisper")),
+        "parakeet_model": parakeet_model
+        or str(config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3")),
+        "canary_model": canary_model
+        or str(config_manager.get("canary_model", "nemo-canary-1b-v2")),
         "include_core": include_core,
     }
-    task = celery_app.send_task(MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True)
+    task = celery_app.send_task(
+        MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True
+    )
     set_download_progress(
         0,
         "Model preparation queued...",

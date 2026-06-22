@@ -5,8 +5,7 @@ import logging
 from datetime import UTC, datetime
 
 import pytest
-from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -779,7 +778,9 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncCli
     api_app.dependency_overrides[get_db] = override_get_db
 
     transport = ASGITransport(app=api_app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
         yield async_client
 
     api_app.dependency_overrides.clear()
@@ -831,7 +832,9 @@ async def test_calendar_overview_hides_admin_provider_metadata(
     assert response.status_code == 200
     payload = response.json()
     google_provider = next(
-        provider for provider in payload["providers"] if provider["provider"] == "google"
+        provider
+        for provider in payload["providers"]
+        if provider["provider"] == "google"
     )
     assert google_provider == {
         "provider": "google",
@@ -989,7 +992,9 @@ async def test_calendar_overview_resets_connections_with_invalid_encrypted_token
 
     assert response.status_code == 200
     google_provider = next(
-        provider for provider in response.json()["providers"] if provider["provider"] == "google"
+        provider
+        for provider in response.json()["providers"]
+        if provider["provider"] == "google"
     )
     assert google_provider == {
         "provider": "google",
@@ -1218,7 +1223,11 @@ async def test_calendar_dashboard_includes_unlinked_recordings_and_deduplicates_
             "ends_at": "2026-04-18T13:30:00Z",
             "duration_seconds": 1800.0,
             "status": "PROCESSED",
-            "speaker_names": ["Alex Morgan", "Blair Chen", "Former UK Government Official"],
+            "speaker_names": [
+                "Alex Morgan",
+                "Blair Chen",
+                "Former UK Government Official",
+            ],
             "tags": [
                 {
                     "id": 1001,
@@ -1351,7 +1360,9 @@ async def test_oauth_callback_input_errors_redirect_to_relative_account_settings
 ) -> None:
     override_current_user(1)
 
-    response = await client.get(f"/api/v1/calendar/oauth/{provider}/callback", params=params)
+    response = await client.get(
+        f"/api/v1/calendar/oauth/{provider}/callback", params=params
+    )
 
     assert response.status_code == 303
     assert response.headers["location"] == expected_location
@@ -1379,7 +1390,10 @@ async def test_oauth_callback_exception_redirects_to_relative_account_settings(
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings?tab=account&calendar=error&provider=google"
+    assert (
+        response.headers["location"]
+        == "/settings?tab=account&calendar=error&provider=google"
+    )
 
 
 @pytest.mark.anyio
@@ -1404,7 +1418,10 @@ async def test_oauth_callback_success_redirects_to_relative_account_settings(
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/settings?tab=account&calendar=success&provider=google"
+    assert (
+        response.headers["location"]
+        == "/settings?tab=account&calendar=success&provider=google"
+    )
 
 
 @pytest.mark.anyio
@@ -1497,8 +1514,14 @@ async def test_read_tasks_returns_utc_instants_for_due_dates(
         0,
         tzinfo=UTC,
     )
-    assert datetime.fromisoformat(payload["created_at"].replace("Z", "+00:00")).tzinfo == UTC
-    assert datetime.fromisoformat(payload["updated_at"].replace("Z", "+00:00")).tzinfo == UTC
+    assert (
+        datetime.fromisoformat(payload["created_at"].replace("Z", "+00:00")).tzinfo
+        == UTC
+    )
+    assert (
+        datetime.fromisoformat(payload["updated_at"].replace("Z", "+00:00")).tzinfo
+        == UTC
+    )
 
 
 @pytest.mark.anyio
@@ -1534,7 +1557,9 @@ async def test_create_task_normalises_due_at_using_user_timezone(
             )
         ).scalar_one()
 
-    assert datetime.fromisoformat(str(stored_due_at)) == datetime(2026, 4, 13, 12, 30, 0)
+    assert datetime.fromisoformat(str(stored_due_at)) == datetime(
+        2026, 4, 13, 12, 30, 0
+    )
 
 
 @pytest.mark.anyio
@@ -1690,7 +1715,9 @@ async def test_update_task_archives_and_unarchives_owned_task(
     assert archive_response.status_code == 200
     assert archive_response.json()["archived_at"] is not None
 
-    unarchive_response = await client.patch("/api/v1/tasks/202", json={"archived": False})
+    unarchive_response = await client.patch(
+        "/api/v1/tasks/202", json={"archived": False}
+    )
 
     assert unarchive_response.status_code == 200
     assert unarchive_response.json()["archived_at"] is None
@@ -1790,8 +1817,16 @@ async def test_delete_other_users_task_returns_404(
 @pytest.mark.parametrize(
     ("method", "path", "payload"),
     [
-        ("put", "/api/v1/calendar/connections/301/calendars", {"selected_calendar_ids": []}),
-        ("put", "/api/v1/calendar/connections/301/calendars/401/colour", {"colour": "emerald"}),
+        (
+            "put",
+            "/api/v1/calendar/connections/301/calendars",
+            {"selected_calendar_ids": []},
+        ),
+        (
+            "put",
+            "/api/v1/calendar/connections/301/calendars/401/colour",
+            {"colour": "emerald"},
+        ),
         ("post", "/api/v1/calendar/connections/301/sync", None),
         ("delete", "/api/v1/calendar/connections/301", None),
     ],

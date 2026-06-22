@@ -1,5 +1,6 @@
 from .constants import *
 
+
 @celery_app.task(name="backend.worker.tasks.sync_calendar_connection_task", bind=True)
 def sync_calendar_connection_task(self, connection_id: int):
     """
@@ -26,5 +27,4 @@ def sync_calendar_connections_task(self):
     return {"status": "success", "connections_synced": synced_connections}
 
 
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

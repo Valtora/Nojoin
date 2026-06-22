@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "c7f4a9e2d1b3"
 down_revision: Union[str, Sequence[str], None] = "9ac66b1d2f40"
@@ -36,12 +35,20 @@ def upgrade() -> None:
         sa.Column("chunk_start_sequence", sa.BigInteger(), nullable=False),
         sa.Column("chunk_end_sequence", sa.BigInteger(), nullable=False),
         sa.Column("status", sa.String(), nullable=False),
-        sa.Column("is_partial", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("is_sealed", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_partial", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
+        sa.Column(
+            "is_sealed", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("processing_run_id", sa.BigInteger(), nullable=True),
         sa.Column("last_error", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "recording_id",

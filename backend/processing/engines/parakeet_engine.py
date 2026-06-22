@@ -3,7 +3,9 @@
 # The onnx-asr logic and the timestamped-result mapper live in onnx_asr_engine.
 
 from .onnx_asr_engine import OnnxAsrEngine
-from .onnx_asr_engine import map_onnx_asr_result as map_parakeet_result  # noqa: F401  backward-compat alias
+from .onnx_asr_engine import (
+    map_onnx_asr_result as map_parakeet_result,  # noqa: F401  backward-compat alias
+)
 
 
 class ParakeetEngine(OnnxAsrEngine):

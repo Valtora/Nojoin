@@ -4,6 +4,7 @@ These cover the loader that replaced the global torchaudio monkey-patch when the
 project moved to torch 2.11 (torchaudio now routes I/O through torchcodec and
 ignores the backend argument).
 """
+
 import numpy as np
 import soundfile as sf
 import torch
@@ -58,7 +59,9 @@ def test_safe_read_audio_resamples_to_target(tmp_path):
     from backend.processing.vad import safe_read_audio
 
     src_sr = 48000
-    samples = (0.05 * np.sin(2 * np.pi * 440 * np.arange(src_sr) / src_sr)).astype("float32")
+    samples = (0.05 * np.sin(2 * np.pi * 440 * np.arange(src_sr) / src_sr)).astype(
+        "float32"
+    )
     path = tmp_path / "resample.wav"
     sf.write(path, samples, src_sr)
 

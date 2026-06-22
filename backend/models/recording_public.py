@@ -59,7 +59,9 @@ class SpeakerNameSuggestionRead(PublicModel):
     source: str
     provider: Optional[str] = None
     rationale: Optional[str] = None
-    evidence_spans: list[SpeakerNameSuggestionEvidenceRead] = Field(default_factory=list)
+    evidence_spans: list[SpeakerNameSuggestionEvidenceRead] = Field(
+        default_factory=list
+    )
     signals: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -81,7 +83,9 @@ class TranscriptPublicRead(PublicModel):
     meeting_edge_payload: Optional[dict[str, Any]] = None
     meeting_edge_status: str = "idle"
     meeting_edge_error_message: Optional[str] = None
-    speaker_name_suggestions: list[SpeakerNameSuggestionRead] = Field(default_factory=list)
+    speaker_name_suggestions: list[SpeakerNameSuggestionRead] = Field(
+        default_factory=list
+    )
     notes_status: str = "pending"
     transcript_status: str = "pending"
     error_message: Optional[str] = None
@@ -194,7 +198,9 @@ def serialize_transcript(
         updated_at=transcript.updated_at,
         recording_id=recording_public_id,
         text=transcript.text if text_override is None else text_override,
-        segments=transcript.segments if segments_override is None else segments_override,
+        segments=transcript.segments
+        if segments_override is None
+        else segments_override,
         notes=transcript.notes,
         user_notes=transcript.user_notes,
         meeting_edge_focus=transcript.meeting_edge_focus,

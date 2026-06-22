@@ -1,11 +1,12 @@
+import logging
+from typing import Any, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
-from typing import Optional, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
-from backend.api.error_handling import sanitized_http_exception
 from backend.api.deps import get_current_user, get_db
+from backend.api.error_handling import sanitized_http_exception
 from backend.celery_app import celery_app
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
@@ -22,7 +23,6 @@ from backend.utils.config_manager import (
     get_default_user_settings,
     strip_legacy_automatic_ai_settings,
 )
-from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
 from backend.utils.languages import (
     get_language_registry_payload,
     validate_custom_notes_language_instruction,
@@ -30,11 +30,16 @@ from backend.utils.languages import (
     validate_notes_language,
     validate_transcription_language,
 )
+from backend.utils.ollama_url_policy import (
+    OllamaURLValidationError,
+    validate_ollama_api_url,
+)
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset(INSTALL_WIDE_AI_SETTING_KEYS)
+
 
 class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
@@ -80,63 +85,77 @@ class SettingsUpdate(BaseModel):
     spellcheck_language: Optional[str] = None
     timezone: Optional[str] = None
 
-    @field_validator('whisper_model_size')
+    @field_validator("whisper_model_size")
     @classmethod
     def validate_whisper_model_size(cls, value: Optional[str]) -> Optional[str]:
         if value and value not in WHISPER_MODEL_SIZES:
-            raise ValueError(f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}")
+            raise ValueError(
+                f"Invalid whisper_model_size. Must be one of {WHISPER_MODEL_SIZES}"
+            )
         return value
 
-    @field_validator('transcription_backend')
+    @field_validator("transcription_backend")
     @classmethod
     def validate_transcription_backend(cls, value: Optional[str]) -> Optional[str]:
         if value and value not in TRANSCRIPTION_BACKENDS:
-            raise ValueError(f"Invalid transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}")
+            raise ValueError(
+                f"Invalid transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}"
+            )
         return value
 
-    @field_validator('transcription_language')
+    @field_validator("transcription_language")
     @classmethod
     def validate_transcription_language(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return value
         return validate_transcription_language(value)
 
-    @field_validator('notes_language')
+    @field_validator("notes_language")
     @classmethod
     def validate_notes_language(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return value
         return validate_notes_language(value)
 
-    @field_validator('notes_language_custom_instruction')
+    @field_validator("notes_language_custom_instruction")
     @classmethod
-    def validate_notes_language_custom_instruction(cls, value: Optional[str]) -> Optional[str]:
+    def validate_notes_language_custom_instruction(
+        cls, value: Optional[str]
+    ) -> Optional[str]:
         if value is None:
             return value
         return validate_custom_notes_language_instruction(value)
 
-    @field_validator('theme')
+    @field_validator("theme")
     @classmethod
     def validate_theme(cls, value: Optional[str]) -> Optional[str]:
         if value and value not in APP_THEMES:
             raise ValueError(f"Invalid theme. Must be one of {APP_THEMES}")
         return value
 
-    @field_validator('llm_provider')
+    @field_validator("llm_provider")
     @classmethod
     def validate_llm_provider(cls, value: Optional[str]) -> Optional[str]:
         if value and value not in ["gemini", "openai", "anthropic", "ollama"]:
-            raise ValueError("Invalid llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']")
+            raise ValueError(
+                "Invalid llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']"
+            )
         return value
 
-    @field_validator('secondary_llm_provider')
+    @field_validator("secondary_llm_provider")
     @classmethod
     def validate_secondary_llm_provider(cls, value: Optional[str]) -> Optional[str]:
-        if value is not None and value != "" and value not in ["gemini", "openai", "anthropic", "ollama"]:
-            raise ValueError("Invalid secondary_llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama'] or empty")
+        if (
+            value is not None
+            and value != ""
+            and value not in ["gemini", "openai", "anthropic", "ollama"]
+        ):
+            raise ValueError(
+                "Invalid secondary_llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama'] or empty"
+            )
         return value
 
-    @field_validator('ollama_api_url')
+    @field_validator("ollama_api_url")
     @classmethod
     def validate_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
         if value:
@@ -146,7 +165,7 @@ class SettingsUpdate(BaseModel):
                 raise ValueError(str(exc)) from exc
         return value
 
-    @field_validator('secondary_ollama_api_url')
+    @field_validator("secondary_ollama_api_url")
     @classmethod
     def validate_secondary_ollama_api_url(cls, value: Optional[str]) -> Optional[str]:
         if value:
@@ -156,7 +175,7 @@ class SettingsUpdate(BaseModel):
                 raise ValueError(str(exc)) from exc
         return value
 
-    @field_validator('ollama_context_window', 'secondary_ollama_context_window')
+    @field_validator("ollama_context_window", "secondary_ollama_context_window")
     @classmethod
     def validate_ollama_context_window(cls, value: Optional[int]) -> Optional[int]:
         if value is None:
@@ -165,19 +184,23 @@ class SettingsUpdate(BaseModel):
             raise ValueError("Ollama context window must be at least 1024 tokens.")
         return value
 
-    @field_validator('timezone')
+    @field_validator("timezone")
     @classmethod
     def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
         if value:
             return validate_timezone_name(value)
         return value
 
-    @field_validator('meeting_edge_context_level')
+    @field_validator("meeting_edge_context_level")
     @classmethod
     def validate_meeting_edge_context_level(cls, value: Optional[int]) -> Optional[int]:
         if value is None:
             return value
-        if not MEETING_EDGE_CONTEXT_LEVEL_MIN <= value <= MEETING_EDGE_CONTEXT_LEVEL_MAX:
+        if (
+            not MEETING_EDGE_CONTEXT_LEVEL_MIN
+            <= value
+            <= MEETING_EDGE_CONTEXT_LEVEL_MAX
+        ):
             raise ValueError(
                 f"Invalid meeting_edge_context_level. Must be between {MEETING_EDGE_CONTEXT_LEVEL_MIN} and {MEETING_EDGE_CONTEXT_LEVEL_MAX}"
             )
@@ -198,7 +221,9 @@ def _apply_install_wide_ai_owner_fallback(
     for field in INSTALL_WIDE_AI_SETTING_KEYS:
         current_value = merged.get(field)
         owner_value = owner_settings.get(field)
-        if _has_configured_value(current_value) or not _has_configured_value(owner_value):
+        if _has_configured_value(current_value) or not _has_configured_value(
+            owner_value
+        ):
             continue
         merged[field] = owner_value
 
@@ -228,6 +253,7 @@ def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
     config_manager.save_config(config_data)
     config_manager.reload()
 
+
 async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     """
     Merges system config, default user settings, and user-specific settings.
@@ -240,14 +266,16 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     default_user_settings = get_default_user_settings()
 
     # 2.5 Apply Owner's System-Wide LLM Configuration Defaults
-    from backend.models.user import User
     from sqlmodel import select
+
+    from backend.models.user import User
+
     result = await db.execute(select(User).where(User.role == "owner"))
     owner = result.scalar_one_or_none()
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
     _apply_install_wide_ai_owner_fallback(merged, owner_settings)
-    
+
     # 3. Apply User Specific Settings
     _apply_default_user_settings(merged, default_user_settings)
     sanitized_user_settings = _get_mutable_user_settings(user_settings)
@@ -255,15 +283,16 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         merged.update(
             {k: v for k, v in sanitized_user_settings.items() if v is not None}
         )
-        
+
     # 4. Inject system API keys (from Admin DB or .env) globally
     from backend.utils.config_manager import async_get_system_api_keys
+
     system_keys = await async_get_system_api_keys(db)
     for sk in SENSITIVE_KEYS:
         val = system_keys.get(sk)
         if val:
             merged[sk] = val
-            
+
     # 5. Mask sensitive keys
     for key in SENSITIVE_KEYS:
         if merged.get(key):
@@ -272,7 +301,7 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
                 merged[key] = f"{val[:3]}...{val[-4:]}"
             else:
                 merged[key] = "***"
-                
+
     return merged
 
 
@@ -380,7 +409,9 @@ async def _save_user_settings(
         _persist_install_wide_ai_settings(update_data)
 
     user_scoped_updates = {
-        key: value for key, value in update_data.items() if key not in INSTALL_WIDE_AI_SETTING_KEYS
+        key: value
+        for key, value in update_data.items()
+        if key not in INSTALL_WIDE_AI_SETTING_KEYS
     }
     current_settings.update(user_scoped_updates)
     current_user.settings = current_settings
@@ -393,7 +424,12 @@ async def _save_user_settings(
     if meeting_edge_keys.intersection(update_data):
         await _dispatch_meeting_edge_refresh_for_active_recordings(db, current_user)
 
-    model_keys = {"whisper_model_size", "transcription_backend", "parakeet_model", "canary_model"}
+    model_keys = {
+        "whisper_model_size",
+        "transcription_backend",
+        "parakeet_model",
+        "canary_model",
+    }
     if is_admin and model_keys.intersection(update_data):
         prepared_settings = dict(current_settings)
         try:
@@ -408,9 +444,14 @@ async def _save_user_settings(
                 ),
             )
         except Exception as e:  # noqa: BLE001
-            logger.error("Failed to queue model preparation after settings update: %s", e, exc_info=True)
+            logger.error(
+                "Failed to queue model preparation after settings update: %s",
+                e,
+                exc_info=True,
+            )
 
     return await _merge_settings(current_user.settings, db)
+
 
 @router.get("", response_model=Any)
 async def get_settings_root(
@@ -423,6 +464,7 @@ async def get_settings_root(
     """
     return await _merge_settings(current_user.settings, db)
 
+
 @router.get("/", response_model=Any)
 async def get_settings(
     current_user: User = Depends(get_current_user),
@@ -434,6 +476,7 @@ async def get_settings(
     """
     return await _merge_settings(current_user.settings, db)
 
+
 @router.post("", response_model=Any)
 async def update_settings_root(
     settings: SettingsUpdate,
@@ -444,6 +487,7 @@ async def update_settings_root(
     Update user settings (root path).
     """
     return await _save_user_settings(settings, current_user, db)
+
 
 @router.post("/", response_model=Any)
 async def update_settings(
@@ -468,8 +512,10 @@ async def get_language_options(
 
 # --- Personal Dictionary ---
 
+
 class WordPayload(BaseModel):
     word: str
+
 
 @router.get("/personal-dictionary", response_model=List[str])
 async def get_personal_dictionary(
@@ -477,6 +523,7 @@ async def get_personal_dictionary(
 ) -> List[str]:
     settings = current_user.settings or {}
     return settings.get("personal_dictionary", [])
+
 
 @router.post("/personal-dictionary", response_model=List[str])
 async def add_personal_dictionary_word(
@@ -497,6 +544,7 @@ async def add_personal_dictionary_word(
     await db.commit()
     return words
 
+
 @router.delete("/personal-dictionary/{word}", response_model=List[str])
 async def remove_personal_dictionary_word(
     word: str,
@@ -515,12 +563,14 @@ async def remove_personal_dictionary_word(
 
 # --- Spellcheck Ignored Words ---
 
+
 @router.get("/spellcheck-ignored", response_model=List[str])
 async def get_spellcheck_ignored(
     current_user: User = Depends(get_current_user),
 ) -> List[str]:
     settings = current_user.settings or {}
     return settings.get("spellcheck_ignored_words", [])
+
 
 @router.post("/spellcheck-ignored", response_model=List[str])
 async def add_spellcheck_ignored_word(
@@ -540,6 +590,7 @@ async def add_spellcheck_ignored_word(
     db.add(current_user)
     await db.commit()
     return words
+
 
 @router.delete("/spellcheck-ignored/{word}", response_model=List[str])
 async def remove_spellcheck_ignored_word(

@@ -41,7 +41,9 @@ def test_merge_llm_config_uses_meeting_edge_model_when_present() -> None:
     assert resolved.model == "gpt-4.1-mini"
 
 
-def test_merge_llm_config_falls_back_to_main_model_without_meeting_edge_override() -> None:
+def test_merge_llm_config_falls_back_to_main_model_without_meeting_edge_override() -> (
+    None
+):
     resolved = _merge_llm_config(
         base_config={
             "llm_provider": "anthropic",
@@ -119,7 +121,9 @@ def test_merge_llm_config_resolves_secondary_ollama_context_window() -> None:
     assert secondary.context_window == 65536
 
 
-def test_merge_llm_config_prefers_config_backed_model_defaults_over_owner_settings() -> None:
+def test_merge_llm_config_prefers_config_backed_model_defaults_over_owner_settings() -> (
+    None
+):
     resolved = _merge_llm_config(
         base_config={
             "llm_provider": "openai",

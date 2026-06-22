@@ -1,10 +1,10 @@
 from .constants import *
 
+
 @dataclass(frozen=True)
 class IdentityReplayScope:
     anchor_recording_speaker_id: int
     allowed_recording_speaker_ids: frozenset[int]
-
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,6 @@ BOUNDARY_ONLY_SPEAKER_REPLAY_POLICY = SpeakerReplayPolicy(
 )
 
 
-
 def _normalize_speaker_assignment_source(value: Any) -> str:
     normalized = str(value or "").strip() or SPEAKER_ASSIGNMENT_SOURCE_LEGACY
     if normalized == "speaker_identity_replay":
@@ -33,13 +32,11 @@ def _normalize_speaker_assignment_source(value: Any) -> str:
     return normalized
 
 
-
 def _normalize_speaker_assignment_authority(value: Any) -> str:
     normalized = str(value or "").strip()
     if normalized in SPEAKER_ASSIGNMENT_AUTHORITY_RANK:
         return normalized
     return SPEAKER_ASSIGNMENT_AUTHORITY_PROVISIONAL
-
 
 
 def _derive_default_speaker_assignment_authority(
@@ -53,7 +50,6 @@ def _derive_default_speaker_assignment_authority(
     if state_value == TranscriptUtteranceState.FINALIZED.value:
         return SPEAKER_ASSIGNMENT_AUTHORITY_FINALIZED
     return SPEAKER_ASSIGNMENT_AUTHORITY_PROVISIONAL
-
 
 
 def _derive_default_speaker_assignment_source(
@@ -95,12 +91,14 @@ def _derive_default_speaker_assignment_source(
         SPEAKER_ASSIGNMENT_SOURCE_COMPATIBILITY_REPLACE,
     }:
         return normalized_source
-    if normalized_source_kind and normalized_source_kind != SPEAKER_ASSIGNMENT_SOURCE_LEGACY:
+    if (
+        normalized_source_kind
+        and normalized_source_kind != SPEAKER_ASSIGNMENT_SOURCE_LEGACY
+    ):
         return normalized_source_kind
     if normalized_source and normalized_source != SPEAKER_ASSIGNMENT_SOURCE_LEGACY:
         return normalized_source
     return SPEAKER_ASSIGNMENT_SOURCE_LEGACY
-
 
 
 def _max_speaker_assignment_authority(*values: Any) -> str:
@@ -113,7 +111,6 @@ def _max_speaker_assignment_authority(*values: Any) -> str:
             strongest = normalized
             strongest_rank = rank
     return strongest
-
 
 
 def _resolve_segment_speaker_assignment_source(
@@ -135,7 +132,6 @@ def _resolve_segment_speaker_assignment_source(
     )
 
 
-
 def _resolve_segment_speaker_assignment_authority(
     segment: dict[str, Any],
     *,
@@ -151,16 +147,15 @@ def _resolve_segment_speaker_assignment_authority(
     )
 
 
-
 def _utterance_speaker_assignment_source(
     utterance: TranscriptUtterance,
     *,
     projection: dict[str, Any] | None = None,
 ) -> str:
     projection = projection or {}
-    current_value = getattr(utterance, "speaker_assignment_source", None) or projection.get(
-        "speaker_assignment_source"
-    )
+    current_value = getattr(
+        utterance, "speaker_assignment_source", None
+    ) or projection.get("speaker_assignment_source")
     if current_value:
         return _normalize_speaker_assignment_source(current_value)
     return _derive_default_speaker_assignment_source(
@@ -171,23 +166,21 @@ def _utterance_speaker_assignment_source(
     )
 
 
-
 def _utterance_speaker_assignment_authority(
     utterance: TranscriptUtterance,
     *,
     projection: dict[str, Any] | None = None,
 ) -> str:
     projection = projection or {}
-    current_value = getattr(utterance, "speaker_assignment_authority", None) or projection.get(
-        "speaker_assignment_authority"
-    )
+    current_value = getattr(
+        utterance, "speaker_assignment_authority", None
+    ) or projection.get("speaker_assignment_authority")
     if current_value:
         return _normalize_speaker_assignment_authority(current_value)
     return _derive_default_speaker_assignment_authority(
         state=utterance.state,
         manual_speaker_locked=bool(utterance.manual_speaker_locked),
     )
-
 
 
 def _set_utterance_speaker_assignment_provenance(
@@ -207,7 +200,6 @@ def _set_utterance_speaker_assignment_provenance(
     )
 
 
-
 def _effective_speaker_replay_policy(
     replay_policy: SpeakerReplayPolicy | None,
     *,
@@ -220,17 +212,14 @@ def _effective_speaker_replay_policy(
     return BOUNDARY_ONLY_SPEAKER_REPLAY_POLICY
 
 
-
 def _is_identity_replay_policy(replay_policy: SpeakerReplayPolicy | None) -> bool:
     return replay_policy is not None and replay_policy.identity_scope is not None
-
 
 
 def _replay_source_for_policy(replay_policy: SpeakerReplayPolicy | None) -> str:
     if _is_identity_replay_policy(replay_policy):
         return "speaker_identity_replay"
     return "speaker_correction_replay"
-
 
 
 def _replay_normalized_recording_speaker_id(
@@ -242,7 +231,6 @@ def _replay_normalized_recording_speaker_id(
     if not _identity_replay_scope_contains(replay_policy, recording_speaker_id):
         return recording_speaker_id
     return _identity_replay_anchor_recording_speaker_id(replay_policy)
-
 
 
 def _speaker_replay_policy_for_correction_event(
@@ -278,7 +266,6 @@ def _speaker_replay_policy_for_correction_event(
     return None
 
 
-
 def _record_guarded_replay_rejection(
     *,
     recording_id: int,
@@ -311,21 +298,26 @@ def _record_guarded_replay_rejection(
     )
 
 
-
 def ensure_recording_speaker_aliases_for_speaker(
     session,
     recording_speaker: RecordingSpeaker,
     *,
     source_run_id: int | None = None,
 ) -> None:
-    existing_rows = session.execute(
-        select(RecordingSpeakerAlias).where(
-            RecordingSpeakerAlias.recording_speaker_id == recording_speaker.id
+    existing_rows = (
+        session.execute(
+            select(RecordingSpeakerAlias).where(
+                RecordingSpeakerAlias.recording_speaker_id == recording_speaker.id
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     existing = {
         (
-            row.alias_type.value if hasattr(row.alias_type, "value") else str(row.alias_type),
+            row.alias_type.value
+            if hasattr(row.alias_type, "value")
+            else str(row.alias_type),
             row.alias_value,
         )
         for row in existing_rows
@@ -333,11 +325,23 @@ def ensure_recording_speaker_aliases_for_speaker(
 
     candidates: list[tuple[RecordingSpeakerAliasType, str]] = []
     if recording_speaker.diarization_label:
-        candidates.append((_alias_type_for_value(recording_speaker.diarization_label), recording_speaker.diarization_label))
+        candidates.append(
+            (
+                _alias_type_for_value(recording_speaker.diarization_label),
+                recording_speaker.diarization_label,
+            )
+        )
     if recording_speaker.local_name:
-        candidates.append((RecordingSpeakerAliasType.DISPLAY_NAME, recording_speaker.local_name))
-    if recording_speaker.name and recording_speaker.name != recording_speaker.local_name:
-        candidates.append((RecordingSpeakerAliasType.DISPLAY_NAME, recording_speaker.name))
+        candidates.append(
+            (RecordingSpeakerAliasType.DISPLAY_NAME, recording_speaker.local_name)
+        )
+    if (
+        recording_speaker.name
+        and recording_speaker.name != recording_speaker.local_name
+    ):
+        candidates.append(
+            (RecordingSpeakerAliasType.DISPLAY_NAME, recording_speaker.name)
+        )
     global_speaker = getattr(recording_speaker, "global_speaker", None)
     if global_speaker is None and recording_speaker.global_speaker_id:
         global_speaker = session.get(GlobalSpeaker, recording_speaker.global_speaker_id)
@@ -358,7 +362,6 @@ def ensure_recording_speaker_aliases_for_speaker(
         )
 
 
-
 def _ensure_recording_speaker_alias(
     session,
     *,
@@ -371,12 +374,16 @@ def _ensure_recording_speaker_alias(
     valid_to_ms: int | None = None,
     confidence: float | None = None,
 ) -> RecordingSpeakerAlias:
-    existing_rows = session.execute(
-        select(RecordingSpeakerAlias)
-        .where(RecordingSpeakerAlias.recording_speaker_id == recording_speaker_id)
-        .where(RecordingSpeakerAlias.alias_type == alias_type)
-        .where(RecordingSpeakerAlias.alias_value == alias_value)
-    ).scalars().all()
+    existing_rows = (
+        session.execute(
+            select(RecordingSpeakerAlias)
+            .where(RecordingSpeakerAlias.recording_speaker_id == recording_speaker_id)
+            .where(RecordingSpeakerAlias.alias_type == alias_type)
+            .where(RecordingSpeakerAlias.alias_value == alias_value)
+        )
+        .scalars()
+        .all()
+    )
 
     for row in existing_rows:
         if (
@@ -406,7 +413,6 @@ def _ensure_recording_speaker_alias(
     return alias_row
 
 
-
 def ensure_recording_speaker_aliases(
     session,
     recording_id: int,
@@ -428,15 +434,20 @@ def ensure_recording_speaker_aliases(
     return speakers
 
 
-
-def active_recording_speaker_ids_for_read(session, recording_id: int) -> tuple[set[int], bool]:
+def active_recording_speaker_ids_for_read(
+    session, recording_id: int
+) -> tuple[set[int], bool]:
     rows = session.execute(
         select(TranscriptUtterance.recording_speaker_id)
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.state.in_(ACTIVE_UTTERANCE_STATES))
         .where(TranscriptUtterance.recording_speaker_id.is_not(None))
     ).all()
-    active_ids = {int(recording_speaker_id) for (recording_speaker_id,) in rows if recording_speaker_id is not None}
+    active_ids = {
+        int(recording_speaker_id)
+        for (recording_speaker_id,) in rows
+        if recording_speaker_id is not None
+    }
 
     has_active_utterances = bool(
         session.execute(
@@ -447,7 +458,6 @@ def active_recording_speaker_ids_for_read(session, recording_id: int) -> tuple[s
         ).first()
     )
     return active_ids, has_active_utterances
-
 
 
 def filter_recording_speakers_for_public_read(
@@ -469,7 +479,6 @@ def filter_recording_speakers_for_public_read(
     return filtered
 
 
-
 def refresh_recording_speaker_usage_state(session, recording_id: int) -> None:
     active_speaker_ids, has_active_utterances = active_recording_speaker_ids_for_read(
         session,
@@ -486,7 +495,6 @@ def refresh_recording_speaker_usage_state(session, recording_id: int) -> None:
             continue
         speaker.speaker_status = next_status
         session.add(speaker)
-
 
 
 def merge_recording_speaker_aliases(
@@ -507,19 +515,29 @@ def merge_recording_speaker_aliases(
         source_run_id=source_run_id,
     )
 
-    source_alias_rows = session.execute(
-        select(RecordingSpeakerAlias).where(
-            RecordingSpeakerAlias.recording_speaker_id == source_speaker.id
+    source_alias_rows = (
+        session.execute(
+            select(RecordingSpeakerAlias).where(
+                RecordingSpeakerAlias.recording_speaker_id == source_speaker.id
+            )
         )
-    ).scalars().all()
-    target_alias_rows = session.execute(
-        select(RecordingSpeakerAlias).where(
-            RecordingSpeakerAlias.recording_speaker_id == target_speaker.id
+        .scalars()
+        .all()
+    )
+    target_alias_rows = (
+        session.execute(
+            select(RecordingSpeakerAlias).where(
+                RecordingSpeakerAlias.recording_speaker_id == target_speaker.id
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     existing_target_keys = {
         (
-            row.alias_type.value if hasattr(row.alias_type, "value") else str(row.alias_type),
+            row.alias_type.value
+            if hasattr(row.alias_type, "value")
+            else str(row.alias_type),
             row.alias_value,
         )
         for row in target_alias_rows
@@ -548,7 +566,6 @@ def merge_recording_speaker_aliases(
         existing_target_keys.add(alias_key)
 
 
-
 def _generic_display_aliases_for_label(label: str | None) -> set[str]:
     if not label:
         return set()
@@ -564,19 +581,21 @@ def _generic_display_aliases_for_label(label: str | None) -> set[str]:
     return set()
 
 
-
 def _is_generic_speaker_display_alias(value: str | None) -> bool:
     return bool(value and GENERIC_SPEAKER_DISPLAY_PATTERN.match(value.strip()))
 
 
-
-def _continuity_alias_values_for_speaker(session, recording_speaker: RecordingSpeaker) -> set[str]:
+def _continuity_alias_values_for_speaker(
+    session, recording_speaker: RecordingSpeaker
+) -> set[str]:
     ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
 
     values: set[str] = set()
     if recording_speaker.diarization_label:
         values.add(recording_speaker.diarization_label)
-        values.update(_generic_display_aliases_for_label(recording_speaker.diarization_label))
+        values.update(
+            _generic_display_aliases_for_label(recording_speaker.diarization_label)
+        )
 
     alias_rows = session.execute(
         select(RecordingSpeakerAlias.alias_type, RecordingSpeakerAlias.alias_value)
@@ -592,13 +611,16 @@ def _continuity_alias_values_for_speaker(session, recording_speaker: RecordingSp
     for alias_type, alias_value in alias_rows:
         if not alias_value:
             continue
-        alias_type_value = alias_type.value if hasattr(alias_type, "value") else str(alias_type)
+        alias_type_value = (
+            alias_type.value if hasattr(alias_type, "value") else str(alias_type)
+        )
         alias_text = str(alias_value)
-        if alias_type_value in machine_alias_types or _is_generic_speaker_display_alias(alias_text):
+        if alias_type_value in machine_alias_types or _is_generic_speaker_display_alias(
+            alias_text
+        ):
             values.add(alias_text)
 
     return values
-
 
 
 def _preserve_speaker_label_continuity(
@@ -611,10 +633,17 @@ def _preserve_speaker_label_continuity(
 ) -> None:
     if source_speaker is None or source_speaker.id == target_speaker.id:
         return
-    if scope in {SpeakerCorrectionScope.UTTERANCE_ONLY, SpeakerCorrectionScope.MERGE_INTO_SPEAKER}:
+    if scope in {
+        SpeakerCorrectionScope.UTTERANCE_ONLY,
+        SpeakerCorrectionScope.MERGE_INTO_SPEAKER,
+    }:
         return
 
-    valid_from_ms = anchor_start_ms if scope == SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD else None
+    valid_from_ms = (
+        anchor_start_ms
+        if scope == SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD
+        else None
+    )
     for alias_value in _continuity_alias_values_for_speaker(session, source_speaker):
         alias_type = (
             RecordingSpeakerAliasType.DISPLAY_NAME
@@ -626,11 +655,11 @@ def _preserve_speaker_label_continuity(
             recording_speaker_id=target_speaker.id,
             alias_type=alias_type,
             alias_value=alias_value,
-            source_run_id=target_speaker.processing_run_id or source_speaker.processing_run_id,
+            source_run_id=target_speaker.processing_run_id
+            or source_speaker.processing_run_id,
             active=True,
             valid_from_ms=valid_from_ms,
         )
-
 
 
 def _resolve_active_recording_speaker(
@@ -646,7 +675,6 @@ def _resolve_active_recording_speaker(
             break
         current = merged_target
     return current
-
 
 
 def _build_identity_replay_policy(
@@ -676,8 +704,12 @@ def _build_identity_replay_policy(
         candidate_id = getattr(candidate_speaker, "id", None)
         if candidate_id is None:
             continue
-        resolved_candidate = _resolve_active_recording_speaker(session, candidate_speaker)
-        if getattr(resolved_candidate, "id", None) == getattr(resolved_anchor, "id", None):
+        resolved_candidate = _resolve_active_recording_speaker(
+            session, candidate_speaker
+        )
+        if getattr(resolved_candidate, "id", None) == getattr(
+            resolved_anchor, "id", None
+        ):
             allowed_recording_speaker_ids.add(int(candidate_id))
             allowed_recording_speaker_ids.add(int(resolved_candidate.id))
             continue
@@ -702,15 +734,16 @@ def _build_identity_replay_policy(
     )
 
 
-
 def _identity_replay_scope_contains(
     replay_policy: SpeakerReplayPolicy,
     recording_speaker_id: int | None,
 ) -> bool:
     if replay_policy.identity_scope is None or recording_speaker_id is None:
         return False
-    return int(recording_speaker_id) in replay_policy.identity_scope.allowed_recording_speaker_ids
-
+    return (
+        int(recording_speaker_id)
+        in replay_policy.identity_scope.allowed_recording_speaker_ids
+    )
 
 
 def _identity_replay_anchor_recording_speaker_id(
@@ -721,7 +754,6 @@ def _identity_replay_anchor_recording_speaker_id(
     return int(replay_policy.identity_scope.anchor_recording_speaker_id)
 
 
-
 def _normalized_identity_replay_candidate(
     session,
     *,
@@ -730,7 +762,9 @@ def _normalized_identity_replay_candidate(
 ) -> RecordingSpeaker | None:
     if matched_speaker is None or replay_policy.identity_scope is None:
         return matched_speaker
-    if not _identity_replay_scope_contains(replay_policy, getattr(matched_speaker, "id", None)):
+    if not _identity_replay_scope_contains(
+        replay_policy, getattr(matched_speaker, "id", None)
+    ):
         return matched_speaker
     anchor_speaker = session.get(
         RecordingSpeaker,
@@ -739,7 +773,6 @@ def _normalized_identity_replay_candidate(
     if anchor_speaker is None:
         return matched_speaker
     return _resolve_active_recording_speaker(session, anchor_speaker)
-
 
 
 def _apply_source_run_provenance(
@@ -753,7 +786,6 @@ def _apply_source_run_provenance(
     session.add(recording_speaker)
 
 
-
 def _find_matching_recording_speaker(
     session,
     *,
@@ -765,30 +797,39 @@ def _find_matching_recording_speaker(
 ) -> RecordingSpeaker | None:
     speaker_ids = [speaker.id for speaker in recording_speakers]
     if speaker_ids and segment_start_ms is not None:
-        alias_rows = session.execute(
-            select(RecordingSpeakerAlias)
-            .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
-            .where(RecordingSpeakerAlias.active.is_(True))
-            .where(RecordingSpeakerAlias.alias_value == value)
-            .where(
-                or_(
-                    RecordingSpeakerAlias.valid_from_ms.is_(None),
-                    RecordingSpeakerAlias.valid_from_ms <= segment_start_ms,
+        alias_rows = (
+            session.execute(
+                select(RecordingSpeakerAlias)
+                .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
+                .where(RecordingSpeakerAlias.active.is_(True))
+                .where(RecordingSpeakerAlias.alias_value == value)
+                .where(
+                    or_(
+                        RecordingSpeakerAlias.valid_from_ms.is_(None),
+                        RecordingSpeakerAlias.valid_from_ms <= segment_start_ms,
+                    )
+                )
+                .where(
+                    or_(
+                        RecordingSpeakerAlias.valid_to_ms.is_(None),
+                        RecordingSpeakerAlias.valid_to_ms > segment_start_ms,
+                    )
+                )
+                .order_by(
+                    func.coalesce(RecordingSpeakerAlias.valid_from_ms, -1).desc(),
+                    RecordingSpeakerAlias.id.desc(),
                 )
             )
-            .where(
-                or_(
-                    RecordingSpeakerAlias.valid_to_ms.is_(None),
-                    RecordingSpeakerAlias.valid_to_ms > segment_start_ms,
-                )
-            )
-            .order_by(func.coalesce(RecordingSpeakerAlias.valid_from_ms, -1).desc(), RecordingSpeakerAlias.id.desc())
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         speakers_by_id = {speaker.id: speaker for speaker in recording_speakers}
         for alias_row in alias_rows:
             alias_speaker = speakers_by_id.get(alias_row.recording_speaker_id)
             if alias_speaker is None:
-                alias_speaker = session.get(RecordingSpeaker, alias_row.recording_speaker_id)
+                alias_speaker = session.get(
+                    RecordingSpeaker, alias_row.recording_speaker_id
+                )
             if alias_speaker is None or alias_speaker.recording_id != recording_id:
                 continue
             resolved = _resolve_active_recording_speaker(session, alias_speaker)
@@ -819,18 +860,24 @@ def _find_matching_recording_speaker(
     if not speaker_ids:
         return None
 
-    alias_rows = session.execute(
-        select(RecordingSpeakerAlias)
-        .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
-        .where(RecordingSpeakerAlias.active.is_(True))
-        .where(RecordingSpeakerAlias.alias_value == value)
-        .order_by(RecordingSpeakerAlias.id.desc())
-    ).scalars().all()
+    alias_rows = (
+        session.execute(
+            select(RecordingSpeakerAlias)
+            .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
+            .where(RecordingSpeakerAlias.active.is_(True))
+            .where(RecordingSpeakerAlias.alias_value == value)
+            .order_by(RecordingSpeakerAlias.id.desc())
+        )
+        .scalars()
+        .all()
+    )
     speakers_by_id = {speaker.id: speaker for speaker in recording_speakers}
     for alias_row in alias_rows:
         alias_speaker = speakers_by_id.get(alias_row.recording_speaker_id)
         if alias_speaker is None:
-            alias_speaker = session.get(RecordingSpeaker, alias_row.recording_speaker_id)
+            alias_speaker = session.get(
+                RecordingSpeaker, alias_row.recording_speaker_id
+            )
         if alias_speaker is None or alias_speaker.recording_id != recording_id:
             continue
         resolved = _resolve_active_recording_speaker(session, alias_speaker)
@@ -838,7 +885,6 @@ def _find_matching_recording_speaker(
         return resolved
 
     return None
-
 
 
 def _append_boundary_revision_events(
@@ -871,7 +917,9 @@ def _append_boundary_revision_events(
                 event_type="merge",
                 source=source,
                 old_values={
-                    "source_public_ids": [utterance.public_id for utterance in source_utterances],
+                    "source_public_ids": [
+                        utterance.public_id for utterance in source_utterances
+                    ],
                 },
                 new_values={
                     "start_ms": new_utterance.start_ms,
@@ -905,7 +953,6 @@ def _append_boundary_revision_events(
             },
             resulting_revision=new_utterance.revision,
         )
-
 
 
 def _append_speaker_correction_event(
@@ -958,7 +1005,6 @@ def _append_speaker_correction_event(
     return correction_event
 
 
-
 def record_recording_speaker_corrections(
     session,
     *,
@@ -971,7 +1017,11 @@ def record_recording_speaker_corrections(
     payload: dict[str, Any] | None = None,
     payload_by_speaker_id: dict[int, dict[str, Any]] | None = None,
 ) -> list[SpeakerCorrectionEvent]:
-    from .core import _reconcile_completed_windows_from_effective_point, refresh_transcript_projection_from_canonical
+    from .core import (
+        _reconcile_completed_windows_from_effective_point,
+        refresh_transcript_projection_from_canonical,
+    )
+
     correction_events: list[SpeakerCorrectionEvent] = []
     for speaker_id in target_recording_speaker_ids:
         recording_speaker = session.get(RecordingSpeaker, speaker_id)
@@ -981,7 +1031,9 @@ def record_recording_speaker_corrections(
         event_payload = dict(payload or {})
         if payload_by_speaker_id:
             event_payload.update(payload_by_speaker_id.get(speaker_id, {}))
-        event_payload.setdefault("diarization_label", recording_speaker.diarization_label)
+        event_payload.setdefault(
+            "diarization_label", recording_speaker.diarization_label
+        )
         event_payload.setdefault("target_public_id", recording_speaker.public_id)
         event_payload.setdefault(
             "speaker_name",
@@ -1026,7 +1078,6 @@ def record_recording_speaker_corrections(
     return correction_events
 
 
-
 def update_recording_speaker_identity(
     session,
     *,
@@ -1039,8 +1090,13 @@ def update_recording_speaker_identity(
     event_type: SpeakerCorrectionEventType | None = None,
     source: str = "api",
 ) -> list[RecordingSpeaker]:
-    from .core import recording_ready_for_canonical_backfill, refresh_transcript_projection_from_canonical, list_active_utterances
+    from .core import (
+        list_active_utterances,
+        recording_ready_for_canonical_backfill,
+        refresh_transcript_projection_from_canonical,
+    )
     from .startup import ensure_canonical_backfill
+
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")
@@ -1052,13 +1108,16 @@ def update_recording_speaker_identity(
     matching_speakers = [
         recording_speaker
         for recording_speaker in recording_speakers
-        if recording_speaker.diarization_label == diarization_label and not recording_speaker.merged_into_id
+        if recording_speaker.diarization_label == diarization_label
+        and not recording_speaker.merged_into_id
     ]
     if not matching_speakers:
         raise LookupError(f"Speaker '{diarization_label}' not found in recording")
 
     old_display_names = {
-        recording_speaker.id: _recording_speaker_display_name(session, recording_speaker)
+        recording_speaker.id: _recording_speaker_display_name(
+            session, recording_speaker
+        )
         for recording_speaker in matching_speakers
     }
 
@@ -1106,16 +1165,22 @@ def update_recording_speaker_identity(
     record_recording_speaker_corrections(
         session,
         recording_id=recording_id,
-        target_recording_speaker_ids=[recording_speaker.id for recording_speaker in matching_speakers],
+        target_recording_speaker_ids=[
+            recording_speaker.id for recording_speaker in matching_speakers
+        ],
         actor_user_id=actor_user_id,
         event_type=effective_event_type,
         scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
-        target_global_speaker_id=(target_global_speaker.id if target_global_speaker is not None else None),
+        target_global_speaker_id=(
+            target_global_speaker.id if target_global_speaker is not None else None
+        ),
         payload_by_speaker_id={
             recording_speaker.id: {
                 "old_name": old_display_names.get(recording_speaker.id),
                 "new_name": (
-                    target_global_speaker.name if target_global_speaker is not None else new_speaker_name
+                    target_global_speaker.name
+                    if target_global_speaker is not None
+                    else new_speaker_name
                 ),
                 "matched_global_speaker": target_global_speaker is not None,
                 "source": source,
@@ -1130,7 +1195,6 @@ def update_recording_speaker_identity(
     return matching_speakers
 
 
-
 def merge_recording_speakers_by_label(
     session,
     *,
@@ -1140,8 +1204,15 @@ def merge_recording_speakers_by_label(
     actor_user_id: int | None = None,
     source: str = "api",
 ) -> tuple[RecordingSpeaker, RecordingSpeaker]:
-    from .core import _reconcile_completed_windows_from_effective_point, recording_ready_for_canonical_backfill, refresh_transcript_projection_from_canonical, update_utterance_speaker, list_active_utterances
+    from .core import (
+        _reconcile_completed_windows_from_effective_point,
+        list_active_utterances,
+        recording_ready_for_canonical_backfill,
+        refresh_transcript_projection_from_canonical,
+        update_utterance_speaker,
+    )
     from .startup import ensure_canonical_backfill
+
     recording = session.get(Recording, recording_id)
     if recording is None:
         raise LookupError("Recording not found")
@@ -1165,10 +1236,14 @@ def merge_recording_speakers_by_label(
     ]
 
     source_speaker = (
-        _resolve_active_recording_speaker(session, source_matches[0]) if source_matches else None
+        _resolve_active_recording_speaker(session, source_matches[0])
+        if source_matches
+        else None
     )
     target_speaker = (
-        _resolve_active_recording_speaker(session, target_matches[0]) if target_matches else None
+        _resolve_active_recording_speaker(session, target_matches[0])
+        if target_matches
+        else None
     )
 
     if source_speaker is None:
@@ -1192,7 +1267,8 @@ def merge_recording_speakers_by_label(
     source_utterances = [
         utterance
         for utterance in list_active_utterances(session, recording_id)
-        if (utterance.recording_speaker_id or utterance.speaker_label) == source_speaker.id
+        if (utterance.recording_speaker_id or utterance.speaker_label)
+        == source_speaker.id
     ]
     if not source_utterances:
         source_utterances = [
@@ -1232,7 +1308,9 @@ def merge_recording_speakers_by_label(
             scope=SpeakerCorrectionScope.MERGE_INTO_SPEAKER,
             effective_from_ms=source_speaker.first_seen_ms,
             payload={
-                "new_speaker_name": _recording_speaker_display_name(session, target_speaker),
+                "new_speaker_name": _recording_speaker_display_name(
+                    session, target_speaker
+                ),
                 "diarization_label": target_speaker.diarization_label,
                 "target_public_id": target_speaker.public_id,
             },
@@ -1261,6 +1339,4 @@ def merge_recording_speakers_by_label(
     return source_speaker, target_speaker
 
 
-
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

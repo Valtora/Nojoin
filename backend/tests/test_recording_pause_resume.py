@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import shutil
 import wave
 from pathlib import Path
@@ -357,31 +356,51 @@ async def api_app(monkeypatch, tmp_path, test_session_maker: sessionmaker) -> Fa
 
     fake_user = build_test_user()
 
-    async def fake_get_authenticated_token_details(db, actual_token, *, allowed_token_types, required_scopes_by_type=None):
+    async def fake_get_authenticated_token_details(
+        db, actual_token, *, allowed_token_types, required_scopes_by_type=None
+    ):
         if actual_token == "session-token":
-            return fake_user, {"sub": fake_user.username, "token_type": "session", "scopes": ["session:web"]}
+            return fake_user, {
+                "sub": fake_user.username,
+                "token_type": "session",
+                "scopes": ["session:web"],
+            }
         raise AssertionError(f"Unexpected token: {actual_token}")
 
-    async def fake_get_authenticated_user_from_token(db, actual_token, *, allowed_token_types, required_scopes_by_type=None):
+    async def fake_get_authenticated_user_from_token(
+        db, actual_token, *, allowed_token_types, required_scopes_by_type=None
+    ):
         assert actual_token == "session-token"
         return fake_user
 
     from backend.api.v1.endpoints import recordings as recordings_module
     from backend.utils import recording_storage
 
-    monkeypatch.setattr(deps, "get_authenticated_token_details", fake_get_authenticated_token_details)
-    monkeypatch.setattr(deps, "get_authenticated_user_from_token", fake_get_authenticated_user_from_token)
+    monkeypatch.setattr(
+        deps, "get_authenticated_token_details", fake_get_authenticated_token_details
+    )
+    monkeypatch.setattr(
+        deps,
+        "get_authenticated_user_from_token",
+        fake_get_authenticated_user_from_token,
+    )
     monkeypatch.setattr(recordings_module, "recordings_root_dir", lambda: tmp_path)
     monkeypatch.setattr(
         recordings_module,
         "recording_upload_temp_dir",
-        lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
+        lambda recording_id, create=False: _recording_temp_dir(
+            tmp_path, recording_id, create=create
+        ),
     )
-    monkeypatch.setattr(recording_storage, "recordings_root_dir", lambda create=True: tmp_path)
+    monkeypatch.setattr(
+        recording_storage, "recordings_root_dir", lambda create=True: tmp_path
+    )
     monkeypatch.setattr(
         recording_storage,
         "recording_upload_temp_dir",
-        lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
+        lambda recording_id, create=False: _recording_temp_dir(
+            tmp_path, recording_id, create=create
+        ),
     )
     monkeypatch.setattr(
         recordings_module.celery_app,
@@ -391,7 +410,9 @@ async def api_app(monkeypatch, tmp_path, test_session_maker: sessionmaker) -> Fa
     monkeypatch.setattr(
         recordings_module,
         "concatenate_wavs",
-        lambda segment_paths, output_path: _fake_concatenate_wavs(segment_paths, output_path),
+        lambda segment_paths, output_path: _fake_concatenate_wavs(
+            segment_paths, output_path
+        ),
     )
     monkeypatch.setattr(
         recordings_module,
@@ -686,4 +707,7 @@ async def test_get_recording_hides_in_flight_transcript_content(
     processed_payload = processed_response.json()
     assert processed_payload["status"] == "PROCESSED"
     assert processed_payload["transcript"]["text"] == "Interim transcript text."
-    assert processed_payload["transcript"]["segments"][0]["text"] == "Interim transcript text."
+    assert (
+        processed_payload["transcript"]["segments"][0]["text"]
+        == "Interim transcript text."
+    )

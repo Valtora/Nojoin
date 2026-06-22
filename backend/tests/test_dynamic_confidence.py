@@ -82,7 +82,12 @@ def test_confidence_with_missing_label_in_scores() -> None:
 
 def test_transcript_mention_overrides_embedding_confidence() -> None:
     segments = [
-        {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00", "text": "Hi, I'm Alice speaking"},
+        {
+            "start": 0.0,
+            "end": 5.0,
+            "speaker": "SPEAKER_00",
+            "text": "Hi, I'm Alice speaking",
+        },
     ]
 
     result = build_mapping_based_speaker_suggestions(

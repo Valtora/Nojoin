@@ -2,10 +2,11 @@
 
 import pytest
 
+from backend.processing import transcribe
+
 # validate_config_value is a method on the ConfigManager singleton, not a
 # module-level function, so it is accessed via the exported config_manager instance.
 from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG, config_manager
-from backend.processing import transcribe
 
 validate_config_value = config_manager.validate_config_value
 
@@ -58,7 +59,9 @@ def test_dispatcher_selects_whisper():
     """transcribe_audio routes to the whisper engine in the registry."""
     fake = _FakeEngine("whisper")
     transcribe._ENGINE_REGISTRY["whisper"] = fake
-    result = transcribe.transcribe_audio("meeting.wav", {"transcription_backend": "whisper"})
+    result = transcribe.transcribe_audio(
+        "meeting.wav", {"transcription_backend": "whisper"}
+    )
     assert fake.transcribe_called_with is not None
     assert fake.transcribe_called_with[0] == "meeting.wav"
     assert result == {"text": "fake", "language": "en", "segments": []}
@@ -90,8 +93,12 @@ def test_whisper_engine_emits_canonical_schema(monkeypatch):
                 ],
             }
 
-    monkeypatch.setattr(whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel())
-    monkeypatch.setattr(whisper_engine, "ensure_ffmpeg_in_path", lambda: None, raising=False)
+    monkeypatch.setattr(
+        whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel()
+    )
+    monkeypatch.setattr(
+        whisper_engine, "ensure_ffmpeg_in_path", lambda: None, raising=False
+    )
     monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
     # Avoid leaking a fake model into the shared module-level cache.
     monkeypatch.setattr(whisper_engine, "_model_cache", {})
@@ -118,7 +125,9 @@ def test_whisper_engine_passes_forced_language(monkeypatch):
             captured.update(kwargs)
             return {"text": "bonjour", "language": "fr", "segments": []}
 
-    monkeypatch.setattr(whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel())
+    monkeypatch.setattr(
+        whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel()
+    )
     monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
     monkeypatch.setattr(whisper_engine, "_model_cache", {})
 
@@ -214,7 +223,9 @@ def test_dispatcher_selects_parakeet():
     """transcribe_audio routes to the parakeet engine in the registry."""
     fake = _FakeEngine("parakeet")
     transcribe._ENGINE_REGISTRY["parakeet"] = fake
-    result = transcribe.transcribe_audio("meeting.wav", {"transcription_backend": "parakeet"})
+    result = transcribe.transcribe_audio(
+        "meeting.wav", {"transcription_backend": "parakeet"}
+    )
     assert fake.transcribe_called_with is not None
     assert fake.transcribe_called_with[0] == "meeting.wav"
     assert result == {"text": "fake", "language": "en", "segments": []}
@@ -224,7 +235,9 @@ def test_dispatcher_selects_canary():
     """transcribe_audio routes to the canary engine in the registry."""
     fake = _FakeEngine("canary")
     transcribe._ENGINE_REGISTRY["canary"] = fake
-    result = transcribe.transcribe_audio("meeting.wav", {"transcription_backend": "canary"})
+    result = transcribe.transcribe_audio(
+        "meeting.wav", {"transcription_backend": "canary"}
+    )
     assert fake.transcribe_called_with is not None
     assert fake.transcribe_called_with[0] == "meeting.wav"
     assert result == {"text": "fake", "language": "en", "segments": []}
@@ -261,7 +274,9 @@ def _write_silence(path, seconds, sample_rate=16000):
     import numpy as np
     import soundfile
 
-    soundfile.write(str(path), np.zeros(int(seconds * sample_rate), dtype="float32"), sample_rate)
+    soundfile.write(
+        str(path), np.zeros(int(seconds * sample_rate), dtype="float32"), sample_rate
+    )
 
 
 def test_onnx_asr_short_audio_single_pass(tmp_path, monkeypatch):
@@ -310,7 +325,10 @@ def test_onnx_asr_chunks_long_audio(tmp_path, monkeypatch):
     starts = [segment["start"] for segment in result["segments"]]
     assert starts == sorted(starts)
     assert starts[0] == 0.0
-    assert starts[1] >= onnx_asr_engine.MAX_CHUNK_DURATION_S - onnx_asr_engine.CHUNK_SNAP_RADIUS_S
+    assert (
+        starts[1]
+        >= onnx_asr_engine.MAX_CHUNK_DURATION_S - onnx_asr_engine.CHUNK_SNAP_RADIUS_S
+    )
 
 
 def test_canary_passes_forced_language_to_recognizer(tmp_path, monkeypatch):

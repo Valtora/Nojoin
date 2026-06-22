@@ -7,9 +7,8 @@ Create Date: 2026-05-29 00:00:00.000000
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "2f6a9d1c8b40"
 down_revision: Union[str, Sequence[str], None] = ("f2b6d9a8c4e1", "f4c2a9b7d1e3")
@@ -51,6 +50,7 @@ def upgrade() -> None:
         ["task_id"],
         unique=False,
     )
+
 
 def downgrade() -> None:
     op.drop_index(op.f("ix_user_task_tags_task_id"), table_name="user_task_tags")

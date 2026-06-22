@@ -67,7 +67,9 @@ def release_segmentation_model_cache() -> None:
     """Drop cached segmentation models (mirrors ``diarize.release_pipeline_cache``)."""
     global _model_cache
     if _model_cache:
-        logger.info("Releasing %s from segmentation model cache.", list(_model_cache.keys()))
+        logger.info(
+            "Releasing %s from segmentation model cache.", list(_model_cache.keys())
+        )
         _model_cache.clear()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -86,7 +88,9 @@ def load_segmentation_model(device_str: str, hf_token: str | None = None):
         if not hf_token:
             hf_token = config_manager.get("hf_token")
         if not hf_token:
-            raise ValueError("Hugging Face token (hf_token) not found and no local segmentation model is available.")
+            raise ValueError(
+                "Hugging Face token (hf_token) not found and no local segmentation model is available."
+            )
         model = Model.from_pretrained(resolved_model.load_ref, token=hf_token)
     else:
         logger.info(
@@ -161,7 +165,9 @@ def _runs_from_frames(
                 runs.append(
                     {
                         "local_speaker_idx": int(local_idx),
-                        "start_ms": int(span_start_ms + run_start_frame * frame_duration_ms),
+                        "start_ms": int(
+                            span_start_ms + run_start_frame * frame_duration_ms
+                        ),
                         "end_ms": int(span_start_ms + frame_idx * frame_duration_ms),
                     }
                 )
@@ -170,7 +176,9 @@ def _runs_from_frames(
             runs.append(
                 {
                     "local_speaker_idx": int(local_idx),
-                    "start_ms": int(span_start_ms + run_start_frame * frame_duration_ms),
+                    "start_ms": int(
+                        span_start_ms + run_start_frame * frame_duration_ms
+                    ),
                     "end_ms": int(span_end_ms),
                 }
             )

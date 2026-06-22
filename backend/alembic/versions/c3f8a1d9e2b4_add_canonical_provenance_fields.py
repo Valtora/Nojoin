@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "c3f8a1d9e2b4"
 down_revision: Union[str, Sequence[str], None] = "9ac66b1d2f40"
@@ -20,9 +19,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("recording_speakers", sa.Column("processing_run_id", sa.BigInteger(), nullable=True))
-    op.add_column("recording_speakers", sa.Column("last_speaker_correction_event_id", sa.BigInteger(), nullable=True))
-    op.add_column("recording_speakers", sa.Column("last_diarization_window_result_id", sa.BigInteger(), nullable=True))
+    op.add_column(
+        "recording_speakers",
+        sa.Column("processing_run_id", sa.BigInteger(), nullable=True),
+    )
+    op.add_column(
+        "recording_speakers",
+        sa.Column("last_speaker_correction_event_id", sa.BigInteger(), nullable=True),
+    )
+    op.add_column(
+        "recording_speakers",
+        sa.Column("last_diarization_window_result_id", sa.BigInteger(), nullable=True),
+    )
     op.create_foreign_key(
         "fk_recording_speakers_processing_run_id",
         "recording_speakers",
@@ -47,12 +55,33 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
-    op.create_index(op.f("ix_recording_speakers_processing_run_id"), "recording_speakers", ["processing_run_id"], unique=False)
-    op.create_index(op.f("ix_recording_speakers_last_speaker_correction_event_id"), "recording_speakers", ["last_speaker_correction_event_id"], unique=False)
-    op.create_index(op.f("ix_recording_speakers_last_diarization_window_result_id"), "recording_speakers", ["last_diarization_window_result_id"], unique=False)
+    op.create_index(
+        op.f("ix_recording_speakers_processing_run_id"),
+        "recording_speakers",
+        ["processing_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_recording_speakers_last_speaker_correction_event_id"),
+        "recording_speakers",
+        ["last_speaker_correction_event_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_recording_speakers_last_diarization_window_result_id"),
+        "recording_speakers",
+        ["last_diarization_window_result_id"],
+        unique=False,
+    )
 
-    op.add_column("transcript_utterances", sa.Column("last_utterance_event_id", sa.BigInteger(), nullable=True))
-    op.add_column("transcript_utterances", sa.Column("last_diarization_window_result_id", sa.BigInteger(), nullable=True))
+    op.add_column(
+        "transcript_utterances",
+        sa.Column("last_utterance_event_id", sa.BigInteger(), nullable=True),
+    )
+    op.add_column(
+        "transcript_utterances",
+        sa.Column("last_diarization_window_result_id", sa.BigInteger(), nullable=True),
+    )
     op.create_foreign_key(
         "fk_transcript_utterances_last_utterance_event_id",
         "transcript_utterances",
@@ -69,8 +98,18 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
-    op.create_index(op.f("ix_transcript_utterances_last_utterance_event_id"), "transcript_utterances", ["last_utterance_event_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterances_last_diarization_window_result_id"), "transcript_utterances", ["last_diarization_window_result_id"], unique=False)
+    op.create_index(
+        op.f("ix_transcript_utterances_last_utterance_event_id"),
+        "transcript_utterances",
+        ["last_utterance_event_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_last_diarization_window_result_id"),
+        "transcript_utterances",
+        ["last_diarization_window_result_id"],
+        unique=False,
+    )
 
     op.execute(
         """
@@ -122,19 +161,53 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_transcript_utterances_last_diarization_window_result_id"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_last_utterance_event_id"), table_name="transcript_utterances")
-    op.drop_constraint("fk_transcript_utterances_last_diarization_window_result_id", "transcript_utterances", type_="foreignkey")
-    op.drop_constraint("fk_transcript_utterances_last_utterance_event_id", "transcript_utterances", type_="foreignkey")
+    op.drop_index(
+        op.f("ix_transcript_utterances_last_diarization_window_result_id"),
+        table_name="transcript_utterances",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_last_utterance_event_id"),
+        table_name="transcript_utterances",
+    )
+    op.drop_constraint(
+        "fk_transcript_utterances_last_diarization_window_result_id",
+        "transcript_utterances",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_transcript_utterances_last_utterance_event_id",
+        "transcript_utterances",
+        type_="foreignkey",
+    )
     op.drop_column("transcript_utterances", "last_diarization_window_result_id")
     op.drop_column("transcript_utterances", "last_utterance_event_id")
 
-    op.drop_index(op.f("ix_recording_speakers_last_diarization_window_result_id"), table_name="recording_speakers")
-    op.drop_index(op.f("ix_recording_speakers_last_speaker_correction_event_id"), table_name="recording_speakers")
-    op.drop_index(op.f("ix_recording_speakers_processing_run_id"), table_name="recording_speakers")
-    op.drop_constraint("fk_recording_speakers_last_diarization_window_result_id", "recording_speakers", type_="foreignkey")
-    op.drop_constraint("fk_recording_speakers_last_speaker_correction_event_id", "recording_speakers", type_="foreignkey")
-    op.drop_constraint("fk_recording_speakers_processing_run_id", "recording_speakers", type_="foreignkey")
+    op.drop_index(
+        op.f("ix_recording_speakers_last_diarization_window_result_id"),
+        table_name="recording_speakers",
+    )
+    op.drop_index(
+        op.f("ix_recording_speakers_last_speaker_correction_event_id"),
+        table_name="recording_speakers",
+    )
+    op.drop_index(
+        op.f("ix_recording_speakers_processing_run_id"), table_name="recording_speakers"
+    )
+    op.drop_constraint(
+        "fk_recording_speakers_last_diarization_window_result_id",
+        "recording_speakers",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_recording_speakers_last_speaker_correction_event_id",
+        "recording_speakers",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_recording_speakers_processing_run_id",
+        "recording_speakers",
+        type_="foreignkey",
+    )
     op.drop_column("recording_speakers", "last_diarization_window_result_id")
     op.drop_column("recording_speakers", "last_speaker_correction_event_id")
     op.drop_column("recording_speakers", "processing_run_id")

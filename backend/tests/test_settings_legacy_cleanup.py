@@ -1,3 +1,5 @@
+import pytest
+
 from backend.api.v1.endpoints.settings import (
     SettingsUpdate,
     _build_settings_update_data,
@@ -13,7 +15,6 @@ from backend.utils.config_manager import (
     is_meeting_edge_enabled,
 )
 from backend.utils.llm_config import _merge_llm_config
-import pytest
 
 
 class _FakeScalarResult:
@@ -70,7 +71,9 @@ def test_build_settings_update_data_ignores_masked_sensitive_values() -> None:
     assert update_data == {"prefer_short_titles": False}
 
 
-def test_build_settings_update_data_drops_install_wide_ollama_url_for_non_admin() -> None:
+def test_build_settings_update_data_drops_install_wide_ollama_url_for_non_admin() -> (
+    None
+):
     settings = SettingsUpdate.model_validate(
         {
             "prefer_short_titles": False,

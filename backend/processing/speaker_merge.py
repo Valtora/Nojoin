@@ -15,8 +15,8 @@ from sqlmodel import select
 
 from backend.models.speaker import RecordingSpeaker
 from backend.processing.embedding import (
-    cosine_similarity,
     DUPLICATE_SPEAKER_MERGE_THRESHOLD,
+    cosine_similarity,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ def merge_duplicate_speakers(
     rank: dict[int, int] = {int(s.id): 0 for s in eligible}
 
     for i, speaker_a in enumerate(eligible):
-        for speaker_b in eligible[i + 1:]:
+        for speaker_b in eligible[i + 1 :]:
             if speaker_a.id is None or speaker_b.id is None:
                 continue
             score = cosine_similarity(speaker_a.embedding, speaker_b.embedding)

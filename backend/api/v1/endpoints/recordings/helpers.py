@@ -1,56 +1,58 @@
-import os
-import shutil
 import asyncio
 import logging
+import os
+import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
-from datetime import datetime, timedelta
-from fastapi import HTTPException, status, UploadFile
+
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
 
-from backend.utils.time import utc_now
+import backend.api.v1.endpoints.recordings as recordings_module
+from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
+from backend.models.chat import ChatMessage
+from backend.models.context_chunk import ContextChunk
+from backend.models.pipeline import (
+    DiarizationWindowResult,
+    ProcessingRun,
+    RecordingAsrWindowResult,
+    RecordingAudioChunk,
+    RecordingAudioWindowManifest,
+    SpeakerCorrectionEvent,
+    TranscriptUtterance,
+)
 from backend.models.recording import (
     ClientStatus,
     Recording,
     RecordingPipelineGeneration,
     RecordingStatus,
 )
-from backend.models.transcript import Transcript
 from backend.models.speaker import RecordingSpeaker
-from backend.models.chat import ChatMessage
-from backend.models.context_chunk import ContextChunk
-from backend.utils.recording_storage import (
-    RECORDING_UPLOAD_RETENTION_HOURS,
-)
-import backend.api.v1.endpoints.recordings as recordings_module
+from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
-from backend.models.pipeline import (
-    RecordingAudioChunk,
-    RecordingAudioWindowManifest,
-    ProcessingRun,
-    TranscriptUtterance,
-    SpeakerCorrectionEvent,
-    DiarizationWindowResult,
-    RecordingAsrWindowResult,
-)
 from backend.utils.recording_audio_sync import (
     BROWSER_AUDIO_SEGMENT_SUFFIXES,
     find_missing_chunk_sequences,
     find_pending_recording_upload_sequences,
     list_recording_audio_chunks,
-    sync_recording_audio_chunks_from_entries,
     sync_recording_audio_chunks_from_directory,
+    sync_recording_audio_chunks_from_entries,
     sync_recording_audio_window_manifests,
 )
+from backend.utils.recording_storage import (
+    RECORDING_UPLOAD_RETENTION_HOURS,
+)
+from backend.utils.time import utc_now
+
 from .constants import (
-    UPLOAD_CLOSED_DETAIL,
+    LOSSY_AUDIO_SUFFIXES,
+    SEGMENT_CONTENT_TYPE_SUFFIXES,
     STATUS_UPDATES_CLOSED_DETAIL,
     UNSUPPORTED_SEGMENT_MEDIA_DETAIL,
-    SEGMENT_CONTENT_TYPE_SUFFIXES,
-    LOSSY_AUDIO_SUFFIXES,
+    UPLOAD_CLOSED_DETAIL,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,7 +62,9 @@ def _recording_has_proxy(recording: Recording) -> bool:
     return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
 
 
-def _estimated_audio_bitrate_bits_per_second(audio_info: dict[str, Any] | None) -> int | None:
+def _estimated_audio_bitrate_bits_per_second(
+    audio_info: dict[str, Any] | None,
+) -> int | None:
     if not audio_info:
         return None
 
@@ -70,7 +74,12 @@ def _estimated_audio_bitrate_bits_per_second(audio_info: dict[str, Any] | None) 
 
     size = audio_info.get("size")
     duration = audio_info.get("duration")
-    if isinstance(size, int) and size > 0 and isinstance(duration, (int, float)) and duration > 0:
+    if (
+        isinstance(size, int)
+        and size > 0
+        and isinstance(duration, (int, float))
+        and duration > 0
+    ):
         return int((size * 8) / float(duration))
 
     return None
@@ -92,6 +101,7 @@ def _enforce_lossy_audio_bitrate_floor(file_path: str) -> None:
         )
 
     from backend.utils.audio import LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND
+
     if bitrate < LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND:
         raise HTTPException(
             status_code=422,
@@ -189,7 +199,9 @@ async def _get_active_capture_recording_for_user(
     query = (
         select(Recording)
         .where(Recording.user_id == user_id)
-        .where(Recording.status.in_([RecordingStatus.UPLOADING, RecordingStatus.PAUSED]))
+        .where(
+            Recording.status.in_([RecordingStatus.UPLOADING, RecordingStatus.PAUSED])
+        )
         .where(Recording.is_deleted == False)
         .order_by(Recording.updated_at.desc())
     )
@@ -298,7 +310,10 @@ def _stage_import_audio_chunk(
 ) -> Path:
     source_path = Path(audio_path)
     suffix = source_path.suffix or ".bin"
-    staged_path = recordings_module.recording_upload_temp_dir(recording_id, create=True) / f"{sequence}{suffix}"
+    staged_path = (
+        recordings_module.recording_upload_temp_dir(recording_id, create=True)
+        / f"{sequence}{suffix}"
+    )
 
     if staged_path.exists():
         try:
@@ -406,8 +421,13 @@ async def _transcode_pending_browser_segments_for_finalize(
     failed_sequences: list[int] = []
     for sequence in pending_sequences:
         try:
-            from backend.processing.segment_transcode import transcode_staged_browser_segment
-            await asyncio.to_thread(transcode_staged_browser_segment, recording_id, sequence)
+            from backend.processing.segment_transcode import (
+                transcode_staged_browser_segment,
+            )
+
+            await asyncio.to_thread(
+                transcode_staged_browser_segment, recording_id, sequence
+            )
         except Exception as exc:  # noqa: BLE001
             failed_sequences.append(sequence)
             logger.warning(
@@ -439,10 +459,16 @@ async def _mark_recording_audio_chunks_failed(
     failed_root: Path | None,
 ) -> None:
     rows = (
-        await db.execute(
-            select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
+        (
+            await db.execute(
+                select(RecordingAudioChunk).where(
+                    RecordingAudioChunk.recording_id == recording_id
+                )
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not rows:
         return
 
@@ -481,16 +507,24 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         delete(ProcessingRun).where(ProcessingRun.recording_id == recording_id)
     )
     await db.execute(
-        delete(TranscriptUtterance).where(TranscriptUtterance.recording_id == recording_id)
+        delete(TranscriptUtterance).where(
+            TranscriptUtterance.recording_id == recording_id
+        )
     )
     await db.execute(
-        delete(SpeakerCorrectionEvent).where(SpeakerCorrectionEvent.recording_id == recording_id)
+        delete(SpeakerCorrectionEvent).where(
+            SpeakerCorrectionEvent.recording_id == recording_id
+        )
     )
     await db.execute(
-        delete(DiarizationWindowResult).where(DiarizationWindowResult.recording_id == recording_id)
+        delete(DiarizationWindowResult).where(
+            DiarizationWindowResult.recording_id == recording_id
+        )
     )
     await db.execute(
-        delete(RecordingAsrWindowResult).where(RecordingAsrWindowResult.recording_id == recording_id)
+        delete(RecordingAsrWindowResult).where(
+            RecordingAsrWindowResult.recording_id == recording_id
+        )
     )
     if existing_transcript:
         await db.delete(existing_transcript)
@@ -524,13 +558,14 @@ async def _requeue_for_processing(
 
     task = recordings_module.celery_app.send_task(
         "backend.worker.tasks.process_recording_task",
-        args=[recording.id, True, engine_override]
+        args=[recording.id, True, engine_override],
     )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
     from backend.models.task import register_task_ownership
+
     await register_task_ownership(db, task.id, recording.user_id)
 
 
@@ -581,9 +616,9 @@ def generate_default_meeting_name() -> str:
     suffix = get_ordinal_suffix(day_num)
     short_month = now.strftime("%b")
     hour = now.hour
-    
+
     time_of_day = ""
-    
+
     if 5 <= hour < 12:
         if hour < 8:
             time_of_day = "Early Morning"
@@ -609,7 +644,7 @@ def generate_default_meeting_name() -> str:
         if 21 <= hour < 24:
             time_of_day = "Night"
         else:
-            time_of_day = "Late Night" 
+            time_of_day = "Late Night"
 
     return f"{day_name} {day_num}{suffix} {short_month}, {time_of_day} Meeting"
 

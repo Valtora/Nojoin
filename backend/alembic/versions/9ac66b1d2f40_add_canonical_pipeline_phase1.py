@@ -11,10 +11,9 @@ from datetime import datetime
 from typing import Any, Sequence, Union
 from uuid import uuid4
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "9ac66b1d2f40"
 down_revision: Union[str, Sequence[str], None] = "e6c2d7f8a901"
@@ -264,21 +263,46 @@ def upgrade() -> None:
     ):
         enum_type.create(bind, checkfirst=True)
 
-    op.add_column("recording_speakers", sa.Column("public_id", sa.String(length=36), nullable=True))
     op.add_column(
         "recording_speakers",
-        sa.Column("speaker_status", sa.String(), nullable=False, server_default=sa.text("'active'")),
+        sa.Column("public_id", sa.String(length=36), nullable=True),
     )
     op.add_column(
         "recording_speakers",
-        sa.Column("speaker_kind", sa.String(), nullable=False, server_default=sa.text("'automated'")),
+        sa.Column(
+            "speaker_status",
+            sa.String(),
+            nullable=False,
+            server_default=sa.text("'active'"),
+        ),
     )
-    op.add_column("recording_speakers", sa.Column("first_seen_ms", sa.BigInteger(), nullable=True))
-    op.add_column("recording_speakers", sa.Column("last_seen_ms", sa.BigInteger(), nullable=True))
-    op.add_column("recording_speakers", sa.Column("identity_confidence", sa.Float(), nullable=True))
     op.add_column(
         "recording_speakers",
-        sa.Column("identity_locked", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "speaker_kind",
+            sa.String(),
+            nullable=False,
+            server_default=sa.text("'automated'"),
+        ),
+    )
+    op.add_column(
+        "recording_speakers", sa.Column("first_seen_ms", sa.BigInteger(), nullable=True)
+    )
+    op.add_column(
+        "recording_speakers", sa.Column("last_seen_ms", sa.BigInteger(), nullable=True)
+    )
+    op.add_column(
+        "recording_speakers",
+        sa.Column("identity_confidence", sa.Float(), nullable=True),
+    )
+    op.add_column(
+        "recording_speakers",
+        sa.Column(
+            "identity_locked",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
     )
 
     recording_audio_chunks = op.create_table(
@@ -302,14 +326,39 @@ def upgrade() -> None:
         sa.Column("idempotency_key", sa.String(length=255), nullable=True),
         sa.Column("received_at", sa.DateTime(), nullable=False),
         sa.Column("cleanup_eligible_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("recording_id", "sequence_no", name="uq_recording_audio_chunks_recording_sequence"),
-        sa.UniqueConstraint("recording_id", "idempotency_key", name="uq_recording_audio_chunks_recording_idempotency"),
+        sa.UniqueConstraint(
+            "recording_id",
+            "sequence_no",
+            name="uq_recording_audio_chunks_recording_sequence",
+        ),
+        sa.UniqueConstraint(
+            "recording_id",
+            "idempotency_key",
+            name="uq_recording_audio_chunks_recording_idempotency",
+        ),
     )
-    op.create_index(op.f("ix_recording_audio_chunks_public_id"), "recording_audio_chunks", ["public_id"], unique=True)
-    op.create_index(op.f("ix_recording_audio_chunks_recording_id"), "recording_audio_chunks", ["recording_id"], unique=False)
-    op.create_index(op.f("ix_recording_audio_chunks_idempotency_key"), "recording_audio_chunks", ["idempotency_key"], unique=False)
+    op.create_index(
+        op.f("ix_recording_audio_chunks_public_id"),
+        "recording_audio_chunks",
+        ["public_id"],
+        unique=True,
+    )
+    op.create_index(
+        op.f("ix_recording_audio_chunks_recording_id"),
+        "recording_audio_chunks",
+        ["recording_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_recording_audio_chunks_idempotency_key"),
+        "recording_audio_chunks",
+        ["idempotency_key"],
+        unique=False,
+    )
 
     processing_runs = op.create_table(
         "processing_runs",
@@ -326,7 +375,9 @@ def upgrade() -> None:
         sa.Column("config_hash", sa.String(length=255), nullable=True),
         sa.Column("transcription_backend", sa.String(), nullable=True),
         sa.Column("diarization_backend", sa.String(), nullable=True),
-        sa.Column("model_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "model_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
         sa.Column("span_start_ms", sa.BigInteger(), nullable=True),
         sa.Column("span_end_ms", sa.BigInteger(), nullable=True),
         sa.Column("reused_live_asr", sa.Boolean(), nullable=False),
@@ -335,15 +386,40 @@ def upgrade() -> None:
         sa.Column("error_summary", sa.Text(), nullable=True),
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["parent_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["requested_by_user_id"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["parent_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["requested_by_user_id"], ["users.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("recording_id", "idempotency_key", name="uq_processing_runs_recording_idempotency"),
+        sa.UniqueConstraint(
+            "recording_id",
+            "idempotency_key",
+            name="uq_processing_runs_recording_idempotency",
+        ),
     )
-    op.create_index(op.f("ix_processing_runs_public_id"), "processing_runs", ["public_id"], unique=True)
-    op.create_index(op.f("ix_processing_runs_recording_id"), "processing_runs", ["recording_id"], unique=False)
-    op.create_index(op.f("ix_processing_runs_idempotency_key"), "processing_runs", ["idempotency_key"], unique=False)
+    op.create_index(
+        op.f("ix_processing_runs_public_id"),
+        "processing_runs",
+        ["public_id"],
+        unique=True,
+    )
+    op.create_index(
+        op.f("ix_processing_runs_recording_id"),
+        "processing_runs",
+        ["recording_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_processing_runs_idempotency_key"),
+        "processing_runs",
+        ["idempotency_key"],
+        unique=False,
+    )
 
     transcript_utterances = op.create_table(
         "transcript_utterances",
@@ -368,19 +444,62 @@ def upgrade() -> None:
         sa.Column("manual_speaker_locked", sa.Boolean(), nullable=False),
         sa.Column("text_confidence", sa.Float(), nullable=True),
         sa.Column("speaker_confidence", sa.Float(), nullable=True),
-        sa.Column("confidence_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.ForeignKeyConstraint(["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["recording_speaker_id"], ["recording_speakers.id"], ondelete="SET NULL"),
+        sa.Column(
+            "confidence_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.ForeignKeyConstraint(
+            ["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_speaker_id"], ["recording_speakers.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_transcript_utterances_public_id"), "transcript_utterances", ["public_id"], unique=True)
-    op.create_index(op.f("ix_transcript_utterances_recording_id"), "transcript_utterances", ["recording_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterances_sort_key"), "transcript_utterances", ["sort_key"], unique=False)
-    op.create_index(op.f("ix_transcript_utterances_speaker_label"), "transcript_utterances", ["speaker_label"], unique=False)
-    op.create_index(op.f("ix_transcript_utterances_recording_speaker_id"), "transcript_utterances", ["recording_speaker_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterances_processing_run_id"), "transcript_utterances", ["processing_run_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterances_overlap_group_id"), "transcript_utterances", ["overlap_group_id"], unique=False)
+    op.create_index(
+        op.f("ix_transcript_utterances_public_id"),
+        "transcript_utterances",
+        ["public_id"],
+        unique=True,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_recording_id"),
+        "transcript_utterances",
+        ["recording_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_sort_key"),
+        "transcript_utterances",
+        ["sort_key"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_speaker_label"),
+        "transcript_utterances",
+        ["speaker_label"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_recording_speaker_id"),
+        "transcript_utterances",
+        ["recording_speaker_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_processing_run_id"),
+        "transcript_utterances",
+        ["processing_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterances_overlap_group_id"),
+        "transcript_utterances",
+        ["overlap_group_id"],
+        unique=False,
+    )
 
     transcript_utterance_events = op.create_table(
         "transcript_utterance_events",
@@ -397,16 +516,47 @@ def upgrade() -> None:
         sa.Column("new_values", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("resulting_revision", sa.BigInteger(), nullable=False),
         sa.ForeignKeyConstraint(["actor_user_id"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["utterance_id"], ["transcript_utterances.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["utterance_id"], ["transcript_utterances.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_transcript_utterance_events_recording_id"), "transcript_utterance_events", ["recording_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterance_events_utterance_id"), "transcript_utterance_events", ["utterance_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterance_events_processing_run_id"), "transcript_utterance_events", ["processing_run_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterance_events_actor_user_id"), "transcript_utterance_events", ["actor_user_id"], unique=False)
-    op.create_index(op.f("ix_transcript_utterance_events_event_type"), "transcript_utterance_events", ["event_type"], unique=False)
+    op.create_index(
+        op.f("ix_transcript_utterance_events_recording_id"),
+        "transcript_utterance_events",
+        ["recording_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterance_events_utterance_id"),
+        "transcript_utterance_events",
+        ["utterance_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterance_events_processing_run_id"),
+        "transcript_utterance_events",
+        ["processing_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterance_events_actor_user_id"),
+        "transcript_utterance_events",
+        ["actor_user_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_transcript_utterance_events_event_type"),
+        "transcript_utterance_events",
+        ["event_type"],
+        unique=False,
+    )
 
     recording_speaker_aliases = op.create_table(
         "recording_speaker_aliases",
@@ -421,13 +571,32 @@ def upgrade() -> None:
         sa.Column("valid_from_ms", sa.BigInteger(), nullable=True),
         sa.Column("valid_to_ms", sa.BigInteger(), nullable=True),
         sa.Column("confidence", sa.Float(), nullable=True),
-        sa.ForeignKeyConstraint(["recording_speaker_id"], ["recording_speakers.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["source_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["recording_speaker_id"], ["recording_speakers.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_recording_speaker_aliases_recording_speaker_id"), "recording_speaker_aliases", ["recording_speaker_id"], unique=False)
-    op.create_index(op.f("ix_recording_speaker_aliases_alias_value"), "recording_speaker_aliases", ["alias_value"], unique=False)
-    op.create_index(op.f("ix_recording_speaker_aliases_source_run_id"), "recording_speaker_aliases", ["source_run_id"], unique=False)
+    op.create_index(
+        op.f("ix_recording_speaker_aliases_recording_speaker_id"),
+        "recording_speaker_aliases",
+        ["recording_speaker_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_recording_speaker_aliases_alias_value"),
+        "recording_speaker_aliases",
+        ["alias_value"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_recording_speaker_aliases_source_run_id"),
+        "recording_speaker_aliases",
+        ["source_run_id"],
+        unique=False,
+    )
 
     speaker_correction_events = op.create_table(
         "speaker_correction_events",
@@ -446,20 +615,69 @@ def upgrade() -> None:
         sa.Column("effective_from_ms", sa.BigInteger(), nullable=True),
         sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.ForeignKeyConstraint(["actor_user_id"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["source_recording_speaker_id"], ["recording_speakers.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["target_global_speaker_id"], ["global_speakers.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["target_recording_speaker_id"], ["recording_speakers.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["utterance_id"], ["transcript_utterances.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_recording_speaker_id"],
+            ["recording_speakers.id"],
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["target_global_speaker_id"], ["global_speakers.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["target_recording_speaker_id"],
+            ["recording_speakers.id"],
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["utterance_id"], ["transcript_utterances.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_speaker_correction_events_public_id"), "speaker_correction_events", ["public_id"], unique=True)
-    op.create_index(op.f("ix_speaker_correction_events_recording_id"), "speaker_correction_events", ["recording_id"], unique=False)
-    op.create_index(op.f("ix_speaker_correction_events_actor_user_id"), "speaker_correction_events", ["actor_user_id"], unique=False)
-    op.create_index(op.f("ix_speaker_correction_events_utterance_id"), "speaker_correction_events", ["utterance_id"], unique=False)
-    op.create_index(op.f("ix_speaker_correction_events_source_recording_speaker_id"), "speaker_correction_events", ["source_recording_speaker_id"], unique=False)
-    op.create_index(op.f("ix_speaker_correction_events_target_recording_speaker_id"), "speaker_correction_events", ["target_recording_speaker_id"], unique=False)
-    op.create_index(op.f("ix_speaker_correction_events_target_global_speaker_id"), "speaker_correction_events", ["target_global_speaker_id"], unique=False)
+    op.create_index(
+        op.f("ix_speaker_correction_events_public_id"),
+        "speaker_correction_events",
+        ["public_id"],
+        unique=True,
+    )
+    op.create_index(
+        op.f("ix_speaker_correction_events_recording_id"),
+        "speaker_correction_events",
+        ["recording_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_speaker_correction_events_actor_user_id"),
+        "speaker_correction_events",
+        ["actor_user_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_speaker_correction_events_utterance_id"),
+        "speaker_correction_events",
+        ["utterance_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_speaker_correction_events_source_recording_speaker_id"),
+        "speaker_correction_events",
+        ["source_recording_speaker_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_speaker_correction_events_target_recording_speaker_id"),
+        "speaker_correction_events",
+        ["target_recording_speaker_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_speaker_correction_events_target_global_speaker_id"),
+        "speaker_correction_events",
+        ["target_global_speaker_id"],
+        unique=False,
+    )
 
     diarization_window_results = op.create_table(
         "diarization_window_results",
@@ -479,14 +697,35 @@ def upgrade() -> None:
         sa.Column("device", sa.String(), nullable=True),
         sa.Column("config_hash", sa.String(length=255), nullable=True),
         sa.Column("status", sa.String(), nullable=False),
-        sa.Column("raw_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.ForeignKeyConstraint(["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
+        sa.Column(
+            "raw_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.ForeignKeyConstraint(
+            ["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_diarization_window_results_public_id"), "diarization_window_results", ["public_id"], unique=True)
-    op.create_index(op.f("ix_diarization_window_results_recording_id"), "diarization_window_results", ["recording_id"], unique=False)
-    op.create_index(op.f("ix_diarization_window_results_processing_run_id"), "diarization_window_results", ["processing_run_id"], unique=False)
+    op.create_index(
+        op.f("ix_diarization_window_results_public_id"),
+        "diarization_window_results",
+        ["public_id"],
+        unique=True,
+    )
+    op.create_index(
+        op.f("ix_diarization_window_results_recording_id"),
+        "diarization_window_results",
+        ["recording_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_diarization_window_results_processing_run_id"),
+        "diarization_window_results",
+        ["processing_run_id"],
+        unique=False,
+    )
 
     op.create_table(
         "diarization_window_turns",
@@ -499,14 +738,37 @@ def upgrade() -> None:
         sa.Column("end_ms", sa.BigInteger(), nullable=False),
         sa.Column("confidence", sa.Float(), nullable=True),
         sa.Column("matched_recording_speaker_id", sa.BigInteger(), nullable=True),
-        sa.Column("metadata_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.ForeignKeyConstraint(["matched_recording_speaker_id"], ["recording_speakers.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["window_result_id"], ["diarization_window_results.id"], ondelete="CASCADE"),
+        sa.Column(
+            "metadata_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.ForeignKeyConstraint(
+            ["matched_recording_speaker_id"],
+            ["recording_speakers.id"],
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["window_result_id"], ["diarization_window_results.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_diarization_window_turns_window_result_id"), "diarization_window_turns", ["window_result_id"], unique=False)
-    op.create_index(op.f("ix_diarization_window_turns_local_speaker_key"), "diarization_window_turns", ["local_speaker_key"], unique=False)
-    op.create_index(op.f("ix_diarization_window_turns_matched_recording_speaker_id"), "diarization_window_turns", ["matched_recording_speaker_id"], unique=False)
+    op.create_index(
+        op.f("ix_diarization_window_turns_window_result_id"),
+        "diarization_window_turns",
+        ["window_result_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_diarization_window_turns_local_speaker_key"),
+        "diarization_window_turns",
+        ["local_speaker_key"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_diarization_window_turns_matched_recording_speaker_id"),
+        "diarization_window_turns",
+        ["matched_recording_speaker_id"],
+        unique=False,
+    )
 
     recordings = sa.table(
         "recordings",
@@ -546,16 +808,20 @@ def upgrade() -> None:
         sa.column("identity_locked", sa.Boolean()),
     )
 
-    speaker_rows = bind.execute(
-        sa.select(
-            recording_speakers.c.id,
-            recording_speakers.c.global_speaker_id,
-            recording_speakers.c.diarization_label,
-            recording_speakers.c.local_name,
-            recording_speakers.c.name,
-            recording_speakers.c.merged_into_id,
+    speaker_rows = (
+        bind.execute(
+            sa.select(
+                recording_speakers.c.id,
+                recording_speakers.c.global_speaker_id,
+                recording_speakers.c.diarization_label,
+                recording_speakers.c.local_name,
+                recording_speakers.c.name,
+                recording_speakers.c.merged_into_id,
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     for row in speaker_rows:
         bind.execute(
             recording_speakers.update()
@@ -563,26 +829,45 @@ def upgrade() -> None:
             .values(
                 public_id=str(uuid4()),
                 speaker_status="merged" if row["merged_into_id"] else "active",
-                speaker_kind=("live" if str(row["diarization_label"] or "").startswith("LIVE_") else "manual" if str(row["diarization_label"] or "").startswith("MANUAL_") or row["local_name"] else "automated"),
+                speaker_kind=(
+                    "live"
+                    if str(row["diarization_label"] or "").startswith("LIVE_")
+                    else "manual"
+                    if str(row["diarization_label"] or "").startswith("MANUAL_")
+                    or row["local_name"]
+                    else "automated"
+                ),
                 identity_locked=bool(row["local_name"] or row["global_speaker_id"]),
                 updated_at=_utcnow(),
             )
         )
 
-    processed_recordings = bind.execute(
-        sa.select(
-            recordings.c.id.label("recording_id"),
-            recordings.c.user_id.label("user_id"),
-            recordings.c.status.label("status"),
-            transcripts.c.id.label("transcript_id"),
-            transcripts.c.segments.label("segments"),
+    processed_recordings = (
+        bind.execute(
+            sa.select(
+                recordings.c.id.label("recording_id"),
+                recordings.c.user_id.label("user_id"),
+                recordings.c.status.label("status"),
+                transcripts.c.id.label("transcript_id"),
+                transcripts.c.segments.label("segments"),
+            )
+            .select_from(
+                recordings.join(
+                    transcripts, transcripts.c.recording_id == recordings.c.id
+                )
+            )
+            .where(recordings.c.status == "PROCESSED")
         )
-        .select_from(recordings.join(transcripts, transcripts.c.recording_id == recordings.c.id))
-        .where(recordings.c.status == "PROCESSED")
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     for recording_row in processed_recordings:
-        segments = [dict(segment) for segment in (recording_row["segments"] or []) if isinstance(segment, dict)]
+        segments = [
+            dict(segment)
+            for segment in (recording_row["segments"] or [])
+            if isinstance(segment, dict)
+        ]
         if not segments:
             continue
 
@@ -603,8 +888,14 @@ def upgrade() -> None:
                 transcription_backend=None,
                 diarization_backend=None,
                 model_metadata=None,
-                span_start_ms=_segment_to_ms(min((segment.get("start", 0.0) for segment in segments), default=0.0)),
-                span_end_ms=_segment_to_ms(max((segment.get("end", 0.0) for segment in segments), default=0.0)),
+                span_start_ms=_segment_to_ms(
+                    min(
+                        (segment.get("start", 0.0) for segment in segments), default=0.0
+                    )
+                ),
+                span_end_ms=_segment_to_ms(
+                    max((segment.get("end", 0.0) for segment in segments), default=0.0)
+                ),
                 reused_live_asr=False,
                 idempotency_key=None,
                 metrics=None,
@@ -615,27 +906,33 @@ def upgrade() -> None:
             .returning(processing_runs.c.id)
         ).scalar_one()
 
-        recording_speaker_rows = bind.execute(
-            sa.select(
-                recording_speakers.c.id,
-                recording_speakers.c.recording_id,
-                recording_speakers.c.global_speaker_id,
-                recording_speakers.c.diarization_label,
-                recording_speakers.c.local_name,
-                recording_speakers.c.name,
-                recording_speakers.c.public_id,
-                recording_speakers.c.first_seen_ms,
-                recording_speakers.c.last_seen_ms,
-                global_speakers.c.name.label("global_name"),
-            )
-            .select_from(
-                recording_speakers.outerjoin(
-                    global_speakers,
-                    recording_speakers.c.global_speaker_id == global_speakers.c.id,
+        recording_speaker_rows = (
+            bind.execute(
+                sa.select(
+                    recording_speakers.c.id,
+                    recording_speakers.c.recording_id,
+                    recording_speakers.c.global_speaker_id,
+                    recording_speakers.c.diarization_label,
+                    recording_speakers.c.local_name,
+                    recording_speakers.c.name,
+                    recording_speakers.c.public_id,
+                    recording_speakers.c.first_seen_ms,
+                    recording_speakers.c.last_seen_ms,
+                    global_speakers.c.name.label("global_name"),
+                )
+                .select_from(
+                    recording_speakers.outerjoin(
+                        global_speakers,
+                        recording_speakers.c.global_speaker_id == global_speakers.c.id,
+                    )
+                )
+                .where(
+                    recording_speakers.c.recording_id == recording_row["recording_id"]
                 )
             )
-            .where(recording_speakers.c.recording_id == recording_row["recording_id"])
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         speaker_rows_for_recording = [dict(row) for row in recording_speaker_rows]
 
         overlap_groups = _build_overlap_groups(segments)
@@ -649,7 +946,9 @@ def upgrade() -> None:
         }
 
         for index, segment in enumerate(segments):
-            speaker_value = str(segment.get("speaker") or "UNKNOWN").strip() or "UNKNOWN"
+            speaker_value = (
+                str(segment.get("speaker") or "UNKNOWN").strip() or "UNKNOWN"
+            )
             matched_speaker: dict[str, Any] | None = None
             if speaker_value != "UNKNOWN":
                 for row in speaker_rows_for_recording:
@@ -659,7 +958,11 @@ def upgrade() -> None:
 
                 if matched_speaker is None:
                     now = _utcnow()
-                    diarization_label = speaker_value if _label_like(speaker_value) else f"MANUAL_{uuid4().hex[:8]}"
+                    diarization_label = (
+                        speaker_value
+                        if _label_like(speaker_value)
+                        else f"MANUAL_{uuid4().hex[:8]}"
+                    )
                     local_name = None if _label_like(speaker_value) else speaker_value
                     new_speaker_id = bind.execute(
                         recording_speakers.insert()
@@ -673,7 +976,9 @@ def upgrade() -> None:
                             name=None,
                             public_id=str(uuid4()),
                             speaker_status="active",
-                            speaker_kind=_speaker_kind_for_label(diarization_label, segment),
+                            speaker_kind=_speaker_kind_for_label(
+                                diarization_label, segment
+                            ),
                             first_seen_ms=None,
                             last_seen_ms=None,
                             identity_confidence=None,
@@ -694,15 +999,22 @@ def upgrade() -> None:
                         "global_name": None,
                     }
                     speaker_rows_for_recording.append(matched_speaker)
-                    speaker_bounds[int(new_speaker_id)] = {"first_seen_ms": None, "last_seen_ms": None}
+                    speaker_bounds[int(new_speaker_id)] = {
+                        "first_seen_ms": None,
+                        "last_seen_ms": None,
+                    }
 
             start_ms = _segment_to_ms(segment.get("start", 0.0))
             end_ms = _segment_to_ms(segment.get("end", 0.0))
             if matched_speaker is not None:
                 bounds = speaker_bounds[int(matched_speaker["id"])]
-                if bounds["first_seen_ms"] is None or start_ms < int(bounds["first_seen_ms"]):
+                if bounds["first_seen_ms"] is None or start_ms < int(
+                    bounds["first_seen_ms"]
+                ):
                     bounds["first_seen_ms"] = start_ms
-                if bounds["last_seen_ms"] is None or end_ms > int(bounds["last_seen_ms"]):
+                if bounds["last_seen_ms"] is None or end_ms > int(
+                    bounds["last_seen_ms"]
+                ):
                     bounds["last_seen_ms"] = end_ms
 
             overlap_group = overlap_groups.get(index, {})
@@ -719,18 +1031,32 @@ def upgrade() -> None:
                     start_ms=start_ms,
                     end_ms=end_ms,
                     text=str(segment.get("text", "") or ""),
-                    speaker_label=(matched_speaker["diarization_label"] if matched_speaker else speaker_value),
-                    recording_speaker_id=(matched_speaker["id"] if matched_speaker else None),
+                    speaker_label=(
+                        matched_speaker["diarization_label"]
+                        if matched_speaker
+                        else speaker_value
+                    ),
+                    recording_speaker_id=(
+                        matched_speaker["id"] if matched_speaker else None
+                    ),
                     state=_segment_state(recording_row["status"], segment),
                     source_kind=str(segment.get("segment_source") or "legacy"),
                     processing_run_id=run_id,
                     revision=revision_value,
                     overlap_group_id=overlap_group.get("group_id"),
                     overlap_rank=overlap_group.get("rank", 0),
-                    manual_text_locked=bool(segment.get("text_manually_edited") is True),
-                    manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
-                    text_confidence=float(segment["text_confidence"]) if segment.get("text_confidence") is not None else None,
-                    speaker_confidence=float(segment["speaker_confidence"]) if segment.get("speaker_confidence") is not None else None,
+                    manual_text_locked=bool(
+                        segment.get("text_manually_edited") is True
+                    ),
+                    manual_speaker_locked=bool(
+                        segment.get("speaker_manually_edited") is True
+                    ),
+                    text_confidence=float(segment["text_confidence"])
+                    if segment.get("text_confidence") is not None
+                    else None,
+                    speaker_confidence=float(segment["speaker_confidence"])
+                    if segment.get("speaker_confidence") is not None
+                    else None,
                     confidence_payload=None,
                 )
                 .returning(transcript_utterances.c.id)
@@ -751,7 +1077,9 @@ def upgrade() -> None:
                         "start_ms": start_ms,
                         "end_ms": end_ms,
                         "text": str(segment.get("text", "") or ""),
-                        "speaker": matched_speaker["diarization_label"] if matched_speaker else speaker_value,
+                        "speaker": matched_speaker["diarization_label"]
+                        if matched_speaker
+                        else speaker_value,
                     },
                     resulting_revision=revision_value,
                 )
@@ -764,17 +1092,32 @@ def upgrade() -> None:
                     "start": start_ms / 1000.0,
                     "end": end_ms / 1000.0,
                     "text": str(segment.get("text", "") or ""),
-                    "speaker": matched_speaker["diarization_label"] if matched_speaker else speaker_value,
-                    "overlapping_speakers": _projection_overlap_labels(segments, index, overlap_groups),
-                    "provisional": _segment_state(recording_row["status"], segment) == "provisional",
+                    "speaker": matched_speaker["diarization_label"]
+                    if matched_speaker
+                    else speaker_value,
+                    "overlapping_speakers": _projection_overlap_labels(
+                        segments, index, overlap_groups
+                    ),
+                    "provisional": _segment_state(recording_row["status"], segment)
+                    == "provisional",
                     "segment_source": segment.get("segment_source") or "legacy",
-                    "speaker_manually_edited": bool(segment.get("speaker_manually_edited") is True),
-                    "text_manually_edited": bool(segment.get("text_manually_edited") is True),
+                    "speaker_manually_edited": bool(
+                        segment.get("speaker_manually_edited") is True
+                    ),
+                    "text_manually_edited": bool(
+                        segment.get("text_manually_edited") is True
+                    ),
                     "revision": revision_value,
-                    "recording_speaker_id": matched_speaker["id"] if matched_speaker else None,
+                    "recording_speaker_id": matched_speaker["id"]
+                    if matched_speaker
+                    else None,
                     "state": _segment_state(recording_row["status"], segment),
-                    "speaker_confidence": float(segment["speaker_confidence"]) if segment.get("speaker_confidence") is not None else None,
-                    "text_confidence": float(segment["text_confidence"]) if segment.get("text_confidence") is not None else None,
+                    "speaker_confidence": float(segment["speaker_confidence"])
+                    if segment.get("speaker_confidence") is not None
+                    else None,
+                    "text_confidence": float(segment["text_confidence"])
+                    if segment.get("text_confidence") is not None
+                    else None,
                     "updated_at": now.isoformat(),
                 }
             )
@@ -785,7 +1128,10 @@ def upgrade() -> None:
             .where(transcripts.c.id == recording_row["transcript_id"])
             .values(
                 segments=projection_segments,
-                text=" ".join(str(segment.get("text", "") or "") for segment in projection_segments).strip(),
+                text=" ".join(
+                    str(segment.get("text", "") or "")
+                    for segment in projection_segments
+                ).strip(),
             )
         )
 
@@ -800,20 +1146,24 @@ def upgrade() -> None:
                 )
             )
 
-    alias_rows = bind.execute(
-        sa.select(
-            recording_speakers.c.id,
-            recording_speakers.c.diarization_label,
-            recording_speakers.c.local_name,
-            recording_speakers.c.name,
-            global_speakers.c.name.label("global_name"),
-        ).select_from(
-            recording_speakers.outerjoin(
-                global_speakers,
-                recording_speakers.c.global_speaker_id == global_speakers.c.id,
+    alias_rows = (
+        bind.execute(
+            sa.select(
+                recording_speakers.c.id,
+                recording_speakers.c.diarization_label,
+                recording_speakers.c.local_name,
+                recording_speakers.c.name,
+                global_speakers.c.name.label("global_name"),
+            ).select_from(
+                recording_speakers.outerjoin(
+                    global_speakers,
+                    recording_speakers.c.global_speaker_id == global_speakers.c.id,
+                )
             )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     for row in alias_rows:
         _insert_alias_rows(
             bind,
@@ -826,64 +1176,168 @@ def upgrade() -> None:
             source_run_id=None,
         )
 
-    op.alter_column("recording_speakers", "public_id", existing_type=sa.String(length=36), nullable=False)
-    op.create_index(op.f("ix_recording_speakers_public_id"), "recording_speakers", ["public_id"], unique=True)
+    op.alter_column(
+        "recording_speakers",
+        "public_id",
+        existing_type=sa.String(length=36),
+        nullable=False,
+    )
+    op.create_index(
+        op.f("ix_recording_speakers_public_id"),
+        "recording_speakers",
+        ["public_id"],
+        unique=True,
+    )
     op.alter_column("recording_speakers", "speaker_status", server_default=None)
     op.alter_column("recording_speakers", "speaker_kind", server_default=None)
     op.alter_column("recording_speakers", "identity_locked", server_default=None)
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_recording_speakers_public_id"), table_name="recording_speakers")
+    op.drop_index(
+        op.f("ix_recording_speakers_public_id"), table_name="recording_speakers"
+    )
 
-    op.drop_index(op.f("ix_diarization_window_turns_matched_recording_speaker_id"), table_name="diarization_window_turns")
-    op.drop_index(op.f("ix_diarization_window_turns_local_speaker_key"), table_name="diarization_window_turns")
-    op.drop_index(op.f("ix_diarization_window_turns_window_result_id"), table_name="diarization_window_turns")
+    op.drop_index(
+        op.f("ix_diarization_window_turns_matched_recording_speaker_id"),
+        table_name="diarization_window_turns",
+    )
+    op.drop_index(
+        op.f("ix_diarization_window_turns_local_speaker_key"),
+        table_name="diarization_window_turns",
+    )
+    op.drop_index(
+        op.f("ix_diarization_window_turns_window_result_id"),
+        table_name="diarization_window_turns",
+    )
     op.drop_table("diarization_window_turns")
 
-    op.drop_index(op.f("ix_diarization_window_results_processing_run_id"), table_name="diarization_window_results")
-    op.drop_index(op.f("ix_diarization_window_results_recording_id"), table_name="diarization_window_results")
-    op.drop_index(op.f("ix_diarization_window_results_public_id"), table_name="diarization_window_results")
+    op.drop_index(
+        op.f("ix_diarization_window_results_processing_run_id"),
+        table_name="diarization_window_results",
+    )
+    op.drop_index(
+        op.f("ix_diarization_window_results_recording_id"),
+        table_name="diarization_window_results",
+    )
+    op.drop_index(
+        op.f("ix_diarization_window_results_public_id"),
+        table_name="diarization_window_results",
+    )
     op.drop_table("diarization_window_results")
 
-    op.drop_index(op.f("ix_speaker_correction_events_target_global_speaker_id"), table_name="speaker_correction_events")
-    op.drop_index(op.f("ix_speaker_correction_events_target_recording_speaker_id"), table_name="speaker_correction_events")
-    op.drop_index(op.f("ix_speaker_correction_events_source_recording_speaker_id"), table_name="speaker_correction_events")
-    op.drop_index(op.f("ix_speaker_correction_events_utterance_id"), table_name="speaker_correction_events")
-    op.drop_index(op.f("ix_speaker_correction_events_actor_user_id"), table_name="speaker_correction_events")
-    op.drop_index(op.f("ix_speaker_correction_events_recording_id"), table_name="speaker_correction_events")
-    op.drop_index(op.f("ix_speaker_correction_events_public_id"), table_name="speaker_correction_events")
+    op.drop_index(
+        op.f("ix_speaker_correction_events_target_global_speaker_id"),
+        table_name="speaker_correction_events",
+    )
+    op.drop_index(
+        op.f("ix_speaker_correction_events_target_recording_speaker_id"),
+        table_name="speaker_correction_events",
+    )
+    op.drop_index(
+        op.f("ix_speaker_correction_events_source_recording_speaker_id"),
+        table_name="speaker_correction_events",
+    )
+    op.drop_index(
+        op.f("ix_speaker_correction_events_utterance_id"),
+        table_name="speaker_correction_events",
+    )
+    op.drop_index(
+        op.f("ix_speaker_correction_events_actor_user_id"),
+        table_name="speaker_correction_events",
+    )
+    op.drop_index(
+        op.f("ix_speaker_correction_events_recording_id"),
+        table_name="speaker_correction_events",
+    )
+    op.drop_index(
+        op.f("ix_speaker_correction_events_public_id"),
+        table_name="speaker_correction_events",
+    )
     op.drop_table("speaker_correction_events")
 
-    op.drop_index(op.f("ix_recording_speaker_aliases_source_run_id"), table_name="recording_speaker_aliases")
-    op.drop_index(op.f("ix_recording_speaker_aliases_alias_value"), table_name="recording_speaker_aliases")
-    op.drop_index(op.f("ix_recording_speaker_aliases_recording_speaker_id"), table_name="recording_speaker_aliases")
+    op.drop_index(
+        op.f("ix_recording_speaker_aliases_source_run_id"),
+        table_name="recording_speaker_aliases",
+    )
+    op.drop_index(
+        op.f("ix_recording_speaker_aliases_alias_value"),
+        table_name="recording_speaker_aliases",
+    )
+    op.drop_index(
+        op.f("ix_recording_speaker_aliases_recording_speaker_id"),
+        table_name="recording_speaker_aliases",
+    )
     op.drop_table("recording_speaker_aliases")
 
-    op.drop_index(op.f("ix_transcript_utterance_events_event_type"), table_name="transcript_utterance_events")
-    op.drop_index(op.f("ix_transcript_utterance_events_actor_user_id"), table_name="transcript_utterance_events")
-    op.drop_index(op.f("ix_transcript_utterance_events_processing_run_id"), table_name="transcript_utterance_events")
-    op.drop_index(op.f("ix_transcript_utterance_events_utterance_id"), table_name="transcript_utterance_events")
-    op.drop_index(op.f("ix_transcript_utterance_events_recording_id"), table_name="transcript_utterance_events")
+    op.drop_index(
+        op.f("ix_transcript_utterance_events_event_type"),
+        table_name="transcript_utterance_events",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterance_events_actor_user_id"),
+        table_name="transcript_utterance_events",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterance_events_processing_run_id"),
+        table_name="transcript_utterance_events",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterance_events_utterance_id"),
+        table_name="transcript_utterance_events",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterance_events_recording_id"),
+        table_name="transcript_utterance_events",
+    )
     op.drop_table("transcript_utterance_events")
 
-    op.drop_index(op.f("ix_transcript_utterances_overlap_group_id"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_processing_run_id"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_recording_speaker_id"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_speaker_label"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_sort_key"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_recording_id"), table_name="transcript_utterances")
-    op.drop_index(op.f("ix_transcript_utterances_public_id"), table_name="transcript_utterances")
+    op.drop_index(
+        op.f("ix_transcript_utterances_overlap_group_id"),
+        table_name="transcript_utterances",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_processing_run_id"),
+        table_name="transcript_utterances",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_recording_speaker_id"),
+        table_name="transcript_utterances",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_speaker_label"),
+        table_name="transcript_utterances",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_sort_key"), table_name="transcript_utterances"
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_recording_id"),
+        table_name="transcript_utterances",
+    )
+    op.drop_index(
+        op.f("ix_transcript_utterances_public_id"), table_name="transcript_utterances"
+    )
     op.drop_table("transcript_utterances")
 
-    op.drop_index(op.f("ix_processing_runs_idempotency_key"), table_name="processing_runs")
+    op.drop_index(
+        op.f("ix_processing_runs_idempotency_key"), table_name="processing_runs"
+    )
     op.drop_index(op.f("ix_processing_runs_recording_id"), table_name="processing_runs")
     op.drop_index(op.f("ix_processing_runs_public_id"), table_name="processing_runs")
     op.drop_table("processing_runs")
 
-    op.drop_index(op.f("ix_recording_audio_chunks_idempotency_key"), table_name="recording_audio_chunks")
-    op.drop_index(op.f("ix_recording_audio_chunks_recording_id"), table_name="recording_audio_chunks")
-    op.drop_index(op.f("ix_recording_audio_chunks_public_id"), table_name="recording_audio_chunks")
+    op.drop_index(
+        op.f("ix_recording_audio_chunks_idempotency_key"),
+        table_name="recording_audio_chunks",
+    )
+    op.drop_index(
+        op.f("ix_recording_audio_chunks_recording_id"),
+        table_name="recording_audio_chunks",
+    )
+    op.drop_index(
+        op.f("ix_recording_audio_chunks_public_id"), table_name="recording_audio_chunks"
+    )
     op.drop_table("recording_audio_chunks")
 
     op.drop_column("recording_speakers", "identity_locked")

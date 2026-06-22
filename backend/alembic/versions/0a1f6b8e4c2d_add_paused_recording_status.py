@@ -5,10 +5,10 @@ Revises: 4f7d2c1a9b80
 Create Date: 2026-05-25 18:30:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
-
 
 # revision identifiers, used by Alembic.
 revision: str = "0a1f6b8e4c2d"

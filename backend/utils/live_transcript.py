@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
-
 LIVE_SPEAKER_PREFIX = "LIVE_"
 LIVE_FINAL_REUSE_MIN_OVERLAP_RATIO = 0.60
 LIVE_FINAL_REUSE_MIN_DURATION_RATIO = 0.60
@@ -117,7 +116,9 @@ def merge_reusable_segments(
     primary_segments: list[dict[str, Any]],
     additional_segments: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    merged_segments: list[dict[str, Any]] = [dict(segment) for segment in primary_segments]
+    merged_segments: list[dict[str, Any]] = [
+        dict(segment) for segment in primary_segments
+    ]
     seen_keys = {_segment_merge_key(segment) for segment in merged_segments}
 
     for segment in additional_segments:
@@ -144,9 +145,11 @@ def apply_live_authority_to_segments(
     if not live_segments or not combined_segments:
         return combined_segments
 
-    matches_by_combined_index, rejections_by_combined_index = _match_live_segments_to_combined(
-        live_segments,
-        combined_segments,
+    matches_by_combined_index, rejections_by_combined_index = (
+        _match_live_segments_to_combined(
+            live_segments,
+            combined_segments,
+        )
     )
     authoritative_segments: list[dict[str, Any]] = []
     for combined_index, combined_segment in enumerate(combined_segments):
@@ -205,7 +208,9 @@ def apply_live_authority_to_segments(
 def _match_live_segments_to_combined(
     live_segments: list[dict[str, Any]],
     combined_segments: list[dict[str, Any]],
-) -> tuple[dict[int, _LiveFinalMatchCandidate], dict[int, _LiveFinalMatchCandidate | str]]:
+) -> tuple[
+    dict[int, _LiveFinalMatchCandidate], dict[int, _LiveFinalMatchCandidate | str]
+]:
     matches_by_combined_index: dict[int, _LiveFinalMatchCandidate] = {}
     rejections_by_combined_index: dict[int, _LiveFinalMatchCandidate | str] = {}
     live_ids: dict[str, int] = {}
@@ -244,7 +249,9 @@ def _match_live_segments_to_combined(
     for live_index, combined_indexes in stable_live_usage.items():
         if len(combined_indexes) > 1:
             for combined_index in combined_indexes:
-                rejections_by_combined_index[combined_index] = "ambiguous_stable_utterance_id"
+                rejections_by_combined_index[combined_index] = (
+                    "ambiguous_stable_utterance_id"
+                )
             continue
         combined_index = combined_indexes[0]
         matches_by_combined_index[combined_index] = stable_id_candidates[combined_index]
@@ -254,7 +261,10 @@ def _match_live_segments_to_combined(
     }
     tentative_matches: dict[int, _LiveFinalMatchCandidate] = {}
     for combined_index, combined_segment in enumerate(combined_segments):
-        if combined_index in matches_by_combined_index or combined_index in rejections_by_combined_index:
+        if (
+            combined_index in matches_by_combined_index
+            or combined_index in rejections_by_combined_index
+        ):
             continue
 
         all_candidates = [
@@ -267,18 +277,26 @@ def _match_live_segments_to_combined(
             for live_index, live_segment in enumerate(live_segments)
             if live_index not in used_live_indexes
         ]
-        usable_candidates = [candidate for candidate in all_candidates if _candidate_is_usable(candidate)]
+        usable_candidates = [
+            candidate for candidate in all_candidates if _candidate_is_usable(candidate)
+        ]
         usable_candidates.sort(key=lambda candidate: candidate.score, reverse=True)
 
         if not usable_candidates:
-            best_candidate = max(all_candidates, key=lambda candidate: candidate.score, default=None)
-            rejections_by_combined_index[combined_index] = best_candidate or "no_live_overlap"
+            best_candidate = max(
+                all_candidates, key=lambda candidate: candidate.score, default=None
+            )
+            rejections_by_combined_index[combined_index] = (
+                best_candidate or "no_live_overlap"
+            )
             continue
 
         best_candidate = usable_candidates[0]
         if len(usable_candidates) > 1:
             second_candidate = usable_candidates[1]
-            if (best_candidate.score - second_candidate.score) < LIVE_FINAL_REUSE_AMBIGUITY_MARGIN:
+            if (
+                best_candidate.score - second_candidate.score
+            ) < LIVE_FINAL_REUSE_AMBIGUITY_MARGIN:
                 rejections_by_combined_index[combined_index] = best_candidate
                 continue
 
@@ -290,7 +308,9 @@ def _match_live_segments_to_combined(
 
     for combined_index, candidate in tentative_matches.items():
         if len(live_usage.get(candidate.live_index, [])) > 1:
-            rejections_by_combined_index[combined_index] = "ambiguous_live_utterance_reused"
+            rejections_by_combined_index[combined_index] = (
+                "ambiguous_live_utterance_reused"
+            )
             continue
         matches_by_combined_index[combined_index] = candidate
 
@@ -323,10 +343,18 @@ def _build_match_candidate(
         live_index=live_index,
         reason=reason,
         overlap_seconds=overlap_seconds,
-        combined_overlap_ratio=(overlap_seconds / combined_duration) if combined_duration > 0.0 else 0.0,
-        live_overlap_ratio=(overlap_seconds / live_duration) if live_duration > 0.0 else 0.0,
-        duration_ratio=(smaller_duration / larger_duration) if larger_duration > 0.0 else 0.0,
-        text_similarity=_text_similarity(combined_segment.get("text"), live_segment.get("text")),
+        combined_overlap_ratio=(overlap_seconds / combined_duration)
+        if combined_duration > 0.0
+        else 0.0,
+        live_overlap_ratio=(overlap_seconds / live_duration)
+        if live_duration > 0.0
+        else 0.0,
+        duration_ratio=(smaller_duration / larger_duration)
+        if larger_duration > 0.0
+        else 0.0,
+        text_similarity=_text_similarity(
+            combined_segment.get("text"), live_segment.get("text")
+        ),
     )
 
 
@@ -348,8 +376,12 @@ def _build_rejected_alignment_payload(
     live_segments: list[dict[str, Any]],
 ) -> dict[str, Any]:
     if isinstance(rejection, _LiveFinalMatchCandidate):
-        payload = _candidate_alignment_payload(rejection, live_segments[rejection.live_index])
-        payload["candidate_live_utterance_ids"] = payload.pop("matched_live_utterance_ids", [])
+        payload = _candidate_alignment_payload(
+            rejection, live_segments[rejection.live_index]
+        )
+        payload["candidate_live_utterance_ids"] = payload.pop(
+            "matched_live_utterance_ids", []
+        )
         payload["candidate_live_speaker"] = payload.pop("matched_live_speaker", None)
         payload["matched_live_utterance_ids"] = []
         payload["status"] = "rejected"
@@ -421,16 +453,22 @@ def map_final_speakers_to_live_labels(
                 continue
 
             label_scores = scores.setdefault(str(final_label), {})
-            label_scores[str(live_label)] = label_scores.get(str(live_label), 0.0) + overlap
+            label_scores[str(live_label)] = (
+                label_scores.get(str(live_label), 0.0) + overlap
+            )
 
     mapping: dict[str, str] = {}
     for final_label, label_scores in scores.items():
-        ranked_labels = sorted(label_scores.items(), key=lambda item: item[1], reverse=True)
+        ranked_labels = sorted(
+            label_scores.items(), key=lambda item: item[1], reverse=True
+        )
         best_live_label, best_score = ranked_labels[0]
         total_score = sum(label_scores.values())
         best_share = (best_score / total_score) if total_score > 0.0 else 0.0
         second_score = ranked_labels[1][1] if len(ranked_labels) > 1 else 0.0
-        margin = ((best_score - second_score) / total_score) if total_score > 0.0 else 0.0
+        margin = (
+            ((best_score - second_score) / total_score) if total_score > 0.0 else 0.0
+        )
         if best_share < LIVE_FINAL_SPEAKER_MAP_MIN_SHARE:
             continue
         if len(ranked_labels) > 1 and margin < LIVE_FINAL_SPEAKER_MAP_MIN_MARGIN:

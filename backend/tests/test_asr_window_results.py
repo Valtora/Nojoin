@@ -3,16 +3,18 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 
-from backend.models.pipeline import RecordingAsrWindowResult, RecordingAsrWindowResultStatus
+from backend.models.pipeline import (
+    RecordingAsrWindowResult,
+    RecordingAsrWindowResultStatus,
+)
 from backend.utils.asr_window_results import (
     complete_recording_asr_window_result,
+    fail_recording_asr_window_result,
     get_recording_asr_window_result,
     get_reusable_catch_up_segments,
-    fail_recording_asr_window_result,
     get_transcription_model_name,
     start_recording_asr_window_result,
 )
-
 
 RECORDING_ASR_WINDOW_RESULTS_SCHEMA = """
 CREATE TABLE recording_asr_window_results (
@@ -51,9 +53,24 @@ def _make_session() -> Session:
 
 
 def test_get_transcription_model_name_uses_backend_specific_config():
-    assert get_transcription_model_name({"transcription_backend": "whisper", "whisper_model_size": "base"}) == "base"
-    assert get_transcription_model_name({"transcription_backend": "parakeet", "parakeet_model": "parakeet-v3"}) == "parakeet-v3"
-    assert get_transcription_model_name({"transcription_backend": "canary", "canary_model": "canary-v2"}) == "canary-v2"
+    assert (
+        get_transcription_model_name(
+            {"transcription_backend": "whisper", "whisper_model_size": "base"}
+        )
+        == "base"
+    )
+    assert (
+        get_transcription_model_name(
+            {"transcription_backend": "parakeet", "parakeet_model": "parakeet-v3"}
+        )
+        == "parakeet-v3"
+    )
+    assert (
+        get_transcription_model_name(
+            {"transcription_backend": "canary", "canary_model": "canary-v2"}
+        )
+        == "canary-v2"
+    )
 
 
 def test_asr_window_result_reuses_same_row_across_start_and_complete():

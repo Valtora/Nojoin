@@ -9,19 +9,14 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
-from sqlalchemy import or_
 from sqlmodel import select
 
 from backend.celery_app import celery_app
 from backend.models.pipeline import (
-    DiarizationWindowResult,
-    ProcessingRun,
     ProcessingRunKind,
-    ProcessingRunStatus,
     RecordingAudioChunk,
     RecordingAudioWindowManifest,
     TranscriptUtteranceState,
@@ -44,16 +39,9 @@ from backend.utils.asr_window_results import (
     start_recording_asr_window_result,
 )
 from backend.utils.audio_windows import (
-    WINDOW_DIARIZATION_STATUS_FAILED,
-    WINDOW_DIARIZATION_STATUS_PROCESSED,
-    WINDOW_DIARIZATION_STATUS_PROCESSING,
-    WINDOW_STATUS_FAILED,
-    WINDOW_STATUS_LIVE_PROCESSING,
     WINDOW_STATUS_LIVE_PROCESSED,
     infer_resume_state_from_manifests,
     mark_audio_windows_processed,
-    window_asr_is_processed,
-    window_diarization_status,
 )
 from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
@@ -182,7 +170,9 @@ def _build_live_utterance_public_id(
     return str(uuid5(NAMESPACE_URL, f"live-utterance:{payload}"))
 
 
-def _load_recording_audio_window_manifests(session, recording_id: int) -> list[RecordingAudioWindowManifest]:
+def _load_recording_audio_window_manifests(
+    session, recording_id: int
+) -> list[RecordingAudioWindowManifest]:
     if not hasattr(session, "exec"):
         return []
 
@@ -196,7 +186,9 @@ def _load_recording_audio_window_manifests(session, recording_id: int) -> list[R
         return []
 
 
-def _load_recording_audio_chunks(session, recording_id: int) -> list[RecordingAudioChunk]:
+def _load_recording_audio_chunks(
+    session, recording_id: int
+) -> list[RecordingAudioChunk]:
     if not hasattr(session, "exec"):
         return []
 
@@ -292,7 +284,9 @@ def _analyze_live_source_channels(audio) -> dict[str, Any]:
     sorted_shares = sorted(shares, reverse=True)
     primary_share = sorted_shares[0]
     secondary_share = sorted_shares[1] if len(sorted_shares) > 1 else 0.0
-    primary_source = BROWSER_LIVE_SOURCE_NAME_BY_CHANNEL.get(primary_channel, f"channel_{primary_channel}")
+    primary_source = BROWSER_LIVE_SOURCE_NAME_BY_CHANNEL.get(
+        primary_channel, f"channel_{primary_channel}"
+    )
     dominant_source = None
     if primary_share >= LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD and (
         secondary_share <= 0.0
@@ -309,7 +303,9 @@ def _analyze_live_source_channels(audio) -> dict[str, Any]:
             "primary_share": round(primary_share, 4),
             "secondary_share": round(secondary_share, 4),
             "dominant_source": dominant_source,
-            "source_overlap": bool(secondary_share >= LIVE_SOURCE_OVERLAP_SHARE_THRESHOLD),
+            "source_overlap": bool(
+                secondary_share >= LIVE_SOURCE_OVERLAP_SHARE_THRESHOLD
+            ),
         }
     )
     return payload
@@ -348,7 +344,9 @@ def _coerce_live_source_channel_evidence(
         primary_share=_coerce_float(source_channel_evidence.get("primary_share")),
         secondary_share=_coerce_float(source_channel_evidence.get("secondary_share")),
         source_overlap=bool(source_channel_evidence.get("source_overlap", False)),
-        authority=str(source_channel_evidence.get("authority") or LIVE_SOURCE_AUTHORITY_NONE),
+        authority=str(
+            source_channel_evidence.get("authority") or LIVE_SOURCE_AUTHORITY_NONE
+        ),
         reason=str(source_channel_evidence.get("reason") or "source_channel_payload"),
         preferred_label=source_channel_evidence.get("preferred_label"),
         excluded_labels=tuple(
@@ -356,7 +354,9 @@ def _coerce_live_source_channel_evidence(
             for label in source_channel_evidence.get("excluded_labels", [])
             if label
         ),
-        speaker_confidence=_coerce_float(source_channel_evidence.get("speaker_confidence")),
+        speaker_confidence=_coerce_float(
+            source_channel_evidence.get("speaker_confidence")
+        ),
     )
 
 
@@ -443,7 +443,6 @@ def _build_live_source_channel_evidence(
     )
 
 
-
 def _default_live_state() -> dict:
     return {
         "next_expected": LIVE_INITIAL_SEQUENCE,
@@ -503,7 +502,9 @@ def _sanitize_sequence_outcomes(value: Any) -> dict[str, dict[str, Any]]:
     if len(outcomes) <= _MAX_LIVE_SEQUENCE_OUTCOMES:
         return outcomes
 
-    ordered_keys = sorted(outcomes, key=lambda key: int(key))[-_MAX_LIVE_SEQUENCE_OUTCOMES:]
+    ordered_keys = sorted(outcomes, key=lambda key: int(key))[
+        -_MAX_LIVE_SEQUENCE_OUTCOMES:
+    ]
     return {key: outcomes[key] for key in ordered_keys}
 
 
@@ -658,7 +659,9 @@ def classify_speech(
         complete_regions = speech
         cut_point = last["end"]
 
-    return _split_complete_regions(complete_regions, max_segment_s=max_segment_s), cut_point
+    return _split_complete_regions(
+        complete_regions, max_segment_s=max_segment_s
+    ), cut_point
 
 
 def _split_complete_regions(
@@ -708,7 +711,9 @@ def _build_live_config() -> dict:
         "processing_device": config_manager.get("processing_device", "auto"),
         "context_window_s": config_manager.get("live_context_window_s", 5.0),
         "forced_max_s": config_manager.get("live_forced_max_s", DEFAULT_FORCED_MAX),
-        "max_segment_s": config_manager.get("live_max_segment_s", DEFAULT_MAX_SEGMENT_S),
+        "max_segment_s": config_manager.get(
+            "live_max_segment_s", DEFAULT_MAX_SEGMENT_S
+        ),
         "speech_pad_ms": config_manager.get("live_speech_pad_ms", 300),
     }
 
@@ -734,11 +739,15 @@ def _extract_region_text(result: dict, prefix_s: float) -> str:
     return re.sub(
         r"\s+",
         " ",
-        " ".join(str(segment.get("text", "") or "").strip() for segment in kept_segments),
+        " ".join(
+            str(segment.get("text", "") or "").strip() for segment in kept_segments
+        ),
     ).strip()
 
 
-def _extract_region_segment_payloads(result: dict, prefix_s: float) -> list[dict[str, Any]]:
+def _extract_region_segment_payloads(
+    result: dict, prefix_s: float
+) -> list[dict[str, Any]]:
     """Return the ASR segment payloads that belong to the region after prefix_s.
 
     The returned segment and word timings are region-relative, not clip-relative.
@@ -846,8 +855,12 @@ def _build_live_confidence_payload(
 
     for segment in region_segment_payloads:
         absolute_segment = {
-            "start_ms": int(region_start_ms + round(float(segment.get("start", 0.0)) * 1000.0)),
-            "end_ms": int(region_start_ms + round(float(segment.get("end", 0.0)) * 1000.0)),
+            "start_ms": int(
+                region_start_ms + round(float(segment.get("start", 0.0)) * 1000.0)
+            ),
+            "end_ms": int(
+                region_start_ms + round(float(segment.get("end", 0.0)) * 1000.0)
+            ),
             "text": str(segment.get("text", "") or ""),
         }
         words = []
@@ -857,8 +870,12 @@ def _build_live_confidence_payload(
                 continue
             words.append(
                 {
-                    "start_ms": int(region_start_ms + round(float(word.get("start", 0.0)) * 1000.0)),
-                    "end_ms": int(region_start_ms + round(float(word.get("end", 0.0)) * 1000.0)),
+                    "start_ms": int(
+                        region_start_ms + round(float(word.get("start", 0.0)) * 1000.0)
+                    ),
+                    "end_ms": int(
+                        region_start_ms + round(float(word.get("end", 0.0)) * 1000.0)
+                    ),
                     "word": word_text,
                 }
             )
@@ -943,8 +960,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording, RecordingStatus
     from backend.models.user import User
-    from backend.processing.vad import detect_speech_segments
     from backend.processing.transcribe import transcribe_audio
+    from backend.processing.vad import detect_speech_segments
     from backend.worker.tasks import resolve_llm_config
 
     config_manager.reload()
@@ -1017,7 +1034,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     try:
         manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
         resumed_state = infer_resume_state_from_manifests(manifest_rows)
-        if resumed_state and int(resumed_state["next_expected"]) > int(state["next_expected"]):
+        if resumed_state and int(resumed_state["next_expected"]) > int(
+            state["next_expected"]
+        ):
             state["next_expected"] = int(resumed_state["next_expected"])
             state["buffer_abs_start"] = float(resumed_state["buffer_abs_start"])
             record_pipeline_metric(
@@ -1143,7 +1162,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         if os.path.exists(buffer_path):
             channel_parts.append(_read_live_audio_channels(buffer_path))
         for seg_n in run:
-            channel_parts.append(_read_live_audio_channels(str(temp_dir / f"{seg_n}.wav")))
+            channel_parts.append(
+                _read_live_audio_channels(str(temp_dir / f"{seg_n}.wav"))
+            )
 
         combined_channels = _concat_live_audio_channels(channel_parts)
         combined = _mix_live_audio_channels(combined_channels)
@@ -1176,8 +1197,12 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     if user and user.settings:
                         user_settings = user.settings
                 if hasattr(session, "exec"):
-                    merged_config = resolve_llm_config(session, user_settings).merged_config
-                merged_config.setdefault("transcription_backend", live_config["transcription_backend"])
+                    merged_config = resolve_llm_config(
+                        session, user_settings
+                    ).merged_config
+                merged_config.setdefault(
+                    "transcription_backend", live_config["transcription_backend"]
+                )
                 live_config.update(
                     {
                         "transcription_backend": merged_config.get(
@@ -1296,7 +1321,9 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             prefix_s = left_context.numel() / LIVE_SAMPLE_RATE
             region_start_ms = int(round((combined_abs_start + sp["start"]) * 1000.0))
             region_end_ms = int(round((combined_abs_start + sp["end"]) * 1000.0))
-            ledger_enabled = bool(config_manager.get("enable_asr_window_result_ledger", True))
+            ledger_enabled = bool(
+                config_manager.get("enable_asr_window_result_ledger", True)
+            )
 
             if ledger_enabled:
                 _persist_asr_window_result_best_effort(
@@ -1344,12 +1371,17 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                                     chunk_start_sequence=run[0],
                                     chunk_end_sequence=run[-1],
                                     config=live_config,
-                                    error_summary=str(exc).strip()[:500] or "Live ASR invocation failed.",
-                                    error_payload={"error_type": exc.__class__.__name__},
+                                    error_summary=str(exc).strip()[:500]
+                                    or "Live ASR invocation failed.",
+                                    error_payload={
+                                        "error_type": exc.__class__.__name__
+                                    },
                                 )
                             )
                         raise
-                    metric["payload"]["text_chars"] = len((result or {}).get("text") or "")
+                    metric["payload"]["text_chars"] = len(
+                        (result or {}).get("text") or ""
+                    )
                 speaker_label = "UNKNOWN"
 
             finally:
@@ -1443,15 +1475,22 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 state["last_speaker_label"] = speaker_label
                 if (
                     source_channel_evidence.authority == LIVE_SOURCE_AUTHORITY_CLEAR
-                    and source_channel_evidence.dominant_source == BROWSER_LIVE_MICROPHONE_SOURCE
+                    and source_channel_evidence.dominant_source
+                    == BROWSER_LIVE_MICROPHONE_SOURCE
                 ):
-                    source_channel_labels.setdefault(BROWSER_LIVE_MICROPHONE_SOURCE, speaker_label)
+                    source_channel_labels.setdefault(
+                        BROWSER_LIVE_MICROPHONE_SOURCE, speaker_label
+                    )
 
         # --- Carry over the unconsumed trailing audio ---
         cut_sample = int(cut_point * LIVE_SAMPLE_RATE)
         new_buffer_channels = combined_channels[:, cut_sample:]
         if new_buffer_channels.numel() > 0:
-            tensor = new_buffer_channels if new_buffer_channels.ndim > 1 else new_buffer_channels.unsqueeze(0)
+            tensor = (
+                new_buffer_channels
+                if new_buffer_channels.ndim > 1
+                else new_buffer_channels.unsqueeze(0)
+            )
             import silero_vad
 
             silero_vad.save_audio(buffer_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)
@@ -1473,7 +1512,11 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         else:
             consumed_channels = consumed_channels[:, :0]
         if consumed_channels.numel() > 0:
-            tensor = consumed_channels if consumed_channels.ndim > 1 else consumed_channels.unsqueeze(0)
+            tensor = (
+                consumed_channels
+                if consumed_channels.ndim > 1
+                else consumed_channels.unsqueeze(0)
+            )
             import silero_vad
 
             silero_vad.save_audio(context_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)
@@ -1495,9 +1538,15 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 if new_segments:
                     created_utterances = []
                     created_public_ids: set[str] = set()
-                    use_canonical_live_writes = bool(
-                        config_manager.get("enable_canonical_transcript_writes", True)
-                    ) and hasattr(session, "exec") and hasattr(session, "execute")
+                    use_canonical_live_writes = (
+                        bool(
+                            config_manager.get(
+                                "enable_canonical_transcript_writes", True
+                            )
+                        )
+                        and hasattr(session, "exec")
+                        and hasattr(session, "execute")
+                    )
 
                     if use_canonical_live_writes:
                         created_utterances = append_utterances_from_segments(
@@ -1509,26 +1558,37 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                             state_override=TranscriptUtteranceState.PROVISIONAL,
                             trigger_source="worker",
                             config_hash=live_config_hash,
-                            transcription_backend=str(live_config.get("transcription_backend") or "whisper"),
+                            transcription_backend=str(
+                                live_config.get("transcription_backend") or "whisper"
+                            ),
                             model_metadata={
                                 "model_name": live_model_name,
                                 "chunk_start_sequence": run[0],
                                 "chunk_end_sequence": run[-1],
                                 "trigger_sequence": sequence,
                             },
-                            span_start_ms=min(item["span_start_ms"] for item in pending_asr_completions),
-                            span_end_ms=max(item["span_end_ms"] for item in pending_asr_completions),
+                            span_start_ms=min(
+                                item["span_start_ms"]
+                                for item in pending_asr_completions
+                            ),
+                            span_end_ms=max(
+                                item["span_end_ms"] for item in pending_asr_completions
+                            ),
                         )
                     else:
                         from sqlalchemy.orm.attributes import flag_modified
 
                         transcript = recording.transcript
                         if transcript is not None:
-                            transcript.segments = (transcript.segments or []) + new_segments
+                            transcript.segments = (
+                                transcript.segments or []
+                            ) + new_segments
                             flag_modified(transcript, "segments")
                             session.add(transcript)
 
-                    created_public_ids = {utterance.public_id for utterance in created_utterances}
+                    created_public_ids = {
+                        utterance.public_id for utterance in created_utterances
+                    }
 
                     user_settings = getattr(
                         getattr(recording, "user", None),
@@ -1539,11 +1599,17 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         from backend.models.user import User
 
                         user = session.get(User, recording.user_id)
-                        user_settings = getattr(user, "settings", None) if user else None
+                        user_settings = (
+                            getattr(user, "settings", None) if user else None
+                        )
 
-                    should_dispatch_meeting_edge = is_meeting_edge_enabled(user_settings)
+                    should_dispatch_meeting_edge = is_meeting_edge_enabled(
+                        user_settings
+                    )
 
-                manifest_rows = _load_recording_audio_window_manifests(session, recording_id)
+                manifest_rows = _load_recording_audio_window_manifests(
+                    session, recording_id
+                )
                 updated_manifest_rows = mark_audio_windows_processed(
                     manifest_rows,
                     up_to_sequence=run[-1],
@@ -1562,18 +1628,20 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                             else None
                         )
                         _persist_asr_window_result_best_effort(
-                            lambda ledger_session, pending_result=pending_result, produced_ids=produced_ids: complete_recording_asr_window_result(
-                                ledger_session,
-                                recording_id=recording_id,
-                                source_kind="live",
-                                span_start_ms=pending_result["span_start_ms"],
-                                span_end_ms=pending_result["span_end_ms"],
-                                chunk_start_sequence=run[0],
-                                chunk_end_sequence=run[-1],
-                                config=live_config,
-                                config_hash=live_config_hash,
-                                result_payload=pending_result["result_payload"],
-                                produced_utterance_public_ids=produced_ids,
+                            lambda ledger_session, pending_result=pending_result, produced_ids=produced_ids: (
+                                complete_recording_asr_window_result(
+                                    ledger_session,
+                                    recording_id=recording_id,
+                                    source_kind="live",
+                                    span_start_ms=pending_result["span_start_ms"],
+                                    span_end_ms=pending_result["span_end_ms"],
+                                    chunk_start_sequence=run[0],
+                                    chunk_end_sequence=run[-1],
+                                    config=live_config,
+                                    config_hash=live_config_hash,
+                                    result_payload=pending_result["result_payload"],
+                                    produced_utterance_public_ids=produced_ids,
+                                )
                             )
                         )
 
@@ -1598,8 +1666,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                     )
         finally:
             session.close()
-
-
 
             if should_dispatch_meeting_edge:
                 try:
@@ -1668,20 +1734,29 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             exc,
             exc_info=True,
         )
-        if 'pending_asr_completions' in locals() and config_manager.get("enable_asr_window_result_ledger", True):
+        if "pending_asr_completions" in locals() and config_manager.get(
+            "enable_asr_window_result_ledger", True
+        ):
             for pending_result in pending_asr_completions:
                 _persist_asr_window_result_best_effort(
-                    lambda ledger_session, pending_result=pending_result: fail_recording_asr_window_result(
-                        ledger_session,
-                        recording_id=recording_id,
-                        source_kind="live",
-                        span_start_ms=pending_result["span_start_ms"],
-                        span_end_ms=pending_result["span_end_ms"],
-                        chunk_start_sequence=run[0] if 'run' in locals() and run else None,
-                        chunk_end_sequence=run[-1] if 'run' in locals() and run else None,
-                        config=live_config if 'live_config' in locals() else None,
-                        error_summary=str(exc).strip()[:500] or "Live utterance persistence failed.",
-                        error_payload={"error_type": exc.__class__.__name__},
+                    lambda ledger_session, pending_result=pending_result: (
+                        fail_recording_asr_window_result(
+                            ledger_session,
+                            recording_id=recording_id,
+                            source_kind="live",
+                            span_start_ms=pending_result["span_start_ms"],
+                            span_end_ms=pending_result["span_end_ms"],
+                            chunk_start_sequence=run[0]
+                            if "run" in locals() and run
+                            else None,
+                            chunk_end_sequence=run[-1]
+                            if "run" in locals() and run
+                            else None,
+                            config=live_config if "live_config" in locals() else None,
+                            error_summary=str(exc).strip()[:500]
+                            or "Live utterance persistence failed.",
+                            error_payload={"error_type": exc.__class__.__name__},
+                        )
                     )
                 )
         if run:

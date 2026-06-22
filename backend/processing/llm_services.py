@@ -1,43 +1,52 @@
-from backend.utils.config_manager import config_manager
-import logging
 import json
+import logging
 import re
-from typing import Dict, Tuple, List, Generator, Any, Optional, Sequence
-# Lazy imports for LLM providers to avoid heavy dependencies in API
-# import openai
-# import anthropic
-from backend.utils.transcript_utils import render_transcript
-from backend.utils.config_manager import from_project_relative_path
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
+
+from backend.utils.config_manager import config_manager
+from backend.utils.languages import build_output_language_prompt_section
+from backend.utils.meeting_edge import (
+    MeetingEdgeContractError,
+    MeetingEdgeRequest,
+    MeetingEdgeResult,
+    get_default_meeting_edge_prompt_template,
+)
+from backend.utils.meeting_edge import (
+    build_meeting_edge_prompt as build_meeting_edge_prompt_text,
+)
+from backend.utils.meeting_edge import (
+    parse_meeting_edge_response as parse_meeting_edge_payload,
+)
+from backend.utils.meeting_intelligence import (
+    AutomaticMeetingIntelligenceRequest,
+    AutomaticMeetingIntelligenceResult,
+    MeetingIntelligenceContractError,
+    get_default_automatic_meeting_intelligence_prompt_template,
+)
+from backend.utils.meeting_intelligence import (
+    build_automatic_meeting_intelligence_prompt as build_automatic_meeting_intelligence_prompt_text,
+)
+from backend.utils.meeting_intelligence import (
+    finalise_automatic_meeting_intelligence_result as finalise_automatic_meeting_intelligence_payload,
+)
+from backend.utils.meeting_intelligence import (
+    parse_automatic_meeting_intelligence_response as parse_automatic_meeting_intelligence_payload,
+)
 from backend.utils.meeting_notes import (
     MeetingEventContext,
     append_user_notes_section,
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
 )
-from backend.utils.languages import build_output_language_prompt_section
-from backend.utils.meeting_intelligence import (
-    AutomaticMeetingIntelligenceRequest,
-    AutomaticMeetingIntelligenceResult,
-    MeetingIntelligenceContractError,
-    build_automatic_meeting_intelligence_prompt as build_automatic_meeting_intelligence_prompt_text,
-    finalise_automatic_meeting_intelligence_result as finalise_automatic_meeting_intelligence_payload,
-    get_default_automatic_meeting_intelligence_prompt_template,
-    parse_automatic_meeting_intelligence_response as parse_automatic_meeting_intelligence_payload,
-)
-from backend.utils.meeting_edge import (
-    MeetingEdgeContractError,
-    MeetingEdgeRequest,
-    MeetingEdgeResult,
-    build_meeting_edge_prompt as build_meeting_edge_prompt_text,
-    get_default_meeting_edge_prompt_template,
-    parse_meeting_edge_response as parse_meeting_edge_payload,
-)
+from backend.utils.ollama_url_policy import validate_ollama_api_url
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     parse_speaker_inference_response,
 )
-from backend.utils.ollama_url_policy import validate_ollama_api_url
-import os
+
+# Lazy imports for LLM providers to avoid heavy dependencies in API
+# import openai
+# import anthropic
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +70,16 @@ def summarize_llm_response_shape(response_text: str) -> Dict[str, Any]:
 def build_eligible_speaker_labels_prompt_section(
     eligible_labels: Optional[Sequence[str]],
 ) -> str:
-    labels = [str(label).strip() for label in eligible_labels or () if str(label).strip()]
+    labels = [
+        str(label).strip() for label in eligible_labels or () if str(label).strip()
+    ]
     if not labels:
         return "All unresolved diarization labels in the transcript are eligible."
 
     lines = ["Only return suggestions for these diarization labels:"]
     lines.extend(f"- {label}" for label in labels)
     return "\n".join(lines)
+
 
 class LLMBackend:
     def infer_speaker_suggestions(
@@ -113,7 +125,16 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
+    def generate_meeting_notes(
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Generate meeting notes using the provided speaker mapping to replace generic labels.
         Returns the meeting notes as a string.
@@ -143,7 +164,13 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def infer_speakers_and_generate_notes(self, transcript: str, prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None) -> Tuple[Dict[str, str], str]:
+    def infer_speakers_and_generate_notes(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+    ) -> Tuple[Dict[str, str], str]:
         """
         Backward-compatible method: infers speakers and generates notes in sequence using the new methods.
         """
@@ -153,10 +180,20 @@ class LLMBackend:
             timeout,
             user_notes=user_notes,
         )
-        notes = self.generate_meeting_notes(transcript, mapping, prompt_template, timeout, user_notes=user_notes)
+        notes = self.generate_meeting_notes(
+            transcript, mapping, prompt_template, timeout, user_notes=user_notes
+        )
         return mapping, notes
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ):
         """
         Ask a question about the meeting.
         """
@@ -165,7 +202,15 @@ class LLMBackend:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ) -> Generator[str, None, None]:
         """
         Ask a question about the meeting and yield response chunks.
         """
@@ -173,7 +218,13 @@ class LLMBackend:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
+    def infer_meeting_title(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
@@ -187,7 +238,9 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def _build_chat_prompt(self, user_question: str, meeting_notes: str, diarized_transcript: str) -> str:
+    def _build_chat_prompt(
+        self, user_question: str, meeting_notes: str, diarized_transcript: str
+    ) -> str:
         base_prompt = f"""
 You are a helpful AI assistant. You have access to the following meeting notes, full diarized transcript, and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
@@ -200,7 +253,6 @@ When referencing transcript content, always include the timestamp in [MM:SS] for
 # Full Diarized Transcript:
 {diarized_transcript}
 """
-
 
         base_prompt += f"\nUser Question: {user_question}\n"
         return base_prompt
@@ -381,7 +433,11 @@ Now generate the meeting notes following the exact structure specified above, re
             if line.startswith("|") and "|" in line[1:]:
                 in_table = True
                 parts = [p.strip() for p in line.strip("|").split("|")]
-                if len(parts) == 2 and parts[0] != "Diarization Label" and not parts[0].startswith("-"):
+                if (
+                    len(parts) == 2
+                    and parts[0] != "Diarization Label"
+                    and not parts[0].startswith("-")
+                ):
                     mapping[parts[0]] = parts[1]
             elif in_table and (not line.startswith("|")):
                 break
@@ -398,7 +454,7 @@ Now generate the meeting notes following the exact structure specified above, re
                 in_notes = True
             if in_notes:
                 notes_lines.append(line)
-        
+
         result = "\n".join(notes_lines).strip()
         if not result:
             # Fallback: if no header found, return everything.
@@ -410,8 +466,10 @@ Now generate the meeting notes following the exact structure specified above, re
     def parse_title(response_text: str) -> str:
         # Take first non-empty line, strip spurious characters/quotes/markdown
         for line in response_text.splitlines():
-            cleaned = line.strip().lstrip('#').strip()
-            cleaned = re.sub(r'^\W+|\W+$', '', cleaned)  # Remove leading/trailing non-word chars/quotes
+            cleaned = line.strip().lstrip("#").strip()
+            cleaned = re.sub(
+                r"^\W+|\W+$", "", cleaned
+            )  # Remove leading/trailing non-word chars/quotes
             if cleaned:
                 cleaned = re.sub(r"\s+", " ", cleaned)
                 return cleaned
@@ -438,7 +496,9 @@ Now generate the meeting notes following the exact structure specified above, re
             transcript=transcript,
             mapping_table=LLMBackend.mapping_to_markdown_table(speaker_mapping),
             user_notes_section=build_user_notes_prompt_section(user_notes),
-            meeting_context_section=build_meeting_context_prompt_section(meeting_context),
+            meeting_context_section=build_meeting_context_prompt_section(
+                meeting_context
+            ),
             output_language_section=build_output_language_prompt_section(
                 output_language_instruction
             ),
@@ -454,7 +514,9 @@ Now generate the meeting notes following the exact structure specified above, re
         return prompt_template.format(
             transcript=transcript,
             user_notes_section=build_user_notes_prompt_section(user_notes),
-            meeting_context_section=build_meeting_context_prompt_section(meeting_context),
+            meeting_context_section=build_meeting_context_prompt_section(
+                meeting_context
+            ),
         )
 
     @staticmethod
@@ -471,7 +533,9 @@ Now generate the meeting notes following the exact structure specified above, re
                 eligible_labels
             ),
             user_notes_section=build_user_notes_prompt_section(user_notes),
-            meeting_context_section=build_meeting_context_prompt_section(meeting_context),
+            meeting_context_section=build_meeting_context_prompt_section(
+                meeting_context
+            ),
         )
 
     @staticmethod
@@ -554,57 +618,70 @@ Preserve the same schema and do not invent facts not supported by the original t
         """
         Fetches the diarized transcript and speaker mapping for a recording, and returns the mapped transcript as plaintext.
         """
+        from sqlmodel import select
+
         from backend.core.db import get_sync_session
         from backend.models.recording import Recording
-        from backend.models.transcript import Transcript
         from backend.models.speaker import RecordingSpeaker
-        from sqlmodel import select
+        from backend.models.transcript import Transcript
 
         with get_sync_session() as session:
             rec = session.get(Recording, recording_id)
             if not rec:
                 return "Recording not found."
-            
+
             # Get Transcript
-            transcript_obj = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+            transcript_obj = session.exec(
+                select(Transcript).where(Transcript.recording_id == recording_id)
+            ).first()
             if not transcript_obj or not transcript_obj.segments:
-                 return "Diarized transcript not found."
-            
+                return "Diarized transcript not found."
+
             # Get Speakers
-            speakers = session.exec(select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)).all()
+            speakers = session.exec(
+                select(RecordingSpeaker).where(
+                    RecordingSpeaker.recording_id == recording_id
+                )
+            ).all()
             label_to_name = {s.diarization_label: s.name for s in speakers}
-            
+
             # Render
             lines = []
             for seg in transcript_obj.segments:
-                speaker_label = seg.get('speaker', 'Unknown')
+                speaker_label = seg.get("speaker", "Unknown")
                 speaker_name = label_to_name.get(speaker_label, speaker_label)
-                text = seg.get('text', '')
-                start = seg.get('start', 0)
+                text = seg.get("text", "")
+                start = seg.get("start", 0)
                 minutes = int(start // 60)
                 seconds = int(start % 60)
                 timestamp = f"[{minutes:02d}:{seconds:02d}]"
                 lines.append(f"{timestamp} {speaker_name}: {text}")
-            
+
             return "\n".join(lines)
 
     def _update_notes_in_db(self, recording_id: int, new_notes: str):
         """
         Updates the meeting notes in the database.
         """
-        from backend.core.db import get_sync_session
-        from backend.models.transcript import Transcript
         from sqlmodel import select
 
+        from backend.core.db import get_sync_session
+        from backend.models.transcript import Transcript
+
         with get_sync_session() as session:
-            transcript_obj = session.exec(select(Transcript).where(Transcript.recording_id == recording_id)).first()
+            transcript_obj = session.exec(
+                select(Transcript).where(Transcript.recording_id == recording_id)
+            ).first()
             if transcript_obj:
                 transcript_obj.notes = new_notes
                 session.add(transcript_obj)
                 session.commit()
                 logger.info(f"Updated notes for recording {recording_id}")
             else:
-                logger.error(f"Could not find transcript for recording {recording_id} to update notes")
+                logger.error(
+                    f"Could not find transcript for recording {recording_id} to update notes"
+                )
+
 
 class GeminiLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
@@ -616,11 +693,13 @@ class GeminiLLMBackend(LLMBackend):
                 "The 'google-genai' package is required for Gemini support. "
                 "Please install it with: pip install google-genai"
             )
-        
+
         if api_key is None:
             api_key = config_manager.get("gemini_api_key")
         if not api_key:
-            raise ValueError("Google Gemini API key is not set. Please provide it in settings.")
+            raise ValueError(
+                "Google Gemini API key is not set. Please provide it in settings."
+            )
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("gemini")
         self.genai = genai  # Store reference for later use
@@ -631,18 +710,22 @@ class GeminiLLMBackend(LLMBackend):
         Extract text from the response, handling potential non-text parts (like thoughts)
         to avoid warnings and ensure text extraction.
         """
-        if hasattr(response, 'candidates') and response.candidates:
+        if hasattr(response, "candidates") and response.candidates:
             candidate = response.candidates[0]
-            if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
+            if (
+                hasattr(candidate, "content")
+                and candidate.content
+                and hasattr(candidate.content, "parts")
+            ):
                 text_parts = []
                 for part in candidate.content.parts:
-                    if hasattr(part, 'text') and part.text:
+                    if hasattr(part, "text") and part.text:
                         text_parts.append(part.text)
                 if text_parts:
                     return "".join(text_parts)
-        
+
         # Fallback to .text if available (which might log the warning but works)
-        if hasattr(response, 'text'):
+        if hasattr(response, "text"):
             return response.text
         return ""
 
@@ -656,18 +739,18 @@ class GeminiLLMBackend(LLMBackend):
             model_list = []
             for m in models:
                 # Check attributes
-                name = getattr(m, 'name', None)
+                name = getattr(m, "name", None)
                 if name:
                     # Strip 'models/' prefix if present, as the client usually handles it or expects it.
                     # But for display we might want the full name or short name.
                     # The user example showed 'gemini-flash-latest'.
                     if name.startswith("models/"):
                         name = name[7:]
-                    
+
                     # Filter for gemini models
                     if "gemini" in name.lower():
                         model_list.append(name)
-            
+
             return sorted(model_list)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (list models): {e}")
@@ -696,7 +779,9 @@ class GeminiLLMBackend(LLMBackend):
             meeting_context,
         )
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -726,15 +811,33 @@ class GeminiLLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
+    def generate_meeting_notes(
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
+        prompt = self.build_notes_prompt(
+            prompt_template,
+            transcript,
+            speaker_mapping,
+            user_notes,
+            meeting_context,
+            output_language_instruction,
+        )
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -758,7 +861,9 @@ class GeminiLLMBackend(LLMBackend):
             prompt_template,
         )
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -778,7 +883,9 @@ class GeminiLLMBackend(LLMBackend):
     ) -> MeetingEdgeResult:
         prompt = self.build_meeting_edge_prompt(request, prompt_template)
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -799,19 +906,31 @@ class GeminiLLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ):
         # If recording_id is provided, use mapped transcript
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-        
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         contents = []
         if conversation_history:
             contents.extend(conversation_history)
         contents.append({"role": "user", "parts": [{"text": prompt}]})
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -822,27 +941,39 @@ class GeminiLLMBackend(LLMBackend):
             logger.error(f"Gemini API error (chat): {e}")
             raise RuntimeError(f"Gemini API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
+    def ask_question_streaming(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-            
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         contents = []
         if conversation_history:
             contents.extend(conversation_history)
         contents.append({"role": "user", "parts": [{"text": prompt}]})
-        
+
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
-            
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
+
         # Define Tool
         def update_meeting_notes(content: str):
             """Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes."""
             pass
 
         tools = [update_meeting_notes]
-        
+
         try:
             # Use streaming API
             # Automatic function calling is disabled to allow manual handling and event streaming.
@@ -852,9 +983,9 @@ class GeminiLLMBackend(LLMBackend):
                 config=self.genai.types.GenerateContentConfig(
                     tools=tools,
                     automatic_function_calling=self.genai.types.AutomaticFunctionCallingConfig(
-                        disable=True 
-                    )
-                )
+                        disable=True
+                    ),
+                ),
             )
             for chunk in response_stream:
                 # Check for function calls
@@ -867,19 +998,23 @@ class GeminiLLMBackend(LLMBackend):
                                 yield {"type": "notes_update"}
                                 # Send a confirmation message back to the user since we are not doing a full round-trip
                                 yield "I have updated the meeting notes."
-                
+
                 # Safely extract text to avoid warnings about non-text parts
                 try:
                     # Check if there is actual text content before accessing .text
                     has_text = False
-                    if hasattr(chunk, 'candidates') and chunk.candidates:
+                    if hasattr(chunk, "candidates") and chunk.candidates:
                         candidate = chunk.candidates[0]
-                        if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
+                        if (
+                            hasattr(candidate, "content")
+                            and candidate.content
+                            and hasattr(candidate.content, "parts")
+                        ):
                             for part in candidate.content.parts:
-                                if hasattr(part, 'text') and part.text:
+                                if hasattr(part, "text") and part.text:
                                     has_text = True
                                     break
-                    
+
                     if has_text and chunk.text:
                         yield chunk.text
                 except Exception:  # noqa: BLE001
@@ -892,7 +1027,13 @@ class GeminiLLMBackend(LLMBackend):
             else:
                 raise RuntimeError(f"Gemini API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
+    def infer_meeting_title(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
@@ -906,7 +1047,9 @@ class GeminiLLMBackend(LLMBackend):
             ),
         )
         if not self.model:
-            raise ValueError("No Gemini model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.models.generate_content(
                 model=self.model,
@@ -932,13 +1075,17 @@ class GeminiLLMBackend(LLMBackend):
             logger.error(f"Gemini API validation failed: {e}")
             raise ValueError(f"Gemini API validation failed: {e}")
 
+
 class OpenAILLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         import openai
+
         if api_key is None:
             api_key = config_manager.get("openai_api_key")
         if not api_key:
-            raise ValueError("OpenAI API key is not set. Please provide it in settings.")
+            raise ValueError(
+                "OpenAI API key is not set. Please provide it in settings."
+            )
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("openai")
         self.client = openai.OpenAI(api_key=self.api_key)
@@ -955,7 +1102,7 @@ class OpenAILLMBackend(LLMBackend):
             for m in models:
                 if "gpt" in m.id and "audio" not in m.id and "realtime" not in m.id:
                     model_list.append(m.id)
-                elif "o1" in m.id: # Add support for reasoning models
+                elif "o1" in m.id:  # Add support for reasoning models
                     model_list.append(m.id)
             return sorted(model_list)
         except Exception as e:  # noqa: BLE001
@@ -985,14 +1132,16 @@ class OpenAILLMBackend(LLMBackend):
             meeting_context,
         )
         if not self.model:
-            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
         try:
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 timeout=timeout,
-                stream=True
+                stream=True,
             )
             text_chunks = []
             for chunk in stream:
@@ -1002,8 +1151,12 @@ class OpenAILLMBackend(LLMBackend):
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (speaker suggestions): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (speaker suggestions): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (speaker suggestions): {e}")
             raise RuntimeError(f"OpenAI API error (speaker suggestions): {e}")
 
@@ -1025,22 +1178,40 @@ class OpenAILLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
+    def generate_meeting_notes(
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
+        prompt = self.build_notes_prompt(
+            prompt_template,
+            transcript,
+            speaker_mapping,
+            user_notes,
+            meeting_context,
+            output_language_instruction,
+        )
         if not self.model:
-            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
         try:
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 timeout=timeout,
-                stream=True
+                stream=True,
             )
             text_chunks = []
             for chunk in stream:
@@ -1051,8 +1222,12 @@ class OpenAILLMBackend(LLMBackend):
             return notes
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (meeting notes): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (meeting notes): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (meeting notes): {e}")
             raise RuntimeError(f"OpenAI API error (meeting notes): {e}")
 
@@ -1067,7 +1242,9 @@ class OpenAILLMBackend(LLMBackend):
             prompt_template,
         )
         if not self.model:
-            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
         request_kwargs = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
@@ -1081,8 +1258,12 @@ class OpenAILLMBackend(LLMBackend):
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (meeting intelligence): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (meeting intelligence): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (meeting intelligence): {e}")
             raise RuntimeError(f"OpenAI API error (meeting intelligence): {e}")
 
@@ -1094,7 +1275,9 @@ class OpenAILLMBackend(LLMBackend):
     ) -> MeetingEdgeResult:
         prompt = self.build_meeting_edge_prompt(request, prompt_template)
         if not self.model:
-            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
 
         request_kwargs = {
             "model": self.model,
@@ -1121,19 +1304,33 @@ class OpenAILLMBackend(LLMBackend):
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (Meeting Edge): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (Meeting Edge): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (Meeting Edge): {e}")
             raise RuntimeError(f"OpenAI API error (Meeting Edge): {e}")
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-        
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -1146,28 +1343,41 @@ class OpenAILLMBackend(LLMBackend):
                         messages.append({"role": role, "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         if not self.model:
-            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.2,
-                timeout=timeout
+                model=self.model, messages=messages, temperature=0.2, timeout=timeout
             )
             return response.choices[0].message.content
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (chat): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (chat): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (chat): {e}")
             raise RuntimeError(f"OpenAI API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
+    def ask_question_streaming(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-            
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -1179,67 +1389,70 @@ class OpenAILLMBackend(LLMBackend):
                     for part in msg["parts"]:
                         messages.append({"role": role, "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
-        
-        tools = [{
-            "type": "function",
-            "function": {
-                "name": "update_meeting_notes",
-                "description": "Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "content": {
-                            "type": "string",
-                            "description": "The full, updated Markdown text of the meeting notes."
-                        }
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "update_meeting_notes",
+                    "description": "Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "content": {
+                                "type": "string",
+                                "description": "The full, updated Markdown text of the meeting notes.",
+                            }
+                        },
+                        "required": ["content"],
                     },
-                    "required": ["content"]
-                }
+                },
             }
-        }]
-        
+        ]
+
         # Prepare request arguments
         request_kwargs = {
             "model": self.model,
             "messages": messages,
             "stream": True,
             "timeout": timeout,
-            "tools": tools
+            "tools": tools,
         }
-        
+
         # Skip temperature for reasoning models (OpenAI) that enforce default temperature
         if self.model.startswith("gpt") or "gpt" in self.model:
             request_kwargs["temperature"] = 0.2
-        
+
         try:
             stream = self.client.chat.completions.create(**request_kwargs)
-            
+
             tool_calls_accumulator = {}
-            
+
             for chunk in stream:
                 if not chunk.choices:
                     continue
-                    
+
                 delta = chunk.choices[0].delta
-                
+
                 if delta.content is not None:
                     yield delta.content
-                
+
                 if delta.tool_calls:
                     for tool_part in delta.tool_calls:
                         idx = tool_part.index
                         if idx not in tool_calls_accumulator:
-                            tool_calls_accumulator[idx] = {
-                                "name": "",
-                                "arguments": ""
-                            }
-                        
+                            tool_calls_accumulator[idx] = {"name": "", "arguments": ""}
+
                         if tool_part.function and tool_part.function.name:
-                            tool_calls_accumulator[idx]["name"] += tool_part.function.name
-                        
+                            tool_calls_accumulator[idx]["name"] += (
+                                tool_part.function.name
+                            )
+
                         if tool_part.function and tool_part.function.arguments:
-                            tool_calls_accumulator[idx]["arguments"] += tool_part.function.arguments
-            
+                            tool_calls_accumulator[idx]["arguments"] += (
+                                tool_part.function.arguments
+                            )
+
             # Process accumulated tool calls
             for idx, tool_data in tool_calls_accumulator.items():
                 if tool_data["name"] == "update_meeting_notes":
@@ -1251,16 +1464,28 @@ class OpenAILLMBackend(LLMBackend):
                             yield {"type": "notes_update"}
                             yield "I have updated the meeting notes."
                     except json.JSONDecodeError:
-                        logger.error("Failed to parse tool arguments for update_meeting_notes")
+                        logger.error(
+                            "Failed to parse tool arguments for update_meeting_notes"
+                        )
 
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (streaming chat): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (streaming chat): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (streaming chat): {e}")
             raise RuntimeError(f"OpenAI API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
+    def infer_meeting_title(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
@@ -1274,20 +1499,26 @@ class OpenAILLMBackend(LLMBackend):
             ),
         )
         if not self.model:
-            raise ValueError("No OpenAI model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                timeout=timeout
+                timeout=timeout,
             )
             title = self.parse_title(response.choices[0].message.content)
             return title
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
-                logger.error(f"OpenAI API error (meeting title): Invalid model {self.model}. {e}")
-                raise ValueError(f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings.")
+                logger.error(
+                    f"OpenAI API error (meeting title): Invalid model {self.model}. {e}"
+                )
+                raise ValueError(
+                    f"The model '{self.model}' appears to be invalid or is not a chat model. Please check the model name in Settings."
+                )
             logger.error(f"OpenAI API error (meeting title): {e}")
             raise RuntimeError(f"OpenAI API error (meeting title): {e}")
 
@@ -1304,13 +1535,17 @@ class OpenAILLMBackend(LLMBackend):
             logger.error(f"OpenAI API validation failed: {e}")
             raise ValueError(f"OpenAI API validation failed: {e}")
 
+
 class AnthropicLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         import anthropic
+
         if api_key is None:
             api_key = config_manager.get("anthropic_api_key")
         if not api_key:
-            raise ValueError("Anthropic API key is not set. Please provide it in settings.")
+            raise ValueError(
+                "Anthropic API key is not set. Please provide it in settings."
+            )
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("anthropic")
         self.client = anthropic.Anthropic(api_key=self.api_key)
@@ -1321,7 +1556,7 @@ class AnthropicLLMBackend(LLMBackend):
         """
         try:
             # Anthropic Python SDK supports models.list()
-            if hasattr(self.client, 'models') and hasattr(self.client.models, 'list'):
+            if hasattr(self.client, "models") and hasattr(self.client.models, "list"):
                 models = self.client.models.list()
                 # Filter for claude models
                 return sorted([m.id for m in models if "claude" in m.id])
@@ -1354,7 +1589,9 @@ class AnthropicLLMBackend(LLMBackend):
             meeting_context,
         )
         if not self.model:
-            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -1362,7 +1599,11 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
             )
-            text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            text = (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
@@ -1386,15 +1627,33 @@ class AnthropicLLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
+    def generate_meeting_notes(
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
+        prompt = self.build_notes_prompt(
+            prompt_template,
+            transcript,
+            speaker_mapping,
+            user_notes,
+            meeting_context,
+            output_language_instruction,
+        )
         if not self.model:
-            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -1402,7 +1661,11 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
             )
-            text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            text = (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
         except Exception as e:  # noqa: BLE001
@@ -1420,7 +1683,9 @@ class AnthropicLLMBackend(LLMBackend):
             prompt_template,
         )
         if not self.model:
-            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -1428,7 +1693,11 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
             )
-            text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            text = (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting intelligence): {e}")
@@ -1442,7 +1711,9 @@ class AnthropicLLMBackend(LLMBackend):
     ) -> MeetingEdgeResult:
         prompt = self.build_meeting_edge_prompt(request, prompt_template)
         if not self.model:
-            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -1455,7 +1726,11 @@ class AnthropicLLMBackend(LLMBackend):
                 temperature=0.2,
                 timeout=timeout,
             )
-            text = response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            text = (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
             # Re-attach the prefilled opening brace.
             text = "{" + str(text)
             return self.parse_meeting_edge_result(text, request)
@@ -1465,13 +1740,23 @@ class AnthropicLLMBackend(LLMBackend):
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ):
         # If recording_id is provided, use mapped transcript
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-        
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -1480,7 +1765,9 @@ class AnthropicLLMBackend(LLMBackend):
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
         if not self.model:
-            raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -1488,17 +1775,31 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=messages,
                 temperature=0.2,
             )
-            return response.content[0].text if hasattr(response.content[0], 'text') else response.content[0]
+            return (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[Any, None, None]:
+    def ask_question_streaming(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ) -> Generator[Any, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-        
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -1506,7 +1807,7 @@ class AnthropicLLMBackend(LLMBackend):
                     for part in msg["parts"]:
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
-        
+
         tool_definition = {
             "name": "update_meeting_notes",
             "description": "Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes.",
@@ -1515,39 +1816,47 @@ class AnthropicLLMBackend(LLMBackend):
                 "properties": {
                     "content": {
                         "type": "string",
-                        "description": "The full, updated Markdown text of the meeting notes."
+                        "description": "The full, updated Markdown text of the meeting notes.",
                     }
                 },
-                "required": ["content"]
-            }
+                "required": ["content"],
+            },
         }
-        
+
         try:
             with self.client.messages.stream(
                 model=self.model,
                 max_tokens=1024,
                 messages=messages,
                 temperature=0.2,
-                tools=[tool_definition]
+                tools=[tool_definition],
             ) as stream:
-                
                 current_tool_name = None
                 current_json_accum = ""
 
                 for event in stream:
                     # Text Delta
-                    if event.type == "content_block_delta" and event.delta.type == "text_delta":
+                    if (
+                        event.type == "content_block_delta"
+                        and event.delta.type == "text_delta"
+                    ):
                         yield event.delta.text
-                    
+
                     # Tool Start
-                    elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                    elif (
+                        event.type == "content_block_start"
+                        and event.content_block.type == "tool_use"
+                    ):
                         current_tool_name = event.content_block.name
                         current_json_accum = ""
-                    
+
                     # Tool Args Delta
-                    elif event.type == "content_block_delta" and event.delta.type == "input_json_delta":
+                    elif (
+                        event.type == "content_block_delta"
+                        and event.delta.type == "input_json_delta"
+                    ):
                         current_json_accum += event.delta.partial_json
-                    
+
                     # Tool Stop (Execute)
                     elif event.type == "content_block_stop":
                         if current_tool_name == "update_meeting_notes":
@@ -1559,7 +1868,9 @@ class AnthropicLLMBackend(LLMBackend):
                                     yield {"type": "notes_update"}
                                     yield "I have updated the meeting notes."
                             except json.JSONDecodeError:
-                                logger.error("Failed to parse tool arguments for update_meeting_notes")
+                                logger.error(
+                                    "Failed to parse tool arguments for update_meeting_notes"
+                                )
                             finally:
                                 current_tool_name = None
 
@@ -1567,7 +1878,13 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (streaming chat): {e}")
             raise RuntimeError(f"Anthropic API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
+    def infer_meeting_title(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         """
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
@@ -1587,7 +1904,11 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
             )
-            title = self.parse_title(response.content[0].text if hasattr(response.content[0], 'text') else response.content[0])
+            title = self.parse_title(
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
             return title
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting title): {e}")
@@ -1600,13 +1921,15 @@ class AnthropicLLMBackend(LLMBackend):
         """
         try:
             # Use list_models to verify key without consuming tokens
-            if hasattr(self.client, 'models') and hasattr(self.client.models, 'list'):
+            if hasattr(self.client, "models") and hasattr(self.client.models, "list"):
                 self.client.models.list()
                 return True
-            
+
             # Fallback if list_models not available (should not happen with recent SDK)
             if not self.model:
-                raise ValueError("No Anthropic model configured. Please select a model in Settings.")
+                raise ValueError(
+                    "No Anthropic model configured. Please select a model in Settings."
+                )
 
             # Try a minimal generation with the configured model
             self.client.messages.create(
@@ -1618,6 +1941,7 @@ class AnthropicLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API validation failed: {e}")
             raise ValueError(f"Anthropic API validation failed: {e}")
+
 
 class OllamaLLMBackend(LLMBackend):
     def __init__(
@@ -1642,7 +1966,9 @@ class OllamaLLMBackend(LLMBackend):
             trusted_url=trusted_api_url,
         )
         self.model = model or config_manager.get("ollama_model")
-        self.context_window = context_window or config_manager.get("ollama_context_window")
+        self.context_window = context_window or config_manager.get(
+            "ollama_context_window"
+        )
 
     def _chat_options(self, *, temperature: float) -> dict[str, object]:
         options: dict[str, object] = {"temperature": temperature}
@@ -1682,7 +2008,7 @@ class OllamaLLMBackend(LLMBackend):
             resp = self._get("/api/tags", timeout=10)
             resp.raise_for_status()
             data = resp.json()
-            return sorted([m['name'] for m in data.get('models', [])])
+            return sorted([m["name"] for m in data.get("models", [])])
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (list models): {e}")
             return []
@@ -1706,20 +2032,22 @@ class OllamaLLMBackend(LLMBackend):
             meeting_context,
         )
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
-        
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
+
         try:
             payload = {
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
-            text = response_json.get('message', {}).get('content', '')
+            text = response_json.get("message", {}).get("content", "")
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (speaker suggestions): {e}")
@@ -1743,25 +2071,43 @@ class OllamaLLMBackend(LLMBackend):
             eligible_labels=eligible_labels,
         ).mapping
 
-    def generate_meeting_notes(self, transcript: str, speaker_mapping: Dict[str, str], prompt_template: str = None, timeout: int = 60, user_notes: Optional[str] = None, meeting_context: Optional[MeetingEventContext] = None, output_language_instruction: Optional[str] = None) -> str:
+    def generate_meeting_notes(
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         if prompt_template is None:
             prompt_template = self.get_notes_prompt_template()
-        prompt = self.build_notes_prompt(prompt_template, transcript, speaker_mapping, user_notes, meeting_context, output_language_instruction)
+        prompt = self.build_notes_prompt(
+            prompt_template,
+            transcript,
+            speaker_mapping,
+            user_notes,
+            meeting_context,
+            output_language_instruction,
+        )
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
-        
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
+
         try:
             payload = {
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
-            text = response_json.get('message', {}).get('content', '')
+            text = response_json.get("message", {}).get("content", "")
             return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting notes): {e}")
@@ -1778,7 +2124,9 @@ class OllamaLLMBackend(LLMBackend):
             prompt_template,
         )
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
 
         try:
             payload = {
@@ -1786,13 +2134,13 @@ class OllamaLLMBackend(LLMBackend):
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
-            text = response_json.get('message', {}).get('content', '')
+            text = response_json.get("message", {}).get("content", "")
             try:
                 return self.parse_automatic_meeting_intelligence_result(text, request)
             except JSON_CONTRACT_ERRORS as parse_error:
@@ -1817,12 +2165,16 @@ class OllamaLLMBackend(LLMBackend):
                     "format": "json",
                     "options": self._chat_options(temperature=0.0),
                 }
-                repair_resp = self._post("/api/chat", json=repair_payload, timeout=timeout)
+                repair_resp = self._post(
+                    "/api/chat", json=repair_payload, timeout=timeout
+                )
                 repair_resp.raise_for_status()
                 repair_json = repair_resp.json()
                 self._raise_if_truncated(repair_json)
-                repair_text = repair_json.get('message', {}).get('content', '')
-                return self.parse_automatic_meeting_intelligence_result(repair_text, request)
+                repair_text = repair_json.get("message", {}).get("content", "")
+                return self.parse_automatic_meeting_intelligence_result(
+                    repair_text, request
+                )
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting intelligence): {e}")
             raise RuntimeError(f"Ollama API error (meeting intelligence): {e}")
@@ -1835,7 +2187,9 @@ class OllamaLLMBackend(LLMBackend):
     ) -> MeetingEdgeResult:
         prompt = self.build_meeting_edge_prompt(request, prompt_template)
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
 
         try:
             payload = {
@@ -1843,13 +2197,13 @@ class OllamaLLMBackend(LLMBackend):
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
-            text = response_json.get('message', {}).get('content', '')
+            text = response_json.get("message", {}).get("content", "")
             try:
                 return self.parse_meeting_edge_result(text, request)
             except JSON_CONTRACT_ERRORS as parse_error:
@@ -1874,22 +2228,34 @@ class OllamaLLMBackend(LLMBackend):
                     "format": "json",
                     "options": self._chat_options(temperature=0.0),
                 }
-                repair_resp = self._post("/api/chat", json=repair_payload, timeout=timeout)
+                repair_resp = self._post(
+                    "/api/chat", json=repair_payload, timeout=timeout
+                )
                 repair_resp.raise_for_status()
                 repair_json = repair_resp.json()
                 self._raise_if_truncated(repair_json)
-                repair_text = repair_json.get('message', {}).get('content', '')
+                repair_text = repair_json.get("message", {}).get("content", "")
                 return self.parse_meeting_edge_result(repair_text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (Meeting Edge): {e}")
             raise RuntimeError(f"Ollama API error (Meeting Edge): {e}")
 
-    def ask_question_about_meeting(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None):
+    def ask_question_about_meeting(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-        
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -1897,32 +2263,44 @@ class OllamaLLMBackend(LLMBackend):
                     for part in msg["parts"]:
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
-        
+
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
 
         try:
             payload = {
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
-            return response_json.get('message', {}).get('content', '')
+            return response_json.get("message", {}).get("content", "")
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (chat): {e}")
             raise RuntimeError(f"Ollama API error (chat): {e}")
 
-    def ask_question_streaming(self, user_question: str, meeting_notes: str, diarized_transcript: str, conversation_history: list = None, timeout: int = 60, recording_id: str = None) -> Generator[str, None, None]:
+    def ask_question_streaming(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ) -> Generator[str, None, None]:
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
-            
-        prompt = self._build_chat_prompt(user_question, meeting_notes, diarized_transcript)
-        
+
+        prompt = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+
         messages = []
         if conversation_history:
             for msg in conversation_history:
@@ -1930,21 +2308,24 @@ class OllamaLLMBackend(LLMBackend):
                     for part in msg["parts"]:
                         messages.append({"role": msg["role"], "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
-        
+
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
 
         try:
             payload = {
                 "model": self.model,
                 "messages": messages,
                 "stream": True,
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, stream=True, timeout=timeout)
             resp.raise_for_status()
-            
+
             import json
+
             final_metadata = None
             for line in resp.iter_lines():
                 if line:
@@ -1952,7 +2333,7 @@ class OllamaLLMBackend(LLMBackend):
                         chunk = json.loads(line)
                         if chunk.get("done"):
                             final_metadata = chunk
-                        content = chunk.get('message', {}).get('content', '')
+                        content = chunk.get("message", {}).get("content", "")
                         if content:
                             yield content
                     except json.JSONDecodeError:
@@ -1962,7 +2343,13 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API error (streaming chat): {e}")
             raise RuntimeError(f"Ollama API error (streaming chat): {e}")
 
-    def infer_meeting_title(self, transcript: str, prompt_template: str = None, timeout: int = 60, output_language_instruction: Optional[str] = None) -> str:
+    def infer_meeting_title(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
         if prompt_template is None:
             prompt_template = self.get_title_prompt_template()
         prompt = prompt_template.format(
@@ -1972,19 +2359,21 @@ class OllamaLLMBackend(LLMBackend):
             ),
         )
         if not self.model:
-            raise ValueError("No Ollama model configured. Please select a model in Settings.")
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
         try:
             payload = {
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": self._chat_options(temperature=0.3)
+                "options": self._chat_options(temperature=0.3),
             }
             resp = self._post("/api/chat", json=payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
-            text = response_json.get('message', {}).get('content', '')
+            text = response_json.get("message", {}).get("content", "")
             return self.parse_title(text)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting title): {e}")
@@ -1998,11 +2387,13 @@ class OllamaLLMBackend(LLMBackend):
             logger.error(f"Ollama API validation failed: {e}")
             raise ValueError(f"Ollama API validation failed: {e}")
 
+
 def _get_default_model_for_provider(provider: str) -> Optional[str]:
     """Return the recommended default model for a provider."""
-    # Defaults are no longer hardcoded here. 
+    # Defaults are no longer hardcoded here.
     # Users must select a model or rely on frontend recommendations.
     return None
+
 
 def get_default_model_for_provider(provider: str) -> Optional[str]:
     """
@@ -2010,6 +2401,7 @@ def get_default_model_for_provider(provider: str) -> Optional[str]:
     This is the single source of truth for default model names.
     """
     return _get_default_model_for_provider(provider)
+
 
 # --- LLM Backend Factory ---
 def get_llm_backend(
@@ -2034,13 +2426,19 @@ def get_llm_backend(
         ValueError: If provider is unknown.
     """
     from backend.utils.config_manager import config_manager
+
     if model is None:
         if provider == "ollama":
             model = config_manager.get("ollama_model")
         else:
             model = config_manager.get(f"{provider}_model")
 
-    logger.info("Creating LLM backend: provider=%s model=%s api_url=%s", provider, model, api_url)
+    logger.info(
+        "Creating LLM backend: provider=%s model=%s api_url=%s",
+        provider,
+        model,
+        api_url,
+    )
 
     if provider == "gemini":
         return GeminiLLMBackend(api_key=api_key, model=model)
@@ -2068,8 +2466,8 @@ class SecondaryLLMBackend(LLMBackend):
         self._secondary = secondary
         logger.info(
             "SecondaryLLMBackend: primary=%s secondary=%s",
-            getattr(primary, 'model', 'unknown'),
-            getattr(secondary, 'model', 'unknown'),
+            getattr(primary, "model", "unknown"),
+            getattr(secondary, "model", "unknown"),
         )
 
     def _call_with_secondary(self, method_name: str, *args, **kwargs):
@@ -2077,21 +2475,24 @@ class SecondaryLLMBackend(LLMBackend):
             result = getattr(self._primary, method_name)(*args, **kwargs)
             logger.info(
                 "Primary LLM (%s) handled %s successfully.",
-                getattr(self._primary, 'model', 'unknown'),
+                getattr(self._primary, "model", "unknown"),
                 method_name,
             )
             return result
         except Exception as primary_exc:
             logger.warning(
                 "Primary LLM (%s) failed on %s: %s. Falling back to secondary (%s).",
-                getattr(self._primary, 'model', 'unknown'),
+                getattr(self._primary, "model", "unknown"),
                 method_name,
                 primary_exc,
-                getattr(self._secondary, 'model', 'unknown'),
+                getattr(self._secondary, "model", "unknown"),
             )
             try:
                 result = getattr(self._secondary, method_name)(*args, **kwargs)
-                logger.info("Secondary LLM call succeeded on %s after primary failure.", method_name)
+                logger.info(
+                    "Secondary LLM call succeeded on %s after primary failure.",
+                    method_name,
+                )
                 return result
             except Exception:
                 logger.error("Secondary LLM also failed on %s.", method_name)
@@ -2116,36 +2517,118 @@ class SecondaryLLMBackend(LLMBackend):
                 raise primary_exc
             logger.warning(
                 "Primary LLM (%s) failed on streaming %s: %s. Falling back to secondary (%s).",
-                getattr(self._primary, 'model', 'unknown'),
+                getattr(self._primary, "model", "unknown"),
                 method_name,
                 primary_exc,
-                getattr(self._secondary, 'model', 'unknown'),
+                getattr(self._secondary, "model", "unknown"),
             )
             try:
                 yield from getattr(self._secondary, method_name)(*args, **kwargs)
             except Exception:
                 raise primary_exc
 
-    def infer_speaker_suggestions(self, transcript, prompt_template=None, timeout=60, user_notes=None, meeting_context=None, eligible_labels=None):
-        return self._call_with_secondary("infer_speaker_suggestions", transcript, prompt_template, timeout, user_notes=user_notes, meeting_context=meeting_context, eligible_labels=eligible_labels)
+    def infer_speaker_suggestions(
+        self,
+        transcript,
+        prompt_template=None,
+        timeout=60,
+        user_notes=None,
+        meeting_context=None,
+        eligible_labels=None,
+    ):
+        return self._call_with_secondary(
+            "infer_speaker_suggestions",
+            transcript,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            eligible_labels=eligible_labels,
+        )
 
     def generate_meeting_intelligence(self, request, prompt_template=None, timeout=60):
-        return self._call_with_secondary("generate_meeting_intelligence", request, prompt_template, timeout)
+        return self._call_with_secondary(
+            "generate_meeting_intelligence", request, prompt_template, timeout
+        )
 
     def generate_meeting_edge(self, request, prompt_template=None, timeout=60):
-        return self._call_with_secondary("generate_meeting_edge", request, prompt_template, timeout)
+        return self._call_with_secondary(
+            "generate_meeting_edge", request, prompt_template, timeout
+        )
 
-    def generate_meeting_notes(self, transcript, speaker_mapping, prompt_template=None, timeout=60, user_notes=None, meeting_context=None, output_language_instruction=None):
-        return self._call_with_secondary("generate_meeting_notes", transcript, speaker_mapping, prompt_template, timeout, user_notes=user_notes, meeting_context=meeting_context, output_language_instruction=output_language_instruction)
+    def generate_meeting_notes(
+        self,
+        transcript,
+        speaker_mapping,
+        prompt_template=None,
+        timeout=60,
+        user_notes=None,
+        meeting_context=None,
+        output_language_instruction=None,
+    ):
+        return self._call_with_secondary(
+            "generate_meeting_notes",
+            transcript,
+            speaker_mapping,
+            prompt_template,
+            timeout,
+            user_notes=user_notes,
+            meeting_context=meeting_context,
+            output_language_instruction=output_language_instruction,
+        )
 
-    def infer_meeting_title(self, transcript, prompt_template=None, timeout=60, output_language_instruction=None):
-        return self._call_with_secondary("infer_meeting_title", transcript, prompt_template, timeout, output_language_instruction=output_language_instruction)
+    def infer_meeting_title(
+        self,
+        transcript,
+        prompt_template=None,
+        timeout=60,
+        output_language_instruction=None,
+    ):
+        return self._call_with_secondary(
+            "infer_meeting_title",
+            transcript,
+            prompt_template,
+            timeout,
+            output_language_instruction=output_language_instruction,
+        )
 
-    def ask_question_about_meeting(self, user_question, meeting_notes, diarized_transcript, conversation_history=None, timeout=60, recording_id=None):
-        return self._call_with_secondary("ask_question_about_meeting", user_question, meeting_notes, diarized_transcript, conversation_history, timeout, recording_id=recording_id)
+    def ask_question_about_meeting(
+        self,
+        user_question,
+        meeting_notes,
+        diarized_transcript,
+        conversation_history=None,
+        timeout=60,
+        recording_id=None,
+    ):
+        return self._call_with_secondary(
+            "ask_question_about_meeting",
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            conversation_history,
+            timeout,
+            recording_id=recording_id,
+        )
 
-    def ask_question_streaming(self, user_question, meeting_notes, diarized_transcript, conversation_history=None, timeout=60, recording_id=None):
-        return self._stream_with_secondary("ask_question_streaming", user_question, meeting_notes, diarized_transcript, conversation_history, timeout, recording_id=recording_id)
+    def ask_question_streaming(
+        self,
+        user_question,
+        meeting_notes,
+        diarized_transcript,
+        conversation_history=None,
+        timeout=60,
+        recording_id=None,
+    ):
+        return self._stream_with_secondary(
+            "ask_question_streaming",
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            conversation_history,
+            timeout,
+            recording_id=recording_id,
+        )
 
     def validate_api_key(self) -> bool:
         try:

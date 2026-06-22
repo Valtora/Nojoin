@@ -1,18 +1,21 @@
+import logging
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
-import logging
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlmodel import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from sqlmodel import select
 from backend.api.v1.api import api_router
+from backend.startup_migrations import (
+    run_startup_migrations,
+    should_skip_startup_migrations,
+)
 from backend.utils.version import get_installed_version
-from backend.startup_migrations import run_startup_migrations, should_skip_startup_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -71,14 +74,20 @@ class EnforceCanonicalHttpsMiddleware(BaseHTTPMiddleware):
         if request.url.scheme == "https":
             return True
 
-        if not _is_private_client_address(request.client.host if request.client else None):
+        if not _is_private_client_address(
+            request.client.host if request.client else None
+        ):
             return False
 
-        forwarded_proto = _normalise_forwarded_header(request.headers.get("x-forwarded-proto"))
+        forwarded_proto = _normalise_forwarded_header(
+            request.headers.get("x-forwarded-proto")
+        )
         if forwarded_proto != "https":
             return False
 
-        forwarded_host = _normalise_forwarded_host(request.headers.get("x-forwarded-host"))
+        forwarded_host = _normalise_forwarded_host(
+            request.headers.get("x-forwarded-host")
+        )
         host = _normalise_forwarded_host(request.headers.get("host"))
         canonical_host = urlparse(get_trusted_web_origin()).hostname
 
@@ -95,38 +104,23 @@ class EnforceCanonicalHttpsMiddleware(BaseHTTPMiddleware):
             redirect_target = f"{redirect_target}?{request.url.query}"
         return redirect_target
 
+
 # Import models to register them with SQLModel
-from backend.models.recording import Recording
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.models.tag import Tag, RecordingTag
-from backend.models.transcript import Transcript
-from backend.models.user import User
-from backend.models.revoked_jwt import RevokedJwt
-from backend.models.chat import ChatMessage
-from backend.models.task import UserTask
-from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
-from backend.models.pipeline import (
-    RecordingAudioChunk,
-    RecordingAsrWindowResult,
-    RecordingAudioWindowManifest,
-    ProcessingRun,
-    TranscriptUtterance,
-    TranscriptUtteranceEvent,
-    RecordingSpeakerAlias,
-    SpeakerCorrectionEvent,
-    DiarizationWindowResult,
-    DiarizationWindowTurn,
-)
 from backend.core.db import async_session_maker
+from backend.models.user import User
 from backend.seed_demo import seed_demo_data
-from backend.services.recording_identity_service import ensure_recording_meeting_uids, ensure_recording_public_ids
+from backend.services.model_preparation import enqueue_model_preparation
+from backend.services.recording_identity_service import (
+    ensure_recording_meeting_uids,
+    ensure_recording_public_ids,
+)
 from backend.utils.config_manager import (
     get_cors_origin_list,
     get_trusted_host_list,
     get_trusted_web_origin,
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
-from backend.services.model_preparation import enqueue_model_preparation
+
 
 async def ensure_owner_exists():
     """
@@ -139,16 +133,18 @@ async def ensure_owner_exists():
         query = select(User).where(User.role == "owner")
         result = await session.execute(query)
         owner = result.scalar_one_or_none()
-        
+
         if not owner:
             logger.warning("No owner found. Promoting the first user to OWNER.")
             # If no owner, promote the first user
             query = select(User).order_by(User.id).limit(1)
             result = await session.execute(query)
             first_user = result.scalar_one_or_none()
-            
+
             if first_user:
-                logger.info(f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER")
+                logger.info(
+                    f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER"
+                )
                 first_user.role = "owner"
                 session.add(first_user)
                 await session.commit()
@@ -180,10 +176,13 @@ async def ensure_recording_public_ids_on_startup() -> None:
 
 def run_migrations():
     if should_skip_startup_migrations():
-        logger.info("Skipping app-startup migrations because they already ran before process start.")
+        logger.info(
+            "Skipping app-startup migrations because they already ran before process start."
+        )
         return
 
     run_startup_migrations()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -205,6 +204,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+
 def create_app(*, app_lifespan=lifespan) -> FastAPI:
     app = FastAPI(
         title="Nojoin API",
@@ -222,7 +222,12 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept", "Range"],
-        expose_headers=["Accept-Ranges", "Content-Disposition", "Content-Length", "Content-Range"],
+        expose_headers=[
+            "Accept-Ranges",
+            "Content-Disposition",
+            "Content-Length",
+            "Content-Range",
+        ],
     )
 
     app.add_middleware(EnforceCanonicalHttpsMiddleware)
@@ -237,8 +242,10 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
 
     return app
 
+
 app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

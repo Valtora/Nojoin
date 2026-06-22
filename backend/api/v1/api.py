@@ -1,7 +1,27 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+
 from backend.api.deps import get_current_user
-from backend.api.v1.endpoints import api_docs, backup, calendar, documents, invitations, llm, login, people_tags, recordings, settings, setup, speakers, system, tags, tasks, transcripts, users, version
+from backend.api.v1.endpoints import (
+    api_docs,
+    backup,
+    calendar,
+    documents,
+    invitations,
+    llm,
+    login,
+    people_tags,
+    recordings,
+    settings,
+    setup,
+    speakers,
+    system,
+    tags,
+    tasks,
+    transcripts,
+    users,
+    version,
+)
 
 api_router = APIRouter()
 legacy_companion_router = APIRouter()
@@ -85,16 +105,14 @@ async def retired_companion_prefix(legacy_path: str) -> JSONResponse:
 async def retired_companion_routes(**_: str) -> JSONResponse:
     return _companion_retired()
 
+
 api_router.include_router(api_docs.router, tags=["docs"])
 api_router.include_router(login.router, tags=["login"])
 api_router.include_router(legacy_companion_router)
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(setup.router, prefix="/setup", tags=["setup"])
 api_router.include_router(
-    llm.router,
-    prefix="/llm",
-    tags=["llm"],
-    dependencies=[Depends(get_current_user)]
+    llm.router, prefix="/llm", tags=["llm"], dependencies=[Depends(get_current_user)]
 )
 api_router.include_router(
     users.router,
@@ -106,63 +124,54 @@ api_router.include_router(
     prefix="/invitations",
     tags=["invitations"],
 )
-api_router.include_router(
-    recordings.router,
-    prefix="/recordings",
-    tags=["recordings"]
-)
+api_router.include_router(recordings.router, prefix="/recordings", tags=["recordings"])
 api_router.include_router(
     transcripts.router,
     prefix="/transcripts",
     tags=["transcripts"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
-    speakers.router, 
-    prefix="/speakers", 
+    speakers.router,
+    prefix="/speakers",
     tags=["speakers"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
-    people_tags.router, 
-    prefix="/people-tags", 
+    people_tags.router,
+    prefix="/people-tags",
     tags=["people-tags"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
-    tags.router, 
-    prefix="/tags", 
-    tags=["tags"],
-    dependencies=[Depends(get_current_user)]
+    tags.router, prefix="/tags", tags=["tags"], dependencies=[Depends(get_current_user)]
 )
 api_router.include_router(
     tasks.router,
     prefix="/tasks",
     tags=["tasks"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
     settings.router,
     prefix="/settings",
     tags=["settings"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
     version.router,
     prefix="/version",
     tags=["version"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
     backup.router,
     prefix="/backup",
     tags=["backup"],
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(
-    documents.router,
-    tags=["documents"],
-    dependencies=[Depends(get_current_user)]
+    documents.router, tags=["documents"], dependencies=[Depends(get_current_user)]
 )
 api_router.include_router(
     calendar.router,

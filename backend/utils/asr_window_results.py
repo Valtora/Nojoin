@@ -7,9 +7,12 @@ from typing import Any, Iterable
 
 from sqlmodel import select
 
-from backend.models.pipeline import RecordingAsrWindowResult, RecordingAsrWindowResultStatus
-from backend.utils.time import utc_now
+from backend.models.pipeline import (
+    RecordingAsrWindowResult,
+    RecordingAsrWindowResultStatus,
+)
 from backend.utils.languages import resolve_transcription_language_code
+from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +39,9 @@ def build_recording_asr_window_result_config_hash(config: dict[str, Any] | None)
         "transcription_language": effective_language or "auto",
     }
     digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
     ).hexdigest()
     return digest
 
@@ -56,19 +61,27 @@ def build_recording_asr_window_result_idempotency_key(
         "source_kind": str(source_kind),
         "span_start_ms": int(span_start_ms),
         "span_end_ms": int(span_end_ms),
-        "chunk_start_sequence": None if chunk_start_sequence is None else int(chunk_start_sequence),
-        "chunk_end_sequence": None if chunk_end_sequence is None else int(chunk_end_sequence),
+        "chunk_start_sequence": None
+        if chunk_start_sequence is None
+        else int(chunk_start_sequence),
+        "chunk_end_sequence": None
+        if chunk_end_sequence is None
+        else int(chunk_end_sequence),
         "transcription_backend": str(transcription_backend),
         "model_name": str(model_name or ""),
         "config_hash": str(config_hash),
     }
     digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
     ).hexdigest()
     return f"asr:{source_kind}:{digest}"
 
 
-def _lookup_recording_asr_window_result(session, *, recording_id: int, idempotency_key: str) -> RecordingAsrWindowResult | None:
+def _lookup_recording_asr_window_result(
+    session, *, recording_id: int, idempotency_key: str
+) -> RecordingAsrWindowResult | None:
     if not hasattr(session, "exec"):
         return None
 
@@ -114,9 +127,17 @@ def get_recording_asr_window_result(
     config_hash: str | None = None,
 ) -> RecordingAsrWindowResult | None:
     normalized_config = dict(config or {})
-    normalized_backend = str(transcription_backend or normalized_config.get("transcription_backend") or "whisper")
-    normalized_model_name = model_name or get_transcription_model_name(normalized_config)
-    normalized_config_hash = config_hash or build_recording_asr_window_result_config_hash(normalized_config)
+    normalized_backend = str(
+        transcription_backend
+        or normalized_config.get("transcription_backend")
+        or "whisper"
+    )
+    normalized_model_name = model_name or get_transcription_model_name(
+        normalized_config
+    )
+    normalized_config_hash = (
+        config_hash or build_recording_asr_window_result_config_hash(normalized_config)
+    )
     normalized_idempotency_key = build_recording_asr_window_result_idempotency_key(
         source_kind=str(source_kind or "live"),
         span_start_ms=int(min(span_start_ms, span_end_ms)),
@@ -212,18 +233,29 @@ def upsert_recording_asr_window_result(
     normalized_source = str(source_kind or "live")
     normalized_start = int(min(span_start_ms, span_end_ms))
     normalized_end = int(max(span_start_ms, span_end_ms))
-    normalized_backend = str(transcription_backend or normalized_config.get("transcription_backend") or "whisper")
-    normalized_model_name = model_name or get_transcription_model_name(normalized_config)
-    normalized_config_hash = config_hash or build_recording_asr_window_result_config_hash(normalized_config)
-    normalized_idempotency_key = idempotency_key or build_recording_asr_window_result_idempotency_key(
-        source_kind=normalized_source,
-        span_start_ms=normalized_start,
-        span_end_ms=normalized_end,
-        chunk_start_sequence=chunk_start_sequence,
-        chunk_end_sequence=chunk_end_sequence,
-        transcription_backend=normalized_backend,
-        model_name=normalized_model_name,
-        config_hash=normalized_config_hash,
+    normalized_backend = str(
+        transcription_backend
+        or normalized_config.get("transcription_backend")
+        or "whisper"
+    )
+    normalized_model_name = model_name or get_transcription_model_name(
+        normalized_config
+    )
+    normalized_config_hash = (
+        config_hash or build_recording_asr_window_result_config_hash(normalized_config)
+    )
+    normalized_idempotency_key = (
+        idempotency_key
+        or build_recording_asr_window_result_idempotency_key(
+            source_kind=normalized_source,
+            span_start_ms=normalized_start,
+            span_end_ms=normalized_end,
+            chunk_start_sequence=chunk_start_sequence,
+            chunk_end_sequence=chunk_end_sequence,
+            transcription_backend=normalized_backend,
+            model_name=normalized_model_name,
+            config_hash=normalized_config_hash,
+        )
     )
 
     existing_row = _lookup_recording_asr_window_result(
@@ -259,7 +291,10 @@ def upsert_recording_asr_window_result(
     row.status = status
     row.idempotency_key = normalized_idempotency_key
 
-    if status in {RecordingAsrWindowResultStatus.PENDING, RecordingAsrWindowResultStatus.RUNNING}:
+    if status in {
+        RecordingAsrWindowResultStatus.PENDING,
+        RecordingAsrWindowResultStatus.RUNNING,
+    }:
         row.started_at = row.started_at or now
         row.completed_at = None
         row.error_summary = None
@@ -295,7 +330,9 @@ def upsert_recording_asr_window_result(
     return row
 
 
-def start_recording_asr_window_result(session, **kwargs) -> RecordingAsrWindowResult | None:
+def start_recording_asr_window_result(
+    session, **kwargs
+) -> RecordingAsrWindowResult | None:
     return upsert_recording_asr_window_result(
         session,
         status=RecordingAsrWindowResultStatus.RUNNING,
@@ -303,7 +340,9 @@ def start_recording_asr_window_result(session, **kwargs) -> RecordingAsrWindowRe
     )
 
 
-def complete_recording_asr_window_result(session, **kwargs) -> RecordingAsrWindowResult | None:
+def complete_recording_asr_window_result(
+    session, **kwargs
+) -> RecordingAsrWindowResult | None:
     return upsert_recording_asr_window_result(
         session,
         status=RecordingAsrWindowResultStatus.COMPLETED,
@@ -311,7 +350,9 @@ def complete_recording_asr_window_result(session, **kwargs) -> RecordingAsrWindo
     )
 
 
-def fail_recording_asr_window_result(session, **kwargs) -> RecordingAsrWindowResult | None:
+def fail_recording_asr_window_result(
+    session, **kwargs
+) -> RecordingAsrWindowResult | None:
     return upsert_recording_asr_window_result(
         session,
         status=RecordingAsrWindowResultStatus.FAILED,

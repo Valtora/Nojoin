@@ -15,8 +15,30 @@ target-version = "py312"
 [tool.ruff.lint]
 select = [
     "F",   # pyflakes (correctness/logic errors)
+    "I",   # isort (deterministic import ordering)
     "BLE", # blind-except (BLE001)
 ]
 ignore = [
-    "F403", "F405", "F821", "F841", "F401", "F811"
+    # Star-import rules: several package __init__ and model modules intentionally
+    # re-export with `from x import *`, so these would be noise.
+    "F403",  # undefined-local-with-import-star
+    "F405",  # may-be-undefined-from-star-imports
+    # The following stay off only until the exception-handling cleanup fixes the
+    # latent bugs they surface (20 undefined names, unused except bindings, and
+    # one redefinition), each with tests. They are enabled in that follow-up.
+    "F821",  # undefined-name
+    "F841",  # unused-variable
+    "F811",  # redefined-while-unused
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Star-import re-export packages: these decomposed modules glue themselves
+# together with `from .X import *` (e.g. core.py re-exports constants, speaker,
+# diarization, segmentation, startup). Imports that look locally unused are in
+# fact the package's public surface, so F401 must not strip the re-export seams.
+"backend/utils/canonical_pipeline/*.py" = ["F401"]
+"backend/worker/tasks/*.py" = ["F401"]
+# Pure re-export aggregator packages whose submodules and tests resolve symbols
+# from the package root via a dynamically-built __all__ Ruff cannot analyse.
+"backend/api/v1/endpoints/recordings/__init__.py" = ["F401"]
+"backend/api/v1/endpoints/speakers/__init__.py" = ["F401"]

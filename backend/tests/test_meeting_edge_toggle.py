@@ -71,7 +71,9 @@ def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(monkey
         tasks_module,
         "resolve_llm_config",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("Meeting Edge LLM config should not be resolved when disabled")
+            AssertionError(
+                "Meeting Edge LLM config should not be resolved when disabled"
+            )
         ),
     )
 
@@ -90,7 +92,9 @@ def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(monkey
     assert session.commit_count == 1
 
 
-def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestions(monkeypatch):
+def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestions(
+    monkeypatch,
+):
     recording = SimpleNamespace(
         id=1,
         status=tasks_module.RecordingStatus.UPLOADING,
@@ -135,11 +139,23 @@ def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestio
         ],
     )
     monkeypatch.setattr(tasks_module, "_has_meeting_edge_signal", lambda **kwargs: True)
-    monkeypatch.setattr(tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True)
-    monkeypatch.setattr(tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None)
-    monkeypatch.setattr(tasks_module, "build_recording_speaker_map", lambda speakers: {})
-    monkeypatch.setattr(tasks_module, "serialize_meeting_edge_result", lambda result: {"summary": result})
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True
+    )
+    monkeypatch.setattr(
+        tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        tasks_module, "build_recording_speaker_map", lambda speakers: {}
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "serialize_meeting_edge_result",
+        lambda result: {"summary": result},
+    )
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
     monkeypatch.setattr(
         tasks_module,
         "resolve_llm_config",
@@ -160,7 +176,10 @@ def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestio
         task._session = original_session
 
     assert result is not None
-    assert captured["rolling_summary"] == "Rich running context with decisions and threads."
+    assert (
+        captured["rolling_summary"]
+        == "Rich running context with decisions and threads."
+    )
     assert captured["previous_questions"] == ("Previously asked question?",)
     assert captured["previous_points"] == ("Previously raised point.",)
 
@@ -219,7 +238,9 @@ def test_meeting_edge_source_signature_includes_context_level():
     assert signature_level_2 != signature_level_3
 
 
-def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_empty(monkeypatch):
+def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_empty(
+    monkeypatch,
+):
     recording = SimpleNamespace(
         id=1,
         status=tasks_module.RecordingStatus.UPLOADING,
@@ -258,11 +279,23 @@ def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_em
         ],
     )
     monkeypatch.setattr(tasks_module, "_has_meeting_edge_signal", lambda **kwargs: True)
-    monkeypatch.setattr(tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True)
-    monkeypatch.setattr(tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None)
-    monkeypatch.setattr(tasks_module, "build_recording_speaker_map", lambda speakers: {})
-    monkeypatch.setattr(tasks_module, "serialize_meeting_edge_result", lambda result: {"summary": result})
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_should_refresh_meeting_edge", lambda **kwargs: True
+    )
+    monkeypatch.setattr(
+        tasks_module, "_resolve_meeting_event_context", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        tasks_module, "build_recording_speaker_map", lambda speakers: {}
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "serialize_meeting_edge_result",
+        lambda result: {"summary": result},
+    )
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
     monkeypatch.setattr(
         tasks_module,
         "resolve_llm_config",

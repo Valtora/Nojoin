@@ -24,7 +24,9 @@ def test_get_installed_version_prefers_embedded_env(
     embedded_file = tmp_path / ".build-version"
     embedded_file.write_text("0.8.1\n", encoding="utf-8")
 
-    monkeypatch.setattr(version_utils, "_candidate_version_paths", lambda: [embedded_file])
+    monkeypatch.setattr(
+        version_utils, "_candidate_version_paths", lambda: [embedded_file]
+    )
     monkeypatch.setenv(version_utils.BUILD_VERSION_ENV_VAR, "v0.8.3")
 
     assert version_utils.get_installed_version() == "0.8.3"

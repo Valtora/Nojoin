@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from importlib import import_module
 import logging
 import os
 from contextlib import contextmanager
+from importlib import import_module
 
 from sqlalchemy import or_, text
 from sqlmodel import Session, select
@@ -20,7 +20,9 @@ from backend.utils.canonical_pipeline import (
 logger = logging.getLogger(__name__)
 
 SKIP_STARTUP_CANONICAL_CUTOVER_ENV_VAR = "NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER"
-STARTUP_CANONICAL_CUTOVER_BATCH_SIZE_ENV_VAR = "NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE"
+STARTUP_CANONICAL_CUTOVER_BATCH_SIZE_ENV_VAR = (
+    "NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE"
+)
 STARTUP_CANONICAL_CUTOVER_ADVISORY_LOCK_ID = 640_227_114_901_337_251
 TRUE_VALUES = {"1", "true", "yes", "on"}
 COMPANION_RETIREMENT_NOTICE_TITLE = (
@@ -115,7 +117,10 @@ def _advisory_lock(connection):
 
 def run_startup_canonical_cutover() -> dict[str, int]:
     if _env_flag(SKIP_STARTUP_CANONICAL_CUTOVER_ENV_VAR):
-        logger.info("Skipping startup canonical cutover because %s is enabled.", SKIP_STARTUP_CANONICAL_CUTOVER_ENV_VAR)
+        logger.info(
+            "Skipping startup canonical cutover because %s is enabled.",
+            SKIP_STARTUP_CANONICAL_CUTOVER_ENV_VAR,
+        )
         return {"skipped": 1}
 
     _register_sqlmodel_models()
@@ -136,7 +141,9 @@ def run_startup_canonical_cutover() -> dict[str, int]:
     with sync_engine.connect() as connection:
         with _advisory_lock(connection):
             with Session(bind=connection) as session:
-                summary["retirement_notices"] = _ensure_companion_retirement_notice(session)
+                summary["retirement_notices"] = _ensure_companion_retirement_notice(
+                    session
+                )
                 if summary["retirement_notices"]:
                     session.commit()
 

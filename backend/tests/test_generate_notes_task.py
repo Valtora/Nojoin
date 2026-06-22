@@ -11,7 +11,6 @@ from sqlmodel import Session
 
 import backend.worker.tasks as tasks_module
 
-
 BASE_SCHEMA = """
 CREATE TABLE invitations (
     id INTEGER PRIMARY KEY,
@@ -250,13 +249,25 @@ def test_generate_notes_task_completes_with_saved_provider_config(
             captured["output_language_instruction"] = output_language_instruction
             return "# Meeting Notes\n\n## Summary\nGenerated notes."
 
-    def fake_get_llm_backend(provider: str, api_key=None, model=None, api_url=None, **kwargs):
+    def fake_get_llm_backend(
+        provider: str, api_key=None, model=None, api_url=None, **kwargs
+    ):
         calls = captured.setdefault("calls", [])
-        calls.append({"provider": provider, "api_key": api_key, "model": model, "api_url": api_url, **kwargs})
+        calls.append(
+            {
+                "provider": provider,
+                "api_key": api_key,
+                "model": model,
+                "api_url": api_url,
+                **kwargs,
+            }
+        )
         return FakeLLM()
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr("backend.processing.llm_services.get_llm_backend", fake_get_llm_backend)
+    monkeypatch.setattr(
+        "backend.processing.llm_services.get_llm_backend", fake_get_llm_backend
+    )
 
     verification_engine = create_engine(str(engine.url), future=True)
     try:
@@ -264,7 +275,9 @@ def test_generate_notes_task_completes_with_saved_provider_config(
 
         with Session(verification_engine) as session:
             row = session.exec(
-                text("SELECT notes, notes_status, error_message, processing_step, processing_progress FROM transcripts JOIN recordings ON transcripts.recording_id = recordings.id WHERE transcripts.id = 1")
+                text(
+                    "SELECT notes, notes_status, error_message, processing_step, processing_progress FROM transcripts JOIN recordings ON transcripts.recording_id = recordings.id WHERE transcripts.id = 1"
+                )
             ).one()
 
         assert row[0] == "# Meeting Notes\n\n## Summary\nGenerated notes."
@@ -297,10 +310,14 @@ def test_generate_notes_task_marks_missing_model_as_error(
     )
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("LLM backend should not be created when the model is missing")
+        raise AssertionError(
+            "LLM backend should not be created when the model is missing"
+        )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr("backend.processing.llm_services.get_llm_backend", fail_if_called)
+    monkeypatch.setattr(
+        "backend.processing.llm_services.get_llm_backend", fail_if_called
+    )
 
     verification_engine = create_engine(str(engine.url), future=True)
     try:
@@ -308,7 +325,9 @@ def test_generate_notes_task_marks_missing_model_as_error(
 
         with Session(verification_engine) as session:
             row = session.exec(
-                text("SELECT notes, notes_status, error_message FROM transcripts WHERE id = 1")
+                text(
+                    "SELECT notes, notes_status, error_message FROM transcripts WHERE id = 1"
+                )
             ).one()
 
         assert row[0] == "Existing notes"
@@ -335,7 +354,12 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
     captured: dict[str, Any] = {}
     canonical_segments = [
         {"start": 0.0, "end": 1.5, "speaker": "SPEAKER_00", "text": "Canonical hello."},
-        {"start": 1.5, "end": 3.0, "speaker": "SPEAKER_00", "text": "Canonical follow up."},
+        {
+            "start": 1.5,
+            "end": 3.0,
+            "speaker": "SPEAKER_00",
+            "text": "Canonical follow up.",
+        },
     ]
 
     class FakeLLM:

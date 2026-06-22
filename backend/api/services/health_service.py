@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
 import asyncio
 import os
 import secrets
 import shutil
 import time
+from typing import Any
 
 import httpx
 import redis.asyncio as redis
@@ -15,9 +15,12 @@ from sqlmodel import Session, text
 from backend.celery_app import celery_app
 from backend.core.db import sync_engine
 from backend.preload_models import check_model_status
-from backend.utils.deployment_warnings import get_deployment_warnings
 from backend.utils.config_manager import async_get_system_api_keys, config_manager
-from backend.utils.download_progress import get_download_progress, is_download_in_progress
+from backend.utils.deployment_warnings import get_deployment_warnings
+from backend.utils.download_progress import (
+    get_download_progress,
+    is_download_in_progress,
+)
 from backend.utils.version import get_installed_version
 
 HF_VALIDATE_URL = "https://huggingface.co/api/whoami-v2"
@@ -227,9 +230,7 @@ def _get_transcription_component(
         model_label = f"Parakeet ({configured_model})"
         downloading = _is_stage_downloading(download, "parakeet", "queued", "init")
     elif transcription_backend == "canary":
-        configured_model = str(
-            config_manager.get("canary_model", "nemo-canary-1b-v2")
-        )
+        configured_model = str(config_manager.get("canary_model", "nemo-canary-1b-v2"))
         backing_status = model_status.get("canary", {})
         model_label = f"Canary ({configured_model})"
         downloading = _is_stage_downloading(download, "canary", "queued", "init")
@@ -237,7 +238,9 @@ def _get_transcription_component(
         configured_model = whisper_model_size
         backing_status = model_status.get("whisper", {})
         model_label = f"Whisper {configured_model}"
-        downloading = _is_stage_downloading(download, "whisper", "whisper_loading", "queued", "init")
+        downloading = _is_stage_downloading(
+            download, "whisper", "whisper_loading", "queued", "init"
+        )
 
     downloaded = bool(backing_status.get("downloaded"))
 
@@ -367,11 +370,15 @@ async def _get_diarization_component(
     pyannote_ready = bool(pyannote_status.get("downloaded"))
     embedding_ready = bool(embedding_status.get("downloaded"))
     segmentation_ready = bool(segmentation_status.get("downloaded"))
-    using_local_assets = all(
-        status.get("source") in {"bundled", "cache"}
-        for status in (pyannote_status, embedding_status)
-        if status
-    ) and pyannote_ready and embedding_ready
+    using_local_assets = (
+        all(
+            status.get("source") in {"bundled", "cache"}
+            for status in (pyannote_status, embedding_status)
+            if status
+        )
+        and pyannote_ready
+        and embedding_ready
+    )
     system_keys = await async_get_system_api_keys(db)
     hf_token_status = await _validate_hf_token(system_keys.get("hf_token"))
     downloading = _is_stage_downloading(download, "pyannote", "embedding", "init")
@@ -392,7 +399,11 @@ async def _get_diarization_component(
             False,
         )
 
-    if pyannote_ready and embedding_ready and (hf_token_status["valid"] is True or using_local_assets):
+    if (
+        pyannote_ready
+        and embedding_ready
+        and (hf_token_status["valid"] is True or using_local_assets)
+    ):
         detail = "Pyannote diarization and speaker embeddings are ready."
         if segmentation_ready:
             detail = "Pyannote diarization, speaker embeddings, and segmentation refinement are ready."
@@ -607,13 +618,19 @@ def _build_summary(
     if not transcription_ready:
         blocking_reasons.append("The configured transcription model is not ready.")
     elif checks["transcription_model"]["status"] == "warning":
-        degraded_reasons.append("The configured transcription model is not prepared yet.")
+        degraded_reasons.append(
+            "The configured transcription model is not prepared yet."
+        )
 
     diarization_enabled = checks["diarization"].get("enabled") is not False
     if diarization_enabled and not diarization_ready:
-        degraded_reasons.append("Speaker diarization will fall back until its prerequisites are ready.")
+        degraded_reasons.append(
+            "Speaker diarization will fall back until its prerequisites are ready."
+        )
     if checks["device"]["status"] == "warning" and not device_ready:
-        degraded_reasons.append("Processing is running without the normal GPU acceleration path.")
+        degraded_reasons.append(
+            "Processing is running without the normal GPU acceleration path."
+        )
 
     if blocking_reasons:
         return {
@@ -637,6 +654,7 @@ def _build_summary(
         "blocking_reasons": [],
         "degraded_reasons": [],
     }
+
 
 async def get_system_health_status() -> dict[str, Any]:
     health_status = {

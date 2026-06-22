@@ -99,7 +99,9 @@ def get_deployment_warnings() -> list[DeploymentWarning]:
     return warnings
 
 
-def log_deployment_warnings(*, startup_path: str, logger_instance: logging.Logger | None = None) -> list[DeploymentWarning]:
+def log_deployment_warnings(
+    *, startup_path: str, logger_instance: logging.Logger | None = None
+) -> list[DeploymentWarning]:
     findings = get_deployment_warnings()
     if not findings:
         return findings

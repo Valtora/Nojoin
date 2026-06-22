@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -9,11 +11,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from pathlib import Path
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
-
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
@@ -380,7 +380,13 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
-        await connection.execute(text(GLOBAL_SPEAKENS_SCHEMA if "GLOBAL_SPEAKENS_SCHEMA" in globals() else GLOBAL_SPEAKERS_SCHEMA))
+        await connection.execute(
+            text(
+                GLOBAL_SPEAKENS_SCHEMA
+                if "GLOBAL_SPEAKENS_SCHEMA" in globals()
+                else GLOBAL_SPEAKERS_SCHEMA
+            )
+        )
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
@@ -415,7 +421,9 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncCli
     api_app.dependency_overrides[get_current_user] = lambda: build_test_user()
 
     transport = ASGITransport(app=api_app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
         yield async_client
 
     api_app.dependency_overrides.clear()
@@ -732,7 +740,9 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
     )
     _install("backend.processing.transcribe", transcribe_audio=fake_transcribe_audio)
     _install("backend.processing.diarize", diarize_audio=lambda *a, **k: None)
-    _install("backend.processing.embedding_core", extract_embeddings=lambda *a, **k: None)
+    _install(
+        "backend.processing.embedding_core", extract_embeddings=lambda *a, **k: None
+    )
     _install(
         "backend.processing.embedding",
         cosine_similarity=lambda *a, **k: 0.0,
@@ -854,9 +864,11 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
     monkeypatch.setattr(
         tasks_module.config_manager,
         "get",
-        lambda key, default=None: True
-        if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
-        else default,
+        lambda key, default=None: (
+            True
+            if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
+            else default
+        ),
     )
 
     fake_session = _FakeSession()
@@ -926,30 +938,57 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
     _install(
         "backend.utils.live_transcript",
         apply_live_authority_to_segments=lambda live, combined: combined,
-        build_transcription_result_from_segments=lambda segments: ({"text": "", "segments": []}, []),
-        merge_reusable_segments=lambda primary, additional: list(primary) + list(additional),
+        build_transcription_result_from_segments=lambda segments: (
+            {"text": "", "segments": []},
+            [],
+        ),
+        merge_reusable_segments=lambda primary, additional: (
+            list(primary) + list(additional)
+        ),
         map_final_speakers_to_live_labels=lambda *a, **k: {},
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
     _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
 
     monkeypatch.setattr("os.path.exists", lambda path: True)
-    monkeypatch.setattr(tasks_module, "build_reusable_live_segments", lambda *a, **k: [])
-    monkeypatch.setattr(tasks_module, "_load_recording_audio_window_manifests", lambda *a, **k: [])
-    monkeypatch.setattr(tasks_module, "_recording_has_completed_diarization_windows", lambda *a, **k: False)
-    monkeypatch.setattr(tasks_module, "_run_automatic_meeting_intelligence_stage", lambda *a, **k: None)
-    monkeypatch.setattr(tasks_module, "mark_recording_audio_chunks_ready_for_cleanup", lambda *a, **k: None)
+    monkeypatch.setattr(
+        tasks_module, "build_reusable_live_segments", lambda *a, **k: []
+    )
+    monkeypatch.setattr(
+        tasks_module, "_load_recording_audio_window_manifests", lambda *a, **k: []
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_recording_has_completed_diarization_windows",
+        lambda *a, **k: False,
+    )
+    monkeypatch.setattr(
+        tasks_module, "_run_automatic_meeting_intelligence_stage", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "mark_recording_audio_chunks_ready_for_cleanup",
+        lambda *a, **k: None,
+    )
     monkeypatch.setattr(tasks_module, "auto_link_recording", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "update_recording_status", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "build_recording_speaker_map", lambda *a, **k: {})
-    monkeypatch.setattr(tasks_module, "get_speakers_eligible_for_llm_renaming", lambda *a, **k: [])
-    monkeypatch.setattr(tasks_module, "_build_automatic_meeting_intelligence_transcript", lambda *a, **k: "")
+    monkeypatch.setattr(
+        tasks_module, "get_speakers_eligible_for_llm_renaming", lambda *a, **k: []
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "_build_automatic_meeting_intelligence_transcript",
+        lambda *a, **k: "",
+    )
 
     def _explode_finalize(session, *args, **kwargs):
         session.needs_rollback = True
         raise RuntimeError("finalize exploded")
 
-    monkeypatch.setattr(tasks_module, "finalize_utterances_from_segments", _explode_finalize)
+    monkeypatch.setattr(
+        tasks_module, "finalize_utterances_from_segments", _explode_finalize
+    )
 
     task = tasks_module.process_recording_task
     monkeypatch.setattr(task, "_session", fake_session, raising=False)
@@ -968,27 +1007,31 @@ def test_summarize_completed_diarization_window_speaker_evidence_rows_counts_dis
 
     from backend.worker import tasks as tasks_module
 
-    summary = tasks_module._summarize_completed_diarization_window_speaker_evidence_rows(
-        [
-            SimpleNamespace(raw_payload={"speaker_labels": ["SPEAKER_00", "SPEAKER_01"]}),
-            SimpleNamespace(
-                raw_payload={
-                    "speaker_metadata": {
-                        "SPEAKER_00": {},
-                        "SPEAKER_01": {},
-                        "SPEAKER_02": {},
+    summary = (
+        tasks_module._summarize_completed_diarization_window_speaker_evidence_rows(
+            [
+                SimpleNamespace(
+                    raw_payload={"speaker_labels": ["SPEAKER_00", "SPEAKER_01"]}
+                ),
+                SimpleNamespace(
+                    raw_payload={
+                        "speaker_metadata": {
+                            "SPEAKER_00": {},
+                            "SPEAKER_01": {},
+                            "SPEAKER_02": {},
+                        }
                     }
-                }
-            ),
-            SimpleNamespace(
-                raw_payload={
-                    "turns": [
-                        {"local_speaker_key": "SPEAKER_01"},
-                        {"local_speaker_key": "SPEAKER_01"},
-                    ]
-                }
-            ),
-        ]
+                ),
+                SimpleNamespace(
+                    raw_payload={
+                        "turns": [
+                            {"local_speaker_key": "SPEAKER_01"},
+                            {"local_speaker_key": "SPEAKER_01"},
+                        ]
+                    }
+                ),
+            ]
+        )
     )
 
     assert summary == {
@@ -1013,9 +1056,7 @@ def test_build_final_diarization_plan_skips_confident_live_reuse():
                 "overlapping_speakers": [],
             }
         ],
-        reused_live_transcript_segments=[
-            {"start": 0.0, "end": 1.0, "text": "hello"}
-        ],
+        reused_live_transcript_segments=[{"start": 0.0, "end": 1.0, "text": "hello"}],
         engine_override=None,
     )
 
@@ -1167,7 +1208,9 @@ def test_build_catch_up_segments_reuses_completed_ledger_span(monkeypatch):
 
     from backend.worker import tasks as tasks_module
 
-    fake_run = SimpleNamespace(id=91, status="running", completed_at=None, error_summary=None)
+    fake_run = SimpleNamespace(
+        id=91, status="running", completed_at=None, error_summary=None
+    )
 
     class _FakeSession:
         def __init__(self):
@@ -1198,15 +1241,23 @@ def test_build_catch_up_segments_reuses_completed_ledger_span(monkeypatch):
         tasks_module,
         "_load_recording_audio_chunks",
         lambda *a, **k: [
-            SimpleNamespace(sequence_no=1, absolute_start_ms=1000, absolute_end_ms=2000),
-            SimpleNamespace(sequence_no=2, absolute_start_ms=2000, absolute_end_ms=2500),
-            SimpleNamespace(sequence_no=3, absolute_start_ms=2500, absolute_end_ms=3000),
+            SimpleNamespace(
+                sequence_no=1, absolute_start_ms=1000, absolute_end_ms=2000
+            ),
+            SimpleNamespace(
+                sequence_no=2, absolute_start_ms=2000, absolute_end_ms=2500
+            ),
+            SimpleNamespace(
+                sequence_no=3, absolute_start_ms=2500, absolute_end_ms=3000
+            ),
         ],
     )
     monkeypatch.setattr(
         tasks_module.config_manager,
         "get",
-        lambda key, default=None: True if key == "enable_asr_window_result_ledger" else default,
+        lambda key, default=None: (
+            True if key == "enable_asr_window_result_ledger" else default
+        ),
     )
     monkeypatch.setattr(
         tasks_module,
@@ -1223,13 +1274,18 @@ def test_build_catch_up_segments_reuses_completed_ledger_span(monkeypatch):
     )
 
     def _unexpected_transcribe(*args, **kwargs):
-        raise AssertionError("transcribe_audio should not run for a completed catch-up ledger span")
+        raise AssertionError(
+            "transcribe_audio should not run for a completed catch-up ledger span"
+        )
 
     segments, window_ids, catch_up_run = tasks_module._build_catch_up_segments(
         session=session,
         recording=recording,
         processed_audio_path="/tmp/recording.wav",
-        merged_config={"transcription_backend": "whisper", "whisper_model_size": "base"},
+        merged_config={
+            "transcription_backend": "whisper",
+            "whisper_model_size": "base",
+        },
         transcribe_audio=_unexpected_transcribe,
         extract_audio_clip=lambda *a, **k: None,
         temp_files=[],
@@ -1254,7 +1310,9 @@ def test_build_catch_up_segments_reruns_only_uncovered_spans(monkeypatch):
 
     from backend.worker import tasks as tasks_module
 
-    fake_run = SimpleNamespace(id=92, status="running", completed_at=None, error_summary=None)
+    fake_run = SimpleNamespace(
+        id=92, status="running", completed_at=None, error_summary=None
+    )
     transcribe_calls: list[str] = []
 
     class _FakeSession:
@@ -1290,19 +1348,25 @@ def test_build_catch_up_segments_reruns_only_uncovered_spans(monkeypatch):
             ),
         ],
     )
-    monkeypatch.setattr(tasks_module, "_load_recording_audio_chunks", lambda *a, **k: [])
+    monkeypatch.setattr(
+        tasks_module, "_load_recording_audio_chunks", lambda *a, **k: []
+    )
     monkeypatch.setattr(
         tasks_module,
         "collect_pending_chunk_spans",
         lambda *a, **k: [
             SimpleNamespace(start_sequence=1, end_sequence=1, start_ms=0, end_ms=1000),
-            SimpleNamespace(start_sequence=3, end_sequence=3, start_ms=2000, end_ms=3000),
+            SimpleNamespace(
+                start_sequence=3, end_sequence=3, start_ms=2000, end_ms=3000
+            ),
         ],
     )
     monkeypatch.setattr(
         tasks_module.config_manager,
         "get",
-        lambda key, default=None: True if key == "enable_asr_window_result_ledger" else default,
+        lambda key, default=None: (
+            True if key == "enable_asr_window_result_ledger" else default
+        ),
     )
 
     def _fake_lookup(*args, **kwargs):
@@ -1325,9 +1389,15 @@ def test_build_catch_up_segments_reruns_only_uncovered_spans(monkeypatch):
         return None
 
     monkeypatch.setattr(tasks_module, "get_recording_asr_window_result", _fake_lookup)
-    monkeypatch.setattr(tasks_module, "start_recording_asr_window_result", lambda *a, **k: None)
-    monkeypatch.setattr(tasks_module, "complete_recording_asr_window_result", lambda *a, **k: None)
-    monkeypatch.setattr(tasks_module, "fail_recording_asr_window_result", lambda *a, **k: None)
+    monkeypatch.setattr(
+        tasks_module, "start_recording_asr_window_result", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        tasks_module, "complete_recording_asr_window_result", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        tasks_module, "fail_recording_asr_window_result", lambda *a, **k: None
+    )
 
     def _fake_extract_audio_clip(*args, **kwargs):
         pass
@@ -1345,7 +1415,10 @@ def test_build_catch_up_segments_reruns_only_uncovered_spans(monkeypatch):
         session=session,
         recording=recording,
         processed_audio_path="/tmp/recording.wav",
-        merged_config={"transcription_backend": "whisper", "whisper_model_size": "base"},
+        merged_config={
+            "transcription_backend": "whisper",
+            "whisper_model_size": "base",
+        },
         transcribe_audio=_fake_transcribe,
         extract_audio_clip=_fake_extract_audio_clip,
         temp_files=[],
@@ -1399,10 +1472,18 @@ async def test_import_audio_bootstraps_durable_import_chunk_and_window(
 
     async with test_session_maker() as session:
         chunk_rows = (
-            await session.execute(text("SELECT sequence_no, source_kind, absolute_start_ms, absolute_end_ms, storage_path FROM recording_audio_chunks"))
+            await session.execute(
+                text(
+                    "SELECT sequence_no, source_kind, absolute_start_ms, absolute_end_ms, storage_path FROM recording_audio_chunks"
+                )
+            )
         ).all()
         manifest_rows = (
-            await session.execute(text("SELECT source_kind, window_start_ms, window_end_ms, chunk_start_sequence, chunk_end_sequence FROM recording_audio_window_manifests"))
+            await session.execute(
+                text(
+                    "SELECT source_kind, window_start_ms, window_end_ms, chunk_start_sequence, chunk_end_sequence FROM recording_audio_window_manifests"
+                )
+            )
         ).all()
 
     assert len(chunk_rows) == 1
@@ -1440,10 +1521,18 @@ async def test_import_low_bitrate_audio_succeeds(
 
     async with test_session_maker() as session:
         chunk_rows = (
-            await session.execute(text("SELECT sequence_no, source_kind, absolute_start_ms, absolute_end_ms, storage_path FROM recording_audio_chunks"))
+            await session.execute(
+                text(
+                    "SELECT sequence_no, source_kind, absolute_start_ms, absolute_end_ms, storage_path FROM recording_audio_chunks"
+                )
+            )
         ).all()
         manifest_rows = (
-            await session.execute(text("SELECT source_kind, window_start_ms, window_end_ms, chunk_start_sequence, chunk_end_sequence FROM recording_audio_window_manifests"))
+            await session.execute(
+                text(
+                    "SELECT source_kind, window_start_ms, window_end_ms, chunk_start_sequence, chunk_end_sequence FROM recording_audio_window_manifests"
+                )
+            )
         ).all()
 
     assert len(chunk_rows) == 1
@@ -1461,20 +1550,20 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
     """Reprocessing a recording clears all its pipeline tables and artifacts."""
     from backend.models.chat import ChatMessage
     from backend.models.context_chunk import ContextChunk
-    from backend.models.speaker import RecordingSpeaker
     from backend.models.pipeline import (
+        DiarizationWindowResult,
         ProcessingRun,
         ProcessingRunKind,
         ProcessingRunStatus,
-        TranscriptUtterance,
-        TranscriptUtteranceState,
-        SpeakerCorrectionEvent,
-        SpeakerCorrectionScope,
-        SpeakerCorrectionEventType,
-        DiarizationWindowResult,
         RecordingAsrWindowResult,
         RecordingAsrWindowResultStatus,
+        SpeakerCorrectionEvent,
+        SpeakerCorrectionEventType,
+        SpeakerCorrectionScope,
+        TranscriptUtterance,
+        TranscriptUtteranceState,
     )
+    from backend.models.speaker import RecordingSpeaker
     from backend.models.transcript import Transcript
 
     # 1. Setup a processed recording with pipeline metadata
@@ -1483,15 +1572,79 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
     # 2. Insert ChatMessage, ContextChunk, RecordingSpeaker, ProcessingRun, TranscriptUtterance,
     # SpeakerCorrectionEvent, DiarizationWindowResult, RecordingAsrWindowResult
     async with test_session_maker() as session:
-        session.add(Transcript(recording_id=201, text="test", segments=[], transcript_status="completed"))
-        session.add(ChatMessage(recording_id=201, role="user", content="hello", user_id=1))
+        session.add(
+            Transcript(
+                recording_id=201,
+                text="test",
+                segments=[],
+                transcript_status="completed",
+            )
+        )
+        session.add(
+            ChatMessage(recording_id=201, role="user", content="hello", user_id=1)
+        )
         session.add(ContextChunk(recording_id=201, text="text"))
-        session.add(RecordingSpeaker(id=2010, recording_id=201, diarization_label="SPEAKER_00", name="Speaker 1", speaker_status="active"))
-        session.add(ProcessingRun(id=20100, recording_id=201, run_kind=ProcessingRunKind.FINALIZE, status=ProcessingRunStatus.COMPLETED, idempotency_key="finalize:key"))
-        session.add(TranscriptUtterance(id=201000, public_id="utt-1", recording_id=201, sort_key="a", start_ms=0, end_ms=1000, text="hello", state=TranscriptUtteranceState.FINALIZED, recording_speaker_id=2010))
-        session.add(SpeakerCorrectionEvent(public_id="corr-1", recording_id=201, event_type=SpeakerCorrectionEventType.ASSIGN_UTTERANCE, scope=SpeakerCorrectionScope.UTTERANCE_ONLY))
-        session.add(DiarizationWindowResult(id=2010000, public_id="diar-1", recording_id=201, window_start_ms=0, window_end_ms=1000, status="completed"))
-        session.add(RecordingAsrWindowResult(public_id="asr-1", recording_id=201, span_start_ms=0, span_end_ms=1000, transcription_backend="whisper", config_hash="hash", status=RecordingAsrWindowResultStatus.COMPLETED, idempotency_key="key"))
+        session.add(
+            RecordingSpeaker(
+                id=2010,
+                recording_id=201,
+                diarization_label="SPEAKER_00",
+                name="Speaker 1",
+                speaker_status="active",
+            )
+        )
+        session.add(
+            ProcessingRun(
+                id=20100,
+                recording_id=201,
+                run_kind=ProcessingRunKind.FINALIZE,
+                status=ProcessingRunStatus.COMPLETED,
+                idempotency_key="finalize:key",
+            )
+        )
+        session.add(
+            TranscriptUtterance(
+                id=201000,
+                public_id="utt-1",
+                recording_id=201,
+                sort_key="a",
+                start_ms=0,
+                end_ms=1000,
+                text="hello",
+                state=TranscriptUtteranceState.FINALIZED,
+                recording_speaker_id=2010,
+            )
+        )
+        session.add(
+            SpeakerCorrectionEvent(
+                public_id="corr-1",
+                recording_id=201,
+                event_type=SpeakerCorrectionEventType.ASSIGN_UTTERANCE,
+                scope=SpeakerCorrectionScope.UTTERANCE_ONLY,
+            )
+        )
+        session.add(
+            DiarizationWindowResult(
+                id=2010000,
+                public_id="diar-1",
+                recording_id=201,
+                window_start_ms=0,
+                window_end_ms=1000,
+                status="completed",
+            )
+        )
+        session.add(
+            RecordingAsrWindowResult(
+                public_id="asr-1",
+                recording_id=201,
+                span_start_ms=0,
+                span_end_ms=1000,
+                transcription_backend="whisper",
+                config_hash="hash",
+                status=RecordingAsrWindowResultStatus.COMPLETED,
+                idempotency_key="key",
+            )
+        )
         await session.commit()
 
     # 3. Call reprocess endpoint
@@ -1506,27 +1659,48 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
 
     # 4. Verify that generated artifacts and pipeline tables are completely cleared
     async with test_session_maker() as session:
-        res = await session.execute(text("SELECT COUNT(*) FROM chat_messages WHERE recording_id = 201"))
+        res = await session.execute(
+            text("SELECT COUNT(*) FROM chat_messages WHERE recording_id = 201")
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM context_chunks WHERE recording_id = 201"))
+        res = await session.execute(
+            text("SELECT COUNT(*) FROM context_chunks WHERE recording_id = 201")
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM recording_speakers WHERE recording_id = 201"))
+        res = await session.execute(
+            text("SELECT COUNT(*) FROM recording_speakers WHERE recording_id = 201")
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 201"))
+        res = await session.execute(
+            text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 201")
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 201"))
+        res = await session.execute(
+            text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 201")
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM speaker_correction_events WHERE recording_id = 201"))
+        res = await session.execute(
+            text(
+                "SELECT COUNT(*) FROM speaker_correction_events WHERE recording_id = 201"
+            )
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM diarization_window_results WHERE recording_id = 201"))
+        res = await session.execute(
+            text(
+                "SELECT COUNT(*) FROM diarization_window_results WHERE recording_id = 201"
+            )
+        )
         assert res.scalar() == 0
 
-        res = await session.execute(text("SELECT COUNT(*) FROM recording_asr_window_results WHERE recording_id = 201"))
+        res = await session.execute(
+            text(
+                "SELECT COUNT(*) FROM recording_asr_window_results WHERE recording_id = 201"
+            )
+        )
         assert res.scalar() == 0
-

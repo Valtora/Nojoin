@@ -77,12 +77,17 @@ def test_normalise_google_event_extracts_location_and_meeting_url() -> None:
 
 
 def test_get_meeting_url_host_normalises_hostname() -> None:
-    assert _get_meeting_url_host("https://Teams.Microsoft.com/l/meetup-join/abc") == "teams.microsoft.com"
+    assert (
+        _get_meeting_url_host("https://Teams.Microsoft.com/l/meetup-join/abc")
+        == "teams.microsoft.com"
+    )
 
 
 def test_is_trusted_meeting_url_allows_google_microsoft_and_zoom() -> None:
     assert _is_trusted_meeting_url("https://meet.google.com/abc-defg-hij") is True
-    assert _is_trusted_meeting_url("https://teams.microsoft.com/l/meetup-join/abc") is True
+    assert (
+        _is_trusted_meeting_url("https://teams.microsoft.com/l/meetup-join/abc") is True
+    )
     assert _is_trusted_meeting_url("https://company.zoom.us/j/123456789") is True
 
 
@@ -105,7 +110,9 @@ def test_to_dashboard_event_marks_untrusted_links() -> None:
         end_date=None,
     )
     calendar = SimpleNamespace(id=7, connection_id=9, name="Work")
-    connection = SimpleNamespace(id=9, provider="google", email="owner@example.com", display_name=None)
+    connection = SimpleNamespace(
+        id=9, provider="google", email="owner@example.com", display_name=None
+    )
 
     payload = _to_dashboard_event(event, {7: calendar}, {9: connection})
 
@@ -115,7 +122,9 @@ def test_to_dashboard_event_marks_untrusted_links() -> None:
     assert payload.ends_at == datetime(2026, 4, 11, 10, 0, 0, tzinfo=UTC)
 
 
-def test_build_google_events_query_params_uses_sync_token_without_window_filters() -> None:
+def test_build_google_events_query_params_uses_sync_token_without_window_filters() -> (
+    None
+):
     params = _build_google_events_query_params(
         datetime(2026, 4, 1, 0, 0, 0),
         datetime(2026, 5, 1, 0, 0, 0),
@@ -151,25 +160,34 @@ def test_can_use_incremental_sync_requires_matching_window_and_cursor() -> None:
         sync_window_end=datetime(2026, 5, 1, 0, 0, 0),
     )
 
-    assert _can_use_incremental_sync(
-        calendar,
-        datetime(2026, 4, 1, 0, 0, 0),
-        datetime(2026, 5, 1, 0, 0, 0),
-    ) is True
-    assert _can_use_incremental_sync(
-        calendar,
-        datetime(2026, 3, 1, 0, 0, 0),
-        datetime(2026, 5, 1, 0, 0, 0),
-    ) is False
-    assert _can_use_incremental_sync(
-        SimpleNamespace(
-            sync_cursor=None,
-            sync_window_start=datetime(2026, 4, 1, 0, 0, 0),
-            sync_window_end=datetime(2026, 5, 1, 0, 0, 0),
-        ),
-        datetime(2026, 4, 1, 0, 0, 0),
-        datetime(2026, 5, 1, 0, 0, 0),
-    ) is False
+    assert (
+        _can_use_incremental_sync(
+            calendar,
+            datetime(2026, 4, 1, 0, 0, 0),
+            datetime(2026, 5, 1, 0, 0, 0),
+        )
+        is True
+    )
+    assert (
+        _can_use_incremental_sync(
+            calendar,
+            datetime(2026, 3, 1, 0, 0, 0),
+            datetime(2026, 5, 1, 0, 0, 0),
+        )
+        is False
+    )
+    assert (
+        _can_use_incremental_sync(
+            SimpleNamespace(
+                sync_cursor=None,
+                sync_window_start=datetime(2026, 4, 1, 0, 0, 0),
+                sync_window_end=datetime(2026, 5, 1, 0, 0, 0),
+            ),
+            datetime(2026, 4, 1, 0, 0, 0),
+            datetime(2026, 5, 1, 0, 0, 0),
+        )
+        is False
+    )
 
 
 def test_iter_event_dates_expands_all_day_event_span() -> None:
@@ -205,7 +223,9 @@ def test_normalise_microsoft_timed_event_uses_utc_naive_datetimes() -> None:
             "start": {"dateTime": "2026-04-11T09:30:00"},
             "end": {"dateTime": "2026-04-11T10:15:00"},
             "location": {"displayName": "Microsoft Teams Meeting"},
-            "onlineMeeting": {"joinUrl": "https://teams.microsoft.com/l/meetup-join/abc"},
+            "onlineMeeting": {
+                "joinUrl": "https://teams.microsoft.com/l/meetup-join/abc"
+            },
             "lastModifiedDateTime": "2026-04-10T08:00:00Z",
         }
     )
@@ -240,26 +260,32 @@ def test_normalise_microsoft_event_extracts_meeting_url_from_body_when_needed() 
 
 
 def test_is_partial_microsoft_occurrence_detects_stripped_delta_occurrence() -> None:
-    assert _is_partial_microsoft_occurrence(
-        {
-            "id": "occ-1",
-            "type": "occurrence",
-            "seriesMasterId": "master-1",
-            "start": {"dateTime": "2026-04-14T12:00:00"},
-            "end": {"dateTime": "2026-04-14T13:00:00"},
-        }
-    ) is True
+    assert (
+        _is_partial_microsoft_occurrence(
+            {
+                "id": "occ-1",
+                "type": "occurrence",
+                "seriesMasterId": "master-1",
+                "start": {"dateTime": "2026-04-14T12:00:00"},
+                "end": {"dateTime": "2026-04-14T13:00:00"},
+            }
+        )
+        is True
+    )
 
-    assert _is_partial_microsoft_occurrence(
-        {
-            "id": "occ-2",
-            "type": "occurrence",
-            "seriesMasterId": "master-1",
-            "subject": "Gotmoves monthly",
-            "start": {"dateTime": "2026-04-14T12:00:00"},
-            "end": {"dateTime": "2026-04-14T13:00:00"},
-        }
-    ) is False
+    assert (
+        _is_partial_microsoft_occurrence(
+            {
+                "id": "occ-2",
+                "type": "occurrence",
+                "seriesMasterId": "master-1",
+                "subject": "Gotmoves monthly",
+                "start": {"dateTime": "2026-04-14T12:00:00"},
+                "end": {"dateTime": "2026-04-14T13:00:00"},
+            }
+        )
+        is False
+    )
 
 
 def test_normalise_cancelled_microsoft_event_returns_none() -> None:
@@ -286,7 +312,9 @@ def test_classify_sync_failure_marks_reauthorisation_for_refresh_token_errors() 
     assert "reconnected" in message.lower()
 
 
-def test_classify_sync_failure_marks_admin_consent_errors_as_reauthorisation_required() -> None:
+def test_classify_sync_failure_marks_admin_consent_errors_as_reauthorisation_required() -> (
+    None
+):
     request = httpx.Request("GET", "https://graph.microsoft.com/v1.0/me/calendars")
     response = httpx.Response(
         403,

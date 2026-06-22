@@ -8,7 +8,9 @@ from backend.api.v1.endpoints import users
 from backend.models.user import UserRole
 
 
-def make_user(*, role: str, is_superuser: bool = False, force_password_change: bool = False):
+def make_user(
+    *, role: str, is_superuser: bool = False, force_password_change: bool = False
+):
     return SimpleNamespace(
         role=role,
         is_superuser=is_superuser,

@@ -56,9 +56,15 @@ def app(monkeypatch, fake_user):
     async def fake_handle_calendar_callback(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(deps, "get_authenticated_user_from_token", fake_get_authenticated_user_from_token)
+    monkeypatch.setattr(
+        deps,
+        "get_authenticated_user_from_token",
+        fake_get_authenticated_user_from_token,
+    )
     monkeypatch.setattr(login, "enforce_rate_limit", fake_allow_rate_limit)
-    monkeypatch.setattr(login, "_authenticate_user_credentials", fake_authenticate_user_credentials)
+    monkeypatch.setattr(
+        login, "_authenticate_user_credentials", fake_authenticate_user_credentials
+    )
     monkeypatch.setattr(calendar, "enforce_rate_limit", fake_allow_rate_limit)
     monkeypatch.setattr(calendar, "handle_callback", fake_handle_calendar_callback)
 
@@ -86,7 +92,9 @@ async def client(app) -> AsyncClient:
 
 
 @pytest.mark.anyio
-async def test_cookie_authenticated_write_allows_trusted_origin(client: AsyncClient) -> None:
+async def test_cookie_authenticated_write_allows_trusted_origin(
+    client: AsyncClient,
+) -> None:
     set_session_cookie(client)
     response = await client.post(
         "/api/v1/test/write",
@@ -98,7 +106,9 @@ async def test_cookie_authenticated_write_allows_trusted_origin(client: AsyncCli
 
 
 @pytest.mark.anyio
-async def test_cookie_authenticated_write_allows_trusted_referer(client: AsyncClient) -> None:
+async def test_cookie_authenticated_write_allows_trusted_referer(
+    client: AsyncClient,
+) -> None:
     set_session_cookie(client)
     response = await client.post(
         "/api/v1/test/write",
@@ -110,7 +120,9 @@ async def test_cookie_authenticated_write_allows_trusted_referer(client: AsyncCl
 
 
 @pytest.mark.anyio
-async def test_cookie_authenticated_write_rejects_untrusted_origin(client: AsyncClient) -> None:
+async def test_cookie_authenticated_write_rejects_untrusted_origin(
+    client: AsyncClient,
+) -> None:
     set_session_cookie(client)
     response = await client.post(
         "/api/v1/test/write",
@@ -122,7 +134,9 @@ async def test_cookie_authenticated_write_rejects_untrusted_origin(client: Async
 
 
 @pytest.mark.anyio
-async def test_cookie_authenticated_write_rejects_missing_origin_and_referer(client: AsyncClient) -> None:
+async def test_cookie_authenticated_write_rejects_missing_origin_and_referer(
+    client: AsyncClient,
+) -> None:
     set_session_cookie(client)
     response = await client.post(
         "/api/v1/test/write",
@@ -133,7 +147,9 @@ async def test_cookie_authenticated_write_rejects_missing_origin_and_referer(cli
 
 
 @pytest.mark.anyio
-async def test_bearer_authenticated_write_is_not_subject_to_browser_origin_check(client: AsyncClient) -> None:
+async def test_bearer_authenticated_write_is_not_subject_to_browser_origin_check(
+    client: AsyncClient,
+) -> None:
     response = await client.post(
         "/api/v1/test/write",
         headers={
@@ -147,7 +163,9 @@ async def test_bearer_authenticated_write_is_not_subject_to_browser_origin_check
 
 
 @pytest.mark.anyio
-async def test_cookie_authenticated_safe_get_does_not_require_origin_headers(client: AsyncClient) -> None:
+async def test_cookie_authenticated_safe_get_does_not_require_origin_headers(
+    client: AsyncClient,
+) -> None:
     set_session_cookie(client)
     response = await client.get(
         "/api/v1/test/read",

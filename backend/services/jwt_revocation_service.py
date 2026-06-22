@@ -20,7 +20,6 @@ from backend.models.revoked_jwt import RevokedJwt
 from backend.models.user import User
 from backend.utils.time import utc_now
 
-
 REVOKABLE_TOKEN_TYPES = frozenset({"session", "api"})
 
 

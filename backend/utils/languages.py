@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-
 AUTO_TRANSCRIPTION_LANGUAGE = "auto"
 DEFAULT_NOTES_LANGUAGE = "english"
 SAME_AS_TRANSCRIPTION_LANGUAGE = "same_as_transcription"
@@ -81,7 +80,10 @@ class ResolvedLanguagePreferences:
 
 def validate_transcription_language(value: str) -> str:
     normalized = str(value).strip().lower()
-    if normalized != AUTO_TRANSCRIPTION_LANGUAGE and normalized not in LANGUAGE_OPTIONS_BY_CODE:
+    if (
+        normalized != AUTO_TRANSCRIPTION_LANGUAGE
+        and normalized not in LANGUAGE_OPTIONS_BY_CODE
+    ):
         raise ValueError("Unsupported transcription language.")
     return normalized
 
@@ -101,7 +103,9 @@ def validate_custom_notes_language_instruction(value: str | None) -> str:
             f"{MAX_CUSTOM_NOTES_LANGUAGE_INSTRUCTION_LENGTH} characters."
         )
     if _CONTROL_CHARACTER_PATTERN.search(normalized):
-        raise ValueError("Custom notes language instruction must not contain control characters.")
+        raise ValueError(
+            "Custom notes language instruction must not contain control characters."
+        )
     return normalized
 
 
@@ -118,8 +122,13 @@ def validate_language_settings(settings: Mapping[str, Any]) -> None:
     normalized_custom_instruction = validate_custom_notes_language_instruction(
         None if custom_instruction is None else str(custom_instruction)
     )
-    if normalized_notes_language == CUSTOM_NOTES_LANGUAGE and not normalized_custom_instruction:
-        raise ValueError("Custom notes language instruction is required when notes language is custom.")
+    if (
+        normalized_notes_language == CUSTOM_NOTES_LANGUAGE
+        and not normalized_custom_instruction
+    ):
+        raise ValueError(
+            "Custom notes language instruction is required when notes language is custom."
+        )
 
 
 def resolve_transcription_language_code(
@@ -128,7 +137,10 @@ def resolve_transcription_language_code(
 ) -> str | None:
     normalized_settings = dict(settings or {})
     selected = validate_transcription_language(
-        str(normalized_settings.get("transcription_language") or AUTO_TRANSCRIPTION_LANGUAGE)
+        str(
+            normalized_settings.get("transcription_language")
+            or AUTO_TRANSCRIPTION_LANGUAGE
+        )
     )
     if selected == AUTO_TRANSCRIPTION_LANGUAGE:
         return None

@@ -1,6 +1,7 @@
 from .constants import *
 from .speaker import *
 
+
 def refine_recording_utterances_via_segmentation(
     session,
     *,
@@ -12,8 +13,9 @@ def refine_recording_utterances_via_segmentation(
     source: str = "segmentation_refinement",
     candidate_predicate: Callable[[TranscriptUtterance], bool] | None = None,
 ) -> dict[str, Any]:
-    from .diarization import _apply_boundary_reconciliation_segments
     from .core import list_active_utterances
+    from .diarization import _apply_boundary_reconciliation_segments
+
     """Phase F finalize-time pass: re-split ambiguous utterances using
     frame-level segmentation derived turns.
 
@@ -180,7 +182,6 @@ def refine_recording_utterances_via_segmentation(
     return summary
 
 
-
 def _segment_payload_from_utterance(utterance: TranscriptUtterance) -> dict[str, Any]:
     return {
         "id": utterance.public_id,
@@ -193,15 +194,18 @@ def _segment_payload_from_utterance(utterance: TranscriptUtterance) -> dict[str,
         "text_manually_edited": bool(utterance.manual_text_locked),
         "revision": int(utterance.revision),
         "recording_speaker_id": utterance.recording_speaker_id,
-        "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
+        "state": utterance.state.value
+        if hasattr(utterance.state, "value")
+        else str(utterance.state),
         "speaker_confidence": utterance.speaker_confidence,
         "text_confidence": utterance.text_confidence,
         "speaker_assignment_source": _utterance_speaker_assignment_source(utterance),
-        "speaker_assignment_authority": _utterance_speaker_assignment_authority(utterance),
+        "speaker_assignment_authority": _utterance_speaker_assignment_authority(
+            utterance
+        ),
         "overlapping_speakers": _rolling_overlap_labels_for_utterance(utterance),
         "confidence_payload": dict(utterance.confidence_payload or {}),
     }
-
 
 
 def _rolling_overlap_labels_for_utterance(
@@ -219,7 +223,9 @@ def _rolling_overlap_labels_for_utterance(
         or "overlapping_speakers" in rolling_payload
     ):
         labels: list[str] = []
-        for speaker_id in rolling_payload.get("overlapping_recording_speaker_ids") or []:
+        for speaker_id in (
+            rolling_payload.get("overlapping_recording_speaker_ids") or []
+        ):
             try:
                 speaker_id_value = int(speaker_id)
             except (TypeError, ValueError):
@@ -229,19 +235,28 @@ def _rolling_overlap_labels_for_utterance(
                 if recording_speakers_by_id is not None
                 else None
             )
-            label = str(speaker.diarization_label or "").strip() if speaker is not None else ""
-            if label and label != (utterance.speaker_label or UNKNOWN_SPEAKER) and label not in labels:
+            label = (
+                str(speaker.diarization_label or "").strip()
+                if speaker is not None
+                else ""
+            )
+            if (
+                label
+                and label != (utterance.speaker_label or UNKNOWN_SPEAKER)
+                and label not in labels
+            ):
                 labels.append(label)
         for label in rolling_payload.get("overlapping_speakers") or []:
             label_value = str(label or "").strip()
-            if not label_value or label_value == (utterance.speaker_label or UNKNOWN_SPEAKER):
+            if not label_value or label_value == (
+                utterance.speaker_label or UNKNOWN_SPEAKER
+            ):
                 continue
             if label_value not in labels:
                 labels.append(label_value)
         return labels
 
     return list(projection.get("overlapping_speakers") or [])
-
 
 
 def _load_utterance_asr_words(utterance: TranscriptUtterance) -> list[dict[str, Any]]:
@@ -269,7 +284,6 @@ def _load_utterance_asr_words(utterance: TranscriptUtterance) -> list[dict[str, 
     return words
 
 
-
 def _match_word_to_recording_speaker_id(
     word_payload: dict[str, Any],
     *,
@@ -292,11 +306,14 @@ def _match_word_to_recording_speaker_id(
             best_overlap_ms = overlap_ms
             best_speaker_id = int(turn_row.matched_recording_speaker_id)
             continue
-        if overlap_ms == 0 and best_speaker_id is None and turn_row.start_ms <= midpoint_ms < turn_row.end_ms:
+        if (
+            overlap_ms == 0
+            and best_speaker_id is None
+            and turn_row.start_ms <= midpoint_ms < turn_row.end_ms
+        ):
             best_speaker_id = int(turn_row.matched_recording_speaker_id)
 
     return best_speaker_id
-
 
 
 def _join_asr_words(words: Sequence[dict[str, Any]]) -> str:
@@ -305,7 +322,6 @@ def _join_asr_words(words: Sequence[dict[str, Any]]) -> str:
         for word_payload in words
         if str(word_payload.get("word") or "").strip()
     ).strip()
-
 
 
 def _summarize_utterance_turn_support(
@@ -348,7 +364,6 @@ def _summarize_utterance_turn_support(
     }
 
 
-
 def _build_utterance_speaker_state_payload(
     utterance: TranscriptUtterance,
     *,
@@ -369,7 +384,11 @@ def _build_utterance_speaker_state_payload(
         conflicting_window_ids.update(candidate_support.get("window_ids", set()))
         conflicting_overlap_ms += int(candidate_support.get("supporting_overlap_ms", 0))
 
-    state_value = utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)
+    state_value = (
+        utterance.state.value
+        if hasattr(utterance.state, "value")
+        else str(utterance.state)
+    )
     if manual_override:
         speaker_state = ROLLING_DIARIZATION_SPEAKER_STATE_MANUAL_OVERRIDE
     elif state_value == TranscriptUtteranceState.FINALIZED.value:
@@ -396,7 +415,6 @@ def _build_utterance_speaker_state_payload(
     }
 
 
-
 def _speaker_state_for_utterance(
     utterance: TranscriptUtterance,
     *,
@@ -413,14 +431,19 @@ def _speaker_state_for_utterance(
     if projection and projection.get("speaker_state"):
         return str(projection["speaker_state"])
 
-    state_value = utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)
+    state_value = (
+        utterance.state.value
+        if hasattr(utterance.state, "value")
+        else str(utterance.state)
+    )
     if state_value == TranscriptUtteranceState.FINALIZED.value:
         return ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
-    if utterance.source_kind in {"live", "catch_up"} or state_value == TranscriptUtteranceState.PROVISIONAL.value:
+    if (
+        utterance.source_kind in {"live", "catch_up"}
+        or state_value == TranscriptUtteranceState.PROVISIONAL.value
+    ):
         return ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL
     return ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
 
 
-
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

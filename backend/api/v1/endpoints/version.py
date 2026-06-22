@@ -31,7 +31,9 @@ async def get_version(refresh: bool = Query(False)):
     current_version = get_installed_version()
     release_catalog = await get_release_catalog(force_refresh=refresh)
     current_release = get_release_by_version(release_catalog.releases, current_version)
-    update_status = determine_update_status(current_version, release_catalog.latest_version)
+    update_status = determine_update_status(
+        current_version, release_catalog.latest_version
+    )
 
     return VersionInfo(
         current_version=current_version,

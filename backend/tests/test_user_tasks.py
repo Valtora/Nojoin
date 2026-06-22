@@ -26,7 +26,9 @@ def make_task(
 
 
 def test_normalise_task_title_trims_whitespace():
-    assert normalise_task_title("  Follow up with product  ") == "Follow up with product"
+    assert (
+        normalise_task_title("  Follow up with product  ") == "Follow up with product"
+    )
 
 
 def test_normalise_task_title_rejects_blank_values():

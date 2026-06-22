@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from backend.worker.tasks.embeddings import update_speaker_embedding_task
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
+from backend.worker.tasks.embeddings import update_speaker_embedding_task
 
 
-def test_select_recording_audio_for_embedding_prefers_proxy_for_browser_capture(tmp_path):
+def test_select_recording_audio_for_embedding_prefers_proxy_for_browser_capture(
+    tmp_path,
+):
     audio_path = tmp_path / "meeting.webm"
     proxy_path = tmp_path / "meeting.mp3"
     audio_path.write_bytes(b"webm")
@@ -32,7 +34,9 @@ def test_select_recording_audio_for_embedding_falls_back_to_proxy(tmp_path):
     proxy_path = tmp_path / "meeting.mp3"
     proxy_path.write_bytes(b"mp3")
 
-    recording = SimpleNamespace(audio_path=str(tmp_path / "missing.webm"), proxy_path=str(proxy_path))
+    recording = SimpleNamespace(
+        audio_path=str(tmp_path / "missing.webm"), proxy_path=str(proxy_path)
+    )
 
     assert select_recording_audio_for_embedding(recording) == str(proxy_path)
 
@@ -46,7 +50,9 @@ def test_update_speaker_embedding_task_prefers_proxy_for_browser_capture(
     audio_path.write_bytes(b"webm")
     proxy_path.write_bytes(b"mp3")
 
-    recording = SimpleNamespace(id=7, audio_path=str(audio_path), proxy_path=str(proxy_path))
+    recording = SimpleNamespace(
+        id=7, audio_path=str(audio_path), proxy_path=str(proxy_path)
+    )
     recording_speaker = SimpleNamespace(
         id=9,
         diarization_label="LIVE_00",

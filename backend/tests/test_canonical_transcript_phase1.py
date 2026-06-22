@@ -20,7 +20,6 @@ from backend.utils.canonical_pipeline import (
     process_startup_cutover_recording,
 )
 
-
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
     id INTEGER PRIMARY KEY,
@@ -384,7 +383,9 @@ async def api_app() -> FastAPI:
 
 
 @pytest.fixture
-async def client(api_app: FastAPI, test_session_maker: sessionmaker, monkeypatch) -> AsyncClient:
+async def client(
+    api_app: FastAPI, test_session_maker: sessionmaker, monkeypatch
+) -> AsyncClient:
     from backend.api.v1.endpoints import transcripts as transcripts_module
 
     async def override_get_db():
@@ -393,10 +394,16 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker, monkeypatch
 
     api_app.dependency_overrides[get_db] = override_get_db
     api_app.dependency_overrides[get_current_user] = lambda: build_test_user()
-    monkeypatch.setattr(transcripts_module, "_dispatch_meeting_edge_refresh", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        transcripts_module,
+        "_dispatch_meeting_edge_refresh",
+        lambda *args, **kwargs: None,
+    )
 
     transport = ASGITransport(app=api_app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
         yield async_client
 
     api_app.dependency_overrides.clear()
@@ -449,7 +456,9 @@ async def _seed_processed_recording(
                 "now": "2026-05-19 00:00:00",
                 "recording_id": recording_id,
                 "segments": (
-                    '[{"id": "' + segment_id + '", "start": 0.0, "end": 1.2, "speaker": "SPEAKER_00", "text": "hello there", "segment_source": "legacy"}]'
+                    '[{"id": "'
+                    + segment_id
+                    + '", "start": 0.0, "end": 1.2, "speaker": "SPEAKER_00", "text": "hello there", "segment_source": "legacy"}]'
                     if segment_id
                     else '[{"start": 0.0, "end": 1.2, "speaker": "SPEAKER_00", "text": "hello there", "segment_source": "legacy"}]'
                 ),
@@ -583,12 +592,24 @@ async def test_get_utterances_backfills_processed_transcript(
     assert body["utterances"][0]["id"]
 
     async with test_session_maker() as session:
-        transcript = (await session.execute(select(Transcript).where(Transcript.recording_id == 1))).scalar_one()
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
         assert transcript.segments[0]["id"] == body["utterances"][0]["id"]
-        count = (await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"))).scalar_one()
+        count = (
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"
+                )
+            )
+        ).scalar_one()
         last_event_id = (
             await session.execute(
-                text("SELECT last_utterance_event_id FROM transcript_utterances WHERE recording_id = 1")
+                text(
+                    "SELECT last_utterance_event_id FROM transcript_utterances WHERE recording_id = 1"
+                )
             )
         ).scalar_one()
         assert count == 1
@@ -639,7 +660,9 @@ async def test_legacy_reprocess_required_recording_remains_readable(
 
     async with test_session_maker() as session:
         generation = (
-            await session.execute(text("SELECT pipeline_generation FROM recordings WHERE id = 1"))
+            await session.execute(
+                text("SELECT pipeline_generation FROM recordings WHERE id = 1")
+            )
         ).scalar_one()
 
     assert generation == "legacy_reprocess_required"
@@ -678,7 +701,9 @@ async def test_startup_cutover_backfills_pending_legacy_recording(
 
     async with test_session_maker() as session:
         pending_ids = await session.run_sync(
-            lambda sync_session: list_pending_startup_cutover_recording_ids(sync_session, batch_size=10)
+            lambda sync_session: list_pending_startup_cutover_recording_ids(
+                sync_session, batch_size=10
+            )
         )
         assert pending_ids == [1]
 
@@ -691,10 +716,16 @@ async def test_startup_cutover_backfills_pending_legacy_recording(
         await session.commit()
 
         generation = (
-            await session.execute(text("SELECT pipeline_generation FROM recordings WHERE id = 1"))
+            await session.execute(
+                text("SELECT pipeline_generation FROM recordings WHERE id = 1")
+            )
         ).scalar_one()
         utterance_count = (
-            await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"))
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"
+                )
+            )
         ).scalar_one()
 
     assert outcome == "backfilled"
@@ -730,13 +761,21 @@ async def test_startup_cutover_is_idempotent_after_partial_completion(
         await session.commit()
 
         generation = (
-            await session.execute(text("SELECT pipeline_generation FROM recordings WHERE id = 1"))
+            await session.execute(
+                text("SELECT pipeline_generation FROM recordings WHERE id = 1")
+            )
         ).scalar_one()
         utterance_count = (
-            await session.execute(text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"))
+            await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"
+                )
+            )
         ).scalar_one()
         processing_run_count = (
-            await session.execute(text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT COUNT(*) FROM processing_runs WHERE recording_id = 1")
+            )
         ).scalar_one()
 
     assert first_outcome == "backfilled"
@@ -765,7 +804,9 @@ async def test_startup_cutover_resumes_remaining_recordings_after_restart(
 
     async with test_session_maker() as session:
         pending_before_restart = await session.run_sync(
-            lambda sync_session: list_pending_startup_cutover_recording_ids(sync_session, batch_size=10)
+            lambda sync_session: list_pending_startup_cutover_recording_ids(
+                sync_session, batch_size=10
+            )
         )
         first_outcome = await session.run_sync(
             lambda sync_session: process_startup_cutover_recording(
@@ -777,7 +818,9 @@ async def test_startup_cutover_resumes_remaining_recordings_after_restart(
 
     async with test_session_maker() as session:
         pending_after_restart = await session.run_sync(
-            lambda sync_session: list_pending_startup_cutover_recording_ids(sync_session, batch_size=10)
+            lambda sync_session: list_pending_startup_cutover_recording_ids(
+                sync_session, batch_size=10
+            )
         )
         second_outcome = await session.run_sync(
             lambda sync_session: process_startup_cutover_recording(
@@ -788,7 +831,9 @@ async def test_startup_cutover_resumes_remaining_recordings_after_restart(
         await session.commit()
 
         generations = (
-            await session.execute(text("SELECT id, pipeline_generation FROM recordings ORDER BY id"))
+            await session.execute(
+                text("SELECT id, pipeline_generation FROM recordings ORDER BY id")
+            )
         ).all()
 
     assert pending_before_restart == [1, 2]
@@ -808,7 +853,9 @@ async def test_startup_cutover_marks_inflight_legacy_recording_reprocess_require
     await _seed_uploading_recording(test_session_maker)
 
     async with test_session_maker() as session:
-        await session.execute(text("UPDATE recordings SET pipeline_generation = NULL WHERE id = 1"))
+        await session.execute(
+            text("UPDATE recordings SET pipeline_generation = NULL WHERE id = 1")
+        )
         await session.commit()
 
         outcome = await session.run_sync(
@@ -838,7 +885,11 @@ async def test_manual_recording_speaker_rename_supersedes_pending_suggestion(
     await _seed_processed_recording(test_session_maker)
     await _set_transcript_speaker_suggestions(
         test_session_maker,
-        [_build_pending_speaker_suggestion(diarization_label="SPEAKER_00", suggested_name="Alex")],
+        [
+            _build_pending_speaker_suggestion(
+                diarization_label="SPEAKER_00", suggested_name="Alex"
+            )
+        ],
     )
 
     utterances_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
@@ -856,11 +907,16 @@ async def test_manual_recording_speaker_rename_supersedes_pending_suggestion(
 
     async with test_session_maker() as session:
         transcript = (
-            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
         ).scalar_one()
 
     assert transcript.speaker_name_suggestions[0]["status"] == "superseded"
-    assert transcript.speaker_name_suggestions[0]["resolution_reason"] == "manual_name_change"
+    assert (
+        transcript.speaker_name_suggestions[0]["resolution_reason"]
+        == "manual_name_change"
+    )
     assert transcript.speaker_name_suggestions[0]["resolution_actor_user_id"] == 1
 
 
@@ -872,7 +928,11 @@ async def test_accept_recording_speaker_suggestion_updates_identity_and_marks_ac
     await _seed_processed_recording(test_session_maker)
     await _set_transcript_speaker_suggestions(
         test_session_maker,
-        [_build_pending_speaker_suggestion(diarization_label="SPEAKER_00", suggested_name="Alex")],
+        [
+            _build_pending_speaker_suggestion(
+                diarization_label="SPEAKER_00", suggested_name="Alex"
+            )
+        ],
     )
 
     utterances_response = await client.get("/api/v1/transcripts/canon-rec/utterances")
@@ -887,7 +947,9 @@ async def test_accept_recording_speaker_suggestion_updates_identity_and_marks_ac
 
     async with test_session_maker() as session:
         transcript = (
-            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
         ).scalar_one()
         speaker_row = (
             await session.execute(
@@ -898,7 +960,10 @@ async def test_accept_recording_speaker_suggestion_updates_identity_and_marks_ac
         ).one()
 
     assert transcript.speaker_name_suggestions[0]["status"] == "accepted"
-    assert transcript.speaker_name_suggestions[0]["resolution_reason"] == "accepted_by_user"
+    assert (
+        transcript.speaker_name_suggestions[0]["resolution_reason"]
+        == "accepted_by_user"
+    )
     assert transcript.speaker_name_suggestions[0]["resolution_actor_user_id"] == 1
     assert speaker_row[0] == "Alex" or speaker_row[1] == "Alex"
 
@@ -911,7 +976,11 @@ async def test_reject_recording_speaker_suggestion_marks_rejected(
     await _seed_processed_recording(test_session_maker)
     await _set_transcript_speaker_suggestions(
         test_session_maker,
-        [_build_pending_speaker_suggestion(diarization_label="SPEAKER_00", suggested_name="Alex")],
+        [
+            _build_pending_speaker_suggestion(
+                diarization_label="SPEAKER_00", suggested_name="Alex"
+            )
+        ],
     )
 
     response = await client.post(
@@ -923,11 +992,16 @@ async def test_reject_recording_speaker_suggestion_marks_rejected(
 
     async with test_session_maker() as session:
         transcript = (
-            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
         ).scalar_one()
 
     assert transcript.speaker_name_suggestions[0]["status"] == "rejected"
-    assert transcript.speaker_name_suggestions[0]["resolution_reason"] == "rejected_by_user"
+    assert (
+        transcript.speaker_name_suggestions[0]["resolution_reason"]
+        == "rejected_by_user"
+    )
     assert transcript.speaker_name_suggestions[0]["resolution_actor_user_id"] == 1
 
 
@@ -960,13 +1034,17 @@ async def test_legacy_segment_text_update_syncs_canonical_utterance(
             )
         ).one()
         recent_event_types = (
-            await session.execute(
-                text(
-                    "SELECT event_type FROM transcript_utterance_events WHERE utterance_id = (SELECT id FROM transcript_utterances WHERE public_id = :public_id) ORDER BY id DESC LIMIT 2"
-                ),
-                {"public_id": utterance_id},
+            (
+                await session.execute(
+                    text(
+                        "SELECT event_type FROM transcript_utterance_events WHERE utterance_id = (SELECT id FROM transcript_utterances WHERE public_id = :public_id) ORDER BY id DESC LIMIT 2"
+                    ),
+                    {"public_id": utterance_id},
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert row[0] == "updated text"
         assert row[1] == 2
         assert row[2] is not None
@@ -1202,11 +1280,15 @@ async def test_rollback_flag_disables_canonical_writes_and_uses_legacy_json(
 
     async with test_session_maker() as session:
         transcript = (
-            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
         ).scalar_one()
         canonical_count = (
             await session.execute(
-                text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1")
+                text(
+                    "SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1"
+                )
             )
         ).scalar_one()
         assert transcript.segments[0]["text"] == "legacy rollback text"
@@ -1264,12 +1346,16 @@ async def test_speaker_patch_scope_updates_all_matching_utterances_and_creates_m
 
     async with test_session_maker() as session:
         revisions = (
-            await session.execute(
-                text(
+            (
+                await session.execute(
+                    text(
                         "SELECT revision FROM transcript_utterances WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED' ORDER BY sort_key"
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         alias_rows = (
             await session.execute(
                 text(
@@ -1277,7 +1363,9 @@ async def test_speaker_patch_scope_updates_all_matching_utterances_and_creates_m
                 )
             )
         ).all()
-        normalized_alias_rows = {(alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows}
+        normalized_alias_rows = {
+            (alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows
+        }
         correction_scope = (
             await session.execute(
                 text(
@@ -1293,12 +1381,16 @@ async def test_speaker_patch_scope_updates_all_matching_utterances_and_creates_m
             )
         ).scalar_one()
         recent_event_types = (
-            await session.execute(
-                text(
-                    "SELECT event_type FROM transcript_utterance_events WHERE recording_id = 1 ORDER BY id DESC LIMIT 2"
+            (
+                await session.execute(
+                    text(
+                        "SELECT event_type FROM transcript_utterance_events WHERE recording_id = 1 ORDER BY id DESC LIMIT 2"
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert revisions == [2, 2]
         assert ("display_name", "Dana") in normalized_alias_rows
         assert correction_scope.lower() == "speaker_everywhere_in_recording"
@@ -1421,7 +1513,9 @@ async def test_speaker_patch_with_global_target_creates_global_alias(
                 )
             )
         ).all()
-        normalized_alias_rows = {(alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows}
+        normalized_alias_rows = {
+            (alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows
+        }
         linked_global_id = (
             await session.execute(
                 text(
@@ -1780,7 +1874,9 @@ async def test_live_and_speaker_aliases_are_persisted_for_canonical_speakers(
                 )
             )
         ).all()
-        normalized_alias_rows = {(alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows}
+        normalized_alias_rows = {
+            (alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows
+        }
         assert ("diarization_label", "SPEAKER_00") in normalized_alias_rows
         assert ("live_label", "LIVE_01") in normalized_alias_rows
 
@@ -1956,7 +2052,11 @@ async def test_whole_transcript_rename_routes_future_generic_live_labels_to_corr
             select(RecordingSpeaker).where(RecordingSpeaker.local_name == "Ezra Klein")
         ).scalar_one()
 
-        return future_utterances, target_speaker, serialize_canonical_utterances(sync_session, 1)
+        return (
+            future_utterances,
+            target_speaker,
+            serialize_canonical_utterances(sync_session, 1),
+        )
 
     async with test_session_maker() as session:
         future_utterances, target_speaker, transcript_segments = await session.run_sync(
@@ -2066,15 +2166,22 @@ async def test_live_scope_rename_reuses_live_speaker_identity_for_future_live_la
             state_override=TranscriptUtteranceState.PROVISIONAL,
             trigger_source="test",
         )
-        speaker_rows = sync_session.execute(
-            select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
-        ).scalars().all()
+        speaker_rows = (
+            sync_session.execute(
+                select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
+            )
+            .scalars()
+            .all()
+        )
         return updated_utterance, target_speaker, future_utterances, speaker_rows
 
     async with test_session_maker() as session:
-        updated_utterance, target_speaker, future_utterances, speaker_rows = await session.run_sync(
-            apply_live_rename_and_append_future_label
-        )
+        (
+            updated_utterance,
+            target_speaker,
+            future_utterances,
+            speaker_rows,
+        ) = await session.run_sync(apply_live_rename_and_append_future_label)
         await session.commit()
 
     future_utterance = future_utterances[0]
@@ -2086,7 +2193,6 @@ async def test_live_scope_rename_reuses_live_speaker_identity_for_future_live_la
     assert future_utterance.recording_speaker_id == 1
     assert future_utterance.speaker_label == "LIVE_01"
     assert len(speaker_rows) == 1
-
 
 
 @pytest.mark.anyio
@@ -2130,7 +2236,9 @@ async def test_recording_speaker_rename_records_correction_event_and_alias(
                 )
             )
         ).all()
-        normalized_alias_rows = {(alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows}
+        normalized_alias_rows = {
+            (alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows
+        }
 
         assert event_row[0].lower() == "rename"
         assert event_row[1].lower() == "speaker_everywhere_in_recording"
@@ -2153,7 +2261,9 @@ async def test_recording_speaker_rename_repairs_projection_when_projection_is_em
 
     async with test_session_maker() as session:
         await session.execute(
-            text("UPDATE transcripts SET text = '', segments = '[]' WHERE recording_id = 1")
+            text(
+                "UPDATE transcripts SET text = '', segments = '[]' WHERE recording_id = 1"
+            )
         )
         await session.commit()
 
@@ -2175,11 +2285,15 @@ async def test_recording_speaker_rename_repairs_projection_when_projection_is_em
 
     async with test_session_maker() as session:
         transcript = (
-            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
         ).scalar_one()
 
         assert transcript.segments
-        assert [segment["speaker"] for segment in transcript.segments] == utterance_speakers
+        assert [
+            segment["speaker"] for segment in transcript.segments
+        ] == utterance_speakers
 
 
 @pytest.mark.anyio
@@ -2217,7 +2331,9 @@ async def test_recording_speaker_merge_repairs_canonical_segments_when_projectio
 
     async with test_session_maker() as session:
         await session.execute(
-            text("UPDATE transcripts SET text = '', segments = '[]' WHERE recording_id = 1")
+            text(
+                "UPDATE transcripts SET text = '', segments = '[]' WHERE recording_id = 1"
+            )
         )
         await session.commit()
 
@@ -2240,7 +2356,9 @@ async def test_recording_speaker_merge_repairs_canonical_segments_when_projectio
 
     async with test_session_maker() as session:
         transcript = (
-            await session.execute(select(Transcript).where(Transcript.recording_id == 1))
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
         ).scalar_one()
         assert [segment["speaker"] for segment in transcript.segments] == [
             "SPEAKER_01",
@@ -2303,7 +2421,9 @@ async def test_recording_speaker_link_to_global_records_correction_event_and_ali
                 )
             )
         ).all()
-        normalized_alias_rows = {(alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows}
+        normalized_alias_rows = {
+            (alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows
+        }
 
         assert event_row[0].lower() == "link_global_speaker"
         assert event_row[1] == 7
@@ -2430,7 +2550,9 @@ async def test_promote_speaker_records_correction_event_and_alias(
                 )
             )
         ).all()
-        normalized_alias_rows = {(alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows}
+        normalized_alias_rows = {
+            (alias_type.lower(), alias_value) for alias_type, alias_value in alias_rows
+        }
 
         assert promoted_global_id is not None
         assert event_row[0].lower() == "promote_global_speaker"
@@ -2641,9 +2763,15 @@ async def test_finalize_utterances_from_segments_preserves_manual_text_lock(
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "live-utt-1"
         assert utterance_row[1] == "manual text"
@@ -2817,7 +2945,9 @@ async def test_finalize_utterances_from_segments_inherits_manual_speaker_lock_wh
     async with test_session_maker() as session:
         old_state = (
             await session.execute(
-                text("SELECT state FROM transcript_utterances WHERE public_id = 'live-utt-1'")
+                text(
+                    "SELECT state FROM transcript_utterances WHERE public_id = 'live-utt-1'"
+                )
             )
         ).scalar_one()
         active_row = (
@@ -2832,10 +2962,20 @@ async def test_finalize_utterances_from_segments_inherits_manual_speaker_lock_wh
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
-        confidence_payload = json.loads(active_row[4]) if isinstance(active_row[4], str) else active_row[4]
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
+        confidence_payload = (
+            json.loads(active_row[4])
+            if isinstance(active_row[4], str)
+            else active_row[4]
+        )
 
         assert old_state.lower() == "superseded"
         assert active_row[0] != "live-utt-1"
@@ -3078,8 +3218,12 @@ async def test_recording_speaker_public_read_filter_hides_zero_utterance_speaker
                 1,
                 list(
                     sync_session.execute(
-                        select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
-                    ).scalars().all()
+                        select(RecordingSpeaker).where(
+                            RecordingSpeaker.recording_id == 1
+                        )
+                    )
+                    .scalars()
+                    .all()
                 ),
             )
         )
@@ -3088,7 +3232,9 @@ async def test_recording_speaker_public_read_filter_hides_zero_utterance_speaker
             label == "LIVE_01" and name == "Dana" and status == "active"
             for label, name, status in rows
         )
-        assert [speaker.local_name or speaker.name for speaker in public_speakers] == ["Dana"]
+        assert [speaker.local_name or speaker.name for speaker in public_speakers] == [
+            "Dana"
+        ]
 
 
 @pytest.mark.anyio
@@ -3152,9 +3298,7 @@ async def test_append_utterances_from_segments_creates_live_provisional_run_and_
         ).one()
         transcript_row = (
             await session.execute(
-                text(
-                    "SELECT text, segments FROM transcripts WHERE recording_id = 1"
-                )
+                text("SELECT text, segments FROM transcripts WHERE recording_id = 1")
             )
         ).one()
 
@@ -3172,7 +3316,11 @@ async def test_append_utterances_from_segments_creates_live_provisional_run_and_
         assert "base" in str(processing_run_row[3])
 
         assert transcript_row[0] == "hello live"
-        transcript_segments = json.loads(transcript_row[1]) if isinstance(transcript_row[1], str) else transcript_row[1]
+        transcript_segments = (
+            json.loads(transcript_row[1])
+            if isinstance(transcript_row[1], str)
+            else transcript_row[1]
+        )
         assert transcript_segments[0]["id"] == "live-utt-1"
         assert transcript_segments[0]["segment_source"] == "live"
         assert transcript_segments[0]["provisional"] is True
@@ -3250,7 +3398,11 @@ async def test_append_utterances_from_segments_live_retry_is_idempotent(
                 text("SELECT segments FROM transcripts WHERE recording_id = 1")
             )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert processing_run_count == 1
         assert utterance_count == 1
@@ -3339,15 +3491,26 @@ async def test_persist_diarization_window_result_records_model_and_speaker_metad
             )
         ).all()
 
-        raw_payload = json.loads(result_row[5]) if isinstance(result_row[5], str) else result_row[5]
-        first_turn_payload = json.loads(turn_rows[0][3]) if isinstance(turn_rows[0][3], str) else turn_rows[0][3]
+        raw_payload = (
+            json.loads(result_row[5])
+            if isinstance(result_row[5], str)
+            else result_row[5]
+        )
+        first_turn_payload = (
+            json.loads(turn_rows[0][3])
+            if isinstance(turn_rows[0][3], str)
+            else turn_rows[0][3]
+        )
 
         assert result_row[0] == "pyannote/speaker-diarization-community-1"
         assert result_row[1] == "community-1"
         assert result_row[2] == "cpu"
         assert result_row[3] == "rolling-cfg-1"
         assert result_row[4] == "completed"
-        assert raw_payload["speaker_metadata"]["SPEAKER_00"]["best_recording_speaker_id"] == 7
+        assert (
+            raw_payload["speaker_metadata"]["SPEAKER_00"]["best_recording_speaker_id"]
+            == 7
+        )
         assert len(turn_rows) == 2
         assert turn_rows[0][0] == "SPEAKER_00"
         assert first_turn_payload["track"] == "A"
@@ -3515,9 +3678,15 @@ async def test_reconcile_diarization_window_result_revises_earlier_live_speaker_
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "LIVE_02"
         assert utterance_row[1] >= 0.55
@@ -3661,7 +3830,9 @@ async def test_reconcile_diarization_window_result_merges_adjacent_live_utteranc
             )
         ).all()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
         merge_count = (
             await session.execute(
@@ -3671,8 +3842,16 @@ async def test_reconcile_diarization_window_result_merges_adjacent_live_utteranc
             )
         ).scalar_one()
 
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
-        active_rows = [row for row in utterance_rows if str(row[1]).lower() != TranscriptUtteranceState.SUPERSEDED.value]
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
+        active_rows = [
+            row
+            for row in utterance_rows
+            if str(row[1]).lower() != TranscriptUtteranceState.SUPERSEDED.value
+        ]
 
         assert len(active_rows) == 1
         assert active_rows[0][2] == "LIVE_02"
@@ -3716,9 +3895,21 @@ async def test_reconcile_diarization_window_result_splits_live_utterance_from_wo
                                     "text": "hello there general kenobi",
                                     "words": [
                                         {"start_ms": 0, "end_ms": 300, "word": "hello"},
-                                        {"start_ms": 300, "end_ms": 600, "word": "there"},
-                                        {"start_ms": 600, "end_ms": 900, "word": "general"},
-                                        {"start_ms": 900, "end_ms": 1200, "word": "kenobi"},
+                                        {
+                                            "start_ms": 300,
+                                            "end_ms": 600,
+                                            "word": "there",
+                                        },
+                                        {
+                                            "start_ms": 600,
+                                            "end_ms": 900,
+                                            "word": "general",
+                                        },
+                                        {
+                                            "start_ms": 900,
+                                            "end_ms": 1200,
+                                            "word": "kenobi",
+                                        },
                                     ],
                                 }
                             ],
@@ -3826,9 +4017,15 @@ async def test_reconcile_diarization_window_result_splits_live_utterance_from_wo
 
     async with test_session_maker() as session:
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
         utterance_rows = (
             await session.execute(
                 text(
@@ -3846,18 +4043,41 @@ async def test_reconcile_diarization_window_result_splits_live_utterance_from_wo
             )
         ).scalar_one()
 
-        active_rows = [row for row in utterance_rows if str(row[1]).lower() != TranscriptUtteranceState.SUPERSEDED.value]
+        active_rows = [
+            row
+            for row in utterance_rows
+            if str(row[1]).lower() != TranscriptUtteranceState.SUPERSEDED.value
+        ]
         original_row = next(row for row in utterance_rows if row[0] == "live-utt-1")
-        first_payload = json.loads(active_rows[0][4]) if isinstance(active_rows[0][4], str) else active_rows[0][4]
-        second_payload = json.loads(active_rows[1][4]) if isinstance(active_rows[1][4], str) else active_rows[1][4]
+        first_payload = (
+            json.loads(active_rows[0][4])
+            if isinstance(active_rows[0][4], str)
+            else active_rows[0][4]
+        )
+        second_payload = (
+            json.loads(active_rows[1][4])
+            if isinstance(active_rows[1][4], str)
+            else active_rows[1][4]
+        )
 
         assert str(original_row[1]).lower() == TranscriptUtteranceState.SUPERSEDED.value
-        assert [segment["speaker"] for segment in transcript_segments] == ["LIVE_01", "LIVE_02"]
-        assert [segment["text"] for segment in transcript_segments] == ["hello there", "general kenobi"]
+        assert [segment["speaker"] for segment in transcript_segments] == [
+            "LIVE_01",
+            "LIVE_02",
+        ]
+        assert [segment["text"] for segment in transcript_segments] == [
+            "hello there",
+            "general kenobi",
+        ]
         assert [row[2] for row in active_rows] == ["LIVE_01", "LIVE_02"]
         assert [row[3] for row in active_rows] == ["hello there", "general kenobi"]
-        assert first_payload["rolling_diarization"]["split_from_public_id"] == "live-utt-1"
-        assert second_payload["rolling_diarization"]["split_from_public_id"] == "live-utt-1"
+        assert (
+            first_payload["rolling_diarization"]["split_from_public_id"] == "live-utt-1"
+        )
+        assert (
+            second_payload["rolling_diarization"]["split_from_public_id"]
+            == "live-utt-1"
+        )
         assert first_payload["asr_segments"][0]["words"][0]["word"] == "hello"
         assert second_payload["asr_segments"][0]["words"][0]["word"] == "general"
         assert split_count == 2
@@ -4007,13 +4227,22 @@ async def test_reconcile_diarization_window_result_keeps_distinct_local_speakers
             )
         ).all()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert turn_rows == [("SPEAKER_00", 2), ("SPEAKER_01", 3)]
         assert [row[0] for row in active_rows] == ["LIVE_01", "LIVE_02"]
-        assert [segment["speaker"] for segment in transcript_segments] == ["LIVE_01", "LIVE_02"]
+        assert [segment["speaker"] for segment in transcript_segments] == [
+            "LIVE_01",
+            "LIVE_02",
+        ]
 
 
 @pytest.mark.anyio
@@ -4126,10 +4355,14 @@ async def test_reconcile_diarization_window_result_creates_new_speaker_for_unmat
         ).all()
         raw_payload = (
             await session.execute(
-                text("SELECT raw_payload FROM diarization_window_results WHERE id = 190")
+                text(
+                    "SELECT raw_payload FROM diarization_window_results WHERE id = 190"
+                )
             )
         ).scalar_one()
-        raw_payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        raw_payload = (
+            json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        )
         speaker_ids_by_label = {row[1]: int(row[0]) for row in speaker_rows}
 
         assert list(speaker_ids_by_label) == ["LIVE_01", "LIVE_02"]
@@ -4293,10 +4526,20 @@ async def test_reconcile_diarization_window_result_projects_overlapping_speakers
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
-        confidence_payload = json.loads(utterance_row[3]) if isinstance(utterance_row[3], str) else utterance_row[3]
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
+        confidence_payload = (
+            json.loads(utterance_row[3])
+            if isinstance(utterance_row[3], str)
+            else utterance_row[3]
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == "manual text survives overlap fallback"
@@ -4306,15 +4549,22 @@ async def test_reconcile_diarization_window_result_projects_overlapping_speakers
         assert transcript_segments[0]["text"] == "manual text survives overlap fallback"
         assert transcript_segments[0]["overlapping_speakers"] == ["LIVE_02"]
         assert serialized_segments[0]["overlapping_speakers"] == ["LIVE_02"]
-        assert confidence_payload["rolling_diarization"]["overlapping_recording_speaker_ids"] == [2]
-        assert confidence_payload["rolling_diarization"]["overlapping_speakers"] == ["LIVE_02"]
+        assert confidence_payload["rolling_diarization"][
+            "overlapping_recording_speaker_ids"
+        ] == [2]
+        assert confidence_payload["rolling_diarization"]["overlapping_speakers"] == [
+            "LIVE_02"
+        ]
 
 
 @pytest.mark.anyio
 async def test_record_recording_speaker_corrections_replays_completed_windows_after_global_link(
     test_session_maker: sessionmaker,
 ) -> None:
-    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.models.pipeline import (
+        SpeakerCorrectionEventType,
+        SpeakerCorrectionScope,
+    )
     from backend.utils.canonical_pipeline import (
         append_utterances_from_segments,
         reconcile_diarization_window_result,
@@ -4405,7 +4655,7 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
                         "speaker_metadata": {
                             "SPEAKER_00": {
                                 "best_global_speaker_id": 7,
-                                    "best_global_speaker_score": 1.0,
+                                "best_global_speaker_score": 1.0,
                             }
                         }
                     }
@@ -4446,9 +4696,7 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
 
     async with test_session_maker() as session:
         await session.execute(
-            text(
-                "UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = 2"
-            )
+            text("UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = 2")
         )
         await session.run_sync(
             lambda sync_session: record_recording_speaker_corrections(
@@ -4478,7 +4726,9 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
         replay_event_count = (
             await session.execute(
@@ -4493,12 +4743,23 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
                 text("SELECT COUNT(*) FROM recording_speakers WHERE recording_id = 1")
             )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
-        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
+        confidence_payload = (
+            json.loads(utterance_row[2])
+            if isinstance(utterance_row[2], str)
+            else utterance_row[2]
+        )
 
         assert utterance_row[0] == "LIVE_02"
         assert utterance_row[1] == 41
-        assert confidence_payload["rolling_diarization"]["matched_recording_speaker_id"] == 2
+        assert (
+            confidence_payload["rolling_diarization"]["matched_recording_speaker_id"]
+            == 2
+        )
         assert utterance_row[3] == "identity_replay"
         assert utterance_row[4] == "provisional"
         assert replay_event_count == 1
@@ -4514,7 +4775,10 @@ async def test_record_recording_speaker_corrections_replays_completed_windows_af
 async def test_identity_replay_preserves_finalized_overlap_primary_for_out_of_cluster_candidate(
     test_session_maker: sessionmaker,
 ) -> None:
-    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.models.pipeline import (
+        SpeakerCorrectionEventType,
+        SpeakerCorrectionScope,
+    )
     from backend.utils.canonical_pipeline import (
         append_utterances_from_segments,
         record_recording_speaker_corrections,
@@ -4543,7 +4807,7 @@ async def test_identity_replay_preserves_finalized_overlap_primary_for_out_of_cl
                         "speaker": "LIVE_03",
                         "text": "overlap peer",
                         "segment_source": "finalize",
-                    }
+                    },
                 ],
                 run_kind=ProcessingRunKind.FINALIZE,
                 source="finalize",
@@ -4594,7 +4858,9 @@ async def test_identity_replay_preserves_finalized_overlap_primary_for_out_of_cl
             {"now": "2026-05-20 00:00:00"},
         )
         await session.execute(
-            text("UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = :speaker_id"),
+            text(
+                "UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = :speaker_id"
+            ),
             {"speaker_id": anchor_speaker_id},
         )
         await session.execute(
@@ -4669,17 +4935,32 @@ async def test_identity_replay_preserves_finalized_overlap_primary_for_out_of_cl
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
         transcript_segments_by_id = {
-            segment["id"]: segment for segment in transcript_segments if segment.get("id")
+            segment["id"]: segment
+            for segment in transcript_segments
+            if segment.get("id")
         }
-        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+        confidence_payload = (
+            json.loads(utterance_row[2])
+            if isinstance(utterance_row[2], str)
+            else utterance_row[2]
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == anchor_speaker_id
-        assert confidence_payload["rolling_diarization"]["rejection_reason"] == "overlap_primary_preserved"
+        assert (
+            confidence_payload["rolling_diarization"]["rejection_reason"]
+            == "overlap_primary_preserved"
+        )
         assert transcript_segments_by_id["final-utt-overlap"]["speaker"] == "LIVE_01"
         assert transcript_segments_by_id["final-utt-overlap"]["overlapping_speakers"]
 
@@ -4688,7 +4969,10 @@ async def test_identity_replay_preserves_finalized_overlap_primary_for_out_of_cl
 async def test_identity_replay_blocks_inactive_out_of_cluster_candidate(
     test_session_maker: sessionmaker,
 ) -> None:
-    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.models.pipeline import (
+        SpeakerCorrectionEventType,
+        SpeakerCorrectionScope,
+    )
     from backend.utils.canonical_pipeline import (
         append_utterances_from_segments,
         record_recording_speaker_corrections,
@@ -4760,7 +5044,9 @@ async def test_identity_replay_blocks_inactive_out_of_cluster_candidate(
             {"now": "2026-05-20 00:00:00"},
         )
         await session.execute(
-            text("UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = :speaker_id"),
+            text(
+                "UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = :speaker_id"
+            ),
             {"speaker_id": anchor_speaker_id},
         )
         await session.execute(
@@ -4839,19 +5125,29 @@ async def test_identity_replay_blocks_inactive_out_of_cluster_candidate(
                 text("SELECT speaker_status FROM recording_speakers WHERE id = 31")
             )
         ).scalar_one()
-        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
+        confidence_payload = (
+            json.loads(utterance_row[2])
+            if isinstance(utterance_row[2], str)
+            else utterance_row[2]
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == anchor_speaker_id
         assert inactive_status == "inactive"
-        assert confidence_payload["rolling_diarization"]["rejection_reason"] == "inactive_candidate_blocked"
+        assert (
+            confidence_payload["rolling_diarization"]["rejection_reason"]
+            == "inactive_candidate_blocked"
+        )
 
 
 @pytest.mark.anyio
 async def test_identity_replay_normalizes_cluster_candidate_to_anchor(
     test_session_maker: sessionmaker,
 ) -> None:
-    from backend.models.pipeline import SpeakerCorrectionEventType, SpeakerCorrectionScope
+    from backend.models.pipeline import (
+        SpeakerCorrectionEventType,
+        SpeakerCorrectionScope,
+    )
     from backend.utils.canonical_pipeline import (
         append_utterances_from_segments,
         record_recording_speaker_corrections,
@@ -4994,9 +5290,15 @@ async def test_identity_replay_normalizes_cluster_candidate_to_anchor(
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == 11
@@ -5140,13 +5442,21 @@ async def test_merge_identity_replay_normalizes_window_matches_to_merge_target(
         ).scalar_one()
         turn_match = (
             await session.execute(
-                text("SELECT matched_recording_speaker_id FROM diarization_window_turns WHERE id = 92")
+                text(
+                    "SELECT matched_recording_speaker_id FROM diarization_window_turns WHERE id = 92"
+                )
             )
         ).scalar_one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == 41
@@ -5294,9 +5604,15 @@ async def test_reconcile_diarization_window_result_preserves_manual_speaker_lock
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert bool(utterance_row[1]) is True
@@ -5454,9 +5770,15 @@ async def test_phase4_exit_gate_rolling_diarization_updates_earlier_live_assignm
             )
         ).all()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_rows[0][0] == "live-utt-1"
         assert utterance_rows[0][1] == "LIVE_02"
@@ -5464,7 +5786,10 @@ async def test_phase4_exit_gate_rolling_diarization_updates_earlier_live_assignm
         assert utterance_rows[1][0] == "live-utt-2"
         assert utterance_rows[1][1] == "LIVE_01"
         assert bool(utterance_rows[1][2]) is True
-        assert [segment["speaker"] for segment in transcript_segments] == ["LIVE_02", "LIVE_01"]
+        assert [segment["speaker"] for segment in transcript_segments] == [
+            "LIVE_02",
+            "LIVE_01",
+        ]
 
 
 @pytest.mark.anyio
@@ -5617,10 +5942,20 @@ async def test_reconcile_diarization_window_result_marks_live_speaker_stable_aft
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        confidence_payload = json.loads(utterance_row[1]) if isinstance(utterance_row[1], str) else utterance_row[1]
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        confidence_payload = (
+            json.loads(utterance_row[1])
+            if isinstance(utterance_row[1], str)
+            else utterance_row[1]
+        )
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert confidence_payload["rolling_diarization"]["speaker_state"] == "stable"
@@ -5833,7 +6168,9 @@ async def test_reconcile_diarization_window_result_keeps_stable_live_speaker_wit
         assert conflicting_speaker is not None
         return conflicting_speaker, 1.0, {"provisional": False, "forced": True}
 
-    monkeypatch.setattr(canonical_pipeline, "_match_window_local_speaker", _force_conflicting_match)
+    monkeypatch.setattr(
+        canonical_pipeline, "_match_window_local_speaker", _force_conflicting_match
+    )
 
     async with test_session_maker() as session:
         summary = await session.run_sync(
@@ -5860,18 +6197,36 @@ async def test_reconcile_diarization_window_result_keeps_stable_live_speaker_wit
             )
         ).one()
         transcript_segments = (
-            await session.execute(text("SELECT segments FROM transcripts WHERE recording_id = 1"))
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
         ).scalar_one()
-        confidence_payload = json.loads(utterance_row[2]) if isinstance(utterance_row[2], str) else utterance_row[2]
-        transcript_segments = json.loads(transcript_segments) if isinstance(transcript_segments, str) else transcript_segments
+        confidence_payload = (
+            json.loads(utterance_row[2])
+            if isinstance(utterance_row[2], str)
+            else utterance_row[2]
+        )
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == 38
         assert confidence_payload["rolling_diarization"]["speaker_state"] == "stable"
-        assert confidence_payload["rolling_diarization"]["applied_recording_speaker_id"] == int(stable_speaker_id)
-        assert confidence_payload["rolling_diarization"]["candidate_recording_speaker_id"] == 2
+        assert confidence_payload["rolling_diarization"][
+            "applied_recording_speaker_id"
+        ] == int(stable_speaker_id)
+        assert (
+            confidence_payload["rolling_diarization"]["candidate_recording_speaker_id"]
+            == 2
+        )
         assert confidence_payload["rolling_diarization"]["candidate_rejected"] is True
-        assert confidence_payload["rolling_diarization"]["rejection_reason"] == "stable_speaker_requires_repeated_evidence"
+        assert (
+            confidence_payload["rolling_diarization"]["rejection_reason"]
+            == "stable_speaker_requires_repeated_evidence"
+        )
         assert transcript_segments[0]["speaker"] == "LIVE_01"
         assert transcript_segments[0]["speaker_state"] == "stable"
 
@@ -5981,7 +6336,9 @@ async def test_reconcile_diarization_window_result_boundary_only_mode_keeps_exis
         assert conflicting_speaker is not None
         return conflicting_speaker, 0.94, {"provisional": False, "forced": True}
 
-    monkeypatch.setattr(canonical_pipeline, "_match_window_local_speaker", _force_conflicting_match)
+    monkeypatch.setattr(
+        canonical_pipeline, "_match_window_local_speaker", _force_conflicting_match
+    )
 
     async with test_session_maker() as session:
         summary = await session.run_sync(
@@ -6008,12 +6365,19 @@ async def test_reconcile_diarization_window_result_boundary_only_mode_keeps_exis
                 )
             )
         ).one()
-        confidence_payload = json.loads(utterance_row[3]) if isinstance(utterance_row[3], str) else utterance_row[3]
+        confidence_payload = (
+            json.loads(utterance_row[3])
+            if isinstance(utterance_row[3], str)
+            else utterance_row[3]
+        )
 
         assert utterance_row[0] == "LIVE_01"
         assert utterance_row[1] == int(stable_speaker_id)
         assert utterance_row[2] == 41
-        assert confidence_payload["rolling_diarization"]["candidate_recording_speaker_id"] == 2
+        assert (
+            confidence_payload["rolling_diarization"]["candidate_recording_speaker_id"]
+            == 2
+        )
         assert confidence_payload["rolling_diarization"]["candidate_rejected"] is True
         assert (
             confidence_payload["rolling_diarization"]["rejection_reason"]
@@ -6087,6 +6451,7 @@ async def test_identical_finalize_retry_is_idempotent(
 
         assert processing_run_count == 1
         assert active_utterance_count == 1
+
 
 def _make_turn(turn_id: int, start_ms: int, end_ms: int, speaker_id: int | None) -> Any:
     from backend.models.pipeline import DiarizationWindowTurn
@@ -6261,7 +6626,9 @@ def test_match_utterance_flags_boundary_and_dampens_confidence() -> None:
     assert evidence["is_boundary_utterance"] is True
     assert 2 in evidence["boundary_overlapping_recording_speaker_ids"]
     raw_confidence = evidence["raw_confidence"]
-    assert confidence == round(raw_confidence * ROLLING_DIARIZATION_BOUNDARY_CONFIDENCE_DAMPENER, 4)
+    assert confidence == round(
+        raw_confidence * ROLLING_DIARIZATION_BOUNDARY_CONFIDENCE_DAMPENER, 4
+    )
     assert evidence.get("boundary_dampened") is True
 
 

@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
-
 PLACEHOLDER_SPEAKER_PATTERN = re.compile(
     r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$",
     re.IGNORECASE,
@@ -96,7 +95,9 @@ class MeetingEventContext:
     attendees: List[str] = field(default_factory=list)
 
 
-def meeting_event_context_from_calendar_event(event: Any) -> Optional[MeetingEventContext]:
+def meeting_event_context_from_calendar_event(
+    event: Any,
+) -> Optional[MeetingEventContext]:
     """Build a :class:`MeetingEventContext` from a ``CalendarEvent`` model.
 
     Returns ``None`` when no event is supplied so the prompt paths fall back
@@ -184,4 +185,6 @@ def append_user_notes_section(notes: str, user_notes: Optional[str]) -> str:
     if not bullet_lines:
         return notes_without_user_section.strip()
 
-    return f"{notes_without_user_section.rstrip()}\n\n## User Notes\n" + "\n".join(bullet_lines)
+    return f"{notes_without_user_section.rstrip()}\n\n## User Notes\n" + "\n".join(
+        bullet_lines
+    )

@@ -1,17 +1,20 @@
+import logging
 import os
 import threading
 import time
-import logging
+
 import redis
 from celery import Celery, bootsteps
 from celery.signals import setup_logging, task_postrun, worker_ready
-from backend.utils.logging_config import setup_logging as configure_logging
+
 from backend.utils.deployment_warnings import log_deployment_warnings
+from backend.utils.logging_config import setup_logging as configure_logging
 
 logger = logging.getLogger(__name__)
 
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 
 @setup_logging.connect
 def config_loggers(*args, **kwargs):
@@ -25,8 +28,8 @@ def log_placeholder_secret_warnings_on_worker_start(**kwargs):
 
 def release_worker_model_caches() -> None:
     try:
-        import sys
         import ctypes
+        import sys
 
         from backend.utils.config_manager import config_manager
 
@@ -39,7 +42,10 @@ def release_worker_model_caches() -> None:
             ("backend.processing.transcribe", "release_model_cache"),
             ("backend.processing.diarize", "release_pipeline_cache"),
             ("backend.processing.embedding_core", "release_embedding_model_cache"),
-            ("backend.processing.segmentation_refinement", "release_segmentation_model_cache"),
+            (
+                "backend.processing.segmentation_refinement",
+                "release_segmentation_model_cache",
+            ),
             ("backend.processing.text_embedding", "release_embedding_model"),
         )
         for module_name, release_name in loaded_release_hooks:
@@ -51,6 +57,7 @@ def release_worker_model_caches() -> None:
                 release()
 
         import gc
+
         gc.collect()
 
         torch_module = sys.modules.get("torch")
@@ -77,6 +84,7 @@ def release_worker_model_caches() -> None:
 def release_model_caches_after_task(**kwargs):
     release_worker_model_caches()
 
+
 celery_app = Celery(
     "nojoin_worker",
     broker=REDIS_URL,
@@ -85,7 +93,7 @@ celery_app = Celery(
         "backend.worker.tasks",
         "backend.processing.live_transcribe",
         "backend.processing.segment_transcode",
-    ]
+    ],
 )
 
 celery_app.conf.update(
@@ -105,6 +113,7 @@ celery_app.conf.update(
         },
     },
 )
+
 
 # Heartbeat implementation to keep worker "active" during heavy tasks
 class HeartbeatThread(threading.Thread):
@@ -132,6 +141,7 @@ class HeartbeatThread(threading.Thread):
     def stop(self):
         self.stop_event.set()
 
+
 class HeartbeatStep(bootsteps.StartStopStep):
     def start(self, worker):
         self.t = HeartbeatThread(REDIS_URL)
@@ -141,7 +151,8 @@ class HeartbeatStep(bootsteps.StartStopStep):
         self.t.stop()
         self.t.join()
 
-celery_app.steps['worker'].add(HeartbeatStep)
+
+celery_app.steps["worker"].add(HeartbeatStep)
 
 if __name__ == "__main__":
     celery_app.start()
