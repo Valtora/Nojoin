@@ -34,5 +34,5 @@ torchmetrics==1.9.0
 soundfile==0.13.1
 matplotlib==3.10.8
 pyannoteai-sdk==0.4.0
-torchcodec==0.7.0
+torchcodec==0.11.1
 fastembed==0.8.0

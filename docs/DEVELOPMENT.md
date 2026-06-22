@@ -11,7 +11,7 @@ This guide covers local development prerequisites and the main commands used whe
 
 ### Backend
 
-- Python 3.11
+- Python 3.12
 - FFmpeg
 - PostgreSQL development headers
 - Compiler tools

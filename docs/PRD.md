@@ -217,7 +217,7 @@ The system provides the following core capabilities:
 
 ### 4.1 Server Stack
 
-- **Language:** Python 3.11+
+- **Language:** Python 3.12+
 - **Framework:** FastAPI
 - **Task Queue:** Celery
 - **Database:** PostgreSQL 18 (accessed via SQLModel/SQLAlchemy)

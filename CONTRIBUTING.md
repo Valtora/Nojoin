@@ -34,7 +34,7 @@ Please refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local development
 
 Local contributor prerequisites:
 
-- Python 3.11
+- Python 3.12
 - Node.js 20 or newer
 - npm
 - Docker for the containerised stack and deployment-path verification
