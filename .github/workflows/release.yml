@@ -45,17 +45,20 @@ jobs:
       - name: Validate tag format and docs version
         id: release
         shell: bash
+        env:
+          RELEASE_REF_INPUT: ${{ inputs.release_ref }}
+          PUBLISH_LATEST_INPUT: ${{ inputs.publish_latest }}
         run: |
           set -euo pipefail
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            tag_name="${{ inputs.release_ref }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            tag_name="${RELEASE_REF_INPUT}"
             if ! git rev-parse -q --verify "refs/tags/${tag_name}" >/dev/null; then
               echo "workflow_dispatch release_ref must point to an existing tag: ${tag_name}" >&2
               exit 1
             fi
             release_ref="refs/tags/${tag_name}"
-            publish_latest="${{ inputs.publish_latest }}"
+            publish_latest="${PUBLISH_LATEST_INPUT}"
           else
             tag_name="${GITHUB_REF_NAME}"
             release_ref="${GITHUB_REF}"
