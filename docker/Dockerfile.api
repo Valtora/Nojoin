@@ -1,5 +1,5 @@
-# Use Python 3.11 slim image for lightweight API
-FROM python:3.11-slim AS builder
+# Use Python 3.12 slim image for lightweight API
+FROM python:3.12-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -27,7 +27,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements/backend.txt
 
 # --- Runtime Stage ---
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1

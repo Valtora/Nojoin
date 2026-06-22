@@ -65,7 +65,7 @@ These items are release blockers. Complete them before treating `main` as produc
 
 ### Python Tooling
 
-- [ ] **PY-001:** Align Ruff's `target-version` with the production Python 3.11 runtime.
+- [ ] **PY-001:** Align Ruff's `target-version` with the production Python 3.12 runtime.
 - [ ] **PY-002:** Add an explicit development or test requirements file that pins `pytest`, required pytest plugins, Ruff, and any other repository tooling.
 - [ ] **PY-003:** Document creation of `.venv`, dependency installation, activation, linting, formatting, migration checks, and testing from a fresh checkout.
 - [ ] **PY-004:** Enable Ruff rules for undefined names, unused imports, unused variables, and redefinitions.

@@ -11,6 +11,31 @@ LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND = 128_000
 PLAYBACK_PROXY_SAMPLE_RATE_HZ = 48_000
 PLAYBACK_PROXY_BITRATE_BITS_PER_SECOND = 192_000
 
+
+def load_audio(path: str, *, channels_first: bool = True):
+    """Load an audio file into a float32 torch tensor and its sample rate.
+
+    Explicit soundfile loader used instead of torchaudio.load: torchaudio 2.11
+    ignores the legacy backend argument and routes I/O through torchcodec, and
+    its load/info helpers are being retired. Audio reaching the processing
+    pipeline is always ffmpeg-transcoded WAV (see processing/segment_transcode),
+    which soundfile decodes natively and deterministically. soundfile and torch
+    are imported lazily so the torch-free API container can import this module.
+
+    Returns a ``(channels, frames)`` tensor when ``channels_first`` is True.
+    """
+    import soundfile as sf
+    import torch
+
+    data, sample_rate = sf.read(path, dtype="float32", always_2d=False)
+    tensor = torch.from_numpy(data)
+    if tensor.ndim == 1:
+        tensor = tensor.unsqueeze(0 if channels_first else 1)
+    elif channels_first:
+        tensor = tensor.t()
+    return tensor.contiguous(), sample_rate
+
+
 def ensure_ffmpeg_in_path():
     """
     Ensures ffmpeg and ffprobe are in the system PATH.

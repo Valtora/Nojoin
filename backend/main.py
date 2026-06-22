@@ -9,13 +9,10 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from backend.core.audio_setup import setup_audio_environment
 from sqlmodel import select
 from backend.api.v1.api import api_router
 from backend.utils.version import get_installed_version
 from backend.startup_migrations import run_startup_migrations, should_skip_startup_migrations
-
-setup_audio_environment()
 
 logger = logging.getLogger(__name__)
 

@@ -1,19 +1,22 @@
 # Use PyTorch base image with CUDA 12.6 support
 # --- Builder Stage ---
-FROM pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime AS builder
+FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies
+# Install build dependencies. python3-venv is required because the PyTorch
+# base image ships a system Python without ensurepip (it dropped the bundled
+# conda environment), so `python -m venv` below cannot bootstrap pip otherwise.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
     libssl-dev \
     libffi-dev \
     build-essential \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -33,7 +36,7 @@ RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints
 RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
 # Install pyannote.audio without dependencies to use system torch
-RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.2 -c constraints.txt
+RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt
 
 # Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
 # pulls the CPU-only onnxruntime; replace it with a CUDA-12-compatible
@@ -47,7 +50,7 @@ RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
 RUN pip install --no-cache-dir triton
 
 # --- Runtime Stage ---
-FROM pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime AS runtime
+FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime AS runtime
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -73,9 +76,14 @@ WORKDIR /app
 # Copy the rest of the application code
 COPY . .
 
-# Create a non-root user and switch to it
-# Create directories for volumes to ensure they are owned by appuser
-RUN useradd -m -u 1000 appuser && \
+# Create a non-root user and switch to it.
+# The Ubuntu 24.04-based PyTorch image ships a default user at UID 1000; remove
+# whatever occupies 1000 first so appuser keeps UID 1000 for mounted-volume
+# ownership. Create directories for volumes to ensure they are owned by appuser.
+RUN if getent passwd 1000 >/dev/null 2>&1; then \
+        userdel -r "$(getent passwd 1000 | cut -d: -f1)" 2>/dev/null || true; \
+    fi && \
+    useradd -m -u 1000 appuser && \
     mkdir -p /home/appuser/.cache/huggingface && \
     mkdir -p /app/data && \
     chown -R appuser:appuser /app /home/appuser
