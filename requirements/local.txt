@@ -6,4 +6,11 @@ torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126
 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu126
 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu126
 torchcodec==0.11.1 --index-url https://download.pytorch.org/whl/cu126
-ruff==0.15.15
+
+# pytest is pinned here too (mirrors test.txt) so the documented GPU host setup
+# can run the suite directly. test.txt is not included because its CPU torch pin
+# would conflict with the cu126 stack above.
+pytest==9.0.3
+
+# Linting, formatting, and type-checking tooling (ruff, mypy, pre-commit).
+-r lint.txt

@@ -1,0 +1,13 @@
+# Linting, formatting, and type-checking tooling.
+#
+# Intentionally free of application and ML dependencies so the CI lint job can
+# install it quickly. Ruff needs no project dependencies; mypy follows imports
+# for the typed boundaries it checks and ignores the heavy ML stack via config
+# in pyproject.toml.
+ruff==0.15.15
+mypy==1.18.2
+pre-commit==4.6.0
+
+# Type stubs for third-party libraries used on the typed backend boundary.
+types-requests==2.33.0.20260518
+types-aiofiles==25.1.0.20260518

@@ -1,0 +1,41 @@
+# Pre-commit hooks mirroring the fast checks enforced in CI (.github/workflows/ci.yml).
+#
+# Install the git hook once:   pre-commit install
+# Run against everything:      pre-commit run --all-files
+#
+# Heavier checks (mypy, pytest) are intentionally left out to keep the commit
+# hook fast; run scripts/check.py for the full local check suite before pushing.
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.15
+    hooks:
+      - id: ruff
+        name: ruff lint
+        args: [--fix]
+      - id: ruff-format
+        name: ruff format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: validate-docs
+        name: validate documentation links
+        entry: python scripts/validate_docs.py
+        language: system
+        pass_filenames: false
+        files: \.(md|py)$
+      - id: validate-alembic
+        name: validate alembic graph
+        entry: python scripts/validate_alembic.py
+        language: system
+        pass_filenames: false
+        files: ^backend/.*\.py$
