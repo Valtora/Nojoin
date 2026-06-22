@@ -1,33 +1,81 @@
-# Pull Request Template
+# Summary
 
-## Description
+Describe the user-visible or maintainer-visible change in 2-4 sentences. State what changed and why.
 
-Please include a summary of the change and which issue is fixed or what feature is added. Please also include relevant motivation and context. List any dependencies that are required for this change.
+## Linked Issues
 
-Fixes # (issue)
+- Fixes #
+- Related #
 
-## Type of change
+## Change Type
 
-Please delete options that are not relevant.
+- [ ] Bug fix
+- [ ] Feature
+- [ ] Refactor
+- [ ] Documentation
+- [ ] CI / build / tooling
+- [ ] Breaking change
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
+## Affected Areas
 
-## How Has This Been Tested?
+- [ ] Backend / API
+- [ ] Worker / processing pipeline
+- [ ] Frontend / UI
+- [ ] Browser capture
+- [ ] Auth / security
+- [ ] Calendar / integrations
+- [ ] Migrations / persistence
+- [ ] Deployment / operations
+- [ ] Documentation only
 
-Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration:
+## Local Verification
 
-## Impact
+Mark every command you actually ran. Leave unchecked items unchecked and explain them below.
 
-Please describe the impact of this change on the project.
+- [ ] `source .venv/bin/activate && python scripts/check_fast.py`
+- [ ] `source .venv/bin/activate && pytest`
+- [ ] `cd frontend && npm run lint`
+- [ ] `cd frontend && npm run test`
+- [ ] `cd frontend && npm run build`
+- [ ] `python3 scripts/validate_docs.py`
+- [ ] `python3 scripts/validate_alembic.py`
+- [ ] `git diff --check`
 
-## Screenshot (if relevant)
+## Manual Validation
 
-Please provide a screenshot of the change if relevant, you can drag and drop an image directly into the markdown box.
+List the manual checks you performed. If none were needed, say `Not needed`.
 
-## To-Dos
+If browser capture or recording flows changed, explicitly cover:
 
-- [ ] Successful npm build
-- [ ] Successful docker build
+- share picker behavior
+- selected microphone behavior
+- waveform / live state
+- pause / resume
+- stop / finalize
+- discard
+- unsupported-browser messaging
+
+## Impact And Risk
+
+- Security impact:
+  State whether auth, sessions, tokens, secrets, or trust boundaries changed. If yes, say whether `docs/SECURITY.md` was updated.
+- Migration impact:
+  State whether `backend/alembic/versions/` changed and whether `python3 scripts/validate_alembic.py` passed.
+- Deployment impact:
+  State whether operators need `.env`, Docker, reverse proxy, model, or rollout changes. If yes, say whether `docs/DEPLOYMENT.md` was updated.
+- Documentation impact:
+  List the docs updated for this behavior or workflow change. If none were needed, say why.
+
+## Scope-Specific Checks
+
+- [ ] Security-sensitive behavior changes updated `docs/SECURITY.md`
+- [ ] Deployment or runtime workflow changes updated `docs/DEPLOYMENT.md`
+- [ ] Contributor workflow or validation changes updated `CONTRIBUTING.md` and `docs/DEVELOPMENT.md`
+
+## Pending Before Merge
+
+List anything still pending before merge. If nothing is pending, say `None`.
+
+## Screenshots Or Recordings
+
+Add screenshots, screen recordings, or note `Not applicable`.

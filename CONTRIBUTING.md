@@ -74,6 +74,8 @@ Run the checks for every area you touched before opening a pull request. Capture
 
 `python scripts/check_fast.py` is the incremental Python standards gate for stable backend boundaries. It currently enforces Ruff linting, Ruff format drift detection, and mypy on the typed API/configuration/shared-contract modules listed in the script, and the same command runs in CI and release validation as `Python quality`.
 
+Complete the pull request template accurately. Mark only the checks you actually ran, call out any manual validation performed, and explicitly list anything still pending before merge.
+
 Additional scope rules:
 
 - Recording context-menu changes must keep `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx` in sync.

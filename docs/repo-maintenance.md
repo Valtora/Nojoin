@@ -174,7 +174,7 @@ Large refactors must preserve behavior and begin with characterization tests.
 - [ ] **COMM-001:** Add an explicit private reporting contact or process to the Code of Conduct enforcement section.
 - [ ] **COMM-002:** Update the platform issue template to match the current Windows, Linux, macOS, Android, and iOS support boundaries.
 - [ ] **COMM-003:** Improve the bug template with Nojoin version, deployment mode, browser, capture mode, logs, reproduction data, and privacy-redaction guidance.
-- [ ] **COMM-004:** Improve the pull-request template with backend tests, frontend lint/test/build, migration impact, documentation impact, security impact, and manual verification.
+- [x] **COMM-004:** Improve the pull-request template with backend tests, frontend lint/test/build, migration impact, documentation impact, security impact, and manual verification.
 - [ ] **COMM-005:** Add issue-template configuration that directs security reports to private vulnerability reporting and support questions to the intended support channel.
 - [ ] **COMM-006:** Define maintainer response, triage, and supported-version expectations that can realistically be met.
 
