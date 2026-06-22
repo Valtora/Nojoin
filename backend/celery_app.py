@@ -4,13 +4,9 @@ import time
 import logging
 import redis
 from celery import Celery, bootsteps
-from backend.core.audio_setup import setup_audio_environment
 from celery.signals import setup_logging, task_postrun, worker_ready
 from backend.utils.logging_config import setup_logging as configure_logging
 from backend.utils.deployment_warnings import log_deployment_warnings
-
-# Setup audio environment (patches torchaudio)
-setup_audio_environment()
 
 logger = logging.getLogger(__name__)
 

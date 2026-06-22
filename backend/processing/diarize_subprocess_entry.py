@@ -20,16 +20,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 cwd = os.getcwd()
 
-# Ensure audio environment is setup
-try:
-    from backend.core.audio_setup import setup_audio_environment
-    setup_audio_environment()
-except ImportError:
-    # Fallback if running in a context where backend package isn't fully resolvable
-    # This might happen if PYTHONPATH isn't set correctly, but the sys.path insert above should fix it.
-    logger.warning("Could not import backend.core.audio_setup")
-except ImportError:
-    logger.warning("Could not import backend.utils.hf_patch in subprocess")
 
 class StdoutProgressHook:
     def __init__(self):

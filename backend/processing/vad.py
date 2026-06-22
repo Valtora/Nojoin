@@ -6,15 +6,20 @@ import numpy as np
 import torchaudio
 from typing import Optional, Dict, Any, Tuple
 
+from backend.utils.audio import load_audio
+
 logger = logging.getLogger(__name__)
 
 def safe_read_audio(path: str, sampling_rate: int = 16000, preserve_channels: bool = False):
     """
-    Reads audio using torchaudio with 'soundfile' backend to avoid torchcodec issues.
-    Replicates silero_vad.read_audio functionality.
+    Reads audio into a (channels, frames) tensor and resamples to ``sampling_rate``.
+
+    Uses the explicit soundfile loader (backend.utils.audio.load_audio) instead of
+    torchaudio.load: torchaudio 2.11 ignores the backend argument and routes I/O
+    through torchcodec. Replicates silero_vad.read_audio functionality.
     """
 
-    wav, sr = torchaudio.load(path, backend="soundfile")
+    wav, sr = load_audio(path)
     
     if wav.ndim == 1:
         wav = wav.unsqueeze(0)
