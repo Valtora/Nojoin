@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models.calendar import CalendarDashboardDayCountRead
+from backend.models.calendar import CalendarDashboardDayCountRead, CalendarEvent
 from backend.models.chat import ChatMessage
 from backend.models.document import Document, DocumentStatus
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
@@ -158,6 +158,9 @@ def serialize_recording_speaker(
     *,
     recording_public_id: str,
 ) -> RecordingSpeakerPublicRead:
+    # serialize_* helpers only ever receive persisted rows, so the primary key
+    # is always populated despite the ORM model typing it as Optional.
+    assert speaker.id is not None
     return RecordingSpeakerPublicRead(
         id=speaker.id,
         public_id=speaker.public_id,
@@ -192,6 +195,7 @@ def serialize_transcript(
     segments_override: Optional[list[dict]] = None,
     text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
+    assert transcript.id is not None
     return TranscriptPublicRead(
         id=transcript.id,
         created_at=transcript.created_at,
@@ -223,6 +227,7 @@ def serialize_chat_message(
     *,
     recording_public_id: str,
 ) -> ChatMessagePublicRead:
+    assert message.id is not None
     return ChatMessagePublicRead(
         id=message.id,
         created_at=message.created_at,
@@ -239,6 +244,7 @@ def serialize_document(
     *,
     recording_public_id: str,
 ) -> DocumentPublicRead:
+    assert document.id is not None
     return DocumentPublicRead(
         id=document.id,
         created_at=document.created_at,

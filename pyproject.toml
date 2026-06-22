@@ -9,6 +9,32 @@ markers = [
   "pipeline_baseline: marker for pipeline baseline evaluation metrics"
 ]
 
+[tool.mypy]
+# Incremental, boundary-first type checking. The production runtime is 3.12.
+# Rather than type-checking the whole (largely untyped) backend at once, we
+# enforce types on a curated set of stable boundaries -- configuration, core
+# security/persistence contracts, and API-facing schemas -- and expand the
+# `files` list as more modules are annotated (see docs/repo-maintenance.md).
+python_version = "3.12"
+# Heavy ML and third-party libraries ship no stubs; don't fail on their imports.
+ignore_missing_imports = true
+# Process imported modules for type information but only report errors in the
+# files listed below, so the enforced boundary stays small and green.
+follow_imports = "silent"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+files = [
+    "backend/utils/config_manager.py",
+    "backend/core/exceptions.py",
+    "backend/core/security.py",
+    "backend/core/encryption.py",
+    "backend/models/base.py",
+    "backend/models/recording_public.py",
+    "backend/models/people_tag_schemas.py",
+]
+
 [tool.ruff]
 target-version = "py312"
 
