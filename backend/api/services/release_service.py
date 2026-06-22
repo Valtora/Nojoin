@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
+from typing import TypedDict
 
 import httpx
 from pydantic import BaseModel
@@ -13,7 +14,9 @@ logger = logging.getLogger(__name__)
 GITHUB_RELEASES_API_URL = "https://api.github.com/repos/Valtora/Nojoin/releases"
 GITHUB_RELEASES_PAGE_URL = "https://github.com/Valtora/Nojoin/releases"
 GITHUB_LATEST_RELEASE_URL = "https://github.com/Valtora/Nojoin/releases/latest"
-GITHUB_RAW_VERSION_URL = "https://raw.githubusercontent.com/Valtora/Nojoin/main/docs/VERSION"
+GITHUB_RAW_VERSION_URL = (
+    "https://raw.githubusercontent.com/Valtora/Nojoin/main/docs/VERSION"
+)
 GHCR_TOKEN_URL = "https://ghcr.io/token?scope=repository:valtora/nojoin-api:pull"
 GHCR_TAGS_URL = "https://ghcr.io/v2/valtora/nojoin-api/tags/list"
 
@@ -21,10 +24,13 @@ RELEASE_CACHE_TTL = timedelta(minutes=10)
 MAX_RELEASE_HISTORY = 12
 SEMVER_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
-_release_cache = {
-    "data": None,
-    "expires_at": datetime.min,
-}
+
+class ReleaseCache(TypedDict):
+    data: ReleaseCatalog | None
+    expires_at: datetime
+
+
+_release_cache: ReleaseCache = {"data": None, "expires_at": datetime.min}
 _release_cache_lock = asyncio.Lock()
 
 
@@ -89,7 +95,9 @@ def compare_versions(left: str | None, right: str | None) -> int | None:
     return 0
 
 
-def determine_update_status(current_version: str | None, latest_version: str | None) -> str:
+def determine_update_status(
+    current_version: str | None, latest_version: str | None
+) -> str:
     comparison = compare_versions(current_version, latest_version)
     if comparison is None:
         return "unknown"
@@ -100,7 +108,9 @@ def determine_update_status(current_version: str | None, latest_version: str | N
     return "current"
 
 
-def get_release_by_version(releases: list[ReleaseInfo], version: str | None) -> ReleaseInfo | None:
+def get_release_by_version(
+    releases: list[ReleaseInfo], version: str | None
+) -> ReleaseInfo | None:
     normalised = normalise_version(version)
     if not normalised:
         return None
@@ -134,13 +144,15 @@ async def _fetch_github_releases(limit: int = MAX_RELEASE_HISTORY) -> list[Relea
 
     try:
         async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
-            response = await client.get(GITHUB_RELEASES_API_URL, params={"per_page": limit})
+            response = await client.get(
+                GITHUB_RELEASES_API_URL, params={"per_page": limit}
+            )
             if response.status_code != 200:
                 logger.debug("GitHub releases request failed: %s", response.status_code)
                 return []
 
             payload = response.json()
-    except Exception:  # noqa: BLE001
+    except (httpx.HTTPError, TypeError, ValueError):
         logger.debug("Failed to fetch GitHub releases metadata.", exc_info=True)
         return []
 
@@ -205,9 +217,11 @@ async def _fetch_latest_from_ghcr() -> str | None:
             if not semver_tags:
                 return None
 
-            semver_tags.sort(key=lambda value: parse_semver(value) or (0, 0, 0), reverse=True)
+            semver_tags.sort(
+                key=lambda value: parse_semver(value) or (0, 0, 0), reverse=True
+            )
             return normalise_version(semver_tags[0])
-    except Exception:  # noqa: BLE001
+    except (httpx.HTTPError, TypeError, ValueError):
         logger.debug("Failed to fetch latest version from GHCR.", exc_info=True)
         return None
 
@@ -218,21 +232,20 @@ async def _fetch_latest_from_github_raw() -> str | None:
             response = await client.get(GITHUB_RAW_VERSION_URL)
             if response.status_code == 200:
                 return normalise_version(response.text.strip())
-    except Exception:  # noqa: BLE001
+    except (httpx.HTTPError, ValueError):
         logger.debug("Failed to fetch version from GitHub raw.", exc_info=True)
     return None
 
 
 async def get_release_catalog(force_refresh: bool = False) -> ReleaseCatalog:
-    global _release_cache
-
     async with _release_cache_lock:
+        cached_catalog = _release_cache["data"]
         if (
             not force_refresh
-            and _release_cache["data"]
+            and cached_catalog is not None
             and datetime.now() < _release_cache["expires_at"]
         ):
-            return _release_cache["data"]
+            return cached_catalog
 
     releases = await _fetch_github_releases()
     if releases:
@@ -251,12 +264,16 @@ async def get_release_catalog(force_refresh: bool = False) -> ReleaseCatalog:
             source = "github-raw" if latest_version else "unknown"
 
         if not latest_version:
-            logger.warning("Could not determine latest version from GitHub releases, GHCR, or GitHub raw.")
+            logger.warning(
+                "Could not determine latest version from GitHub releases, GHCR, or GitHub raw."
+            )
 
         catalog = ReleaseCatalog(
             source=source,
             latest_version=latest_version,
-            latest_release_url=GITHUB_LATEST_RELEASE_URL if latest_version else GITHUB_RELEASES_PAGE_URL,
+            latest_release_url=GITHUB_LATEST_RELEASE_URL
+            if latest_version
+            else GITHUB_RELEASES_PAGE_URL,
             releases=[],
         )
 

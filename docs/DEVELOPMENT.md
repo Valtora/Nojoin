@@ -47,7 +47,7 @@ Host-run validation expects the project virtual environment plus frontend depend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements/local.txt
+python -m pip install -r requirements/dev.txt
 
 cd frontend
 npm install
@@ -56,6 +56,7 @@ npm install
 If you are working on a narrower area, you can install a smaller Python dependency set:
 
 - backend tests only: `python -m pip install -r requirements/test.txt`
+- full local host worker stack with bundled-model extras: `python -m pip install -r requirements/local.txt`
 - API-only or worker-only runtime work: use the matching file under `requirements/`
 
 ## Required Pull Request Checks
@@ -73,6 +74,7 @@ Local equivalents:
 
 ```bash
 source .venv/bin/activate
+python scripts/check_fast.py
 pytest
 
 cd frontend
@@ -85,8 +87,11 @@ python3 scripts/validate_docs.py
 python3 scripts/validate_alembic.py
 ```
 
+`python scripts/check_fast.py` is the incremental Python standards gate for stable backend boundaries. It currently runs Ruff linting, Ruff format drift detection, and mypy on the typed API/configuration/shared-contract modules listed in `scripts/check_fast.py`, and the same command is enforced in CI and release validation as `Python quality`.
+
 ## Verification By Change Scope
 
+- Python tooling/config changes: run `python scripts/check_fast.py`, `pytest`, `python3 scripts/validate_docs.py`, and `python3 scripts/validate_alembic.py`.
 - Backend or worker code: run `pytest`.
 - Frontend code: run `npm run lint`, `npm run test`, and `npm run build`.
 - Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behavior, selected microphone behavior, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
@@ -248,6 +253,9 @@ alembic revision --autogenerate -m "message"
 
 # Sweep legacy recordings (manual run)
 python -m backend.startup_canonical_cutover
+
+# Run the fast Python standards gate (ensure the virtual environment is active first)
+python scripts/check_fast.py
 
 # Run backend tests (ensure the virtual environment is active first)
 source .venv/bin/activate

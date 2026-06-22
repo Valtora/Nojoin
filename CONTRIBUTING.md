@@ -45,14 +45,17 @@ Typical host setup from a fresh checkout:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements/local.txt
+python -m pip install -r requirements/dev.txt
 
 cd frontend
 npm install
 ```
 
+For the full host-side worker and bundled-model dependency set, install `requirements/local.txt` instead of `requirements/dev.txt`.
+
 Minimum pull request verification is:
 
+- Fast Python standards: `source .venv/bin/activate && python scripts/check_fast.py`
 - Backend/API/worker changes: `source .venv/bin/activate && pytest`
 - Frontend changes: `cd frontend && npm run lint && npm run test && npm run build`
 - Documentation changes: `python3 scripts/validate_docs.py`
@@ -68,6 +71,8 @@ The pull request workflow requires these checks to pass on `main`:
 - `Alembic validation`
 
 Run the checks for every area you touched before opening a pull request. Capture-related changes also require manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behavior. Migration changes must keep a single checked-in Alembic head and must not delete or rename committed revision files.
+
+`python scripts/check_fast.py` is the incremental Python standards gate for stable backend boundaries. It currently enforces Ruff linting, Ruff format drift detection, and mypy on the typed API/configuration/shared-contract modules listed in the script, and the same command runs in CI and release validation as `Python quality`.
 
 Additional scope rules:
 

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { getErrorMessage } from "@/lib/errors";
+
 import type { SettingsAutosaveStatus } from "./SettingsAutosaveState";
 
 export const SETTINGS_AUTOSAVE_DEBOUNCE_MS = 1000;
@@ -31,21 +33,7 @@ function getAutosaveErrorMessage(
   error: unknown,
   fallbackMessage: string,
 ): string {
-  if (typeof error === "object" && error !== null) {
-    const maybeResponse = error as {
-      response?: { data?: { detail?: unknown } };
-    };
-    const detail = maybeResponse.response?.data?.detail;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail;
-    }
-  }
-
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-
-  return fallbackMessage;
+  return getErrorMessage(error, fallbackMessage);
 }
 
 export default function useDebouncedAutosave<T>({

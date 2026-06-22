@@ -1,6 +1,7 @@
 -r backend.txt
 -r worker.txt
 aiosqlite==0.22.1
+anyio==4.13.0
 pytest==9.0.3
 torch==2.8.0
 torchaudio==2.8.0

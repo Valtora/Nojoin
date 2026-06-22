@@ -1,5 +1,3 @@
-import { AxiosError } from "axios";
-
 import {
   discardRecordingCapture,
   finalizeRecordingCapture,
@@ -10,6 +8,12 @@ import {
   reportRecordingCaptureSources,
   resumeRecordingCapture,
 } from "@/lib/api";
+import {
+  getErrorDetail,
+  getErrorMessage,
+  getErrorPayload,
+  getErrorStatus,
+} from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import type { Recording, RecordingId } from "@/types";
 
@@ -82,28 +86,10 @@ const formatCaptureError = (error: unknown) => {
     return error.message;
   }
 
-  if (error instanceof AxiosError) {
-    const detail = error.response?.data?.detail;
-    if (typeof detail === "string") {
-      return detail;
-    }
-    if (detail && typeof detail.message === "string") {
-      return detail.message;
-    }
-    if (typeof error.message === "string") {
-      return error.message;
-    }
-  }
-
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return error ? String(error) : "The browser capture flow failed unexpectedly.";
+  return getErrorMessage(
+    error,
+    "The browser capture flow failed unexpectedly.",
+  );
 };
 
 const formatUnsupportedMessage = (reason: CaptureState["support"]["reason"]) => {
@@ -243,8 +229,7 @@ export class CaptureController {
       initResponse = await initRecording(name);
 
     } catch (error: unknown) {
-      const detail =
-        error instanceof AxiosError ? error.response?.data?.detail : null;
+      const detail = getErrorPayload(error)?.detail;
 
       if (isActiveRecordingConflictDetail(detail)) {
         await this.refreshPausedRecording().catch(() => {});
@@ -717,11 +702,9 @@ export class CaptureController {
         return await finalizeRecordingCapture(recordingId);
 
       } catch (error: unknown) {
-        const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
         const canRetry =
-          error instanceof AxiosError &&
-          error.response?.status === 409 &&
-          detail === FINALIZE_UPLOAD_IN_PROGRESS_DETAIL &&
+          getErrorStatus(error) === 409 &&
+          getErrorDetail(error) === FINALIZE_UPLOAD_IN_PROGRESS_DETAIL &&
           attempt < FINALIZE_RETRY_DELAYS_MS.length;
 
         if (!canRetry) {

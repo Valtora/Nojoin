@@ -4,7 +4,6 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-
 FORBIDDEN_INTERNAL_HOSTNAMES = frozenset(
     {
         "localhost",
@@ -48,9 +47,7 @@ def validate_ollama_api_url(
         )
 
     if lowered_hostname in LOCALHOST_HOSTNAMES:
-        raise OllamaURLValidationError(
-            "Loopback Ollama hostnames are not allowed."
-        )
+        raise OllamaURLValidationError("Loopback Ollama hostnames are not allowed.")
 
     if lowered_hostname in SPECIAL_LOCAL_HOSTNAMES:
         if allow_private:
@@ -89,7 +86,11 @@ def _normalise_optional_url(url: str | None) -> str | None:
 
 def _normalise_url(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.hostname:
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or not parsed.hostname
+    ):
         raise OllamaURLValidationError("Invalid Ollama API URL format.")
 
     hostname = parsed.hostname.strip()
@@ -106,14 +107,18 @@ def _resolve_hostname(hostname: str) -> list[str]:
         try:
             addr_info = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
         except socket.gaierror as exc:
-            raise OllamaURLValidationError("Could not resolve Ollama hostname.") from exc
-        addresses = {item[4][0] for item in addr_info if item[4]}
+            raise OllamaURLValidationError(
+                "Could not resolve Ollama hostname."
+            ) from exc
+        addresses = {str(item[4][0]) for item in addr_info if item[4]}
         return sorted(addresses)
 
     return [str(ip_obj)]
 
 
-def _is_never_allowed_address(ip_obj: ipaddress._BaseAddress) -> bool:
+def _is_never_allowed_address(
+    ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
     if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast:
         return True
     if ip_obj.is_unspecified or ip_obj.is_reserved:

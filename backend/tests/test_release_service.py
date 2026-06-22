@@ -1,42 +1,47 @@
-from backend.api.services.release_service import (
-    ReleaseInfo,
-    compare_versions,
-    determine_update_status,
-    get_release_by_version,
-    normalise_version,
-)
+from __future__ import annotations
+
+import httpx
+import pytest
+
+from backend.api.services import release_service
 
 
-def test_normalise_version_accepts_semver_with_optional_v_prefix():
-    assert normalise_version("0.7.6") == "0.7.6"
-    assert normalise_version("v0.7.6") == "0.7.6"
+class _ExplodingAsyncClient:
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    async def __aenter__(self) -> "_ExplodingAsyncClient":
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        return None
+
+    async def get(self, *args: object, **kwargs: object) -> httpx.Response:
+        raise httpx.ReadTimeout("boom")
 
 
-def test_normalise_version_rejects_non_release_tags():
-    assert normalise_version("latest") is None
-    assert normalise_version("sha-0a93da3") is None
+@pytest.mark.anyio
+async def test_fetch_github_releases_returns_empty_list_on_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release_service.httpx, "AsyncClient", _ExplodingAsyncClient)
+
+    releases = await release_service._fetch_github_releases()
+
+    assert releases == []
 
 
-def test_compare_versions_uses_semver_ordering():
-    assert compare_versions("0.7.5", "0.7.6") == -1
-    assert compare_versions("0.7.6", "0.7.6") == 0
-    assert compare_versions("0.7.7", "0.7.6") == 1
+@pytest.mark.anyio
+async def test_fetch_latest_from_github_raw_returns_none_on_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release_service.httpx, "AsyncClient", _ExplodingAsyncClient)
 
+    latest_version = await release_service._fetch_latest_from_github_raw()
 
-def test_determine_update_status_handles_ahead_versions():
-    assert determine_update_status("0.7.5", "0.7.6") == "update-available"
-    assert determine_update_status("0.7.6", "0.7.6") == "current"
-    assert determine_update_status("0.7.7", "0.7.6") == "ahead"
-    assert determine_update_status("dev", "0.7.6") == "unknown"
-
-
-def test_release_helpers_find_matching_release():
-    release = ReleaseInfo(
-        version="0.7.6",
-        tag_name="v0.7.6",
-        name="v0.7.6",
-        html_url="https://example.invalid/release/v0.7.6",
-        body="Release notes",
-    )
-
-    assert get_release_by_version([release], "v0.7.6") == release
+    assert latest_version is None

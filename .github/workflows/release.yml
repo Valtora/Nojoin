@@ -83,6 +83,32 @@ jobs:
           echo "major_minor=${version%.*}" >> "${GITHUB_OUTPUT}"
           echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
 
+  python-quality:
+    name: Python quality
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      - name: Install Python quality dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/dev.txt
+
+      - name: Run Python quality checks
+        run: python scripts/check_fast.py
+
   backend-tests:
     name: Backend tests
     needs: validate-release-ref
@@ -229,6 +255,7 @@ jobs:
     name: Build & Push Docker Images
     needs:
       - validate-release-ref
+      - python-quality
       - backend-tests
       - frontend-lint
       - frontend-unit-tests

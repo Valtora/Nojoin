@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, RefreshCw, AlertTriangle } from "lucide-react";
 import { reprocessRecording } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingId, ReprocessRequest } from "@/types";
 
@@ -78,16 +79,13 @@ export default function ReprocessDialog({
       const updatedRecording = await reprocessRecording(recordingId, body);
       onReprocessed(updatedRecording);
       onClose();
-
-        } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "response" in err
-          ? ((err as { response?: { data?: { detail?: unknown } } }).response
-              ?.data?.detail as string | undefined)
-          : undefined;
+    } catch (err: unknown) {
       addNotification({
         type: "error",
-        message: message || "Failed to start reprocessing. Please try again.",
+        message: getErrorMessage(
+          err,
+          "Failed to start reprocessing. Please try again.",
+        ),
       });
       setIsSubmitting(false);
     }

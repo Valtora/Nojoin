@@ -1,36 +1,48 @@
 import axios from "axios";
 
-function getResponseData(error: unknown): Record<string, unknown> | null {
-  if (
-    typeof error !== "object" ||
-    error === null ||
-    !("response" in error) ||
-    typeof error.response !== "object" ||
-    error.response === null ||
-    !("data" in error.response) ||
-    typeof error.response.data !== "object" ||
-    error.response.data === null
-  ) {
+export interface ApiErrorPayload extends Record<string, unknown> {
+  detail?: unknown;
+  message?: unknown;
+}
+
+export interface AxiosErrorLike {
+  response?: {
+    data?: unknown;
+    status?: number;
+  };
+  message?: unknown;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
+  return isRecord(value);
+}
+
+export function isAxiosErrorLike(error: unknown): error is AxiosErrorLike {
+  if (axios.isAxiosError(error)) {
+    return true;
+  }
+
+  return (
+    isRecord(error) &&
+    "response" in error &&
+    (error.response === undefined || isRecord(error.response))
+  );
+}
+
+export function getErrorPayload(error: unknown): ApiErrorPayload | null {
+  if (!isAxiosErrorLike(error) || !isApiErrorPayload(error.response?.data)) {
     return null;
   }
 
-  return error.response.data as Record<string, unknown>;
+  return error.response.data;
 }
 
 export function getErrorStatus(error: unknown): number | null {
-  if (axios.isAxiosError(error)) {
-    return error.response?.status ?? null;
-  }
-
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof error.response === "object" &&
-    error.response !== null &&
-    "status" in error.response &&
-    typeof error.response.status === "number"
-  ) {
+  if (isAxiosErrorLike(error) && typeof error.response?.status === "number") {
     return error.response.status;
   }
 
@@ -38,7 +50,7 @@ export function getErrorStatus(error: unknown): number | null {
 }
 
 export function getErrorDetail(error: unknown): string | null {
-  const data = getResponseData(error);
+  const data = getErrorPayload(error);
   if (!data) {
     return null;
   }
@@ -47,10 +59,25 @@ export function getErrorDetail(error: unknown): string | null {
   return typeof detail === "string" && detail.trim().length > 0 ? detail : null;
 }
 
+export function getPayloadMessage(error: unknown): string | null {
+  const data = getErrorPayload(error);
+  if (!data) {
+    return null;
+  }
+
+  const message = data.message;
+  return typeof message === "string" && message.trim().length > 0 ? message : null;
+}
+
 export function getErrorMessage(error: unknown, fallback: string): string {
   const detail = getErrorDetail(error);
   if (detail) {
     return detail;
+  }
+
+  const payloadMessage = getPayloadMessage(error);
+  if (payloadMessage) {
+    return payloadMessage;
   }
 
   if (error instanceof Error && error.message.trim().length > 0) {
