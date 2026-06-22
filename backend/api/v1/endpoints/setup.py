@@ -78,8 +78,10 @@ class ValidateLLMRequest(BaseModel):
     model: Optional[str] = None
     api_url: Optional[str] = None
 
+
 class ValidateHFRequest(BaseModel):
     token: str
+
 
 class ListModelsRequest(BaseModel):
     provider: str
@@ -286,12 +288,10 @@ async def validate_hf(
     is_public_request = user is None
 
     try:
-        from backend.utils.config_manager import get_system_api_keys
-        system_keys = get_system_api_keys()
-        token = system_keys.get("hf_token")
+        token = request.token.strip()
         if not token:
             raise ValueError("Hugging Face token is not set.")
-            
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://huggingface.co/api/whoami-v2",
