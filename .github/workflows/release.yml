@@ -2,20 +2,237 @@ name: Release & Publish
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Exact release tag to publish (must match vX.Y.Z)
+        required: true
+        type: string
+      publish_latest:
+        description: Also publish the latest tag for this manual release
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  validate-release-ref:
+    name: Validate release ref
+    runs-on: ubuntu-latest
+    outputs:
+      major_minor: ${{ steps.release.outputs.major_minor }}
+      publish_latest: ${{ steps.release.outputs.publish_latest }}
+      release_ref: ${{ steps.release.outputs.release_ref }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref }}
+
+      - name: Validate tag format and docs version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag_name="${{ inputs.release_ref }}"
+            if ! git rev-parse -q --verify "refs/tags/${tag_name}" >/dev/null; then
+              echo "workflow_dispatch release_ref must point to an existing tag: ${tag_name}" >&2
+              exit 1
+            fi
+            release_ref="refs/tags/${tag_name}"
+            publish_latest="${{ inputs.publish_latest }}"
+          else
+            tag_name="${GITHUB_REF_NAME}"
+            release_ref="${GITHUB_REF}"
+            publish_latest="true"
+          fi
+
+          if [[ ! "${tag_name}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match strict vX.Y.Z semver. Got: ${tag_name}" >&2
+            exit 1
+          fi
+
+          version="${tag_name#v}"
+          docs_version="$(tr -d '[:space:]' < docs/VERSION)"
+          if [[ "${docs_version}" != "${version}" ]]; then
+            echo "docs/VERSION (${docs_version}) does not match release tag (${version})." >&2
+            exit 1
+          fi
+
+          echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
+          echo "release_ref=${release_ref}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "major_minor=${version%.*}" >> "${GITHUB_OUTPUT}"
+          echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
+
+  backend-tests:
+    name: Backend tests
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/test.txt
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/test.txt
+
+      - name: Run backend tests
+        run: pytest
+
+  frontend-lint:
+    name: Frontend lint
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+  frontend-unit-tests:
+    name: Frontend unit tests
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm run test
+
+  frontend-build:
+    name: Frontend build
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend production build
+        working-directory: frontend
+        run: npm run build
+
+  docs-validation:
+    name: Docs validation
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate documentation links
+        run: python scripts/validate_docs.py
+
+  alembic-validation:
+    name: Alembic validation
+    needs: validate-release-ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate checked-in Alembic graph
+        run: python scripts/validate_alembic.py
+
   server-release:
     name: Build & Push Docker Images
+    needs:
+      - validate-release-ref
+      - backend-tests
+      - frontend-lint
+      - frontend-unit-tests
+      - frontend-build
+      - docs-validation
+      - alembic-validation
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     strategy:
       fail-fast: false
@@ -48,6 +265,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v4
@@ -62,36 +281,24 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
           tags: |
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ needs.validate-release-ref.outputs.publish_latest == 'true' }}
+            type=raw,value=${{ needs.validate-release-ref.outputs.version }}
+            type=raw,value=${{ needs.validate-release-ref.outputs.major_minor }}
             type=sha
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-
-      - name: Resolve Server Version
-        id: server_version
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             ${{ matrix.build_args }}
-            ${{ matrix.service == 'api' && format('NOJOIN_SERVER_VERSION={0}', steps.server_version.outputs.value) || '' }}
+            ${{ matrix.service == 'api' && format('NOJOIN_SERVER_VERSION={0}', needs.validate-release-ref.outputs.version) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

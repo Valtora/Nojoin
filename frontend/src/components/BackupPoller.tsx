@@ -35,9 +35,7 @@ export default function BackupPoller() {
           try {
             await downloadBackupFile(taskId);
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-          } catch (err: any) {
+                    } catch (err: unknown) {
             console.error(err);
             addNotification({
               type: "error",
@@ -53,9 +51,7 @@ export default function BackupPoller() {
         }
         // PENDING or PROCESSING: Continue polling
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+            } catch (error: unknown) {
         console.error("Backup polling error:", error);
         // Don't clear taskId immediately on network error, retry.
         // Consideration: Clear polling if 404 is encountered.

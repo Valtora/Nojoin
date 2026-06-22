@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CalendarProvider,
   CalendarProviderConfigUpdate,
@@ -10,6 +10,7 @@ import {
   getCalendarProviderStatuses,
   updateCalendarProviderConfiguration,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { CalendarRange, Loader2, Save } from "lucide-react";
 import SettingsCallout from "./SettingsCallout";
@@ -72,30 +73,27 @@ export default function CalendarProviderSettings() {
   );
   const { addNotification } = useNotificationStore();
 
-  const loadProviders = async () => {
+  const loadProviders = useCallback(async () => {
     setLoading(true);
     try {
       const providerStatuses = await getCalendarProviderStatuses();
       setProviders(providerStatuses);
       setForms(buildInitialForms(providerStatuses));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          "Failed to load calendar provider configuration",
+          getErrorMessage(error, "Failed to load calendar provider configuration"),
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [addNotification]);
 
   useEffect(() => {
     void loadProviders();
-  }, []);
+  }, [loadProviders]);
 
   const updateForm = (
     provider: CalendarProvider,
@@ -156,14 +154,11 @@ export default function CalendarProviderSettings() {
         message: `${updatedProvider.display_name} provider settings saved`,
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          `Failed to save ${provider} provider settings`,
+          getErrorMessage(error, `Failed to save ${provider} provider settings`),
       });
     } finally {
       setSavingProvider(null);

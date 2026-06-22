@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Invitation, UserRole } from "@/types";
 import {
   getInvitations,
@@ -35,14 +35,12 @@ export default function InvitesTab() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [inviteToDelete, setInviteToDelete] = useState<number | null>(null);
 
-  const fetchInvitations = async () => {
+  const fetchInvitations = useCallback(async () => {
     try {
       const data = await getInvitations();
       setInvitations(data);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to fetch invitations", e);
       addNotification({
         type: "error",
@@ -51,11 +49,11 @@ export default function InvitesTab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [addNotification]);
 
   useEffect(() => {
-    fetchInvitations();
-  }, []);
+    void fetchInvitations();
+  }, [fetchInvitations]);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -68,9 +66,7 @@ export default function InvitesTab() {
         message: "Invitation created successfully",
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to create invitation", e);
       addNotification({
         type: "error",
@@ -96,9 +92,7 @@ export default function InvitesTab() {
         message: "Invitation revoked",
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to revoke invitation", e);
       addNotification({
         type: "error",
@@ -125,9 +119,7 @@ export default function InvitesTab() {
         message: "Invitation deleted",
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to delete invitation", e);
       addNotification({
         type: "error",

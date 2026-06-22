@@ -254,9 +254,7 @@ export default function SystemTab() {
         setAdminHealth(nextHealth);
         setHealthError(null);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+            } catch (error: unknown) {
         console.error("Failed to load admin health dashboard", error);
         if (!cancelled) {
           setHealthError(
@@ -334,9 +332,7 @@ export default function SystemTab() {
 
         wsRef.current = ws;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (err: any) {
+            } catch (err: unknown) {
         console.error("Failed to connect to log stream:", err);
         setLogs((prev) => [
           ...prev,
@@ -371,9 +367,7 @@ export default function SystemTab() {
       link.click();
       link.remove();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Download failed", error);
       addNotification({ type: "error", message: "Failed to download logs." });
     }

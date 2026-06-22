@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser } from '@/lib/api';
+import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -18,16 +19,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       try {
         currentUser = await getCurrentUser();
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (e: any) {
+            } catch (e: unknown) {
         currentUser = null;
         if (
           !publicPaths.some(p => pathname?.startsWith(p)) &&
-          e?.response?.status !== 401
+          getErrorStatus(e) !== 401
         ) {
           console.error("Failed to validate current user", e);
-          setError(e.message || "Failed to connect to server");
+          setError(getErrorMessage(e, "Failed to connect to server"));
         }
       }
       

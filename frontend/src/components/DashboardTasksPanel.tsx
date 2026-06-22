@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Calendar, Check, Loader2, Trash2 } from "lucide-react";
 
 import {
@@ -9,6 +9,7 @@ import {
   getUserTasks,
   updateUserTask,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import {
   DEFAULT_TIME_ZONE,
@@ -158,14 +159,11 @@ export default function DashboardTasksPanel() {
           setTasks(sortTasks(data));
         }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (loadError: any) {
+            } catch (loadError: unknown) {
         if (!cancelled) {
           addNotification({
             type: "error",
-            message:
-              loadError.response?.data?.detail || "Failed to load tasks.",
+            message: getErrorMessage(loadError, "Failed to load tasks."),
           });
         }
       } finally {
@@ -241,31 +239,6 @@ export default function DashboardTasksPanel() {
     }
   }, [deadlineModalTaskId, deadlineModalTask, isDeadlineModalSaving]);
 
-  useEffect(() => {
-    if (editingTaskId === null) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      if (editingFormRef.current?.contains(target)) {
-        return;
-      }
-
-      void commitEditingTask();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, true);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-    };
-  }, [editingTaskId, editingTitle, tasks]);
-
   const handleCloseComposer = () => {
     setIsComposerOpen(false);
     setTitle("");
@@ -282,12 +255,12 @@ export default function DashboardTasksPanel() {
     });
   };
 
-  const resetEditingTask = () => {
+  const resetEditingTask = useCallback(() => {
     setEditingTaskId(null);
     setEditingTitle("");
-  };
+  }, []);
 
-  const commitEditingTask = async (): Promise<boolean> => {
+  const commitEditingTask = useCallback(async (): Promise<boolean> => {
     if (editingTaskId === null) {
       return true;
     }
@@ -335,12 +308,9 @@ export default function DashboardTasksPanel() {
         addNotification({ message: "Task updated.", type: "success" });
         return true;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (updateError: any) {
+            } catch (updateError: unknown) {
         addNotification({
-          message:
-            updateError.response?.data?.detail || "Failed to update task title.",
+          message: getErrorMessage(updateError, "Failed to update task title."),
           type: "error",
         });
         return false;
@@ -352,7 +322,32 @@ export default function DashboardTasksPanel() {
 
     pendingTitleSaveRef.current = savePromise;
     return savePromise;
-  };
+  }, [addNotification, editingTaskId, editingTitle, resetEditingTask, tasks]);
+
+  useEffect(() => {
+    if (editingTaskId === null) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (editingFormRef.current?.contains(target)) {
+        return;
+      }
+
+      void commitEditingTask();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [commitEditingTask, editingTaskId]);
 
   const handleBeginEditingTask = async (task: UserTask) => {
     if (editingTaskId !== null && editingTaskId !== task.id) {
@@ -434,13 +429,10 @@ export default function DashboardTasksPanel() {
       setIsComposerOpen(false);
       addNotification({ message: "Task added.", type: "success" });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (createError: any) {
+        } catch (createError: unknown) {
       addNotification({
         type: "error",
-        message:
-          createError.response?.data?.detail || "Failed to add task.",
+        message: getErrorMessage(createError, "Failed to add task."),
       });
     } finally {
       setSubmitting(false);
@@ -477,12 +469,9 @@ export default function DashboardTasksPanel() {
         ),
       );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (toggleError: any) {
+        } catch (toggleError: unknown) {
       addNotification({
-        message:
-          toggleError.response?.data?.detail || "Failed to update task state.",
+        message: getErrorMessage(toggleError, "Failed to update task state."),
         type: "error",
       });
     } finally {
@@ -505,12 +494,9 @@ export default function DashboardTasksPanel() {
       );
       addNotification({ message: "Task removed.", type: "success" });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (deleteError: any) {
+        } catch (deleteError: unknown) {
       addNotification({
-        message:
-          deleteError.response?.data?.detail || "Failed to delete task.",
+        message: getErrorMessage(deleteError, "Failed to delete task."),
         type: "error",
       });
     } finally {
@@ -535,12 +521,9 @@ export default function DashboardTasksPanel() {
       );
       addNotification({ message: "Task archived.", type: "success" });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (archiveError: any) {
+        } catch (archiveError: unknown) {
       addNotification({
-        message:
-          archiveError.response?.data?.detail || "Failed to archive task.",
+        message: getErrorMessage(archiveError, "Failed to archive task."),
         type: "error",
       });
     } finally {
@@ -573,13 +556,10 @@ export default function DashboardTasksPanel() {
       });
       return true;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (deadlineError: any) {
+        } catch (deadlineError: unknown) {
       addNotification({
         type: "error",
-        message:
-          deadlineError.response?.data?.detail || "Failed to save deadline.",
+        message: getErrorMessage(deadlineError, "Failed to save deadline."),
       });
       return false;
     } finally {

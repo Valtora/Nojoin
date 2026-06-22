@@ -578,9 +578,7 @@ export default function TranscriptView({
     try {
       await onUpdateSegmentText(segment, newText);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to replace text", e);
     } finally {
       setIsSubmitting(false);

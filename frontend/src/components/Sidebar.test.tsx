@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import Sidebar from "./Sidebar";
+import { ViewportDensityProvider } from "./ViewportDensityProvider";
 import { RecordingStatus, type Recording } from "@/types";
 
 const routerPush = vi.fn();
@@ -132,7 +133,11 @@ describe("Sidebar", () => {
   });
 
   it("keeps the recordings list on /recordings instead of redirecting to the latest item", async () => {
-    render(<Sidebar />);
+    render(
+      <ViewportDensityProvider>
+        <Sidebar />
+      </ViewportDensityProvider>,
+    );
 
     expect(await screen.findByRole("heading", { name: "Latest meeting" })).toBeInTheDocument();
 

@@ -17,6 +17,18 @@ interface RichTextEditorProps {
   onEditorReady?: (editor: Editor) => void;
 }
 
+type MarkdownStorageEditor = Editor & {
+  storage: {
+    markdown: {
+      getMarkdown(): string;
+    };
+  };
+};
+
+function getMarkdown(editor: Editor): string {
+  return (editor as MarkdownStorageEditor).storage.markdown.getMarkdown();
+}
+
 export default function RichTextEditor({ content, onChange, editable = true, onEditorReady }: RichTextEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -40,8 +52,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
     content: content,
     editable: editable,
     onUpdate: ({ editor }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const markdown = (editor.storage as any).markdown.getMarkdown();
+      const markdown = getMarkdown(editor);
       onChange(markdown);
     },
     onCreate: ({ editor }) => {
@@ -57,8 +68,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
 
   // Update content if it changes externally (e.g. reset)
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (editor && content !== (editor.storage as any).markdown.getMarkdown()) {
+    if (editor && content !== getMarkdown(editor)) {
       editor.commands.setContent(content);
     }
   }, [content, editor]);

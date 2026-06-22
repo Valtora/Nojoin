@@ -23,6 +23,7 @@ import {
   scanMatches,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { getErrorMessage } from "@/lib/errors";
 import SplitPersonModal from "./SplitPersonModal";
 
 interface RecalibrateModalProps {
@@ -76,9 +77,7 @@ export default function RecalibrateModal({
       // Reset states
       setSegmentStates({});
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to fetch segments", error);
       addNotification({
         type: "error",
@@ -190,14 +189,12 @@ export default function RecalibrateModal({
       });
       // Do not auto close, let user decide
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Recalibration failed", error);
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail || "Failed to recalibrate voiceprint.",
+          getErrorMessage(error, "Failed to recalibrate voiceprint."),
       });
     } finally {
       setIsSubmitting(false);
@@ -265,9 +262,7 @@ export default function RecalibrateModal({
                         onComplete();
                         onClose();
 
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-                      } catch (e: any) {
+                                            } catch (e: unknown) {
                         console.error(e);
                         addNotification({
                           type: "error",

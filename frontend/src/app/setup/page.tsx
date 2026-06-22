@@ -1,24 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   setupSystem,
   login,
   validateLLM,
-  validateHF,
   listModels,
   checkFFmpeg,
   getInitialConfig,
   getCurrentUser,
   getDownloadProgress,
 } from "@/lib/api";
+import { getErrorMessage, getErrorStatus } from "@/lib/errors";
 import {
   Loader2,
   CheckCircle,
-  Check,
-  X,
   AlertTriangle,
   ArrowRight,
   RefreshCw,
@@ -50,12 +48,7 @@ export default function SetupPage() {
 
   // Validation State
   const [validatingLLM, setValidatingLLM] = useState(false);
-  const [validatingHF, setValidatingHF] = useState(false);
   const [llmValidationMsg, setLlmValidationMsg] = useState<{
-    valid: boolean;
-    msg: string;
-  } | null>(null);
-  const [hfValidationMsg, setHfValidationMsg] = useState<{
     valid: boolean;
     msg: string;
   } | null>(null);
@@ -88,17 +81,14 @@ export default function SetupPage() {
           );
           return;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (err: any) {
-          if (err?.response?.status !== 401) {
+                } catch (err: unknown) {
+          if (getErrorStatus(err) !== 401) {
             throw err;
           }
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ffmpegStatus = await checkFFmpeg().catch((err: any) => {
-          if (err?.response?.status === 401 || err?.response?.status === 403) {
+                const ffmpegStatus = await checkFFmpeg().catch((err: unknown) => {
+          if (getErrorStatus(err) === 401 || getErrorStatus(err) === 403) {
             return {
               ffmpeg: true,
               ffprobe: true,
@@ -116,9 +106,7 @@ export default function SetupPage() {
 
         setLoading(false);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (err: any) {
+            } catch (err: unknown) {
         console.error(err);
         setError("Failed to connect to server");
         setLoading(false);
@@ -141,7 +129,7 @@ export default function SetupPage() {
       setFormData((prev) => ({ ...prev, selected_model: "" }));
     }
     if (fieldKey === "hf_token") {
-      setHfValidationMsg(null);
+      return;
     }
     if (fieldKey === "llm_provider") {
       setLlmValidationMsg(null);
@@ -149,6 +137,13 @@ export default function SetupPage() {
       setFormData((prev) => ({ ...prev, selected_model: "" }));
     }
   };
+
+  const llmConfigMissing =
+    !formData.llm_provider ||
+    (formData.llm_provider === "gemini" && !formData.gemini_api_key) ||
+    (formData.llm_provider === "openai" && !formData.openai_api_key) ||
+    (formData.llm_provider === "anthropic" && !formData.anthropic_api_key) ||
+    (formData.llm_provider === "ollama" && !formData.ollama_api_url);
 
   // --- Step 0: Legal Disclaimer ---
   const handleLegalSubmit = () => {
@@ -194,18 +189,15 @@ export default function SetupPage() {
       setInitialConfigLoaded(true);
       return true;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
-      if (err.response?.status === 403) {
+        } catch (err: unknown) {
+      if (getErrorStatus(err) === 403) {
         setError(
           "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
         );
         return false;
       }
       setError(
-        err.response?.data?.detail ||
-          "Failed to unlock first-run setup. Check FIRST_RUN_PASSWORD.",
+        getErrorMessage(err, "Failed to unlock first-run setup. Check FIRST_RUN_PASSWORD."),
       );
       return false;
     }
@@ -233,17 +225,7 @@ export default function SetupPage() {
   };
 
   // --- Step 2: LLM ---
-  const checkLlmMissing = (config: typeof formData) => {
-    const provider = config.llm_provider;
-    if (!provider) return true;
-    if (provider === "gemini" && !config.gemini_api_key) return true;
-    if (provider === "openai" && !config.openai_api_key) return true;
-    if (provider === "anthropic" && !config.anthropic_api_key) return true;
-    if (provider === "ollama" && !config.ollama_api_url) return true;
-    return false;
-  };
-
-  const validateAndFetchModels = async () => {
+  const validateAndFetchModels = useCallback(async () => {
     setValidatingLLM(true);
     setError("");
     setLlmValidationMsg(null);
@@ -287,18 +269,19 @@ export default function SetupPage() {
       }
       setModelsFetched(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+        } catch (err: unknown) {
       setLlmValidationMsg({
         valid: false,
-        msg: err.response?.data?.detail || err.message,
+        msg: getErrorMessage(err, "Validation failed"),
       });
       setModelsFetched(true);
     } finally {
       setValidatingLLM(false);
     }
-  };
+  }, [
+    formData.llm_provider,
+    formData.ollama_api_url,
+  ]);
 
   const handleLLMSubmit = () => {
     if (llmSkipped) {
@@ -353,12 +336,23 @@ export default function SetupPage() {
 
   useEffect(() => {
     if (step === 2 && initialConfigLoaded) {
-      const isMissing = checkLlmMissing(formData);
-      if (!isMissing && !modelsFetched && !validatingLLM) {
-        validateAndFetchModels();
+      if (!llmConfigMissing && !modelsFetched && !validatingLLM) {
+        void validateAndFetchModels();
       }
     }
-  }, [step, initialConfigLoaded, formData.llm_provider, formData.gemini_api_key, formData.openai_api_key, formData.anthropic_api_key, formData.ollama_api_url, modelsFetched, validatingLLM]);
+  }, [
+    formData.anthropic_api_key,
+    formData.gemini_api_key,
+    formData.llm_provider,
+    formData.ollama_api_url,
+    formData.openai_api_key,
+    initialConfigLoaded,
+    llmConfigMissing,
+    modelsFetched,
+    step,
+    validateAndFetchModels,
+    validatingLLM,
+  ]);
 
   // --- Step 3: HuggingFace ---
   const handleHFSubmit = async () => {
@@ -413,16 +407,14 @@ export default function SetupPage() {
 
       await waitForModelPreparation();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+        } catch (err: unknown) {
       console.error("Setup failed:", err);
-      if (err.response?.status === 403) {
+      if (getErrorStatus(err) === 403) {
         setError(
           "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
         );
       } else {
-        setError(err.response?.data?.detail || err.message || "Setup failed. Please try again.");
+        setError(getErrorMessage(err, "Setup failed. Please try again."));
       }
 
       if (!loggedIn) {
@@ -691,7 +683,7 @@ export default function SetupPage() {
           {/* Step 2: LLM Setup */}
           {step === 2 && (
             <div className="space-y-4">
-              {checkLlmMissing(formData) ? (
+              {llmConfigMissing ? (
                 <div className="space-y-6">
                   <div className="text-center mb-6">
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">

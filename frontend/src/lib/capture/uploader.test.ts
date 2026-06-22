@@ -6,7 +6,7 @@ describe("capture uploader", () => {
   it("uploads queued segments in sequence and retries with backoff", async () => {
     const attempts: number[] = [];
     const uploaded: number[] = [];
-    const wait = vi.fn(async (_ms: number) => {});
+    const wait = vi.fn(async () => {});
     const uploadSegment = vi.fn(async (_recordingId: number, sequence: number) => {
       attempts.push(sequence);
 
@@ -37,8 +37,8 @@ describe("capture uploader", () => {
 
   it("surfaces a fatal error after retries are exhausted and stops draining", async () => {
     const fatalError = new Error("fatal upload failure");
-    const onFatal = vi.fn(async (_error: Error) => {});
-    const wait = vi.fn(async (_ms: number) => {});
+    const onFatal = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
     const uploadSegment = vi.fn(async () => {
       throw fatalError;
     });

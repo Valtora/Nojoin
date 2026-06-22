@@ -12,9 +12,7 @@ export default function VersionTag() {
         const data = await getVersion();
         setVersionInfo(data);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (e: any) {
+            } catch (e: unknown) {
         console.error("Failed to fetch version info", e);
       } finally {
         setLoading(false);

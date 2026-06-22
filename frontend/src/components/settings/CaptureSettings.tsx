@@ -7,6 +7,7 @@ import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { getErrorMessage } from "@/lib/errors";
 
 import { AUDIO_KEYWORDS } from "./keywords";
 import SettingsCallout from "./SettingsCallout";
@@ -131,17 +132,13 @@ export default function CaptureSettings({
         setMicrophones(nextMicrophones);
         setDeviceError(null);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+            } catch (error: unknown) {
         if (disposed) {
           return;
         }
 
         setDeviceError(
-          error instanceof Error
-            ? error.message
-            : "Failed to refresh microphone devices.",
+          getErrorMessage(error, "Failed to refresh microphone devices."),
         );
       } finally {
         if (!disposed) {
@@ -278,9 +275,7 @@ export default function CaptureSettings({
       } catch (error) {
         if (!cancelled) {
           setPreviewError(
-            error instanceof Error
-              ? error.message
-              : "Failed to start the microphone input test.",
+            getErrorMessage(error, "Failed to start the microphone input test."),
           );
           setPreviewEnabled(false);
         }
@@ -301,6 +296,7 @@ export default function CaptureSettings({
     previewEnabled,
     settings.autoGainControl,
     settings.echoCancellation,
+    settings.microphoneGain,
     settings.microphoneDeviceId,
     settings.noiseSuppression,
   ]);
@@ -325,13 +321,9 @@ export default function CaptureSettings({
       setMicrophones(nextMicrophones);
       setDeviceError(null);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       setDeviceError(
-        error instanceof Error
-          ? error.message
-          : "Failed to refresh microphone devices.",
+        getErrorMessage(error, "Failed to refresh microphone devices."),
       );
     } finally {
       setLoadingDevices(false);

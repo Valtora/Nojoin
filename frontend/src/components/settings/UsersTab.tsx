@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getUsers, createUser, deleteUser, updateUser } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import {
   Loader2,
   Trash2,
@@ -105,11 +106,9 @@ export default function UsersTab() {
       setNewUser({ ...EMPTY_NEW_USER });
       await fetchUsers();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+        } catch (err: unknown) {
       addNotification({
-        message: err.response?.data?.detail || "Failed to create user",
+        message: getErrorMessage(err, "Failed to create user"),
         type: "error",
       });
     }
@@ -137,11 +136,9 @@ export default function UsersTab() {
         await fetchUsers();
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+        } catch (err: unknown) {
       addNotification({
-        message: err.response?.data?.detail || "Failed to delete user",
+        message: getErrorMessage(err, "Failed to delete user"),
         type: "error",
       });
     } finally {
@@ -181,11 +178,9 @@ export default function UsersTab() {
       setEditingUser(null);
       await fetchUsers();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+        } catch (err: unknown) {
       addNotification({
-        message: err.response?.data?.detail || "Failed to update user",
+        message: getErrorMessage(err, "Failed to update user"),
         type: "error",
       });
     }

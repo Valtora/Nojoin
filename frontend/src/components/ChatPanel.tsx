@@ -40,7 +40,6 @@ export default function ChatPanel({
       : Array.isArray(params?.id)
         ? params.id[0] ?? null
         : null;
-  const [provider, setProvider] = useState<string>("AI");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -88,9 +87,6 @@ export default function ChatPanel({
         );
         setIsLLMConfigured(configured);
 
-        if (provider) {
-          setProvider(provider.charAt(0).toUpperCase() + provider.slice(1));
-        }
       })
       .catch(console.error);
 
@@ -215,9 +211,7 @@ export default function ChatPanel({
       setMessages([]);
       addNotification({ type: "success", message: "Chat history cleared" });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error(e);
       addNotification({ type: "error", message: "Failed to clear chat" });
     } finally {

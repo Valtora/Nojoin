@@ -59,9 +59,7 @@ export default function BatchActionBar({
       onActionComplete();
       clearSelection();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch archive failed:", error);
       addNotification({
         type: "error",
@@ -80,9 +78,7 @@ export default function BatchActionBar({
       onActionComplete();
       clearSelection();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch restore failed:", error);
       addNotification({
         type: "error",
@@ -101,9 +97,7 @@ export default function BatchActionBar({
       onActionComplete();
       clearSelection();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch delete failed:", error);
       addNotification({
         type: "error",
@@ -128,9 +122,7 @@ export default function BatchActionBar({
           onActionComplete();
           clearSelection();
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (error: any) {
+                } catch (error: unknown) {
           console.error("Batch permanent delete failed:", error);
           addNotification({
             type: "error",
@@ -160,9 +152,7 @@ export default function BatchActionBar({
       onActionComplete();
       clearSelection();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch tag action failed:", error);
       addNotification({ type: "error", message: "Failed to update tags" });
     }

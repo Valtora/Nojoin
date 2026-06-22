@@ -140,7 +140,7 @@ export default function TaskDeadlineModal({
     setDraftValue(
       zonedValue ? new Date(zonedValue) : buildSuggestedDeadline(zonedNow),
     );
-  }, [isOpen, valueTimestamp, resolvedTimeZone]);
+  }, [isOpen, resolvedTimeZone, valueTimestamp, zonedNow, zonedValue]);
 
   useEffect(() => {
     if (!isOpen || isSaving) {

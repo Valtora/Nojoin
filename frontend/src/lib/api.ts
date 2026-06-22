@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { CaptureSourceReportPayload } from "@/lib/capture/sourceReport";
+import { getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
 import {
   ActiveRecordingConflictDetail,
   CalendarConnection,
@@ -179,9 +180,7 @@ export const logout = async (): Promise<void> => {
   try {
     await api.post("/login/logout");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+    } catch (error: unknown) {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
@@ -913,9 +912,7 @@ export const exportAudio = async (
     link.remove();
     window.URL.revokeObjectURL(url);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+    } catch (error: unknown) {
     console.error("[exportAudio] Error during audio export:", error);
     throw error;
   }
@@ -965,9 +962,7 @@ export const exportContent = async (
     link.remove();
     window.URL.revokeObjectURL(url);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+    } catch (error: unknown) {
     console.error("[exportContent] Error during export:", error);
     throw error;
   }
@@ -1316,9 +1311,7 @@ export const getTlsFingerprint = async (): Promise<{ fingerprint: string | null 
     const response = await api.get<{ fingerprint: string | null }>("/system/fingerprint");
     return response.data;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+    } catch (error: unknown) {
     console.error("Failed to fetch TLS fingerprint", error);
     return { fingerprint: null };
   }
@@ -1669,10 +1662,10 @@ export const streamChatMessage = (
       }
     })
     .catch((err) => {
-      if (err.name === "AbortError") {
+      if (isAbortError(err)) {
         return;
       } else {
-        onError(err.message || "Network error");
+        onError(getErrorMessage(err, "Network error"));
       }
     });
 
@@ -1849,11 +1842,9 @@ export const importBackup = async (
             }
             // If 'pending' or 'processing', continue polling
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-          } catch (err: any) {
+                    } catch (err: unknown) {
             // Retries on transient network errors; aborts on 404 (lost job).
-            if (err.response && err.response.status === 404) {
+            if (getErrorStatus(err) === 404) {
               clearInterval(pollInterval);
               reject(new Error("Restore job lost on server"));
             }
@@ -1867,9 +1858,7 @@ export const importBackup = async (
     // Synchronous completion fallback for older API versions or small files.
     return;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+    } catch (error: unknown) {
     throw error;
   }
 };
@@ -1963,12 +1952,10 @@ export const uploadBackupChunked = async (
               reject(new Error(error || "Restore failed during processing"));
             }
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-          } catch (err: any) {
+                    } catch (err: unknown) {
             console.warn("Polling status failed", err);
             // If 404, job lost?
-            if (err.response && err.response.status === 404) {
+            if (getErrorStatus(err) === 404) {
               clearInterval(pollInterval);
               reject(new Error("Restore job lost on server"));
             }
@@ -1977,9 +1964,7 @@ export const uploadBackupChunked = async (
       });
     }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (error: any) {
+    } catch (error: unknown) {
     throw error;
   }
 };

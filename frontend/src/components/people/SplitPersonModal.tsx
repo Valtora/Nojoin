@@ -19,6 +19,7 @@ import {
   getRecordingStreamUrl,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { getErrorMessage } from "@/lib/errors";
 
 interface SplitPersonModalProps {
   isOpen: boolean;
@@ -85,9 +86,7 @@ export default function SplitPersonModal({
       setSegmentStates({});
       setNewSpeakerName("");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to fetch segments", error);
       addNotification({
         type: "error",
@@ -210,13 +209,11 @@ export default function SplitPersonModal({
         message: `${newSpeakerName} has been created and segments moved!`,
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Split failed", error);
       addNotification({
         type: "error",
-        message: error.response?.data?.detail || "Failed to split speaker.",
+        message: getErrorMessage(error, "Failed to split speaker."),
       });
     } finally {
       setIsSubmitting(false);

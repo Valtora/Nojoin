@@ -59,9 +59,7 @@ export default function AddTagModal({
       const data = await getTags();
       setAllTags(data);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to load tags:", error);
     }
   }, []);
@@ -92,9 +90,7 @@ export default function AddTagModal({
       if (onTagsUpdated) onTagsUpdated();
       setInputValue("");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to add tag:", error);
     } finally {
       setProcessingTags((prev) => {
@@ -134,9 +130,7 @@ export default function AddTagModal({
       }
       setInputValue("");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to create tag:", error);
     } finally {
       setProcessingTags((prev) => {
@@ -155,9 +149,7 @@ export default function AddTagModal({
       if (onTagsUpdated) onTagsUpdated();
       setEditingTagId(null);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to rename tag:", error);
     }
   };
@@ -173,9 +165,7 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to delete tag:", error);
     }
   };
@@ -189,9 +179,7 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to remove tag:", error);
     } finally {
       setProcessingTags((prev) => {

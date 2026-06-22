@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { LanguageRegistry, Settings, SystemModelStatus } from "@/types";
 import {
-  Eye,
-  EyeOff,
   Check,
   X,
   Loader2,
@@ -16,20 +14,19 @@ import {
   Server,
 } from "lucide-react";
 import { fuzzyMatch } from "@/lib/searchUtils";
+import { getErrorMessage } from "@/lib/errors";
 import {
   clampMeetingEdgeContextLevel,
   MEETING_EDGE_CONTEXT_OPTIONS,
 } from "@/lib/meetingEdgeContext";
 import {
   validateLLM,
-  validateHF,
   getModelsStatus,
   deleteModel,
   listModels,
   getLanguageOptions,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { trimString, sanitizeUrl } from "@/lib/validation";
 import Tooltip from "@/components/ui/Tooltip";
 import { Switch } from "@/components/ui/Switch";
 import SettingsCallout from "./SettingsCallout";
@@ -59,10 +56,6 @@ const WHISPER_MODELS = [
 ];
 
 const DEFAULT_OLLAMA_CONTEXT_WINDOW = 131072;
-
-function isMaskedSecret(value: string | null | undefined): boolean {
-  return Boolean(value && (value.includes("...") || value.includes("***")));
-}
 
 interface AISettingsProps {
   settings: Settings;
@@ -176,6 +169,99 @@ export default function AISettings({
     persistSettingsUpdate(updates);
   };
 
+  const getSecondaryProviderApiKey = (
+    provider: Settings["secondary_llm_provider"],
+  ): string => {
+    switch (provider) {
+      case "openai":
+        return settings.secondary_openai_api_key || "";
+      case "anthropic":
+        return settings.secondary_anthropic_api_key || "";
+      case "gemini":
+        return settings.secondary_gemini_api_key || "";
+      default:
+        return "";
+    }
+  };
+
+  const getSecondaryProviderModel = (
+    provider: Settings["secondary_llm_provider"],
+  ): string => {
+    switch (provider) {
+      case "openai":
+        return settings.secondary_openai_model || "";
+      case "anthropic":
+        return settings.secondary_anthropic_model || "";
+      case "ollama":
+        return settings.secondary_ollama_model || "";
+      case "gemini":
+        return settings.secondary_gemini_model || "";
+      default:
+        return "";
+    }
+  };
+
+  const getSecondaryProviderLiveModel = (
+    provider: Settings["secondary_llm_provider"],
+  ): string => {
+    switch (provider) {
+      case "openai":
+        return settings.secondary_openai_live_model || "";
+      case "anthropic":
+        return settings.secondary_anthropic_live_model || "";
+      case "ollama":
+        return settings.secondary_ollama_live_model || "";
+      case "gemini":
+        return settings.secondary_gemini_live_model || "";
+      default:
+        return "";
+    }
+  };
+
+  const updateSecondaryProviderModel = (
+    provider: Settings["secondary_llm_provider"],
+    value: string,
+  ) => {
+    if (!provider) {
+      return;
+    }
+
+    const updates: Settings = { ...settings };
+    if (provider === "openai") {
+      updates.secondary_openai_model = value;
+    } else if (provider === "anthropic") {
+      updates.secondary_anthropic_model = value;
+    } else if (provider === "ollama") {
+      updates.secondary_ollama_model = value;
+    } else {
+      updates.secondary_gemini_model = value;
+    }
+
+    onUpdate(updates);
+  };
+
+  const updateSecondaryProviderLiveModel = (
+    provider: Settings["secondary_llm_provider"],
+    value: string,
+  ) => {
+    if (!provider) {
+      return;
+    }
+
+    const updates: Settings = { ...settings };
+    if (provider === "openai") {
+      updates.secondary_openai_live_model = value || null;
+    } else if (provider === "anthropic") {
+      updates.secondary_anthropic_live_model = value || null;
+    } else if (provider === "ollama") {
+      updates.secondary_ollama_live_model = value || null;
+    } else {
+      updates.secondary_gemini_live_model = value || null;
+    }
+
+    onUpdate(updates);
+  };
+
   const getModelOptionsForProvider = (kind: "main" | "live") => {
     const selectedModel = getSelectedModelForProvider(kind);
     if (!selectedModel) {
@@ -210,9 +296,7 @@ export default function AISettings({
           const res = await listModels(provider, "", url);
           setAvailableModels(res.models);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (e: any) {
+                } catch (e: unknown) {
           console.error("Failed to fetch models", e);
           setAvailableModels([]);
         } finally {
@@ -244,7 +328,7 @@ export default function AISettings({
       try {
         const res = await listModels(provider, "", url);
         setSecondaryAvailableModels(res.models);
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("Failed to fetch secondary models", e);
         setSecondaryAvailableModels([]);
       } finally {
@@ -297,12 +381,10 @@ export default function AISettings({
         provider,
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       setValidationMsg({
         type: "error",
-        msg: e.response?.data?.detail || e.message,
+        msg: getErrorMessage(e, "Validation failed"),
         provider,
       });
     } finally {
@@ -327,13 +409,11 @@ export default function AISettings({
       });
       refreshStatus();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error(e);
       addNotification({
         type: "error",
-        message: `Failed to delete model: ${e.response?.data?.detail || e.message}`,
+        message: `Failed to delete model: ${getErrorMessage(e, "Unknown error")}`,
       });
     } finally {
       setDeleting(null);
@@ -722,7 +802,7 @@ export default function AISettings({
                     const sp = settings.secondary_llm_provider;
                     const hasKey = sp === "ollama"
                       ? Boolean(settings.secondary_ollama_api_url)
-                      : Boolean(settings[`secondary_${sp}_api_key`]);
+                      : Boolean(getSecondaryProviderApiKey(sp));
                     return hasKey ? (
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
                         Configured
@@ -803,16 +883,10 @@ export default function AISettings({
                   </button>
                 </label>
                 <select
-                  value={(() => {
-                    const sp = settings.secondary_llm_provider;
-                    if (!sp) return "";
-                    return settings[`secondary_${sp}_model`] || "";
-                  })()}
+                  value={getSecondaryProviderModel(settings.secondary_llm_provider)}
                   onChange={(e) => {
                     const sp = settings.secondary_llm_provider;
-                    if (!sp) return;
-                    const key = `secondary_${sp}_model` as keyof typeof settings;
-                    onUpdate({ ...settings, [key]: e.target.value });
+                    updateSecondaryProviderModel(sp, e.target.value);
                   }}
                   disabled={secondaryAvailableModels.length === 0}
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
@@ -842,16 +916,10 @@ export default function AISettings({
                   </label>
                 </div>
                 <select
-                  value={(() => {
-                    const sp = settings.secondary_llm_provider;
-                    if (!sp) return "";
-                    return settings[`secondary_${sp}_live_model` as keyof typeof settings] as string || "";
-                  })()}
+                  value={getSecondaryProviderLiveModel(settings.secondary_llm_provider)}
                   onChange={(e) => {
                     const sp = settings.secondary_llm_provider;
-                    if (!sp) return;
-                    const key = `secondary_${sp}_live_model` as keyof typeof settings;
-                    onUpdate({ ...settings, [key]: e.target.value || null });
+                    updateSecondaryProviderLiveModel(sp, e.target.value);
                   }}
                   disabled={secondaryAvailableModels.length === 0}
                   className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
@@ -870,7 +938,7 @@ export default function AISettings({
                 const sp = settings.secondary_llm_provider;
                 const hasConfig = sp === "ollama"
                   ? Boolean(settings.secondary_ollama_api_url)
-                  : Boolean(sp && settings[`secondary_${sp}_api_key`]);
+                  : Boolean(getSecondaryProviderApiKey(sp));
                 return hasConfig ? (
                   <div className="md:col-span-2">
                     <button

@@ -20,9 +20,7 @@ export const themeScript = `
       document.documentElement.classList.remove('dark');
     }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-  } catch (e: any) {
+    } catch (e: unknown) {
     // localStorage may be unavailable, default to system preference
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');

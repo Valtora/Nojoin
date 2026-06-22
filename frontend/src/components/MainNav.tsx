@@ -398,9 +398,7 @@ export default function MainNav() {
       const data = await getTags();
       setTags(data);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to load tags:", error);
     }
   }, []);
@@ -503,9 +501,7 @@ export default function MainNav() {
       );
       window.dispatchEvent(new CustomEvent("tags-updated"));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to update tag color:", error);
     }
   };
@@ -519,9 +515,7 @@ export default function MainNav() {
       setEditingTagId(null);
       window.dispatchEvent(new CustomEvent("tags-updated"));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to rename tag:", error);
     }
   };
@@ -541,9 +535,7 @@ export default function MainNav() {
           setTags((prev: Tag[]) => prev.filter((t: Tag) => t.id !== tag.id));
           window.dispatchEvent(new CustomEvent("tags-updated"));
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (error: any) {
+                } catch (error: unknown) {
           console.error("Failed to delete tag:", error);
         }
       },
@@ -564,9 +556,7 @@ export default function MainNav() {
       setIsAddingTag(false);
       window.dispatchEvent(new CustomEvent("tags-updated"));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to create tag:", error);
     }
   };
@@ -592,9 +582,7 @@ export default function MainNav() {
 
       window.dispatchEvent(new CustomEvent("tags-updated"));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to create tag:", error);
     }
   };
@@ -746,9 +734,7 @@ export default function MainNav() {
         toggleExpandedTag(newParentId);
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to move tag", e);
       // Revert optimistic update
       setTags((prev) =>
@@ -1027,9 +1013,7 @@ export default function MainNav() {
                           );
                           window.dispatchEvent(new CustomEvent("tags-updated"));
 
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-                        } catch (e: any) {
+                                                } catch (e: unknown) {
                           console.error(e);
                         }
                         setContextMenu(null);
@@ -1072,9 +1056,7 @@ export default function MainNav() {
                                       new CustomEvent("tags-updated"),
                                     );
 
-                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-                                  } catch (e: any) {
+                                                                    } catch (e: unknown) {
                                     console.error(e);
                                   }
                                 }

@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, FileText, Loader2, CheckCircle } from 'lucide-react';
 import { uploadDocument } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errors';
 import type { RecordingId } from '@/types';
 import { useNotificationStore } from '@/lib/notificationStore';
 
@@ -127,13 +128,11 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 handleClose();
             }, 1500);
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-        } catch (error: any) {
+                } catch (error: unknown) {
             setUploadState('idle');
             addNotification({
                 type: 'error',
-                message: error.response?.data?.detail || 'Upload failed. Please try again.',
+                message: getErrorMessage(error, 'Upload failed. Please try again.'),
             });
         }
     };

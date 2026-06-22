@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { uploadBackupChunked } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import {
   Download,
   Upload,
@@ -147,12 +148,10 @@ export default function BackupRestore() {
         window.location.reload();
       }, 2000);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Import failed:", error);
       const errorMsg =
-        error.response?.data?.detail || "Failed to restore backup.";
+        getErrorMessage(error, "Failed to restore backup.");
       setMessage({ type: "error", text: errorMsg });
     } finally {
       setImporting(false);
