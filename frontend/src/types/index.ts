@@ -367,8 +367,7 @@ export interface Settings {
   enable_diarization?: boolean;
   spellcheck_language?: string;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface LanguageChoice {
@@ -741,10 +740,8 @@ export interface RecordingInfo {
 export interface AsyncTaskStatus {
   task_id: string;
   status: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  result?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  meta?: any;
+    result?: unknown;
+    meta?: unknown;
 }
 
 export interface AxiosErrorLike {

@@ -32,6 +32,48 @@ We **actively welcome** code contributions, bug fixes, and feature enhancements 
 
 Please refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local development setup and core source-build commands.
 
+Local contributor prerequisites:
+
+- Python 3.11
+- Node.js 20 or newer
+- npm
+- Docker for the containerised stack and deployment-path verification
+
+Typical host setup from a fresh checkout:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements/local.txt
+
+cd frontend
+npm install
+```
+
+Minimum pull request verification is:
+
+- Backend/API/worker changes: `source .venv/bin/activate && pytest`
+- Frontend changes: `cd frontend && npm run lint && npm run test && npm run build`
+- Documentation changes: `python3 scripts/validate_docs.py`
+- Alembic migration changes: `python3 scripts/validate_alembic.py`
+
+The pull request workflow requires these checks to pass on `main`:
+
+- `Backend tests`
+- `Frontend lint`
+- `Frontend unit tests`
+- `Frontend build`
+- `Docs validation`
+- `Alembic validation`
+
+Run the checks for every area you touched before opening a pull request. Capture-related changes also require manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behavior. Migration changes must keep a single checked-in Alembic head and must not delete or rename committed revision files.
+
+Additional scope rules:
+
+- Recording context-menu changes must keep `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx` in sync.
+- Security-sensitive changes must preserve the documented auth and token boundaries in `docs/SECURITY.md` and update that guide in the same pull request when behavior changes.
+
 ## Code of Conduct
 
 Please note that this project is released with a [Code of Conduct](docs/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.

@@ -24,9 +24,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
       const data = await getTags();
       setTags(data);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error('Failed to load tags:', error);
     }
   }, []);
@@ -47,9 +45,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
       await loadTags();
       setSelectedTag(inputValue.trim());
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error('Failed to create tag:', error);
     }
   };

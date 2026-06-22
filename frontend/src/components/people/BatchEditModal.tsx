@@ -63,9 +63,7 @@ export function BatchEditModal({
       await onSave(finalUpdates);
       onClose();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch update failed:", error);
     } finally {
       setIsSubmitting(false);

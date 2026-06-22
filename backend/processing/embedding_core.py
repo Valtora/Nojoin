@@ -1,9 +1,10 @@
 import logging
-import torch
-import numpy as np
-from pyannote.audio import Inference, Model
-from pyannote.core import Segment
 from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import torch
+from pyannote.core import Segment
+
 from backend.utils.config_manager import config_manager
 from backend.processing.embedding import cosine_similarity
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
@@ -14,25 +15,36 @@ logger = logging.getLogger(__name__)
 DEFAULT_EMBEDDING_MODEL = "pyannote/wespeaker-voxceleb-resnet34-LM"
 
 
-# Add safe globals for Pyannote (Matches pattern in diarize.py + TorchVersion for embedding model)
-try:
-    from pyannote.audio.core.task import Specifications, Problem, Resolution
-    import torch
-    
-    safe_globals_list = [Specifications, Problem, Resolution]
-    
-    # Add TorchVersion which is required for wespeaker-voxceleb-resnet34-LM
-    try:
-        from torch.torch_version import TorchVersion
-        safe_globals_list.append(TorchVersion)
-    except ImportError:
-        pass
-        
-    torch.serialization.add_safe_globals(safe_globals_list)
-except ImportError:
-    pass # Should not happen if pyannote/torch is installed
-
 _embedding_model_cache = {}
+
+
+def _register_pyannote_safe_globals() -> None:
+    """Register PyTorch safe globals required by pyannote embedding models."""
+    try:
+        from pyannote.audio.core.task import Problem, Resolution, Specifications
+
+        safe_globals_list = [Specifications, Problem, Resolution]
+
+        try:
+            from torch.torch_version import TorchVersion
+
+            safe_globals_list.append(TorchVersion)
+        except ImportError:
+            pass
+
+        torch.serialization.add_safe_globals(safe_globals_list)
+    except ImportError:
+        # Keep pyannote optional at module import time so non-ML tests can import
+        # this module without the worker-only runtime installed.
+        pass
+
+
+def _load_pyannote_audio_types():
+    """Load pyannote.audio lazily to avoid import-time CI/test failures."""
+    _register_pyannote_safe_globals()
+    from pyannote.audio import Inference, Model
+
+    return Inference, Model
 
 def release_embedding_model_cache():
     """Releases cached speaker embedding models from memory."""
@@ -47,6 +59,7 @@ def release_embedding_model_cache():
 def load_embedding_model(device_str: str, hf_token: str = None):
     """Load pyannote embedding model."""
     try:
+        Inference, Model = _load_pyannote_audio_types()
         resolved_model = resolve_local_pyannote_model(DEFAULT_EMBEDDING_MODEL)
         if resolved_model.source == "remote":
             if not hf_token:

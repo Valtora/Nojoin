@@ -63,9 +63,7 @@ export default function PeoplePage() {
       });
       setPeople(data);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to fetch people:", error);
       addNotification({ type: "error", message: "Failed to load people." });
     } finally {
@@ -98,9 +96,7 @@ export default function PeoplePage() {
         await deleteGlobalSpeaker(personToDelete.id);
         fetchPeople();
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+            } catch (error: unknown) {
         console.error("Failed to delete person:", error);
         addNotification({ type: "error", message: "Failed to delete person." });
       } finally {
@@ -120,9 +116,7 @@ export default function PeoplePage() {
       }
       fetchPeople();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       throw error;
     }
   };
@@ -203,9 +197,7 @@ export default function PeoplePage() {
       setSelectedIds(new Set());
       fetchPeople();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch delete failed", error);
       addNotification({ type: "error", message: "Failed to delete some people." });
     } finally {
@@ -266,9 +258,7 @@ export default function PeoplePage() {
       fetchPeople();
       setSelectedIds(new Set());
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Batch update failed:", error);
       addNotification({
         type: "error",

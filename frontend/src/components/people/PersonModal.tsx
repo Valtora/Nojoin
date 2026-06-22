@@ -87,9 +87,7 @@ export function PersonModal({
       setNewTagName("");
       setShowTagInput(false);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to create tag:", error);
     }
   };
@@ -183,9 +181,7 @@ interface TagNode extends PeopleTag {
       await onSave(formData);
       onClose();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to save person:", error);
     } finally {
       setIsSubmitting(false);
@@ -222,9 +218,7 @@ interface TagNode extends PeopleTag {
         window.location.reload();
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Merge failed:", error);
       addNotification({
         type: "error",
@@ -254,9 +248,7 @@ interface TagNode extends PeopleTag {
       });
       onClose();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to delete voiceprint:", error);
       addNotification({
         type: "error",

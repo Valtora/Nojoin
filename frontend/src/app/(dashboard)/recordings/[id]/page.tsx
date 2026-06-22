@@ -27,6 +27,7 @@ import {
   clampMeetingEdgeContextLevel,
   DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
 } from "@/lib/meetingEdgeContext";
+import { getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
 import ChatPanel from "@/components/ChatPanel";
 import AudioPlayer from "@/components/AudioPlayer";
 import SpeakerPanel from "@/components/SpeakerPanel";
@@ -380,9 +381,7 @@ export default function RecordingPage({ params }: PageProps) {
       }
       return recData;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to fetch recording:", e);
       addNotification({
         type: "error",
@@ -487,11 +486,9 @@ export default function RecordingPage({ params }: PageProps) {
           if (!isEditingTitle) setTitleValue(data.name);
         }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (e: any) {
+            } catch (e: unknown) {
         console.error("Polling failed", e);
-        if (e.response && e.response.status === 404) {
+        if (getErrorStatus(e) === 404) {
           addNotification({
             type: "info",
             message: "Recording was discarded or deleted.",
@@ -643,11 +640,9 @@ export default function RecordingPage({ params }: PageProps) {
 
         await audioRef.current.play();
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (err: any) {
+            } catch (err: unknown) {
         // Ignore AbortError which happens when play() is interrupted by another play() or pause()
-        if (err.name !== "AbortError") {
+        if (!isAbortError(err)) {
           console.error("Playback failed:", err);
         }
       }
@@ -725,9 +720,7 @@ export default function RecordingPage({ params }: PageProps) {
       setHistory((prev) => prev.slice(0, -1));
       setFuture((prev) => [previousState, ...prev]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Undo failed", e);
       await syncTranscriptState("full").catch(() => undefined);
       addNotification({ type: "error", message: "Undo failed." });
@@ -748,9 +741,7 @@ export default function RecordingPage({ params }: PageProps) {
       setFuture((prev) => prev.slice(1));
       setHistory((prev) => [...prev, nextState]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Redo failed", e);
       await syncTranscriptState("full").catch(() => undefined);
       addNotification({ type: "error", message: "Redo failed." });
@@ -768,9 +759,7 @@ export default function RecordingPage({ params }: PageProps) {
       setRecording(updated);
       await syncTranscriptState("full");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to rename speaker:", error);
       addNotification({
         type: "error",
@@ -876,9 +865,7 @@ export default function RecordingPage({ params }: PageProps) {
         );
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to update segment speaker:", error);
       addNotification({
         type: "error",
@@ -940,9 +927,7 @@ export default function RecordingPage({ params }: PageProps) {
         nextSegments,
       );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to update segment text:", error);
       addNotification({ type: "error", message: "Failed to update segment text." });
     }
@@ -964,9 +949,7 @@ export default function RecordingPage({ params }: PageProps) {
       ]);
       setRecording(updated);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Failed to find and replace:", error);
       addNotification({ type: "error", message: "Failed to find and replace." });
     }
@@ -991,9 +974,7 @@ export default function RecordingPage({ params }: PageProps) {
       setIsEditingTitle(false);
       router.refresh();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to rename recording:", e);
       addNotification({ type: "error", message: "Failed to rename recording." });
     }
@@ -1028,9 +1009,7 @@ export default function RecordingPage({ params }: PageProps) {
         const updated = await getRecording(recording.id);
         setRecording(updated);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (e: any) {
+            } catch (e: unknown) {
         console.error("Failed to update speaker color", e);
         addNotification({ type: "error", message: "Failed to update speaker color." });
       }
@@ -1047,25 +1026,20 @@ export default function RecordingPage({ params }: PageProps) {
       setRecording(updated);
       setActivePanel("notes"); // Switch to notes panel after generation
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to generate notes:", e);
       try {
         const updated = await getRecording(recording.id);
         setRecording(updated);
         setActivePanel("notes");
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (refreshError: any) {
+            } catch (refreshError: unknown) {
         console.error("Failed to refresh recording after notes error:", refreshError);
       }
       addNotification({
         type: "error",
         message:
-          e.response?.data?.detail ||
-          "Failed to generate notes. Configure an AI provider and model in Settings, then try again.",
+          getErrorMessage(e, "Failed to generate notes. Configure an AI provider and model in Settings, then try again."),
       });
     } finally {
       setIsGeneratingNotes(false);
@@ -1084,9 +1058,7 @@ export default function RecordingPage({ params }: PageProps) {
       const updated = await getRecording(recording.id);
       setRecording(updated);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to update notes:", e);
       addNotification({ type: "error", message: "Failed to update notes." });
     }
@@ -1106,9 +1078,7 @@ export default function RecordingPage({ params }: PageProps) {
       const updated = await getRecording(recording.id);
       setRecording(updated);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Notes undo failed:", e);
       addNotification({ type: "error", message: "Failed to undo notes changes." });
     }
@@ -1128,9 +1098,7 @@ export default function RecordingPage({ params }: PageProps) {
       const updated = await getRecording(recording.id);
       setRecording(updated);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Notes redo failed:", e);
       addNotification({ type: "error", message: "Failed to redo notes changes." });
     }
@@ -1156,9 +1124,7 @@ export default function RecordingPage({ params }: PageProps) {
       try {
         await updateSettings({ meeting_edge_context_level: level });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+            } catch (error: unknown) {
         setMeetingEdgeContextLevel(previousLevel);
         throw error;
       }
@@ -1178,9 +1144,7 @@ export default function RecordingPage({ params }: PageProps) {
         await exportContent(recording.id, contentType, format);
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error("Export failed:", error);
       addNotification({
         type: "error",

@@ -126,7 +126,7 @@ Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**
 
 ## Legal
 
-Recording laws vary by jurisdiction. Review the [legal disclaimer](LEGAL.md) before using Nojoin.
+Recording laws vary by jurisdiction. Review the [legal disclaimer](docs/LEGAL.md) before using Nojoin.
 
 ## Support
 

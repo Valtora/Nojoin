@@ -39,6 +39,63 @@ Windows:
 - Browser microphone permission for local smoke tests
 - PipeWire screen capture support when validating Linux shared-screen or system audio behavior
 
+## Fresh Checkout Setup
+
+Host-run validation expects the project virtual environment plus frontend dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements/local.txt
+
+cd frontend
+npm install
+```
+
+If you are working on a narrower area, you can install a smaller Python dependency set:
+
+- backend tests only: `python -m pip install -r requirements/test.txt`
+- API-only or worker-only runtime work: use the matching file under `requirements/`
+
+## Required Pull Request Checks
+
+The `CI` workflow enforces these required checks on pull requests and on pushes to `main`:
+
+- `Backend tests`
+- `Frontend lint`
+- `Frontend unit tests`
+- `Frontend build`
+- `Docs validation`
+- `Alembic validation`
+
+Local equivalents:
+
+```bash
+source .venv/bin/activate
+pytest
+
+cd frontend
+npm run lint
+npm run test
+npm run build
+
+cd ..
+python3 scripts/validate_docs.py
+python3 scripts/validate_alembic.py
+```
+
+## Verification By Change Scope
+
+- Backend or worker code: run `pytest`.
+- Frontend code: run `npm run lint`, `npm run test`, and `npm run build`.
+- Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behavior, selected microphone behavior, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
+- Documentation-only changes: run `python3 scripts/validate_docs.py`.
+- Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision.
+- Deployment or release workflow changes: run the backend, frontend, docs, and Alembic validation set together before opening the pull request.
+- Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behavior changes.
+- Recording context-menu changes: update both `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx`, then run the full frontend lint, test, and build set.
+
 ## Compose Files
 
 - `docker-compose.example.yml`: Deployment template using published images.
@@ -195,6 +252,10 @@ python -m backend.startup_canonical_cutover
 # Run backend tests (ensure the virtual environment is active first)
 source .venv/bin/activate
 pytest
+
+# Validate docs and Alembic graph before opening a pull request
+python3 scripts/validate_docs.py
+python3 scripts/validate_alembic.py
 ```
 
 Development guardrails:
@@ -261,42 +322,42 @@ If you add a new language or update an existing dictionary:
 - **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues.
 
 ### Data Access & Dependency Injection
-- **Data Access**: `SQLModel` is used for ORM. All model files are located in [backend/models/](file:///home/msadmin/Nojoin/backend/models/).
+- **Data Access**: `SQLModel` is used for ORM. All model files are located in [backend/models/](../backend/models/).
 - **Dependency Injection**: Use `backend.api.deps` for DB sessions (`SessionDep`) and retrieving the current user (`CurrentUser`).
 
 ### System Configuration
 - **Configuration Management**: `backend.utils.config_manager` is the central utility handling system and user settings persisted in `data/config.json`. Do not implement parallel ad-hoc configuration storage mechanisms.
 
 ### Audio Processing & ML Operations
-- **Library Imports**: ML libraries (such as `torch`, `whisper`, `pyannote`) are computationally heavy and must be imported **inside** Celery task functions (under [backend/worker/tasks.py](file:///home/msadmin/Nojoin/backend/worker/tasks.py)) to ensure quick backend API startup.
-- **Pluggable ASR Engines**: The ASR Transcribe step dispatches to a pluggable engine under [backend/processing/engines/](file:///home/msadmin/Nojoin/backend/processing/engines/), determined by the `transcription_backend` configuration key. Pluggable engines (e.g. Whisper, or onnx-asr engines like Parakeet and Canary) share the `OnnxAsrEngine` base class. Note that Parakeet offers faster transcription on compatible NVIDIA systems but trades off accuracy and language coverage compared to Whisper.
+- **Library Imports**: ML libraries (such as `torch`, `whisper`, `pyannote`) are computationally heavy and must be imported **inside** Celery task functions (under [backend/worker/tasks/](../backend/worker/tasks/)) to ensure quick backend API startup.
+- **Pluggable ASR Engines**: The ASR Transcribe step dispatches to a pluggable engine under [backend/processing/engines/](../backend/processing/engines/), determined by the `transcription_backend` configuration key. Pluggable engines (e.g. Whisper, or onnx-asr engines like Parakeet and Canary) share the `OnnxAsrEngine` base class. Note that Parakeet offers faster transcription on compatible NVIDIA systems but trades off accuracy and language coverage compared to Whisper.
 - **Diarization manifests**: `RecordingAudioWindowManifest.status` is a legacy compatibility projection. Use `asr_status` for live/catch-up ASR coverage and `diarization_status`, `diarization_config_hash`, and `diarization_window_result_id` for rolling or catch-up speaker-window coverage. Never treat legacy `live_processed` as diarization-complete.
-- **Phantom Speaker Filter**: The post-diarization stage [backend/processing/phantom_filter.py](file:///home/msadmin/Nojoin/backend/processing/phantom_filter.py) filters and reassigns speech segments caused by non-speech notification sounds or background noise. It uses heuristic duration/segment count checks followed by embedding-based validation. Constant thresholds (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, and `PHANTOM_MERGE_THRESHOLD`) are defined in that file.
-- **Speaker Identification Constants**: All speaker matching thresholds are centralized in [backend/processing/embedding.py](file:///home/msadmin/Nojoin/backend/processing/embedding.py). Do not hardcode threshold values elsewhere; import and reference the named constants (such as `IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD`, `SCAN_MATCH_THRESHOLD`, `UI_SHOW_MATCH_THRESHOLD`, and `UI_STRONG_MATCH_THRESHOLD`).
+- **Phantom Speaker Filter**: The post-diarization stage [backend/processing/phantom_filter.py](../backend/processing/phantom_filter.py) filters and reassigns speech segments caused by non-speech notification sounds or background noise. It uses heuristic duration/segment count checks followed by embedding-based validation. Constant thresholds (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, and `PHANTOM_MERGE_THRESHOLD`) are defined in that file.
+- **Speaker Identification Constants**: All speaker matching thresholds are centralized in [backend/processing/embedding.py](../backend/processing/embedding.py). Do not hardcode threshold values elsewhere; import and reference the named constants (such as `IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD`, `SCAN_MATCH_THRESHOLD`, `UI_SHOW_MATCH_THRESHOLD`, and `UI_STRONG_MATCH_THRESHOLD`).
 - **PyTorch 2.6+ safe globals**: PyTorch 2.6+ defaults to `weights_only=True` in `torch.load` for security, blocking loading of custom classes (like `pyannote.audio.core.task.Specifications` and `torch.torch_version.TorchVersion`) from model checkpoints. These classes must be explicitly registered prior to loading models via `torch.serialization.add_safe_globals([...])` at the module level in `embedding_core.py` and `diarize.py`.
 
 ## Frontend Coding Conventions
 
 ### Architecture & UI Guidelines
-- **State Management**: **Zustand** (defined in [frontend/src/lib/store.ts](file:///home/msadmin/Nojoin/frontend/src/lib/store.ts)) is the global UI state manager (handling navigation, selection, and filters). Avoid prop drilling wherever possible.
-- **API Client Layer**: All API communication must go through [frontend/src/lib/api.ts](file:///home/msadmin/Nojoin/frontend/src/lib/api.ts).
+- **State Management**: **Zustand** (defined in [frontend/src/lib/store.ts](../frontend/src/lib/store.ts)) is the global UI state manager (handling navigation, selection, and filters). Avoid prop drilling wherever possible.
+- **API Client Layer**: All API communication must go through [frontend/src/lib/api.ts](../frontend/src/lib/api.ts).
 - **Security & Tokens**:
   - Browser auth uses HttpOnly session cookies issued by `/api/v1/login/session`.
   - Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
   - Never expose bearer tokens in URL query strings or other browser-visible areas.
-- **Routing & Framework**: Use the Next.js App Router ([frontend/src/app/](file:///home/msadmin/Nojoin/frontend/src/app/)) and Tailwind CSS for styling. Prefer functional components inside [frontend/src/components/](file:///home/msadmin/Nojoin/frontend/src/components/).
+- **Routing & Framework**: Use the Next.js App Router ([frontend/src/app/](../frontend/src/app/)) and Tailwind CSS for styling. Prefer functional components inside [frontend/src/components/](../frontend/src/components/).
 - **Strict TypeScript**: Avoid the use of `any` types. Ensure TS interfaces in `frontend/src/types/index.ts` are updated first when adding settings or model fields.
 
 ### UI Duplication Rules
 - **Context Menus warning**: When modifying the context menu options for recording cards/rows, you **must** update both of the following files to prevent UI divergence:
-  - [frontend/src/components/RecordingCard.tsx](file:///home/msadmin/Nojoin/frontend/src/components/RecordingCard.tsx) (handles the recording grid view).
-  - [frontend/src/components/Sidebar.tsx](file:///home/msadmin/Nojoin/frontend/src/components/Sidebar.tsx) (handles the sidebar recording list view).
+  - [frontend/src/components/RecordingCard.tsx](../frontend/src/components/RecordingCard.tsx) (handles the recording grid view).
+  - [frontend/src/components/Sidebar.tsx](../frontend/src/components/Sidebar.tsx) (handles the sidebar recording list view).
 
 ## Release Workflow and Version Detection
 
 ### Unified Release Process
 Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step:
-1. **Update Version**: Update [docs/VERSION](file:///home/msadmin/Nojoin/docs/VERSION) to the new version string (e.g. `0.6.0`).
+1. **Update Version**: Update [VERSION](VERSION) to the new version string (e.g. `0.6.0`).
 2. **Commit and Tag**: Commit the version file change and create/push the tag:
    ```bash
    git add docs/VERSION
@@ -304,7 +365,7 @@ Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend
    git tag v0.6.0
    git push origin v0.6.0
    ```
-3. **CI/CD Pipeline**: The push of `v*` tag triggers [.github/workflows/release.yml](file:///home/msadmin/Nojoin/.github/workflows/release.yml) to build and push Docker images to GHCR, embedding the version for runtime display in Settings. Update release notes manually in the GitHub Releases interface.
+3. **CI/CD Pipeline**: The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml). Release publishing now re-runs the backend, frontend, docs, and Alembic validation set before any image push, verifies `docs/VERSION` matches the tag, and only publishes `latest` automatically from the tag-triggered release flow. Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly. Update release notes manually in the GitHub Releases interface.
 
 ### Runtime Version Detection
 The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.

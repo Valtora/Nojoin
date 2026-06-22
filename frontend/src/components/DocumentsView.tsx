@@ -37,9 +37,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       setDocuments(docs);
       setLoadFailed(false);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to load documents", e);
       setLoadFailed(true);
       addNotification({ type: "error", message: "Failed to load documents." });
@@ -97,9 +95,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       addNotification({ type: "success", message: "Document deleted" });
       setDocuments((prev) => prev.filter((d) => d.id !== documentToDelete.id));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to delete document", e);
       addNotification({ type: "error", message: "Failed to delete document" });
     } finally {

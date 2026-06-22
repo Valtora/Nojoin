@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { X, Fingerprint, Link, Plus, HardDrive, AlertCircle, Check, Loader2 } from 'lucide-react';
 import { RecordingId, VoiceprintExtractResult, VoiceprintMatchInfo, BatchVoiceprintResult } from '@/types';
 import { applyVoiceprintAction, VoiceprintAction } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errors';
 
 interface VoiceprintModalProps {
   isOpen: boolean;
@@ -93,10 +94,8 @@ export default function VoiceprintModal({
       onComplete();
       onClose();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
-      setError(e.response?.data?.detail || 'Failed to apply voiceprint action');
+        } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to apply voiceprint action'));
     } finally {
       setIsSubmitting(false);
     }
@@ -127,10 +126,8 @@ export default function VoiceprintModal({
       onComplete();
       onClose();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
-      setError(e.response?.data?.detail || 'Failed to apply voiceprint actions');
+        } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to apply voiceprint actions'));
     } finally {
       setIsSubmitting(false);
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ColorPicker from "@/components/ColorPicker";
 import { Switch } from "@/components/ui/Switch";
@@ -19,6 +19,7 @@ import {
   updateCalendarColor,
   updateCalendarSelection,
 } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import {
   CalendarRange,
@@ -94,28 +95,25 @@ export default function CalendarConnectionsSettings() {
   const { addNotification } = useNotificationStore();
   const handledCallbackRef = useRef(false);
 
-  const loadOverview = async () => {
+  const loadOverview = useCallback(async () => {
     setLoading(true);
     try {
       setOverview(await getCalendarOverview());
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          "Failed to load calendar connections",
+          getErrorMessage(error, "Failed to load calendar connections"),
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [addNotification]);
 
   useEffect(() => {
     void loadOverview();
-  }, []);
+  }, [loadOverview]);
 
   useEffect(() => {
     if (handledCallbackRef.current) {
@@ -156,7 +154,7 @@ export default function CalendarConnectionsSettings() {
       scroll: false,
     });
     void loadOverview();
-  }, [addNotification, pathname, router, searchParams]);
+  }, [addNotification, loadOverview, pathname, router, searchParams]);
 
   const configuredProviders = useMemo(
     () => overview?.providers.filter((provider) => provider.configured) ?? [],
@@ -169,14 +167,11 @@ export default function CalendarConnectionsSettings() {
       const { authorisation_url } = await startCalendarAuthorisation(provider);
       window.location.assign(authorisation_url);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          `Failed to start ${CONNECT_LABELS[provider] || "calendar"} sign-in`,
+          getErrorMessage(error, `Failed to start ${CONNECT_LABELS[provider] || "calendar"} sign-in`),
       });
       setBusyKey(null);
     }
@@ -204,14 +199,11 @@ export default function CalendarConnectionsSettings() {
         replaceConnection(currentOverview, updatedConnection),
       );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          "Failed to update selected calendars",
+          getErrorMessage(error, "Failed to update selected calendars"),
       });
     } finally {
       setBusyKey(null);
@@ -234,14 +226,11 @@ export default function CalendarConnectionsSettings() {
         replaceConnection(currentOverview, updatedConnection),
       );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          "Failed to update calendar colour",
+          getErrorMessage(error, "Failed to update calendar colour"),
       });
     } finally {
       setBusyKey(null);
@@ -260,12 +249,10 @@ export default function CalendarConnectionsSettings() {
         message: "Calendar sync completed",
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
-        message: error.response?.data?.detail || "Calendar sync failed",
+        message: getErrorMessage(error, "Calendar sync failed"),
       });
     } finally {
       setBusyKey(null);
@@ -295,14 +282,11 @@ export default function CalendarConnectionsSettings() {
         message: "Calendar connection removed",
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       addNotification({
         type: "error",
         message:
-          error.response?.data?.detail ||
-          "Failed to disconnect calendar account",
+          getErrorMessage(error, "Failed to disconnect calendar account"),
       });
     } finally {
       setBusyKey(null);

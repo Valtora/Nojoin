@@ -79,9 +79,7 @@ export default function ReprocessDialog({
       onReprocessed(updatedRecording);
       onClose();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
+        } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "response" in err
           ? ((err as { response?: { data?: { detail?: unknown } } }).response

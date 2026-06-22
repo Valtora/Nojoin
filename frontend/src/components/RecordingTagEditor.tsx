@@ -23,9 +23,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
       window.dispatchEvent(new CustomEvent('tags-updated'));
       if (onTagsUpdated) onTagsUpdated();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (error: any) {
+        } catch (error: unknown) {
       console.error('Failed to remove tag:', error);
     }
   };

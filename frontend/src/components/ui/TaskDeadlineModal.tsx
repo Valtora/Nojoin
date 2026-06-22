@@ -137,10 +137,15 @@ export default function TaskDeadlineModal({
       return;
     }
 
+    const nextZonedValue = value ? toTimeZoneDate(value, resolvedTimeZone) : null;
+    const nextZonedNow = toTimeZoneDate(new Date(), resolvedTimeZone);
+
     setDraftValue(
-      zonedValue ? new Date(zonedValue) : buildSuggestedDeadline(zonedNow),
+      nextZonedValue
+        ? new Date(nextZonedValue)
+        : buildSuggestedDeadline(nextZonedNow),
     );
-  }, [isOpen, valueTimestamp, resolvedTimeZone]);
+  }, [isOpen, resolvedTimeZone, value, valueTimestamp]);
 
   useEffect(() => {
     if (!isOpen || isSaving) {

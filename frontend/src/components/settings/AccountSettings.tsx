@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { updatePasswordMe, updateUserMe } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errors';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { Loader2, User, Lock } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -138,10 +139,8 @@ export default function AccountSettings({
         router.push('/');
       }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (err: any) {
-      addNotification({ message: err.response?.data?.detail || 'Failed to update password', type: 'error' });
+        } catch (err: unknown) {
+      addNotification({ message: getErrorMessage(err, 'Failed to update password'), type: 'error' });
     } finally {
       setPasswordLoading(false);
     }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { usePausedRecordingGuard } from "@/lib/capture/usePausedRecordingGuard";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 import ResumeRecordingModal from "./ResumeRecordingModal";
@@ -32,16 +33,14 @@ export default function CaptureShell({ children }: CaptureShellProps) {
       await resume(pausedRecording.id);
       router.push(`/recordings/${pausedRecording.id}`);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (resumeError: any) {
+        } catch (resumeError: unknown) {
       if (!controller.getState().error) {
         addNotification({
           type: "error",
-          message:
-            resumeError instanceof Error
-              ? resumeError.message
-              : "Failed to resume the paused recording.",
+          message: getErrorMessage(
+            resumeError,
+            "Failed to resume the paused recording.",
+          ),
         });
       }
     } finally {
@@ -59,15 +58,13 @@ export default function CaptureShell({ children }: CaptureShellProps) {
       await cancel(pausedRecording.id);
       router.push("/recordings");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (cancelError: any) {
+        } catch (cancelError: unknown) {
       addNotification({
         type: "error",
-        message:
-          cancelError instanceof Error
-            ? cancelError.message
-            : "Failed to discard the paused recording.",
+        message: getErrorMessage(
+          cancelError,
+          "Failed to discard the paused recording.",
+        ),
       });
     } finally {
       setBusyAction(null);

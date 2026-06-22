@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
@@ -30,7 +30,7 @@ export default function TourGuide() {
       return true;
     });
 
-  const startTour = (
+  const startTour = useCallback((
     steps: typeof dashboardSteps,
     onDestroyed: () => void,
   ) => {
@@ -50,7 +50,7 @@ export default function TourGuide() {
     });
 
     driverObj.drive();
-  };
+  }, []);
 
   useEffect(() => {
     getUserMe().then(user => setUserId(user.id)).catch(() => {});
@@ -97,6 +97,7 @@ export default function TourGuide() {
     setHasSeenRecordingsTour,
     hasSeenTranscriptTour,
     setHasSeenTranscriptTour,
+    startTour,
     userId,
   ]);
 

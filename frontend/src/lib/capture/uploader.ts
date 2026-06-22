@@ -146,9 +146,7 @@ export class SegmentUploader {
         await this.uploadSegmentFn(this.recordingId, sequence, blob);
         return;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (error: any) {
+            } catch (error: unknown) {
         lastError =
           error instanceof Error
             ? error

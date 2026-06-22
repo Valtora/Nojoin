@@ -35,6 +35,7 @@ import {
   rejectSpeakerNameSuggestion,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { getErrorMessage } from "@/lib/errors";
 import {
   buildGlobalSpeakerById,
   buildUniqueGlobalSpeakerIdByName,
@@ -326,9 +327,7 @@ export default function SpeakerPanel({
       setRenamingSpeaker(null);
       onRefresh();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to rename speaker", e);
       addNotification({ type: "error", message: "Failed to rename speaker." });
     } finally {
@@ -357,9 +356,7 @@ export default function SpeakerPanel({
 
       onRefresh();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to merge speakers", e);
       addNotification({ type: "error", message: "Failed to merge speakers." });
     } finally {
@@ -383,9 +380,7 @@ export default function SpeakerPanel({
       setDeletingSpeaker(null);
       onRefresh();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to delete speaker", e);
       addNotification({ type: "error", message: "Failed to delete speaker." });
     } finally {
@@ -406,13 +401,11 @@ export default function SpeakerPanel({
       setBatchVoiceprintResults(null);
       setVoiceprintModalOpen(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to extract voiceprint", e);
       addNotification({
         type: "error",
-        message: e.response?.data?.detail || "Failed to extract voiceprint.",
+        message: getErrorMessage(e, "Failed to extract voiceprint."),
       });
     } finally {
       setExtractingVoiceprint(null);
@@ -434,15 +427,12 @@ export default function SpeakerPanel({
         message: "Speaker added to Global Library.",
       });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to promote speaker", e);
       addNotification({
         type: "error",
         message:
-          e.response?.data?.detail ||
-          "Failed to promote speaker to global library.",
+          getErrorMessage(e, "Failed to promote speaker to global library."),
       });
     } finally {
       setIsSubmitting(false);
@@ -462,9 +452,7 @@ export default function SpeakerPanel({
       });
       onRefresh();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to accept speaker suggestion", e);
       addNotification({
         type: "error",
@@ -488,9 +476,7 @@ export default function SpeakerPanel({
       });
       onRefresh();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error("Failed to reject speaker suggestion", e);
       addNotification({
         type: "error",

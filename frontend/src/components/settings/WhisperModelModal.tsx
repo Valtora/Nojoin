@@ -75,9 +75,7 @@ export default function WhisperModelModal({
         const res = await getModelsStatus(selectedModel);
         setStatus(res);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-      } catch (e: any) {
+            } catch (e: unknown) {
         console.error("Failed to check model status", e);
       } finally {
         setLoadingStatus(false);
@@ -103,9 +101,7 @@ export default function WhisperModelModal({
       const res = await getModelsStatus(selectedModel);
       setStatus(res);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    } catch (e: any) {
+        } catch (e: unknown) {
       console.error(e);
       addNotification({ type: "error", message: "Failed to delete model cache" });
     } finally {
