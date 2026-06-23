@@ -110,12 +110,15 @@ gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
     "required_approving_review_count": 0
   },
   "required_linear_history": true,
+  "required_conversation_resolution": true,
   "allow_force_pushes": false,
   "allow_deletions": false,
   "restrictions": null
 }
 JSON
 ```
+
+`required_conversation_resolution` makes unresolved review threads (including automated review comments) block the merge until they are resolved, so feedback is not lost. It is listed explicitly because `PUT` replaces the whole protection object: omitting it would silently disable it on the next apply.
 
 **This configuration cannot lock out a sole maintainer.** It is deliberately built so that a single person who is also the only code owner can always merge their own green pull request:
 
