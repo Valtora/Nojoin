@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
@@ -15,7 +15,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Plus,
   X,
   Bell,
@@ -25,29 +24,16 @@ import {
 } from "lucide-react";
 import {
   DndContext,
-  DragEndEvent,
   DragOverlay,
-  useDraggable,
-  useDroppable,
   PointerSensor,
   useSensor,
   useSensors,
   pointerWithin,
 } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNavigationStore, ViewType } from "@/lib/store";
 import { DESKTOP_BREAKPOINT } from "@/lib/viewportDensity";
-import {
-  getTags,
-  updateTag,
-  deleteTag,
-  createTag,
-  logout
-} from "@/lib/api";
-import { Tag } from "@/types";
-import { getColorByKey, DEFAULT_TAG_COLORS } from "@/lib/constants";
-import { InlineColorPicker } from "./ColorPicker";
+import { logout } from "@/lib/api";
 
 import ImportAudioModal from "./ImportAudioModal";
 import ConfirmationModal from "./ConfirmationModal";
@@ -57,261 +43,9 @@ import ContextMenu from "./ContextMenu";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 
-interface NavItemProps {
-  icon: React.ReactNode;
-  label: string;
-  isActive?: boolean;
-  onClick: () => void;
-  collapsed: boolean;
-  badge?: number;
-  id?: string;
-  disabled?: boolean;
-}
-
-function NavItem({
-  icon,
-  label,
-  isActive,
-  onClick,
-  collapsed,
-  badge,
-  id,
-  disabled = false,
-}: NavItemProps) {
-  return (
-    <button
-      id={id}
-      onClick={() => {
-        if (!disabled) {
-          onClick();
-        }
-      }}
-      disabled={disabled}
-      title={collapsed ? label : undefined}
-      className={`
-        w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
-        ${
-          isActive
-            ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
-            : disabled
-              ? "text-gray-400 dark:text-gray-600"
-              : "text-gray-700 dark:text-gray-300 hover:bg-white/70 hover:text-orange-800 dark:hover:bg-gray-800/70"
-        }
-        ${disabled ? "cursor-not-allowed opacity-60" : ""}
-        ${collapsed ? "justify-center" : ""}
-      `}
-    >
-      <span className="shrink-0">{icon}</span>
-      {!collapsed && (
-        <>
-          <span className="flex-1 text-left text-sm font-medium truncate">
-            {label}
-          </span>
-          {badge !== undefined && badge > 0 && (
-            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
-              {badge}
-            </span>
-          )}
-        </>
-      )}
-    </button>
-  );
-}
-
-interface TagItemProps {
-  tag: Tag;
-  isSelected: boolean;
-  onToggle: () => void;
-  onColorChange: (colorKey: string) => void;
-  onDelete: () => void;
-  onRename: (newName: string) => void;
-  onAddChild: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  isEditing: boolean;
-  onStartEdit: () => void;
-  onCancelEdit: () => void;
-  collapsed: boolean;
-  level?: number;
-  hasChildren: boolean;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
-}
-
-function TagItem({
-  tag,
-  isSelected,
-  onToggle,
-  onColorChange,
-  onDelete,
-  onRename,
-  onAddChild,
-  onContextMenu,
-  isEditing,
-  onStartEdit,
-  onCancelEdit,
-  collapsed,
-  level = 0,
-  hasChildren,
-  isExpanded,
-  onToggleExpand,
-}: TagItemProps) {
-  const color = getColorByKey(tag.color);
-  const [editValue, setEditValue] = useState(tag.name);
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setDraggableRef,
-    transform,
-    isDragging,
-  } = useDraggable({
-    id: `tag-${tag.id}`,
-    data: { tag },
-  });
-
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: `tag-${tag.id}`,
-    data: { tag },
-    disabled: isDragging,
-  });
-
-  const style = {
-    transform: CSS.Translate.toString(transform),
-  };
-
-  // Reset edit value when editing starts
-  useEffect(() => {
-    if (isEditing) {
-      setEditValue(tag.name);
-    }
-  }, [isEditing, tag.name]);
-
-  const handleSubmit = () => {
-    if (editValue.trim() && editValue.trim() !== tag.name) {
-      onRename(editValue.trim());
-    } else {
-      onCancelEdit();
-    }
-  };
-
-  if (collapsed) {
-    return (
-      <button
-        onClick={onToggle}
-        title={tag.name}
-        className={`
-          w-full flex justify-center py-2 rounded-lg transition-all
-          ${isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50 dark:hover:bg-gray-800/50"}
-        `}
-      >
-        <span className={`w-3 h-3 rounded-full ${color.dot}`} />
-      </button>
-    );
-  }
-
-  const content = (
-    <div
-      {...attributes}
-      {...listeners}
-      className={`
-        group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer relative select-none touch-none
-        ${isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50 dark:hover:bg-gray-800/50"}
-        ${isDragging ? "opacity-50" : ""}
-        ${isOver ? "bg-orange-50 dark:bg-orange-900/10 ring-2 ring-orange-400 dark:ring-orange-600" : ""}
-      `}
-      style={{ paddingLeft: `${level * 12 + 12}px` }}
-      onClick={() => {
-        if (!isEditing) onToggle();
-      }}
-      onContextMenu={onContextMenu}
-    >
-      <InlineColorPicker
-        selectedColor={tag.color || undefined}
-        onColorSelect={onColorChange}
-      />
-      {isEditing ? (
-        <input
-          type="text"
-          value={editValue}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-            setEditValue(e.target.value)
-          }
-          onKeyDown={(e: React.KeyboardEvent) => {
-            if (e.key === "Enter") handleSubmit();
-            if (e.key === "Escape") onCancelEdit();
-          }}
-          onBlur={handleSubmit}
-          autoFocus
-          className="flex-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none select-text"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-        />
-      ) : (
-        <span
-          className={`flex-1 text-sm truncate ${isSelected ? "font-medium" : ""}`}
-          title={tag.name}
-          onDoubleClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            onStartEdit();
-          }}
-        >
-          {tag.name}
-        </span>
-      )}
-      {!isEditing && (
-        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              onAddChild();
-            }}
-            className="p-1 hover:text-orange-500 transition-all"
-            title="Add sub-tag"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <Plus className="w-3 h-3" />
-          </button>
-
-          {hasChildren && (
-            <button
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                onToggleExpand();
-              }}
-              className="p-1 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
-              title={isExpanded ? "Collapse" : "Expand"}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              {isExpanded ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-            </button>
-          )}
-
-          <button
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-1 hover:text-red-500 transition-all"
-            title="Delete tag"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <div ref={setDroppableRef} style={style}>
-      <div ref={setDraggableRef}>{content}</div>
-    </div>
-  );
-}
+import NavItem from "./mainNav/NavItem";
+import TagItem from "./mainNav/TagItem";
+import { TagWithChildren, useMainNavTags } from "./mainNav/useMainNavTags";
 
 export default function MainNav() {
   const router = useRouter();
@@ -327,9 +61,6 @@ export default function MainNav() {
     toggleNavCollapse,
     navWidth,
     setNavWidth,
-    expandedTagIds: expandedTagIdsArray,
-    toggleExpandedTag,
-    setExpandedTagIds,
     isMobileNavOpen,
     setMobileNavOpen,
   } = useNavigationStore();
@@ -340,80 +71,54 @@ export default function MainNav() {
   const COLLAPSED_WIDTH = isCompact ? 60 : 64;
   const resolvedNavWidth = isCompact ? Math.min(navWidth, 248) : navWidth;
 
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [isAddingTag, setIsAddingTag] = useState(false);
-  const [createTagModal, setCreateTagModal] = useState<{
-    isOpen: boolean;
-    parentId?: number;
-  }>({ isOpen: false });
+  const {
+    tags,
+    tagTree,
+    expandedTagIds,
+    toggleExpandedTag,
+    setExpandedTagIds,
+    isAddingTag,
+    setIsAddingTag,
+    newTagName,
+    setNewTagName,
+    editingTagId,
+    setEditingTagId,
+    createTagModal,
+    setCreateTagModal,
+    contextMenu,
+    setContextMenu,
+    confirmModal,
+    setConfirmModal,
+    isOverRoot,
+    setRootNodeRef,
+    handleColorChange,
+    handleRenameTag,
+    handleDeleteTag,
+    handleAddTag,
+    handleAddSubTag,
+    handleCreateTagConfirm,
+    handleContextMenu,
+    handleDragEnd,
+    handlePromoteToRoot,
+    handlePromoteOneLevel,
+    handleExpandAllTags,
+  } = useMainNavTags();
 
-  // Convert array to Set for easier lookup
-  const expandedTagIds = useMemo(
-    () => new Set(expandedTagIdsArray),
-    [expandedTagIdsArray],
-  );
-
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    tagId: number;
-  } | null>(null);
-
-  // Close context menu on click outside
-  useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    window.addEventListener("click", handleClick);
-    return () => window.removeEventListener("click", handleClick);
-  }, []);
-
-  const [newTagName, setNewTagName] = useState("");
-  const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
 
   // Modal states
-  // const [isSpeakersModalOpen, setIsSpeakersModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const hasPausedCaptureLock = Boolean(pausedRecording && !runtimeActive);
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    isDangerous?: boolean;
-  }>({
-    isOpen: false,
-    title: "",
-    message: "",
-    onConfirm: () => {},
-  });
 
   const handleLogout = async () => {
     await logout();
   };
 
-  const loadTags = useCallback(async () => {
-    try {
-      const data = await getTags();
-      setTags(data);
-
-        } catch (error: unknown) {
-      console.error("Failed to load tags:", error);
-    }
-  }, []);
-
   useEffect(() => {
     setMounted(true);
-    void loadTags();
-
-    // Listen for global tag updates
-    const handleTagsUpdated = () => {
-      void loadTags();
-    };
-    window.addEventListener("tags-updated", handleTagsUpdated);
-    return () => window.removeEventListener("tags-updated", handleTagsUpdated);
-  }, [loadTags]);
+  }, []);
 
   useEffect(() => {
     const syncViewport = () => {
@@ -465,137 +170,6 @@ export default function MainNav() {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
-
-  // Build tag tree
-  interface TagWithChildren extends Tag {
-    children: TagWithChildren[];
-  }
-
-  const tagTree = useMemo(() => {
-    const tagMap = new Map<number, TagWithChildren>();
-    const roots: TagWithChildren[] = [];
-
-    // First pass: create nodes
-    tags.forEach((tag: Tag) => {
-      tagMap.set(tag.id, { ...tag, children: [] });
-    });
-
-    // Second pass: build tree
-    tags.forEach((tag: Tag) => {
-      const node = tagMap.get(tag.id)!;
-      if (tag.parent_id && tagMap.has(tag.parent_id)) {
-        tagMap.get(tag.parent_id)!.children.push(node);
-      } else {
-        roots.push(node);
-      }
-    });
-
-    return roots;
-  }, [tags]);
-
-  const handleColorChange = async (tagId: number, colorKey: string) => {
-    try {
-      await updateTag(tagId, { color: colorKey });
-      setTags((prev: Tag[]) =>
-        prev.map((t: Tag) => (t.id === tagId ? { ...t, color: colorKey } : t)),
-      );
-      window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to update tag color:", error);
-    }
-  };
-
-  const handleRenameTag = async (tagId: number, newName: string) => {
-    try {
-      await updateTag(tagId, { name: newName });
-      setTags((prev: Tag[]) =>
-        prev.map((t: Tag) => (t.id === tagId ? { ...t, name: newName } : t)),
-      );
-      setEditingTagId(null);
-      window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to rename tag:", error);
-    }
-  };
-
-  const handleDeleteTag = (tagId: number) => {
-    const tag = tags.find((t: Tag) => t.id === tagId);
-    if (!tag) return;
-
-    setConfirmModal({
-      isOpen: true,
-      title: "Delete Tag",
-      message: `Are you sure you want to delete the tag "${tag.name}"? This will remove it from all recordings.`,
-      isDangerous: true,
-      onConfirm: async () => {
-        try {
-          await deleteTag(tag.id);
-          setTags((prev: Tag[]) => prev.filter((t: Tag) => t.id !== tag.id));
-          window.dispatchEvent(new CustomEvent("tags-updated"));
-
-                } catch (error: unknown) {
-          console.error("Failed to delete tag:", error);
-        }
-      },
-    });
-  };
-
-  const handleAddTag = async (parentId?: number) => {
-    if (!newTagName.trim()) return;
-
-    try {
-      const randomColor =
-        DEFAULT_TAG_COLORS[
-          Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)
-        ];
-      const newTag = await createTag(newTagName.trim(), randomColor, parentId);
-      setTags((prev: Tag[]) => [...prev, newTag]);
-      setNewTagName("");
-      setIsAddingTag(false);
-      window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
-    }
-  };
-
-  const handleAddSubTag = (parentId: number) => {
-    setCreateTagModal({ isOpen: true, parentId });
-  };
-
-  const handleCreateTagConfirm = async (name: string) => {
-    try {
-      const parentId = createTagModal.parentId;
-      const randomColor =
-        DEFAULT_TAG_COLORS[
-          Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)
-        ];
-      const newTag = await createTag(name, randomColor, parentId);
-      setTags((prev: Tag[]) => [...prev, newTag]);
-
-      // If adding a sub-tag, ensure parent is expanded
-      if (parentId && !expandedTagIds.has(parentId)) {
-        toggleExpandedTag(parentId);
-      }
-
-      window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
-    }
-  };
-
-  const handleContextMenu = (e: React.MouseEvent, tagId: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      tagId,
-    });
-  };
 
   const renderTagTree = (nodes: TagWithChildren[], level = 0) => {
     return nodes.map((node) => (
@@ -671,83 +245,12 @@ export default function MainNav() {
     }),
   );
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (!over) return;
-
-    // Extract tag IDs
-    const activeIdString = String(active.id);
-    const overIdString = String(over.id);
-
-    const activeTagId = parseInt(activeIdString.replace("tag-", ""));
-    let newParentId: number | null = null;
-
-    if (overIdString === "root-tags-drop-zone") {
-      newParentId = null;
-    } else if (overIdString.startsWith("tag-")) {
-      const overTagId = parseInt(overIdString.replace("tag-", ""));
-      // Don't do anything if dropped on itself
-      if (activeTagId === overTagId) return;
-
-      // Check for cycles: ensure overTagId is not a descendant of activeTagId
-      const isDescendant = (parentId: number, childId: number): boolean => {
-        if (parentId === childId) return true;
-        const child = tags.find((t) => t.id === childId);
-        if (!child || !child.parent_id) return false;
-        return isDescendant(parentId, child.parent_id);
-      };
-
-      if (isDescendant(activeTagId, overTagId)) {
-        console.warn("Cannot move parent into child - cycle detected");
-        return;
-      }
-
-      newParentId = overTagId;
-    } else {
-      return; // Dropped somewhere else
-    }
-
-    // Find the active tag object
-    const activeTag = tags.find((t) => t.id === activeTagId);
-    if (!activeTag) return;
-
-    // Don't update if parent hasn't changed
-    if (activeTag.parent_id === newParentId) return;
-
-    // Optimistic update - local state uses undefined for no parent
-    setTags((prev) =>
-      prev.map((t) =>
-        t.id === activeTagId
-          ? { ...t, parent_id: newParentId === null ? undefined : newParentId }
-          : t,
-      ),
-    );
-
-    try {
-      // API Call - MUST send null to explicitly unset parent
-      await updateTag(activeTagId, { parent_id: newParentId });
-      window.dispatchEvent(new CustomEvent("tags-updated"));
-
-      // If moved to a new parent, expand that parent
-      if (newParentId && !expandedTagIds.has(newParentId)) {
-        toggleExpandedTag(newParentId);
-      }
-
-        } catch (e: unknown) {
-      console.error("Failed to move tag", e);
-      // Revert optimistic update
-      setTags((prev) =>
-        prev.map((t) =>
-          t.id === activeTagId ? { ...t, parent_id: activeTag.parent_id } : t,
-        ),
-      );
-    }
-  };
-
-  const { isOver: isOverRoot, setNodeRef: setRootNodeRef } = useDroppable({
-    id: "root-tags-drop-zone",
-  });
+  const contextMenuTag = contextMenu
+    ? tags.find((t) => t.id === contextMenu.tagId)
+    : undefined;
+  const contextMenuParent = contextMenuTag
+    ? tags.find((t) => t.id === contextMenuTag.parent_id)
+    : undefined;
 
   return (
     <>
@@ -893,12 +396,7 @@ export default function MainNav() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      const parentIds = tags
-                        .filter((t) =>
-                          tags.some((child) => child.parent_id === t.id),
-                        )
-                        .map((t) => t.id);
-                      setExpandedTagIds(parentIds);
+                      handleExpandAllTags();
                     }}
                     className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                     title="Expand All"
@@ -994,74 +492,20 @@ export default function MainNav() {
                   setContextMenu(null);
                 },
               },
-              ...(tags.find((t) => t.id === contextMenu.tagId)?.parent_id
+              ...(contextMenuTag?.parent_id
                 ? [
                     {
                       label: "Promote to Root",
-                      onClick: async () => {
-                        try {
-                          await updateTag(contextMenu.tagId, {
-                            parent_id: null,
-                          }); // Send null to API
-                          // Optimistic update (local state undefined)
-                          setTags((prev) =>
-                            prev.map((t) =>
-                              t.id === contextMenu.tagId
-                                ? { ...t, parent_id: undefined }
-                                : t,
-                            ),
-                          );
-                          window.dispatchEvent(new CustomEvent("tags-updated"));
-
-                                                } catch (e: unknown) {
-                          console.error(e);
-                        }
-                        setContextMenu(null);
+                      onClick: () => {
+                        void handlePromoteToRoot(contextMenu.tagId);
                       },
                     },
-                    ...(tags.find(
-                      (t) =>
-                        t.id ===
-                        tags.find((curr) => curr.id === contextMenu.tagId)
-                          ?.parent_id,
-                    )?.parent_id
+                    ...(contextMenuParent?.parent_id
                       ? [
                           {
                             label: "Promote One Level",
-                            onClick: async () => {
-                              const tag = tags.find(
-                                (t) => t.id === contextMenu.tagId,
-                              );
-                              if (tag?.parent_id) {
-                                const parent = tags.find(
-                                  (t) => t.id === tag.parent_id,
-                                );
-                                if (parent?.parent_id) {
-                                  try {
-                                    await updateTag(tag.id, {
-                                      parent_id: parent.parent_id,
-                                    });
-                                    // Optimistic update
-                                    setTags((prev) =>
-                                      prev.map((t) =>
-                                        t.id === tag.id
-                                          ? {
-                                              ...t,
-                                              parent_id: parent.parent_id,
-                                            }
-                                          : t,
-                                      ),
-                                    );
-                                    window.dispatchEvent(
-                                      new CustomEvent("tags-updated"),
-                                    );
-
-                                                                    } catch (e: unknown) {
-                                    console.error(e);
-                                  }
-                                }
-                              }
-                              setContextMenu(null);
+                            onClick: () => {
+                              void handlePromoteOneLevel(contextMenu.tagId);
                             },
                           },
                         ]
