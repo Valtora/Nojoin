@@ -82,6 +82,7 @@ ignore = [
 # from the package root via a dynamically-built __all__ Ruff cannot analyse.
 "backend/api/v1/endpoints/recordings/__init__.py" = ["F401"]
 "backend/api/v1/endpoints/speakers/__init__.py" = ["F401"]
+"backend/api/v1/endpoints/transcripts/__init__.py" = ["F401"]
 # Generated Alembic migrations keep create_table() results as named locals for
 # readability; they must not be edited (committed revisions are immutable).
 "backend/alembic/versions/*.py" = ["F841"]
