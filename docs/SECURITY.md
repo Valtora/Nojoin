@@ -72,6 +72,15 @@ Live recording is initiated and controlled by the authenticated web app.
 
 For end-user capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
 
+## Vulnerability Scanning and Severity Policy
+
+Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before their rolling tags are published. The policy balances strong assurance against the reality that the worker image is built on a large CUDA/PyTorch base with a slow-moving, inherited CVE surface.
+
+- The release pipeline scans each image and **fails the release on CRITICAL or HIGH findings that have a fix available** (`ignore-unfixed: true`). Such findings are addressable by us — usually by pulling in a patched base image or dependency — so they block publication.
+- Findings **without an upstream fix** do not block the release. They cannot be actioned by Nojoin and are unavoidable for the GPU worker base image. They remain visible in scan output for tracking.
+- A *fixed* CRITICAL/HIGH finding may be **temporarily accepted only by an explicit, documented exception** in [.trivyignore](../.trivyignore), recording the CVE id, the reason, the owner, and a review-by date. Exceptions are expected to be short-lived and are removed once the fix is pulled in, typically through a Dependabot base-image or dependency update.
+- Pull requests additionally run an informational dependency and configuration scan that surfaces CVEs without blocking merges.
+
 ## Supported Versions
 
 As Nojoin is in active development, only the latest version is supported. We encourage all users to use the most up-to-date version of the application.

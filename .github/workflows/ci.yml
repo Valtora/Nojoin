@@ -170,3 +170,25 @@ jobs:
 
       - name: Validate checked-in Alembic graph
         run: python scripts/validate_alembic.py
+
+  dependency-scan:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      # Informational on pull requests: surfaces dependency and config CVEs in
+      # the repository without blocking merges. The release pipeline enforces
+      # the blocking image scan and severity policy (REL-008).
+      - name: Scan repository dependencies and config
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+          trivyignores: .trivyignore

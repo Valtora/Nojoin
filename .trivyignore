@@ -1,0 +1,19 @@
+# Trivy ignore file — documented vulnerability exceptions.
+#
+# Severity policy (see docs/SECURITY.md "Vulnerability Scanning and Severity Policy"):
+#   - The release pipeline fails on CRITICAL/HIGH findings that have a fix
+#     available (`ignore-unfixed: true`), scanning each image before its rolling
+#     tags are published.
+#   - Findings without an upstream fix are not actioned by us and do not block
+#     the release; this is unavoidable for the CUDA/PyTorch worker base image.
+#   - A *fixed* CRITICAL/HIGH finding may be temporarily accepted only by adding
+#     it below with the CVE id, the reason, the owner, and a review-by date.
+#     Remove the entry once the fix is pulled in (usually via a base-image or
+#     dependency bump from Dependabot).
+#
+# Format: one CVE id per line, with a justification comment above it.
+#
+# Example (do not leave stale entries here):
+# # CVE-XXXX-NNNNN: base-image-only, fix lands in next pytorch base bump.
+# #   Owner: maintainers. Review by: YYYY-MM-DD.
+# CVE-XXXX-NNNNN

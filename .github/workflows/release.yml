@@ -321,6 +321,24 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      # First-party severity gate (REL-008): fail the release on CRITICAL/HIGH
+      # vulnerabilities that have a fix available. ignore-unfixed keeps the
+      # CVE-heavy CUDA/PyTorch worker base releasable, because findings with no
+      # upstream fix cannot be actioned by us; documented exceptions for fixed
+      # findings we are temporarily accepting live in .trivyignore.
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+
       - name: Sign image with cosign (keyless)
         env:
           IMAGE_DIGEST: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
