@@ -21,18 +21,12 @@ import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   getRecordings,
-  renameRecording,
-  inferSpeakers,
   getGlobalSpeakers,
   RecordingFilters,
-  archiveRecording,
-  restoreRecording,
-  softDeleteRecording,
-  permanentlyDeleteRecording,
   getTags,
-  cancelProcessing,
   getRecordingsCalendar,
 } from "@/lib/api";
+import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import MonthCalendar from "./MonthCalendar";
 import { getUserTimeZone, localDayRangeToUtc } from "@/lib/timezone";
 import { format, startOfMonth } from "date-fns";
@@ -113,6 +107,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { addNotification } = useNotificationStore();
+  const actions = useRecordingActions();
   const { isCompact } = useViewportDensity();
   const prevRecordingsRef = useRef<Map<RecordingId, RecordingStatus>>(new Map());
   const prevNotesStatusRef = useRef<Map<RecordingId, string>>(new Map());
@@ -494,38 +489,24 @@ export default function Sidebar() {
 
   const handleArchive = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
-    try {
-      await archiveRecording(id);
-
-        } catch (e: unknown) {
-      console.error("Failed to archive", e);
-      fetchRecordings();
-    }
+    await actions.archive(id, { onError: fetchRecordings });
   };
 
   const handleRestore = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
-    try {
-      await restoreRecording(id);
-
-        } catch (e: unknown) {
-      console.error("Failed to restore", e);
-      fetchRecordings();
-    }
+    await actions.restore(id, { onError: fetchRecordings });
   };
 
   const handleSoftDelete = async (id: RecordingId) => {
     setRecordings((prev) => prev.filter((r) => r.id !== id));
-    try {
-      await softDeleteRecording(id);
-      if (pathname === `/recordings/${id}`) {
-        router.push("/recordings");
-      }
-
-        } catch (e: unknown) {
-      console.error("Failed to delete", e);
-      fetchRecordings();
-    }
+    await actions.softDelete(id, {
+      onSuccess: () => {
+        if (pathname === `/recordings/${id}`) {
+          router.push("/recordings");
+        }
+      },
+      onError: fetchRecordings,
+    });
   };
 
   const handlePermanentDelete = async (id: RecordingId) => {
@@ -537,16 +518,14 @@ export default function Sidebar() {
       isDangerous: true,
       onConfirm: async () => {
         setRecordings((prev) => prev.filter((r) => r.id !== id));
-        try {
-          await permanentlyDeleteRecording(id);
-          if (pathname === `/recordings/${id}`) {
-            router.push("/recordings");
-          }
-
-                } catch (e: unknown) {
-          console.error("Failed to permanently delete", e);
-          fetchRecordings();
-        }
+        await actions.permanentDelete(id, {
+          onSuccess: () => {
+            if (pathname === `/recordings/${id}`) {
+              router.push("/recordings");
+            }
+          },
+          onError: fetchRecordings,
+        });
       },
     });
   };
@@ -572,52 +551,23 @@ export default function Sidebar() {
       }),
     );
 
-    try {
-      await renameRecording(id, renameValue);
-
-        } catch (e: unknown) {
-      console.error("Failed to rename", e);
-      fetchRecordings();
-    }
+    await actions.rename(id, renameValue, { onError: fetchRecordings });
   };
 
-
   const handleInferSpeakers = async (id: RecordingId) => {
-    try {
-      await inferSpeakers(id);
-      addNotification({
-        message:
-          "Speaker inference started. Review the suggested names when they are ready.",
-        type: "success",
-      });
-      // Dispatch event to notify other components (like the detail page)
-      window.dispatchEvent(
-        new CustomEvent("recording-updated", { detail: { id } }),
-      );
-      fetchRecordings();
-
-        } catch (e: unknown) {
-      console.error("Failed to infer speakers", e);
-      addNotification({ message: "Failed to infer speakers.", type: "error" });
-    }
+    await actions.inferSpeakers(id, {
+      onSuccess: () => {
+        // Dispatch event to notify other components (like the detail page)
+        window.dispatchEvent(
+          new CustomEvent("recording-updated", { detail: { id } }),
+        );
+        fetchRecordings();
+      },
+    });
   };
 
   const handleCancel = async (id: RecordingId) => {
-    try {
-      await cancelProcessing(id);
-      addNotification({
-        message: "Processing cancelled.",
-        type: "success",
-      });
-      fetchRecordings();
-
-        } catch (e: unknown) {
-      console.error("Failed to cancel processing", e);
-      addNotification({
-        message: "Failed to cancel processing.",
-        type: "error",
-      });
-    }
+    await actions.cancel(id, { onSuccess: fetchRecordings });
   };
 
   const handleRecordingClick = (
