@@ -257,7 +257,7 @@ async def delete_user(
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
-    # Prevent deleting owner (unless you are owner?)
+    # Authorization: only an owner may delete an owner account.
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot delete the owner")
 
@@ -324,11 +324,11 @@ async def update_user_role(
     if role not in [UserRole.ADMIN, UserRole.USER, UserRole.OWNER]:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    # Prevent modifying owner
+    # Authorization: only an owner may change an owner's role.
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot modify the owner")
 
-    # Prevent promoting to owner (only one owner usually, or manual DB change)
+    # Authorization: only an owner may promote a user to the owner role.
     if role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot promote to owner")
 
@@ -440,10 +440,10 @@ async def update_user(
     if user_in.is_superuser is not None:
         user.is_superuser = user_in.is_superuser
     if user_in.role is not None:
-        # Prevent modifying owner if not owner
+        # Authorization: only an owner may change an owner's role.
         if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
             raise HTTPException(status_code=403, detail="Cannot modify the owner")
-        # Prevent promoting to owner if not owner
+        # Authorization: only an owner may promote a user to the owner role.
         if user_in.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
             raise HTTPException(status_code=403, detail="Cannot promote to owner")
         user.role = user_in.role

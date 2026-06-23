@@ -1,5 +1,3 @@
-# nojoin/utils/config_manager.py
-
 import json
 import logging
 import os
@@ -539,11 +537,6 @@ class ConfigManager:
 # after it's initialized once at startup.
 config_manager = ConfigManager()
 
-# Example Usage:
-# from nojoin.utils.config_manager import config_manager
-
-# config_manager.set("whisper_model_size", "small")
-
 
 # --- Path Utilities ---
 def get_project_root():
@@ -561,9 +554,6 @@ def get_recordings_dir():
     return str(path_manager.get_recordings_directory_from_config(rel_dir))
 
 
-# Note: get_transcripts_dir() function removed - transcripts are now stored in database
-
-
 def to_project_relative_path(abs_path):
     """Converts an absolute path to a path relative to the user data directory."""
     return path_manager.to_user_data_relative_path(abs_path)
@@ -574,7 +564,6 @@ def from_project_relative_path(rel_path):
     return str(path_manager.from_user_data_relative_path(rel_path))
 
 
-# --- Path Utilities (Extended) ---
 def get_nojoin_dir():
     """Returns the absolute path to the user data directory."""
     return str(path_manager.user_data_directory)

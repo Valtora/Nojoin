@@ -139,11 +139,7 @@ def transcribe_audio_with_progress(
             logger.info(f"Whisper model {model_size} loaded successfully.")
         model = _model_cache[model_size]
 
-        # Use unified progress system for transcription
-        # progress_manager = get_progress_manager()
-
-        # with progress_manager.create_transcription_context(progress_callback) as context:
-        if True:  # Placeholder to keep indentation
+        if True:  # Retained scope guard; kept to preserve the block's indentation.
             try:
                 use_fp16 = device == "cuda"
 
@@ -297,7 +293,6 @@ class WhisperEngine(TranscriptionEngine):
             logger.info(
                 f"Transcription completed for {audio_path}. Detected language: {result.get('language')}"
             )
-            # logger.debug(f"Transcription result: {result}") # Can be very verbose
 
             return result
 

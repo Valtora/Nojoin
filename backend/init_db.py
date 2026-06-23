@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 async def init_db():
     logger.info("Initialising database...")
     async with engine.begin() as conn:
-        # await conn.run_sync(SQLModel.metadata.drop_all)
         await conn.run_sync(SQLModel.metadata.create_all)
 
     # Seed demo data
