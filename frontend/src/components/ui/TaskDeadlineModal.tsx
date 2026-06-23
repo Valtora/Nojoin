@@ -279,7 +279,7 @@ export default function TaskDeadlineModal({
           <DatePicker
             inline
             selected={resolvedDraft}
-            onChange={(date) => {
+            onChange={(date: Date | null) => {
               if (date) {
                 setDraftValue(date);
               }
