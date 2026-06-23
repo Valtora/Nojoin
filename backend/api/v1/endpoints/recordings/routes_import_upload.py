@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowMan
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
-from backend.utils.audio import concatenate_binary_files
+from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,

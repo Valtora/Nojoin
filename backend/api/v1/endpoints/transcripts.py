@@ -508,8 +508,6 @@ def _generate_pdf_export(
     css = "body { font-family: Helvetica, sans-serif; }"
     pdf.add_section(Section(markdown_content), user_css=css)
 
-    # Save to buffer
-    buffer = BytesIO()
     # Use a temporary file since the library requires a file path string for saving.
 
     import tempfile
@@ -554,7 +552,7 @@ def _generate_docx_export(
         if recording.created_at
         else "Unknown Date"
     )
-    runner = p.add_run(f"Date: {date_str}")
+    p.add_run(f"Date: {date_str}")
 
     p = doc.add_paragraph()
     duration_str = (
@@ -2082,15 +2080,6 @@ async def chat_with_meeting(
     augmented_message = request.message
     if context_text:
         augmented_message = f"Context from related meetings/documents:\n{context_text}\n\nUser Question: {request.message}"
-
-    from backend.utils.config_manager import async_get_system_api_keys
-
-    system_keys = await async_get_system_api_keys(db)
-
-    # Get system defaults from Owner
-    res = await db.execute(select(User).where(User.role == "owner"))
-    owner = res.scalar_one_or_none()
-    owner_settings = getattr(owner, "settings", {}) if owner else {}
 
     user_settings = current_user.settings or {}
 

@@ -55,6 +55,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/backend.txt -r requirements/lint.txt
 
+      - name: Ruff lint
+        run: ruff check .
+
       - name: Ruff format check
         run: ruff format --check .
 

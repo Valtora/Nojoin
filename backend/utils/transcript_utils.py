@@ -662,7 +662,6 @@ def consolidate_diarized_transcript(
                 # Try to split at a space near the ratio to avoid cutting words
                 # Search within a window
                 search_window = 10
-                found_space = False
                 for offset in range(search_window):
                     # Check forward
                     if (
@@ -670,12 +669,10 @@ def consolidate_diarized_transcript(
                         and curr_text[split_idx + offset] == " "
                     ):
                         split_idx += offset
-                        found_space = True
                         break
                     # Check backward
                     if split_idx - offset > 0 and curr_text[split_idx - offset] == " ":
                         split_idx -= offset
-                        found_space = True
                         break
 
                 chunk_text = curr_text[:split_idx].strip()

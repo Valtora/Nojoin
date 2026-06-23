@@ -197,9 +197,6 @@ class LLMBackend:
         """
         Ask a question about the meeting.
         """
-        # If recording_id is provided, use mapped transcript
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
     def ask_question_streaming(
@@ -214,8 +211,6 @@ class LLMBackend:
         """
         Ask a question about the meeting and yield response chunks.
         """
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
         raise NotImplementedError
 
     def infer_meeting_title(
@@ -2479,7 +2474,7 @@ class SecondaryLLMBackend(LLMBackend):
                 method_name,
             )
             return result
-        except Exception as primary_exc:
+        except Exception as primary_exc:  # noqa: BLE001 -- boundary: fall back to secondary LLM on any primary failure
             logger.warning(
                 "Primary LLM (%s) failed on %s: %s. Falling back to secondary (%s).",
                 getattr(self._primary, "model", "unknown"),
@@ -2494,7 +2489,7 @@ class SecondaryLLMBackend(LLMBackend):
                     method_name,
                 )
                 return result
-            except Exception:
+            except Exception:  # noqa: BLE001 -- boundary: surface the original primary failure if secondary also fails
                 logger.error("Secondary LLM also failed on %s.", method_name)
                 raise primary_exc
 
@@ -2524,7 +2519,7 @@ class SecondaryLLMBackend(LLMBackend):
             )
             try:
                 yield from getattr(self._secondary, method_name)(*args, **kwargs)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- boundary: surface the original primary failure if secondary also fails
                 raise primary_exc
 
     def infer_speaker_suggestions(
@@ -2633,13 +2628,17 @@ class SecondaryLLMBackend(LLMBackend):
     def validate_api_key(self) -> bool:
         try:
             return self._primary.validate_api_key()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- boundary: fall back to secondary LLM on any primary failure
+            logger.debug(
+                "Primary LLM validate_api_key failed: %s. Trying secondary.", exc
+            )
             return self._secondary.validate_api_key()
 
     def list_models(self) -> list:
         try:
             return self._primary.list_models()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- boundary: fall back to secondary LLM on any primary failure
+            logger.debug("Primary LLM list_models failed: %s. Trying secondary.", exc)
             return self._secondary.list_models()
 
 
@@ -2678,7 +2677,7 @@ def get_llm_backend_with_secondary(
             context_window=secondary_cfg.context_window,
         )
         return SecondaryLLMBackend(primary=primary, secondary=secondary)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- boundary: continue with primary only if secondary init fails
         logger.warning(
             "Failed to initialise secondary LLM backend (%s): %s. "
             "Continuing with primary only.",

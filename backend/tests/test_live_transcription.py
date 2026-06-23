@@ -679,7 +679,7 @@ def test_detect_speech_segments_device_cpu(monkeypatch):
     )
 
     buffer = torch.zeros(16000)
-    result = vad_module.detect_speech_segments(buffer, sample_rate=16000)
+    vad_module.detect_speech_segments(buffer, sample_rate=16000)
 
     assert len(to_calls) == 1
     assert to_calls[0] == ("model", torch.device("cpu"))
@@ -724,7 +724,7 @@ def test_detect_speech_segments_device_cuda_fallback_to_cpu(monkeypatch):
     )
 
     buffer = torch.zeros(16000)
-    result = vad_module.detect_speech_segments(buffer, sample_rate=16000)
+    vad_module.detect_speech_segments(buffer, sample_rate=16000)
 
     assert len(to_calls) == 1
     assert to_calls[0] == ("model", torch.device("cpu"))
@@ -781,7 +781,7 @@ def test_detect_speech_segments_device_cuda_migration_failure_fallback(
 
     monkeypatch.setattr(torch.Tensor, "to", fake_tensor_to)
 
-    result = vad_module.detect_speech_segments(buffer, sample_rate=16000)
+    vad_module.detect_speech_segments(buffer, sample_rate=16000)
 
     # Should attempt model.to(cuda), fail, then fallback to model.to(cpu)
     assert len(to_calls) == 2

@@ -354,13 +354,12 @@ def extract_audio_clip(
         subprocess.run(cmd, check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode() if e.stderr else "Unknown ffmpeg error"
-        raise RuntimeError(f"Failed to extract audio clip: {error_msg}")
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Unexpected error converting to proxy MP3: {str(e)}")
-        # Cleanup temp file
-        if is_same_file and os.path.exists(final_output_path):
+        raise RuntimeError(f"Failed to extract audio clip: {error_msg}") from e
+    except Exception as e:  # noqa: BLE001 -- boundary: clean up then translate to RuntimeError
+        # Remove any partially-written clip before propagating the failure.
+        if os.path.exists(output_path):
             try:
-                os.remove(final_output_path)
+                os.remove(output_path)
             except OSError:
                 pass
-        return False
+        raise RuntimeError(f"Failed to extract audio clip: {e}") from e

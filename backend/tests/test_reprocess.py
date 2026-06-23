@@ -380,13 +380,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
-        await connection.execute(
-            text(
-                GLOBAL_SPEAKENS_SCHEMA
-                if "GLOBAL_SPEAKENS_SCHEMA" in globals()
-                else GLOBAL_SPEAKERS_SCHEMA
-            )
-        )
+        await connection.execute(text(GLOBAL_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))

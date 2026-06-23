@@ -9,10 +9,8 @@ import torch
 from pyannote.audio import Pipeline
 from pyannote.core import Annotation
 
-from backend.utils import config_manager
+from backend.utils.config_manager import config_manager
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
-
-from ..utils.config_manager import config_manager
 
 # Add safe globals for Pyannote
 try:
@@ -161,8 +159,6 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
         f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, device: {device_str}"
     )
     try:
-        device = torch.device(device_str)
-
         # Check cache first
         cache_key = f"{DEFAULT_PIPELINE}_{device_str}"
         if cache_key in _pipeline_cache:

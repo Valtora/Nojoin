@@ -1361,6 +1361,13 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                         result = transcribe_audio(clip_path, config=live_config)
                     except Exception as exc:
                         if ledger_enabled:
+                            # Bind error details to plain locals: Python unbinds
+                            # `exc` when the except block exits, so the best-effort
+                            # callback below must not close over the `exc` name.
+                            asr_error_summary = (
+                                str(exc).strip()[:500] or "Live ASR invocation failed."
+                            )
+                            asr_error_type = exc.__class__.__name__
                             _persist_asr_window_result_best_effort(
                                 lambda ledger_session: fail_recording_asr_window_result(
                                     ledger_session,
@@ -1371,11 +1378,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                                     chunk_start_sequence=run[0],
                                     chunk_end_sequence=run[-1],
                                     config=live_config,
-                                    error_summary=str(exc).strip()[:500]
-                                    or "Live ASR invocation failed.",
-                                    error_payload={
-                                        "error_type": exc.__class__.__name__
-                                    },
+                                    error_summary=asr_error_summary,
+                                    error_payload={"error_type": asr_error_type},
                                 )
                             )
                         raise
@@ -1737,6 +1741,12 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         if "pending_asr_completions" in locals() and config_manager.get(
             "enable_asr_window_result_ledger", True
         ):
+            # Bind error details to plain locals: `exc` is unbound once this
+            # except block exits and the callbacks below run best-effort after.
+            persistence_error_summary = (
+                str(exc).strip()[:500] or "Live utterance persistence failed."
+            )
+            persistence_error_type = exc.__class__.__name__
             for pending_result in pending_asr_completions:
                 _persist_asr_window_result_best_effort(
                     lambda ledger_session, pending_result=pending_result: (
@@ -1753,9 +1763,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                             if "run" in locals() and run
                             else None,
                             config=live_config if "live_config" in locals() else None,
-                            error_summary=str(exc).strip()[:500]
-                            or "Live utterance persistence failed.",
-                            error_payload={"error_type": exc.__class__.__name__},
+                            error_summary=persistence_error_summary,
+                            error_payload={"error_type": persistence_error_type},
                         )
                     )
                 )

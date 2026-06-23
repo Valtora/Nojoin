@@ -107,8 +107,6 @@ def mute_non_speech_segments(
         # Defaults to CPU but uses GPU if available/configured.
         from backend.utils.config_manager import config_manager
 
-        # Load configuration
-        vad_config = config_manager.get("vad_parameters", {})
         device_str = config_manager.get("processing_device", "auto")
         device = torch.device("cpu")  # Default to CPU
 

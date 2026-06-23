@@ -73,9 +73,7 @@ async def upload_document(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # Validate file type
-    allowed_types = ["application/pdf", "text/plain", "text/markdown"]
-    # Simple check on content_type or extension
+    # Validate file type by extension.
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in [".pdf", ".txt", ".md"]:
         raise HTTPException(

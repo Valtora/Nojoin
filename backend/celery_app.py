@@ -72,7 +72,7 @@ def release_worker_model_caches() -> None:
         try:
             ctypes.CDLL("libc.so.6").malloc_trim(0)
             logger.info("Forced glibc malloc_trim cleanup successfully.")
-        except Exception as trim_exc:
+        except Exception as trim_exc:  # noqa: BLE001 -- boundary: malloc_trim only exists on glibc Linux
             logger.debug("malloc_trim skipped or failed: %s", trim_exc)
 
         logger.info("Worker model caches released.")

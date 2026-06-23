@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import wave
 from pathlib import Path
@@ -30,6 +31,8 @@ from backend.utils.audio_windows import (
 from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.time import utc_now
+
+logger = logging.getLogger(__name__)
 
 BROWSER_AUDIO_SEGMENT_SUFFIXES = frozenset({".webm", ".ogg", ".m4a"})
 TRANSCODE_FAILED_SUFFIX = ".transcode_failed"
@@ -69,8 +72,10 @@ def _lock_recording(session: Session, recording_id: int) -> None:
         session.execute(
             select(Recording.id).where(Recording.id == recording_id).with_for_update()
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- boundary: row lock is best-effort (e.g. SQLite has no FOR UPDATE)
+        logger.debug(
+            "Best-effort row lock for recording %s skipped: %s", recording_id, exc
+        )
 
 
 def _sha256_for_path(path: Path) -> str:

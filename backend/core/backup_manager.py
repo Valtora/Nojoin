@@ -493,8 +493,6 @@ class BackupManager:
         Synchronous method to handle heavy file compression and zipping.
         Runs in a thread to prevent blocking the main event loop.
         """
-        path_manager = PathManager()
-
         # Creates a temporary file for the zip explicitly in /tmp (mounted as volume).
         temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir="/tmp")
         temp_zip.close()

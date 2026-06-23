@@ -256,8 +256,8 @@ async def init_upload(filename: str, file_size: int, total_chunks: int):
     upload_id = str(uuid.uuid4())
     path_manager = PathManager()
 
-    # Create temp directory
-    upload_dir = path_manager.get_upload_temp_dir(upload_id)
+    # Create temp directory (get_upload_temp_dir creates it as a side effect).
+    path_manager.get_upload_temp_dir(upload_id)
 
     # Clean up old upload directories (older than 24h)
     temp_uploads_root = path_manager.user_data_directory / "temp_uploads"
