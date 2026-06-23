@@ -12,11 +12,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Accept the API URL as a build argument
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-# Build the application
 RUN npm install -g npm@latest && npm run build
 
 # Production image, copy all the files and run next
@@ -31,7 +29,6 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy built artifacts
 COPY --from=builder /app/public ./public
 
 # Automatically leverage output traces to reduce image size
