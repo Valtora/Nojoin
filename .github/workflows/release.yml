@@ -29,6 +29,7 @@ jobs:
     name: Validate release ref
     runs-on: ubuntu-latest
     outputs:
+      image_base: ${{ steps.release.outputs.image_base }}
       major_minor: ${{ steps.release.outputs.major_minor }}
       publish_latest: ${{ steps.release.outputs.publish_latest }}
       release_ref: ${{ steps.release.outputs.release_ref }}
@@ -77,11 +78,16 @@ jobs:
             exit 1
           fi
 
+          # Container repositories must be lowercase; github.repository can be
+          # mixed case, so derive a lowercase image base for every direct ref.
+          image_base="$(printf '%s/%s' "${REGISTRY}" "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+
           echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
           echo "release_ref=${release_ref}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "major_minor=${version%.*}" >> "${GITHUB_OUTPUT}"
           echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
+          echo "image_base=${image_base}" >> "${GITHUB_OUTPUT}"
 
   backend-tests:
     name: Backend tests
@@ -294,7 +300,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
+          images: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}
           tags: |
             type=raw,value=${{ needs.validate-release-ref.outputs.version }}
             type=sha
@@ -332,7 +338,7 @@ jobs:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
@@ -341,7 +347,7 @@ jobs:
 
       - name: Sign image with cosign (keyless)
         env:
-          IMAGE_DIGEST: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+          IMAGE_DIGEST: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
           # Keyless signing binds the signature to this workflow's OIDC identity;
@@ -374,11 +380,10 @@ jobs:
 
       - name: Prepare smoke-test environment
         env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}
           VERSION: ${{ needs.validate-release-ref.outputs.version }}
         run: |
           set -euo pipefail
-          image_base="$(printf '%s/%s' "${REGISTRY}" "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
-          echo "IMAGE_BASE=${image_base}" >> "${GITHUB_ENV}"
 
           # Minimal .env: FIRST_RUN_PASSWORD is required by the compose file; the
           # encryption key is generated fresh. All other secrets fall back to the
@@ -393,9 +398,9 @@ jobs:
           cat > docker-compose.ci.yml <<EOF
           services:
             api:
-              image: ${image_base}-api:${VERSION}
+              image: ${IMAGE_BASE}-api:${VERSION}
             frontend:
-              image: ${image_base}-frontend:${VERSION}
+              image: ${IMAGE_BASE}-frontend:${VERSION}
           EOF
 
       - name: Start backend stack (db, redis, socket-proxy, api)
@@ -436,6 +441,7 @@ jobs:
 
       - name: Assert containers run as non-root
         env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}
           VERSION: ${{ needs.validate-release-ref.outputs.version }}
         run: |
           set -euo pipefail
@@ -501,7 +507,7 @@ jobs:
       # these tags inherit the existing signature without re-signing.
       - name: Promote rolling tags from verified image
         env:
-          IMAGE_BASE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}
           VERSION: ${{ needs.validate-release-ref.outputs.version }}
           MAJOR_MINOR: ${{ needs.validate-release-ref.outputs.major_minor }}
           PUBLISH_LATEST: ${{ needs.validate-release-ref.outputs.publish_latest }}
@@ -512,3 +518,83 @@ jobs:
             tags+=( "--tag" "${IMAGE_BASE}:latest" )
           fi
           docker buildx imagetools create "${tags[@]}" "${IMAGE_BASE}:${VERSION}"
+
+  publish-release-notes:
+    name: Publish release notes
+    needs:
+      - validate-release-ref
+      - publish-mutable-tags
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # Full history is required to compute the previous-tag..this-tag range.
+          fetch-depth: 0
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Render release notes
+        id: notes
+        env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}
+          TAG: ${{ needs.validate-release-ref.outputs.tag_name }}
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Resolve the previous release tag reachable from this tag. The range is
+          # exactly previous-tag..this-tag (REL-013); fall back to full history
+          # for the very first release.
+          if prev_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${TAG}^" 2>/dev/null)"; then
+            range="${prev_tag}..${TAG}"
+            echo "Changelog range: ${range}"
+          else
+            range="${TAG}"
+            echo "No previous tag found; using full history."
+          fi
+
+          git log --no-merges --pretty=format:'- %s (%h)' "${range}" > changelog.txt
+          if [[ ! -s changelog.txt ]]; then
+            echo "- No notable changes." > changelog.txt
+          fi
+
+          # Resolve the published image digests for reproducible-pin guidance.
+          : > image-digests.txt
+          for suffix in -api -worker -frontend; do
+            digest="$(docker buildx imagetools inspect "${IMAGE_BASE}${suffix}:${VERSION}" \
+              --format '{{ .Manifest.Digest }}' 2>/dev/null || echo unknown)"
+            printf -- '- `%s%s@%s`\n' "${IMAGE_BASE}" "${suffix}" "${digest}" >> image-digests.txt
+          done
+
+          python3 - <<'PY'
+          import os
+
+          version = os.environ["VERSION"]
+          template = open(".github/release-notes-template.md", encoding="utf-8").read()
+          changelog = open("changelog.txt", encoding="utf-8").read().strip()
+          digests = open("image-digests.txt", encoding="utf-8").read().strip()
+
+          body = (
+              template
+              .replace("{{VERSION}}", version)
+              .replace("{{IMAGE_DIGESTS}}", digests)
+              .replace("{{CHANGELOG}}", changelog)
+          )
+          with open("release-notes.md", "w", encoding="utf-8") as handle:
+              handle.write(body)
+          PY
+
+          echo "Rendered release notes:"
+          cat release-notes.md
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          tag_name: ${{ needs.validate-release-ref.outputs.tag_name }}
+          name: Nojoin ${{ needs.validate-release-ref.outputs.version }}
+          body_path: release-notes.md
+          make_latest: ${{ needs.validate-release-ref.outputs.publish_latest }}

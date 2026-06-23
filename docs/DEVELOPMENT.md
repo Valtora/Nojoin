@@ -399,7 +399,7 @@ Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend
    git tag v0.6.0
    git push origin v0.6.0
    ```
-3. **CI/CD Pipeline**: The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml). Release publishing now re-runs the backend, frontend, docs, and Alembic validation set before any image push, verifies `docs/VERSION` matches the tag, and only publishes `latest` automatically from the tag-triggered release flow. Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly. Update release notes manually in the GitHub Releases interface.
+3. **CI/CD Pipeline**: The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml). Release publishing now re-runs the backend, frontend, docs, and Alembic validation set before any image push, verifies `docs/VERSION` matches the tag, and only publishes `latest` automatically from the tag-triggered release flow. Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly. Release notes are generated automatically by the `publish-release-notes` job (see [Automated Release Notes](#automated-release-notes-rel-013-rel-014) below); maintainers refine the editorial sections in the GitHub Releases interface afterward.
 
 ### Runtime Version Detection
 The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
@@ -429,6 +429,10 @@ The release flow publishes the immutable `version` and commit-`sha` tags during 
 ### Health and Non-Root Smoke (REL-012)
 
 The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts each running container's uid is non-root. The worker requires a GPU and preloaded models to boot, so its non-root `USER` is asserted from the published image config via `docker buildx imagetools inspect` (which reads the config without pulling the large layers) rather than by booting it. The rolling tags are not published unless this job passes.
+
+### Automated Release Notes (REL-013, REL-014)
+
+After the rolling tags publish, the `publish-release-notes` job creates the GitHub Release. It resolves the exact previous-tag→this-tag commit range with `git describe`, renders the changelog from that range, resolves the published image digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md). The template carries the required sections — Upgrade, Migration, Rollback, Known Issues, and Browser-Capture Compatibility — with sensible defaults that maintainers refine in the GitHub Releases UI when a release needs specific guidance. `make_latest` follows the same `publish_latest` decision as the image tags.
 
 ## Related Docs
 
