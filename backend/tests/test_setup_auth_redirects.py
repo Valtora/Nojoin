@@ -10,7 +10,6 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.endpoints import login, setup, system
 from backend.main import create_app
 
-
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
 SECURE_TEST_BASE_URL = "https://test"
 
@@ -60,7 +59,9 @@ def _bootstrap_auth_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str
 
 
 @pytest.mark.anyio
-async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypatch) -> None:
+async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(
+    monkeypatch,
+) -> None:
     app = _build_app(initialized=False)
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
 
@@ -91,13 +92,17 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypa
     async def _fake_seed_demo_data(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(setup, "get_llm_backend", lambda *args, **kwargs: _ValidBackend())
+    monkeypatch.setattr(
+        setup, "get_llm_backend", lambda *args, **kwargs: _ValidBackend()
+    )
     monkeypatch.setattr(setup.httpx, "AsyncClient", _FakeHFClient)
     monkeypatch.setattr(system, "seed_demo_data", _fake_seed_demo_data)
 
     headers = _bootstrap_auth_headers()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         responses = [
             await client.get("/api/v1/setup/initial-config", headers=headers),
             await client.post(
@@ -128,7 +133,9 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(monkeypa
 
 
 @pytest.mark.anyio
-async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypatch) -> None:
+async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("WEB_APP_URL", "https://localhost:14443")
     app = _build_app(initialized=True)
 
@@ -154,7 +161,9 @@ async def test_auth_endpoints_do_not_redirect_or_emit_location_headers(monkeypat
         force_password_change=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
         responses = [
             await client.post(
                 "/api/v1/login/access-token",

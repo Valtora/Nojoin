@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import wave
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.orm import Session
 from sqlmodel import select
 
@@ -31,6 +32,7 @@ from backend.utils.config_manager import config_manager
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.time import utc_now
 
+logger = logging.getLogger(__name__)
 
 BROWSER_AUDIO_SEGMENT_SUFFIXES = frozenset({".webm", ".ogg", ".m4a"})
 TRANSCODE_FAILED_SUFFIX = ".transcode_failed"
@@ -66,11 +68,14 @@ def _build_insert_statement(session: Session, table):
 def _lock_recording(session: Session, recording_id: int) -> None:
     try:
         from backend.models.recording import Recording
+
         session.execute(
             select(Recording.id).where(Recording.id == recording_id).with_for_update()
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- boundary: row lock is best-effort (e.g. SQLite has no FOR UPDATE)
+        logger.debug(
+            "Best-effort row lock for recording %s skipped: %s", recording_id, exc
+        )
 
 
 def _sha256_for_path(path: Path) -> str:
@@ -109,10 +114,14 @@ def _build_recording_audio_chunk_fields(
     channel_count = 0
     duration_ms = 0
     if storage_path.suffix.lower() == ".wav":
-        sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(storage_path)
+        sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(
+            storage_path
+        )
     if duration_ms <= 0:
         try:
-            duration_ms = int(round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0))
+            duration_ms = int(
+                round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0)
+            )
         except Exception:  # noqa: BLE001
             duration_ms = 0
 
@@ -138,6 +147,7 @@ def _build_recording_audio_chunk_fields(
         "received_at": utc_now(),
         "cleanup_eligible_at": None,
     }
+
 
 def _select_recording_audio_chunk(
     session: Session,
@@ -407,15 +417,15 @@ def sync_recording_audio_chunks_from_entries(
 
     existing_rows = (
         session.execute(
-            select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
+            select(RecordingAudioChunk).where(
+                RecordingAudioChunk.recording_id == recording_id
+            )
         )
         .scalars()
         .all()
     )
     existing_by_sequence = {
-        row.sequence_no: row
-        for row in existing_rows
-        if row.source_kind == source_kind
+        row.sequence_no: row for row in existing_rows if row.source_kind == source_kind
     }
     existing_by_idempotency = {
         row.idempotency_key: row
@@ -430,7 +440,9 @@ def sync_recording_audio_chunks_from_entries(
             source_kind=source_kind,
             storage_path=storage_path,
         )
-        row = existing_by_sequence.get(sequence) or existing_by_idempotency.get(fields["idempotency_key"])
+        row = existing_by_sequence.get(sequence) or existing_by_idempotency.get(
+            fields["idempotency_key"]
+        )
 
         if row is None:
             row = _get_or_create_recording_audio_chunk(
@@ -546,7 +558,9 @@ def sync_recording_audio_window_manifests(
             .scalars()
             .all()
         )
-        target_window_ms = int(config_manager.get("rolling_diarization_window_ms", 20_000))
+        target_window_ms = int(
+            config_manager.get("rolling_diarization_window_ms", 20_000)
+        )
         hop_ms = int(config_manager.get("rolling_diarization_hop_ms", 5_000))
         window_specs = build_audio_window_specs(
             chunk_rows,

@@ -3,7 +3,7 @@ import logging
 import os
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any, Optional, Union
@@ -70,11 +70,17 @@ def _read_keyring_file() -> Optional[dict[str, Any]]:
 def _write_keyring_file(data: dict[str, Any]) -> None:
     keyring_file = _keyring_path()
     keyring_file.parent.mkdir(parents=True, exist_ok=True)
-    keyring_file.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    keyring_file.write_text(
+        json.dumps(data, indent=2, sort_keys=True), encoding="utf-8"
+    )
     try:
         keyring_file.chmod(0o600)
     except OSError as e:
-        logger.warning("Could not set owner-only permissions on keyring file %s: %s", keyring_file, e)
+        logger.warning(
+            "Could not set owner-only permissions on keyring file %s: %s",
+            keyring_file,
+            e,
+        )
 
 
 def _bootstrap_keyring() -> dict[str, Any]:
@@ -96,7 +102,9 @@ def _bootstrap_keyring() -> dict[str, Any]:
                 legacy_file,
             )
         else:
-            logger.info("Migrated legacy SECRET_KEY into JWT keyring at %s.", _keyring_path())
+            logger.info(
+                "Migrated legacy SECRET_KEY into JWT keyring at %s.", _keyring_path()
+            )
         return data
 
     kid = _new_kid()
@@ -194,7 +202,9 @@ def _migrate_legacy_secret_file(
     current_key_file: Path,
     legacy_key_file: Optional[Path] = None,
 ) -> None:
-    legacy_key_file = legacy_key_file or _legacy_documents_secret_file(current_key_file.name)
+    legacy_key_file = legacy_key_file or _legacy_documents_secret_file(
+        current_key_file.name
+    )
     if legacy_key_file == current_key_file or not legacy_key_file.exists():
         return
 
@@ -209,7 +219,11 @@ def _migrate_legacy_secret_file(
         try:
             current_key_file.chmod(0o600)
         except OSError as e:
-            logger.warning("Could not set owner-only permissions on migrated secret file %s: %s", current_key_file, e)
+            logger.warning(
+                "Could not set owner-only permissions on migrated secret file %s: %s",
+                current_key_file,
+                e,
+            )
         logger.warning(
             "Migrated legacy SECRET_KEY from %s to %s so tokens survive container restarts.",
             legacy_key_file,
@@ -317,11 +331,13 @@ def validate_password_policy(password: str) -> str:
 def hash_user_password(password: str) -> str:
     return get_password_hash(validate_password_policy(password))
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return password_hasher.verify(hashed_password, plain_password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
+
 
 def get_password_hash(password: str) -> str:
     return password_hasher.hash(password)

@@ -9,8 +9,8 @@ from backend.core.db import get_sync_session
 from backend.processing.browser_live_audio import (
     BROWSER_LIVE_CHANNEL_COUNT,
     BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX,
-    BROWSER_LIVE_SYSTEM_CHANNEL_INDEX,
     BROWSER_LIVE_SAMPLE_RATE_HZ,
+    BROWSER_LIVE_SYSTEM_CHANNEL_INDEX,
 )
 from backend.processing.live_transcribe import transcribe_segment_live_task
 from backend.processing.pipeline_metrics import record_pipeline_metric
@@ -23,12 +23,14 @@ from backend.utils.recording_audio_sync import (
 )
 from backend.utils.recording_storage import recording_upload_temp_dir
 
-
 logger = logging.getLogger(__name__)
 
 
 def _transcode_failed_marker_path(recording_id: int, sequence: int) -> Path:
-    return recording_upload_temp_dir(recording_id, create=True) / f"{sequence}{TRANSCODE_FAILED_SUFFIX}"
+    return (
+        recording_upload_temp_dir(recording_id, create=True)
+        / f"{sequence}{TRANSCODE_FAILED_SUFFIX}"
+    )
 
 
 def _wav_segment_path(recording_id: int, sequence: int) -> Path:
@@ -176,7 +178,9 @@ def transcode_segment_task(recording_id: int, sequence: int):
             )
 
         try:
-            failure_marker.write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
+            failure_marker.write_text(
+                f"{type(exc).__name__}: {exc}\n", encoding="utf-8"
+            )
         except OSError as marker_error:
             logger.warning(
                 "Failed to write transcode failure marker %s: %s",
@@ -190,7 +194,9 @@ def transcode_segment_task(recording_id: int, sequence: int):
                 recording_id=recording_id,
                 payload={
                     "sequence": sequence,
-                    "input_path": str(raw_segment_path) if raw_segment_path is not None else None,
+                    "input_path": str(raw_segment_path)
+                    if raw_segment_path is not None
+                    else None,
                     "output_path": str(wav_path),
                     "error": str(exc),
                 },

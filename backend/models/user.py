@@ -1,20 +1,24 @@
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
-from sqlmodel import Field, SQLModel, Relationship
+from datetime import datetime
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from pydantic import field_validator
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
-from pydantic import field_validator
-from backend.models.base import BaseDBModel
+from sqlmodel import Field, Relationship, SQLModel
+
 from backend.core.security import MIN_PASSWORD_LENGTH, validate_password_policy
-from enum import Enum
-from datetime import datetime
+from backend.models.base import BaseDBModel
 
 if TYPE_CHECKING:
     from backend.models.invitation import Invitation
+
 
 class UserRole(str, Enum):
     OWNER = "owner"
     ADMIN = "admin"
     USER = "user"
+
 
 class User(BaseDBModel, table=True):
     __tablename__ = "users"
@@ -27,18 +31,19 @@ class User(BaseDBModel, table=True):
     token_version: int = Field(default=0, nullable=False)
     settings: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB))
     has_seen_demo_recording: bool = Field(default=False)
-    
+
     invitation_id: Optional[int] = Field(default=None, foreign_key="invitations.id")
-    
+
     invitation: Optional["Invitation"] = Relationship(
         back_populates="users",
-        sa_relationship_kwargs={"foreign_keys": "User.invitation_id"}
+        sa_relationship_kwargs={"foreign_keys": "User.invitation_id"},
     )
-    
+
     created_invitations: List["Invitation"] = Relationship(
         back_populates="created_by",
-        sa_relationship_kwargs={"foreign_keys": "Invitation.created_by_id"}
+        sa_relationship_kwargs={"foreign_keys": "Invitation.created_by_id"},
     )
+
 
 class UserCreate(SQLModel):
     username: str
@@ -52,6 +57,7 @@ class UserCreate(SQLModel):
     def validate_password(cls, value: str) -> str:
         return validate_password_policy(value)
 
+
 class UserRead(SQLModel):
     id: int
     username: str
@@ -62,9 +68,11 @@ class UserRead(SQLModel):
     created_at: datetime
     updated_at: datetime
 
+
 class UserList(SQLModel):
     items: List[UserRead]
     total: int
+
 
 class UserUpdate(SQLModel):
     username: Optional[str] = None
@@ -79,6 +87,7 @@ class UserUpdate(SQLModel):
         if value is None:
             return value
         return validate_password_policy(value)
+
 
 class UserPasswordUpdate(SQLModel):
     current_password: str

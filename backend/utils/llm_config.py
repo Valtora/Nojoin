@@ -14,7 +14,6 @@ from backend.utils.config_manager import (
     strip_legacy_automatic_ai_settings,
 )
 
-
 SYSTEM_LLM_FIELDS = (
     "llm_provider",
     "gemini_model",
@@ -141,8 +140,10 @@ def _merge_llm_config(
         for field in SYSTEM_LLM_FIELDS:
             value = owner_settings.get(field)
             current_value = merged.get(field)
-            if value is not None and value != "" and (
-                current_value is None or current_value == ""
+            if (
+                value is not None
+                and value != ""
+                and (current_value is None or current_value == "")
             ):
                 merged[field] = value
 
@@ -163,7 +164,11 @@ def _merge_llm_config(
     api_key = merged.get(f"{provider}_api_key")
     model = _resolve_model_for_purpose(merged, provider, purpose)
     api_url = merged.get("ollama_api_url")
-    context_window = _normalise_context_window(merged.get("ollama_context_window")) if provider == "ollama" else None
+    context_window = (
+        _normalise_context_window(merged.get("ollama_context_window"))
+        if provider == "ollama"
+        else None
+    )
 
     # Resolve secondary provider
     secondary_provider = merged.get("secondary_llm_provider") or None
@@ -175,12 +180,22 @@ def _merge_llm_config(
 
     if secondary_provider:
         secondary_api_key = merged.get(f"secondary_{secondary_provider}_api_key")
-        secondary_model = _resolve_secondary_model_for_purpose(merged, secondary_provider, purpose)
-        secondary_api_url = merged.get("secondary_ollama_api_url") if secondary_provider == "ollama" else None
-        secondary_context_window = _normalise_context_window(
-            merged.get("secondary_ollama_context_window")
-        ) if secondary_provider == "ollama" else None
-        secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
+        secondary_model = _resolve_secondary_model_for_purpose(
+            merged, secondary_provider, purpose
+        )
+        secondary_api_url = (
+            merged.get("secondary_ollama_api_url")
+            if secondary_provider == "ollama"
+            else None
+        )
+        secondary_context_window = (
+            _normalise_context_window(merged.get("secondary_ollama_context_window"))
+            if secondary_provider == "ollama"
+            else None
+        )
+        secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(
+            secondary_provider
+        )
         if secondary_live_model_field:
             secondary_live_model = merged.get(secondary_live_model_field)
 
@@ -196,7 +211,9 @@ def _merge_llm_config(
         secondary_model=str(secondary_model) if secondary_model else None,
         secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
         secondary_context_window=secondary_context_window,
-        secondary_live_model=str(secondary_live_model) if secondary_live_model else None,
+        secondary_live_model=str(secondary_live_model)
+        if secondary_live_model
+        else None,
     )
 
 
@@ -267,7 +284,11 @@ def _apply_owner_provider_override(
     api_key = merged.get(f"{provider}_api_key")
     model = _resolve_model_for_purpose(merged, provider, purpose)
     api_url = merged.get("ollama_api_url")
-    context_window = _normalise_context_window(merged.get("ollama_context_window")) if provider == "ollama" else None
+    context_window = (
+        _normalise_context_window(merged.get("ollama_context_window"))
+        if provider == "ollama"
+        else None
+    )
 
     secondary_provider = merged.get("secondary_llm_provider") or None
     secondary_api_key = None
@@ -278,12 +299,22 @@ def _apply_owner_provider_override(
 
     if secondary_provider:
         secondary_api_key = merged.get(f"secondary_{secondary_provider}_api_key")
-        secondary_model = _resolve_secondary_model_for_purpose(merged, secondary_provider, purpose)
-        secondary_api_url = merged.get("secondary_ollama_api_url") if secondary_provider == "ollama" else None
-        secondary_context_window = _normalise_context_window(
-            merged.get("secondary_ollama_context_window")
-        ) if secondary_provider == "ollama" else None
-        secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(secondary_provider)
+        secondary_model = _resolve_secondary_model_for_purpose(
+            merged, secondary_provider, purpose
+        )
+        secondary_api_url = (
+            merged.get("secondary_ollama_api_url")
+            if secondary_provider == "ollama"
+            else None
+        )
+        secondary_context_window = (
+            _normalise_context_window(merged.get("secondary_ollama_context_window"))
+            if secondary_provider == "ollama"
+            else None
+        )
+        secondary_live_model_field = SECONDARY_LIVE_MODEL_FIELDS_BY_PROVIDER.get(
+            secondary_provider
+        )
         if secondary_live_model_field:
             secondary_live_model = merged.get(secondary_live_model_field)
 
@@ -299,7 +330,9 @@ def _apply_owner_provider_override(
         secondary_model=str(secondary_model) if secondary_model else None,
         secondary_api_url=str(secondary_api_url) if secondary_api_url else None,
         secondary_context_window=secondary_context_window,
-        secondary_live_model=str(secondary_live_model) if secondary_live_model else None,
+        secondary_live_model=str(secondary_live_model)
+        if secondary_live_model
+        else None,
     )
 
 

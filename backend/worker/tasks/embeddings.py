@@ -1,17 +1,26 @@
-from .constants import *
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
-@celery_app.task(name="backend.worker.tasks.update_speaker_embedding_task", base=DatabaseTask, bind=True)
-def update_speaker_embedding_task(self, recording_id: int, start: float, end: float, recording_speaker_id: int):
+from .constants import *
+
+
+@celery_app.task(
+    name="backend.worker.tasks.update_speaker_embedding_task",
+    base=DatabaseTask,
+    bind=True,
+)
+def update_speaker_embedding_task(
+    self, recording_id: int, start: float, end: float, recording_speaker_id: int
+):
     """
     Update the speaker embedding for a specific segment (Active Learning).
     """
-    from backend.processing.embedding_core import extract_embedding_for_segments
     from backend.processing.embedding import merge_embeddings
+    from backend.processing.embedding_core import extract_embedding_for_segments
+
     session = self.session
     try:
         recording = session.get(Recording, recording_id)
-        
+
         target_audio = select_recording_audio_for_embedding(recording)
         if not target_audio:
             logger.warning(f"Recording {recording_id} not found or audio missing.")
@@ -23,40 +32,40 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
             return
 
         device = "cuda" if config_manager.get("use_gpu", True) else "cpu"
-        
+
         # Extract embedding for this segment
         # Passes a list of segments [(start, end)] for embedding extraction.
         new_embedding = extract_embedding_for_segments(
-            target_audio, 
-            [(start, end)], 
-            device_str=device
+            target_audio, [(start, end)], device_str=device
         )
 
         if new_embedding:
             # Merge into RecordingSpeaker
-            current_emb = target_recording_speaker.embedding if target_recording_speaker.embedding is not None else []
-            
+            current_emb = (
+                target_recording_speaker.embedding
+                if target_recording_speaker.embedding is not None
+                else []
+            )
+
             target_recording_speaker.embedding = merge_embeddings(
-                current_emb, 
-                new_embedding, 
-                alpha=0.5
+                current_emb, new_embedding, alpha=0.5
             )
             session.add(target_recording_speaker)
-            
+
             # Merge into GlobalSpeaker
             if target_recording_speaker.global_speaker_id:
-                gs = session.get(GlobalSpeaker, target_recording_speaker.global_speaker_id)
+                gs = session.get(
+                    GlobalSpeaker, target_recording_speaker.global_speaker_id
+                )
                 if gs:
                     gs_emb = gs.embedding if gs.embedding is not None else []
-                    gs.embedding = merge_embeddings(
-                        gs_emb,
-                        new_embedding,
-                        alpha=0.5
-                    )
+                    gs.embedding = merge_embeddings(gs_emb, new_embedding, alpha=0.5)
                     session.add(gs)
-            
+
             session.commit()
-            logger.info(f"Updated embedding for speaker {target_recording_speaker.diarization_label}")
+            logger.info(
+                f"Updated embedding for speaker {target_recording_speaker.diarization_label}"
+            )
         else:
             logger.warning("Failed to extract embedding for update.")
 
@@ -66,18 +75,24 @@ def update_speaker_embedding_task(self, recording_id: int, start: float, end: fl
 
 
 @celery_app.task(name="backend.worker.tasks.extract_embedding_task", bind=True)
-def extract_embedding_task(self, audio_path: str, segments: list, device_str: str = "cpu", hf_token: str = None):
+def extract_embedding_task(
+    self, audio_path: str, segments: list, device_str: str = "cpu", hf_token: str = None
+):
     """
     Extract embedding from segments. Used by API for synchronous-like operations.
     """
     from backend.processing.embedding_core import extract_embedding_for_segments
+
     try:
         # If token not passed, try to get from config in worker
         if not hf_token:
             from backend.utils.config_manager import config_manager
+
             hf_token = config_manager.get("hf_token")
-            
-        return extract_embedding_for_segments(audio_path, segments, device_str, hf_token)
+
+        return extract_embedding_for_segments(
+            audio_path, segments, device_str, hf_token
+        )
     except Exception as e:
         logger.error(f"Failed to extract embedding task: {e}", exc_info=True)
         return None
@@ -88,8 +103,10 @@ def get_text_embedding_task(texts):
     """
     Generate text embeddings using fastembed. Offloads heavy inference from API.
     """
-    from backend.processing.text_embedding import get_text_embedding_service
     from typing import List, Union
+
+    from backend.processing.text_embedding import get_text_embedding_service
+
     try:
         embedding_service = get_text_embedding_service()
         return embedding_service.embed(texts)
@@ -98,5 +115,4 @@ def get_text_embedding_task(texts):
         return []
 
 
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

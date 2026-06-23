@@ -66,7 +66,10 @@ def test_parse_meeting_edge_response_reads_rolling_summary() -> None:
 
     assert result.rolling_summary is not None
     assert result.rolling_summary.startswith("The team reviewed Q3 spend")
-    assert serialize_meeting_edge_result(result)["rolling_summary"] == result.rolling_summary
+    assert (
+        serialize_meeting_edge_result(result)["rolling_summary"]
+        == result.rolling_summary
+    )
 
 
 def test_parse_meeting_edge_response_tolerates_missing_rolling_summary() -> None:
@@ -117,12 +120,14 @@ def test_parse_meeting_edge_response_accepts_fenced_json() -> None:
         {
             "term": "Runbook",
             "explanation": "The step-by-step operational guide for the launch.",
-        }
+        },
     ]
 
 
 def test_parse_meeting_edge_response_accepts_summary_only_payload() -> None:
-    request = MeetingEdgeRequest(recent_transcript="Speaker A: We should revisit budget.")
+    request = MeetingEdgeRequest(
+        recent_transcript="Speaker A: We should revisit budget."
+    )
 
     result = parse_meeting_edge_response(
         '{"summary": "Budget came up.", "questions": [], "points": [], "concepts": []}',
@@ -201,6 +206,7 @@ def test_merge_meeting_edge_concept_history_can_reset_history() -> None:
 
 def test_are_singular_plural() -> None:
     from backend.utils.meeting_edge import _are_singular_plural
+
     assert _are_singular_plural("choke point", "choke points")
     assert _are_singular_plural("choke points", "choke point")
     assert _are_singular_plural("anticipatory price rise", "anticipatory price rises")
@@ -244,7 +250,9 @@ def test_merge_meeting_edge_concept_history_deduplicates_acronyms() -> None:
 
     assert len(result) == 1
     assert result[0]["term"] == "LLM"
-    assert result[0]["explanation"] == "A model that generates text from learned patterns."
+    assert (
+        result[0]["explanation"] == "A model that generates text from learned patterns."
+    )
 
 
 def test_merge_meeting_edge_concept_history_deduplicates_plurals() -> None:
@@ -257,7 +265,7 @@ def test_merge_meeting_edge_concept_history_deduplicates_plurals() -> None:
             {
                 "term": "Anticipatory price rise",
                 "explanation": "A price hike in anticipation of inflation.",
-            }
+            },
         ]
     }
     current_payload = {
@@ -273,7 +281,7 @@ def test_merge_meeting_edge_concept_history_deduplicates_plurals() -> None:
             {
                 "term": "Subsidies",
                 "explanation": "Financial support structures.",
-            }
+            },
         ]
     }
 

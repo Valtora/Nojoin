@@ -1,22 +1,24 @@
-import os
-import sys
 import logging
+import os
+import shutil
+import sys
+import time
 import urllib.request
 import warnings
-import time
-import shutil
 
 # Add project root to path to allow imports from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.utils.config_manager import config_manager
-from backend.utils.logging_config import setup_logging
 from backend.utils.download_progress import (
-    set_download_progress,
     clear_download_progress,
-    is_download_in_progress
+    set_download_progress,
 )
-from backend.utils.pyannote_model_utils import resolve_local_pyannote_model, is_repo_bundled_pyannote_path
+from backend.utils.logging_config import setup_logging
+from backend.utils.pyannote_model_utils import (
+    is_repo_bundled_pyannote_path,
+    resolve_local_pyannote_model,
+)
 
 setup_logging()
 logger = logging.getLogger("backend.preload_models")
@@ -38,11 +40,17 @@ WHISPER_FILENAMES = {
     "turbo": "large-v3-turbo.pt",
 }
 
+
 def _is_onnx_asr_model_cached(model_substring: str) -> bool:
     """Check if an onnx-asr model is present in the Hugging Face hub cache."""
-    hf_cache_base = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
+    hf_cache_base = os.getenv(
+        "HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+    )
     hf_cache = os.path.join(hf_cache_base, "hub")
-    for cache_dir in [hf_cache, os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")]:
+    for cache_dir in [
+        hf_cache,
+        os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub"),
+    ]:
         if os.path.isdir(cache_dir):
             try:
                 for entry in os.listdir(cache_dir):
@@ -58,11 +66,15 @@ def _is_whisper_model_cached(model_size: str) -> bool:
     filename = WHISPER_FILENAMES.get(model_size)
     if not filename:
         return False
-    download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
+    download_root = os.getenv(
+        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
+    )
     filepath = os.path.join(download_root, "whisper", filename)
     if os.path.exists(filepath):
         return True
-    default_filepath = os.path.join(os.path.expanduser("~"), ".cache", "whisper", filename)
+    default_filepath = os.path.join(
+        os.path.expanduser("~"), ".cache", "whisper", filename
+    )
     return default_filepath != filepath and os.path.exists(default_filepath)
 
 
@@ -80,11 +92,15 @@ def _suppress_whisper_timing_warnings():
     )
 
 
-def _download_file(url, dest_path, progress_callback, description, retries=3, stage=None):
+def _download_file(
+    url, dest_path, progress_callback, description, retries=3, stage=None
+):
     for attempt in range(retries):
         try:
-            logger.info(f"Downloading {url} to {dest_path} (Attempt {attempt + 1}/{retries})")
-            
+            logger.info(
+                f"Downloading {url} to {dest_path} (Attempt {attempt + 1}/{retries})"
+            )
+
             # Check for existing partial        try:
             downloaded = 0
             file_mode = "wb"
@@ -93,7 +109,7 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
 
             if os.path.exists(dest_path):
                 downloaded = os.path.getsize(dest_path)
-                
+
                 # Check if server supports range requests (HEAD request)
                 req = urllib.request.Request(url, method="HEAD")
                 try:
@@ -103,7 +119,9 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
                             logger.info("File already fully downloaded.")
                             return
                         if downloaded > total_size:
-                            logger.warning("Local file larger than remote. Restarting download.")
+                            logger.warning(
+                                "Local file larger than remote. Restarting download."
+                            )
                             os.remove(dest_path)
                             downloaded = 0
                         else:
@@ -114,48 +132,61 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
                             file_mode = "ab"
                             logger.info(f"Resuming download from byte {downloaded}")
                 except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Could not check file size: {e}. Restarting download.")
+                    logger.warning(
+                        f"Could not check file size: {e}. Restarting download."
+                    )
                     if os.path.exists(dest_path):
                         os.remove(dest_path)
                     downloaded = 0
 
             elif os.path.exists(part_path):
                 downloaded = os.path.getsize(part_path)
-                
+
                 # Check if server supports range requests (HEAD request)
                 req = urllib.request.Request(url, method="HEAD")
                 try:
                     with urllib.request.urlopen(req) as response:
                         total_size = int(response.info().get("Content-Length"))
                         if downloaded == total_size:
-                            logger.info("Part file already fully downloaded. Renaming to complete.")
+                            logger.info(
+                                "Part file already fully downloaded. Renaming to complete."
+                            )
                             os.rename(part_path, dest_path)
                             return
                         elif response.headers.get("Accept-Ranges") == "bytes":
                             resume_header = {"Range": f"bytes={downloaded}-"}
                             file_mode = "ab"
-                            logger.info(f"Resuming part file download from byte {downloaded}")
+                            logger.info(
+                                f"Resuming part file download from byte {downloaded}"
+                            )
                         else:
-                            logger.warning("Server does not support resume. Restarting download.")
+                            logger.warning(
+                                "Server does not support resume. Restarting download."
+                            )
                             os.remove(part_path)
                             downloaded = 0
                 except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Could not check file size: {e}. Restarting download.")
+                    logger.warning(
+                        f"Could not check file size: {e}. Restarting download."
+                    )
                     os.remove(part_path)
                     downloaded = 0
 
             req = urllib.request.Request(url, headers=resume_header)
-            with urllib.request.urlopen(req) as source, open(part_path, file_mode) as output:
+            with (
+                urllib.request.urlopen(req) as source,
+                open(part_path, file_mode) as output,
+            ):
                 if "Content-Length" in source.info():
                     total_size = int(source.info().get("Content-Length")) + downloaded
                 else:
-                    total_size = None # Unknown size
+                    total_size = None  # Unknown size
 
                 start_time = time.time()
-                chunk_size = 1024 * 1024 # 1MB chunks
-                
+                chunk_size = 1024 * 1024  # 1MB chunks
+
                 last_report_time = 0
-                
+
                 while True:
                     buffer = source.read(chunk_size)
                     if not buffer:
@@ -166,34 +197,50 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
 
                     current_time = time.time()
                     # Report every 0.5 seconds
-                    if current_time - last_report_time > 0.5 or (total_size and downloaded == total_size):
+                    if current_time - last_report_time > 0.5 or (
+                        total_size and downloaded == total_size
+                    ):
                         last_report_time = current_time
-                        
+
                         # Calculate progress
-                        percent = int(downloaded * 100 / total_size) if total_size else 0
-                        
+                        percent = (
+                            int(downloaded * 100 / total_size) if total_size else 0
+                        )
+
                         # Calculate speed and ETA
                         elapsed_time = current_time - start_time
                         if elapsed_time > 0:
                             # Speed based on this session's download
-                            session_downloaded = downloaded - (int(resume_header.get("Range", "bytes=0-").split("=")[1].split("-")[0]) if resume_header else 0)
+                            session_downloaded = downloaded - (
+                                int(
+                                    resume_header.get("Range", "bytes=0-")
+                                    .split("=")[1]
+                                    .split("-")[0]
+                                )
+                                if resume_header
+                                else 0
+                            )
                             speed_bps = session_downloaded / elapsed_time
                             speed_mbps = speed_bps / (1024 * 1024)
-                            
+
                             if total_size:
                                 remaining_bytes = total_size - downloaded
-                                eta_seconds = remaining_bytes / speed_bps if speed_bps > 0 else 0
+                                eta_seconds = (
+                                    remaining_bytes / speed_bps if speed_bps > 0 else 0
+                                )
                                 eta_str = f"{int(eta_seconds)}s"
                             else:
                                 eta_str = "?"
-                            
+
                             speed_str = f"{speed_mbps:.2f} MB/s"
                         else:
                             speed_str = "..."
                             eta_str = "..."
 
-                        progress_callback(f"{description}", percent, speed_str, eta_str, stage=stage)
-            
+                        progress_callback(
+                            f"{description}", percent, speed_str, eta_str, stage=stage
+                        )
+
             # If we get here, download completed successfully. Rename part to final.
             if os.path.exists(part_path):
                 os.rename(part_path, dest_path)
@@ -203,7 +250,8 @@ def _download_file(url, dest_path, progress_callback, description, retries=3, st
             logger.error(f"Download failed (Attempt {attempt + 1}): {e}")
             if attempt == retries - 1:
                 raise e
-            time.sleep(2) # Wait before retry
+            time.sleep(2)  # Wait before retry
+
 
 def _default_device_for_validation() -> str:
     """Validate downloads on CPU so warmup does not reserve idle VRAM."""
@@ -219,7 +267,10 @@ def _release_validation_caches() -> None:
         ("backend.processing.transcribe", "release_model_cache"),
         ("backend.processing.diarize", "release_pipeline_cache"),
         ("backend.processing.embedding_core", "release_embedding_model_cache"),
-        ("backend.processing.segmentation_refinement", "release_segmentation_model_cache"),
+        (
+            "backend.processing.segmentation_refinement",
+            "release_segmentation_model_cache",
+        ),
         ("backend.processing.text_embedding", "release_embedding_model"),
     )
     for module_name, release_name in release_hooks:
@@ -245,7 +296,9 @@ def _prepare_whisper_model(model_size: str) -> None:
     _suppress_whisper_timing_warnings()
     import whisper
 
-    download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
+    download_root = os.getenv(
+        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
+    )
     download_root = os.path.join(download_root, "whisper")
     os.makedirs(download_root, exist_ok=True)
 
@@ -335,10 +388,18 @@ def download_models(
                     progress_callback(msg, percent)
 
     try:
-        whisper_model_size = whisper_model_size or str(config_manager.get("whisper_model_size", "turbo"))
-        transcription_backend = transcription_backend or str(config_manager.get("transcription_backend", "whisper"))
-        parakeet_model = parakeet_model or str(config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3"))
-        canary_model = canary_model or str(config_manager.get("canary_model", "nemo-canary-1b-v2"))
+        whisper_model_size = whisper_model_size or str(
+            config_manager.get("whisper_model_size", "turbo")
+        )
+        transcription_backend = transcription_backend or str(
+            config_manager.get("transcription_backend", "whisper")
+        )
+        parakeet_model = parakeet_model or str(
+            config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3")
+        )
+        canary_model = canary_model or str(
+            config_manager.get("canary_model", "nemo-canary-1b-v2")
+        )
 
         if include_core:
             report(
@@ -387,10 +448,13 @@ def download_models(
         report("Model preparation complete.", 100, stage="complete", status="complete")
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
-        set_download_progress(0, f"Model preparation failed: {exc}", status="error", stage="error")
+        set_download_progress(
+            0, f"Model preparation failed: {exc}", status="error", stage="error"
+        )
         raise
     finally:
         _release_validation_caches()
+
 
 def preload_models():
     try:
@@ -399,6 +463,7 @@ def preload_models():
         # Mark download as errored in shared state
         set_download_progress(0, f"Download failed: {str(e)}", status="error")
         raise
+
 
 def check_model_status(whisper_model_size=None):
     """
@@ -413,22 +478,24 @@ def check_model_status(whisper_model_size=None):
         "embedding": {"downloaded": False, "path": None, "checked_paths": []},
         "segmentation": {"downloaded": False, "path": None, "checked_paths": []},
     }
-    
+
     # Check Whisper
     if not whisper_model_size:
         whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
-    
+
     # 1. Check XDG_CACHE_HOME location (Primary)
-    download_root = os.getenv("XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache"))
+    download_root = os.getenv(
+        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
+    )
     download_root = os.path.join(download_root, "whisper")
-    
+
     # Use local dict instead of importing whisper
     filename = WHISPER_FILENAMES.get(whisper_model_size)
-    
+
     if filename:
         filepath = os.path.join(download_root, filename)
         status["whisper"]["checked_paths"].append(filepath)
-        
+
         if os.path.exists(filepath):
             status["whisper"]["downloaded"] = True
             status["whisper"]["path"] = filepath
@@ -442,15 +509,19 @@ def check_model_status(whisper_model_size=None):
                 if os.path.exists(default_filepath):
                     status["whisper"]["downloaded"] = True
                     status["whisper"]["path"] = default_filepath
-    
+
     # Check Parakeet
     # Best-effort detection: onnx-asr caches the model under the Hugging Face hub
     # cache. Detection is a directory-name match; the exact repo dir name may vary
     # by onnx-asr version, so this is treated as a heuristic, not authoritative.
-    hf_cache_base = os.getenv("HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface"))
+    hf_cache_base = os.getenv(
+        "HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+    )
     hf_cache = os.path.join(hf_cache_base, "hub")
     parakeet_hf_caches = [hf_cache]
-    default_hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
+    default_hf_cache = os.path.join(
+        os.path.expanduser("~"), ".cache", "huggingface", "hub"
+    )
     if default_hf_cache not in parakeet_hf_caches:
         parakeet_hf_caches.append(default_hf_cache)
 
@@ -498,6 +569,7 @@ def check_model_status(whisper_model_size=None):
 
     return status
 
+
 def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
     """
     Delete a specific model from the cache.
@@ -505,9 +577,11 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
     """
     status = check_model_status(whisper_model_size=whisper_model_size)
     model_info = status.get(model_name)
-    
+
     if not model_info or not model_info["downloaded"] or not model_info["path"]:
-        logger.warning(f"Model {model_name} (variant: {whisper_model_size}) not found or not downloaded.")
+        logger.warning(
+            f"Model {model_name} (variant: {whisper_model_size}) not found or not downloaded."
+        )
         return False
 
     path = model_info["path"]
@@ -526,6 +600,7 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
     except Exception as e:
         logger.error(f"Failed to delete {model_name} at {path}: {e}")
         raise e
+
 
 if __name__ == "__main__":
     preload_models()

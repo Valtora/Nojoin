@@ -41,7 +41,9 @@ def _iter_version_files(versions_dir: Path = ALEMBIC_VERSIONS_DIR) -> list[Path]
     return sorted(path for path in versions_dir.glob("*.py") if path.is_file())
 
 
-def get_revision_graph(versions_dir: Path = ALEMBIC_VERSIONS_DIR) -> dict[str, tuple[str, ...]]:
+def get_revision_graph(
+    versions_dir: Path = ALEMBIC_VERSIONS_DIR,
+) -> dict[str, tuple[str, ...]]:
     graph: dict[str, tuple[str, ...]] = {}
 
     for path in _iter_version_files(versions_dir):
@@ -68,14 +70,14 @@ def get_known_revision_ids(versions_dir: Path = ALEMBIC_VERSIONS_DIR) -> set[str
 def get_head_revision_ids(versions_dir: Path = ALEMBIC_VERSIONS_DIR) -> tuple[str, ...]:
     graph = get_revision_graph(versions_dir)
     referenced_revision_ids = {
-        parent_id
-        for parent_ids in graph.values()
-        for parent_id in parent_ids
+        parent_id for parent_ids in graph.values() for parent_id in parent_ids
     }
     head_revision_ids = tuple(sorted(set(graph) - referenced_revision_ids))
 
     if not head_revision_ids:
-        raise RuntimeError("Could not determine an Alembic head revision from the checked-in migration files.")
+        raise RuntimeError(
+            "Could not determine an Alembic head revision from the checked-in migration files."
+        )
 
     return head_revision_ids
 
@@ -85,9 +87,13 @@ def get_database_revision_ids(connection: Connection) -> tuple[str, ...]:
     if "alembic_version" not in table_names:
         return ()
 
-    revision_ids = connection.execute(
-        text("SELECT version_num FROM alembic_version ORDER BY version_num")
-    ).scalars().all()
+    revision_ids = (
+        connection.execute(
+            text("SELECT version_num FROM alembic_version ORDER BY version_num")
+        )
+        .scalars()
+        .all()
+    )
     return tuple(str(revision_id) for revision_id in revision_ids)
 
 
@@ -139,7 +145,9 @@ def repair_orphaned_revision_state(
     return missing_revision_ids
 
 
-def wait_for_database_connection(max_retries: int = 30, retry_interval: float = 1.0) -> None:
+def wait_for_database_connection(
+    max_retries: int = 30, retry_interval: float = 1.0
+) -> None:
     logger.info("Waiting for database connection...")
 
     for attempt in range(max_retries):

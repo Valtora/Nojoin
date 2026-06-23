@@ -5,7 +5,6 @@ from typing import Any, Iterable, Sequence
 
 from backend.models.pipeline import RecordingAudioWindowManifest
 
-
 DEFAULT_AUDIO_WINDOW_MS = 20_000
 DEFAULT_AUDIO_WINDOW_HOP_MS = 5_000
 
@@ -101,13 +100,17 @@ def build_audio_window_specs(
             window_start_ms += hop_ms
 
         last_full_end_ms = (
-            full_window_starts[-1] + target_window_ms if full_window_starts else group_start_ms
+            full_window_starts[-1] + target_window_ms
+            if full_window_starts
+            else group_start_ms
         )
         if full_window_starts and last_full_end_ms >= group_end_ms:
             continue
 
         tail_start_ms = (
-            group_start_ms if not full_window_starts else full_window_starts[-1] + hop_ms
+            group_start_ms
+            if not full_window_starts
+            else full_window_starts[-1] + hop_ms
         )
         if tail_start_ms >= group_end_ms:
             continue
@@ -341,7 +344,9 @@ def window_diarization_status(row: Any) -> str:
     return _get_diarization_status(row)
 
 
-def window_diarization_is_processed(row: Any, *, config_hash: str | None = None) -> bool:
+def window_diarization_is_processed(
+    row: Any, *, config_hash: str | None = None
+) -> bool:
     if _get_diarization_status(row) != WINDOW_DIARIZATION_STATUS_PROCESSED:
         return False
     if config_hash is None:
@@ -385,7 +390,8 @@ def _build_window_spec(
     overlapping_chunks = [
         row
         for row in group
-        if int(row.absolute_end_ms) > window_start_ms and int(row.absolute_start_ms) < window_end_ms
+        if int(row.absolute_end_ms) > window_start_ms
+        and int(row.absolute_start_ms) < window_end_ms
     ]
     if not overlapping_chunks:
         raise ValueError("window must overlap at least one audio chunk")

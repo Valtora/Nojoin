@@ -152,7 +152,9 @@ def set_session_cookie(client: AsyncClient) -> None:
     )
 
 
-def make_wav_bytes(*, duration_s: float = 0.25, sample_rate: int = 16000, channels: int = 1) -> bytes:
+def make_wav_bytes(
+    *, duration_s: float = 0.25, sample_rate: int = 16000, channels: int = 1
+) -> bytes:
     frame_count = int(duration_s * sample_rate)
     pcm_frames = b"\x00\x00" * frame_count * channels
     buffer = io.BytesIO()
@@ -165,11 +167,11 @@ def make_wav_bytes(*, duration_s: float = 0.25, sample_rate: int = 16000, channe
 
 
 def test_ffmpeg_transcode_preserves_browser_source_channels(monkeypatch, tmp_path):
+    from backend.processing import segment_transcode as segment_transcode_module
     from backend.processing.browser_live_audio import (
         BROWSER_LIVE_CHANNEL_COUNT,
         BROWSER_LIVE_SAMPLE_RATE_HZ,
     )
-    from backend.processing import segment_transcode as segment_transcode_module
 
     captured = {}
 
@@ -265,12 +267,20 @@ async def api_app(
 
     fake_user = build_test_user()
 
-    async def fake_get_authenticated_token_details(db, actual_token, *, allowed_token_types, required_scopes_by_type=None):
+    async def fake_get_authenticated_token_details(
+        db, actual_token, *, allowed_token_types, required_scopes_by_type=None
+    ):
         if actual_token == "session-token":
-            return fake_user, {"sub": fake_user.username, "token_type": "session", "scopes": ["session:web"]}
+            return fake_user, {
+                "sub": fake_user.username,
+                "token_type": "session",
+                "scopes": ["session:web"],
+            }
         raise AssertionError(f"Unexpected token: {actual_token}")
 
-    async def fake_get_authenticated_user_from_token(db, actual_token, *, allowed_token_types, required_scopes_by_type=None):
+    async def fake_get_authenticated_user_from_token(
+        db, actual_token, *, allowed_token_types, required_scopes_by_type=None
+    ):
         assert actual_token == "session-token"
         return fake_user
 
@@ -278,13 +288,21 @@ async def api_app(
     from backend.processing import segment_transcode as segment_transcode_module
     from backend.utils import recording_audio_sync, recording_storage
 
-    monkeypatch.setattr(deps, "get_authenticated_token_details", fake_get_authenticated_token_details)
-    monkeypatch.setattr(deps, "get_authenticated_user_from_token", fake_get_authenticated_user_from_token)
+    monkeypatch.setattr(
+        deps, "get_authenticated_token_details", fake_get_authenticated_token_details
+    )
+    monkeypatch.setattr(
+        deps,
+        "get_authenticated_user_from_token",
+        fake_get_authenticated_user_from_token,
+    )
     monkeypatch.setattr(recordings_module, "recordings_root_dir", lambda: tmp_path)
     monkeypatch.setattr(
         recordings_module,
         "recording_upload_temp_dir",
-        lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
+        lambda recording_id, create=False: _recording_temp_dir(
+            tmp_path, recording_id, create=create
+        ),
     )
     monkeypatch.setattr(
         recording_storage,
@@ -294,18 +312,25 @@ async def api_app(
     monkeypatch.setattr(
         recording_storage,
         "recording_upload_temp_dir",
-        lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
+        lambda recording_id, create=False: _recording_temp_dir(
+            tmp_path, recording_id, create=create
+        ),
     )
     monkeypatch.setattr(
         recording_audio_sync,
         "recording_upload_temp_dir",
-        lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
+        lambda recording_id, create=False: _recording_temp_dir(
+            tmp_path, recording_id, create=create
+        ),
     )
     monkeypatch.setattr(
         segment_transcode_module,
         "recording_upload_temp_dir",
-        lambda recording_id, create=False: _recording_temp_dir(tmp_path, recording_id, create=create),
+        lambda recording_id, create=False: _recording_temp_dir(
+            tmp_path, recording_id, create=create
+        ),
     )
+
     def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
         if name == "backend.processing.live_transcribe.transcribe_segment_live_task":
             live_dispatches.append((args[0], args[1]))
@@ -319,7 +344,9 @@ async def api_app(
         "delay",
         lambda recording_id, sequence: live_dispatches.append((recording_id, sequence)),
     )
-    monkeypatch.setattr(segment_transcode_module, "get_sync_session", lambda: Session(sync_engine))
+    monkeypatch.setattr(
+        segment_transcode_module, "get_sync_session", lambda: Session(sync_engine)
+    )
     monkeypatch.setattr(
         segment_transcode_module,
         "record_pipeline_metric",
@@ -374,7 +401,10 @@ async def _chunk_rows_for_recording(
             ),
             {"recording_id": recording_id},
         )
-        return [(int(sequence_no), str(storage_path)) for sequence_no, storage_path in rows.all()]
+        return [
+            (int(sequence_no), str(storage_path))
+            for sequence_no, storage_path in rows.all()
+        ]
 
 
 async def _chunk_metadata_rows_for_recording(
@@ -390,12 +420,22 @@ async def _chunk_metadata_rows_for_recording(
             {"recording_id": recording_id},
         )
         return [
-            (int(sequence_no), int(sample_rate_hz), int(channel_count), str(storage_path))
+            (
+                int(sequence_no),
+                int(sample_rate_hz),
+                int(channel_count),
+                str(storage_path),
+            )
             for sequence_no, sample_rate_hz, channel_count, storage_path in rows.all()
         ]
 
-def test_sync_recording_audio_chunks_upserts_existing_sequence(sync_engine, tmp_path) -> None:
-    from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
+
+def test_sync_recording_audio_chunks_upserts_existing_sequence(
+    sync_engine, tmp_path
+) -> None:
+    from backend.utils.recording_audio_sync import (
+        sync_recording_audio_chunks_from_directory,
+    )
     from backend.utils.time import utc_now
 
     upload_dir = tmp_path / "upload"
@@ -477,7 +517,9 @@ def _chunk_received_at_for_recording(
         ),
         {"recording_id": recording_id},
     )
-    return [(int(sequence_no), str(received_at)) for sequence_no, received_at in rows.all()]
+    return [
+        (int(sequence_no), str(received_at)) for sequence_no, received_at in rows.all()
+    ]
 
 
 @pytest.mark.anyio
@@ -518,7 +560,10 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
     assert upload_response.status_code == 200
     assert live_dispatches == []
     assert transcode_dispatches == [(recording_id, 0)]
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+    assert (
+        await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+        == []
+    )
 
     upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
 
@@ -545,11 +590,13 @@ async def test_webm_upload_defers_live_sync_until_transcode_task(
         assert wav_file.getnchannels() == BROWSER_LIVE_CHANNEL_COUNT
     assert live_dispatches == [(recording_id, 0)]
 
-    chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+    chunk_rows = await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    )
     assert chunk_rows == [(0, str(wav_path))]
-    assert await _chunk_metadata_rows_for_recording(test_session_maker, recording_id=recording_id) == [
-        (0, BROWSER_LIVE_SAMPLE_RATE_HZ, BROWSER_LIVE_CHANNEL_COUNT, str(wav_path))
-    ]
+    assert await _chunk_metadata_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    ) == [(0, BROWSER_LIVE_SAMPLE_RATE_HZ, BROWSER_LIVE_CHANNEL_COUNT, str(wav_path))]
 
 
 @pytest.mark.anyio
@@ -590,7 +637,10 @@ async def test_m4a_upload_defers_live_sync_until_transcode_task(
     assert upload_response.status_code == 200
     assert live_dispatches == []
     assert transcode_dispatches == [(recording_id, 0)]
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+    assert (
+        await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+        == []
+    )
 
     upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
 
@@ -616,7 +666,9 @@ async def test_m4a_upload_defers_live_sync_until_transcode_task(
         assert wav_file.getnchannels() == BROWSER_LIVE_CHANNEL_COUNT
     assert live_dispatches == [(recording_id, 0)]
 
-    chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+    chunk_rows = await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    )
     assert chunk_rows == [(0, str(wav_path))]
 
 
@@ -628,8 +680,8 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
     from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
 
     set_session_cookie(client)
 
@@ -653,7 +705,10 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     )
     assert upload_response.status_code == 200
     assert transcode_dispatches == [(recording_id, 0)]
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+    assert (
+        await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+        == []
+    )
 
     from backend.processing import segment_transcode as segment_transcode_module
 
@@ -667,10 +722,14 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     monkeypatch.setattr(
         recordings_module,
         "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(b"joined-browser-master"),
+        lambda paths, destination: Path(destination).write_bytes(
+            b"joined-browser-master"
+        ),
     )
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
-    monkeypatch.setattr(recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None)
+    monkeypatch.setattr(
+        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
+    )
 
     finalize_response = await client.post(
         f"/api/v1/recordings/{recording_public_id}/finalize",
@@ -684,14 +743,16 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     assert finalize_response.json()["status"] == "QUEUED"
     assert wav_path.exists()
     assert (upload_dir / "0.webm").exists()
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
-        (0, str(wav_path))
-    ]
+    assert await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    ) == [(0, str(wav_path))]
 
     async with test_session_maker() as session:
         recording_row = (
             await session.execute(
-                text("SELECT audio_path, proxy_path FROM recordings WHERE id = :recording_id"),
+                text(
+                    "SELECT audio_path, proxy_path FROM recordings WHERE id = :recording_id"
+                ),
                 {"recording_id": recording_id},
             )
         ).one()
@@ -709,8 +770,8 @@ async def test_finalize_upload_transcodes_pending_m4a_segments(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
     from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
 
     set_session_cookie(client)
 
@@ -747,10 +808,14 @@ async def test_finalize_upload_transcodes_pending_m4a_segments(
     monkeypatch.setattr(
         recordings_module,
         "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(b"joined-browser-master"),
+        lambda paths, destination: Path(destination).write_bytes(
+            b"joined-browser-master"
+        ),
     )
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
-    monkeypatch.setattr(recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None)
+    monkeypatch.setattr(
+        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
+    )
 
     finalize_response = await client.post(
         f"/api/v1/recordings/{recording_public_id}/finalize",
@@ -763,9 +828,9 @@ async def test_finalize_upload_transcodes_pending_m4a_segments(
     assert finalize_response.status_code == 200
     assert wav_path.exists()
     assert (upload_dir / "0.m4a").exists()
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
-        (0, str(wav_path))
-    ]
+    assert await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    ) == [(0, str(wav_path))]
 
 
 def test_sync_recording_audio_chunks_recovers_when_competing_session_wins_insert_race(
@@ -774,7 +839,9 @@ def test_sync_recording_audio_chunks_recovers_when_competing_session_wins_insert
     tmp_path,
 ) -> None:
     from backend.models.pipeline import RecordingAudioChunk
-    from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
+    from backend.utils.recording_audio_sync import (
+        sync_recording_audio_chunks_from_directory,
+    )
 
     upload_dir = tmp_path / "race-upload"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -863,7 +930,9 @@ def test_sync_recording_audio_chunks_preserves_received_at_on_rescan(
     sync_engine,
     tmp_path,
 ) -> None:
-    from backend.utils.recording_audio_sync import sync_recording_audio_chunks_from_directory
+    from backend.utils.recording_audio_sync import (
+        sync_recording_audio_chunks_from_directory,
+    )
 
     upload_dir = tmp_path / "received-at-upload"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -933,7 +1002,9 @@ async def test_failed_webm_transcode_marks_sequence_incomplete_for_finalize(
     monkeypatch.setattr(
         segment_transcode_module,
         "_run_ffmpeg_transcode",
-        lambda input_path, output_path: (_ for _ in ()).throw(RuntimeError("broken container")),
+        lambda input_path, output_path: (_ for _ in ()).throw(
+            RuntimeError("broken container")
+        ),
     )
 
     result = segment_transcode_module.transcode_segment_task.run(recording_id, 0)
@@ -944,7 +1015,10 @@ async def test_failed_webm_transcode_marks_sequence_incomplete_for_finalize(
     assert failure_marker.exists()
     assert not (upload_dir / "0.wav").exists()
     assert live_dispatches == []
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+    assert (
+        await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+        == []
+    )
     assert pipeline_metrics == [
         {
             "stage": "segment_transcode_failed",
@@ -977,9 +1051,9 @@ async def test_pause_resume_finalize_transcodes_pending_browser_segments_without
     monkeypatch,
     tmp_path,
 ) -> None:
-    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
     from backend.api.v1.endpoints import recordings as recordings_module
     from backend.processing import segment_transcode as segment_transcode_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
 
     set_session_cookie(client)
 
@@ -1036,10 +1110,14 @@ async def test_pause_resume_finalize_transcodes_pending_browser_segments_without
     monkeypatch.setattr(
         recordings_module,
         "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(b"joined-browser-master"),
+        lambda paths, destination: Path(destination).write_bytes(
+            b"joined-browser-master"
+        ),
     )
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 2.5)
-    monkeypatch.setattr(recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None)
+    monkeypatch.setattr(
+        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
+    )
 
     finalize_response = await client.post(
         f"/api/v1/recordings/{recording_public_id}/finalize",
@@ -1051,7 +1129,9 @@ async def test_pause_resume_finalize_transcodes_pending_browser_segments_without
     assert finalize_response.json()["status"] == "QUEUED"
     assert (upload_dir / "0.wav").exists()
     assert (upload_dir / "1.wav").exists()
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == [
+    assert await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    ) == [
         (0, str(upload_dir / "0.wav")),
         (1, str(upload_dir / "1.wav")),
     ]
@@ -1093,7 +1173,9 @@ async def test_wav_upload_keeps_existing_fast_path(
     upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
     assert (upload_dir / "0.wav").exists()
 
-    chunk_rows = await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+    chunk_rows = await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    )
     assert chunk_rows == [(0, str(upload_dir / "0.wav"))]
 
 
@@ -1124,7 +1206,10 @@ async def test_segment_upload_rejects_mismatched_content_type_and_suffix(
     )
 
     assert upload_response.status_code == 415
-    assert await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id) == []
+    assert (
+        await _chunk_rows_for_recording(test_session_maker, recording_id=recording_id)
+        == []
+    )
 
 
 def test_transcode_task_registered_with_celery() -> None:

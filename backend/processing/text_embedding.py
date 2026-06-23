@@ -1,7 +1,6 @@
 import logging
 import os
-from typing import Any
-from typing import List, Union
+from typing import Any, List, Union
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +9,7 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
+
 
 class TextEmbeddingService:
     _instance = None
@@ -26,6 +26,7 @@ class TextEmbeddingService:
             logger.info(f"Loading text embedding model: {MODEL_NAME}")
             try:
                 from fastembed import TextEmbedding
+
                 self._model = TextEmbedding(
                     model_name=MODEL_NAME,
                     providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -36,6 +37,7 @@ class TextEmbeddingService:
                 )
                 try:
                     from fastembed import TextEmbedding
+
                     self._model = TextEmbedding(model_name=MODEL_NAME)
                 except Exception as e_cpu:
                     logger.error(f"Failed to load text embedding model: {e_cpu}")
@@ -49,7 +51,6 @@ class TextEmbeddingService:
             cls._instance._model = None
             cls._instance = None
 
-
     def embed(self, texts: Union[str, List[str]]) -> List[List[float]]:
         """
         Generate embeddings for a list of texts.
@@ -57,7 +58,7 @@ class TextEmbeddingService:
         """
         if isinstance(texts, str):
             texts = [texts]
-            
+
         try:
             # fastembed returns a generator of vectors
             embeddings = list(self._model.embed(texts))
@@ -67,14 +68,17 @@ class TextEmbeddingService:
             logger.error(f"Failed to generate embeddings: {e}")
             return []
 
+
 # Global instance accessor
 _service = None
+
 
 def get_text_embedding_service():
     global _service
     if _service is None:
         _service = TextEmbeddingService()
     return _service
+
 
 def release_embedding_model():
     """Global function to release the text embedding model."""

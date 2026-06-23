@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "e2a6f9c4d8b7"
 down_revision: Union[str, Sequence[str], None] = "b7c1d9e4a8f2"
@@ -30,7 +29,9 @@ IX_RAWM_DIAR_WINDOW_RESULT_ID = "ix_rawm_diar_window_result_id"
 def upgrade() -> None:
     op.add_column(
         "recording_audio_window_manifests",
-        sa.Column("asr_status", sa.String(length=32), nullable=False, server_default="pending"),
+        sa.Column(
+            "asr_status", sa.String(length=32), nullable=False, server_default="pending"
+        ),
     )
     op.add_column(
         "recording_audio_window_manifests",
@@ -42,7 +43,12 @@ def upgrade() -> None:
     )
     op.add_column(
         "recording_audio_window_manifests",
-        sa.Column("diarization_status", sa.String(length=32), nullable=False, server_default="pending"),
+        sa.Column(
+            "diarization_status",
+            sa.String(length=32),
+            nullable=False,
+            server_default="pending",
+        ),
     )
     op.add_column(
         "recording_audio_window_manifests",
@@ -178,8 +184,12 @@ def upgrade() -> None:
         """
     )
 
-    op.alter_column("recording_audio_window_manifests", "asr_status", server_default=None)
-    op.alter_column("recording_audio_window_manifests", "diarization_status", server_default=None)
+    op.alter_column(
+        "recording_audio_window_manifests", "asr_status", server_default=None
+    )
+    op.alter_column(
+        "recording_audio_window_manifests", "diarization_status", server_default=None
+    )
 
 
 def downgrade() -> None:

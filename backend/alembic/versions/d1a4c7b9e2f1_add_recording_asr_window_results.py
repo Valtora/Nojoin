@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "d1a4c7b9e2f1"
 down_revision: Union[str, Sequence[str], None] = ("c7f4a9e2d1b3", "c3f8a1d9e2b4")
@@ -40,13 +39,25 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("idempotency_key", sa.String(length=255), nullable=False),
         sa.Column("error_summary", sa.Text(), nullable=True),
-        sa.Column("error_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("result_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("produced_utterance_public_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "error_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column(
+            "result_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column(
+            "produced_utterance_public_ids",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
+        ),
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["recording_id"], ["recordings.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["processing_run_id"], ["processing_runs.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "recording_id",

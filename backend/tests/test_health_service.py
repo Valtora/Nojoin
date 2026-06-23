@@ -34,7 +34,9 @@ def _reset_hf_validation_cache() -> None:
 
 
 @pytest.mark.anyio
-async def test_validate_hf_token_reuses_single_entry_cache_for_same_token(monkeypatch) -> None:
+async def test_validate_hf_token_reuses_single_entry_cache_for_same_token(
+    monkeypatch,
+) -> None:
     calls: list[str] = []
 
     def _fake_async_client(*args, **kwargs):
@@ -68,7 +70,9 @@ async def test_validate_hf_token_revalidates_when_token_changes(monkeypatch) -> 
 
 
 @pytest.mark.anyio
-async def test_get_diarization_component_accepts_local_assets_without_hf_token(monkeypatch) -> None:
+async def test_get_diarization_component_accepts_local_assets_without_hf_token(
+    monkeypatch,
+) -> None:
     async def _fake_keys(_db):
         return {"hf_token": None}
 

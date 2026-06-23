@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 BROWSER_LIVE_SAMPLE_RATE_HZ = 16_000
 BROWSER_LIVE_CHANNEL_COUNT = 2
 

@@ -1,6 +1,9 @@
 from .constants import *
 
-@celery_app.task(name="backend.worker.tasks.cleanup_temp_recordings", base=DatabaseTask, bind=True)
+
+@celery_app.task(
+    name="backend.worker.tasks.cleanup_temp_recordings", base=DatabaseTask, bind=True
+)
 def cleanup_temp_recordings(self):
     """
     Periodic task to clean up old temporary files and failed uploads.
@@ -66,12 +69,13 @@ def get_worker_device_status(self):
     """
     try:
         import torch
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         gpu_name = torch.cuda.get_device_name(0) if device == "cuda" else None
         return {
             "device": device,
             "gpu_name": gpu_name,
-            "torch_version": torch.__version__
+            "torch_version": torch.__version__,
         }
     except ImportError:
         return {"device": "cpu", "error": "torch not installed"}
@@ -86,28 +90,30 @@ def create_backup_task(self, include_audio: bool = True):
     Returns the path to the backup file.
     """
     from backend.core.backup_manager import BackupManager
-    
+
     try:
         logger.info(f"Starting backup task (include_audio={include_audio})")
-        self.update_state(state='PROCESSING', meta={'status': 'Creating backup...'})
-        
+        self.update_state(state="PROCESSING", meta={"status": "Creating backup..."})
+
         zip_path = BackupManager.create_backup_blocking(include_audio=include_audio)
-        
+
         logger.info(f"Backup created successfully at {zip_path}")
         return {"status": "success", "zip_path": zip_path}
-        
+
     except Exception as e:
         logger.error(f"Backup creation failed: {e}", exc_info=True)
         raise e
 
 
-
-@celery_app.task(name="backend.worker.tasks.generate_proxy_task", base=DatabaseTask, bind=True)
+@celery_app.task(
+    name="backend.worker.tasks.generate_proxy_task", base=DatabaseTask, bind=True
+)
 def generate_proxy_task(self, recording_id: int):
     """
     Generate a high-quality MP3 proxy file for frontend playback.
     """
     from backend.utils.audio import convert_to_proxy_mp3
+
     session = self.session
     try:
         recording = session.get(Recording, recording_id)
@@ -136,7 +142,9 @@ def generate_proxy_task(self, recording_id: int):
         logger.info(f"Generating proxy for recording {recording_id} at {proxy_path}")
 
         mix_to_mono = _recording_uses_browser_capture(session, recording_id)
-        if convert_to_proxy_mp3(recording.audio_path, proxy_path, mix_to_mono=mix_to_mono):
+        if convert_to_proxy_mp3(
+            recording.audio_path, proxy_path, mix_to_mono=mix_to_mono
+        ):
             recording.proxy_path = proxy_path
             session.add(recording)
             session.commit()
@@ -149,5 +157,4 @@ def generate_proxy_task(self, recording_id: int):
         # Not re-raised because proxy generation is optional/secondary.
 
 
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

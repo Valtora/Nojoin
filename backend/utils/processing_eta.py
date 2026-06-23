@@ -4,7 +4,6 @@ from typing import Iterable, Optional, Sequence, Tuple
 
 from backend.utils.time import utc_now
 
-
 MIN_HISTORY_SAMPLES = 3
 MIN_AUDIO_DURATION_SECONDS = 60.0
 MAX_REASONABLE_SECONDS_PER_AUDIO_MINUTE = 600.0
@@ -65,12 +64,16 @@ def estimate_processing_eta(
     rate_samples = extract_processing_rate_samples(history_samples)
     sample_size = len(rate_samples)
     if sample_size < MIN_HISTORY_SAMPLES:
-        return ProcessingEtaEstimate(eta_seconds=None, sample_size=sample_size, learning=True)
+        return ProcessingEtaEstimate(
+            eta_seconds=None, sample_size=sample_size, learning=True
+        )
 
     reference_time = now or utc_now()
     elapsed_seconds = max(0.0, (reference_time - processing_started_at).total_seconds())
     average_seconds_per_audio_minute = sum(rate_samples) / sample_size
-    estimated_total_seconds = average_seconds_per_audio_minute * (current_duration_seconds / 60.0)
+    estimated_total_seconds = average_seconds_per_audio_minute * (
+        current_duration_seconds / 60.0
+    )
     remaining_seconds = max(0, int(round(estimated_total_seconds - elapsed_seconds)))
 
     return ProcessingEtaEstimate(

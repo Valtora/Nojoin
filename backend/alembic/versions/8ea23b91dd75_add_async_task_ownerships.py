@@ -7,10 +7,9 @@ Create Date: 2026-05-31 12:00:00.000000
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 import sqlmodel
-
+from alembic import op
 
 revision: str = "8ea23b91dd75"
 down_revision: Union[str, Sequence[str], None] = "1f2e3d4c5b6a"
@@ -24,7 +23,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("id", sa.BigInteger(), sa.Identity(), nullable=False),
-        sa.Column("task_id", sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False),
+        sa.Column(
+            "task_id", sqlmodel.sql.sqltypes.AutoString(length=255), nullable=False
+        ),
         sa.Column("user_id", sa.BigInteger(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),

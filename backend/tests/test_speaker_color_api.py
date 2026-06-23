@@ -142,7 +142,9 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncCli
     api_app.dependency_overrides[get_db] = override_get_db
 
     transport = ASGITransport(app=api_app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
         yield async_client
 
     api_app.dependency_overrides.clear()

@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pytest
-from sqlalchemy import Boolean, Column, Date, DateTime, JSON, Text, create_engine
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Text, create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import Field, SQLModel, Session, select
+from sqlmodel import Field, Session, SQLModel, select
 
 import backend.core.backup_manager as backup_manager_module
 import backend.core.db as db_module
 import backend.utils.version as version_utils
+from backend.core.backup_manager import BackupManager
+from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.context_chunk import ContextChunk  # noqa: F401
 from backend.models.document import Document  # noqa: F401
@@ -23,8 +25,6 @@ from backend.models.invitation import Invitation  # noqa: F401
 from backend.models.speaker import RecordingSpeaker  # noqa: F401
 from backend.models.tag import RecordingTag  # noqa: F401
 from backend.models.transcript import Transcript  # noqa: F401
-from backend.core.backup_manager import BackupManager
-from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.utils.time import utc_now
 
 
@@ -32,8 +32,12 @@ class TestBase(SQLModel):
     __test__ = False
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=utc_now, sa_type=DateTime, nullable=False)
-    updated_at: datetime = Field(default_factory=utc_now, sa_type=DateTime, nullable=False)
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_type=DateTime, nullable=False
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now, sa_type=DateTime, nullable=False
+    )
 
 
 class TestUser(TestBase, table=True):
@@ -45,7 +49,9 @@ class TestUser(TestBase, table=True):
     is_superuser: bool = False
     force_password_change: bool = False
     role: str = "user"
-    settings: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    settings: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
 
 
 class TestCalendarProviderConfig(TestBase, table=True):
@@ -53,7 +59,9 @@ class TestCalendarProviderConfig(TestBase, table=True):
 
     provider: str
     client_id: Optional[str] = None
-    client_secret_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    client_secret_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     tenant_id: Optional[str] = None
     enabled: bool = True
 
@@ -82,7 +90,9 @@ class TestGlobalSpeaker(TestBase, table=True):
     __tablename__ = "backup_test_global_speakers"
 
     name: str
-    embedding: Optional[list[float]] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    embedding: Optional[list[float]] = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
     is_voiceprint_locked: bool = False
     color: Optional[str] = None
     title: Optional[str] = None
@@ -127,8 +137,12 @@ class TestRecording(TestBase, table=True):
     __tablename__ = "backup_test_recordings"
 
     name: str
-    meeting_uid: Optional[str] = Field(default=None, sa_column=Column(Text, unique=True, nullable=True))
-    public_id: Optional[str] = Field(default=None, sa_column=Column(Text, unique=True, nullable=True))
+    meeting_uid: Optional[str] = Field(
+        default=None, sa_column=Column(Text, unique=True, nullable=True)
+    )
+    public_id: Optional[str] = Field(
+        default=None, sa_column=Column(Text, unique=True, nullable=True)
+    )
     audio_path: str = Field(sa_column=Column(Text, unique=True, nullable=False))
     proxy_path: Optional[str] = None
     file_size_bytes: Optional[int] = None
@@ -144,9 +158,15 @@ class TestCalendarConnection(TestBase, table=True):
     provider_account_id: str
     email: Optional[str] = None
     display_name: Optional[str] = None
-    access_token_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    refresh_token_encrypted: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    granted_scopes: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    access_token_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    refresh_token_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    granted_scopes: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False)
+    )
     token_expires_at: Optional[datetime] = None
     sync_status: str = "idle"
     sync_error: Optional[str] = None
@@ -168,7 +188,9 @@ class TestCalendarSource(TestBase, table=True):
     is_primary: bool = False
     is_read_only: bool = False
     is_selected: bool = False
-    sync_cursor: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    sync_cursor: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     last_synced_at: Optional[datetime] = None
     sync_window_start: Optional[datetime] = None
     sync_window_end: Optional[datetime] = None
@@ -184,9 +206,15 @@ class TestCalendarEvent(TestBase, table=True):
     is_all_day: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
-    start_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True))
-    end_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True))
-    location_text: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    start_date: Optional[date] = Field(
+        default=None, sa_column=Column(Date, nullable=True)
+    )
+    end_date: Optional[date] = Field(
+        default=None, sa_column=Column(Date, nullable=True)
+    )
+    location_text: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     meeting_url: Optional[str] = None
     source_url: Optional[str] = None
     external_updated_at: Optional[datetime] = None
@@ -203,7 +231,9 @@ class TestRecordingSpeaker(TestBase, table=True):
     snippet_start: Optional[float] = None
     snippet_end: Optional[float] = None
     voice_snippet_path: Optional[str] = None
-    embedding: Optional[list[float]] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    embedding: Optional[list[float]] = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
     color: Optional[str] = None
     merged_into_id: Optional[int] = None
 
@@ -260,8 +290,13 @@ class StubPathManager:
         self._executable_directory = root / "app"
         (self._executable_directory / "docs").mkdir(parents=True, exist_ok=True)
         self._recordings_directory.mkdir(parents=True, exist_ok=True)
-        self._config_path.write_text(json.dumps({"gemini_api_key": "top-secret", "theme": "dark"}), encoding="utf-8")
-        (self._executable_directory / "docs" / "VERSION").write_text("0.6.0", encoding="utf-8")
+        self._config_path.write_text(
+            json.dumps({"gemini_api_key": "top-secret", "theme": "dark"}),
+            encoding="utf-8",
+        )
+        (self._executable_directory / "docs" / "VERSION").write_text(
+            "0.6.0", encoding="utf-8"
+        )
 
     @property
     def user_data_directory(self) -> Path:
@@ -295,7 +330,9 @@ def build_test_context(root: Path) -> TestContext:
     db_path = root / "backup-test.sqlite"
     sync_engine = create_engine(f"sqlite:///{db_path}", future=True)
     async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", future=True)
-    async_session_maker = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    async_session_maker = sessionmaker(
+        async_engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     for _, model_cls in TEST_MODELS:
         model_cls.__table__.create(sync_engine)
@@ -309,13 +346,19 @@ def build_test_context(root: Path) -> TestContext:
 
 
 def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) -> None:
-    monkeypatch.setattr(backup_manager_module, "PathManager", lambda: context.path_manager)
+    monkeypatch.setattr(
+        backup_manager_module, "PathManager", lambda: context.path_manager
+    )
     monkeypatch.setattr(version_utils, "PathManager", lambda: context.path_manager)
-    monkeypatch.setattr(backup_manager_module, "async_session_maker", context.async_session_maker)
+    monkeypatch.setattr(
+        backup_manager_module, "async_session_maker", context.async_session_maker
+    )
     monkeypatch.setattr(backup_manager_module, "sync_engine", context.sync_engine)
     monkeypatch.setattr(backup_manager_module, "MODELS", TEST_MODELS)
     monkeypatch.setattr(backup_manager_module, "User", TestUser)
-    monkeypatch.setattr(backup_manager_module, "CalendarProviderConfig", TestCalendarProviderConfig)
+    monkeypatch.setattr(
+        backup_manager_module, "CalendarProviderConfig", TestCalendarProviderConfig
+    )
     monkeypatch.setattr(backup_manager_module, "UserTask", TestUserTask)
     monkeypatch.setattr(backup_manager_module, "PeopleTag", TestPeopleTag)
     monkeypatch.setattr(backup_manager_module, "GlobalSpeaker", TestGlobalSpeaker)
@@ -323,8 +366,12 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_manager_module, "Tag", TestTag)
     monkeypatch.setattr(backup_manager_module, "UserTaskTag", TestUserTaskTag)
     monkeypatch.setattr(backup_manager_module, "Recording", TestRecording)
-    monkeypatch.setattr(backup_manager_module, "UserTaskRecording", TestUserTaskRecording)
-    monkeypatch.setattr(backup_manager_module, "CalendarConnection", TestCalendarConnection)
+    monkeypatch.setattr(
+        backup_manager_module, "UserTaskRecording", TestUserTaskRecording
+    )
+    monkeypatch.setattr(
+        backup_manager_module, "CalendarConnection", TestCalendarConnection
+    )
     monkeypatch.setattr(backup_manager_module, "CalendarSource", TestCalendarSource)
     monkeypatch.setattr(backup_manager_module, "CalendarEvent", TestCalendarEvent)
     monkeypatch.setattr(backup_manager_module, "RecordingSpeaker", TestRecordingSpeaker)
@@ -429,7 +476,11 @@ async def seed_source_data(
                 display_name="Alice",
                 access_token_encrypted=encrypt_secret("google-access-token"),
                 refresh_token_encrypted=encrypt_secret("google-refresh-token"),
-                granted_scopes=["openid", "email", "https://www.googleapis.com/auth/calendar.readonly"],
+                granted_scopes=[
+                    "openid",
+                    "email",
+                    "https://www.googleapis.com/auth/calendar.readonly",
+                ],
                 token_expires_at=datetime(2026, 4, 20, 10, 0),
                 sync_status="success",
                 last_sync_completed_at=datetime(2026, 4, 12, 10, 0),
@@ -566,8 +617,12 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     assert backup_info["contains_restorable_calendar_credentials"] is True
     assert backup_info["version"] == "0.6.0"
 
-    google_provider = next(item for item in provider_configs if item["provider"] == "google")
-    microsoft_provider = next(item for item in provider_configs if item["provider"] == "microsoft")
+    google_provider = next(
+        item for item in provider_configs if item["provider"] == "google"
+    )
+    microsoft_provider = next(
+        item for item in provider_configs if item["provider"] == "microsoft"
+    )
     assert google_provider["client_id"] == "google-client-id"
     assert google_provider["client_secret"] == "google-client-secret"
     assert microsoft_provider["client_secret"] == "microsoft-client-secret"
@@ -603,16 +658,22 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
 
     assert BackupManager.restore_jobs[job_id]["status"] == "completed"
 
     with Session(target_context.sync_engine) as session:
         restored_google = session.exec(
-            select(TestCalendarProviderConfig).where(TestCalendarProviderConfig.provider == "google")
+            select(TestCalendarProviderConfig).where(
+                TestCalendarProviderConfig.provider == "google"
+            )
         ).one()
         restored_microsoft = session.exec(
-            select(TestCalendarProviderConfig).where(TestCalendarProviderConfig.provider == "microsoft")
+            select(TestCalendarProviderConfig).where(
+                TestCalendarProviderConfig.provider == "microsoft"
+            )
         ).one()
         restored_connection = session.exec(select(TestCalendarConnection)).one()
         restored_recording = session.exec(select(TestRecording)).one()
@@ -624,15 +685,29 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         restored_user = session.exec(select(TestUser)).one()
         restored_global_speaker = session.exec(select(TestGlobalSpeaker)).one()
         restored_speakers = session.exec(
-            select(TestRecordingSpeaker).order_by(TestRecordingSpeaker.diarization_label)
+            select(TestRecordingSpeaker).order_by(
+                TestRecordingSpeaker.diarization_label
+            )
         ).all()
 
     assert restored_google.client_id == "google-client-id"
-    assert decrypt_secret(restored_google.client_secret_encrypted) == "google-client-secret"
-    assert decrypt_secret(restored_microsoft.client_secret_encrypted) == "microsoft-client-secret"
+    assert (
+        decrypt_secret(restored_google.client_secret_encrypted)
+        == "google-client-secret"
+    )
+    assert (
+        decrypt_secret(restored_microsoft.client_secret_encrypted)
+        == "microsoft-client-secret"
+    )
 
-    assert decrypt_secret(restored_connection.access_token_encrypted) == "google-access-token"
-    assert decrypt_secret(restored_connection.refresh_token_encrypted) == "google-refresh-token"
+    assert (
+        decrypt_secret(restored_connection.access_token_encrypted)
+        == "google-access-token"
+    )
+    assert (
+        decrypt_secret(restored_connection.refresh_token_encrypted)
+        == "google-refresh-token"
+    )
     assert restored_recording.meeting_uid == "meeting-uid-round-trip"
     assert restored_recording.audio_path.endswith("quarterly-planning.opus")
     assert restored_source.user_colour == "emerald"
@@ -648,8 +723,16 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     assert restored_global_speaker.embedding == [0.11, 0.22, 0.33]
     assert restored_global_speaker.is_voiceprint_locked is True
 
-    merged_speaker = next(speaker for speaker in restored_speakers if speaker.diarization_label == "SPEAKER_01")
-    target_speaker = next(speaker for speaker in restored_speakers if speaker.diarization_label == "SPEAKER_00")
+    merged_speaker = next(
+        speaker
+        for speaker in restored_speakers
+        if speaker.diarization_label == "SPEAKER_01"
+    )
+    target_speaker = next(
+        speaker
+        for speaker in restored_speakers
+        if speaker.diarization_label == "SPEAKER_00"
+    )
     assert merged_speaker.merged_into_id == target_speaker.id
 
     await source_context.async_engine.dispose()
@@ -735,15 +818,22 @@ async def test_safe_merge_skips_existing_recordings_matched_by_recording_identit
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
 
     with Session(target_context.sync_engine) as session:
-        restored_recordings = session.exec(select(TestRecording).order_by(TestRecording.id)).all()
+        restored_recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.id)
+        ).all()
         restored_recording_speakers = session.exec(select(TestRecordingSpeaker)).all()
 
     assert len(restored_recordings) == 1
     assert restored_recordings[0].name == "Existing quarterly planning"
-    assert BackupManager._get_recording_identity(restored_recordings[0].audio_path) == "quarterly-planning"
+    assert (
+        BackupManager._get_recording_identity(restored_recordings[0].audio_path)
+        == "quarterly-planning"
+    )
     assert restored_recording_speakers == []
 
     await source_context.async_engine.dispose()
@@ -796,10 +886,14 @@ async def test_safe_merge_skips_existing_recordings_matched_by_meeting_uid_when_
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
 
     with Session(target_context.sync_engine) as session:
-        restored_recordings = session.exec(select(TestRecording).order_by(TestRecording.id)).all()
+        restored_recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.id)
+        ).all()
         restored_recording_speakers = session.exec(select(TestRecordingSpeaker)).all()
 
     assert len(restored_recordings) == 1
@@ -849,15 +943,22 @@ async def test_overwrite_replaces_existing_recordings_matched_by_recording_ident
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=True)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=True
+    )
 
     with Session(target_context.sync_engine) as session:
-        restored_recordings = session.exec(select(TestRecording).order_by(TestRecording.id)).all()
+        restored_recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.id)
+        ).all()
         restored_recording_speakers = session.exec(select(TestRecordingSpeaker)).all()
 
     assert len(restored_recordings) == 1
     assert restored_recordings[0].name == "Quarterly planning"
-    assert BackupManager._get_recording_identity(restored_recordings[0].audio_path) == "quarterly-planning"
+    assert (
+        BackupManager._get_recording_identity(restored_recordings[0].audio_path)
+        == "quarterly-planning"
+    )
     assert len(restored_recording_speakers) == 2
 
     await source_context.async_engine.dispose()
@@ -910,10 +1011,14 @@ async def test_overwrite_replaces_existing_recordings_matched_by_meeting_uid_whe
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=True)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=True
+    )
 
     with Session(target_context.sync_engine) as session:
-        restored_recordings = session.exec(select(TestRecording).order_by(TestRecording.id)).all()
+        restored_recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.id)
+        ).all()
         restored_recording_speakers = session.exec(select(TestRecordingSpeaker)).all()
 
     assert len(restored_recordings) == 1
@@ -934,7 +1039,9 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
 
-    restored_audio = target_context.path_manager.recordings_directory / "imported-meeting.opus"
+    restored_audio = (
+        target_context.path_manager.recordings_directory / "imported-meeting.opus"
+    )
     queued_proxy_ids: list[int] = []
 
     monkeypatch.setattr(
@@ -995,7 +1102,9 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, str(backup_zip), clear_existing=False, overwrite_existing=False)
+    await BackupManager.restore_backup(
+        job_id, str(backup_zip), clear_existing=False, overwrite_existing=False
+    )
 
     with Session(target_context.sync_engine) as session:
         restored_recording = session.exec(select(TestRecording)).one()
@@ -1007,6 +1116,7 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
     assert restored_recording.audio_path.endswith("imported-meeting.opus")
 
     await target_context.async_engine.dispose()
+
 
 @pytest.mark.anyio
 async def test_safe_merge_skips_existing_recording_matched_by_public_id_when_meeting_uid_differs(
@@ -1056,10 +1166,14 @@ async def test_safe_merge_skips_existing_recording_matched_by_public_id_when_mee
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
 
     with Session(target_context.sync_engine) as session:
-        restored_recordings = session.exec(select(TestRecording).order_by(TestRecording.id)).all()
+        restored_recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.id)
+        ).all()
 
     assert len(restored_recordings) == 1
     assert restored_recordings[0].name == "Existing target meeting"
@@ -1105,7 +1219,9 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
 
     # Target holds a recording whose meeting_uid and public_id differ but whose audio file
     # would collide with the runtime path derived from the incoming backup.
-    target_runtime_path = str(target_context.path_manager.recordings_directory / "shared-name.opus")
+    target_runtime_path = str(
+        target_context.path_manager.recordings_directory / "shared-name.opus"
+    )
     await seed_existing_target_recording(
         target_context.async_session_maker,
         meeting_uid="meeting-uid-target",
@@ -1121,7 +1237,9 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
         "error": None,
     }
 
-    await BackupManager.restore_backup(job_id, zip_path, clear_existing=False, overwrite_existing=False)
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
 
     assert BackupManager.restore_jobs[job_id]["status"] == "completed"
 
@@ -1131,7 +1249,9 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
         ).all()
 
     assert len(restored_recordings) == 2
-    inserted = next(row for row in restored_recordings if row.meeting_uid == "meeting-uid-incoming")
+    inserted = next(
+        row for row in restored_recordings if row.meeting_uid == "meeting-uid-incoming"
+    )
     # Suffixed with the incoming meeting_uid to dodge the unique-constraint.
     assert inserted.audio_path != target_runtime_path
     assert "meeting-uid-incoming" in inserted.audio_path

@@ -1,40 +1,13 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from sqlmodel import SQLModel
-
 from alembic import context
-
-# Import your models here so they are registered with SQLModel
-from backend.models.recording import Recording
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.models.tag import Tag, RecordingTag
-from backend.models.transcript import Transcript
-from backend.models.user import User
-from backend.models.revoked_jwt import RevokedJwt
-from backend.models.invitation import Invitation
-from backend.models.chat import ChatMessage
-from backend.models.document import Document
-from backend.models.context_chunk import ContextChunk
-from backend.models.people_tag import PeopleTag, PeopleTagLink
-from backend.models.task import UserTask, UserTaskRecording, UserTaskTag, AsyncTaskOwnership
-from backend.models.calendar import CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
-from backend.models.pipeline import (
-    RecordingAudioChunk,
-    RecordingAsrWindowResult,
-    RecordingAudioWindowManifest,
-    ProcessingRun,
-    TranscriptUtterance,
-    TranscriptUtteranceEvent,
-    RecordingSpeakerAlias,
-    SpeakerCorrectionEvent,
-    DiarizationWindowResult,
-    DiarizationWindowTurn,
-)
+from sqlalchemy import engine_from_config, pool
+from sqlmodel import SQLModel
 
 # Import the database URL
 from backend.core.db import SYNC_DATABASE_URL
+
+# Import your models here so they are registered with SQLModel
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -97,20 +70,22 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             # Check if we need to stamp the DB (tables exist but no alembic_version)
             from sqlalchemy import inspect
+
             inspector = inspect(connection)
             tables = inspector.get_table_names()
-            
+
             # If core tables exist but alembic_version doesn't, stamp it
             if "recordings" in tables and "alembic_version" not in tables:
                 from logging import getLogger
-                getLogger(__name__).info("Database initialised but not versioned. Stamping as head.")
+
+                getLogger(__name__).info(
+                    "Database initialised but not versioned. Stamping as head."
+                )
                 context.stamp(context.config, "head")
 
             context.run_migrations()

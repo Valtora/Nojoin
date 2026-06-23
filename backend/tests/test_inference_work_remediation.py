@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
-from pathlib import Path
+
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -175,8 +175,9 @@ SCHEMA_STATEMENTS = [
         embedding JSON,
         meta JSON
     )
-    """
+    """,
 ]
+
 
 def build_test_user(user_id: int, username: str = "alice") -> User:
     return User(
@@ -189,11 +190,13 @@ def build_test_user(user_id: int, username: str = "alice") -> User:
         settings={"llm_provider": "gemini", "gemini_api_key": "fake-key"},
     )
 
+
 @pytest.fixture
 async def api_app() -> FastAPI:
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
     return app
+
 
 @pytest.fixture
 async def test_session_maker() -> sessionmaker:
@@ -213,6 +216,7 @@ async def test_session_maker() -> sessionmaker:
     finally:
         await engine.dispose()
 
+
 @pytest.fixture
 async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncClient:
     async def override_get_db():
@@ -221,10 +225,13 @@ async def client(api_app: FastAPI, test_session_maker: sessionmaker) -> AsyncCli
 
     api_app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=api_app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
         yield async_client
 
     api_app.dependency_overrides.clear()
+
 
 @pytest.fixture
 def override_current_user(api_app: FastAPI):
@@ -233,7 +240,9 @@ def override_current_user(api_app: FastAPI):
             user_id,
             username,
         )
+
     return _override
+
 
 async def seed_data(test_session_maker: sessionmaker) -> None:
     async with test_session_maker() as session:
@@ -241,7 +250,7 @@ async def seed_data(test_session_maker: sessionmaker) -> None:
         await session.execute(
             text(
                 "INSERT INTO users (id, username, role, is_active, is_superuser, force_password_change, settings) "
-                "VALUES (1, 'alice', 'user', 1, 0, 0, '{\"llm_provider\": \"gemini\", \"gemini_api_key\": \"fake-key\"}')"
+                'VALUES (1, \'alice\', \'user\', 1, 0, 0, \'{"llm_provider": "gemini", "gemini_api_key": "fake-key"}\')'
             )
         )
         # Seed recording
@@ -250,15 +259,15 @@ async def seed_data(test_session_maker: sessionmaker) -> None:
                 "INSERT INTO recordings (id, created_at, updated_at, name, public_id, status, is_archived, is_deleted, user_id, pipeline_generation) "
                 "VALUES (21, :now, :now, 'Test Recording', 'rec-public-21', 'PROCESSED', 0, 0, 1, 'unified')"
             ),
-            {"now": TEST_TIMESTAMP}
+            {"now": TEST_TIMESTAMP},
         )
         # Seed transcript
         await session.execute(
             text(
                 "INSERT INTO transcripts (id, created_at, updated_at, recording_id, segments, notes, notes_status, transcript_status) "
-                "VALUES (31, :now, :now, 21, '[{\"start\": 0.0, \"end\": 5.0, \"speaker\": \"LIVE_00\", \"text\": \"Hello world\"}]', 'Notes', 'idle', 'idle')"
+                'VALUES (31, :now, :now, 21, \'[{"start": 0.0, "end": 5.0, "speaker": "LIVE_00", "text": "Hello world"}]\', \'Notes\', \'idle\', \'idle\')'
             ),
-            {"now": TEST_TIMESTAMP}
+            {"now": TEST_TIMESTAMP},
         )
         # Seed recording speaker
         await session.execute(
@@ -266,7 +275,7 @@ async def seed_data(test_session_maker: sessionmaker) -> None:
                 "INSERT INTO recording_speakers (id, created_at, updated_at, public_id, recording_id, diarization_label, name, speaker_status, speaker_kind) "
                 "VALUES (41, :now, :now, 'speaker-public-41', 21, 'LIVE_00', 'Dana', 'active', 'automated')"
             ),
-            {"now": TEST_TIMESTAMP}
+            {"now": TEST_TIMESTAMP},
         )
         await session.commit()
 
@@ -286,6 +295,7 @@ async def set_recording_media_paths(
         )
         await session.commit()
 
+
 @pytest.mark.anyio
 @patch("backend.api.v1.endpoints.transcripts.get_llm_backend_with_secondary")
 async def test_chat_delegates_embedding_to_celery(
@@ -300,13 +310,16 @@ async def test_chat_delegates_embedding_to_celery(
 
     # Mock the LLM backend ask_question_streaming method
     mock_llm = MagicMock()
+
     def mock_generator(*args, **kwargs):
         yield "Hello from AI"
+
     mock_llm.ask_question_streaming.side_effect = mock_generator
     mock_get_llm_backend_with_secondary.return_value = mock_llm
 
     # Track Celery send_task calls
     celery_tasks = []
+
     class MockTaskResult:
         def get(self, timeout=None):
             return [[0.1] * 384]
@@ -316,6 +329,7 @@ async def test_chat_delegates_embedding_to_celery(
         return MockTaskResult()
 
     from backend.api.v1.endpoints import transcripts as transcripts_module
+
     monkeypatch.setattr(transcripts_module.celery_app, "send_task", fake_send_task)
 
     response = await client.post(
@@ -330,6 +344,7 @@ async def test_chat_delegates_embedding_to_celery(
     assert len(celery_tasks) == 1
     assert celery_tasks[0][0] == "backend.worker.tasks.get_text_embedding_task"
     assert celery_tasks[0][1] == ["What was discussed?"]
+
 
 @pytest.mark.anyio
 async def test_extract_voiceprint_timeout(
@@ -346,9 +361,11 @@ async def test_extract_voiceprint_timeout(
         class TimingOutTaskResult:
             def get(self, timeout=None):
                 raise TimeoutError("Celery task timed out")
+
         return TimingOutTaskResult()
 
     from backend.api.v1.endpoints import speakers as speakers_module
+
     monkeypatch.setattr(speakers_module.celery_app, "send_task", fake_send_task_timeout)
 
     response = await client.post(
@@ -358,6 +375,7 @@ async def test_extract_voiceprint_timeout(
     # Timeout should raise 504 Gateway Timeout
     assert response.status_code == 504
     assert "timed out" in response.json()["detail"]
+
 
 @pytest.mark.anyio
 async def test_extract_all_voiceprints_timeout(
@@ -374,9 +392,11 @@ async def test_extract_all_voiceprints_timeout(
         class TimingOutTaskResult:
             def get(self, timeout=None):
                 raise TimeoutError("Celery task timed out")
+
         return TimingOutTaskResult()
 
     from backend.api.v1.endpoints import speakers as speakers_module
+
     monkeypatch.setattr(speakers_module.celery_app, "send_task", fake_send_task_timeout)
 
     response = await client.post(
@@ -490,6 +510,7 @@ async def test_global_recalibrate_prefers_proxy_for_browser_capture_audio(
     assert response.status_code == 200
     assert captured_args
     assert captured_args[0][0] == str(proxy_path)
+
 
 @patch("backend.processing.text_embedding.get_text_embedding_service")
 def test_worker_text_embedding_task(mock_get_service):

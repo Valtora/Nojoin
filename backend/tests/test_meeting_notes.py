@@ -1,4 +1,7 @@
-from backend.utils.meeting_notes import append_user_notes_section, build_user_notes_prompt_section
+from backend.utils.meeting_notes import (
+    append_user_notes_section,
+    build_user_notes_prompt_section,
+)
 
 
 def test_build_user_notes_prompt_section_handles_empty_notes() -> None:

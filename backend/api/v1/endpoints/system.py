@@ -1,44 +1,52 @@
-from typing import Any, Optional
-import httpx
-import docker
 import asyncio
 import logging
+from typing import Any, Optional
+
+from celery.result import AsyncResult
 from docker.client import DockerClient
 from docker.errors import DockerException, NotFound
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import JSONResponse
-from fastapi.responses import StreamingResponse
-from sqlmodel import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field, field_validator
-from celery.result import AsyncResult
-
-from backend.api.deps import (
-    get_db, 
-    get_current_user, 
-    get_current_admin_user, 
-    get_current_active_superuser,
-    get_current_active_superuser_ws
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
 )
-from backend.core.security import MIN_PASSWORD_LENGTH, hash_user_password, validate_password_policy
-from backend.models.user import User
-from backend.utils.config_manager import config_manager, get_trusted_web_origin
-from backend.utils.ollama_url_policy import OllamaURLValidationError, validate_ollama_api_url
-from backend.preload_models import check_model_status
-from backend.seed_demo import seed_demo_data
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+import docker
+from backend.api.deps import (
+    get_current_active_superuser,
+    get_current_active_superuser_ws,
+    get_current_admin_user,
+    get_current_user,
+    get_db,
+)
 from backend.api.services.health_service import (
     get_admin_health_status,
     get_system_health_status,
 )
+from backend.api.v1.endpoints.setup import (
+    FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
+    is_system_initialized,
+    require_first_run_password,
+)
+from backend.core.security import (
+    MIN_PASSWORD_LENGTH,
+    hash_user_password,
+    validate_password_policy,
+)
+from backend.models.user import User
+from backend.preload_models import check_model_status
+from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
+from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.utils.download_progress import (
     get_download_progress,
     is_download_in_progress,
-)
-from backend.api.v1.endpoints.setup import (
-    FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
-    require_first_run_password,
-    is_system_initialized,
 )
 
 router = APIRouter()
@@ -60,9 +68,7 @@ def resolve_tls_fingerprint() -> str | None:
 
     def format_fingerprint(certificate_bytes: bytes) -> str:
         fingerprint = hashlib.sha256(certificate_bytes).hexdigest().upper()
-        return ":".join(
-            fingerprint[i:i + 2] for i in range(0, len(fingerprint), 2)
-        )
+        return ":".join(fingerprint[i : i + 2] for i in range(0, len(fingerprint), 2))
 
     trusted_origin = get_trusted_web_origin()
     parsed_origin = urlparse(trusted_origin)
@@ -85,10 +91,14 @@ def resolve_tls_fingerprint() -> str | None:
                     cert_der = ssock.getpeercert(binary_form=True)
                     if cert_der:
                         formatted_fp = format_fingerprint(cert_der)
-                        logger.info("Retrieved TLS fingerprint from trusted HTTPS origin.")
+                        logger.info(
+                            "Retrieved TLS fingerprint from trusted HTTPS origin."
+                        )
                         return formatted_fp
         except Exception:  # noqa: BLE001
-            logger.warning("Dynamic TLS certificate retrieval failed; falling back to local certificate.")
+            logger.warning(
+                "Dynamic TLS certificate retrieval failed; falling back to local certificate."
+            )
 
     cert_paths = [
         "/etc/nginx/certs/cert.crt",
@@ -116,8 +126,11 @@ def resolve_tls_fingerprint() -> str | None:
         logger.info("Retrieved TLS fingerprint from local certificate fallback.")
         return formatted_fp
     except Exception:  # noqa: BLE001
-        logger.error("Unable to resolve TLS fingerprint from local certificate fallback.")
+        logger.error(
+            "Unable to resolve TLS fingerprint from local certificate fallback."
+        )
         return None
+
 
 # Initialize Docker client
 client: DockerClient | None = None
@@ -151,8 +164,7 @@ ALLOWED_CONTAINERS = {
 
 @router.get("/logs/download")
 def download_logs(
-    container: str,
-    current_user: User = Depends(get_current_active_superuser)
+    container: str, current_user: User = Depends(get_current_active_superuser)
 ):
     """
     Download logs for a specific container.
@@ -164,35 +176,37 @@ def download_logs(
     docker_client = client
     if docker_client is None:
         raise HTTPException(status_code=503, detail="Docker client unavailable")
-    
+
     try:
         container_obj = docker_client.containers.get(container)
         logs = container_obj.logs(timestamps=True).decode("utf-8")
-        
+
         def iter_logs():
             yield logs
-            
+
         return StreamingResponse(
             iter_logs(),
             media_type="text/plain",
-            headers={"Content-Disposition": f"attachment; filename={container}_logs.txt"}
+            headers={
+                "Content-Disposition": f"attachment; filename={container}_logs.txt"
+            },
         )
     except NotFound:
         raise HTTPException(status_code=404, detail=f"Container {container} not found")
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error fetching logs for {container}: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.websocket("/logs/live")
 async def websocket_logs(
-    websocket: WebSocket, 
+    websocket: WebSocket,
     container: str,
-    user: User = Depends(get_current_active_superuser_ws) 
+    user: User = Depends(get_current_active_superuser_ws),
 ):
     """
     WebSocket endpoint for streaming logs.
-    Uses threaded workers to read Docker logs (which is blocking) 
+    Uses threaded workers to read Docker logs (which is blocking)
     and pushes to an asyncio queue to prevent blocking the main event loop.
     Supports streaming from a single container or "all" containers.
     """
@@ -201,10 +215,14 @@ async def websocket_logs(
         return
 
     await websocket.accept()
-    
+
     docker_client = client
     if docker_client is None:
-        error_msg = f"Error: Docker client unavailable. {client_init_error}" if client_init_error else "Error: Docker client unavailable"
+        error_msg = (
+            f"Error: Docker client unavailable. {client_init_error}"
+            if client_init_error
+            else "Error: Docker client unavailable"
+        )
         await websocket.send_text(error_msg)
         await websocket.close()
         return
@@ -213,7 +231,9 @@ async def websocket_logs(
     loop = asyncio.get_running_loop()
     active = True
 
-    def log_reader(container_name: str, q: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+    def log_reader(
+        container_name: str, q: asyncio.Queue, loop: asyncio.AbstractEventLoop
+    ):
         """
         Thread target: reads logs from a container and puts them into the queue.
         """
@@ -221,7 +241,7 @@ async def websocket_logs(
             c = docker_client.containers.get(container_name)
             # logs(stream=True) blocks until new log arrives
             for line in c.logs(stream=True, tail=2000, follow=True, timestamps=True):
-                if not active: 
+                if not active:
                     break
                 text = line.decode("utf-8")
                 # Format: [container-name] log info...
@@ -240,8 +260,12 @@ async def websocket_logs(
         try:
             # Filter by name prefix or label if possible. For now, strict list.
             containers_list = [
-                "nojoin-api", "nojoin-worker", "nojoin-frontend", 
-                "nojoin-nginx", "nojoin-redis", "nojoin-db"
+                "nojoin-api",
+                "nojoin-worker",
+                "nojoin-frontend",
+                "nojoin-nginx",
+                "nojoin-redis",
+                "nojoin-db",
             ]
             for c_name in containers_list:
                 targets.append(c_name)
@@ -254,6 +278,7 @@ async def websocket_logs(
 
     # Start reader threads
     import threading
+
     threads = []
     for target in targets:
         t = threading.Thread(target=log_reader, args=(target, queue, loop), daemon=True)
@@ -312,6 +337,7 @@ async def get_admin_health(
     """
     return await get_admin_health_status(db)
 
+
 @router.get("/status")
 async def get_system_status(
     current_user: User = Depends(get_current_user),
@@ -322,28 +348,29 @@ async def get_system_status(
     """
     return {"initialized": await is_system_initialized(db)}
 
+
 @router.get("/check-ffmpeg")
-async def check_ffmpeg(
-    current_user: User = Depends(get_current_admin_user)
-) -> Any:
+async def check_ffmpeg(current_user: User = Depends(get_current_admin_user)) -> Any:
     """
     Check if ffmpeg is available in the system PATH.
     """
     import shutil
+
     from backend.utils.audio import ensure_ffmpeg_in_path
-    
+
     # Try to ensure it's in path first
     ensure_ffmpeg_in_path()
-    
+
     ffmpeg_path = shutil.which("ffmpeg")
     ffprobe_path = shutil.which("ffprobe")
-    
+
     return {
         "ffmpeg": ffmpeg_path is not None,
         "ffprobe": ffprobe_path is not None,
         "ffmpeg_path": ffmpeg_path,
-        "ffprobe_path": ffprobe_path
+        "ffprobe_path": ffprobe_path,
     }
+
 
 @router.post("/setup")
 async def setup_system(
@@ -363,12 +390,10 @@ async def setup_system(
         )
 
     require_first_run_password(request)
-    
+
     # Construct settings dict
-    settings = {
-        "whisper_model_size": setup_in.whisper_model_size
-    }
-    
+    settings = {"whisper_model_size": setup_in.whisper_model_size}
+
     llm_provider = config_manager.get("llm_provider", "gemini")
     if setup_in.selected_model:
         if llm_provider == "ollama":
@@ -380,7 +405,7 @@ async def setup_system(
         username=setup_in.username,
         hashed_password=hash_user_password(setup_in.password),
         is_superuser=True,
-        force_password_change=False, # First user sets their own password, so no need to force change
+        force_password_change=False,  # First user sets their own password, so no need to force change
         role="owner",
         settings=settings,
     )
@@ -390,7 +415,9 @@ async def setup_system(
 
     # Seed demo data for the new admin user
     if user.id is None:
-        logger.error("Failed to seed demo data during setup: created user has no persisted ID.")
+        logger.error(
+            "Failed to seed demo data during setup: created user has no persisted ID."
+        )
     else:
         try:
             await seed_demo_data(user.id)
@@ -405,7 +432,9 @@ async def setup_system(
             include_core=True,
         )
     except Exception as e:  # noqa: BLE001
-        logger.error("Failed to queue first-run model preparation: %s", e, exc_info=True)
+        logger.error(
+            "Failed to queue first-run model preparation: %s", e, exc_info=True
+        )
 
     return {"initialized": True, "model_preparation_task_id": model_preparation_task_id}
 
@@ -431,6 +460,7 @@ async def get_download_progress_endpoint(
     progress["in_progress"] = is_download_in_progress()
     return progress
 
+
 @router.get("/tasks/{task_id}")
 async def get_task_status(
     task_id: str,
@@ -441,45 +471,47 @@ async def get_task_status(
     Get the status of a background task.
     """
     from backend.models.task import check_task_ownership
+
     if not await check_task_ownership(db, task_id, current_user):
-         raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(status_code=404, detail="Task not found")
 
     task_result = AsyncResult(task_id)
-    
+
     # Handle potential serialization errors if result contains exceptions
     result_data = None
-    if task_result.status == 'FAILURE':
+    if task_result.status == "FAILURE":
         result_data = "Task failed. Check server logs for details."
-    elif task_result.status == 'SUCCESS':
+    elif task_result.status == "SUCCESS":
         result_data = task_result.result
     else:
         # For PENDING, STARTED, RETRY etc.
         # If it's an exception object, convert to string
         if isinstance(task_result.result, Exception):
-             result_data = str(task_result.result)
+            result_data = str(task_result.result)
         else:
-             result_data = task_result.result
+            result_data = task_result.result
 
     response = {
         "task_id": task_id,
         "status": task_result.status,
         "result": result_data,
     }
-    
+
     # If the task is in a custom state (like PROCESSING), result might be the meta dict
     # Celery stores meta info in .info for custom states
-    if task_result.status == 'PROCESSING':
-         # Ensure we're accessing a dict
-         info = task_result.info
-         if isinstance(info, dict):
-            response["progress"] = info.get('progress', 0)
-            response["message"] = info.get('message', '')
+    if task_result.status == "PROCESSING":
+        # Ensure we're accessing a dict
+        info = task_result.info
+        if isinstance(info, dict):
+            response["progress"] = info.get("progress", 0)
+            response["message"] = info.get("message", "")
             # Pass through other meta fields like speed/eta if present
-            response["result"] = info 
-         else:
+            response["result"] = info
+        else:
             response["message"] = str(info)
-    
+
     return response
+
 
 @router.get("/models/status")
 async def get_models_status(
@@ -497,31 +529,35 @@ async def get_models_status(
             status[model]["checked_paths"] = []
     return status
 
+
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(
     model_name: str,
     variant: Optional[str] = None,
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
-
     """
     Delete a specific model from the cache.
     """
     from backend.preload_models import delete_model
-    
+
     if model_name not in ["whisper", "pyannote", "embedding", "parakeet", "canary"]:
         raise HTTPException(status_code=400, detail="Invalid model name")
-        
+
     try:
         success = delete_model(model_name, whisper_model_size=variant)
         if success:
             return {"message": f"Model {model_name} deleted successfully"}
         else:
-            raise HTTPException(status_code=404, detail=f"Model {model_name} not found or could not be deleted")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {model_name} not found or could not be deleted",
+            )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/seed-demo")
 async def seed_demo(
@@ -534,6 +570,7 @@ async def seed_demo(
         await seed_demo_data(user_id=current_user.id, force=True)
     return {"message": "Demo data seeding initiated"}
 
+
 @router.get("/demo-recording")
 async def get_demo_recording(
     current_user: User = Depends(get_current_user),
@@ -544,18 +581,19 @@ async def get_demo_recording(
     Returns the recording ID if it exists, otherwise returns None.
     """
     from sqlmodel import select
+
     from backend.models.recording import Recording
-    
+
     query = select(Recording).where(
-        Recording.name == "Welcome to Nojoin",
-        Recording.user_id == current_user.id
+        Recording.name == "Welcome to Nojoin", Recording.user_id == current_user.id
     )
     result = await db.execute(query)
     recording = result.scalar_one_or_none()
-    
+
     if recording:
         return {"id": recording.public_id}
     return {"id": None}
+
 
 @router.get("/companion-releases")
 async def get_companion_releases(
@@ -563,10 +601,9 @@ async def get_companion_releases(
 ) -> Any:
     return JSONResponse(status_code=410, content=RETIRED_COMPANION_RESPONSE)
 
+
 @router.get("/fingerprint")
-async def get_tls_fingerprint(
-    current_user: User = Depends(get_current_user)
-) -> Any:
+async def get_tls_fingerprint(current_user: User = Depends(get_current_user)) -> Any:
     """
     Get the SHA-256 fingerprint of the TLS certificate.
     Attempts to fetch the certificate dynamically from the public-facing hostname.

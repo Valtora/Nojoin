@@ -6,7 +6,6 @@ from pathlib import Path
 
 from backend.utils.path_manager import path_manager
 
-
 PYANNOTE_MODEL_ID_TO_DIRNAME = {
     "pyannote/speaker-diarization-community-1": "speaker-diarization-community-1",
     "pyannote/wespeaker-voxceleb-resnet34-LM": "wespeaker-voxceleb-resnet34-LM",
@@ -61,7 +60,9 @@ def _required_files(model_id: str) -> tuple[str, ...]:
 
 
 def _looks_complete_model_dir(path: Path, model_id: str) -> bool:
-    return path.is_dir() and all((path / rel_path).exists() for rel_path in _required_files(model_id))
+    return path.is_dir() and all(
+        (path / rel_path).exists() for rel_path in _required_files(model_id)
+    )
 
 
 def get_bundled_pyannote_model_dir(model_id: str) -> Path | None:
@@ -110,7 +111,9 @@ def _resolve_snapshot_dir(cache_repo_dir: Path) -> Path | None:
                 return candidate
 
     if snapshots_dir.is_dir():
-        snapshot_dirs = sorted((path for path in snapshots_dir.iterdir() if path.is_dir()), reverse=True)
+        snapshot_dirs = sorted(
+            (path for path in snapshots_dir.iterdir() if path.is_dir()), reverse=True
+        )
         if snapshot_dirs:
             return snapshot_dirs[0]
 

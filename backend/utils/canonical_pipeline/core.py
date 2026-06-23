@@ -1,15 +1,17 @@
 from .constants import *
-from .speaker import *
 from .diarization import *
 from .segmentation import *
+from .speaker import *
 from .startup import *
 
-def recording_ready_for_canonical_backfill(status: RecordingStatus | str | None) -> bool:
+
+def recording_ready_for_canonical_backfill(
+    status: RecordingStatus | str | None,
+) -> bool:
     if status is None:
         return False
     status_value = status.value if isinstance(status, RecordingStatus) else str(status)
     return status_value not in IN_FLIGHT_RECORDING_STATUSES
-
 
 
 def list_active_utterances(session, recording_id: int) -> list[TranscriptUtterance]:
@@ -22,8 +24,9 @@ def list_active_utterances(session, recording_id: int) -> list[TranscriptUtteran
     return list(session.execute(statement).scalars().all())
 
 
-
-def list_utterances_for_processing_run(session, processing_run_id: int) -> list[TranscriptUtterance]:
+def list_utterances_for_processing_run(
+    session, processing_run_id: int
+) -> list[TranscriptUtterance]:
     statement = (
         select(TranscriptUtterance)
         .where(TranscriptUtterance.processing_run_id == processing_run_id)
@@ -33,14 +36,12 @@ def list_utterances_for_processing_run(session, processing_run_id: int) -> list[
     return list(session.execute(statement).scalars().all())
 
 
-
 def get_canonical_transcript_revision(session, recording_id: int) -> int:
     statement = select(func.max(TranscriptUtteranceEvent.id)).where(
         TranscriptUtteranceEvent.recording_id == recording_id
     )
     revision = session.execute(statement).scalar_one_or_none()
     return int(revision or 0)
-
 
 
 def serialize_canonical_delta(
@@ -76,7 +77,10 @@ def serialize_canonical_delta(
         if not public_id:
             continue
         state_value = state.value if hasattr(state, "value") else str(state)
-        if event_type in {"supersede", "delete"} or state_value in TOMBSTONE_UTTERANCE_STATES:
+        if (
+            event_type in {"supersede", "delete"}
+            or state_value in TOMBSTONE_UTTERANCE_STATES
+        ):
             changed_public_ids.discard(public_id)
             if public_id not in tombstone_ids:
                 tombstone_ids.add(public_id)
@@ -94,7 +98,6 @@ def serialize_canonical_delta(
         ),
         tombstones,
     )
-
 
 
 def ensure_processing_run(
@@ -143,7 +146,6 @@ def ensure_processing_run(
     return processing_run
 
 
-
 def _processing_run_idempotency_key(
     *,
     run_kind: ProcessingRunKind,
@@ -152,7 +154,11 @@ def _processing_run_idempotency_key(
     state_override: TranscriptUtteranceState | None,
     reused_live_asr: bool,
 ) -> str:
-    state_value = state_override.value if hasattr(state_override, "value") else str(state_override or "")
+    state_value = (
+        state_override.value
+        if hasattr(state_override, "value")
+        else str(state_override or "")
+    )
     signature = {
         "run_kind": run_kind.value,
         "source": source,
@@ -170,10 +176,11 @@ def _processing_run_idempotency_key(
         ],
     }
     digest = hashlib.sha256(
-        json.dumps(signature, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        json.dumps(
+            signature, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
     ).hexdigest()
     return f"{run_kind.value}:{digest}"
-
 
 
 def _reconcile_completed_windows_from_effective_point(
@@ -199,8 +206,12 @@ def _reconcile_completed_windows_from_effective_point(
             .where(DiarizationWindowResult.recording_id == recording_id)
             .where(DiarizationWindowResult.status == "completed")
             .where(DiarizationWindowResult.window_end_ms > int(effective_from_ms))
-            .order_by(DiarizationWindowResult.window_start_ms, DiarizationWindowResult.id)
-        ).scalars().all()
+            .order_by(
+                DiarizationWindowResult.window_start_ms, DiarizationWindowResult.id
+            )
+        )
+        .scalars()
+        .all()
     )
     if not completed_window_rows:
         return {
@@ -229,13 +240,16 @@ def _reconcile_completed_windows_from_effective_point(
             replay_policy=replay_policy,
         )
         summary["window_count"] += 1
-        summary["matched_turn_count"] += int(replay_summary.get("matched_turn_count", 0))
-        summary["updated_utterance_count"] += int(replay_summary.get("updated_utterance_count", 0))
+        summary["matched_turn_count"] += int(
+            replay_summary.get("matched_turn_count", 0)
+        )
+        summary["updated_utterance_count"] += int(
+            replay_summary.get("updated_utterance_count", 0)
+        )
         summary["preserved_manual_lock_count"] += int(
             replay_summary.get("preserved_manual_lock_count", 0)
         )
     return summary
-
 
 
 def replace_utterances_from_segments(
@@ -278,8 +292,12 @@ def replace_utterances_from_segments(
             run_kind=run_kind,
             trigger_source=trigger_source,
             reused_live_asr=reused_live_asr,
-            span_start_ms=_segment_to_ms(min((segment.get("start", 0.0) for segment in segments), default=0.0)),
-            span_end_ms=_segment_to_ms(max((segment.get("end", 0.0) for segment in segments), default=0.0)),
+            span_start_ms=_segment_to_ms(
+                min((segment.get("start", 0.0) for segment in segments), default=0.0)
+            ),
+            span_end_ms=_segment_to_ms(
+                max((segment.get("end", 0.0) for segment in segments), default=0.0)
+            ),
             idempotency_key=run_idempotency_key,
         )
 
@@ -293,7 +311,11 @@ def replace_utterances_from_segments(
     previous_utterances = list_active_utterances(session, recording_id) if force else []
     if force:
         for utterance in previous_utterances:
-            old_state = utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)
+            old_state = (
+                utterance.state.value
+                if hasattr(utterance.state, "value")
+                else str(utterance.state)
+            )
             utterance.state = TranscriptUtteranceState.SUPERSEDED
             session.add(utterance)
             session.flush()
@@ -337,7 +359,11 @@ def replace_utterances_from_segments(
             start_ms=_segment_to_ms(segment.get("start", 0.0)),
             end_ms=_segment_to_ms(segment.get("end", 0.0)),
             text=str(segment.get("text", "") or ""),
-            speaker_label=(recording_speaker.diarization_label if recording_speaker else str(segment.get("speaker") or UNKNOWN_SPEAKER)),
+            speaker_label=(
+                recording_speaker.diarization_label
+                if recording_speaker
+                else str(segment.get("speaker") or UNKNOWN_SPEAKER)
+            ),
             recording_speaker_id=recording_speaker.id if recording_speaker else None,
             state=utterance_state,
             source_kind=str(segment.get("segment_source") or source),
@@ -393,12 +419,16 @@ def replace_utterances_from_segments(
                 utterance,
                 source_segment=segment,
                 recording_speaker=recording_speaker,
-                overlap_labels=_projection_overlap_labels(index, segments, overlap_groups, recording_speakers),
+                overlap_labels=_projection_overlap_labels(
+                    index, segments, overlap_groups, recording_speakers
+                ),
             )
         )
 
     transcript.segments = projection_segments
-    transcript.text = " ".join(segment.get("text", "") for segment in projection_segments).strip()
+    transcript.text = " ".join(
+        segment.get("text", "") for segment in projection_segments
+    ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
     refresh_recording_speaker_usage_state(session, recording_id)
@@ -412,7 +442,6 @@ def replace_utterances_from_segments(
     )
 
     return utterances
-
 
 
 def finalize_utterances_from_segments(
@@ -450,8 +479,12 @@ def finalize_utterances_from_segments(
         run_kind=ProcessingRunKind.FINALIZE,
         trigger_source=trigger_source,
         reused_live_asr=reused_live_asr,
-        span_start_ms=_segment_to_ms(min((segment.get("start", 0.0) for segment in segments), default=0.0)),
-        span_end_ms=_segment_to_ms(max((segment.get("end", 0.0) for segment in segments), default=0.0)),
+        span_start_ms=_segment_to_ms(
+            min((segment.get("start", 0.0) for segment in segments), default=0.0)
+        ),
+        span_end_ms=_segment_to_ms(
+            max((segment.get("end", 0.0) for segment in segments), default=0.0)
+        ),
         idempotency_key=run_idempotency_key,
     )
 
@@ -476,7 +509,9 @@ def finalize_utterances_from_segments(
             select(TranscriptUtterance.public_id).where(
                 TranscriptUtterance.recording_id == recording_id
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
         if str(public_id or "").strip()
     }
 
@@ -519,7 +554,10 @@ def finalize_utterances_from_segments(
         for source_utterance in active_utterances:
             if source_utterance.id in matched_utterance_ids:
                 continue
-            if not source_utterance.manual_speaker_locked or source_utterance.recording_speaker_id is None:
+            if (
+                not source_utterance.manual_speaker_locked
+                or source_utterance.recording_speaker_id is None
+            ):
                 continue
             overlap_ms = _range_overlap_ms(
                 start_ms,
@@ -531,7 +569,9 @@ def finalize_utterances_from_segments(
                 continue
             speaker_id = int(source_utterance.recording_speaker_id)
             overlap_by_speaker_id[speaker_id] += int(overlap_ms)
-            source_public_ids_by_speaker_id[speaker_id].append(source_utterance.public_id)
+            source_public_ids_by_speaker_id[speaker_id].append(
+                source_utterance.public_id
+            )
             if source_utterance.speaker_confidence is not None:
                 confidence_by_speaker_id[speaker_id] = max(
                     confidence_by_speaker_id[speaker_id],
@@ -579,7 +619,9 @@ def finalize_utterances_from_segments(
             )
 
         resolved_speaker = None
-        if manual_speaker_inheritance is None and (matched_utterance is None or not matched_utterance.manual_speaker_locked):
+        if manual_speaker_inheritance is None and (
+            matched_utterance is None or not matched_utterance.manual_speaker_locked
+        ):
             resolved_speaker = _resolve_recording_speaker_for_value(
                 session,
                 recording_id=recording_id,
@@ -600,20 +642,32 @@ def finalize_utterances_from_segments(
                 "end_ms": matched_utterance.end_ms,
                 "text": matched_utterance.text,
                 "speaker": matched_utterance.speaker_label,
-                "state": matched_utterance.state.value if hasattr(matched_utterance.state, "value") else str(matched_utterance.state),
+                "state": matched_utterance.state.value
+                if hasattr(matched_utterance.state, "value")
+                else str(matched_utterance.state),
                 "revision": matched_utterance.revision,
             }
             old_text_locked = bool(matched_utterance.manual_text_locked)
             old_speaker_locked = bool(matched_utterance.manual_speaker_locked)
 
             effective_segment = dict(segment)
-            effective_segment["segment_source"] = matched_utterance.source_kind or str(segment.get("segment_source") or "finalize")
-            effective_segment["text"] = matched_utterance.text if old_text_locked else str(segment.get("text", "") or "")
-            effective_segment["text_manually_edited"] = old_text_locked or bool(segment.get("text_manually_edited") is True)
+            effective_segment["segment_source"] = matched_utterance.source_kind or str(
+                segment.get("segment_source") or "finalize"
+            )
+            effective_segment["text"] = (
+                matched_utterance.text
+                if old_text_locked
+                else str(segment.get("text", "") or "")
+            )
+            effective_segment["text_manually_edited"] = old_text_locked or bool(
+                segment.get("text_manually_edited") is True
+            )
 
             if old_speaker_locked:
                 current_speaker = (
-                    session.get(RecordingSpeaker, matched_utterance.recording_speaker_id)
+                    session.get(
+                        RecordingSpeaker, matched_utterance.recording_speaker_id
+                    )
                     if matched_utterance.recording_speaker_id is not None
                     else None
                 )
@@ -630,7 +684,9 @@ def finalize_utterances_from_segments(
                     if recording_speaker is not None
                     else str(segment.get("speaker") or UNKNOWN_SPEAKER)
                 )
-            effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(segment.get("speaker_manually_edited") is True)
+            effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(
+                segment.get("speaker_manually_edited") is True
+            )
 
             effective_text = str(effective_segment.get("text", "") or "")
             effective_speaker_label = (
@@ -638,25 +694,39 @@ def finalize_utterances_from_segments(
                 if recording_speaker is not None
                 else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
             )
-            effective_recording_speaker_id = recording_speaker.id if recording_speaker is not None else None
-            effective_manual_text_locked = bool(effective_segment.get("text_manually_edited") is True)
-            effective_manual_speaker_locked = bool(effective_segment.get("speaker_manually_edited") is True)
-            effective_text_confidence = _to_optional_float(segment.get("text_confidence"))
+            effective_recording_speaker_id = (
+                recording_speaker.id if recording_speaker is not None else None
+            )
+            effective_manual_text_locked = bool(
+                effective_segment.get("text_manually_edited") is True
+            )
+            effective_manual_speaker_locked = bool(
+                effective_segment.get("speaker_manually_edited") is True
+            )
+            effective_text_confidence = _to_optional_float(
+                segment.get("text_confidence")
+            )
             if effective_text_confidence is None:
                 effective_text_confidence = matched_utterance.text_confidence
-            effective_speaker_confidence = _to_optional_float(segment.get("speaker_confidence"))
+            effective_speaker_confidence = _to_optional_float(
+                segment.get("speaker_confidence")
+            )
             if effective_speaker_confidence is None:
                 effective_speaker_confidence = matched_utterance.speaker_confidence
-            effective_speaker_assignment_source = _resolve_segment_speaker_assignment_source(
-                effective_segment,
-                source="finalize",
-                state=TranscriptUtteranceState.FINALIZED,
-                manual_speaker_locked=effective_manual_speaker_locked,
+            effective_speaker_assignment_source = (
+                _resolve_segment_speaker_assignment_source(
+                    effective_segment,
+                    source="finalize",
+                    state=TranscriptUtteranceState.FINALIZED,
+                    manual_speaker_locked=effective_manual_speaker_locked,
+                )
             )
-            effective_speaker_assignment_authority = _resolve_segment_speaker_assignment_authority(
-                effective_segment,
-                state=TranscriptUtteranceState.FINALIZED,
-                manual_speaker_locked=effective_manual_speaker_locked,
+            effective_speaker_assignment_authority = (
+                _resolve_segment_speaker_assignment_authority(
+                    effective_segment,
+                    state=TranscriptUtteranceState.FINALIZED,
+                    manual_speaker_locked=effective_manual_speaker_locked,
+                )
             )
 
             changed = any(
@@ -664,17 +734,25 @@ def finalize_utterances_from_segments(
                     matched_utterance.sort_key != _sort_key_for_index(index),
                     matched_utterance.text != effective_text,
                     matched_utterance.speaker_label != effective_speaker_label,
-                    matched_utterance.recording_speaker_id != effective_recording_speaker_id,
-                    bool(matched_utterance.manual_text_locked) != effective_manual_text_locked,
-                    bool(matched_utterance.manual_speaker_locked) != effective_manual_speaker_locked,
+                    matched_utterance.recording_speaker_id
+                    != effective_recording_speaker_id,
+                    bool(matched_utterance.manual_text_locked)
+                    != effective_manual_text_locked,
+                    bool(matched_utterance.manual_speaker_locked)
+                    != effective_manual_speaker_locked,
                     matched_utterance.state != TranscriptUtteranceState.FINALIZED,
                     matched_utterance.processing_run_id != processing_run.id,
-                    matched_utterance.overlap_group_id != overlap_groups.get(index, {}).get("group_id"),
-                    int(matched_utterance.overlap_rank or 0) != overlap_groups.get(index, {}).get("rank", 0),
+                    matched_utterance.overlap_group_id
+                    != overlap_groups.get(index, {}).get("group_id"),
+                    int(matched_utterance.overlap_rank or 0)
+                    != overlap_groups.get(index, {}).get("rank", 0),
                     matched_utterance.text_confidence != effective_text_confidence,
-                    matched_utterance.speaker_confidence != effective_speaker_confidence,
-                    _utterance_speaker_assignment_source(matched_utterance) != effective_speaker_assignment_source,
-                    _utterance_speaker_assignment_authority(matched_utterance) != effective_speaker_assignment_authority,
+                    matched_utterance.speaker_confidence
+                    != effective_speaker_confidence,
+                    _utterance_speaker_assignment_source(matched_utterance)
+                    != effective_speaker_assignment_source,
+                    _utterance_speaker_assignment_authority(matched_utterance)
+                    != effective_speaker_assignment_authority,
                 )
             )
 
@@ -688,10 +766,18 @@ def finalize_utterances_from_segments(
             matched_utterance.speaker_confidence = effective_speaker_confidence
             matched_utterance.state = TranscriptUtteranceState.FINALIZED
             matched_utterance.processing_run_id = processing_run.id
-            matched_utterance.overlap_group_id = overlap_groups.get(index, {}).get("group_id")
-            matched_utterance.overlap_rank = overlap_groups.get(index, {}).get("rank", 0)
-            matched_utterance.speaker_assignment_source = effective_speaker_assignment_source
-            matched_utterance.speaker_assignment_authority = effective_speaker_assignment_authority
+            matched_utterance.overlap_group_id = overlap_groups.get(index, {}).get(
+                "group_id"
+            )
+            matched_utterance.overlap_rank = overlap_groups.get(index, {}).get(
+                "rank", 0
+            )
+            matched_utterance.speaker_assignment_source = (
+                effective_speaker_assignment_source
+            )
+            matched_utterance.speaker_assignment_authority = (
+                effective_speaker_assignment_authority
+            )
             if changed:
                 matched_utterance.revision += 1
                 session.add(matched_utterance)
@@ -727,7 +813,9 @@ def finalize_utterances_from_segments(
                     matched_utterance,
                     source_segment=effective_segment,
                     recording_speaker=recording_speaker,
-                    overlap_labels=_projection_overlap_labels(index, segments, overlap_groups, recording_speakers),
+                    overlap_labels=_projection_overlap_labels(
+                        index, segments, overlap_groups, recording_speakers
+                    ),
                 )
             )
             continue
@@ -739,11 +827,15 @@ def finalize_utterances_from_segments(
             effective_segment["recording_speaker_id"] = int(recording_speaker.id)
             effective_segment["speaker_manually_edited"] = True
             if effective_segment.get("speaker_confidence") is None:
-                effective_segment["speaker_confidence"] = manual_speaker_inheritance.get("speaker_confidence")
+                effective_segment["speaker_confidence"] = (
+                    manual_speaker_inheritance.get("speaker_confidence")
+                )
             confidence_payload = dict(effective_segment.get("confidence_payload") or {})
             confidence_payload["inherited_manual_speaker"] = {
                 "recording_speaker_id": int(recording_speaker.id),
-                "source_public_ids": list(manual_speaker_inheritance["source_public_ids"]),
+                "source_public_ids": list(
+                    manual_speaker_inheritance["source_public_ids"]
+                ),
                 "overlap_ms": int(manual_speaker_inheritance["overlap_ms"]),
             }
             effective_segment["confidence_payload"] = confidence_payload
@@ -758,7 +850,11 @@ def finalize_utterances_from_segments(
             start_ms=start_ms,
             end_ms=end_ms,
             text=str(effective_segment.get("text", "") or ""),
-            speaker_label=(recording_speaker.diarization_label if recording_speaker else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)),
+            speaker_label=(
+                recording_speaker.diarization_label
+                if recording_speaker
+                else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
+            ),
             recording_speaker_id=recording_speaker.id if recording_speaker else None,
             state=TranscriptUtteranceState.FINALIZED,
             source_kind=str(effective_segment.get("segment_source") or "finalize"),
@@ -766,22 +862,38 @@ def finalize_utterances_from_segments(
             revision=int(effective_segment.get("revision") or 1),
             overlap_group_id=overlap_groups.get(index, {}).get("group_id"),
             overlap_rank=overlap_groups.get(index, {}).get("rank", 0),
-            manual_text_locked=bool(effective_segment.get("text_manually_edited") is True),
-            manual_speaker_locked=bool(effective_segment.get("speaker_manually_edited") is True),
+            manual_text_locked=bool(
+                effective_segment.get("text_manually_edited") is True
+            ),
+            manual_speaker_locked=bool(
+                effective_segment.get("speaker_manually_edited") is True
+            ),
             speaker_assignment_source=_resolve_segment_speaker_assignment_source(
                 effective_segment,
                 source="finalize",
                 state=TranscriptUtteranceState.FINALIZED,
-                manual_speaker_locked=bool(effective_segment.get("speaker_manually_edited") is True),
+                manual_speaker_locked=bool(
+                    effective_segment.get("speaker_manually_edited") is True
+                ),
             ),
             speaker_assignment_authority=_resolve_segment_speaker_assignment_authority(
                 effective_segment,
                 state=TranscriptUtteranceState.FINALIZED,
-                manual_speaker_locked=bool(effective_segment.get("speaker_manually_edited") is True),
+                manual_speaker_locked=bool(
+                    effective_segment.get("speaker_manually_edited") is True
+                ),
             ),
-            text_confidence=_to_optional_float(effective_segment.get("text_confidence")),
-            speaker_confidence=_to_optional_float(effective_segment.get("speaker_confidence")),
-            confidence_payload=(dict(effective_segment.get("confidence_payload")) if isinstance(effective_segment.get("confidence_payload"), dict) else None),
+            text_confidence=_to_optional_float(
+                effective_segment.get("text_confidence")
+            ),
+            speaker_confidence=_to_optional_float(
+                effective_segment.get("speaker_confidence")
+            ),
+            confidence_payload=(
+                dict(effective_segment.get("confidence_payload"))
+                if isinstance(effective_segment.get("confidence_payload"), dict)
+                else None
+            ),
         )
         session.add(utterance)
         session.flush()
@@ -821,7 +933,9 @@ def finalize_utterances_from_segments(
                 utterance,
                 source_segment=effective_segment,
                 recording_speaker=recording_speaker,
-                overlap_labels=_projection_overlap_labels(index, segments, overlap_groups, recording_speakers),
+                overlap_labels=_projection_overlap_labels(
+                    index, segments, overlap_groups, recording_speakers
+                ),
             )
         )
 
@@ -830,7 +944,11 @@ def finalize_utterances_from_segments(
         if utterance.id in matched_utterance_ids:
             continue
         previous_boundary_utterances.append(utterance)
-        old_state = utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)
+        old_state = (
+            utterance.state.value
+            if hasattr(utterance.state, "value")
+            else str(utterance.state)
+        )
         utterance.state = TranscriptUtteranceState.SUPERSEDED
         session.add(utterance)
         session.flush()
@@ -846,7 +964,9 @@ def finalize_utterances_from_segments(
         )
 
     transcript.segments = projection_segments
-    transcript.text = " ".join(segment.get("text", "") for segment in projection_segments).strip()
+    transcript.text = " ".join(
+        segment.get("text", "") for segment in projection_segments
+    ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
 
@@ -861,7 +981,6 @@ def finalize_utterances_from_segments(
     refresh_recording_speaker_usage_state(session, recording_id)
 
     return utterances
-
 
 
 def append_utterances_from_segments(
@@ -913,12 +1032,16 @@ def append_utterances_from_segments(
         span_start_ms=(
             span_start_ms
             if span_start_ms is not None
-            else _segment_to_ms(min((segment.get("start", 0.0) for segment in segments), default=0.0))
+            else _segment_to_ms(
+                min((segment.get("start", 0.0) for segment in segments), default=0.0)
+            )
         ),
         span_end_ms=(
             span_end_ms
             if span_end_ms is not None
-            else _segment_to_ms(max((segment.get("end", 0.0) for segment in segments), default=0.0))
+            else _segment_to_ms(
+                max((segment.get("end", 0.0) for segment in segments), default=0.0)
+            )
         ),
         idempotency_key=run_idempotency_key,
     )
@@ -956,7 +1079,11 @@ def append_utterances_from_segments(
             start_ms=_segment_to_ms(segment.get("start", 0.0)),
             end_ms=_segment_to_ms(segment.get("end", 0.0)),
             text=str(segment.get("text", "") or ""),
-            speaker_label=(recording_speaker.diarization_label if recording_speaker else str(segment.get("speaker") or UNKNOWN_SPEAKER)),
+            speaker_label=(
+                recording_speaker.diarization_label
+                if recording_speaker
+                else str(segment.get("speaker") or UNKNOWN_SPEAKER)
+            ),
             recording_speaker_id=recording_speaker.id if recording_speaker else None,
             state=utterance_state,
             source_kind=str(segment.get("segment_source") or source),
@@ -979,7 +1106,11 @@ def append_utterances_from_segments(
             ),
             text_confidence=_to_optional_float(segment.get("text_confidence")),
             speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
-            confidence_payload=(dict(segment.get("confidence_payload")) if isinstance(segment.get("confidence_payload"), dict) else None),
+            confidence_payload=(
+                dict(segment.get("confidence_payload"))
+                if isinstance(segment.get("confidence_payload"), dict)
+                else None
+            ),
         )
         session.add(utterance)
         session.flush()
@@ -1010,7 +1141,6 @@ def append_utterances_from_segments(
 
     refresh_transcript_projection_from_canonical(session, recording_id)
     return utterances
-
 
 
 def update_utterance_text(
@@ -1070,12 +1200,12 @@ def update_utterance_text(
             },
         )
         transcript.text = " ".join(
-            str(segment.get("text", "") or "") for segment in (transcript.segments or [])
+            str(segment.get("text", "") or "")
+            for segment in (transcript.segments or [])
         ).strip()
         session.add(transcript)
 
     return utterance
-
 
 
 def update_utterance_speaker(
@@ -1103,7 +1233,11 @@ def update_utterance_speaker(
         raise LookupError("Transcript not found")
 
     source_recording_speaker_id = utterance.recording_speaker_id
-    source_speaker = session.get(RecordingSpeaker, source_recording_speaker_id) if source_recording_speaker_id else None
+    source_speaker = (
+        session.get(RecordingSpeaker, source_recording_speaker_id)
+        if source_recording_speaker_id
+        else None
+    )
 
     target_speaker = resolve_assignment_target(
         session,
@@ -1145,7 +1279,9 @@ def update_utterance_speaker(
         target_utterance.speaker_label = target_speaker.diarization_label
         target_utterance.manual_speaker_locked = True
         target_utterance.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
-        target_utterance.speaker_assignment_authority = SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL
+        target_utterance.speaker_assignment_authority = (
+            SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL
+        )
         target_utterance.revision += 1
         session.add(target_utterance)
         session.flush()
@@ -1183,7 +1319,9 @@ def update_utterance_speaker(
             updated_segments[projection_index]["recording_speaker_id"] = target_key
             updated_segments[projection_index]["revision"] = target_utterance.revision
             updated_segments[projection_index]["state"] = target_utterance.state.value
-            updated_segments[projection_index]["updated_at"] = target_utterance.updated_at.isoformat()
+            updated_segments[projection_index]["updated_at"] = (
+                target_utterance.updated_at.isoformat()
+            )
             updated_segments[projection_index]["speaker_assignment_source"] = (
                 target_utterance.speaker_assignment_source
             )
@@ -1199,7 +1337,11 @@ def update_utterance_speaker(
         anchor_start_ms=utterance.start_ms,
     )
 
-    if scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER and source_recording_speaker_id and source_recording_speaker_id != target_key:
+    if (
+        scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER
+        and source_recording_speaker_id
+        and source_recording_speaker_id != target_key
+    ):
         if source_speaker is not None:
             source_speaker.merged_into_id = target_key
             source_speaker.speaker_status = "merged"
@@ -1239,10 +1381,13 @@ def update_utterance_speaker(
     refresh_recording_speaker_usage_state(session, recording_id)
 
     if scope != SpeakerCorrectionScope.UTTERANCE_ONLY:
-        replay_effective_from_ms = min(
-            int(target_utterance.start_ms)
-            for target_utterance in target_utterances
-        ) if target_utterances else int(utterance.start_ms)
+        replay_effective_from_ms = (
+            min(
+                int(target_utterance.start_ms) for target_utterance in target_utterances
+            )
+            if target_utterances
+            else int(utterance.start_ms)
+        )
         replay_event_type = _event_type_for_scope(scope)
         replay_policy = _speaker_replay_policy_for_correction_event(
             session,
@@ -1261,7 +1406,6 @@ def update_utterance_speaker(
     return utterance, target_speaker
 
 
-
 def apply_compatibility_segment_replace(
     session,
     *,
@@ -1273,10 +1417,16 @@ def apply_compatibility_segment_replace(
         return []
 
     active_utterances = list_active_utterances(session, recording_id)
-    active_by_public_id = {utterance.public_id: utterance for utterance in active_utterances}
+    active_by_public_id = {
+        utterance.public_id: utterance for utterance in active_utterances
+    }
     incoming_ids = [str(segment.get("id")) for segment in segments if segment.get("id")]
 
-    if active_utterances and len(incoming_ids) == len(segments) and set(incoming_ids) == set(active_by_public_id):
+    if (
+        active_utterances
+        and len(incoming_ids) == len(segments)
+        and set(incoming_ids) == set(active_by_public_id)
+    ):
         recording = session.get(Recording, recording_id)
         recording_speakers = ensure_recording_speaker_aliases(session, recording_id)
         utterances: list[TranscriptUtterance] = []
@@ -1293,8 +1443,14 @@ def apply_compatibility_segment_replace(
             old_text_locked = bool(utterance.manual_text_locked)
             old_speaker_locked = bool(utterance.manual_speaker_locked)
             effective_segment = dict(segment)
-            effective_segment["text"] = utterance.text if old_text_locked else str(segment.get("text", "") or "")
-            effective_segment["text_manually_edited"] = old_text_locked or bool(segment.get("text_manually_edited") is True)
+            effective_segment["text"] = (
+                utterance.text
+                if old_text_locked
+                else str(segment.get("text", "") or "")
+            )
+            effective_segment["text_manually_edited"] = old_text_locked or bool(
+                segment.get("text_manually_edited") is True
+            )
 
             if old_speaker_locked:
                 recording_speaker = (
@@ -1322,33 +1478,43 @@ def apply_compatibility_segment_replace(
                     if recording_speaker is not None
                     else str(segment.get("speaker") or UNKNOWN_SPEAKER)
                 )
-            effective_segment["speaker_manually_edited"] = (
-                old_speaker_locked or bool(segment.get("speaker_manually_edited") is True)
+            effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(
+                segment.get("speaker_manually_edited") is True
             )
 
             effective_sort_key = _sort_key_for_index(index)
             effective_start_ms = _segment_to_ms(segment.get("start", 0.0))
             effective_end_ms = _segment_to_ms(segment.get("end", 0.0))
             effective_text = str(effective_segment.get("text", "") or "")
-            effective_recording_speaker_id = recording_speaker.id if recording_speaker else None
+            effective_recording_speaker_id = (
+                recording_speaker.id if recording_speaker else None
+            )
             effective_speaker_label = (
                 recording_speaker.diarization_label
                 if recording_speaker is not None
                 else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
             )
-            effective_manual_text_locked = bool(effective_segment.get("text_manually_edited") is True)
-            effective_manual_speaker_locked = bool(effective_segment.get("speaker_manually_edited") is True)
-            effective_state = _state_for_segment(recording, effective_segment)
-            effective_speaker_assignment_source = _resolve_segment_speaker_assignment_source(
-                effective_segment,
-                source="compatibility_replace",
-                state=effective_state,
-                manual_speaker_locked=effective_manual_speaker_locked,
+            effective_manual_text_locked = bool(
+                effective_segment.get("text_manually_edited") is True
             )
-            effective_speaker_assignment_authority = _resolve_segment_speaker_assignment_authority(
-                effective_segment,
-                state=effective_state,
-                manual_speaker_locked=effective_manual_speaker_locked,
+            effective_manual_speaker_locked = bool(
+                effective_segment.get("speaker_manually_edited") is True
+            )
+            effective_state = _state_for_segment(recording, effective_segment)
+            effective_speaker_assignment_source = (
+                _resolve_segment_speaker_assignment_source(
+                    effective_segment,
+                    source="compatibility_replace",
+                    state=effective_state,
+                    manual_speaker_locked=effective_manual_speaker_locked,
+                )
+            )
+            effective_speaker_assignment_authority = (
+                _resolve_segment_speaker_assignment_authority(
+                    effective_segment,
+                    state=effective_state,
+                    manual_speaker_locked=effective_manual_speaker_locked,
+                )
             )
 
             changed = any(
@@ -1360,12 +1526,15 @@ def apply_compatibility_segment_replace(
                     utterance.recording_speaker_id != effective_recording_speaker_id,
                     utterance.speaker_label != effective_speaker_label,
                     bool(utterance.manual_text_locked) != effective_manual_text_locked,
-                    bool(utterance.manual_speaker_locked) != effective_manual_speaker_locked,
+                    bool(utterance.manual_speaker_locked)
+                    != effective_manual_speaker_locked,
                     utterance.state != effective_state,
                     utterance.overlap_group_id is not None,
                     int(utterance.overlap_rank or 0) != 0,
-                    _utterance_speaker_assignment_source(utterance) != effective_speaker_assignment_source,
-                    _utterance_speaker_assignment_authority(utterance) != effective_speaker_assignment_authority,
+                    _utterance_speaker_assignment_source(utterance)
+                    != effective_speaker_assignment_source,
+                    _utterance_speaker_assignment_authority(utterance)
+                    != effective_speaker_assignment_authority,
                 )
             )
 
@@ -1382,8 +1551,12 @@ def apply_compatibility_segment_replace(
                 utterance.overlap_group_id = None
                 utterance.overlap_rank = 0
                 utterance.state = effective_state
-                utterance.speaker_assignment_source = effective_speaker_assignment_source
-                utterance.speaker_assignment_authority = effective_speaker_assignment_authority
+                utterance.speaker_assignment_source = (
+                    effective_speaker_assignment_source
+                )
+                utterance.speaker_assignment_authority = (
+                    effective_speaker_assignment_authority
+                )
                 session.add(utterance)
                 session.flush()
                 new_values = {
@@ -1395,7 +1568,9 @@ def apply_compatibility_segment_replace(
                 _append_utterance_event(
                     session,
                     utterance=utterance,
-                    event_type=_compatibility_replace_event_type(old_values, new_values),
+                    event_type=_compatibility_replace_event_type(
+                        old_values, new_values
+                    ),
                     source="api",
                     old_values=old_values,
                     new_values=new_values,
@@ -1415,12 +1590,16 @@ def apply_compatibility_segment_replace(
                     utterance,
                     source_segment=effective_segment,
                     recording_speaker=recording_speaker,
-                    overlap_labels=list(effective_segment.get("overlapping_speakers") or []),
+                    overlap_labels=list(
+                        effective_segment.get("overlapping_speakers") or []
+                    ),
                 )
             )
 
         transcript.segments = projection_segments
-        transcript.text = " ".join(segment.get("text", "") for segment in projection_segments).strip()
+        transcript.text = " ".join(
+            segment.get("text", "") for segment in projection_segments
+        ).strip()
         flag_modified(transcript, "segments")
         session.add(transcript)
         return utterances
@@ -1435,7 +1614,6 @@ def apply_compatibility_segment_replace(
     )
 
 
-
 def serialize_canonical_utterances(
     session,
     recording_id: int,
@@ -1445,13 +1623,19 @@ def serialize_canonical_utterances(
     transcript = _load_transcript(session, recording_id)
     recording_speakers = _load_recording_speakers(session, recording_id)
     recording_speakers_by_id = {
-        int(speaker.id): speaker for speaker in recording_speakers if speaker.id is not None
+        int(speaker.id): speaker
+        for speaker in recording_speakers
+        if speaker.id is not None
     }
-    projection_by_id = {
-        str(segment.get("id")): segment
-        for segment in (transcript.segments or [])
-        if isinstance(segment, dict) and segment.get("id")
-    } if transcript else {}
+    projection_by_id = (
+        {
+            str(segment.get("id")): segment
+            for segment in (transcript.segments or [])
+            if isinstance(segment, dict) and segment.get("id")
+        }
+        if transcript
+        else {}
+    )
     payloads: list[dict[str, Any]] = []
     for utterance in list_active_utterances(session, recording_id):
         if only_public_ids is not None and utterance.public_id not in only_public_ids:
@@ -1464,15 +1648,26 @@ def serialize_canonical_utterances(
             "start_ms": utterance.start_ms,
             "end_ms": utterance.end_ms,
             "text": utterance.text,
-            "speaker": utterance.speaker_label or projection.get("speaker") or UNKNOWN_SPEAKER,
+            "speaker": utterance.speaker_label
+            or projection.get("speaker")
+            or UNKNOWN_SPEAKER,
             "recording_speaker_id": utterance.recording_speaker_id,
-            "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
+            "state": utterance.state.value
+            if hasattr(utterance.state, "value")
+            else str(utterance.state),
             "revision": utterance.revision,
             "segment_source": utterance.source_kind,
-            "provisional": (utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state)) == TranscriptUtteranceState.PROVISIONAL.value,
+            "provisional": (
+                utterance.state.value
+                if hasattr(utterance.state, "value")
+                else str(utterance.state)
+            )
+            == TranscriptUtteranceState.PROVISIONAL.value,
             "speaker_manually_edited": utterance.manual_speaker_locked,
             "text_manually_edited": utterance.manual_text_locked,
-            "speaker_state": _speaker_state_for_utterance(utterance, projection=projection),
+            "speaker_state": _speaker_state_for_utterance(
+                utterance, projection=projection
+            ),
             "speaker_confidence": utterance.speaker_confidence,
             "text_confidence": utterance.text_confidence,
             "speaker_assignment_source": _utterance_speaker_assignment_source(
@@ -1496,7 +1691,6 @@ def serialize_canonical_utterances(
     return payloads
 
 
-
 def _normalize_transcript_segments(raw_segments: Any) -> list[dict[str, Any]]:
     if isinstance(raw_segments, str):
         try:
@@ -1514,14 +1708,17 @@ def _normalize_transcript_segments(raw_segments: Any) -> list[dict[str, Any]]:
     return normalized
 
 
-
 def build_transcript_segments_for_read(
     session,
     recording_id: int,
     *,
     transcript: Transcript | None = None,
 ) -> list[dict[str, Any]]:
-    transcript = transcript if transcript is not None else _load_transcript(session, recording_id)
+    transcript = (
+        transcript
+        if transcript is not None
+        else _load_transcript(session, recording_id)
+    )
     fallback_segments = _normalize_transcript_segments(
         getattr(transcript, "segments", None) if transcript is not None else None
     )
@@ -1539,7 +1736,6 @@ def build_transcript_segments_for_read(
     return fallback_segments
 
 
-
 def build_transcript_text_for_read(
     session,
     recording_id: int,
@@ -1547,17 +1743,26 @@ def build_transcript_text_for_read(
     transcript: Transcript | None = None,
     segments: Sequence[dict[str, Any]] | None = None,
 ) -> str:
-    effective_segments = [dict(segment) for segment in segments] if segments is not None else build_transcript_segments_for_read(
-        session,
-        recording_id,
-        transcript=transcript,
+    effective_segments = (
+        [dict(segment) for segment in segments]
+        if segments is not None
+        else build_transcript_segments_for_read(
+            session,
+            recording_id,
+            transcript=transcript,
+        )
     )
     if effective_segments:
-        return " ".join(str(segment.get("text", "") or "") for segment in effective_segments).strip()
+        return " ".join(
+            str(segment.get("text", "") or "") for segment in effective_segments
+        ).strip()
 
-    transcript = transcript if transcript is not None else _load_transcript(session, recording_id)
+    transcript = (
+        transcript
+        if transcript is not None
+        else _load_transcript(session, recording_id)
+    )
     return str(getattr(transcript, "text", "") or "") if transcript is not None else ""
-
 
 
 def build_reusable_live_segments(session, recording_id: int) -> list[dict[str, Any]]:
@@ -1568,11 +1773,13 @@ def build_reusable_live_segments(session, recording_id: int) -> list[dict[str, A
         include_confidence_payload=True,
     ):
         source_kind = str(payload.get("segment_source") or "")
-        if source_kind not in {"live", "catch_up"} and payload.get("provisional") is not True:
+        if (
+            source_kind not in {"live", "catch_up"}
+            and payload.get("provisional") is not True
+        ):
             continue
         reusable_segments.append(dict(payload))
     return reusable_segments
-
 
 
 def refresh_transcript_projection_from_canonical(
@@ -1586,8 +1793,7 @@ def refresh_transcript_projection_from_canonical(
     projection_segments = serialize_canonical_utterances(session, recording_id)
     transcript.segments = projection_segments
     transcript.text = " ".join(
-        str(segment.get("text", "") or "")
-        for segment in projection_segments
+        str(segment.get("text", "") or "") for segment in projection_segments
     ).strip()
     flag_modified(transcript, "segments")
     session.add(transcript)
@@ -1595,8 +1801,9 @@ def refresh_transcript_projection_from_canonical(
     return projection_segments
 
 
-
-def build_transient_utterance_payloads_from_segments(transcript: Transcript | None) -> list[dict[str, Any]]:
+def build_transient_utterance_payloads_from_segments(
+    transcript: Transcript | None,
+) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for index, segment in enumerate((transcript.segments or []) if transcript else []):
         payloads.append(
@@ -1609,14 +1816,27 @@ def build_transient_utterance_payloads_from_segments(transcript: Transcript | No
                 "text": str(segment.get("text", "") or ""),
                 "speaker": str(segment.get("speaker") or UNKNOWN_SPEAKER),
                 "recording_speaker_id": segment.get("recording_speaker_id"),
-                "state": str(segment.get("state") or (TranscriptUtteranceState.PROVISIONAL.value if segment.get("provisional") else TranscriptUtteranceState.STABLE.value)),
+                "state": str(
+                    segment.get("state")
+                    or (
+                        TranscriptUtteranceState.PROVISIONAL.value
+                        if segment.get("provisional")
+                        else TranscriptUtteranceState.STABLE.value
+                    )
+                ),
                 "revision": int(segment.get("revision") or 1),
                 "segment_source": segment.get("segment_source") or "legacy",
                 "provisional": bool(segment.get("provisional") is True),
-                "speaker_manually_edited": bool(segment.get("speaker_manually_edited") is True),
-                "text_manually_edited": bool(segment.get("text_manually_edited") is True),
+                "speaker_manually_edited": bool(
+                    segment.get("speaker_manually_edited") is True
+                ),
+                "text_manually_edited": bool(
+                    segment.get("text_manually_edited") is True
+                ),
                 "speaker_state": segment.get("speaker_state"),
-                "speaker_confidence": _to_optional_float(segment.get("speaker_confidence")),
+                "speaker_confidence": _to_optional_float(
+                    segment.get("speaker_confidence")
+                ),
                 "text_confidence": _to_optional_float(segment.get("text_confidence")),
                 "speaker_assignment_source": _normalize_speaker_assignment_source(
                     segment.get("speaker_assignment_source")
@@ -1631,7 +1851,9 @@ def build_transient_utterance_payloads_from_segments(transcript: Transcript | No
                                 else TranscriptUtteranceState.STABLE.value
                             )
                         ),
-                        manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
+                        manual_speaker_locked=bool(
+                            segment.get("speaker_manually_edited") is True
+                        ),
                     )
                 ),
                 "speaker_assignment_authority": _normalize_speaker_assignment_authority(
@@ -1645,7 +1867,9 @@ def build_transient_utterance_payloads_from_segments(transcript: Transcript | No
                                 else TranscriptUtteranceState.STABLE.value
                             )
                         ),
-                        manual_speaker_locked=bool(segment.get("speaker_manually_edited") is True),
+                        manual_speaker_locked=bool(
+                            segment.get("speaker_manually_edited") is True
+                        ),
                     )
                 ),
                 "updated_at": segment.get("updated_at"),
@@ -1653,7 +1877,6 @@ def build_transient_utterance_payloads_from_segments(transcript: Transcript | No
             }
         )
     return payloads
-
 
 
 def resolve_assignment_target(
@@ -1722,7 +1945,8 @@ def resolve_assignment_target(
     if (
         source_speaker is not None
         and source_speaker.merged_into_id is None
-        and scope in {
+        and scope
+        in {
             SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD,
             SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
         }
@@ -1752,7 +1976,6 @@ def resolve_assignment_target(
     return recording_speaker
 
 
-
 def _resolve_recording_speaker_for_value(
     session,
     *,
@@ -1778,7 +2001,11 @@ def _resolve_recording_speaker_for_value(
     if existing_speaker is not None:
         return existing_speaker
 
-    label = cleaned_value if LABEL_PATTERN.match(cleaned_value) else f"MANUAL_{uuid4().hex[:8]}"
+    label = (
+        cleaned_value
+        if LABEL_PATTERN.match(cleaned_value)
+        else f"MANUAL_{uuid4().hex[:8]}"
+    )
     recording_speaker = RecordingSpeaker(
         recording_id=recording_id,
         diarization_label=label,
@@ -1799,25 +2026,36 @@ def _resolve_recording_speaker_for_value(
     return recording_speaker
 
 
-
-def _touch_recording_speaker_bounds(recording_speaker: RecordingSpeaker, segment: dict[str, Any]) -> None:
+def _touch_recording_speaker_bounds(
+    recording_speaker: RecordingSpeaker, segment: dict[str, Any]
+) -> None:
     start_ms = _segment_to_ms(segment.get("start", 0.0))
     end_ms = _segment_to_ms(segment.get("end", 0.0))
-    if recording_speaker.first_seen_ms is None or start_ms < recording_speaker.first_seen_ms:
+    if (
+        recording_speaker.first_seen_ms is None
+        or start_ms < recording_speaker.first_seen_ms
+    ):
         recording_speaker.first_seen_ms = start_ms
-    if recording_speaker.last_seen_ms is None or end_ms > recording_speaker.last_seen_ms:
+    if (
+        recording_speaker.last_seen_ms is None
+        or end_ms > recording_speaker.last_seen_ms
+    ):
         recording_speaker.last_seen_ms = end_ms
 
 
-
-def _state_for_segment(recording: Recording, segment: dict[str, Any]) -> TranscriptUtteranceState:
+def _state_for_segment(
+    recording: Recording, segment: dict[str, Any]
+) -> TranscriptUtteranceState:
     if segment.get("provisional") is True:
         return TranscriptUtteranceState.PROVISIONAL
-    status_value = recording.status.value if isinstance(recording.status, RecordingStatus) else str(recording.status)
+    status_value = (
+        recording.status.value
+        if isinstance(recording.status, RecordingStatus)
+        else str(recording.status)
+    )
     if status_value == RecordingStatus.PROCESSED.value:
         return TranscriptUtteranceState.FINALIZED
     return TranscriptUtteranceState.STABLE
-
 
 
 def _projection_overlap_labels(
@@ -1844,7 +2082,6 @@ def _projection_overlap_labels(
     return labels
 
 
-
 def _build_projection_segment(
     utterance: TranscriptUtterance,
     *,
@@ -1859,21 +2096,30 @@ def _build_projection_segment(
             "start": utterance.start_ms / 1000.0,
             "end": utterance.end_ms / 1000.0,
             "text": utterance.text,
-            "speaker": recording_speaker.diarization_label if recording_speaker else utterance.speaker_label or UNKNOWN_SPEAKER,
+            "speaker": recording_speaker.diarization_label
+            if recording_speaker
+            else utterance.speaker_label or UNKNOWN_SPEAKER,
             "overlapping_speakers": overlap_labels,
             "provisional": utterance.state == TranscriptUtteranceState.PROVISIONAL,
-            "segment_source": source_segment.get("segment_source") or utterance.source_kind,
+            "segment_source": source_segment.get("segment_source")
+            or utterance.source_kind,
             "speaker_manually_edited": utterance.manual_speaker_locked,
             "text_manually_edited": utterance.manual_text_locked,
-            "speaker_state": _speaker_state_for_utterance(utterance, projection=source_segment),
+            "speaker_state": _speaker_state_for_utterance(
+                utterance, projection=source_segment
+            ),
             "revision": utterance.revision,
             "recording_speaker_id": utterance.recording_speaker_id,
-            "state": utterance.state.value if hasattr(utterance.state, "value") else str(utterance.state),
+            "state": utterance.state.value
+            if hasattr(utterance.state, "value")
+            else str(utterance.state),
             "speaker_confidence": utterance.speaker_confidence,
             "text_confidence": utterance.text_confidence,
             "speaker_assignment_source": _resolve_segment_speaker_assignment_source(
                 segment,
-                source=str(source_segment.get("segment_source") or utterance.source_kind),
+                source=str(
+                    source_segment.get("segment_source") or utterance.source_kind
+                ),
                 state=utterance.state,
                 manual_speaker_locked=bool(utterance.manual_speaker_locked),
             ),
@@ -1886,7 +2132,6 @@ def _build_projection_segment(
         }
     )
     return segment
-
 
 
 def _update_projection_segment_by_public_id(
@@ -1902,7 +2147,6 @@ def _update_projection_segment_by_public_id(
         transcript.segments = updated_segments
         flag_modified(transcript, "segments")
         return
-
 
 
 def _select_utterances_for_scope(
@@ -1921,14 +2165,16 @@ def _select_utterances_for_scope(
         return [
             utterance
             for utterance in active_utterances
-            if (utterance.recording_speaker_id or utterance.speaker_label) == current_key
+            if (utterance.recording_speaker_id or utterance.speaker_label)
+            == current_key
         ]
 
     if scope == SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD:
         return [
             utterance
             for utterance in active_utterances
-            if (utterance.recording_speaker_id or utterance.speaker_label) == current_key
+            if (utterance.recording_speaker_id or utterance.speaker_label)
+            == current_key
             and utterance.start_ms >= anchor_utterance.start_ms
         ]
 
@@ -1936,12 +2182,11 @@ def _select_utterances_for_scope(
         return [
             utterance
             for utterance in active_utterances
-            if (utterance.recording_speaker_id or utterance.speaker_label) == current_key
+            if (utterance.recording_speaker_id or utterance.speaker_label)
+            == current_key
         ]
 
     return [anchor_utterance]
 
 
-
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

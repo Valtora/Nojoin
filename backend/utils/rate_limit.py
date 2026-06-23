@@ -22,14 +22,16 @@ _fallback_windows: dict[str, deque[float]] = defaultdict(deque)
 import ipaddress
 import socket
 
-_dns_cache: dict[str, tuple[list[ipaddress.IPv4Address | ipaddress.IPv6Address], float]] = {}
+_dns_cache: dict[
+    str, tuple[list[ipaddress.IPv4Address | ipaddress.IPv6Address], float]
+] = {}
 DNS_CACHE_TTL = 60.0
 
 
 def _parse_trusted_proxies(proxies_str: str) -> list:
     if not proxies_str:
         return []
-    
+
     trusted = []
     for item in proxies_str.split(","):
         item = item.strip()
@@ -61,7 +63,7 @@ def _resolve_hostname(hostname: str) -> list:
         cached_ips, expires = _dns_cache[hostname]
         if now < expires:
             return cached_ips
-            
+
     ips = []
     try:
         infos = socket.getaddrinfo(hostname, None)
@@ -77,7 +79,7 @@ def _resolve_hostname(hostname: str) -> list:
             f"Failed to resolve trusted proxy hostname {masked}: "
             f"[Errno {exc.errno}] {exc.strerror}"
         )
-        
+
     _dns_cache[hostname] = (ips, now + DNS_CACHE_TTL)
     return ips
 
@@ -87,7 +89,7 @@ def _is_ip_in_trusted(ip_str: str, trusted_list: list) -> bool:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
-        
+
     for target in trusted_list:
         if isinstance(target, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
             if ip == target:
@@ -107,10 +109,10 @@ def get_client_address(request: Request) -> str:
         return "unknown"
 
     direct_peer = request.client.host
-    
+
     trusted_proxies_env = os.getenv("NOJOIN_TRUSTED_PROXIES", "127.0.0.1,::1,nginx")
     trusted_list = _parse_trusted_proxies(trusted_proxies_env)
-    
+
     if not _is_ip_in_trusted(direct_peer, trusted_list):
         return direct_peer
 
@@ -132,7 +134,6 @@ def get_client_address(request: Request) -> str:
     return direct_peer
 
 
-
 def _build_rate_limit_key(
     namespace: str,
     client_address: str,
@@ -140,7 +141,9 @@ def _build_rate_limit_key(
 ) -> str:
     key = f"{RATE_LIMIT_KEY_PREFIX}:{namespace}:{client_address}"
     if discriminator:
-        digest = hashlib.sha256(discriminator.strip().lower().encode("utf-8")).hexdigest()[:16]
+        digest = hashlib.sha256(
+            discriminator.strip().lower().encode("utf-8")
+        ).hexdigest()[:16]
         key = f"{key}:{digest}"
     return key
 
@@ -158,7 +161,9 @@ async def _get_redis() -> Optional[redis.Redis]:
     return _redis_client
 
 
-async def _consume_redis_window(key: str, window_seconds: int) -> Optional[tuple[int, int]]:
+async def _consume_redis_window(
+    key: str, window_seconds: int
+) -> Optional[tuple[int, int]]:
     client = await _get_redis()
     if client is None:
         return None
@@ -284,7 +289,7 @@ async def enforce_upload_concurrency(
     if not acquired:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many concurrent uploads. Please wait for active uploads to finish."
+            detail="Too many concurrent uploads. Please wait for active uploads to finish.",
         )
     try:
         yield

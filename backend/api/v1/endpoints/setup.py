@@ -6,20 +6,20 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
-from backend.api.error_handling import sanitized_http_exception
-from backend.processing.llm_services import get_llm_backend
 from backend.api.deps import (
     STANDARD_USER_SCOPE_REQUIREMENTS,
     STANDARD_USER_TOKEN_TYPES,
-    enforce_trusted_browser_origin,
     enforce_password_change_policy,
+    enforce_trusted_browser_origin,
     get_authenticated_user_from_token,
     get_db,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from backend.api.error_handling import sanitized_http_exception
 from backend.models.user import User
+from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
@@ -71,6 +71,7 @@ def _validate_setup_ollama_api_url(url: str | None) -> str | None:
 
 
 router = APIRouter()
+
 
 class ValidateLLMRequest(BaseModel):
     provider: str
@@ -125,6 +126,7 @@ def require_first_run_password(request: Request) -> None:
             detail=FIRST_RUN_PASSWORD_REQUIRED_DETAIL,
         )
 
+
 async def check_setup_permission(db: AsyncSession, request: Request):
     """
     Check if the endpoint is allowed.
@@ -141,7 +143,7 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     # Initialised system: authenticate manually. Depends(get_current_admin_user)
     # cannot be used at the router level as it would block the unauthenticated
     # (pre-initialisation) case.
-    
+
     auth_header = request.headers.get("Authorization")
     token = None
     if auth_header:
@@ -154,7 +156,9 @@ async def check_setup_permission(db: AsyncSession, request: Request):
             enforce_trusted_browser_origin(request)
 
     if not token:
-        raise HTTPException(status_code=403, detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL)
+        raise HTTPException(
+            status_code=403, detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL
+        )
 
     try:
         user = await get_authenticated_user_from_token(
@@ -165,7 +169,9 @@ async def check_setup_permission(db: AsyncSession, request: Request):
         )
     except HTTPException as exc:
         if exc.status_code in {401, 403}:
-            raise HTTPException(status_code=403, detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL)
+            raise HTTPException(
+                status_code=403, detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL
+            )
         raise
 
     enforce_password_change_policy(user, path=request.url.path, method=request.method)
@@ -175,32 +181,33 @@ async def check_setup_permission(db: AsyncSession, request: Request):
 
     return user
 
+
 @router.get("/initial-config")
-async def get_initial_config(
-    req: Request,
-    db: AsyncSession = Depends(get_db)
-):
+async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     """
     Get initial configuration from environment variables relative to the config manager.
     Returns masked values for security.
     """
     await check_setup_permission(db, req)
-    
+
     # helper to mask key
     def mask_key(key):
         if not key or len(key) < 8:
             return None
         return f"{key[:3]}...{key[-4:]}"
 
-    from backend.utils.config_manager import async_get_system_api_keys
     from backend.preload_models import check_model_status
+    from backend.utils.config_manager import async_get_system_api_keys
+
     system_keys = await async_get_system_api_keys(db)
     llm_provider = config_manager.get("llm_provider", "gemini")
-    selected_model_key = "ollama_model" if llm_provider == "ollama" else f"{llm_provider}_model"
-    model_status = check_model_status()
-    pyannote_models_ready = bool(model_status.get("pyannote", {}).get("downloaded")) and bool(
-        model_status.get("embedding", {}).get("downloaded")
+    selected_model_key = (
+        "ollama_model" if llm_provider == "ollama" else f"{llm_provider}_model"
     )
+    model_status = check_model_status()
+    pyannote_models_ready = bool(
+        model_status.get("pyannote", {}).get("downloaded")
+    ) and bool(model_status.get("embedding", {}).get("downloaded"))
     bundled_pyannote_models_ready = pyannote_models_ready and all(
         model_status.get(key, {}).get("source") == "bundled"
         for key in ("pyannote", "embedding")
@@ -218,24 +225,24 @@ async def get_initial_config(
         "bundled_pyannote_models_ready": bundled_pyannote_models_ready,
     }
 
+
 @router.post("/validate-llm")
 async def validate_llm(
-    request: ValidateLLMRequest,
-    req: Request,
-    db: AsyncSession = Depends(get_db)
+    request: ValidateLLMRequest, req: Request, db: AsyncSession = Depends(get_db)
 ):
     """
     Validate LLM API Key.
     """
     user = await check_setup_permission(db, req)
     is_public_request = user is None
-    
+
     try:
         provider = request.provider
         from backend.utils.config_manager import get_system_api_keys
+
         system_keys = get_system_api_keys()
         api_key = system_keys.get(f"{provider}_api_key")
-             
+
         api_url = None
         if provider == "ollama":
             api_url = config_manager.get("ollama_api_url")
@@ -249,25 +256,32 @@ async def validate_llm(
             allow_private_api_url=provider == "ollama",
         )
         llm.validate_api_key()
-        
+
         models = []
         if provider == "ollama":
             models = llm.list_models()
-            return {"valid": True, "message": "Connected to Ollama successfully.", "models": models}
-            
+            return {
+                "valid": True,
+                "message": "Connected to Ollama successfully.",
+                "models": models,
+            }
+
         provider_name = provider.capitalize() if provider else "LLM"
         return {"valid": True, "message": f"{provider_name} API key is valid."}
     except HTTPException:
         if is_public_request:
-            logger.warning("Public setup LLM validation failed for provider %s.", request.provider)
-            raise HTTPException(status_code=400, detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL)
+            logger.warning(
+                "Public setup LLM validation failed for provider %s.", request.provider
+            )
+            raise HTTPException(
+                status_code=400, detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL
+            )
         raise
     except Exception as exc:  # noqa: BLE001
         _raise_setup_validation_error(
             client_detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL,
             log_message=(
-                "Public setup LLM validation failed for provider "
-                f"'{request.provider}'."
+                f"Public setup LLM validation failed for provider '{request.provider}'."
                 if is_public_request
                 else "Authenticated setup LLM validation failed for provider "
                 f"'{request.provider}'."
@@ -275,11 +289,10 @@ async def validate_llm(
             exc=exc,
         )
 
+
 @router.post("/validate-hf")
 async def validate_hf(
-    request: ValidateHFRequest,
-    req: Request,
-    db: AsyncSession = Depends(get_db)
+    request: ValidateHFRequest, req: Request, db: AsyncSession = Depends(get_db)
 ):
     """
     Validate Hugging Face Token.
@@ -295,7 +308,7 @@ async def validate_hf(
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://huggingface.co/api/whoami-v2",
-                headers={"Authorization": f"Bearer {token}"}
+                headers={"Authorization": f"Bearer {token}"},
             )
             response.raise_for_status()
             response.json()
@@ -303,7 +316,9 @@ async def validate_hf(
     except HTTPException:
         if is_public_request:
             logger.warning("Public setup Hugging Face validation failed.")
-            raise HTTPException(status_code=400, detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL)
+            raise HTTPException(
+                status_code=400, detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL
+            )
         raise
     except Exception as exc:  # noqa: BLE001
         _raise_setup_validation_error(
@@ -316,11 +331,10 @@ async def validate_hf(
             exc=exc,
         )
 
+
 @router.post("/list-models")
 async def list_models(
-    request: ListModelsRequest,
-    req: Request,
-    db: AsyncSession = Depends(get_db)
+    request: ListModelsRequest, req: Request, db: AsyncSession = Depends(get_db)
 ):
     """
     List available models for a given provider and API key.
@@ -331,9 +345,10 @@ async def list_models(
     try:
         provider = request.provider
         from backend.utils.config_manager import get_system_api_keys
+
         system_keys = get_system_api_keys()
         api_key = system_keys.get(f"{provider}_api_key")
-             
+
         api_url = None
         if provider == "ollama":
             api_url = config_manager.get("ollama_api_url")
@@ -349,15 +364,16 @@ async def list_models(
         return {"models": models}
     except HTTPException:
         if is_public_request:
-            logger.warning("Public setup model listing failed for provider %s.", request.provider)
+            logger.warning(
+                "Public setup model listing failed for provider %s.", request.provider
+            )
             raise HTTPException(status_code=400, detail=PUBLIC_MODEL_LIST_ERROR_DETAIL)
         raise
     except Exception as exc:  # noqa: BLE001
         _raise_setup_validation_error(
             client_detail=PUBLIC_MODEL_LIST_ERROR_DETAIL,
             log_message=(
-                "Public setup model listing failed for provider "
-                f"'{request.provider}'."
+                f"Public setup model listing failed for provider '{request.provider}'."
                 if is_public_request
                 else "Authenticated setup model listing failed for provider "
                 f"'{request.provider}'."

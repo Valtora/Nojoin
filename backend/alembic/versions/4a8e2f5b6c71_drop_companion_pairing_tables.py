@@ -11,9 +11,8 @@ import logging
 import os
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 logger = logging.getLogger(__name__)
 

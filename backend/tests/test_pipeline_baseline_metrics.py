@@ -2,7 +2,6 @@ import importlib.util
 import json
 import wave
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -43,19 +42,22 @@ def test_synthetic_manifest_covers_phase_zero_scenarios():
 @pytest.mark.pipeline_baseline
 def test_synthetic_fixture_generator_writes_valid_wavs(tmp_path):
     generator_path = FIXTURE_DIR / "generate_synthetic_fixtures.py"
-    spec = importlib.util.spec_from_file_location("generate_synthetic_fixtures", generator_path)
+    spec = importlib.util.spec_from_file_location(
+        "generate_synthetic_fixtures", generator_path
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)
 
-    generated = module.generate_fixtures(FIXTURE_DIR / "manifest.synthetic.json", tmp_path)
+    generated = module.generate_fixtures(
+        FIXTURE_DIR / "manifest.synthetic.json", tmp_path
+    )
 
     assert len(generated) == len(_load_manifest("manifest.synthetic.json")["fixtures"])
     with wave.open(str(generated[0]), "rb") as wav_file:
         assert wav_file.getnchannels() == 1
         assert wav_file.getframerate() == 16_000
         assert wav_file.getnframes() > 0
-
 
 
 @pytest.mark.pipeline_baseline

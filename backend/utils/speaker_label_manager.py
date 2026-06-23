@@ -1,10 +1,12 @@
 import threading
 
+
 class SpeakerLabelManager:
     """
     Manages mapping between internal speaker labels/IDs and display names for speakers.
     Thread-safe for use across application modules.
     """
+
     def __init__(self):
         self._lock = threading.Lock()
         self._label_to_name = {}  # e.g., {'SPEAKER_00': 'Alice', ...}
@@ -27,4 +29,4 @@ class SpeakerLabelManager:
 
     def clear(self):
         with self._lock:
-            self._label_to_name.clear() 
+            self._label_to_name.clear()

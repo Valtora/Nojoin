@@ -40,7 +40,9 @@ def _render_samples(fixture: dict) -> Iterable[int]:
             end = float(turn["end"])
             if start <= t < end:
                 speaker = str(turn.get("speaker", "speaker_a"))
-                frequency = SPEAKER_FREQUENCIES.get(speaker, SPEAKER_FREQUENCIES["speaker_a"])
+                frequency = SPEAKER_FREQUENCIES.get(
+                    speaker, SPEAKER_FREQUENCIES["speaker_a"]
+                )
                 amplitude = 0.20
                 if "quiet_speaker" in scenarios and speaker == "speaker_b":
                     amplitude = 0.055
@@ -77,7 +79,9 @@ def generate_fixtures(manifest_path: Path, output_dir: Path) -> list[Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate synthetic Nojoin pipeline baseline WAV fixtures.")
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic Nojoin pipeline baseline WAV fixtures."
+    )
     parser.add_argument(
         "--manifest",
         type=Path,

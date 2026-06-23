@@ -11,7 +11,6 @@ from backend.utils.meeting_notes import (
     build_user_notes_prompt_section,
 )
 
-
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -116,9 +115,15 @@ class MeetingEdgeRequest:
             "rolling_summary",
             _normalize_optional_text(self.rolling_summary),
         )
-        object.__setattr__(self, "focus_text", _normalize_optional_text(self.focus_text))
-        object.__setattr__(self, "user_notes", _normalize_optional_text(self.user_notes))
-        object.__setattr__(self, "context_level", _normalize_context_level(self.context_level))
+        object.__setattr__(
+            self, "focus_text", _normalize_optional_text(self.focus_text)
+        )
+        object.__setattr__(
+            self, "user_notes", _normalize_optional_text(self.user_notes)
+        )
+        object.__setattr__(
+            self, "context_level", _normalize_context_level(self.context_level)
+        )
         object.__setattr__(
             self,
             "previous_questions",
@@ -197,7 +202,9 @@ def build_meeting_edge_prompt(
         meeting_context_section=build_meeting_context_prompt_section(
             request.meeting_context
         ),
-        concept_guidance_section=build_concept_guidance_prompt_section(request.context_level),
+        concept_guidance_section=build_concept_guidance_prompt_section(
+            request.context_level
+        ),
         previous_suggestions_section=build_previous_suggestions_prompt_section(
             request.previous_questions,
             request.previous_points,
@@ -288,7 +295,9 @@ def _are_equivalent_concept_terms(t1: str, t2: str) -> bool:
     return _are_acronym_and_expansion(t1, t2)
 
 
-def deduplicate_concepts(concepts: Sequence[MeetingEdgeConcept]) -> list[MeetingEdgeConcept]:
+def deduplicate_concepts(
+    concepts: Sequence[MeetingEdgeConcept],
+) -> list[MeetingEdgeConcept]:
     deduped: list[MeetingEdgeConcept] = []
     for concept in concepts:
         found_idx = -1
@@ -299,8 +308,14 @@ def deduplicate_concepts(concepts: Sequence[MeetingEdgeConcept]) -> list[Meeting
         if found_idx >= 0:
             existing = deduped[found_idx]
             # Keep the shorter (singular) term, but ALWAYS use the newer explanation
-            term = concept.term if len(concept.term) < len(existing.term) else existing.term
-            deduped[found_idx] = MeetingEdgeConcept(term=term, explanation=concept.explanation)
+            term = (
+                concept.term
+                if len(concept.term) < len(existing.term)
+                else existing.term
+            )
+            deduped[found_idx] = MeetingEdgeConcept(
+                term=term, explanation=concept.explanation
+            )
         else:
             deduped.append(concept)
     return deduped
@@ -335,7 +350,9 @@ def build_previous_suggestions_prompt_section(
     previous_questions: Sequence[str],
     previous_points: Sequence[str],
 ) -> str:
-    questions = [str(item).strip() for item in previous_questions or () if str(item).strip()]
+    questions = [
+        str(item).strip() for item in previous_questions or () if str(item).strip()
+    ]
     points = [str(item).strip() for item in previous_points or () if str(item).strip()]
 
     if not questions and not points:
@@ -378,7 +395,9 @@ def _normalize_context_level(value: Any) -> int:
     except (TypeError, ValueError):
         return MEETING_EDGE_CONTEXT_LEVEL_DEFAULT
 
-    return max(MEETING_EDGE_CONTEXT_LEVEL_MIN, min(MEETING_EDGE_CONTEXT_LEVEL_MAX, level))
+    return max(
+        MEETING_EDGE_CONTEXT_LEVEL_MIN, min(MEETING_EDGE_CONTEXT_LEVEL_MAX, level)
+    )
 
 
 def _normalize_string_items(
@@ -492,7 +511,9 @@ def _read_string_list(
         return ()
     if not isinstance(value, list):
         raise MeetingEdgeContractError(f"{key} must be an array")
-    return _normalize_string_items(tuple(str(item) for item in value), max_items=max_items)
+    return _normalize_string_items(
+        tuple(str(item) for item in value), max_items=max_items
+    )
 
 
 def _read_concepts(payload: Mapping[str, Any]) -> tuple[MeetingEdgeConcept, ...]:

@@ -1,35 +1,49 @@
 import json
 import logging
 from typing import List, Optional
+
 from fastapi import HTTPException
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
-from pydantic import BaseModel, ConfigDict
 
+import backend.api.v1.endpoints.speakers as speakers_module
+from backend.models.recording import (
+    LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
+    Recording,
+    RecordingPipelineGeneration,
+    recording_supports_unified_mutations,
+)
+from backend.models.recording_public import (
+    RecordingSpeakerPublicRead,
+    serialize_recording_speaker,
+)
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.models.recording import Recording, RecordingPipelineGeneration, recording_supports_unified_mutations, LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL
-from backend.models.recording_public import RecordingSpeakerPublicRead, serialize_recording_speaker
 from backend.models.transcript import Transcript
+from backend.processing.embedding import merge_embeddings
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.canonical_pipeline import (
     apply_compatibility_segment_replace,
     build_transcript_segments_for_read,
-    recording_ready_for_canonical_backfill,
     merge_recording_speakers_by_label,
+    recording_ready_for_canonical_backfill,
 )
-from backend.utils.speaker_name_suggestions import supersede_pending_transcript_speaker_suggestions
-from backend.processing.embedding import merge_embeddings
-
-import backend.api.v1.endpoints.speakers as speakers_module
+from backend.utils.speaker_name_suggestions import (
+    supersede_pending_transcript_speaker_suggestions,
+)
 
 logger = logging.getLogger(__name__)
 
 
 # Helper functions
-async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_id: int) -> Recording:
-    recording = await get_recording_by_public_id(db, recording_public_id, user_id=user_id)
+async def _get_owned_recording(
+    db: AsyncSession, recording_public_id: str, user_id: int
+) -> Recording:
+    recording = await get_recording_by_public_id(
+        db, recording_public_id, user_id=user_id
+    )
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
     return recording
@@ -37,20 +51,30 @@ async def _get_owned_recording(db: AsyncSession, recording_public_id: str, user_
 
 def _canonical_transcript_writes_enabled() -> bool:
     # Use speakers_module to support test monkeypatching if needed
-    return bool(speakers_module.config_manager.get("enable_canonical_transcript_writes", True))
+    return bool(
+        speakers_module.config_manager.get("enable_canonical_transcript_writes", True)
+    )
 
 
 def _require_recording_speaker_mutations_supported(recording: Recording) -> None:
     if recording_supports_unified_mutations(recording):
         return
-    raise HTTPException(status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
+    raise HTTPException(
+        status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL
+    )
 
 
 async def _require_recordings_support_speaker_mutations(
     db: AsyncSession,
     recording_ids: list[int],
 ) -> None:
-    unique_ids = sorted({int(recording_id) for recording_id in recording_ids if recording_id is not None})
+    unique_ids = sorted(
+        {
+            int(recording_id)
+            for recording_id in recording_ids
+            if recording_id is not None
+        }
+    )
     if not unique_ids:
         return
 
@@ -60,13 +84,16 @@ async def _require_recordings_support_speaker_mutations(
         .where(
             or_(
                 Recording.pipeline_generation.is_(None),
-                Recording.pipeline_generation != RecordingPipelineGeneration.UNIFIED.value,
+                Recording.pipeline_generation
+                != RecordingPipelineGeneration.UNIFIED.value,
             )
         )
         .limit(1)
     )
     if result.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
+        raise HTTPException(
+            status_code=409, detail=LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL
+        )
 
 
 def _copy_transcript_segments(raw_segments) -> list[dict]:
@@ -75,7 +102,9 @@ def _copy_transcript_segments(raw_segments) -> list[dict]:
             raw_segments = json.loads(raw_segments)
         except json.JSONDecodeError:
             return []
-    return [dict(segment) for segment in (raw_segments or []) if isinstance(segment, dict)]
+    return [
+        dict(segment) for segment in (raw_segments or []) if isinstance(segment, dict)
+    ]
 
 
 async def _load_segments_for_speaker_work(
@@ -86,9 +115,14 @@ async def _load_segments_for_speaker_work(
 ) -> list[dict]:
     if transcript is None:
         return []
-    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+    if (
+        _canonical_transcript_writes_enabled()
+        and recording_ready_for_canonical_backfill(recording.status)
+    ):
         return await db.run_sync(
-            lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
+            lambda sync_session: build_transcript_segments_for_read(
+                sync_session, recording.id
+            )
         )
     return _copy_transcript_segments(getattr(transcript, "segments", None))
 
@@ -102,7 +136,10 @@ async def _persist_segments_for_speaker_work(
 ) -> None:
     if transcript is None:
         return
-    if _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+    if (
+        _canonical_transcript_writes_enabled()
+        and recording_ready_for_canonical_backfill(recording.status)
+    ):
         await db.run_sync(
             lambda sync_session: apply_compatibility_segment_replace(
                 sync_session,
@@ -136,7 +173,9 @@ async def _mark_pending_speaker_suggestions_superseded(
     reason: str,
 ) -> int:
     transcript = (
-        await db.execute(select(Transcript).where(Transcript.recording_id == recording_id))
+        await db.execute(
+            select(Transcript).where(Transcript.recording_id == recording_id)
+        )
     ).scalar_one_or_none()
     if transcript is None:
         return 0
@@ -169,7 +208,11 @@ async def _merge_local_speakers(
     recording = await db.get(Recording, recording_id)
     if recording is not None and not recording_supports_unified_mutations(recording):
         raise RuntimeError(LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL)
-    if recording is not None and _canonical_transcript_writes_enabled() and recording_ready_for_canonical_backfill(recording.status):
+    if (
+        recording is not None
+        and _canonical_transcript_writes_enabled()
+        and recording_ready_for_canonical_backfill(recording.status)
+    ):
         try:
             await db.run_sync(
                 lambda sync_session: merge_recording_speakers_by_label(
@@ -188,14 +231,14 @@ async def _merge_local_speakers(
     # 1. Find the source and target speaker entries
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
-        RecordingSpeaker.diarization_label == source_label
+        RecordingSpeaker.diarization_label == source_label,
     )
     result = await db.execute(statement)
     source_speaker = result.scalar_one_or_none()
 
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
-        RecordingSpeaker.diarization_label == target_label
+        RecordingSpeaker.diarization_label == target_label,
     )
     result = await db.execute(statement)
     target_speaker = result.scalar_one_or_none()
@@ -248,9 +291,7 @@ async def _merge_local_speakers(
     # 3. Merge embeddings
     if source_speaker.embedding and target_speaker.embedding:
         target_speaker.embedding = merge_embeddings(
-            target_speaker.embedding, 
-            source_speaker.embedding, 
-            alpha=0.5
+            target_speaker.embedding, source_speaker.embedding, alpha=0.5
         )
         db.add(target_speaker)
     elif source_speaker.embedding and not target_speaker.embedding:
@@ -260,7 +301,7 @@ async def _merge_local_speakers(
     # 4. Soft-Merge source speaker (set merged_into_id)
     # Instead of deleting, we keep it to preserve the merge history for reprocessing
     source_speaker.merged_into_id = target_speaker.id
-    source_speaker.embedding = None # Clear embedding as it's merged
+    source_speaker.embedding = None  # Clear embedding as it's merged
     db.add(source_speaker)
 
 
@@ -283,7 +324,9 @@ class MergeRequestLabels(BaseModel):
 
 class VoiceprintAction(BaseModel):
     action: str  # "create_new", "link_existing", "local_only", "force_link"
-    global_speaker_id: Optional[int] = None  # Required for "link_existing" and "force_link"
+    global_speaker_id: Optional[int] = (
+        None  # Required for "link_existing" and "force_link"
+    )
     new_speaker_name: Optional[str] = None  # Required for "create_new"
 
 

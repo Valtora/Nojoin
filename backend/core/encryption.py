@@ -27,7 +27,11 @@ def _get_encryption_seed() -> str:
     try:
         key_file.chmod(0o600)
     except OSError as e:
-        logger.warning("Could not set owner-only permissions on encryption key file %s: %s", key_file, e)
+        logger.warning(
+            "Could not set owner-only permissions on encryption key file %s: %s",
+            key_file,
+            e,
+        )
     return new_seed
 
 
@@ -51,7 +55,11 @@ def _migrate_legacy_encryption_key_file(current_key_file: Path) -> None:
         try:
             current_key_file.chmod(0o600)
         except OSError as e:
-            logger.warning("Could not set owner-only permissions on migrated encryption key file %s: %s", current_key_file, e)
+            logger.warning(
+                "Could not set owner-only permissions on migrated encryption key file %s: %s",
+                current_key_file,
+                e,
+            )
 
     migrated_key_file = legacy_key_file.with_name(f"{legacy_key_file.name}.migrated")
     try:

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from backend.utils.pyannote_model_utils import (
     get_bundled_pyannote_models_root,
     is_repo_bundled_pyannote_path,
@@ -9,7 +7,9 @@ from backend.utils.pyannote_model_utils import (
 )
 
 
-def test_resolve_local_pyannote_model_prefers_bundled_dir(monkeypatch, tmp_path) -> None:
+def test_resolve_local_pyannote_model_prefers_bundled_dir(
+    monkeypatch, tmp_path
+) -> None:
     bundled_root = tmp_path / "bundled"
     model_dir = bundled_root / "speaker-diarization-community-1"
     (model_dir / "segmentation").mkdir(parents=True)
@@ -30,12 +30,16 @@ def test_resolve_local_pyannote_model_prefers_bundled_dir(monkeypatch, tmp_path)
     assert resolved.checked_paths == [str(model_dir)]
 
 
-def test_resolve_local_pyannote_model_uses_hf_cache_snapshot(monkeypatch, tmp_path) -> None:
+def test_resolve_local_pyannote_model_uses_hf_cache_snapshot(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setenv("NOJOIN_PYANNOTE_MODELS_DIR", str(tmp_path / "empty-bundled"))
     monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-home"))
 
     cache_root = tmp_path / "hf-home" / "hub"
-    snapshot_dir = cache_root / "models--pyannote--segmentation-3.0" / "snapshots" / "abc123"
+    snapshot_dir = (
+        cache_root / "models--pyannote--segmentation-3.0" / "snapshots" / "abc123"
+    )
     (snapshot_dir / "config.yaml").parent.mkdir(parents=True)
     (snapshot_dir / "config.yaml").write_text("model: {}\n", encoding="utf-8")
     (snapshot_dir / "pytorch_model.bin").write_bytes(b"weights")
@@ -45,7 +49,9 @@ def test_resolve_local_pyannote_model_uses_hf_cache_snapshot(monkeypatch, tmp_pa
     assert resolved.source == "cache"
     assert resolved.load_ref == str(snapshot_dir)
     assert resolved.path == str(snapshot_dir)
-    assert str(cache_root / "models--pyannote--segmentation-3.0") in resolved.checked_paths
+    assert (
+        str(cache_root / "models--pyannote--segmentation-3.0") in resolved.checked_paths
+    )
 
 
 def test_is_repo_bundled_pyannote_path(monkeypatch, tmp_path) -> None:

@@ -126,9 +126,7 @@ def test_openai_generate_meeting_intelligence_uses_shared_contract() -> None:
             capture.update(kwargs)
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=_sample_payload())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=_sample_payload()))
                 ]
             )
 
@@ -164,7 +162,9 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
     assert "## User Notes" in result.notes_markdown
     assert capture["max_tokens"] == 4096
-    assert capture["messages"][0]["content"].startswith("You are an expert meeting intelligence assistant.")
+    assert capture["messages"][0]["content"].startswith(
+        "You are an expert meeting intelligence assistant."
+    )
 
 
 def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
@@ -328,7 +328,9 @@ def test_ollama_generate_meeting_edge_accepts_empty_signal_payload() -> None:
     backend.requests = FakeRequests()
 
     result = backend.generate_meeting_edge(
-        MeetingEdgeRequest(recent_transcript="Speaker A: We need final approval before launch."),
+        MeetingEdgeRequest(
+            recent_transcript="Speaker A: We need final approval before launch."
+        ),
         timeout=20,
     )
 
@@ -369,7 +371,9 @@ def test_ollama_generate_meeting_edge_repairs_malformed_payload() -> None:
     backend.requests = FakeRequests()
 
     result = backend.generate_meeting_edge(
-        MeetingEdgeRequest(recent_transcript="Speaker A: We need final approval before launch."),
+        MeetingEdgeRequest(
+            recent_transcript="Speaker A: We need final approval before launch."
+        ),
         timeout=20,
     )
 
@@ -377,7 +381,10 @@ def test_ollama_generate_meeting_edge_repairs_malformed_payload() -> None:
     assert len(calls) == 2
     assert calls[0]["json"]["format"] == "json"
     assert calls[1]["json"]["format"] == "json"
-    assert "Could not parse a Meeting Edge JSON object" in calls[1]["json"]["messages"][0]["content"]
+    assert (
+        "Could not parse a Meeting Edge JSON object"
+        in calls[1]["json"]["messages"][0]["content"]
+    )
 
 
 def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
@@ -402,7 +409,9 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
     class FakeSecondary:
         model = "gemini-flash-lite-latest"
 
-        def generate_meeting_intelligence(self, request, prompt_template=None, timeout=60):
+        def generate_meeting_intelligence(
+            self, request, prompt_template=None, timeout=60
+        ):
             calls.append({"secondary_request": request})
             return AutomaticMeetingIntelligenceResult(
                 speaker_mapping={"SPEAKER_00": "Jordan"},
@@ -418,4 +427,7 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
     assert result.speaker_mapping == {"SPEAKER_00": "Jordan"}
     assert len(calls) == 3
     assert calls[-1]["secondary_request"].output_language_instruction is not None
-    assert "English (British)" in calls[-1]["secondary_request"].output_language_instruction
+    assert (
+        "English (British)"
+        in calls[-1]["secondary_request"].output_language_instruction
+    )

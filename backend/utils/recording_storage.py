@@ -12,7 +12,6 @@ from sqlmodel import select
 from backend.models.pipeline import RecordingAudioChunk
 from backend.utils.time import utc_now
 
-
 RECORDING_UPLOAD_RETENTION_HOURS = 24
 
 
@@ -105,13 +104,18 @@ def delete_recording_artifacts(
     try:
         shutil.rmtree(temp_dir)
     except OSError as error:
-        logger.warning("Failed to delete recording temp directory %s: %s", temp_dir, error)
+        logger.warning(
+            "Failed to delete recording temp directory %s: %s", temp_dir, error
+        )
 
 
 def _cleanup_empty_chunk_parent_dirs(path: Path, *, logger: logging.Logger) -> None:
     candidate = path.parent
     roots: list[Path] = []
-    for root in (recordings_temp_dir(create=False), recordings_failed_dir(create=False)):
+    for root in (
+        recordings_temp_dir(create=False),
+        recordings_failed_dir(create=False),
+    ):
         try:
             roots.append(root.resolve())
         except OSError:
@@ -140,7 +144,9 @@ def _cleanup_empty_chunk_parent_dirs(path: Path, *, logger: logging.Logger) -> N
         except StopIteration:
             pass
         except OSError as error:
-            logger.warning("Failed to inspect recording chunk directory %s: %s", candidate, error)
+            logger.warning(
+                "Failed to inspect recording chunk directory %s: %s", candidate, error
+            )
             return
 
         if resolved_candidate == matching_root:
@@ -153,7 +159,11 @@ def _cleanup_empty_chunk_parent_dirs(path: Path, *, logger: logging.Logger) -> N
         try:
             candidate.rmdir()
         except OSError as error:
-            logger.warning("Failed to remove empty recording chunk directory %s: %s", candidate, error)
+            logger.warning(
+                "Failed to remove empty recording chunk directory %s: %s",
+                candidate,
+                error,
+            )
             return
         candidate = candidate.parent
 
@@ -180,7 +190,9 @@ def cleanup_recording_audio_chunks(
                 resolved_path.unlink()
                 cleaned_count += 1
             except OSError as error:
-                logger.warning("Failed to delete recording chunk file %s: %s", resolved_path, error)
+                logger.warning(
+                    "Failed to delete recording chunk file %s: %s", resolved_path, error
+                )
                 continue
             _cleanup_empty_chunk_parent_dirs(resolved_path, logger=logger)
 
@@ -201,7 +213,9 @@ def mark_recording_audio_chunks_ready_for_cleanup(
     upload_status: str = "finalized",
 ) -> int:
     rows = session.exec(
-        select(RecordingAudioChunk).where(RecordingAudioChunk.recording_id == recording_id)
+        select(RecordingAudioChunk).where(
+            RecordingAudioChunk.recording_id == recording_id
+        )
     ).all()
     if not rows:
         return 0
@@ -238,7 +252,10 @@ def cleanup_stale_recording_artifacts(
     cutoff_time = time.time() - (max_age_hours * 60 * 60)
     cleaned_count = 0
 
-    for root in (recordings_temp_dir(create=False), recordings_failed_dir(create=False)):
+    for root in (
+        recordings_temp_dir(create=False),
+        recordings_failed_dir(create=False),
+    ):
         if not root.exists():
             continue
 
@@ -254,6 +271,8 @@ def cleanup_stale_recording_artifacts(
                 cleaned_count += 1
                 logger.info("Cleaned up old recording storage item: %s", item)
             except Exception as error:  # noqa: BLE001
-                logger.error("Error cleaning stale recording storage item %s: %s", item, error)
+                logger.error(
+                    "Error cleaning stale recording storage item %s: %s", item, error
+                )
 
     return cleaned_count

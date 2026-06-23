@@ -23,8 +23,7 @@ class TranscriptionEngine(ABC):
     name: str
 
     @abstractmethod
-    def transcribe(self, audio_path: str, config: dict) -> dict | None:
-        ...
+    def transcribe(self, audio_path: str, config: dict) -> dict | None: ...
 
     def release(self) -> None:
         """Release cached models / VRAM. Default no-op."""

@@ -216,12 +216,20 @@ def test_apply_live_authority_does_not_use_array_index_for_merged_final_segment(
     assert result[0]["speaker"] == "SPEAKER_00"
     assert result[0]["live_reuse_alignment"]["status"] == "rejected"
     assert result[0]["live_reuse_alignment"]["matched_live_utterance_ids"] == []
-    assert result[0]["live_reuse_alignment"]["candidate_live_utterance_ids"] == ["live-1"]
+    assert result[0]["live_reuse_alignment"]["candidate_live_utterance_ids"] == [
+        "live-1"
+    ]
 
 
 def test_apply_live_authority_rejects_even_split_from_one_live_segment():
     live_segments = [
-        {"id": "live-1", "start": 0, "end": 2, "speaker": "LIVE_01", "text": "hello world"},
+        {
+            "id": "live-1",
+            "start": 0,
+            "end": 2,
+            "speaker": "LIVE_01",
+            "text": "hello world",
+        },
     ]
     combined_segments = [
         {"start": 0, "end": 1, "speaker": "SPEAKER_00", "text": "hello"},
@@ -262,7 +270,13 @@ def test_apply_live_authority_preserves_manual_text_only_when_alignment_is_safe(
                 "text": "manual first",
                 "text_manually_edited": True,
             },
-            {"id": "live-2", "start": 1, "end": 2, "speaker": "LIVE_02", "text": "second"},
+            {
+                "id": "live-2",
+                "start": 1,
+                "end": 2,
+                "speaker": "LIVE_02",
+                "text": "second",
+            },
         ],
         [{"start": 0, "end": 2, "speaker": "SPEAKER_00", "text": "final merged"}],
     )

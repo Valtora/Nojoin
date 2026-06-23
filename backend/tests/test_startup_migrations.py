@@ -8,7 +8,9 @@ from sqlalchemy import create_engine, text
 from backend import startup_migrations
 
 
-def _write_migration(path: Path, revision: str, down_revision: str | tuple[str, ...] | None) -> None:
+def _write_migration(
+    path: Path, revision: str, down_revision: str | tuple[str, ...] | None
+) -> None:
     path.write_text(
         "\n".join(
             [
@@ -33,8 +35,12 @@ def test_repair_orphaned_revision_state_raises_when_auto_repair_disabled() -> No
     engine = create_engine("sqlite://")
 
     with engine.connect() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('deadbeef')"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        connection.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES ('deadbeef')")
+        )
         connection.commit()
 
         with pytest.raises(RuntimeError, match="missing Alembic revision"):
@@ -50,8 +56,12 @@ def test_repair_orphaned_revision_state_restamps_current_heads_when_enabled() ->
     engine = create_engine("sqlite://")
 
     with engine.connect() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('deadbeef')"))
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        connection.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES ('deadbeef')")
+        )
         connection.commit()
 
         repaired = startup_migrations.repair_orphaned_revision_state(
@@ -60,9 +70,13 @@ def test_repair_orphaned_revision_state_restamps_current_heads_when_enabled() ->
             known_revision_ids={"feedface"},
             head_revision_ids=("feedface",),
         )
-        current_revision_ids = connection.execute(
-            text("SELECT version_num FROM alembic_version ORDER BY version_num")
-        ).scalars().all()
+        current_revision_ids = (
+            connection.execute(
+                text("SELECT version_num FROM alembic_version ORDER BY version_num")
+            )
+            .scalars()
+            .all()
+        )
 
     assert repaired == ("deadbeef",)
     assert current_revision_ids == ["feedface"]

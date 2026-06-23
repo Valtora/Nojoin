@@ -98,9 +98,7 @@ def test_best_match_skips_speakers_without_embedding() -> None:
         _FakeSpeaker(id=1, embedding=[]),
         _FakeSpeaker(id=2, embedding=[0.0, 1.0]),
     ]
-    best, _, best_score, _ = _best_match_to_recording_speakers(
-        [0.0, 1.0], speakers
-    )
+    best, _, best_score, _ = _best_match_to_recording_speakers([0.0, 1.0], speakers)
     assert best.id == 2
     assert pytest.approx(best_score, abs=1e-3) == 1.0
 

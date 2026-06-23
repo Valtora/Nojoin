@@ -6,14 +6,14 @@ from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.models.calendar import (
     CalendarActionResponse,
     CalendarAuthorisationStart,
+    CalendarConnectionRead,
     CalendarDashboardSummaryRead,
     CalendarOverviewRead,
     CalendarProvider,
     CalendarProviderConfigUpdate,
     CalendarProviderStatusRead,
-    CalendarSourceColourUpdate,
     CalendarSelectionUpdate,
-    CalendarConnectionRead,
+    CalendarSourceColourUpdate,
 )
 from backend.models.user import User
 from backend.services.calendar_service import (
@@ -25,12 +25,11 @@ from backend.services.calendar_service import (
     list_provider_statuses,
     refresh_connection_now,
     start_authorisation,
-    update_connection_selection,
     update_calendar_source_colour,
+    update_connection_selection,
     update_provider_configuration,
 )
 from backend.utils.rate_limit import enforce_rate_limit
-
 
 router = APIRouter()
 
@@ -42,7 +41,9 @@ def _validate_provider(provider: str) -> str:
     return provider
 
 
-def _map_callback_status(provider: str, error: str | None, error_description: str | None) -> str:
+def _map_callback_status(
+    provider: str, error: str | None, error_description: str | None
+) -> str:
     if error == "access_denied":
         return "cancelled"
     if (
@@ -114,9 +115,13 @@ async def start_calendar_authorisation_redirect(
         authorisation_url = await start_authorisation(db, provider, current_user)
     except HTTPException as exc:
         status_value = "config-error" if exc.status_code == 400 else "error"
-        return RedirectResponse(_build_account_redirect(status_value, provider), status_code=303)
+        return RedirectResponse(
+            _build_account_redirect(status_value, provider), status_code=303
+        )
     except Exception:  # noqa: BLE001
-        return RedirectResponse(_build_account_redirect("error", provider), status_code=303)
+        return RedirectResponse(
+            _build_account_redirect("error", provider), status_code=303
+        )
 
     return RedirectResponse(authorisation_url, status_code=303)
 
@@ -144,17 +149,25 @@ async def calendar_authorisation_callback(
 
     if error or not code or not state:
         status_value = _map_callback_status(provider, error, error_description)
-        return RedirectResponse(_build_account_redirect(status_value, provider), status_code=303)
+        return RedirectResponse(
+            _build_account_redirect(status_value, provider), status_code=303
+        )
 
     try:
         await handle_callback(db, provider, current_user, code, state)
     except Exception:  # noqa: BLE001
-        return RedirectResponse(_build_account_redirect("error", provider), status_code=303)
+        return RedirectResponse(
+            _build_account_redirect("error", provider), status_code=303
+        )
 
-    return RedirectResponse(_build_account_redirect("success", provider), status_code=303)
+    return RedirectResponse(
+        _build_account_redirect("success", provider), status_code=303
+    )
 
 
-@router.put("/connections/{connection_id}/calendars", response_model=CalendarConnectionRead)
+@router.put(
+    "/connections/{connection_id}/calendars", response_model=CalendarConnectionRead
+)
 async def update_selected_calendars(
     connection_id: int,
     payload: CalendarSelectionUpdate,
@@ -164,8 +177,14 @@ async def update_selected_calendars(
     return await update_connection_selection(db, current_user, connection_id, payload)
 
 
-@router.put("/connections/{connection_id}/calendars/{calendar_id}/colour", response_model=CalendarConnectionRead)
-@router.put("/connections/{connection_id}/calendars/{calendar_id}/color", response_model=CalendarConnectionRead)
+@router.put(
+    "/connections/{connection_id}/calendars/{calendar_id}/colour",
+    response_model=CalendarConnectionRead,
+)
+@router.put(
+    "/connections/{connection_id}/calendars/{calendar_id}/color",
+    response_model=CalendarConnectionRead,
+)
 async def update_calendar_colour(
     connection_id: int,
     calendar_id: int,

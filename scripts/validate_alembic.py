@@ -52,8 +52,7 @@ def main() -> int:
     )
     if duplicate_revisions:
         print(
-            "Duplicate Alembic revision ids found: "
-            + ", ".join(duplicate_revisions),
+            "Duplicate Alembic revision ids found: " + ", ".join(duplicate_revisions),
             file=sys.stderr,
         )
         return 1
@@ -85,16 +84,12 @@ def main() -> int:
 
     if len(heads) != 1:
         print(
-            "Expected exactly one checked-in Alembic head, found: "
-            + ", ".join(heads),
+            "Expected exactly one checked-in Alembic head, found: " + ", ".join(heads),
             file=sys.stderr,
         )
         return 1
 
-    print(
-        "Alembic migration graph validated successfully. "
-        f"Head revision: {heads[0]}"
-    )
+    print(f"Alembic migration graph validated successfully. Head revision: {heads[0]}")
     return 0
 
 

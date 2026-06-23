@@ -1,23 +1,23 @@
-import os
 import logging
+
 from fastapi import Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_db, get_current_user
-from backend.models.user import User
-from backend.models.recording import Recording, RecordingUpdate, RecordingStatus, ClientStatus
-from backend.models.calendar import CalendarEvent
-from backend.models.recording_public import RecordingPublicRead, serialize_recording
 import backend.api.v1.endpoints.recordings as recordings_module
+from backend.api.deps import get_current_user, get_db
+from backend.models.calendar import CalendarEvent
+from backend.models.recording import ClientStatus, RecordingStatus, RecordingUpdate
+from backend.models.recording_public import RecordingPublicRead, serialize_recording
+from backend.models.user import User
 
-from .router import router
 from .helpers import (
+    _get_owned_calendar_event,
     _get_owned_recording,
     _recording_has_proxy,
-    _get_owned_calendar_event,
     _requeue_for_processing,
 )
+from .router import router
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +67,20 @@ async def update_recording(
     recording_id: str,
     recording_update: RecordingUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Update a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
+
     if recording_update.name is not None:
         recording.name = recording_update.name
-        
+
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    
+
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
@@ -88,25 +88,24 @@ async def update_recording(
 async def delete_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Delete a recording and its associated file.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    
+
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,
         proxy_path=recording.proxy_path,
         logger=logger,
     )
-            
+
     await db.delete(recording)
     await db.commit()
-    
-    return {"ok": True}
 
+    return {"ok": True}
 
 
 class ReprocessRequest(BaseModel):
@@ -121,7 +120,7 @@ async def reprocess_recording(
     recording_id: str,
     body: ReprocessRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Re-run the full processing pipeline with a caller-chosen transcription engine.
@@ -169,21 +168,23 @@ async def reprocess_recording(
 async def archive_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Archive a recording. Archived recordings are hidden from the main list.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    
+
     if recording.is_deleted:
-        raise HTTPException(status_code=400, detail="Cannot archive a deleted recording")
-        
+        raise HTTPException(
+            status_code=400, detail="Cannot archive a deleted recording"
+        )
+
     recording.is_archived = True
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    
+
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
@@ -191,13 +192,13 @@ async def archive_recording(
 async def restore_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Restore an archived or soft-deleted recording back to the main list.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
+
     recording.is_archived = False
     if recording.is_deleted:
         # Restore from Deleted -> Previous State
@@ -205,11 +206,11 @@ async def restore_recording(
     else:
         # Restore from Archived -> Active
         recording.is_archived = False
-        
+
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    
+
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
@@ -217,18 +218,18 @@ async def restore_recording(
 async def soft_delete_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Soft-delete a recording. It moves to the trash/deleted view.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
+
     recording.is_deleted = True
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    
+
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
 
@@ -236,16 +237,18 @@ async def soft_delete_recording(
 async def permanently_delete_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Permanently delete a recording and its associated file.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    
+
     if recording.celery_task_id:
         try:
-            recordings_module.celery_app.control.revoke(recording.celery_task_id, terminate=True)
+            recordings_module.celery_app.control.revoke(
+                recording.celery_task_id, terminate=True
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -255,10 +258,10 @@ async def permanently_delete_recording(
         proxy_path=recording.proxy_path,
         logger=logger,
     )
-            
+
     await db.delete(recording)
     await db.commit()
-    
+
     return {"ok": True}
 
 
@@ -266,7 +269,7 @@ async def permanently_delete_recording(
 async def infer_speakers_for_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Re-run speaker inference on an already processed meeting.
@@ -280,35 +283,44 @@ async def infer_speakers_for_recording(
     await db.refresh(recording)
 
     task = recordings_module.celery_app.send_task(
-        "backend.worker.tasks.infer_speakers_task",
-        args=[recording.id]
+        "backend.worker.tasks.infer_speakers_task", args=[recording.id]
     )
     recording.celery_task_id = task.id
     db.add(recording)
     await db.commit()
     from backend.models.task import register_task_ownership
+
     await register_task_ownership(db, task.id, recording.user_id)
-    
-    return {"status": "queued", "message": "Speaker suggestion refresh started in background."}
+
+    return {
+        "status": "queued",
+        "message": "Speaker suggestion refresh started in background.",
+    }
 
 
 @router.post("/{recording_id}/cancel", response_model=RecordingPublicRead)
 async def cancel_processing(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Cancel the processing task for a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
-    if recording.status not in [RecordingStatus.PROCESSING, RecordingStatus.QUEUED, RecordingStatus.UPLOADING]:
+
+    if recording.status not in [
+        RecordingStatus.PROCESSING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.UPLOADING,
+    ]:
         raise HTTPException(status_code=400, detail="Recording is not being processed")
 
     if recording.celery_task_id:
         try:
-            recordings_module.celery_app.control.revoke(recording.celery_task_id, terminate=True)
+            recordings_module.celery_app.control.revoke(
+                recording.celery_task_id, terminate=True
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -320,9 +332,9 @@ async def cancel_processing(
     recording.processing_progress = 0
     recording.processing_started_at = None
     recording.processing_completed_at = None
-    
+
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
-    
+
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))

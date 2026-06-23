@@ -1,4 +1,3 @@
-import pytest
 from pyannote.core import Segment
 
 from backend.utils.transcript_utils import (
@@ -21,53 +20,53 @@ class FakeDiarization:
             else:
                 yield Segment(start, end), None
 
+
 def test_consolidate_preserves_short_segments_if_only_one():
     """Test that a single short segment is NOT filtered out."""
-    segments = [
-        {'start': 0.0, 'end': 0.5, 'speaker': 'SPEAKER_00', 'text': 'Hello'}
-    ]
+    segments = [{"start": 0.0, "end": 0.5, "speaker": "SPEAKER_00", "text": "Hello"}]
     result = consolidate_diarized_transcript(segments, min_duration_s=1.0)
     assert len(result) == 1
-    assert result[0]['text'] == 'Hello'
+    assert result[0]["text"] == "Hello"
+
 
 def test_consolidate_merges_consecutive_speakers():
     """Test that segments from the same speaker are merged."""
     segments = [
-        {'start': 0.0, 'end': 2.0, 'speaker': 'SPEAKER_00', 'text': 'Hello'},
-        {'start': 2.0, 'end': 4.0, 'speaker': 'SPEAKER_00', 'text': 'World'}
+        {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00", "text": "Hello"},
+        {"start": 2.0, "end": 4.0, "speaker": "SPEAKER_00", "text": "World"},
     ]
     result = consolidate_diarized_transcript(segments)
     assert len(result) == 1
-    assert result[0]['text'] == 'Hello World'
-    assert result[0]['end'] == 4.0
+    assert result[0]["text"] == "Hello World"
+    assert result[0]["end"] == 4.0
 
 
 def test_consolidate_preserves_live_reuse_alignment_metadata():
     segments = [
         {
-            'id': 'live-1',
-            'start': 0.0,
-            'end': 1.0,
-            'speaker': 'LIVE_01',
-            'text': 'Hello',
-            'live_reuse_alignment': {
-                'status': 'matched',
-                'reason': 'time_overlap',
-                'matched_live_utterance_ids': ['live-1'],
+            "id": "live-1",
+            "start": 0.0,
+            "end": 1.0,
+            "speaker": "LIVE_01",
+            "text": "Hello",
+            "live_reuse_alignment": {
+                "status": "matched",
+                "reason": "time_overlap",
+                "matched_live_utterance_ids": ["live-1"],
             },
         },
         {
-            'id': 'live-2',
-            'start': 1.0,
-            'end': 2.0,
-            'speaker': 'LIVE_01',
-            'text': 'World',
-            'text_manually_edited': True,
-            'live_reuse_alignment': {
-                'status': 'matched',
-                'reason': 'time_overlap',
-                'matched_live_utterance_ids': ['live-2'],
-                'manual_override_reasons': ['manual_text_locked'],
+            "id": "live-2",
+            "start": 1.0,
+            "end": 2.0,
+            "speaker": "LIVE_01",
+            "text": "World",
+            "text_manually_edited": True,
+            "live_reuse_alignment": {
+                "status": "matched",
+                "reason": "time_overlap",
+                "matched_live_utterance_ids": ["live-2"],
+                "manual_override_reasons": ["manual_text_locked"],
             },
         },
     ]
@@ -75,64 +74,72 @@ def test_consolidate_preserves_live_reuse_alignment_metadata():
     result = consolidate_diarized_transcript(segments)
 
     assert len(result) == 1
-    assert result[0]['text'] == 'Hello World'
-    assert result[0]['text_manually_edited'] is True
-    assert result[0]['source_public_ids'] == ['live-1', 'live-2']
-    assert result[0]['live_reuse_alignment']['status'] == 'merged'
-    assert result[0]['live_reuse_alignment']['matched_live_utterance_ids'] == [
-        'live-1',
-        'live-2',
+    assert result[0]["text"] == "Hello World"
+    assert result[0]["text_manually_edited"] is True
+    assert result[0]["source_public_ids"] == ["live-1", "live-2"]
+    assert result[0]["live_reuse_alignment"]["status"] == "merged"
+    assert result[0]["live_reuse_alignment"]["matched_live_utterance_ids"] == [
+        "live-1",
+        "live-2",
     ]
+
 
 def test_consolidate_splits_long_segments():
     """Test that segments are split if they exceed max_duration_s."""
     # Assume max_duration_s=10.0 (default)
-    
+
     # Create two segments that would normally merge to 12s
     segments = [
-        {'start': 0.0, 'end': 8.0, 'speaker': 'SPEAKER_00', 'text': 'Part 1'},
-        {'start': 8.0, 'end': 12.0, 'speaker': 'SPEAKER_00', 'text': 'Part 2'}
+        {"start": 0.0, "end": 8.0, "speaker": "SPEAKER_00", "text": "Part 1"},
+        {"start": 8.0, "end": 12.0, "speaker": "SPEAKER_00", "text": "Part 2"},
     ]
-    
+
     result = consolidate_diarized_transcript(segments)
-    
+
     # Needs 2 segments because 12s > 10s
     assert len(result) == 2
-    
+
     # First segment: 0-8s
-    assert result[0]['start'] == 0.0
-    assert result[0]['end'] == 8.0
-    assert result[0]['text'] == 'Part 1'
-    
+    assert result[0]["start"] == 0.0
+    assert result[0]["end"] == 8.0
+    assert result[0]["text"] == "Part 1"
+
     # Second segment: 8-12s
-    assert result[1]['start'] == 8.0
-    assert result[1]['end'] == 12.0
-    assert result[1]['text'] == 'Part 2'
+    assert result[1]["start"] == 8.0
+    assert result[1]["end"] == 12.0
+    assert result[1]["text"] == "Part 2"
+
 
 def test_consolidate_splits_at_segment_boundary():
     """Test split behavior when multiple segments accumulate."""
     segments = [
-        {'start': 0.0, 'end': 4.0, 'speaker': 'A', 'text': '1'},
-        {'start': 4.0, 'end': 8.0, 'speaker': 'A', 'text': '2'},
-        {'start': 8.0, 'end': 12.0, 'speaker': 'A', 'text': '3'}, # This should cause split (End would match 12 > 10)
-        {'start': 12.0, 'end': 15.0, 'speaker': 'A', 'text': '4'}
+        {"start": 0.0, "end": 4.0, "speaker": "A", "text": "1"},
+        {"start": 4.0, "end": 8.0, "speaker": "A", "text": "2"},
+        {
+            "start": 8.0,
+            "end": 12.0,
+            "speaker": "A",
+            "text": "3",
+        },  # This should cause split (End would match 12 > 10)
+        {"start": 12.0, "end": 15.0, "speaker": "A", "text": "4"},
     ]
-    
+
     result = consolidate_diarized_transcript(segments)
-    
+
     # Expected:
     # Seg 1: 0-8 (1+2) -> 8s duration. Adding 3 (end=12) would make 12s > 10s. So split.
     # Seg 2: 8-12 (3) -> 4s duration. Adding 4 (end=15) -> 8-15 = 7s. Merge.
-    
+
     assert len(result) == 2
-    
-    assert result[0]['start'] == 0.0
-    assert result[0]['end'] == 8.0
-    assert result[0]['text'] == '1 2'
-    
-    assert result[1]['start'] == 8.0
-    assert result[1]['end'] == 15.0
-    assert result[1]['text'] == '3 4'
+
+    assert result[0]["start"] == 0.0
+    assert result[0]["end"] == 8.0
+    assert result[0]["text"] == "1 2"
+
+    assert result[1]["start"] == 8.0
+    assert result[1]["end"] == 15.0
+    assert result[1]["text"] == "3 4"
+
 
 def test_regression_orphan_drop():
     """
@@ -140,19 +147,20 @@ def test_regression_orphan_drop():
     preventing data loss and misalignment.
     """
     segments = [
-        {'start': 0.0, 'end': 9.5, 'speaker': 'A', 'text': 'Long speech part 1'},
-        {'start': 9.5, 'end': 10.2, 'speaker': 'A', 'text': 'end.'}
+        {"start": 0.0, "end": 9.5, "speaker": "A", "text": "Long speech part 1"},
+        {"start": 9.5, "end": 10.2, "speaker": "A", "text": "end."},
     ]
-    
+
     # Use defaults (min=0.5, max=10.0)
     result = consolidate_diarized_transcript(segments)
-    
+
     # Should have 2 segments:
     # 1. 0.0 - 9.5 "Long speech part 1"
     # 2. 9.5 - 10.2 "end." (0.7s duration, which is > 0.5 default)
     assert len(result) == 2
-    assert result[1]['text'] == 'end.'
-    assert result[1]['end'] == 10.2
+    assert result[1]["text"] == "end."
+    assert result[1]["end"] == 10.2
+
 
 def test_regression_giant_segment_split():
     """
@@ -161,45 +169,50 @@ def test_regression_giant_segment_split():
     """
     # 35 second segment
     segments = [
-        {'start': 0.0, 'end': 35.0, 'speaker': 'A', 'text': 'This is a very long segment ' * 10}
+        {
+            "start": 0.0,
+            "end": 35.0,
+            "speaker": "A",
+            "text": "This is a very long segment " * 10,
+        }
     ]
-    
+
     # Should be split into 10s chunks: 0-10, 10-20, 20-30, 30-35
     result = consolidate_diarized_transcript(segments)
-    
+
     assert len(result) >= 4
-    
+
     # Check first chunk
-    assert result[0]['end'] - result[0]['start'] == 10.0
-    assert result[0]['start'] == 0.0
-    assert result[0]['end'] == 10.0
-    
+    assert result[0]["end"] - result[0]["start"] == 10.0
+    assert result[0]["start"] == 0.0
+    assert result[0]["end"] == 10.0
+
     # Check last chunk
     last = result[-1]
-    assert last['start'] == 30.0
-    assert last['end'] == 35.0
+    assert last["start"] == 30.0
+    assert last["end"] == 35.0
 
 
 def test_long_word_split_reconstructs_spaces_without_leading_space_tokens():
     segments = [
         {
-            'start': 0.0,
-            'end': 12.0,
-            'speaker': 'A',
-            'text': 'one two three four five six seven eight nine ten eleven twelve',
-            'words': [
-                {'start': 0.0, 'end': 1.0, 'word': 'one'},
-                {'start': 1.0, 'end': 2.0, 'word': 'two'},
-                {'start': 2.0, 'end': 3.0, 'word': 'three'},
-                {'start': 3.0, 'end': 4.0, 'word': 'four'},
-                {'start': 4.0, 'end': 5.0, 'word': 'five'},
-                {'start': 5.0, 'end': 6.0, 'word': 'six'},
-                {'start': 6.0, 'end': 7.0, 'word': 'seven'},
-                {'start': 7.0, 'end': 8.0, 'word': 'eight'},
-                {'start': 8.0, 'end': 9.0, 'word': 'nine'},
-                {'start': 9.0, 'end': 10.0, 'word': 'ten'},
-                {'start': 10.0, 'end': 11.0, 'word': 'eleven'},
-                {'start': 11.0, 'end': 12.0, 'word': 'twelve'},
+            "start": 0.0,
+            "end": 12.0,
+            "speaker": "A",
+            "text": "one two three four five six seven eight nine ten eleven twelve",
+            "words": [
+                {"start": 0.0, "end": 1.0, "word": "one"},
+                {"start": 1.0, "end": 2.0, "word": "two"},
+                {"start": 2.0, "end": 3.0, "word": "three"},
+                {"start": 3.0, "end": 4.0, "word": "four"},
+                {"start": 4.0, "end": 5.0, "word": "five"},
+                {"start": 5.0, "end": 6.0, "word": "six"},
+                {"start": 6.0, "end": 7.0, "word": "seven"},
+                {"start": 7.0, "end": 8.0, "word": "eight"},
+                {"start": 8.0, "end": 9.0, "word": "nine"},
+                {"start": 9.0, "end": 10.0, "word": "ten"},
+                {"start": 10.0, "end": 11.0, "word": "eleven"},
+                {"start": 11.0, "end": 12.0, "word": "twelve"},
             ],
         }
     ]
@@ -207,8 +220,8 @@ def test_long_word_split_reconstructs_spaces_without_leading_space_tokens():
     result = consolidate_diarized_transcript(segments)
 
     assert len(result) == 2
-    assert result[0]['text'] == 'one two three four five six seven eight nine ten'
-    assert result[1]['text'] == 'eleven twelve'
+    assert result[0]["text"] == "one two three four five six seven eight nine ten"
+    assert result[1]["text"] == "eleven twelve"
 
 
 def test_word_level_combination_ignores_tiny_secondary_overlap():

@@ -1,0 +1,11 @@
+# Full local development environment.
+#
+# Installs the backend/worker test stack (CPU torch) plus all linting,
+# formatting, and type-checking tooling. This is the single command a
+# contributor needs to run the same fast checks as CI:
+#
+#   python -m pip install -r requirements/dev.txt
+#
+# For a GPU host with the live processing stack, use local.txt instead.
+-r test.txt
+-r lint.txt

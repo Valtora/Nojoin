@@ -115,7 +115,9 @@ def test_automatic_meeting_intelligence_request_rejects_duplicate_labels() -> No
         raise AssertionError("Expected MeetingIntelligenceContractError")
 
 
-def test_automatic_meeting_intelligence_result_requires_top_level_markdown_heading() -> None:
+def test_automatic_meeting_intelligence_result_requires_top_level_markdown_heading() -> (
+    None
+):
     try:
         AutomaticMeetingIntelligenceResult(
             speaker_mapping={"SPEAKER_00": "Alex"},

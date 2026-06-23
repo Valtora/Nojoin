@@ -1,19 +1,21 @@
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlmodel import Field, Relationship, SQLModel
-from sqlalchemy import BigInteger, ForeignKey, Column, String
-from enum import Enum
-from .base import BaseDBModel
 from datetime import datetime
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
+from sqlalchemy import BigInteger, Column, ForeignKey, String
+from sqlmodel import Field, Relationship, SQLModel
+
+from .base import BaseDBModel
+
 if TYPE_CHECKING:
+    from .chat import ChatMessage
+    from .context_chunk import ContextChunk
+    from .document import Document
     from .speaker import RecordingSpeaker
     from .tag import RecordingTag
     from .transcript import Transcript
-    from .user import User
-    from .chat import ChatMessage
-    from .document import Document
-    from .context_chunk import ContextChunk
+
 
 class RecordingStatus(str, Enum):
     UPLOADING = "UPLOADING"
@@ -24,6 +26,7 @@ class RecordingStatus(str, Enum):
     PROCESSED = "PROCESSED"
     ERROR = "ERROR"
     CANCELLED = "CANCELLED"
+
 
 class ClientStatus(str, Enum):
     RECORDING = "RECORDING"
@@ -38,9 +41,7 @@ class RecordingPipelineGeneration(str, Enum):
     LEGACY_REPROCESS_REQUIRED = "legacy_reprocess_required"
 
 
-LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL = (
-    "This recording must be reprocessed before transcript or speaker edits are supported"
-)
+LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL = "This recording must be reprocessed before transcript or speaker edits are supported"
 
 
 def generate_meeting_uid() -> str:
@@ -49,6 +50,7 @@ def generate_meeting_uid() -> str:
 
 def generate_public_id() -> str:
     return str(uuid4())
+
 
 class Recording(BaseDBModel, table=True):
     __tablename__ = "recordings"  # pyright: ignore[reportAssignmentType]
@@ -93,24 +95,49 @@ class Recording(BaseDBModel, table=True):
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     last_activity_at: Optional[datetime] = Field(default=None)
-    
-    user_id: Optional[int] = Field(default=None, sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")))
+
+    user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE")),
+    )
     calendar_event_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(BigInteger, ForeignKey("calendar_events.id", ondelete="SET NULL")),
+        sa_column=Column(
+            BigInteger, ForeignKey("calendar_events.id", ondelete="SET NULL")
+        ),
     )
 
     # Relationships
-    speakers: List["RecordingSpeaker"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    tags: List["RecordingTag"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    transcript: Optional["Transcript"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    chat_messages: List["ChatMessage"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    documents: List["Document"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    context_chunks: List["ContextChunk"] = Relationship(back_populates="recording", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    speakers: List["RecordingSpeaker"] = Relationship(
+        back_populates="recording",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    tags: List["RecordingTag"] = Relationship(
+        back_populates="recording",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    transcript: Optional["Transcript"] = Relationship(
+        back_populates="recording",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    chat_messages: List["ChatMessage"] = Relationship(
+        back_populates="recording",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    documents: List["Document"] = Relationship(
+        back_populates="recording",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    context_chunks: List["ContextChunk"] = Relationship(
+        back_populates="recording",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
 
 # Read Models
 # Safe to import here; speaker.py only references Recording under TYPE_CHECKING.
 from .speaker import GlobalSpeakerRead
+
 
 class RecordingSpeakerRead(BaseDBModel):
     recording_id: int
@@ -121,6 +148,7 @@ class RecordingSpeakerRead(BaseDBModel):
     color: Optional[str] = None
     has_voiceprint: bool = False
     global_speaker: Optional[GlobalSpeakerRead] = None
+
 
 class TranscriptRead(BaseDBModel):
     text: Optional[str] = None
@@ -135,9 +163,11 @@ class TranscriptRead(BaseDBModel):
     transcript_status: str = "pending"
     error_message: Optional[str] = None
 
+
 class TagRead(BaseDBModel):
     name: str
     color: Optional[str] = None
+
 
 class RecordingRead(BaseDBModel):
     name: str
@@ -156,10 +186,11 @@ class RecordingRead(BaseDBModel):
     processing_eta_sample_size: int = 0
     is_archived: bool = False
     is_deleted: bool = False
-    
+
     transcript: Optional[TranscriptRead] = None
     speakers: List[RecordingSpeakerRead] = []
     tags: List[TagRead] = []
+
 
 class RecordingUpdate(SQLModel):
     name: Optional[str] = None
@@ -217,7 +248,8 @@ def recording_supports_unified_mutations(recording: Optional["Recording"]) -> bo
         return False
 
     generation = getattr(recording, "pipeline_generation", None)
-    if hasattr(generation, "value"):
-        generation = generation.value
+    # Accept both the enum and its raw string value; getattr falls back to the
+    # original when there is no .value (e.g. already a plain string or None).
+    generation_value = getattr(generation, "value", generation)
 
-    return str(generation or "") == RecordingPipelineGeneration.UNIFIED.value
+    return str(generation_value or "") == RecordingPipelineGeneration.UNIFIED.value

@@ -1,4 +1,3 @@
-import json
 import logging
 from pathlib import Path
 
@@ -70,7 +69,9 @@ def test_pipeline_metric_timer_records_success_and_errors(monkeypatch):
         metric["payload"]["text_chars"] = 5
 
     with pytest.raises(RuntimeError):
-        with pipeline_metric_timer(stage="final_diarization_invocation", recording_id=7):
+        with pipeline_metric_timer(
+            stage="final_diarization_invocation", recording_id=7
+        ):
             raise RuntimeError("missing token")
 
     assert events[0]["stage"] == "live_asr_region"

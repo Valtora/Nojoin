@@ -7,7 +7,6 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-
 MODEL_IDS = (
     "pyannote/speaker-diarization-community-1",
     "pyannote/wespeaker-voxceleb-resnet34-LM",
@@ -22,7 +21,9 @@ def main() -> int:
 
     token = os.getenv("HF_TOKEN", "").strip()
     if not token:
-        print("HF_TOKEN must be set to vendor the gated Pyannote models.", file=sys.stderr)
+        print(
+            "HF_TOKEN must be set to vendor the gated Pyannote models.", file=sys.stderr
+        )
         return 1
 
     for model_id in MODEL_IDS:

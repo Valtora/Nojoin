@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
+from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_notes import (
     MeetingEventContext,
     append_user_notes_section,
@@ -14,8 +15,6 @@ from backend.utils.meeting_notes import (
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
 )
-from backend.utils.languages import build_output_language_prompt_section
-
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
@@ -114,7 +113,9 @@ class AutomaticMeetingIntelligenceRequest:
             )
 
         normalized_labels = tuple(
-            str(label).strip() for label in self.unresolved_speakers if str(label).strip()
+            str(label).strip()
+            for label in self.unresolved_speakers
+            if str(label).strip()
         )
         if len(set(normalized_labels)) != len(normalized_labels):
             raise MeetingIntelligenceContractError(
@@ -181,7 +182,9 @@ class AutomaticMeetingIntelligenceResult:
         request: AutomaticMeetingIntelligenceRequest,
     ) -> None:
         unknown_labels = sorted(
-            label for label in self.speaker_mapping if label not in request.unresolved_speakers
+            label
+            for label in self.speaker_mapping
+            if label not in request.unresolved_speakers
         )
         if unknown_labels:
             raise MeetingIntelligenceContractError(
@@ -317,7 +320,9 @@ def parse_automatic_meeting_intelligence_response(
 def _load_meeting_intelligence_payload(response_text: str) -> Mapping[str, Any]:
     text = response_text.strip()
     if not text:
-        raise MeetingIntelligenceContractError("response_text must be a non-empty string")
+        raise MeetingIntelligenceContractError(
+            "response_text must be a non-empty string"
+        )
 
     direct_payload = _try_load_json_object(text)
     if direct_payload is not None:

@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from backend.api.deps import get_db, get_current_user
+from backend.api.deps import get_current_user, get_db
 from backend.models.tag import Tag, TagRead
 from backend.models.task import (
     UserTask,
@@ -116,7 +115,9 @@ async def _replace_task_tags(
     )
     owned_tags = result.scalars().all()
     owned_tag_ids = {tag.id for tag in owned_tags}
-    missing_tag_ids = [tag_id for tag_id in unique_tag_ids if tag_id not in owned_tag_ids]
+    missing_tag_ids = [
+        tag_id for tag_id in unique_tag_ids if tag_id not in owned_tag_ids
+    ]
     if missing_tag_ids:
         raise HTTPException(status_code=404, detail="Task tag not found")
 
@@ -149,7 +150,9 @@ async def _replace_task_recordings(
         unique_public_ids,
         user_id=current_user.id,
     )
-    recordings_by_public_id = {recording.public_id: recording for recording in recordings}
+    recordings_by_public_id = {
+        recording.public_id: recording for recording in recordings
+    }
     missing_public_ids = [
         public_id
         for public_id in unique_public_ids

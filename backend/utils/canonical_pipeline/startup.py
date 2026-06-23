@@ -1,12 +1,18 @@
 from .constants import *
 
+
 def ensure_canonical_backfill(
     session,
     recording_id: int,
     *,
     force: bool = False,
 ) -> list[TranscriptUtterance]:
-    from .core import list_active_utterances, recording_ready_for_canonical_backfill, replace_utterances_from_segments
+    from .core import (
+        list_active_utterances,
+        recording_ready_for_canonical_backfill,
+        replace_utterances_from_segments,
+    )
+
     recording = session.get(Recording, recording_id)
     transcript = _load_transcript(session, recording_id)
     if recording is None or transcript is None:
@@ -32,7 +38,6 @@ def ensure_canonical_backfill(
     )
 
 
-
 def list_pending_startup_cutover_recording_ids(
     session,
     *,
@@ -44,8 +49,9 @@ def list_pending_startup_cutover_recording_ids(
         .order_by(Recording.id)
         .limit(max(int(batch_size), 1))
     )
-    return [int(recording_id) for recording_id in session.execute(statement).scalars().all()]
-
+    return [
+        int(recording_id) for recording_id in session.execute(statement).scalars().all()
+    ]
 
 
 def _set_legacy_recording_generation(
@@ -72,13 +78,19 @@ def _set_legacy_recording_generation(
     session.add(recording)
 
 
-
 def process_startup_cutover_recording(
     session,
     *,
     recording_id: int,
 ) -> str:
-    from .core import refresh_transcript_projection_from_canonical, list_active_utterances, recording_ready_for_canonical_backfill, _normalize_transcript_segments, replace_utterances_from_segments
+    from .core import (
+        _normalize_transcript_segments,
+        list_active_utterances,
+        recording_ready_for_canonical_backfill,
+        refresh_transcript_projection_from_canonical,
+        replace_utterances_from_segments,
+    )
+
     recording = session.get(Recording, recording_id)
     if recording is None:
         return "missing"
@@ -154,6 +166,4 @@ def process_startup_cutover_recording(
     return "backfilled"
 
 
-
-
-__all__ = [name for name in globals() if not name.startswith('__')]
+__all__ = [name for name in globals() if not name.startswith("__")]

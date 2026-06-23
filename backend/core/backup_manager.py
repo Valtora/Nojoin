@@ -1,28 +1,35 @@
-import zipfile
 import json
+import logging
 import os
 import shutil
-import tempfile
 import subprocess
-import logging
+import tempfile
+import zipfile
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Type, Tuple
+from typing import Any, Dict, List, Tuple, Type
 from uuid import uuid4
-from sqlmodel import select, SQLModel, delete, Session
-from sqlalchemy import text
+
+from sqlmodel import Session, SQLModel, delete, select
+
 from backend.core.db import async_session_maker, sync_engine
 from backend.core.encryption import decrypt_secret, encrypt_secret
-from backend.models.calendar import CalendarProvider, CalendarProviderConfig, CalendarConnection, CalendarSource, CalendarEvent
-from backend.models.user import User
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.models.calendar import (
+    CalendarConnection,
+    CalendarEvent,
+    CalendarProvider,
+    CalendarProviderConfig,
+    CalendarSource,
+)
+from backend.models.chat import ChatMessage
 from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.recording import Recording
-from backend.models.tag import Tag, RecordingTag
-from backend.models.transcript import Transcript
-from backend.models.chat import ChatMessage
+from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.models.tag import RecordingTag, Tag
 from backend.models.task import UserTask, UserTaskRecording, UserTaskTag
-from backend.utils.path_manager import PathManager
+from backend.models.transcript import Transcript
+from backend.models.user import User
 from backend.utils.audio import ensure_ffmpeg_in_path
+from backend.utils.path_manager import PathManager
 from backend.utils.version import get_installed_version
 
 logger = logging.getLogger(__name__)
@@ -59,8 +66,9 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recording_speakers", RecordingSpeaker),
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
-    ("chat_messages", ChatMessage)
+    ("chat_messages", ChatMessage),
 ]
+
 
 class BackupManager:
     # Job tracking: job_id -> {status: str, progress: str, error: str, result: Dict}
@@ -79,8 +87,10 @@ class BackupManager:
         for k, v in redacted.items():
             if isinstance(v, dict):
                 redacted[k] = BackupManager._redact_sensitive_data(v)
-            elif isinstance(k, str) and (k.endswith("_key") or k.endswith("_token") or "password" in k):
-                if v: # Only redact if there is a value
+            elif isinstance(k, str) and (
+                k.endswith("_key") or k.endswith("_token") or "password" in k
+            ):
+                if v:  # Only redact if there is a value
                     redacted[k] = "REDACTED"
         return redacted
 
@@ -95,13 +105,17 @@ class BackupManager:
                 for key, item in value.items()
             }
         if isinstance(value, list):
-            return [BackupManager._restore_redacted_sensitive_data(item) for item in value]
+            return [
+                BackupManager._restore_redacted_sensitive_data(item) for item in value
+            ]
         if value == "REDACTED":
             return None
         return value
 
     @staticmethod
-    def _adapt_record(model_cls: Type[SQLModel], data: Dict[str, Any]) -> Dict[str, Any]:
+    def _adapt_record(
+        model_cls: Type[SQLModel], data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Adapts a record dictionary to match the current model schema.
         Removes fields that no longer exist in the model.
@@ -111,7 +125,7 @@ class BackupManager:
             current_fields = model_cls.model_fields.keys()
         else:
             current_fields = model_cls.__fields__.keys()
-            
+
         # Filters data to only include fields that exist in the current model.
         return {k: v for k, v in data.items() if k in current_fields}
 
@@ -130,8 +144,10 @@ class BackupManager:
         if table_name == "recordings":
             for item in data:
                 if "audio_path" in item and item["audio_path"]:
-                    item["audio_path"] = BackupManager._build_backup_recording_audio_path(
-                        item["audio_path"]
+                    item["audio_path"] = (
+                        BackupManager._build_backup_recording_audio_path(
+                            item["audio_path"]
+                        )
                     )
                     item["file_size_bytes"] = None
 
@@ -141,7 +157,9 @@ class BackupManager:
         if table_name == "users":
             for item in data:
                 if "settings" in item and item["settings"]:
-                    item["settings"] = BackupManager._redact_sensitive_data(item["settings"])
+                    item["settings"] = BackupManager._redact_sensitive_data(
+                        item["settings"]
+                    )
 
         return data
 
@@ -161,9 +179,21 @@ class BackupManager:
 
         for provider, env_keys in CALENDAR_PROVIDER_ENV_KEYS.items():
             row = rows_by_provider.get(provider)
-            env_client_id = os.getenv(env_keys["client_id"] or "") if env_keys["client_id"] else None
-            env_client_secret = os.getenv(env_keys["client_secret"] or "") if env_keys["client_secret"] else None
-            env_tenant_id = os.getenv(env_keys["tenant_id"] or "") if env_keys["tenant_id"] else None
+            env_client_id = (
+                os.getenv(env_keys["client_id"] or "")
+                if env_keys["client_id"]
+                else None
+            )
+            env_client_secret = (
+                os.getenv(env_keys["client_secret"] or "")
+                if env_keys["client_secret"]
+                else None
+            )
+            env_tenant_id = (
+                os.getenv(env_keys["tenant_id"] or "")
+                if env_keys["tenant_id"]
+                else None
+            )
 
             if row is None:
                 has_env_config = bool(
@@ -179,7 +209,12 @@ class BackupManager:
                         "provider": provider,
                         "client_id": env_client_id,
                         "client_secret": env_client_secret,
-                        "tenant_id": env_tenant_id or (MICROSOFT_COMMON_TENANT if provider == CalendarProvider.MICROSOFT.value else None),
+                        "tenant_id": env_tenant_id
+                        or (
+                            MICROSOFT_COMMON_TENANT
+                            if provider == CalendarProvider.MICROSOFT.value
+                            else None
+                        ),
                         "enabled": True,
                     }
                 )
@@ -191,11 +226,23 @@ class BackupManager:
 
             if row.enabled is False:
                 row_data["client_id"] = row.client_id
-                row_data["tenant_id"] = row.tenant_id or (MICROSOFT_COMMON_TENANT if provider == CalendarProvider.MICROSOFT.value else None)
+                row_data["tenant_id"] = row.tenant_id or (
+                    MICROSOFT_COMMON_TENANT
+                    if provider == CalendarProvider.MICROSOFT.value
+                    else None
+                )
                 row_data["client_secret"] = decrypted_secret
             else:
                 row_data["client_id"] = row.client_id or env_client_id
-                row_data["tenant_id"] = row.tenant_id or env_tenant_id or (MICROSOFT_COMMON_TENANT if provider == CalendarProvider.MICROSOFT.value else None)
+                row_data["tenant_id"] = (
+                    row.tenant_id
+                    or env_tenant_id
+                    or (
+                        MICROSOFT_COMMON_TENANT
+                        if provider == CalendarProvider.MICROSOFT.value
+                        else None
+                    )
+                )
                 row_data["client_secret"] = decrypted_secret or env_client_secret
 
             row_data.pop("client_secret_encrypted", None)
@@ -233,12 +280,20 @@ class BackupManager:
         restored = data.copy()
         client_secret = restored.pop("client_secret", None)
         if "client_secret_encrypted" not in restored or client_secret is not None:
-            stripped_secret = client_secret.strip() if isinstance(client_secret, str) else client_secret
-            restored["client_secret_encrypted"] = encrypt_secret(stripped_secret) if stripped_secret else None
+            stripped_secret = (
+                client_secret.strip()
+                if isinstance(client_secret, str)
+                else client_secret
+            )
+            restored["client_secret_encrypted"] = (
+                encrypt_secret(stripped_secret) if stripped_secret else None
+            )
 
         if restored.get("provider") == CalendarProvider.GOOGLE.value:
             restored["tenant_id"] = None
-        elif restored.get("provider") == CalendarProvider.MICROSOFT.value and not restored.get("tenant_id"):
+        elif restored.get(
+            "provider"
+        ) == CalendarProvider.MICROSOFT.value and not restored.get("tenant_id"):
             restored["tenant_id"] = MICROSOFT_COMMON_TENANT
 
         return restored
@@ -252,12 +307,22 @@ class BackupManager:
         refresh_token = restored.pop("refresh_token", None)
 
         if "access_token_encrypted" not in restored or access_token is not None:
-            stripped_access = access_token.strip() if isinstance(access_token, str) else access_token
-            restored["access_token_encrypted"] = encrypt_secret(stripped_access) if stripped_access else None
+            stripped_access = (
+                access_token.strip() if isinstance(access_token, str) else access_token
+            )
+            restored["access_token_encrypted"] = (
+                encrypt_secret(stripped_access) if stripped_access else None
+            )
 
         if "refresh_token_encrypted" not in restored or refresh_token is not None:
-            stripped_refresh = refresh_token.strip() if isinstance(refresh_token, str) else refresh_token
-            restored["refresh_token_encrypted"] = encrypt_secret(stripped_refresh) if stripped_refresh else None
+            stripped_refresh = (
+                refresh_token.strip()
+                if isinstance(refresh_token, str)
+                else refresh_token
+            )
+            restored["refresh_token_encrypted"] = (
+                encrypt_secret(stripped_refresh) if stripped_refresh else None
+            )
 
         return restored
 
@@ -372,7 +437,9 @@ class BackupManager:
             return None
 
         stem, _ = os.path.splitext(subpath)
-        target_abs = os.path.abspath(os.path.join(os.fspath(recordings_dir), stem + ".opus"))
+        target_abs = os.path.abspath(
+            os.path.join(os.fspath(recordings_dir), stem + ".opus")
+        )
         cwd = os.path.abspath(os.getcwd())
 
         try:
@@ -392,17 +459,21 @@ class BackupManager:
         ensure_ffmpeg_in_path()
         temp_opus = tempfile.NamedTemporaryFile(delete=False, suffix=".opus")
         temp_opus.close()
-        
+
         cmd = [
             "ffmpeg",
             "-y",
-            "-i", input_path,
-            "-c:a", "libopus",
-            "-b:a", "64k", # 64k is good for speech
-            "-v", "error",
-            temp_opus.name
+            "-i",
+            input_path,
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "64k",  # 64k is good for speech
+            "-v",
+            "error",
+            temp_opus.name,
         ]
-        
+
         try:
             subprocess.run(cmd, check=True, capture_output=True)
             return temp_opus.name
@@ -413,23 +484,21 @@ class BackupManager:
 
     @staticmethod
     def _create_backup_sync(
-        recordings_dir: PathManager, 
-        config_path: PathManager, 
+        recordings_dir: PathManager,
+        config_path: PathManager,
         db_dump: Dict[str, str],
-        include_audio: bool
+        include_audio: bool,
     ) -> str:
         """
         Synchronous method to handle heavy file compression and zipping.
         Runs in a thread to prevent blocking the main event loop.
         """
-        path_manager = PathManager()
-        
         # Creates a temporary file for the zip explicitly in /tmp (mounted as volume).
         temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir="/tmp")
         temp_zip.close()
 
         try:
-            with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # 1. Write DB Dump
                 for filename, content in db_dump.items():
                     zipf.writestr(filename, content)
@@ -439,49 +508,60 @@ class BackupManager:
                     # Strategies:
                     # 1. Prefer .opus (already compressed)
                     # 2. Fallback to .wav/.mp3 etc (requires compression)
-                    
+
                     file_map: Dict[str, str] = {}
-                    
+
                     for root, dirs, files in os.walk(recordings_dir):
                         for file in files:
                             file_path = os.path.join(root, file)
                             ext = os.path.splitext(file)[1].lower()
-                            base_name = os.path.splitext(file)[0] # Usually the UUID
-                            
+                            base_name = os.path.splitext(file)[0]  # Usually the UUID
+
                             # Include only specific audio formats.
-                            if ext not in ['.wav', '.mp3', '.m4a', '.ogg', '.flac', '.opus']:
+                            if ext not in [
+                                ".wav",
+                                ".mp3",
+                                ".m4a",
+                                ".ogg",
+                                ".flac",
+                                ".opus",
+                            ]:
                                 pass
-                            
-                            if ext == '.opus':
-                                file_map[base_name] = file_path # Overrides others
+
+                            if ext == ".opus":
+                                file_map[base_name] = file_path  # Overrides others
                             elif base_name not in file_map:
-                                file_map[base_name] = file_path # Candidate
-                            
+                                file_map[base_name] = file_path  # Candidate
+
                     # Now process the map
                     added_paths = set()
-                    
+
                     for base_name, file_path in file_map.items():
                         ext = os.path.splitext(file_path)[1].lower()
-                        
+
                         # Calculate arcname (always .opus for audio)
-                        rel_path_base = os.path.relpath(os.path.dirname(file_path), recordings_dir)
+                        rel_path_base = os.path.relpath(
+                            os.path.dirname(file_path), recordings_dir
+                        )
                         if rel_path_base == ".":
                             arcname = os.path.join("recordings", base_name + ".opus")
                         else:
-                            arcname = os.path.join("recordings", rel_path_base, base_name + ".opus")
-                            
+                            arcname = os.path.join(
+                                "recordings", rel_path_base, base_name + ".opus"
+                            )
+
                         if arcname in added_paths:
-                            continue # Skip duplicate
-                            
+                            continue  # Skip duplicate
+
                         try:
-                            if ext == '.opus':
+                            if ext == ".opus":
                                 zipf.write(file_path, arcname)
-                            elif ext in ['.wav', '.mp3', '.m4a', '.ogg', '.flac']:
+                            elif ext in [".wav", ".mp3", ".m4a", ".ogg", ".flac"]:
                                 # Compress
                                 opus_path = BackupManager._compress_to_opus(file_path)
                                 zipf.write(opus_path, arcname)
                                 os.remove(opus_path)
-                            
+
                             added_paths.add(arcname)
                         except Exception as e:  # noqa: BLE001
                             logger.error(f"Failed to process audio {file_path}: {e}")
@@ -507,7 +587,7 @@ class BackupManager:
                 zipf.writestr("backup_info.json", json.dumps(backup_info, indent=2))
 
             return temp_zip.name
-            
+
         except Exception as e:
             # Cleanup temp zip if failed
             if os.path.exists(temp_zip.name):
@@ -521,7 +601,9 @@ class BackupManager:
         """
         # 1. Build index and adjacency
         by_id = {item["id"]: item for item in data if "id" in item}
-        children_map: Dict[Any, List[Dict[str, Any]]] = {} # parent_id -> list of children
+        children_map: Dict[
+            Any, List[Dict[str, Any]]
+        ] = {}  # parent_id -> list of children
         roots = []
 
         for item in data:
@@ -535,15 +617,15 @@ class BackupManager:
 
         # 2. Flatten
         sorted_items = []
-        queue = list(roots) 
-        
+        queue = list(roots)
+
         # Sort roots by ID to be deterministic
         queue.sort(key=lambda x: x.get("id", 0))
 
         while queue:
             node = queue.pop(0)
             sorted_items.append(node)
-            
+
             node_id = node.get("id")
             if node_id in children_map:
                 children = children_map[node_id]
@@ -551,7 +633,7 @@ class BackupManager:
                 children.sort(key=lambda x: x.get("id", 0))
                 # Append children to the end of the queue (BFS traversal).
                 queue.extend(children)
-        
+
         # checks for cycles or disconnected items (shouldn't happen in valid trees)
         # If we missed any, just append them at the end (fallback)
         if len(sorted_items) < len(data):
@@ -559,7 +641,7 @@ class BackupManager:
             for item in data:
                 if item.get("id") not in processed_ids:
                     sorted_items.append(item)
-                    
+
         return sorted_items
 
     @staticmethod
@@ -567,7 +649,7 @@ class BackupManager:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
         config_path = path_manager.config_path
-        
+
         import asyncio
 
         # 1. Dump Database (Async)
@@ -575,13 +657,15 @@ class BackupManager:
         async with async_session_maker() as session:
             for table_name, model_cls in MODELS:
                 statement = select(model_cls)
-                
+
                 # Safe Order for Tags (Parents First)
                 if table_name in ["tags", "p_tags"]:
                     # Order by parent_id NULLS FIRST, then ID
                     # This isn't strictly perfect for deep nesting without recursive CTE,
                     # but it helps simple 1-level nesting which is common.
-                    statement = statement.order_by(model_cls.parent_id.nullsfirst(), model_cls.id)
+                    statement = statement.order_by(
+                        model_cls.parent_id.nullsfirst(), model_cls.id
+                    )
 
                 results = await session.execute(statement)
                 items = results.scalars().all()
@@ -596,7 +680,7 @@ class BackupManager:
             recordings_dir,
             config_path,
             db_dump,
-            include_audio
+            include_audio,
         )
 
     @staticmethod
@@ -611,7 +695,9 @@ class BackupManager:
                 statement = select(model_cls)
 
                 if table_name in ["tags", "p_tags"]:
-                    statement = statement.order_by(model_cls.parent_id.nullsfirst(), model_cls.id)
+                    statement = statement.order_by(
+                        model_cls.parent_id.nullsfirst(), model_cls.id
+                    )
 
                 items = session.exec(statement).all()
                 data = BackupManager._serialise_backup_table_rows(table_name, items)
@@ -632,7 +718,7 @@ class BackupManager:
         overwrite_existing: bool,
         recordings_dir: PathManager,
         config_path: PathManager,
-        user_data_dir: PathManager
+        user_data_dir: PathManager,
     ):
         """
         Synchronous implementation of backup restoration to be run in a separate thread.
@@ -641,11 +727,10 @@ class BackupManager:
         BackupManager.restore_jobs[job_id]["progress"] = "Starting..."
         logger.info(f"Starting synchronous restore process for {zip_path}")
 
-        
         # ID Mapping for additive restore
         # Map: table_name -> { old_id: new_id }
         id_map: Dict[str, Dict[int, int]] = {name: {} for name, _ in MODELS}
-        
+
         # Map: identifier key (meeting_uid:/public_id:/audio_path:) -> new_id.
         # Each restored recording contributes every key it owns so subsequent backup rows that
         # share any identifier collapse onto the same new id.
@@ -664,18 +749,22 @@ class BackupManager:
         # Recordings restored with audio files need a fresh playback proxy.
         recordings_requiring_proxy: set[int] = set()
 
-        with zipfile.ZipFile(zip_path, 'r') as zipf:
+        with zipfile.ZipFile(zip_path, "r") as zipf:
             # Check version compatibility
             if "backup_info.json" in zipf.namelist():
                 try:
                     info = json.loads(zipf.read("backup_info.json"))
                     backup_version = info.get("version", "0.0.0")
                     current_version = BackupManager._get_app_version()
-                    
+
                     if backup_version != current_version:
-                        logger.info(f"Restoring backup from version {backup_version} to {current_version}")
+                        logger.info(
+                            f"Restoring backup from version {backup_version} to {current_version}"
+                        )
                         if backup_version > current_version:
-                            logger.warning(f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues.")
+                            logger.warning(
+                                f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues."
+                            )
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"Failed to read backup info: {e}")
 
@@ -684,9 +773,10 @@ class BackupManager:
                 logger.info("Clearing existing data...")
                 # Clear DB, BUT SKIP USERS to prevent lockout
                 # NOTE: We need a new session here since we are in a thread
-                from backend.core.db import sync_engine
                 from sqlmodel import Session
-                
+
+                from backend.core.db import sync_engine
+
                 with Session(sync_engine) as session:
                     # Delete in reverse order
                     for table_name, model_cls in reversed(MODELS):
@@ -694,7 +784,7 @@ class BackupManager:
                             continue
                         session.exec(delete(model_cls))
                     session.commit()
-                
+
                 # Clear Recordings
                 if recordings_dir.exists():
                     shutil.rmtree(recordings_dir)
@@ -704,7 +794,7 @@ class BackupManager:
 
             # 2. Restore Files
             extracted_files = set()
-            
+
             # Extract recordings
             logger.info("Extracting files...")
             BackupManager.restore_jobs[job_id]["progress"] = "Extracting files..."
@@ -712,11 +802,15 @@ class BackupManager:
                 if file.startswith("recordings/"):
                     # Zip Slip Mitigation
                     target_path = os.path.abspath(os.path.join(user_data_dir, file))
-                    if not target_path.startswith(os.path.abspath(user_data_dir) + os.sep):
-                        error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
+                    if not target_path.startswith(
+                        os.path.abspath(user_data_dir) + os.sep
+                    ):
+                        error_msg = (
+                            f"Zip Slip detected: Skipping malicious file path {file}"
+                        )
                         logger.error(error_msg)
                         raise ValueError(error_msg)
-                        
+
                     # Optimization: Extract all files. If the DB record is skipped,
                     # the file will be orphaned but cleaned up later.
                     zipf.extract(file, user_data_dir)
@@ -726,8 +820,12 @@ class BackupManager:
                         # Only restore config if we are clearing data, otherwise keep current system config
                         try:
                             # Zip Slip Mitigation for config
-                            target_path = os.path.abspath(os.path.join(user_data_dir, file))
-                            if not target_path.startswith(os.path.abspath(user_data_dir) + os.sep):
+                            target_path = os.path.abspath(
+                                os.path.join(user_data_dir, file)
+                            )
+                            if not target_path.startswith(
+                                os.path.abspath(user_data_dir) + os.sep
+                            ):
                                 error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
                                 logger.error(error_msg)
                                 raise ValueError(error_msg)
@@ -739,14 +837,18 @@ class BackupManager:
                                 for k, v in new_config.items():
                                     if v != "REDACTED":
                                         current_config[k] = v
-                                        
+
                                 # Write to string first then file
                                 config_path_obj = PathManager().config_path
-                                config_path_obj.write_text(json.dumps(current_config, indent=2))
+                                config_path_obj.write_text(
+                                    json.dumps(current_config, indent=2)
+                                )
                             else:
                                 zipf.extract(file, user_data_dir)
                         except Exception as e:
-                            if isinstance(e, ValueError) and "Zip Slip detected" in str(e):
+                            if isinstance(e, ValueError) and "Zip Slip detected" in str(
+                                e
+                            ):
                                 raise
                             logger.error(f"Failed to restore config: {e}")
             logger.info("File extraction complete.")
@@ -767,8 +869,10 @@ class BackupManager:
                             )
 
                         if backup_recording_keys:
-                            from backend.core.db import sync_engine
                             from sqlmodel import Session
+
+                            from backend.core.db import sync_engine
+
                             with Session(sync_engine) as session:
                                 existing_rows = session.exec(select(Recording)).all()
                                 existing_ids = [
@@ -783,9 +887,15 @@ class BackupManager:
                                 ]
 
                                 if existing_ids:
-                                    logger.info(f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings.")
+                                    logger.info(
+                                        f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings."
+                                    )
                                     # Specific delete to trigger cascades if needed (though delete from recordings usually cascades)
-                                    session.exec(delete(Recording).where(Recording.id.in_(existing_ids)))
+                                    session.exec(
+                                        delete(Recording).where(
+                                            Recording.id.in_(existing_ids)
+                                        )
+                                    )
                                     session.commit()
                     except Exception as e:  # noqa: BLE001
                         logger.error(f"Pre-flight cleanup failed: {e}")
@@ -793,20 +903,21 @@ class BackupManager:
             # 3. Restore Database
             logger.info("Restoring database records...")
             BackupManager.restore_jobs[job_id]["progress"] = "Restoring database..."
-            from backend.core.db import sync_engine
             from sqlmodel import Session
-            
+
+            from backend.core.db import sync_engine
+
             with Session(sync_engine) as session:
                 for table_name, model_cls in MODELS:
                     if f"{table_name}.json" not in zipf.namelist():
                         continue
-                    
+
                     try:
                         data = json.loads(zipf.read(f"{table_name}.json"))
                     except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to read/parse {table_name}.json: {e}")
                         continue
-                    
+
                     # Topological Sort for Tags to ensure Parents are created first
                     if table_name in ["tags", "p_tags"]:
                         data = BackupManager._topological_sort(data)
@@ -814,34 +925,44 @@ class BackupManager:
                     count = 0
                     for item_data in data:
                         if table_name == "calendar_provider_configs":
-                            item_data = BackupManager._prepare_calendar_provider_config_for_restore(item_data)
+                            item_data = BackupManager._prepare_calendar_provider_config_for_restore(
+                                item_data
+                            )
                         elif table_name == "calendar_connections":
-                            item_data = BackupManager._prepare_calendar_connection_for_restore(item_data)
+                            item_data = (
+                                BackupManager._prepare_calendar_connection_for_restore(
+                                    item_data
+                                )
+                            )
 
                         # Adapt record to current schema (handle removed columns)
                         item_data = BackupManager._adapt_record(model_cls, item_data)
 
                         old_id = item_data.get("id")
-                        
+
                         # Handle Conflict / Additive Logic
-                        
+
                         # Special handling for Users: Resolve by username
                         if table_name == "users":
                             if item_data.get("settings"):
-                                item_data["settings"] = BackupManager._restore_redacted_sensitive_data(
-                                    item_data["settings"]
+                                item_data["settings"] = (
+                                    BackupManager._restore_redacted_sensitive_data(
+                                        item_data["settings"]
+                                    )
                                 )
 
                             username = item_data.get("username")
-                            existing_user = session.exec(select(User).where(User.username == username)).first()
-                            
+                            existing_user = session.exec(
+                                select(User).where(User.username == username)
+                            ).first()
+
                             if existing_user:
                                 # User exists. Map old_id to existing_id.
                                 # Do NOT overwrite the user (security risk, plus passwords etc).
                                 if old_id is not None:
                                     id_map["users"][old_id] = existing_user.id
-                                continue # Skip inserting this user
-                            
+                                continue  # Skip inserting this user
+
                         # Special handling for Recordings: Resolve by durable identifiers
                         elif table_name == "recordings":
                             audio_path = item_data.get("audio_path")
@@ -915,9 +1036,13 @@ class BackupManager:
                                     # Drop every cached key pointing at the deleted row so a later
                                     # backup row that shares some other identifier does not re-match it.
                                     for stale_key in [
-                                        k for k, v in existing_recordings_by_identity.items() if v is existing_rec
+                                        k
+                                        for k, v in existing_recordings_by_identity.items()
+                                        if v is existing_rec
                                     ]:
-                                        existing_recordings_by_identity.pop(stale_key, None)
+                                        existing_recordings_by_identity.pop(
+                                            stale_key, None
+                                        )
                                     session.delete(existing_rec)
                                     session.flush()
                                 else:
@@ -928,23 +1053,33 @@ class BackupManager:
                                         skipped_recording_ids.add(old_id)
                                         # Tracks as restored/processed so subsequent duplicates map to it,
                                         # registering every identity the existing row owns.
-                                        for existing_key in BackupManager._get_recording_match_keys(
+                                        for (
+                                            existing_key
+                                        ) in BackupManager._get_recording_match_keys(
                                             existing_rec.audio_path,
                                             getattr(existing_rec, "meeting_uid", None),
                                             getattr(existing_rec, "public_id", None),
                                         ):
-                                            restored_recording_keys[existing_key] = existing_rec.id
+                                            restored_recording_keys[existing_key] = (
+                                                existing_rec.id
+                                            )
                                         for backup_key in backup_keys:
-                                            restored_recording_keys[backup_key] = existing_rec.id
+                                            restored_recording_keys[backup_key] = (
+                                                existing_rec.id
+                                            )
                                     continue
 
-                            normalized_meeting_uid = BackupManager._normalise_meeting_uid(meeting_uid)
+                            normalized_meeting_uid = (
+                                BackupManager._normalise_meeting_uid(meeting_uid)
+                            )
                             if normalized_meeting_uid:
                                 item_data["meeting_uid"] = normalized_meeting_uid
                             else:
                                 item_data.pop("meeting_uid", None)
 
-                            normalized_public_id = BackupManager._normalise_public_id(public_id)
+                            normalized_public_id = BackupManager._normalise_public_id(
+                                public_id
+                            )
                             if normalized_public_id:
                                 item_data["public_id"] = normalized_public_id
                             else:
@@ -966,9 +1101,8 @@ class BackupManager:
                             # If a stale row in the target shares ``public_id`` (without sharing
                             # any identity we could match), regenerate ours rather than aborting
                             # the restore on a unique-constraint violation.
-                            if (
-                                hasattr(model_cls, "public_id")
-                                and item_data.get("public_id")
+                            if hasattr(model_cls, "public_id") and item_data.get(
+                                "public_id"
                             ):
                                 conflicting_pid_row = session.exec(
                                     select(model_cls).where(
@@ -1007,11 +1141,12 @@ class BackupManager:
                                     try:
                                         original_abs = os.path.abspath(original_path)
                                         new_abs = os.path.abspath(new_path)
-                                        if (
-                                            os.path.exists(original_abs)
-                                            and not os.path.exists(new_abs)
-                                        ):
-                                            os.makedirs(os.path.dirname(new_abs), exist_ok=True)
+                                        if os.path.exists(
+                                            original_abs
+                                        ) and not os.path.exists(new_abs):
+                                            os.makedirs(
+                                                os.path.dirname(new_abs), exist_ok=True
+                                            )
                                             os.rename(original_abs, new_abs)
                                     except OSError as rename_err:
                                         logger.error(
@@ -1019,7 +1154,7 @@ class BackupManager:
                                             f"{original_path} -> {new_path}: {rename_err}"
                                         )
                                     item_data["audio_path"] = new_path
-                        
+
                         else:
                             # Child Records: Skip if parent recording was skipped
                             if "recording_id" in item_data:
@@ -1035,8 +1170,7 @@ class BackupManager:
                                 user_id = item_data.get("user_id")
                                 if user_id in id_map["users"]:
                                     user_id = id_map["users"][user_id]
-                                
-                                
+
                                 # Check existence
                                 existing_tag = session.exec(
                                     select(Tag)
@@ -1052,25 +1186,25 @@ class BackupManager:
                             elif table_name == "p_tags":
                                 tag_name = item_data.get("name")
                                 user_id_val = item_data.get("user_id")
-                                
+
                                 # Remap user_id before checking existence
                                 if user_id_val in id_map["users"]:
                                     user_id_val = id_map["users"][user_id_val]
-                                
+
                                 # Check existence
                                 existing_p_tag = session.exec(
                                     select(PeopleTag)
                                     .where(PeopleTag.name == tag_name)
                                     .where(PeopleTag.user_id == user_id_val)
                                 ).first()
-                                
+
                                 if existing_p_tag:
                                     if old_id is not None:
                                         id_map["p_tags"][old_id] = existing_p_tag.id
                                     continue
 
                         # Remap Foreign Keys for insertion
-                        
+
                         # Removes ID to allow the database to generate a new one.
                         if "id" in item_data:
                             del item_data["id"]
@@ -1082,30 +1216,39 @@ class BackupManager:
                             candidate = model_cls.model_validate(item_data)
                             existing_config = session.exec(
                                 select(CalendarProviderConfig).where(
-                                    CalendarProviderConfig.provider == candidate.provider
+                                    CalendarProviderConfig.provider
+                                    == candidate.provider
                                 )
                             ).first()
 
                             if existing_config:
                                 if overwrite_existing:
                                     existing_config.client_id = candidate.client_id
-                                    existing_config.client_secret_encrypted = candidate.client_secret_encrypted
+                                    existing_config.client_secret_encrypted = (
+                                        candidate.client_secret_encrypted
+                                    )
                                     existing_config.tenant_id = candidate.tenant_id
                                     existing_config.enabled = candidate.enabled
                                     session.add(existing_config)
                                 else:
                                     updated = False
-                                    if not existing_config.client_id and candidate.client_id:
+                                    if (
+                                        not existing_config.client_id
+                                        and candidate.client_id
+                                    ):
                                         existing_config.client_id = candidate.client_id
                                         updated = True
                                     if (
                                         not existing_config.client_secret_encrypted
                                         and candidate.client_secret_encrypted
                                     ):
-                                        existing_config.client_secret_encrypted = candidate.client_secret_encrypted
+                                        existing_config.client_secret_encrypted = (
+                                            candidate.client_secret_encrypted
+                                        )
                                         updated = True
                                     if (
-                                        candidate.provider == CalendarProvider.MICROSOFT.value
+                                        candidate.provider
+                                        == CalendarProvider.MICROSOFT.value
                                         and not existing_config.tenant_id
                                         and candidate.tenant_id
                                     ):
@@ -1115,12 +1258,16 @@ class BackupManager:
                                         session.add(existing_config)
 
                                 if old_id is not None:
-                                    id_map["calendar_provider_configs"][old_id] = existing_config.id
+                                    id_map["calendar_provider_configs"][old_id] = (
+                                        existing_config.id
+                                    )
                                 continue
 
                         elif table_name == "calendar_connections":
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
                             else:
                                 continue
 
@@ -1128,7 +1275,9 @@ class BackupManager:
                             existing_connection = session.exec(
                                 select(CalendarConnection)
                                 .where(CalendarConnection.user_id == candidate.user_id)
-                                .where(CalendarConnection.provider == candidate.provider)
+                                .where(
+                                    CalendarConnection.provider == candidate.provider
+                                )
                                 .where(
                                     CalendarConnection.provider_account_id
                                     == candidate.provider_account_id
@@ -1138,16 +1287,36 @@ class BackupManager:
                             if existing_connection:
                                 if overwrite_existing:
                                     existing_connection.email = candidate.email
-                                    existing_connection.display_name = candidate.display_name
-                                    existing_connection.access_token_encrypted = candidate.access_token_encrypted
-                                    existing_connection.refresh_token_encrypted = candidate.refresh_token_encrypted
-                                    existing_connection.granted_scopes = candidate.granted_scopes
-                                    existing_connection.token_expires_at = candidate.token_expires_at
-                                    existing_connection.sync_status = candidate.sync_status
-                                    existing_connection.sync_error = candidate.sync_error
-                                    existing_connection.last_sync_started_at = candidate.last_sync_started_at
-                                    existing_connection.last_sync_completed_at = candidate.last_sync_completed_at
-                                    existing_connection.last_synced_at = candidate.last_synced_at
+                                    existing_connection.display_name = (
+                                        candidate.display_name
+                                    )
+                                    existing_connection.access_token_encrypted = (
+                                        candidate.access_token_encrypted
+                                    )
+                                    existing_connection.refresh_token_encrypted = (
+                                        candidate.refresh_token_encrypted
+                                    )
+                                    existing_connection.granted_scopes = (
+                                        candidate.granted_scopes
+                                    )
+                                    existing_connection.token_expires_at = (
+                                        candidate.token_expires_at
+                                    )
+                                    existing_connection.sync_status = (
+                                        candidate.sync_status
+                                    )
+                                    existing_connection.sync_error = (
+                                        candidate.sync_error
+                                    )
+                                    existing_connection.last_sync_started_at = (
+                                        candidate.last_sync_started_at
+                                    )
+                                    existing_connection.last_sync_completed_at = (
+                                        candidate.last_sync_completed_at
+                                    )
+                                    existing_connection.last_synced_at = (
+                                        candidate.last_synced_at
+                                    )
                                     session.add(existing_connection)
                                 else:
                                     updated = False
@@ -1158,18 +1327,23 @@ class BackupManager:
                                         "refresh_token_encrypted",
                                         "token_expires_at",
                                     ):
-                                        if (
-                                            not getattr(existing_connection, field)
-                                            and getattr(candidate, field)
-                                        ):
-                                            setattr(existing_connection, field, getattr(candidate, field))
+                                        if not getattr(
+                                            existing_connection, field
+                                        ) and getattr(candidate, field):
+                                            setattr(
+                                                existing_connection,
+                                                field,
+                                                getattr(candidate, field),
+                                            )
                                             updated = True
 
                                     if (
                                         not existing_connection.granted_scopes
                                         and candidate.granted_scopes
                                     ):
-                                        existing_connection.granted_scopes = candidate.granted_scopes
+                                        existing_connection.granted_scopes = (
+                                            candidate.granted_scopes
+                                        )
                                         updated = True
 
                                     existing_sync_marker = (
@@ -1184,32 +1358,50 @@ class BackupManager:
                                         existing_sync_marker is None
                                         or candidate_sync_marker >= existing_sync_marker
                                     ):
-                                        existing_connection.sync_status = candidate.sync_status
-                                        existing_connection.sync_error = candidate.sync_error
-                                        existing_connection.last_sync_started_at = candidate.last_sync_started_at
-                                        existing_connection.last_sync_completed_at = candidate.last_sync_completed_at
-                                        existing_connection.last_synced_at = candidate.last_synced_at
+                                        existing_connection.sync_status = (
+                                            candidate.sync_status
+                                        )
+                                        existing_connection.sync_error = (
+                                            candidate.sync_error
+                                        )
+                                        existing_connection.last_sync_started_at = (
+                                            candidate.last_sync_started_at
+                                        )
+                                        existing_connection.last_sync_completed_at = (
+                                            candidate.last_sync_completed_at
+                                        )
+                                        existing_connection.last_synced_at = (
+                                            candidate.last_synced_at
+                                        )
                                         updated = True
 
                                     if updated:
                                         session.add(existing_connection)
 
                                 if old_id is not None:
-                                    id_map["calendar_connections"][old_id] = existing_connection.id
+                                    id_map["calendar_connections"][old_id] = (
+                                        existing_connection.id
+                                    )
                                 continue
 
                         elif table_name == "calendar_sources":
-                            if item_data.get("connection_id") in id_map["calendar_connections"]:
-                                item_data["connection_id"] = id_map["calendar_connections"][
-                                    item_data["connection_id"]
-                                ]
+                            if (
+                                item_data.get("connection_id")
+                                in id_map["calendar_connections"]
+                            ):
+                                item_data["connection_id"] = id_map[
+                                    "calendar_connections"
+                                ][item_data["connection_id"]]
                             else:
                                 continue
 
                             candidate = model_cls.model_validate(item_data)
                             existing_source = session.exec(
                                 select(CalendarSource)
-                                .where(CalendarSource.connection_id == candidate.connection_id)
+                                .where(
+                                    CalendarSource.connection_id
+                                    == candidate.connection_id
+                                )
                                 .where(
                                     CalendarSource.provider_calendar_id
                                     == candidate.provider_calendar_id
@@ -1224,56 +1416,101 @@ class BackupManager:
                                     existing_source.colour = candidate.colour
                                     existing_source.user_colour = candidate.user_colour
                                     existing_source.is_primary = candidate.is_primary
-                                    existing_source.is_read_only = candidate.is_read_only
+                                    existing_source.is_read_only = (
+                                        candidate.is_read_only
+                                    )
                                     existing_source.is_selected = candidate.is_selected
                                     existing_source.sync_cursor = candidate.sync_cursor
-                                    existing_source.last_synced_at = candidate.last_synced_at
-                                    existing_source.sync_window_start = candidate.sync_window_start
-                                    existing_source.sync_window_end = candidate.sync_window_end
+                                    existing_source.last_synced_at = (
+                                        candidate.last_synced_at
+                                    )
+                                    existing_source.sync_window_start = (
+                                        candidate.sync_window_start
+                                    )
+                                    existing_source.sync_window_end = (
+                                        candidate.sync_window_end
+                                    )
                                     session.add(existing_source)
                                 else:
                                     updated = False
                                     for field in ("name", "description", "time_zone"):
                                         candidate_value = getattr(candidate, field)
-                                        if candidate_value and getattr(existing_source, field) != candidate_value:
-                                            setattr(existing_source, field, candidate_value)
+                                        if (
+                                            candidate_value
+                                            and getattr(existing_source, field)
+                                            != candidate_value
+                                        ):
+                                            setattr(
+                                                existing_source, field, candidate_value
+                                            )
                                             updated = True
 
-                                    if candidate.colour and existing_source.colour != candidate.colour:
+                                    if (
+                                        candidate.colour
+                                        and existing_source.colour != candidate.colour
+                                    ):
                                         existing_source.colour = candidate.colour
                                         updated = True
-                                    if not existing_source.user_colour and candidate.user_colour:
-                                        existing_source.user_colour = candidate.user_colour
+                                    if (
+                                        not existing_source.user_colour
+                                        and candidate.user_colour
+                                    ):
+                                        existing_source.user_colour = (
+                                            candidate.user_colour
+                                        )
                                         updated = True
-                                    if candidate.is_primary and not existing_source.is_primary:
+                                    if (
+                                        candidate.is_primary
+                                        and not existing_source.is_primary
+                                    ):
                                         existing_source.is_primary = True
                                         updated = True
-                                    if candidate.is_read_only and not existing_source.is_read_only:
+                                    if (
+                                        candidate.is_read_only
+                                        and not existing_source.is_read_only
+                                    ):
                                         existing_source.is_read_only = True
                                         updated = True
-                                    if candidate.is_selected and not existing_source.is_selected:
+                                    if (
+                                        candidate.is_selected
+                                        and not existing_source.is_selected
+                                    ):
                                         existing_source.is_selected = True
                                         updated = True
 
                                     if candidate.last_synced_at and (
                                         existing_source.last_synced_at is None
-                                        or candidate.last_synced_at >= existing_source.last_synced_at
+                                        or candidate.last_synced_at
+                                        >= existing_source.last_synced_at
                                     ):
-                                        existing_source.sync_cursor = candidate.sync_cursor
-                                        existing_source.last_synced_at = candidate.last_synced_at
-                                        existing_source.sync_window_start = candidate.sync_window_start
-                                        existing_source.sync_window_end = candidate.sync_window_end
+                                        existing_source.sync_cursor = (
+                                            candidate.sync_cursor
+                                        )
+                                        existing_source.last_synced_at = (
+                                            candidate.last_synced_at
+                                        )
+                                        existing_source.sync_window_start = (
+                                            candidate.sync_window_start
+                                        )
+                                        existing_source.sync_window_end = (
+                                            candidate.sync_window_end
+                                        )
                                         updated = True
 
                                     if updated:
                                         session.add(existing_source)
 
                                 if old_id is not None:
-                                    id_map["calendar_sources"][old_id] = existing_source.id
+                                    id_map["calendar_sources"][old_id] = (
+                                        existing_source.id
+                                    )
                                 continue
 
                         elif table_name == "calendar_events":
-                            if item_data.get("calendar_id") in id_map["calendar_sources"]:
+                            if (
+                                item_data.get("calendar_id")
+                                in id_map["calendar_sources"]
+                            ):
                                 item_data["calendar_id"] = id_map["calendar_sources"][
                                     item_data["calendar_id"]
                                 ]
@@ -1283,8 +1520,13 @@ class BackupManager:
                             candidate = model_cls.model_validate(item_data)
                             existing_event = session.exec(
                                 select(CalendarEvent)
-                                .where(CalendarEvent.calendar_id == candidate.calendar_id)
-                                .where(CalendarEvent.provider_event_id == candidate.provider_event_id)
+                                .where(
+                                    CalendarEvent.calendar_id == candidate.calendar_id
+                                )
+                                .where(
+                                    CalendarEvent.provider_event_id
+                                    == candidate.provider_event_id
+                                )
                             ).first()
 
                             if existing_event:
@@ -1305,34 +1547,52 @@ class BackupManager:
                                     existing_event.ends_at = candidate.ends_at
                                     existing_event.start_date = candidate.start_date
                                     existing_event.end_date = candidate.end_date
-                                    existing_event.location_text = candidate.location_text
+                                    existing_event.location_text = (
+                                        candidate.location_text
+                                    )
                                     existing_event.meeting_url = candidate.meeting_url
                                     existing_event.source_url = candidate.source_url
-                                    existing_event.external_updated_at = candidate.external_updated_at
+                                    existing_event.external_updated_at = (
+                                        candidate.external_updated_at
+                                    )
                                     session.add(existing_event)
                                 else:
                                     updated = False
-                                    for field in ("location_text", "meeting_url", "source_url"):
-                                        if not getattr(existing_event, field) and getattr(candidate, field):
-                                            setattr(existing_event, field, getattr(candidate, field))
+                                    for field in (
+                                        "location_text",
+                                        "meeting_url",
+                                        "source_url",
+                                    ):
+                                        if not getattr(
+                                            existing_event, field
+                                        ) and getattr(candidate, field):
+                                            setattr(
+                                                existing_event,
+                                                field,
+                                                getattr(candidate, field),
+                                            )
                                             updated = True
                                     if updated:
                                         session.add(existing_event)
 
                                 if old_id is not None:
-                                    id_map["calendar_events"][old_id] = existing_event.id
+                                    id_map["calendar_events"][old_id] = (
+                                        existing_event.id
+                                    )
                                 continue
 
                         elif table_name == "global_speakers":
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
                             else:
                                 continue
 
                             # Checks for existing duplicates to prevent redundant entries.
                             speaker_name = item_data.get("name")
                             user_id = item_data.get("user_id")
-                            
+
                             existing_speaker = session.exec(
                                 select(GlobalSpeaker)
                                 .where(GlobalSpeaker.name == speaker_name)
@@ -1345,97 +1605,149 @@ class BackupManager:
                                     existing_speaker.title = item_data.get("title")
                                     existing_speaker.company = item_data.get("company")
                                     existing_speaker.email = item_data.get("email")
-                                    existing_speaker.phone_number = item_data.get("phone_number")
+                                    existing_speaker.phone_number = item_data.get(
+                                        "phone_number"
+                                    )
                                     existing_speaker.notes = item_data.get("notes")
                                     existing_speaker.color = item_data.get("color")
                                     if item_data.get("embedding"):
-                                        existing_speaker.embedding = item_data.get("embedding")
-                                    
+                                        existing_speaker.embedding = item_data.get(
+                                            "embedding"
+                                        )
+
                                     session.add(existing_speaker)
                                 else:
                                     # INTELLIGENT MERGE: Fill in missing fields only
                                     updated = False
-                                    
+
                                     # CRM Fields
-                                    for field in ["title", "company", "email", "phone_number", "notes", "color"]:
-                                        if not getattr(existing_speaker, field) and item_data.get(field):
-                                            setattr(existing_speaker, field, item_data.get(field))
+                                    for field in [
+                                        "title",
+                                        "company",
+                                        "email",
+                                        "phone_number",
+                                        "notes",
+                                        "color",
+                                    ]:
+                                        if not getattr(
+                                            existing_speaker, field
+                                        ) and item_data.get(field):
+                                            setattr(
+                                                existing_speaker,
+                                                field,
+                                                item_data.get(field),
+                                            )
                                             updated = True
-                                    
+
                                     # Voice Embedding: Restore only if missing locally
-                                    if (not existing_speaker.embedding or len(existing_speaker.embedding) == 0) and item_data.get("embedding"):
-                                        existing_speaker.embedding = item_data.get("embedding")
+                                    if (
+                                        not existing_speaker.embedding
+                                        or len(existing_speaker.embedding) == 0
+                                    ) and item_data.get("embedding"):
+                                        existing_speaker.embedding = item_data.get(
+                                            "embedding"
+                                        )
                                         updated = True
-                                        
+
                                     if updated:
                                         session.add(existing_speaker)
 
                                 if old_id is not None:
-                                    id_map["global_speakers"][old_id] = existing_speaker.id
+                                    id_map["global_speakers"][old_id] = (
+                                        existing_speaker.id
+                                    )
                                 continue
 
                         elif table_name == "tags":
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
                             else:
                                 continue
 
                             # Remap parent_id if it exists
                             if item_data.get("parent_id") in id_map["tags"]:
-                                item_data["parent_id"] = id_map["tags"][item_data["parent_id"]]
+                                item_data["parent_id"] = id_map["tags"][
+                                    item_data["parent_id"]
+                                ]
                             elif item_data.get("parent_id"):
                                 # Fallback: if parent not found despite sort, set to None?
                                 # Consistent with p_tags logic
                                 item_data["parent_id"] = None
-                        
+
                         elif table_name == "p_tags":
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
                             else:
                                 # PeopleTags require a user. If user is missing, skip the tag.
                                 pass
-                                
+
                             # Remap parent_id if it exists
                             if item_data.get("parent_id") in id_map["p_tags"]:
-                                item_data["parent_id"] = id_map["p_tags"][item_data["parent_id"]]
+                                item_data["parent_id"] = id_map["p_tags"][
+                                    item_data["parent_id"]
+                                ]
                             elif item_data.get("parent_id"):
                                 # Parent not found (maybe skipped or not yet processed?)
                                 item_data["parent_id"] = None
 
                         elif table_name == "people_tag_links":
-                            if item_data.get("global_speaker_id") in id_map["global_speakers"]:
-                                item_data["global_speaker_id"] = id_map["global_speakers"][item_data["global_speaker_id"]]
+                            if (
+                                item_data.get("global_speaker_id")
+                                in id_map["global_speakers"]
+                            ):
+                                item_data["global_speaker_id"] = id_map[
+                                    "global_speakers"
+                                ][item_data["global_speaker_id"]]
                             else:
-                                logger.warning(f"Skipping people_tag_link: global_speaker_id {item_data.get('global_speaker_id')} not found in map.")
+                                logger.warning(
+                                    f"Skipping people_tag_link: global_speaker_id {item_data.get('global_speaker_id')} not found in map."
+                                )
                                 continue
-                            
+
                             if item_data.get("tag_id") in id_map["p_tags"]:
-                                item_data["tag_id"] = id_map["p_tags"][item_data["tag_id"]]
+                                item_data["tag_id"] = id_map["p_tags"][
+                                    item_data["tag_id"]
+                                ]
                             else:
-                                logger.warning(f"Skipping people_tag_link: tag_id {item_data.get('tag_id')} not found in map.")
+                                logger.warning(
+                                    f"Skipping people_tag_link: tag_id {item_data.get('tag_id')} not found in map."
+                                )
                                 continue
-                            
+
                             # Checks for duplicates
                             existing_link = session.exec(
                                 select(PeopleTagLink)
-                                .where(PeopleTagLink.global_speaker_id == item_data["global_speaker_id"])
+                                .where(
+                                    PeopleTagLink.global_speaker_id
+                                    == item_data["global_speaker_id"]
+                                )
                                 .where(PeopleTagLink.tag_id == item_data["tag_id"])
                             ).first()
-                            
+
                             if existing_link:
                                 if old_id is not None:
-                                    id_map["people_tag_links"][old_id] = existing_link.id
+                                    id_map["people_tag_links"][old_id] = (
+                                        existing_link.id
+                                    )
                                 continue
 
                         elif table_name == "recordings":
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
                             else:
                                 continue
 
                         elif table_name == "user_tasks":
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
                             else:
                                 continue
 
@@ -1447,9 +1759,13 @@ class BackupManager:
                                 continue
 
                             if item_data.get("tag_id") in id_map["tags"]:
-                                item_data["tag_id"] = id_map["tags"][item_data["tag_id"]]
+                                item_data["tag_id"] = id_map["tags"][
+                                    item_data["tag_id"]
+                                ]
                             else:
-                                logger.warning(f"Skipping user_task_tag: tag_id {item_data.get('tag_id')} not found in map.")
+                                logger.warning(
+                                    f"Skipping user_task_tag: tag_id {item_data.get('tag_id')} not found in map."
+                                )
                                 continue
 
                             existing_link = session.exec(
@@ -1472,13 +1788,17 @@ class BackupManager:
 
                             old_rec_id = item_data.get("recording_id")
                             if old_rec_id in id_map["recordings"]:
-                                item_data["recording_id"] = id_map["recordings"][old_rec_id]
+                                item_data["recording_id"] = id_map["recordings"][
+                                    old_rec_id
+                                ]
                             else:
                                 continue
 
                             existing_link = session.exec(
                                 select(UserTaskRecording)
-                                .where(UserTaskRecording.task_id == item_data["task_id"])
+                                .where(
+                                    UserTaskRecording.task_id == item_data["task_id"]
+                                )
                                 .where(
                                     UserTaskRecording.recording_id
                                     == item_data["recording_id"]
@@ -1487,32 +1807,38 @@ class BackupManager:
 
                             if existing_link:
                                 if old_id is not None:
-                                    id_map["user_task_recordings"][old_id] = existing_link.id
+                                    id_map["user_task_recordings"][old_id] = (
+                                        existing_link.id
+                                    )
                                 continue
 
                         elif table_name == "recording_speakers":
                             old_rec_id = item_data.get("recording_id")
                             if old_rec_id in id_map["recordings"]:
                                 new_rec_id = id_map["recordings"][old_rec_id]
-                                
+
                                 # SANITY CHECK: Does this recording exist?
                                 # (Since we are in same transaction, we might need flush first or check local session)
                                 # But we're just setting IDs, assume consistency if map is valid.
                                 item_data["recording_id"] = new_rec_id
                             else:
                                 continue
-                            
+
                             # Safely map Global Speaker ID
                             old_gs_id = item_data.get("global_speaker_id")
                             if old_gs_id and old_gs_id in id_map["global_speakers"]:
-                                item_data["global_speaker_id"] = id_map["global_speakers"][old_gs_id]
+                                item_data["global_speaker_id"] = id_map[
+                                    "global_speakers"
+                                ][old_gs_id]
                             elif old_gs_id:
                                 item_data["global_speaker_id"] = None
 
-                            old_recording_speaker_merge_id = item_data.get("merged_into_id")
+                            old_recording_speaker_merge_id = item_data.get(
+                                "merged_into_id"
+                            )
                             if old_recording_speaker_merge_id is not None:
                                 item_data["merged_into_id"] = None
-                        
+
                         elif table_name == "recording_tags":
                             old_rec_id = item_data.get("recording_id")
                             if old_rec_id in id_map["recordings"]:
@@ -1520,20 +1846,27 @@ class BackupManager:
                                 item_data["recording_id"] = new_rec_id
                             else:
                                 continue
-                            
+
                             if item_data.get("tag_id") in id_map["tags"]:
-                                item_data["tag_id"] = id_map["tags"][item_data["tag_id"]]
+                                item_data["tag_id"] = id_map["tags"][
+                                    item_data["tag_id"]
+                                ]
                             else:
-                                logger.warning(f"Skipping recording_tag: tag_id {item_data.get('tag_id')} not found in map.")
+                                logger.warning(
+                                    f"Skipping recording_tag: tag_id {item_data.get('tag_id')} not found in map."
+                                )
                                 continue
-                            
+
                             # DUPLICATE CHECK
                             existing_link = session.exec(
                                 select(RecordingTag)
-                                .where(RecordingTag.recording_id == item_data["recording_id"])
+                                .where(
+                                    RecordingTag.recording_id
+                                    == item_data["recording_id"]
+                                )
                                 .where(RecordingTag.tag_id == item_data["tag_id"])
                             ).first()
-                            
+
                             if existing_link:
                                 if old_id is not None:
                                     id_map["recording_tags"][old_id] = existing_link.id
@@ -1546,15 +1879,19 @@ class BackupManager:
                                 item_data["recording_id"] = new_rec_id
                             else:
                                 continue
-                                
+
                             # DUPLICATE CHECK
                             existing_transcript = session.exec(
-                                select(Transcript).where(Transcript.recording_id == new_rec_id)
+                                select(Transcript).where(
+                                    Transcript.recording_id == new_rec_id
+                                )
                             ).first()
-                            
+
                             if existing_transcript:
                                 if old_id is not None:
-                                    id_map["transcripts"][old_id] = existing_transcript.id
+                                    id_map["transcripts"][old_id] = (
+                                        existing_transcript.id
+                                    )
                                 continue
 
                         elif table_name == "chat_messages":
@@ -1565,8 +1902,10 @@ class BackupManager:
                             else:
                                 continue
                             if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][item_data["user_id"]]
-                    
+                                item_data["user_id"] = id_map["users"][
+                                    item_data["user_id"]
+                                ]
+
                         # Create instance inside a savepoint so an integrity error on a single
                         # row (e.g. unforeseen unique-constraint collision) is logged and the
                         # row is skipped, rather than rolling back the whole restore.
@@ -1581,7 +1920,7 @@ class BackupManager:
                                 f"(old_id={old_id}): {insert_err}. Skipping."
                             )
                             continue
-                        
+
                         if old_id is not None:
                             id_map[table_name][old_id] = instance.id
 
@@ -1592,9 +1931,13 @@ class BackupManager:
                             pending_recording_speaker_merges.append(
                                 (instance.id, old_recording_speaker_merge_id)
                             )
-                        
+
                         # Track restored recording identities for duplicate detection.
-                        if table_name == "recordings" and hasattr(instance, "audio_path") and instance.audio_path:
+                        if (
+                            table_name == "recordings"
+                            and hasattr(instance, "audio_path")
+                            and instance.audio_path
+                        ):
                             for instance_key in BackupManager._get_recording_match_keys(
                                 instance.audio_path,
                                 getattr(instance, "meeting_uid", None),
@@ -1604,17 +1947,24 @@ class BackupManager:
                                 existing_recordings_by_identity[instance_key] = instance
                             if os.path.exists(instance.audio_path):
                                 recordings_requiring_proxy.add(instance.id)
-                        
+
                         count += 1
-                    
+
                     logger.info(f"Restored {count} records for {table_name}")
 
-                for recording_speaker_id, old_merge_target_id in pending_recording_speaker_merges:
-                    new_merge_target_id = id_map["recording_speakers"].get(old_merge_target_id)
+                for (
+                    recording_speaker_id,
+                    old_merge_target_id,
+                ) in pending_recording_speaker_merges:
+                    new_merge_target_id = id_map["recording_speakers"].get(
+                        old_merge_target_id
+                    )
                     if new_merge_target_id is None:
                         continue
 
-                    recording_speaker = session.get(RecordingSpeaker, recording_speaker_id)
+                    recording_speaker = session.get(
+                        RecordingSpeaker, recording_speaker_id
+                    )
                     if recording_speaker is None:
                         continue
 
@@ -1639,8 +1989,10 @@ class BackupManager:
             # Identifies files extracted from the backup that are not referenced in the database.
             logger.info("Cleaning up orphaned files...")
             BackupManager.restore_jobs[job_id]["progress"] = "Cleaning up..."
-            from backend.core.db import sync_engine
             from sqlmodel import Session
+
+            from backend.core.db import sync_engine
+
             with Session(sync_engine) as session:
                 # Fetches all audio paths currently in the DB to verify against extracted files.
                 all_recordings = session.exec(select(Recording.audio_path)).all()
@@ -1648,43 +2000,52 @@ class BackupManager:
                 for vp in all_recordings:
                     recording_identity = BackupManager._get_recording_identity(vp)
                     if recording_identity:
-                         valid_paths.add(recording_identity)
-                
+                        valid_paths.add(recording_identity)
+
                 orphans = []
                 for file_path in extracted_files:
                     normalized_path = BackupManager._get_recording_identity(file_path)
-                    
+
                     if normalized_path not in valid_paths:
                         orphans.append(file_path)
 
                 if orphans:
-                    logger.info(f"Cleaning up {len(orphans)} orphaned files from restore.")
+                    logger.info(
+                        f"Cleaning up {len(orphans)} orphaned files from restore."
+                    )
                     for orphan in orphans:
                         full_path = os.path.join(user_data_dir, orphan)
                         if os.path.exists(full_path):
                             try:
                                 os.remove(full_path)
                             except OSError:
-                                logger.warning(f"Failed to delete orphaned file: {full_path}")
+                                logger.warning(
+                                    f"Failed to delete orphaned file: {full_path}"
+                                )
             logger.info("Restore process finished successfully.")
             BackupManager.restore_jobs[job_id]["status"] = "completed"
             BackupManager.restore_jobs[job_id]["progress"] = "Done"
 
     @staticmethod
-    async def restore_backup(job_id: str, zip_path: str, clear_existing: bool = False, overwrite_existing: bool = False):
+    async def restore_backup(
+        job_id: str,
+        zip_path: str,
+        clear_existing: bool = False,
+        overwrite_existing: bool = False,
+    ):
         """
         Async wrapper for the synchronous restore process.
         """
         path_manager = PathManager()
         import asyncio
-        
+
         # Initialize job status if not exists (though entry point should have set it)
         if job_id not in BackupManager.restore_jobs:
-             BackupManager.restore_jobs[job_id] = {
-                 "status": "pending",
-                 "progress": "Initializing...",
-                 "error": None
-             }
+            BackupManager.restore_jobs[job_id] = {
+                "status": "pending",
+                "progress": "Initializing...",
+                "error": None,
+            }
 
         try:
             await asyncio.to_thread(
@@ -1695,7 +2056,7 @@ class BackupManager:
                 overwrite_existing,
                 path_manager.recordings_directory,
                 path_manager.config_path,
-                path_manager.user_data_directory
+                path_manager.user_data_directory,
             )
         except Exception as e:
             logger.error(f"Restore failed: {e}", exc_info=True)

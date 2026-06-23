@@ -1,13 +1,11 @@
-import sys
+import logging
 import os
 import pickle
-import logging
+import sys
+import traceback
+
 import torch
 from pyannote.audio import Pipeline
-from pyannote.audio.pipelines.utils.hook import ProgressHook
-from dotenv import load_dotenv
-import pathlib
-import traceback
 
 # Add project root to sys.path to allow imports from backend
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,7 +14,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Setup logging to stdout (must be before any logger usage)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 cwd = os.getcwd()
 
@@ -24,17 +22,23 @@ cwd = os.getcwd()
 class StdoutProgressHook:
     def __init__(self):
         self.last_percent = -1
-    def __call__(self, step_name=None, step_artifact=None, file=None, total=None, completed=None):
+
+    def __call__(
+        self, step_name=None, step_artifact=None, file=None, total=None, completed=None
+    ):
         if completed is not None and total:
             percent = int((completed / total) * 100)
             if percent != self.last_percent:
                 print(f"PROGRESS: {percent}", flush=True)
                 self.last_percent = percent
 
+
 # Usage: python diarize_subprocess_entry.py <audio_path> <output_path> <hf_token> <device>
 def main():
     if len(sys.argv) < 5:
-        logger.error("Usage: python diarize_subprocess_entry.py <audio_path> <output_path> <hf_token> <device>")
+        logger.error(
+            "Usage: python diarize_subprocess_entry.py <audio_path> <output_path> <hf_token> <device>"
+        )
         sys.exit(1)
     audio_path = sys.argv[1]
     output_path = sys.argv[2]
@@ -49,7 +53,9 @@ def main():
         from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
         device = torch.device(device_str)
-        resolved_model = resolve_local_pyannote_model("pyannote/speaker-diarization-community-1")
+        resolved_model = resolve_local_pyannote_model(
+            "pyannote/speaker-diarization-community-1"
+        )
         if resolved_model.source == "remote":
             pipeline = Pipeline.from_pretrained(resolved_model.load_ref, token=hf_token)
         else:
@@ -59,7 +65,7 @@ def main():
         hook = StdoutProgressHook()
         diarization_result = pipeline(file, hook=hook)
         # Save result to output_path using pickle
-        with open(output_path, 'wb') as f:
+        with open(output_path, "wb") as f:
             pickle.dump(diarization_result, f)
         print("DONE", flush=True)
     except Exception as e:  # noqa: BLE001
@@ -69,5 +75,6 @@ def main():
     finally:
         os.chdir(cwd)
 
+
 if __name__ == "__main__":
-    main() 
+    main()

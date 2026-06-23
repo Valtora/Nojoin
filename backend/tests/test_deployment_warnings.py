@@ -65,7 +65,9 @@ def test_get_deployment_warnings_detects_placeholder_env_secrets(monkeypatch) ->
     ]
 
 
-def test_get_deployment_warnings_detects_alternate_redis_placeholder(monkeypatch) -> None:
+def test_get_deployment_warnings_detects_alternate_redis_placeholder(
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("FIRST_RUN_PASSWORD", raising=False)
     monkeypatch.delenv("DATA_ENCRYPTION_KEY", raising=False)
     monkeypatch.setenv("REDIS_URL", "redis://:change_to_secure_string@redis:6379/0")

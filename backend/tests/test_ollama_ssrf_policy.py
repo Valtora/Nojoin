@@ -17,7 +17,6 @@ from backend.utils.ollama_url_policy import (
     validate_ollama_api_url,
 )
 
-
 SECURE_TEST_BASE_URL = "https://test"
 
 
@@ -98,9 +97,7 @@ def test_ollama_backend_rejects_untrusted_private_runtime_url(monkeypatch) -> No
         llm_services.config_manager,
         "get",
         lambda key, default=None: (
-            "http://host.docker.internal:11434"
-            if key == "ollama_api_url"
-            else default
+            "http://host.docker.internal:11434" if key == "ollama_api_url" else default
         ),
     )
 
@@ -123,9 +120,7 @@ async def test_authenticated_llm_models_route_uses_install_wide_ollama_url(
         llm_endpoint.config_manager,
         "get",
         lambda key, default=None: (
-            "http://host.docker.internal:11434"
-            if key == "ollama_api_url"
-            else default
+            "http://host.docker.internal:11434" if key == "ollama_api_url" else default
         ),
     )
 
@@ -167,9 +162,7 @@ async def test_authenticated_llm_models_route_rejects_ollama_override(
         llm_endpoint.config_manager,
         "get",
         lambda key, default=None: (
-            "http://host.docker.internal:11434"
-            if key == "ollama_api_url"
-            else default
+            "http://host.docker.internal:11434" if key == "ollama_api_url" else default
         ),
     )
 

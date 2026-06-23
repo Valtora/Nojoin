@@ -5,11 +5,11 @@ Revises: c2a2b3d4e5f8
 Create Date: 2026-05-14 00:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "9f2d7c6b4a10"
@@ -32,7 +32,9 @@ def upgrade() -> None:
         sa.Column("api_host", sa.String(length=255), nullable=False),
         sa.Column("api_port", sa.Integer(), nullable=False),
         sa.Column("paired_web_origin", sa.String(length=2048), nullable=False),
-        sa.Column("replacement_pairing_session_id", sa.String(length=64), nullable=True),
+        sa.Column(
+            "replacement_pairing_session_id", sa.String(length=64), nullable=True
+        ),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
         sa.Column("opened_at", sa.DateTime(), nullable=True),
         sa.Column("completed_at", sa.DateTime(), nullable=True),

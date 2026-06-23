@@ -317,9 +317,26 @@ If you add a new language or update an existing dictionary:
 ## Backend Coding Conventions
 
 ### Language & Formatting
-- **Type Hints**: Mandatory for all function arguments and return values.
-- **Imports**: Group standard library, third-party library, and local imports clearly.
-- **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues.
+- **Formatting & Imports**: Code is formatted and import-sorted by Ruff. Run `ruff format .` and `ruff check --fix .`, or let the pre-commit hook do it. Do not hand-format.
+- **Type Hints**: New and changed public/cross-module code should be fully annotated. Type checking is enforced incrementally by mypy on the boundary listed under `[tool.mypy].files` in `pyproject.toml` (configuration, core security/persistence contracts, and API-facing schema/model modules). Add modules to that list as they are annotated; annotate public functions and cross-module interfaces before internal helpers.
+- **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues. Catch specific exception types where recovery differs; a deliberately broad `except Exception` at a recovery boundary must log actionable context (or re-raise with `raise ... from`) and carry a justification comment in the form `# noqa: BLE001 -- boundary: <reason>`.
+- **Logging**: Use lazy `%`-style formatting (`logger.info("processed %s", count)`), not eager f-strings, in frequently executed paths so the interpolation is skipped when the level is disabled.
+
+### Local Checks From A Fresh Checkout
+Reproduce the CI Python checks locally with a single command:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements/dev.txt   # tests + lint/format/type tooling (CPU)
+pre-commit install                              # optional: run lint/format on commit
+
+python scripts/check.py            # ruff lint, format check, mypy, doc/alembic validators, pytest
+python scripts/check.py --fix      # auto-fix lint + formatting first
+python scripts/check.py lint mypy  # run a subset
+```
+
+Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the live processing stack.
 
 ### Data Access & Dependency Injection
 - **Data Access**: `SQLModel` is used for ORM. All model files are located in [backend/models/](../backend/models/).

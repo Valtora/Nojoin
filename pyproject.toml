@@ -9,14 +9,79 @@ markers = [
   "pipeline_baseline: marker for pipeline baseline evaluation metrics"
 ]
 
+[tool.mypy]
+# Incremental, boundary-first type checking. The production runtime is 3.12.
+# Rather than type-checking the whole (largely untyped) backend at once, we
+# enforce types on a curated set of stable boundaries -- configuration, core
+# security/persistence contracts, and API-facing schemas -- and expand the
+# `files` list as more modules are annotated (see docs/repo-maintenance.md).
+python_version = "3.12"
+# The Pydantic plugin teaches mypy about SQLModel/Pydantic models, including
+# @computed_field stacked on @property.
+plugins = ["pydantic.mypy"]
+# Heavy ML and third-party libraries ship no stubs; don't fail on their imports.
+ignore_missing_imports = true
+# Process imported modules for type information but only report errors in the
+# files listed below, so the enforced boundary stays small and green.
+follow_imports = "silent"
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+files = [
+    # Configuration and core security/persistence contracts.
+    "backend/utils/config_manager.py",
+    "backend/utils/time.py",
+    "backend/core/exceptions.py",
+    "backend/core/security.py",
+    "backend/core/encryption.py",
+    "backend/core/db.py",
+    "backend/api/deps.py",
+    "backend/api/error_handling.py",
+    "backend/utils/upload_limit.py",
+    # API-facing schema and ORM models (public/cross-module surface).
+    "backend/models/base.py",
+    "backend/models/recording.py",
+    "backend/models/recording_public.py",
+    "backend/models/speaker.py",
+    "backend/models/transcript.py",
+    "backend/models/user.py",
+    "backend/models/calendar.py",
+    "backend/models/task.py",
+    "backend/models/document.py",
+    "backend/models/chat.py",
+    "backend/models/tag.py",
+    "backend/models/pipeline.py",
+    "backend/models/people_tag_schemas.py",
+]
+
 [tool.ruff]
 target-version = "py312"
 
 [tool.ruff.lint]
 select = [
     "F",   # pyflakes (correctness/logic errors)
+    "I",   # isort (deterministic import ordering)
     "BLE", # blind-except (BLE001)
 ]
 ignore = [
-    "F403", "F405", "F821", "F841", "F401", "F811"
+    # Star-import rules: several package __init__ and model modules intentionally
+    # re-export with `from x import *`, so these would be noise.
+    "F403",  # undefined-local-with-import-star
+    "F405",  # may-be-undefined-from-star-imports
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Star-import re-export packages: these decomposed modules glue themselves
+# together with `from .X import *` (e.g. core.py re-exports constants, speaker,
+# diarization, segmentation, startup). Imports that look locally unused are in
+# fact the package's public surface, so F401 must not strip the re-export seams.
+"backend/utils/canonical_pipeline/*.py" = ["F401"]
+"backend/worker/tasks/*.py" = ["F401"]
+# Pure re-export aggregator packages whose submodules and tests resolve symbols
+# from the package root via a dynamically-built __all__ Ruff cannot analyse.
+"backend/api/v1/endpoints/recordings/__init__.py" = ["F401"]
+"backend/api/v1/endpoints/speakers/__init__.py" = ["F401"]
+# Generated Alembic migrations keep create_table() results as named locals for
+# readability; they must not be edited (committed revisions are immutable).
+"backend/alembic/versions/*.py" = ["F841"]

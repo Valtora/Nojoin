@@ -1,38 +1,56 @@
-import os
 import logging
-from datetime import datetime, timezone, UTC, timedelta
-from typing import List, Optional, Any
+import os
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, List, Optional
+
+import aiofiles
 from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlmodel import select, or_, col
-import aiofiles
+from sqlmodel import col, or_, select
 
-from backend.api.deps import get_db, get_current_user, get_current_user_stream
-from backend.models.user import User
+import backend.api.v1.endpoints.recordings as recordings_module
+from backend.api.deps import get_current_user, get_current_user_stream, get_db
+from backend.models.calendar import (
+    CalendarConnection,
+    CalendarDashboardDayCountRead,
+    CalendarEvent,
+    CalendarSource,
+)
 from backend.models.recording import Recording, RecordingStatus
-from backend.models.recording_public import RecordingPublicRead, RecordingsCalendarRead, CalendarEventLinkRead, serialize_recording
-from backend.models.transcript import Transcript
+from backend.models.recording_public import (
+    CalendarEventLinkRead,
+    RecordingPublicRead,
+    RecordingsCalendarRead,
+    serialize_recording,
+)
 from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag, Tag
-from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource, CalendarDashboardDayCountRead
-from backend.services.calendar_link_service import CANDIDATE_WINDOW_PADDING, score_event_match
-from backend.utils.timezones import get_timezone, get_user_timezone_name, utc_naive_to_timezone
-from backend.utils.time import utc_now
-from backend.utils.processing_eta import estimate_processing_eta
+from backend.models.transcript import Transcript
+from backend.models.user import User
+from backend.services.calendar_link_service import (
+    CANDIDATE_WINDOW_PADDING,
+    score_event_match,
+)
 from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
-import backend.api.v1.endpoints.recordings as recordings_module
+from backend.utils.processing_eta import estimate_processing_eta
+from backend.utils.time import utc_now
+from backend.utils.timezones import (
+    get_timezone,
+    get_user_timezone_name,
+    utc_naive_to_timezone,
+)
 
-from .router import router
 from .helpers import (
     _get_owned_recording,
     _recording_has_proxy,
     _should_hide_in_flight_transcript_content,
 )
+from .router import router
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +71,27 @@ async def list_recordings_root(
     status_filters: Optional[List[RecordingStatus]] = Query(None, alias="status"),
     user_filter: Optional[str] = Query(None, alias="user"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     List all recordings (root path).
     """
     return await list_recordings(
-        skip=skip, limit=limit, q=q, start_date=start_date, end_date=end_date,
-        speaker_ids=speaker_ids, tag_ids=tag_ids, include_archived=include_archived,
-        include_deleted=include_deleted, only_archived=only_archived, only_deleted=only_deleted,
-        status_filters=status_filters, user_filter=user_filter,
-        db=db, current_user=current_user
+        skip=skip,
+        limit=limit,
+        q=q,
+        start_date=start_date,
+        end_date=end_date,
+        speaker_ids=speaker_ids,
+        tag_ids=tag_ids,
+        include_archived=include_archived,
+        include_deleted=include_deleted,
+        only_archived=only_archived,
+        only_deleted=only_deleted,
+        status_filters=status_filters,
+        user_filter=user_filter,
+        db=db,
+        current_user=current_user,
     )
 
 
@@ -83,7 +111,7 @@ async def list_recordings(
     status_filters: Optional[List[RecordingStatus]] = Query(None, alias="status"),
     user_filter: Optional[str] = Query(None, alias="user"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     List all recordings with optional search and filtering.
@@ -96,18 +124,20 @@ async def list_recordings(
 
     if status_filters:
         query = query.where(Recording.status.in_(list(status_filters)))
-    
+
     # Archive/Delete filtering
     if only_deleted:
         query = query.where(Recording.is_deleted == True)
     elif only_archived:
-        query = query.where(Recording.is_archived == True, Recording.is_deleted == False)
+        query = query.where(
+            Recording.is_archived == True, Recording.is_deleted == False
+        )
     else:
         if not include_deleted:
             query = query.where(Recording.is_deleted == False)
         if not include_archived:
             query = query.where(Recording.is_archived == False)
-    
+
     # Joins for filtering and searching
     if q or speaker_ids or tag_ids:
         query = query.join(Transcript, isouter=True)
@@ -120,7 +150,7 @@ async def list_recordings(
             col(Recording.name).ilike(f"%{q}%"),
             col(Transcript.text).ilike(f"%{q}%"),
             col(RecordingSpeaker.name).ilike(f"%{q}%"),
-            col(Tag.name).ilike(f"%{q}%")
+            col(Tag.name).ilike(f"%{q}%"),
         )
         query = query.where(search_filter)
 
@@ -142,7 +172,7 @@ async def list_recordings(
 
     # Order and pagination
     query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
-    
+
     result = await db.execute(query)
     recordings = result.scalars().all()
     return [
@@ -191,7 +221,12 @@ async def get_recording_calendar_event_candidates(
     events = list((await db.execute(statement)).scalars().all())
     scored = sorted(
         (
-            (event, score_event_match(window_start, window_end, event.starts_at, event.ends_at))
+            (
+                event,
+                score_event_match(
+                    window_start, window_end, event.starts_at, event.ends_at
+                ),
+            )
             for event in events
         ),
         key=lambda pair: pair[1],
@@ -228,7 +263,9 @@ async def get_recordings_calendar(
     if viewed_month.month == 12:
         month_end_local = datetime(viewed_month.year + 1, 1, 1, tzinfo=tz)
     else:
-        month_end_local = datetime(viewed_month.year, viewed_month.month + 1, 1, tzinfo=tz)
+        month_end_local = datetime(
+            viewed_month.year, viewed_month.month + 1, 1, tzinfo=tz
+        )
 
     month_start = month_start_local.astimezone(UTC).replace(tzinfo=None)
     month_end = month_end_local.astimezone(UTC).replace(tzinfo=None)
@@ -262,7 +299,7 @@ async def get_recordings_calendar(
 async def get_recording(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get a specific recording by ID with all relationships loaded.
@@ -276,15 +313,15 @@ async def get_recording(
             selectinload(Recording.speakers).options(
                 selectinload(RecordingSpeaker.global_speaker)
             ),
-            selectinload(Recording.tags).selectinload(RecordingTag.tag)
+            selectinload(Recording.tags).selectinload(RecordingTag.tag),
         )
     )
     result = await db.execute(statement)
     recording = result.scalar_one_or_none()
-    
+
     if not recording:
         raise HTTPException(status_code=404, detail="Recording not found")
-        
+
     processing_eta_seconds = None
     processing_eta_learning = False
     processing_eta_sample_size = 0
@@ -330,7 +367,9 @@ async def get_recording(
     speakers_override = None
     if recording.transcript is not None:
         transcript_segments_override = await db.run_sync(
-            lambda sync_session: build_transcript_segments_for_read(sync_session, recording.id)
+            lambda sync_session: build_transcript_segments_for_read(
+                sync_session, recording.id
+            )
         )
         transcript_text_override = await db.run_sync(
             lambda sync_session: build_transcript_text_for_read(
@@ -340,10 +379,12 @@ async def get_recording(
             )
         )
         speakers_override = await db.run_sync(
-            lambda sync_session: recordings_module.filter_recording_speakers_for_public_read(
-                sync_session,
-                recording.id,
-                recording.speakers,
+            lambda sync_session: (
+                recordings_module.filter_recording_speakers_for_public_read(
+                    sync_session,
+                    recording.id,
+                    recording.speakers,
+                )
             )
         )
 
@@ -372,26 +413,23 @@ async def get_recording(
 async def get_recording_info(
     recording_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ) -> Any:
     """
     Get detailed technical info about the recording audio file.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
+
     from backend.processing.audio_preprocessing import analyze_audio_file
-    
-    info = {
-        "original": None,
-        "proxy": None
-    }
-    
+
+    info = {"original": None, "proxy": None}
+
     if recording.audio_path and os.path.exists(recording.audio_path):
         info["original"] = analyze_audio_file(recording.audio_path)
-        
+
     if recording.proxy_path and os.path.exists(recording.proxy_path):
         info["proxy"] = analyze_audio_file(recording.proxy_path)
-        
+
     return info
 
 
@@ -400,36 +438,36 @@ async def stream_recording(
     recording_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_stream)
+    current_user: User = Depends(get_current_user_stream),
 ):
     """
     Stream the audio file for a recording.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-        
+
     if not recording.proxy_path or not os.path.exists(recording.proxy_path):
         raise HTTPException(
             status_code=202,
-            detail="Audio proxy is being prepared. Please try again shortly."
+            detail="Audio proxy is being prepared. Please try again shortly.",
         )
 
     file_path = recording.proxy_path
     media_type = "audio/mpeg"
-        
+
     file_size = os.path.getsize(file_path)
-    CHUNK_SIZE = 2500 * 1024 
-    
+    CHUNK_SIZE = 2500 * 1024
+
     is_range_request = False
     start = 0
     end = min(file_size - 1, CHUNK_SIZE - 1)
-    
+
     range_header = request.headers.get("range")
     if range_header:
         is_range_request = True
         try:
             range_str = range_header.replace("bytes=", "")
             range_parts = range_str.split("-")
-            
+
             if range_parts[0] == "":
                 suffix_length = int(range_parts[1])
                 start = max(0, file_size - suffix_length)
@@ -443,7 +481,7 @@ async def stream_recording(
                     end = file_size - 1
         except ValueError:
             pass
-            
+
     chunk_end = min(end, start + CHUNK_SIZE - 1)
     end = chunk_end
 
@@ -451,14 +489,14 @@ async def stream_recording(
         raise HTTPException(
             status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
             detail="Requested range not satisfiable",
-            headers={"Content-Range": f"bytes */{file_size}"}
+            headers={"Content-Range": f"bytes */{file_size}"},
         )
 
     if end >= file_size:
         end = file_size - 1
-        
+
     content_length = end - start + 1
-    
+
     async def iterfile():
         async with aiofiles.open(file_path, "rb") as f:
             await f.seek(start)
@@ -470,7 +508,7 @@ async def stream_recording(
                     break
                 yield data
                 bytes_to_read -= len(data)
-                
+
     cache_control = "private, max-age=3600"
     use_partial = is_range_request or content_length < file_size
 
@@ -487,5 +525,5 @@ async def stream_recording(
         iterfile(),
         status_code=206 if use_partial else 200,
         headers=headers,
-        media_type=media_type
+        media_type=media_type,
     )

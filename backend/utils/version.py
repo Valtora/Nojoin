@@ -82,7 +82,9 @@ def _get_version_from_files() -> str | None:
 
 @lru_cache(maxsize=1)
 def get_installed_version() -> str:
-    return _get_version_from_environment() or _get_version_from_files() or DEFAULT_VERSION
+    return (
+        _get_version_from_environment() or _get_version_from_files() or DEFAULT_VERSION
+    )
 
 
 def reset_installed_version_cache() -> None:

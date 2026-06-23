@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.models.calendar import CalendarDashboardDayCountRead
+from backend.models.calendar import CalendarDashboardDayCountRead, CalendarEvent
 from backend.models.chat import ChatMessage
 from backend.models.document import Document, DocumentStatus
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
@@ -59,7 +59,9 @@ class SpeakerNameSuggestionRead(PublicModel):
     source: str
     provider: Optional[str] = None
     rationale: Optional[str] = None
-    evidence_spans: list[SpeakerNameSuggestionEvidenceRead] = Field(default_factory=list)
+    evidence_spans: list[SpeakerNameSuggestionEvidenceRead] = Field(
+        default_factory=list
+    )
     signals: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -81,7 +83,9 @@ class TranscriptPublicRead(PublicModel):
     meeting_edge_payload: Optional[dict[str, Any]] = None
     meeting_edge_status: str = "idle"
     meeting_edge_error_message: Optional[str] = None
-    speaker_name_suggestions: list[SpeakerNameSuggestionRead] = Field(default_factory=list)
+    speaker_name_suggestions: list[SpeakerNameSuggestionRead] = Field(
+        default_factory=list
+    )
     notes_status: str = "pending"
     transcript_status: str = "pending"
     error_message: Optional[str] = None
@@ -154,6 +158,9 @@ def serialize_recording_speaker(
     *,
     recording_public_id: str,
 ) -> RecordingSpeakerPublicRead:
+    # serialize_* helpers only ever receive persisted rows, so the primary key
+    # is always populated despite the ORM model typing it as Optional.
+    assert speaker.id is not None
     return RecordingSpeakerPublicRead(
         id=speaker.id,
         public_id=speaker.public_id,
@@ -188,13 +195,16 @@ def serialize_transcript(
     segments_override: Optional[list[dict]] = None,
     text_override: Optional[str] = None,
 ) -> TranscriptPublicRead:
+    assert transcript.id is not None
     return TranscriptPublicRead(
         id=transcript.id,
         created_at=transcript.created_at,
         updated_at=transcript.updated_at,
         recording_id=recording_public_id,
         text=transcript.text if text_override is None else text_override,
-        segments=transcript.segments if segments_override is None else segments_override,
+        segments=transcript.segments
+        if segments_override is None
+        else segments_override,
         notes=transcript.notes,
         user_notes=transcript.user_notes,
         meeting_edge_focus=transcript.meeting_edge_focus,
@@ -217,6 +227,7 @@ def serialize_chat_message(
     *,
     recording_public_id: str,
 ) -> ChatMessagePublicRead:
+    assert message.id is not None
     return ChatMessagePublicRead(
         id=message.id,
         created_at=message.created_at,
@@ -233,6 +244,7 @@ def serialize_document(
     *,
     recording_public_id: str,
 ) -> DocumentPublicRead:
+    assert document.id is not None
     return DocumentPublicRead(
         id=document.id,
         created_at=document.created_at,

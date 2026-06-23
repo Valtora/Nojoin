@@ -1,11 +1,14 @@
-import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
+
+import pytest
+from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from backend.api.deps import (
+    get_current_active_superuser,
+    get_current_active_superuser_ws,
+)
 from backend.api.v1.endpoints import system
-from backend.api.deps import get_current_active_superuser, get_current_active_superuser_ws
 from backend.main import create_app
 
 
@@ -65,7 +68,9 @@ def test_download_logs_forbidden(test_app):
 def test_websocket_logs_allowed(test_app):
     client = TestClient(test_app)
     # The client can connect to allowed container
-    with client.websocket_connect("/api/v1/system/logs/live?container=nojoin-api") as websocket:
+    with client.websocket_connect(
+        "/api/v1/system/logs/live?container=nojoin-api"
+    ) as websocket:
         # Check that it gets lines from container
         # Since stream returns [b"line 1\n", b"line 2\n"], it should be processed.
         msg1 = websocket.receive_text()
@@ -77,7 +82,9 @@ def test_websocket_logs_forbidden(test_app):
     client = TestClient(test_app)
     # The client should be closed with code 1008 immediately if the container is not allowed
     with pytest.raises(WebSocketDisconnect) as excinfo:
-        with client.websocket_connect("/api/v1/system/logs/live?container=unrelated-container") as websocket:
+        with client.websocket_connect(
+            "/api/v1/system/logs/live?container=unrelated-container"
+        ) as websocket:
             websocket.receive_text()
-    
+
     assert excinfo.value.code == 1008

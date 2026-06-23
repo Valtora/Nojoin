@@ -12,10 +12,20 @@ def normalise_task_title(title: str) -> str:
 
 
 def sort_tasks_for_dashboard(tasks: Sequence[TaskItem]) -> list[TaskItem]:
-    archived_tasks = [task for task in tasks if getattr(task, "archived_at", None) is not None]
-    visible_tasks = [task for task in tasks if getattr(task, "archived_at", None) is None]
-    active_tasks = [task for task in visible_tasks if getattr(task, "completed_at", None) is None]
-    completed_tasks = [task for task in visible_tasks if getattr(task, "completed_at", None) is not None]
+    archived_tasks = [
+        task for task in tasks if getattr(task, "archived_at", None) is not None
+    ]
+    visible_tasks = [
+        task for task in tasks if getattr(task, "archived_at", None) is None
+    ]
+    active_tasks = [
+        task for task in visible_tasks if getattr(task, "completed_at", None) is None
+    ]
+    completed_tasks = [
+        task
+        for task in visible_tasks
+        if getattr(task, "completed_at", None) is not None
+    ]
 
     active_tasks.sort(key=lambda task: getattr(task, "created_at"), reverse=True)
     active_tasks.sort(key=lambda task: getattr(task, "due_at") or datetime.max)

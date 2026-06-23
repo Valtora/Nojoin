@@ -207,7 +207,9 @@ def summarize_pipeline_metrics(events: Iterable[dict[str, Any]]) -> dict[str, An
 
     speaker_preservation_rate = None
     if manual_speaker_edits:
-        speaker_preservation_rate = preserved_manual_speaker_edits / manual_speaker_edits
+        speaker_preservation_rate = (
+            preserved_manual_speaker_edits / manual_speaker_edits
+        )
     text_preservation_rate = None
     if manual_text_edits:
         text_preservation_rate = preserved_manual_text_edits / manual_text_edits
@@ -221,11 +223,15 @@ def summarize_pipeline_metrics(events: Iterable[dict[str, Any]]) -> dict[str, An
         "diarization_invocations": stage_counts.get("final_diarization_invocation", 0)
         + stage_counts.get("rolling_diarization_window", 0),
         "live_segments_emitted": live_segments_emitted,
-        "live_transcript_reuse_count": stage_counts.get("final_transcription_reused_live", 0),
+        "live_transcript_reuse_count": stage_counts.get(
+            "final_transcription_reused_live", 0
+        ),
         "final_asr_rerun_count": stage_counts.get("final_asr_invocation", 0),
         "speaker_match_kinds": dict(speaker_match_kinds),
         "speaker_correction_events": stage_counts.get("speaker_correction_applied", 0),
-        "text_correction_events": stage_counts.get("transcript_text_correction_applied", 0),
+        "text_correction_events": stage_counts.get(
+            "transcript_text_correction_applied", 0
+        ),
         "manual_speaker_edit_preservation_rate": speaker_preservation_rate,
         "manual_text_edit_preservation_rate": text_preservation_rate,
         "finalization_ms": round(finalization_ms, 3),

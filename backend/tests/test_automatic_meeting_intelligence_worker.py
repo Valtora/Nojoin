@@ -9,13 +9,12 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
 
+import backend.worker.tasks as tasks_module
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
-import backend.worker.tasks as tasks_module
-
 
 BASE_SCHEMA = """
 CREATE TABLE recordings (
@@ -224,7 +223,9 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
     return engine
 
 
-def _sample_llm_config(*, api_key: str | None = "sk-test", model: str | None = "gpt-test") -> ResolvedLLMConfig:
+def _sample_llm_config(
+    *, api_key: str | None = "sk-test", model: str | None = "gpt-test"
+) -> ResolvedLLMConfig:
     return ResolvedLLMConfig(
         provider="openai",
         api_key=api_key,
@@ -242,10 +243,17 @@ class _FakeTask:
         self.calls.append({"state": state, "meta": meta})
 
 
-def test_build_automatic_meeting_intelligence_transcript_keeps_unresolved_labels_visible() -> None:
+def test_build_automatic_meeting_intelligence_transcript_keeps_unresolved_labels_visible() -> (
+    None
+):
     transcript = tasks_module._build_automatic_meeting_intelligence_transcript(
         [
-            {"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00", "text": "Opening update."},
+            {
+                "start": 0.0,
+                "end": 4.0,
+                "speaker": "SPEAKER_00",
+                "text": "Opening update.",
+            },
             {
                 "start": 4.0,
                 "end": 8.0,
@@ -280,7 +288,9 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
                 notes_markdown="# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date",
             )
 
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
     task = _FakeTask()
 
     try:
@@ -314,7 +324,9 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
             speakers = verification_session.exec(
                 select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
             ).all()
-            names_by_label = {speaker.diarization_label: speaker.name for speaker in speakers}
+            names_by_label = {
+                speaker.diarization_label: speaker.name for speaker in speakers
+            }
             suggestions = transcript.speaker_name_suggestions
 
         assert result is not None
@@ -331,11 +343,17 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert recording.processing_progress == 97
         assert transcript.notes_status == "completed"
         assert transcript.error_message is None
-        assert transcript.notes == "# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date"
+        assert (
+            transcript.notes
+            == "# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date"
+        )
         assert captured["request"].unresolved_speakers == ("SPEAKER_00",)
         assert captured["request"].user_notes == "Confirm the rollout date"
         assert captured["request"].prefer_short_titles is False
-        assert captured["timeout"] == tasks_module.AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS
+        assert (
+            captured["timeout"]
+            == tasks_module.AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS
+        )
         assert task.calls == [
             {
                 "state": "PROCESSING",
@@ -357,7 +375,9 @@ def test_run_automatic_meeting_intelligence_stage_skips_when_llm_config_missing(
     task = _FakeTask()
 
     def fail_if_called(_config):
-        raise AssertionError("LLM backend should not be created when configuration is incomplete")
+        raise AssertionError(
+            "LLM backend should not be created when configuration is incomplete"
+        )
 
     monkeypatch.setattr(tasks_module, "_llm_backend_from_config", fail_if_called)
 
@@ -410,7 +430,9 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
         def generate_meeting_intelligence(self, request, timeout: int = 60):
             raise RuntimeError("Unified AI contract failed")
 
-    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", lambda config: FakeLLM())
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
 
     try:
         with Session(engine) as session:

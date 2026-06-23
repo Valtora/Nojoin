@@ -9,8 +9,9 @@ Uses a two-stage approach:
 """
 
 import logging
+from typing import Any, Dict, Optional
+
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
 from pyannote.core import Annotation, Segment
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,9 @@ def _find_nearest_speaker(
         if label in exclude_labels:
             continue
         # Temporal distance: gap between segment boundaries
-        distance = max(0.0, target_segment.start - segment.end, segment.start - target_segment.end)
+        distance = max(
+            0.0, target_segment.start - segment.end, segment.start - target_segment.end
+        )
         if distance < best_distance:
             best_distance = distance
             best_label = label
@@ -114,7 +117,9 @@ def filter_phantom_speakers(
     # If every speaker would be a candidate, none are phantoms -- they are
     # all equally brief (e.g. a short recording with two speakers).
     if not established:
-        logger.info("[PhantomFilter] No established speakers detected; skipping filter.")
+        logger.info(
+            "[PhantomFilter] No established speakers detected; skipping filter."
+        )
         return diarization
 
     if not candidates:
@@ -132,18 +137,19 @@ def filter_phantom_speakers(
 
     # --- Stage 2: Embedding validation ---
     # Lazy-import heavy dependencies inside the function (worker convention).
-    from backend.processing.embedding_core import (
-        load_embedding_model,
-        _embedding_model_cache,
-        DEFAULT_EMBEDDING_MODEL,
-    )
     from backend.processing.embedding import cosine_similarity
+    from backend.processing.embedding_core import (
+        DEFAULT_EMBEDDING_MODEL,
+        _embedding_model_cache,
+        load_embedding_model,
+    )
     from backend.utils.config_manager import config_manager
 
     get_config = config.get if config else config_manager.get
     device_str = get_config("processing_device", "auto")
     if device_str == "auto":
         import torch
+
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
 
     hf_token = get_config("hf_token")
@@ -167,10 +173,14 @@ def filter_phantom_speakers(
                 emb = np.mean(emb, axis=0)
             established_embeddings[label] = emb
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"[PhantomFilter] Could not extract embedding for established speaker {label}: {e}")
+            logger.warning(
+                f"[PhantomFilter] Could not extract embedding for established speaker {label}: {e}"
+            )
 
     if not established_embeddings:
-        logger.warning("[PhantomFilter] No established speaker embeddings extracted; skipping filter.")
+        logger.warning(
+            "[PhantomFilter] No established speaker embeddings extracted; skipping filter."
+        )
         return diarization
 
     # Evaluate each candidate
@@ -188,7 +198,9 @@ def filter_phantom_speakers(
             if len(emb.shape) == 2:
                 emb = np.mean(emb, axis=0)
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"[PhantomFilter] Could not extract embedding for candidate {label}: {e}")
+            logger.warning(
+                f"[PhantomFilter] Could not extract embedding for candidate {label}: {e}"
+            )
             continue
 
         candidate_emb_list = emb.tolist()

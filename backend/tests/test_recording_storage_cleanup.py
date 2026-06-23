@@ -19,7 +19,6 @@ from backend.utils.recording_storage import (
     recordings_failed_dir,
 )
 
-
 RECORDING_AUDIO_CHUNKS_SCHEMA = """
 CREATE TABLE recording_audio_chunks (
     id INTEGER PRIMARY KEY,
