@@ -37,7 +37,7 @@ Nojoin is single-maintainer, so triage is a regular self-applied pass rather tha
 
 - **Weekly:** sweep new issues and pull requests. Apply a severity, scope, platform (where relevant), and release-impact label, and remove `needs-triage`. Security reports are handled out-of-band on the 48-hour acknowledgement commitment in the [security policy](../docs/SECURITY.md), not on this weekly cadence.
 - **Per release:** before tagging, review open `severity:critical` and `severity:high` issues and any `release:breaking` or `release:migration-required` items so release notes and the upgrade guidance are accurate.
-- **Quarterly:** the repository-quality re-audit (see [repo-maintenance.md](../docs/repo-maintenance.md)) also reviews stale and unlabelled issues.
+- **Quarterly:** the repository-quality re-audit (see the re-audit process in [CONTRIBUTING.md](../CONTRIBUTING.md#periodic-re-audit)) also reviews stale and unlabelled issues.
 
 New issues opened from the templates should arrive with `needs-triage`; the weekly sweep replaces it with the substantive labels.
 

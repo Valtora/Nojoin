@@ -177,6 +177,16 @@ The exact `gh` command, the reasoning behind each value, and the guarantee that 
 
 Changes that alter trust boundaries, persistence, capture, processing, or deployment contracts require an Architecture Decision Record. See [docs/adr/README.md](docs/adr/README.md) for when an ADR is required and how to add one.
 
+### Periodic Re-Audit
+
+The repository-quality bar is maintained, not set once. Three passes keep it current:
+
+- **Quarterly (automated reminder):** `.github/workflows/repo-audit-reminder.yml` runs on the first day of each quarter and opens an `audit`-labelled issue if one is not already open. That issue carries the re-audit checklist; the maintainer works through it, records the measured evidence in the issue, and opens follow-up issues for any regression.
+- **Per release:** before tagging, confirm the release-blocking quality checks still hold and that open `severity:critical`/`severity:high` and `release:*` issues are reflected in the release notes.
+- **On significant change:** when a change alters a core contract (trust boundary, persistence, capture, processing, or deployment), the accompanying ADR is the record — see [docs/adr/README.md](docs/adr/README.md).
+
+The re-audit procedure is to run the required checks from a clean environment, capture the actual numbers (test counts and durations, lint results, link-check output) in the audit issue, and resolve regressions with tracked follow-up issues rather than silently closing the audit.
+
 ### Other Governance Policies
 
 To avoid duplication, the remaining policies live in their canonical homes:
@@ -184,7 +194,6 @@ To avoid duplication, the remaining policies live in their canonical homes:
 - **Triage cadence and labels:** [.github/SUPPORT.md](.github/SUPPORT.md) and [.github/labels.yml](.github/labels.yml).
 - **Dependency-update policy:** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#dependency-update-policy).
 - **Test reliability (duration and flakiness):** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#test-reliability) and the flaky-test reporting path under [Reporting Issues](#reporting-issues).
-- **Periodic re-audit cadence:** [docs/repo-maintenance.md](docs/repo-maintenance.md).
 
 ## Code of Conduct
 

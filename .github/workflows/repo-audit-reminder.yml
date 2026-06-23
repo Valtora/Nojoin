@@ -1,9 +1,10 @@
 name: Repository Re-Audit Reminder
 
 # Opens a quarterly issue reminding the maintainer to run the repository-quality
-# re-audit and update docs/repo-maintenance.md (GOV-008). It uses the runner's
-# built-in gh CLI rather than a third-party action, so there is no extra pinned
-# SHA to maintain, and it is idempotent: it never stacks a second open reminder.
+# re-audit (GOV-008); the re-audit process is documented in CONTRIBUTING.md. It
+# uses the runner's built-in gh CLI rather than a third-party action, so there is
+# no extra pinned SHA to maintain, and it is idempotent: it never stacks a second
+# open reminder.
 
 on:
   schedule:
@@ -44,11 +45,11 @@ jobs:
           stamp="$(date -u +'%Y-%m')"
           body_file="$(mktemp)"
           cat > "${body_file}" <<'EOF'
-          Quarterly repository-quality re-audit (GOV-008).
+          Quarterly repository-quality re-audit (GOV-008). The re-audit process
+          is documented under "Periodic Re-Audit" in CONTRIBUTING.md.
 
-          Work through the **Re-Audit And Completion Gate** in
-          [docs/repo-maintenance.md](../blob/main/docs/repo-maintenance.md) and
-          record measured evidence, not impressions:
+          Work through the checklist below and record measured evidence in this
+          issue, not impressions:
 
           - [ ] Required pull-request checks are green on `main`.
           - [ ] Backend tests pass from a clean environment; note the count and duration, and review the `--durations` output for new slow outliers.
@@ -60,8 +61,8 @@ jobs:
           - [ ] Contributor and community docs still match the supported workflow and reporting channels.
           - [ ] Open issues are triaged and labelled; stale `flaky`/`slow-test` items are reviewed.
 
-          Update the tracker checkboxes and counts to reflect the findings, then
-          close this issue. Open follow-up issues for any regressions.
+          Record the findings in this issue, open follow-up issues for any
+          regression, then close this issue.
           EOF
 
           gh issue create \
