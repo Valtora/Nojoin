@@ -1259,3 +1259,212 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
 
     await source_context.async_engine.dispose()
     await target_context.async_engine.dispose()
+
+
+async def seed_unrelated_target_user(
+    session_maker: sessionmaker,
+    *,
+    user_id: int,
+    username: str,
+) -> None:
+    async with session_maker() as session:
+        session.add(
+            TestUser(
+                id=user_id,
+                username=username,
+                hashed_password="local-hash",
+                role="user",
+                settings={"theme": "dark"},
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_clear_existing_wipes_non_user_data_but_preserves_existing_users(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Characterizes the clear/preflight conflict mode (clear_existing=True): every
+    # non-user table is emptied and the recordings directory is recreated before the
+    # restore, but the users table is intentionally left intact to prevent lockout.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-clear",
+        recording_audio_path="data/recordings/quarterly-planning.wav",
+    )
+    zip_path = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    # A local-only user (absent from the backup) must survive the clear; a local-only
+    # recording must not.
+    await seed_unrelated_target_user(
+        target_context.async_session_maker, user_id=900, username="local-only-admin"
+    )
+    async with target_context.async_session_maker() as session:
+        session.add(
+            TestRecording(
+                id=901,
+                name="Local only meeting",
+                meeting_uid="meeting-uid-local-only",
+                audio_path="data/recordings/local-only.wav",
+                status="PROCESSED",
+                user_id=900,
+            )
+        )
+        await session.commit()
+
+    job_id = "clear-existing-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=True, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        usernames = sorted(row.username for row in session.exec(select(TestUser)).all())
+        recordings = session.exec(
+            select(TestRecording).order_by(TestRecording.name)
+        ).all()
+
+    # The local-only user is preserved (lockout prevention); the backup user is added.
+    assert "local-only-admin" in usernames
+    assert "alice" in usernames
+
+    # The local-only recording was wiped by the clear; only the backup recording remains.
+    recording_names = [row.name for row in recordings]
+    assert "Local only meeting" not in recording_names
+    assert recording_names == ["Quarterly planning"]
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_rejects_zip_slip_path_traversal_and_fails_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Characterizes the extraction-stage security boundary: a recordings/ archive entry
+    # whose resolved path escapes the user data directory must abort the restore with a
+    # "Zip Slip" error and must not write the file outside the tree.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    escape_target = tmp_path / "zip-slip-escape.txt"
+    assert not escape_target.exists()
+
+    backup_zip = tmp_path / "malicious-backup.zip"
+    with zipfile.ZipFile(backup_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("recordings/../../zip-slip-escape.txt", b"malicious-payload")
+        for table_name, _ in TEST_MODELS:
+            archive.writestr(f"{table_name}.json", "[]")
+
+    job_id = "zip-slip-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(
+        job_id, str(backup_zip), clear_existing=False, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "failed"
+    assert "Zip Slip" in (BackupManager.restore_jobs[job_id]["error"] or "")
+    assert not escape_target.exists()
+
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_identity_remap_assigns_new_ids_and_remaps_child_foreign_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Characterizes the identity-remap stage: when a backup primary key collides with an
+    # unrelated existing row, the restored row is assigned a fresh id and every dependent
+    # foreign key follows the new id rather than the pre-existing occupant of that id.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
+
+    # The backup's user, recording and task all use id=1 / user_id=1.
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-remap",
+        recording_audio_path="data/recordings/quarterly-planning.wav",
+    )
+    zip_path = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    # An unrelated local user already occupies id=1, forcing the backup's alice onto a
+    # new id during restore.
+    await seed_unrelated_target_user(
+        target_context.async_session_maker, user_id=1, username="local-bob"
+    )
+
+    job_id = "identity-remap-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        local_bob = session.exec(
+            select(TestUser).where(TestUser.username == "local-bob")
+        ).one()
+        alice = session.exec(select(TestUser).where(TestUser.username == "alice")).one()
+        restored_recording = session.exec(select(TestRecording)).one()
+        restored_task = session.exec(select(TestUserTask)).one()
+        restored_global_speaker = session.exec(select(TestGlobalSpeaker)).one()
+
+    # The pre-existing occupant of id=1 is untouched; alice landed on a fresh id.
+    assert local_bob.id == 1
+    assert alice.id != 1
+
+    # Every child foreign key points at alice's new id, never at local-bob.
+    assert restored_recording.user_id == alice.id
+    assert restored_task.user_id == alice.id
+    assert restored_global_speaker.user_id == alice.id
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
