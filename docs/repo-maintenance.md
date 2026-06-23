@@ -127,7 +127,7 @@ Large refactors must preserve behavior and begin with characterization tests.
 - [x] **BE-003:** Add stage-level characterization tests before decomposing `process_recording_task`.
 - [x] **BE-004:** Split the processing task into explicit orchestration stages with typed inputs, outputs, and failure semantics while keeping heavy inference in Celery workers.
 - [x] **BE-005:** Decompose `transcribe_segment_live_task` around sequence gating, audio buffering, ASR, persistence, diarisation dispatch, and best-effort failure handling.
-- [ ] **BE-006:** Decompose the largest canonical-pipeline reconciliation functions without weakening stable-id alignment or manual-edit authority.
+- [x] **BE-006:** Decompose the largest canonical-pipeline reconciliation functions without weakening stable-id alignment or manual-edit authority.
 - [ ] **BE-007:** Split oversized API endpoint modules by resource or responsibility while preserving route contracts.
 - [ ] **BE-008:** Define and enforce review thresholds for new modules and functions that grow beyond an agreed size or complexity.
 
