@@ -36,7 +36,9 @@ files = [
     "backend/core/security.py",
     "backend/core/encryption.py",
     "backend/core/db.py",
+    "backend/api/deps.py",
     "backend/api/error_handling.py",
+    "backend/utils/upload_limit.py",
     # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",
     "backend/models/recording.py",

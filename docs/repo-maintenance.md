@@ -148,7 +148,7 @@ Large refactors must preserve behavior and begin with characterization tests.
 - [x] **DOC-002:** Replace every machine-local `file:///home/...` documentation link with a repository-relative link.
 - [x] **DOC-003:** Add automated local-link checking for `README.md`, `CONTRIBUTING.md`, and `docs/*.md`.
 - [ ] **DOC-004:** Consolidate the root and `docs/` legal disclaimers into one canonical policy and update all links.
-- [ ] **DOC-005:** Correct spelling, grammar, punctuation, capitalization, and British/American terminology inconsistencies across public documentation.
+- [ ] **DOC-005:** Correct spelling, grammar, punctuation, capitalization, and British/American terminology inconsistencies across public documentation. British English spelling and conventions takes priority and precedence.
 - [ ] **DOC-006:** Replace stale historical implementation notes in operator documentation with current behavior plus versioned migration notes where still required.
 - [ ] **DOC-007:** Add headings, captions, and context to the screenshots guide.
 - [ ] **DOC-008:** Host critical logos and documentation images in repository-controlled assets where practical.

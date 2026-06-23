@@ -3,8 +3,11 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlmodel import Session
 
 load_dotenv()
@@ -35,11 +38,8 @@ sync_engine = create_engine(
     SYNC_DATABASE_URL, echo=False, future=True, pool_pre_ping=True, pool_recycle=3600
 )
 
-# sessionmaker's overloads don't model the AsyncSession class_ argument; the
-# async factory is functionally correct here. async_sessionmaker is the typed
-# successor and is the intended future migration.
-async_session_maker = sessionmaker(  # type: ignore[call-overload]
-    engine, class_=AsyncSession, expire_on_commit=False
+async_session_maker: async_sessionmaker[AsyncSession] = async_sessionmaker(
+    engine, expire_on_commit=False
 )
 
 
