@@ -60,9 +60,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = [
-    "F",   # pyflakes (correctness/logic errors)
-    "I",   # isort (deterministic import ordering)
-    "BLE", # blind-except (BLE001)
+    "F",       # pyflakes (correctness/logic errors)
+    "I",       # isort (deterministic import ordering)
+    "BLE",     # blind-except (BLE001)
+    "C901",    # mccabe: function too complex (max-complexity below)
+    "PLR0912", # too-many-branches (Pylint default limit)
+    "PLR0913", # too-many-arguments (Pylint default limit)
+    "PLR0915", # too-many-statements (Pylint default limit)
 ]
 ignore = [
     # Star-import rules: several package __init__ and model modules intentionally
@@ -70,6 +74,12 @@ ignore = [
     "F403",  # undefined-local-with-import-star
     "F405",  # may-be-undefined-from-star-imports
 ]
+
+# Function-complexity gate (BE-008). C901 trips above max-complexity; the PLR
+# rules use Ruff's Pylint-default limits. Existing violators are grandfathered
+# below; new code in non-grandfathered files is enforced.
+[tool.ruff.lint.mccabe]
+max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # Star-import re-export packages: these decomposed modules glue themselves
@@ -85,4 +95,81 @@ ignore = [
 "backend/api/v1/endpoints/transcripts/__init__.py" = ["F401"]
 # Generated Alembic migrations keep create_table() results as named locals for
 # readability; they must not be edited (committed revisions are immutable).
-"backend/alembic/versions/*.py" = ["F841"]
+"backend/alembic/versions/*.py" = ["F841", "C901", "PLR0912", "PLR0913", "PLR0915"]
+
+# BE-008 complexity baseline: existing violators grandfathered; do not add new
+# entries; shrink over time. Each file ignores only the complexity/size rules it
+# currently trips (C901 too-complex, PLR0912 too-many-branches, PLR0913
+# too-many-arguments, PLR0915 too-many-statements). New code in any file NOT
+# listed here -- and any newly created file -- is gated at the configured limits.
+"backend/api/services/health_service.py" = ["C901"]
+"backend/api/v1/endpoints/backup.py" = ["PLR0913"]
+"backend/api/v1/endpoints/calendar.py" = ["PLR0913"]
+"backend/api/v1/endpoints/recordings/helpers.py" = ["C901", "PLR0912"]
+"backend/api/v1/endpoints/recordings/routes_capture.py" = ["C901", "PLR0913", "PLR0915"]
+"backend/api/v1/endpoints/recordings/routes_import_upload.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/recordings/routes_query.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/api/v1/endpoints/speakers/helpers.py" = ["C901", "PLR0912"]
+"backend/api/v1/endpoints/speakers/routes_global.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/api/v1/endpoints/speakers/routes_recording.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/speakers/routes_voiceprint.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/system.py" = ["C901", "PLR0915"]
+"backend/api/v1/endpoints/tasks.py" = ["C901", "PLR0912"]
+"backend/api/v1/endpoints/transcripts/helpers.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/api/v1/endpoints/transcripts/routes_chat.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/transcripts/routes_export.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/transcripts/routes_segments.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/users.py" = ["C901"]
+"backend/core/backup_manager.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/core/security.py" = ["PLR0913"]
+"backend/models/recording_public.py" = ["PLR0913"]
+"backend/preload_models.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/processing/diarize.py" = ["C901", "PLR0915"]
+"backend/processing/embedding_core.py" = ["C901", "PLR0912"]
+"backend/processing/engines/onnx_asr_engine.py" = ["C901", "PLR0912"]
+"backend/processing/engines/whisper_engine.py" = ["C901", "PLR0912"]
+"backend/processing/live_transcribe.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/processing/llm_services.py" = ["C901", "PLR0912", "PLR0913"]
+"backend/processing/phantom_filter.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/processing/pipeline_metrics.py" = ["PLR0913"]
+"backend/processing/speaker_merge.py" = ["C901", "PLR0912"]
+"backend/processing/vad.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/seed_demo.py" = ["C901", "PLR0915"]
+"backend/services/calendar_service.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/services/jwt_revocation_service.py" = ["PLR0913"]
+"backend/utils/asr_window_results.py" = ["PLR0913"]
+"backend/utils/audio_windows.py" = ["PLR0913"]
+"backend/utils/canonical_pipeline/constants.py" = ["PLR0913"]
+"backend/utils/canonical_pipeline/core.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/diarization.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/segmentation.py" = ["C901", "PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/speaker.py" = ["C901", "PLR0912", "PLR0913"]
+"backend/utils/config_manager.py" = ["C901", "PLR0912"]
+"backend/utils/download_progress.py" = ["PLR0913"]
+"backend/utils/live_transcript.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/utils/meeting_intelligence.py" = ["PLR0913"]
+"backend/utils/ollama_url_policy.py" = ["C901"]
+"backend/utils/path_manager.py" = ["C901"]
+"backend/utils/rate_limit.py" = ["PLR0913"]
+"backend/utils/recording_audio_sync.py" = ["C901"]
+"backend/utils/recording_storage.py" = ["C901"]
+"backend/utils/rolling_diarization.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/utils/speaker_name_suggestions.py" = ["PLR0913"]
+"backend/utils/transcript_utils.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/worker/tasks/constants.py" = ["PLR0913"]
+"backend/worker/tasks/intelligence.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/worker/tasks/pipeline.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/worker/tasks/system.py" = ["PLR0913"]
+# Tests are exempt from PLR0913/PLR0915 (fixtures and parametrised cases legitimately
+# take many arguments and statements); listed explicitly to keep the gate visible.
+"backend/tests/test_backup_manager.py" = ["PLR0913", "PLR0915"]
+"backend/tests/test_calendar_and_task_api.py" = ["PLR0913"]
+"backend/tests/test_calendar_event_linking.py" = ["PLR0913"]
+"backend/tests/test_generate_notes_task.py" = ["PLR0913"]
+"backend/tests/test_infer_speakers_task.py" = ["PLR0913"]
+"backend/tests/test_recording_segment_transcode.py" = ["PLR0913"]
+"backend/tests/test_recordings_calendar_api.py" = ["PLR0913"]
+"backend/tests/test_reprocess.py" = ["C901", "PLR0913", "PLR0915"]
+"backend/tests/test_user_tasks.py" = ["PLR0913"]
+# Maintenance scripts: existing complexity grandfathered.
+"scripts/validate_docs.py" = ["C901"]

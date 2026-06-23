@@ -322,6 +322,15 @@ If you add a new language or update an existing dictionary:
 - **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues. Catch specific exception types where recovery differs; a deliberately broad `except Exception` at a recovery boundary must log actionable context (or re-raise with `raise ... from`) and carry a justification comment in the form `# noqa: BLE001 -- boundary: <reason>`.
 - **Logging**: Use lazy `%`-style formatting (`logger.info("processed %s", count)`), not eager f-strings, in frequently executed paths so the interpolation is skipped when the level is disabled.
 
+### Complexity & Size Thresholds
+New and changed code is gated on function complexity and module size to keep maintainability hotspots from spreading:
+
+- **Function complexity**: Ruff `C901` enforces a McCabe complexity ceiling of 10 (`[tool.ruff.lint.mccabe] max-complexity = 10`).
+- **Function size & arguments**: Ruff `PLR0915` (too-many-statements), `PLR0912` (too-many-branches), and `PLR0913` (too-many-arguments) at Ruff's Pylint-default limits.
+- **File size**: Backend Python source files (excluding `backend/tests/`, `test_*.py`/`*_test.py`, and Alembic migrations under `backend/alembic/versions/`) must be **at most 1000 lines**. This is enforced by `scripts/check_file_size.py`, which runs in `scripts/check.py` and CI.
+
+Existing violators predate the gate and are **grandfathered**: the complexity/size Ruff rules are ignored per-file under the `# BE-008 complexity baseline` block in `[tool.ruff.lint.per-file-ignores]`, and over-length files are listed with their current line count in the `GRANDFATHERED` allowlist in `scripts/check_file_size.py`. The policy is **shrink, not grow**: a grandfathered file fails the size check if it grows beyond its recorded count, and you should remove its baseline entries as it drops back under the limits. **Do not add new grandfather entries** — new files and new code in non-grandfathered files must comply with the thresholds above.
+
 ### Comments
 These rules apply to all tracked source (backend, worker, and frontend), not just Python.
 
@@ -339,7 +348,7 @@ source .venv/bin/activate
 python -m pip install -r requirements/dev.txt   # tests + lint/format/type tooling (CPU)
 pre-commit install                              # optional: run lint/format on commit
 
-python scripts/check.py            # ruff lint, format check, trailing-whitespace, mypy, doc/alembic validators, pytest
+python scripts/check.py            # ruff lint, format check, trailing-whitespace, file-size, mypy, doc/alembic validators, pytest
 python scripts/check.py --fix      # auto-fix lint + formatting first
 python scripts/check.py lint mypy  # run a subset
 ```

@@ -26,6 +26,7 @@ CHECKS: dict[str, list[str]] = {
     "lint": ["ruff", "check", "."],
     "format": ["ruff", "format", "--check", "."],
     "whitespace": [sys.executable, "scripts/check_whitespace.py"],
+    "filesize": [sys.executable, "scripts/check_file_size.py"],
     "typecheck": ["mypy"],
     "docs": [sys.executable, "scripts/validate_docs.py"],
     "alembic": [sys.executable, "scripts/validate_alembic.py"],
