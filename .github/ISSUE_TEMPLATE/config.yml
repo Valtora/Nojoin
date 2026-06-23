@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability (private)
+    url: https://github.com/Valtora/Nojoin/security/advisories/new
+    about: Report security vulnerabilities privately through GitHub Private Vulnerability Reporting. Do not open a public issue.
+  - name: Questions and support
+    url: https://github.com/Valtora/Nojoin/blob/main/.github/SUPPORT.md
+    about: Read the support guide for where to ask questions and what to expect from maintainers.
+  - name: Documentation
+    url: https://github.com/Valtora/Nojoin/blob/main/docs/README.md
+    about: Setup, deployment, capture, and usage guides answer most questions.

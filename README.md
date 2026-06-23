@@ -1,6 +1,6 @@
 <!-- markdownlint-disable -->
 <div align="center">
-    <h1><img src="https://iili.io/fueA2wB.png" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
+    <h1><img src="assets/images/nojoin-mark.svg" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
         <p>
            <strong>Self-Hosted Meeting Transcription and Notes</strong>
             </p>

@@ -116,7 +116,7 @@ Use **Settings > Updates** to see:
 
 Paused recordings are retained indefinitely and are not cleaned up automatically. This protects uploaded meeting data and prevents overlapping segment streams for the same user.
 
-Read [CAPTURE.md](CAPTURE.md) for the support matrix, browser picker behavior, and troubleshooting steps.
+Read [CAPTURE.md](CAPTURE.md) for the support matrix, browser picker behaviour, and troubleshooting steps.
 
 ## Related Docs
 

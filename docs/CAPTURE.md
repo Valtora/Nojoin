@@ -28,7 +28,7 @@ Live capture has two browser modes:
 
 Unsupported browsers can still review recordings, play audio, edit transcripts, manage speakers, use search, and administer Nojoin. They cannot start live capture.
 
-Chrome on macOS is a supported desktop capture path. Tab audio is the most reliable macOS option. Window and entire-screen audio should work on current Chrome and current macOS when the browser picker exposes and grants the audio toggle, but older browser or OS versions may return video without a shared-audio track. Other Chromium-family browsers on macOS are allowed by Nojoin but treated as best-effort because their picker behavior can lag Chrome.
+Chrome on macOS is a supported desktop capture path. Tab audio is the most reliable macOS option. Window and entire-screen audio should work on current Chrome and current macOS when the browser picker exposes and grants the audio toggle, but older browser or OS versions may return video without a shared-audio track. Other Chromium-family browsers on macOS are allowed by Nojoin but treated as best-effort because their picker behaviour can lag Chrome.
 
 ## What Nojoin Captures
 
@@ -41,7 +41,7 @@ On desktop shared-audio capture, the browser mixes those sources in the Nojoin t
 
 On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
 
-For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps. Live ASR and rolling speaker-window diarization are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
+For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps. Live ASR and rolling speaker-window diarisation are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
 
 ## Before Your First Recording
 
@@ -93,7 +93,7 @@ On macOS, entire-screen and window audio should work on current Chrome and curre
 The exact wording is browser-dependent:
 
 - Chrome on Windows usually shows **Also share system audio** for entire-screen sharing and **Share tab audio** for tab sharing.
-- Edge on Windows follows the same general behavior as Chrome.
+- Edge on Windows follows the same general behaviour as Chrome.
 - Chrome on macOS usually offers reliable tab audio. Window and entire-screen audio should work on latest Chrome and macOS when the picker shows the audio toggle.
 - Brave may require shields or site settings to allow capture prompts on hardened profiles.
 - Linux Chromium builds require working desktop capture through PipeWire for screen capture. PulseAudio-only environments are expected to fail for system or screen audio.
@@ -121,7 +121,7 @@ Switching to another browser tab, changing the active window, using another appl
 
 ## Floating Recording Badge
 
-While a recording is active, a floating badge appears at the top-center of the viewport. The badge shows:
+While a recording is active, a floating badge appears at the top-centre of the viewport. The badge shows:
 
 - A pulsing red dot and the word **Recording** (or **Paused** when paused).
 - The elapsed recording time.

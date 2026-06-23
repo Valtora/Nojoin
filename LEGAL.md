@@ -1,5 +1,5 @@
 # Legal Disclaimer
 
-**Important:** You are responsible for complying with all applicable laws in your jurisdiction regarding the recording of conversations. Many jurisdictions require the consent of all parties before a conversation can be recorded.
+**Important:** Recording laws vary by jurisdiction, and many jurisdictions require the consent of all parties before a conversation can be recorded. You are responsible for complying with all applicable laws in your jurisdiction.
 
-By using Nojoin, you acknowledge that you will use this software in a lawful manner. The developers of Nojoin assume no liability for any unlawful use of this application.
+The full, canonical legal disclaimer and terms of use are maintained in [docs/LEGAL.md](docs/LEGAL.md). Review it before using Nojoin.

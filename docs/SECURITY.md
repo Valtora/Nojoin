@@ -4,7 +4,7 @@ The Nojoin team and community take all security vulnerabilities seriously. Thank
 
 ## Active Development
 
-Nojoin is still in active development and all releases should be considered pre-release. There may be security vulnerabilities in the application. Nojoin's maintainers are not responsible for any data loss or security breaches that may occur as a result of using the application. We also advise users to take additional security measures in general but especially when deploying Nojoin over a publically accessible URL. For example, we recommend using a VPN or a reverse proxy to secure your Nojoin instance.
+Nojoin is still in active development and all releases should be considered pre-release. There may be security vulnerabilities in the application. Nojoin's maintainers are not responsible for any data loss or security breaches that may occur as a result of using the application. We also advise users to take additional security measures in general but especially when deploying Nojoin over a publicly accessible URL. For example, we recommend using a VPN or a reverse proxy to secure your Nojoin instance.
 
 ## First-Run Bootstrap Protection
 
@@ -93,7 +93,7 @@ We use GitHub's Private Vulnerability Reporting feature to receive security disc
 
 ### Expected Workflow
 
-1. **Acknowledgment:** You will receive an initial response confirming receipt of your report within 48 hours.
+1. **Acknowledgement:** You will receive an initial response confirming receipt of your report within 48 hours.
 2. **Evaluation:** The maintainers will investigate the report and determine the severity and scope of the vulnerability.
 3. **Remediation:** If the vulnerability is confirmed, we will work on a patch. A security advisory will be drafted, and a fix will be released.
 4. **Disclosure:** Once a patch is available and deployed, we will coordinate public disclosure through a GitHub Security Advisory.

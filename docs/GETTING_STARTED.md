@@ -94,7 +94,7 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 
 ## 6. Recommended Next Steps
 
-- Read [CAPTURE.md](CAPTURE.md) for browser capture setup, resume/discard behavior, and troubleshooting.
+- Read [CAPTURE.md](CAPTURE.md) for browser capture setup, resume/discard behaviour, and troubleshooting.
 - Read [USAGE.md](USAGE.md) for the dashboard, recordings workspace, notes, search, and speaker workflows.
 - Read [CALENDAR.md](CALENDAR.md) if you want Google or Outlook calendar integration.
 - Read [ADMIN.md](ADMIN.md) if you will manage users, invitations, or system settings.

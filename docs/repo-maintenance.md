@@ -147,29 +147,29 @@ Large refactors must preserve behavior and begin with characterization tests.
 - [x] **DOC-001:** Publish this maintenance tracker and link it from the documentation index.
 - [x] **DOC-002:** Replace every machine-local `file:///home/...` documentation link with a repository-relative link.
 - [x] **DOC-003:** Add automated local-link checking for `README.md`, `CONTRIBUTING.md`, and `docs/*.md`.
-- [ ] **DOC-004:** Consolidate the root and `docs/` legal disclaimers into one canonical policy and update all links.
-- [ ] **DOC-005:** Correct spelling, grammar, punctuation, capitalization, and British/American terminology inconsistencies across public documentation. British English spelling and conventions takes priority and precedence.
-- [ ] **DOC-006:** Replace stale historical implementation notes in operator documentation with current behavior plus versioned migration notes where still required.
-- [ ] **DOC-007:** Add headings, captions, and context to the screenshots guide.
-- [ ] **DOC-008:** Host critical logos and documentation images in repository-controlled assets where practical.
-- [ ] **DOC-009:** Add a documentation ownership and review rule requiring behavior, setup, deployment, and support changes to update the relevant guide in the same pull request.
+- [x] **DOC-004:** Consolidate the root and `docs/` legal disclaimers into one canonical policy and update all links.
+- [x] **DOC-005:** Correct spelling, grammar, punctuation, capitalization, and British/American terminology inconsistencies across public documentation. British English spelling and conventions takes priority and precedence.
+- [x] **DOC-006:** Replace stale historical implementation notes in operator documentation with current behavior plus versioned migration notes where still required.
+- [x] **DOC-007:** Add headings, captions, and context to the screenshots guide.
+- [x] **DOC-008:** Host critical logos and documentation images in repository-controlled assets where practical.
+- [x] **DOC-009:** Add a documentation ownership and review rule requiring behavior, setup, deployment, and support changes to update the relevant guide in the same pull request.
 
 ### Contributor Onboarding
 
 - [x] **DOC-010:** Expand `CONTRIBUTING.md` with prerequisites, environment setup, test commands, lint commands, commit expectations, and pull-request verification requirements.
-- [ ] **DOC-011:** Add a short contributor path that does not require building every GPU/ML dependency for frontend-only or documentation-only changes.
+- [x] **DOC-011:** Add a short contributor path that does not require building every GPU/ML dependency for frontend-only or documentation-only changes.
 - [x] **DOC-012:** Document which checks are mandatory by change scope: backend, worker, frontend, capture, migration, documentation, and deployment.
 - [x] **DOC-013:** Add guidance for database migrations, security-sensitive changes, browser-capture manual testing, and recording context-menu duplication.
-- [ ] **DOC-014:** Document how contributors can report flaky tests, platform-specific failures, and dependency issues.
+- [x] **DOC-014:** Document how contributors can report flaky tests, platform-specific failures, and dependency issues.
 
 ### Community Files
 
-- [ ] **COMM-001:** Add an explicit private reporting contact or process to the Code of Conduct enforcement section.
-- [ ] **COMM-002:** Update the platform issue template to match the current Windows, Linux, macOS, Android, and iOS support boundaries.
-- [ ] **COMM-003:** Improve the bug template with Nojoin version, deployment mode, browser, capture mode, logs, reproduction data, and privacy-redaction guidance.
-- [ ] **COMM-004:** Improve the pull-request template with backend tests, frontend lint/test/build, migration impact, documentation impact, security impact, and manual verification.
-- [ ] **COMM-005:** Add issue-template configuration that directs security reports to private vulnerability reporting and support questions to the intended support channel.
-- [ ] **COMM-006:** Define maintainer response, triage, and supported-version expectations that can realistically be met.
+- [x] **COMM-001:** Add an explicit private reporting contact or process to the Code of Conduct enforcement section.
+- [x] **COMM-002:** Update the platform issue template to match the current Windows, Linux, macOS, Android, and iOS support boundaries.
+- [x] **COMM-003:** Improve the bug template with Nojoin version, deployment mode, browser, capture mode, logs, reproduction data, and privacy-redaction guidance.
+- [x] **COMM-004:** Improve the pull-request template with backend tests, frontend lint/test/build, migration impact, documentation impact, security impact, and manual verification.
+- [x] **COMM-005:** Add issue-template configuration that directs security reports to private vulnerability reporting and support questions to the intended support channel.
+- [x] **COMM-006:** Define maintainer response, triage, and supported-version expectations that can realistically be met.
 
 ## Phase 5: Harden Release And Supply-Chain Governance
 

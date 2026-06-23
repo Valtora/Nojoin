@@ -76,7 +76,7 @@ Use it to manage your shared speaker library:
 
 - Review people records and stored voiceprints in one place.
 - Search and filter the library when you need to find a known speaker quickly.
-- Organize people with reusable people tags.
+- Organise people with reusable people tags.
 - Open batch editing and cleanup flows for broader speaker-library maintenance.
 
 ## Live Recording
@@ -103,7 +103,7 @@ On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu 
 
 You can switch to another browser tab, window, or application while recording. Nojoin only pauses automatically when the Nojoin tab is refreshed, closed, or navigated away from the active recording.
 
-While a recording is active, a floating badge appears at the top-center of the viewport on every page. The badge shows the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. You can control the recording from any page without navigating back to the recording workspace first.
+While a recording is active, a floating badge appears at the top-centre of the viewport on every page. The badge shows the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. You can control the recording from any page without navigating back to the recording workspace first.
 
 ### Pause, Resume, Stop, And Cancel
 
@@ -202,7 +202,7 @@ Settings are grouped by task.
 - **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
 - **AI**: provider configuration, model choices, automatic meeting intelligence, Meeting Edge model selection, and secondary LLM provider fallback.
 - **Transcription**: transcription backend and model choices.
-- **Calendar**: user calendar connections and timezone behavior.
+- **Calendar**: user calendar connections and timezone behaviour.
 - **Help**: tours and support surfaces.
 - **Admin**: user, system, provider, release, and maintenance settings for administrators.
 
