@@ -390,16 +390,34 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 ## Release Workflow and Version Detection
 
 ### Unified Release Process
-Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step:
-1. **Update Version**: Update [VERSION](VERSION) to the new version string (e.g. `0.6.0`).
-2. **Commit and Tag**: Commit the version file change and create/push the tag:
+
+Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step. The maintainer steps are unchanged by the supply-chain hardening; what changed is that more happens automatically after the tag is pushed, and the release can now be blocked by a gate.
+
+**Maintainer steps (manual):**
+
+1. **Merge and sync**: Merge the work for the release into `main` and ensure your local `main` is up to date.
+2. **Update version**: Update [VERSION](VERSION) to the new version string (e.g. `0.6.0`). The tag must match this value exactly or the release fails fast.
+3. **Commit and tag**: Commit the version bump, then create and push the tag:
    ```bash
    git add docs/VERSION
    git commit -m "chore: bump version to 0.6.0"
    git tag v0.6.0
    git push origin v0.6.0
    ```
-3. **CI/CD Pipeline**: The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml). Release publishing now re-runs the backend, frontend, docs, and Alembic validation set before any image push, verifies `docs/VERSION` matches the tag, and only publishes `latest` automatically from the tag-triggered release flow. Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly. Release notes are generated automatically by the `publish-release-notes` job (see [Automated Release Notes](#automated-release-notes-rel-013-rel-014) below); maintainers refine the editorial sections in the GitHub Releases interface afterward.
+4. **Refine release notes (after the run succeeds)**: The pipeline creates the GitHub Release automatically (see below). Edit its editorial sections — Migration, Rollback, Known Issues, Browser-Capture Compatibility — in the GitHub Releases interface where the release needs specific guidance. You no longer author release notes from scratch.
+
+**What the pipeline does automatically (on tag push):** The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml), which runs in this order:
+
+1. Re-runs the full backend, frontend, docs, and Alembic validation set and verifies `docs/VERSION` matches the tag.
+2. Builds each image and publishes only the immutable `version` and commit-`sha` tags, with provenance and SBOM attestations.
+3. Scans each image with Trivy and **fails the release on fixable CRITICAL/HIGH vulnerabilities** (see [Image Provenance, SBOM, and Signing](#image-provenance-sbom-and-signing) and the severity policy in [SECURITY.md](SECURITY.md)).
+4. Signs each image with cosign, then runs the non-root and health smoke.
+5. Publishes the rolling `latest` and `major.minor` tags only after all the above pass.
+6. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes-rel-013-rel-014)).
+
+Because of step 3, a tag push no longer guarantees published images: if scanning finds a fixable CRITICAL/HIGH vulnerability the run fails and the rolling tags are not moved. The usual fix is to merge the relevant Dependabot base-image or dependency update (or, for a justified unfixable case, add a documented, dated entry to [.trivyignore](../.trivyignore)) and cut the tag again.
+
+Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly.
 
 ### Runtime Version Detection
 The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
