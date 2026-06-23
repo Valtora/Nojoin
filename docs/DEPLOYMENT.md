@@ -259,6 +259,13 @@ location / {
 }
 ```
 
+## Image Trust and Supply Chain
+
+Published Nojoin images are built by a hardened, gated release pipeline. Operators with stricter assurance requirements can rely on the following properties.
+
+- **Reproducible bases:** Every image is built from base images pinned by immutable `@sha256:` digest, not mutable tags. The exact GitHub Actions used by the release workflow are pinned to commit SHAs.
+- **Update policy:** Pinned actions and base images are kept current automatically by Dependabot on a weekly cadence. Each update passes the full CI gate before it can merge, and a new release must be cut to publish updated images.
+
 ## Upgrading and Migration
 
 - When performing major upgrades, check release notes for breaking changes.

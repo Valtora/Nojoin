@@ -404,6 +404,20 @@ Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend
 ### Runtime Version Detection
 The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
 
+## Supply-Chain and Release Hardening
+
+The release pipeline is hardened to make published images reproducible, traceable, and verifiable. Contributors changing CI, the release workflow, or the Dockerfiles must keep the controls below intact.
+
+### Pinned Actions and Base Images
+
+- Every third-party GitHub Action in [.github/workflows/](../.github/workflows/) is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment. Do not reintroduce floating tags such as `@v5`; a mutable tag can be repointed at malicious code after review.
+- Every container base image in the Dockerfiles is pinned by `@sha256:` digest with the human-readable tag kept as a comment. The digest is the immutable identity of the image; the tag alone is mutable.
+- When you intentionally upgrade an action or base image, update both the SHA/digest and the version comment in the same change.
+
+### Dependabot
+
+[.github/dependabot.yml](../.github/dependabot.yml) keeps four ecosystems current on a weekly cadence: GitHub Actions, Python (`requirements/`), npm (`frontend/`), and Docker base images. Dependabot rewrites pinned SHAs and digests in place and updates the version comment, so pinning does not cause drift. Review and merge these update pull requests like any other change; they run the full CI suite.
+
 ## Related Docs
 
 - [CAPTURE.md](CAPTURE.md)
