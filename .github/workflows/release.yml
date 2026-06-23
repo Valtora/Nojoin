@@ -226,7 +226,7 @@ jobs:
         run: python scripts/validate_alembic.py
 
   server-release:
-    name: Build & Push Docker Images
+    name: Build, scan & sign images
     needs:
       - validate-release-ref
       - backend-tests
@@ -236,6 +236,12 @@ jobs:
       - docs-validation
       - alembic-validation
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      # Required for cosign keyless signing via the GitHub OIDC token.
+      id-token: write
 
     strategy:
       fail-fast: false
@@ -278,21 +284,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Only immutable tags (exact version and commit SHA) are published here.
+      # The rolling latest/major.minor tags are published by publish-mutable-tags
+      # after scanning, the health smoke, and signing all pass.
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
           tags: |
-            type=raw,value=latest,enable=${{ needs.validate-release-ref.outputs.publish_latest == 'true' }}
             type=raw,value=${{ needs.validate-release-ref.outputs.version }}
-            type=raw,value=${{ needs.validate-release-ref.outputs.major_minor }}
             type=sha
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: ${{ matrix.context }}
@@ -305,3 +316,65 @@ jobs:
             ${{ matrix.service == 'api' && format('NOJOIN_SERVER_VERSION={0}', needs.validate-release-ref.outputs.version) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Attach a signed build-provenance attestation and an SBOM to each
+          # published image so consumers can audit how it was built (REL-007).
+          provenance: mode=max
+          sbom: true
+
+      - name: Sign image with cosign (keyless)
+        env:
+          IMAGE_DIGEST: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          # Keyless signing binds the signature to this workflow's OIDC identity;
+          # no long-lived private key is stored. Signing by digest covers every
+          # tag that resolves to this image (REL-009).
+          cosign sign --yes "${IMAGE_DIGEST}"
+
+  publish-mutable-tags:
+    name: Publish rolling tags
+    needs:
+      - validate-release-ref
+      - server-release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image_suffix:
+          - -api
+          - -worker
+          - -frontend
+
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # Promote the verified immutable image to the rolling tags. major.minor
+      # always advances on a successful release; latest only advances when the
+      # release flow authorised it. cosign signatures attach to the digest, so
+      # these tags inherit the existing signature without re-signing.
+      - name: Promote rolling tags from verified image
+        env:
+          IMAGE_BASE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+          MAJOR_MINOR: ${{ needs.validate-release-ref.outputs.major_minor }}
+          PUBLISH_LATEST: ${{ needs.validate-release-ref.outputs.publish_latest }}
+        run: |
+          set -euo pipefail
+          tags=( "--tag" "${IMAGE_BASE}:${MAJOR_MINOR}" )
+          if [[ "${PUBLISH_LATEST}" == "true" ]]; then
+            tags+=( "--tag" "${IMAGE_BASE}:latest" )
+          fi
+          docker buildx imagetools create "${tags[@]}" "${IMAGE_BASE}:${VERSION}"

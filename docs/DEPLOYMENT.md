@@ -265,6 +265,32 @@ Published Nojoin images are built by a hardened, gated release pipeline. Operato
 
 - **Reproducible bases:** Every image is built from base images pinned by immutable `@sha256:` digest, not mutable tags. The exact GitHub Actions used by the release workflow are pinned to commit SHAs.
 - **Update policy:** Pinned actions and base images are kept current automatically by Dependabot on a weekly cadence. Each update passes the full CI gate before it can merge, and a new release must be cut to publish updated images.
+- **Signed images:** Every published image is signed with [cosign](https://github.com/sigstore/cosign) using keyless (OIDC) signing. The signature is bound to the release workflow's identity rather than a stored key.
+- **Provenance and SBOM:** Every image carries a build-provenance attestation and a Software Bill of Materials (SBOM) attestation describing how it was built and what it contains.
+
+### Verifying an Image Before Deploying
+
+Verify the cosign signature (replace the tag as needed):
+
+```bash
+cosign verify ghcr.io/valtora/nojoin-api:latest \
+  --certificate-identity-regexp "^https://github.com/Valtora/Nojoin/.github/workflows/release.yml@.*$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Inspect the provenance and SBOM attestations:
+
+```bash
+# Provenance attestation
+cosign verify-attestation --type slsaprovenance ghcr.io/valtora/nojoin-api:latest \
+  --certificate-identity-regexp "^https://github.com/Valtora/Nojoin/.*$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# SBOM and image index (digests, platforms, attestations)
+docker buildx imagetools inspect ghcr.io/valtora/nojoin-api:latest
+```
+
+Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha256:...`) rather than a rolling tag guarantees you run the precise image you verified.
 
 ## Upgrading and Migration
 

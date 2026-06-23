@@ -418,6 +418,14 @@ The release pipeline is hardened to make published images reproducible, traceabl
 
 [.github/dependabot.yml](../.github/dependabot.yml) keeps four ecosystems current on a weekly cadence: GitHub Actions, Python (`requirements/`), npm (`frontend/`), and Docker base images. Dependabot rewrites pinned SHAs and digests in place and updates the version comment, so pinning does not cause drift. Review and merge these update pull requests like any other change; they run the full CI suite.
 
+### Image Provenance, SBOM, and Signing
+
+Every published image is signed with cosign keyless (OIDC) signing and carries build-provenance and SBOM attestations (`provenance: mode=max`, `sbom: true` in the build step). The signature is bound to the release workflow identity, so the `server-release` job requires `id-token: write`. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
+
+### Gated Tag Publication
+
+The release flow publishes the immutable `version` and commit-`sha` tags during the build, then publishes the rolling `latest` and `major.minor` tags from a separate `publish-mutable-tags` job only after vulnerability scanning, the image health smoke, and signing all pass. This means a build that fails a gate can briefly expose an immutable `vX.Y.Z` tag (with the run visibly failing) but can never advance the `latest` tag that operators pull by default. Keep this ordering intact when editing the release workflow.
+
 ## Related Docs
 
 - [CAPTURE.md](CAPTURE.md)
