@@ -6663,3 +6663,407 @@ def test_match_utterance_does_not_dampen_when_overlap_is_clear() -> None:
     assert evidence["is_boundary_utterance"] is False
     assert evidence.get("boundary_dampened") is not True
     assert confidence == 0.9
+
+
+# ---------------------------------------------------------------------------
+# BE-006 characterization tests.
+#
+# These pin the behaviour of the rolling-diarization reconciliation seam
+# (`reconcile_diarization_window_result` and the
+# `_reconcile_completed_windows_from_effective_point` orchestrator) *before*
+# the function is decomposed into helpers. They lock down the two invariants
+# BE-006 must not weaken:
+#
+#   * Manual-edit authority: a confident auto candidate must NOT overwrite a
+#     manually-locked speaker; the candidate is only recorded in the rolling
+#     payload for provenance.
+#   * Stable-id alignment: `public_id` and `last_diarization_window_result_id`
+#     survive reconciliation for both the locked utterance and a re-derived
+#     sibling utterance.
+#
+# The re-export seam is also pinned: the public symbols must remain importable
+# from the package root regardless of how the function is later split.
+# ---------------------------------------------------------------------------
+
+
+def test_be006_reconciliation_seam_reexport_surface_is_intact() -> None:
+    """Pin the public re-export surface the rest of the codebase resolves
+    from the canonical_pipeline package root. Decomposition must not drop
+    any of these names from the `from .X import *` seams."""
+    from backend.utils import canonical_pipeline as pkg
+    from backend.utils.canonical_pipeline import core, diarization
+
+    for name in (
+        "reconcile_diarization_window_result",
+        "reconcile_completed_diarization_windows",
+        "_reconcile_completed_windows_from_effective_point",
+        "_match_window_local_speaker",
+        "_enforce_distinct_window_local_speaker_matches",
+        "_match_utterance_from_diarization_turns",
+        "_build_split_replacement_segments_from_diarization",
+        "_build_turn_boundary_split_segments_from_diarization",
+        "_build_merge_replacement_plans_from_diarization",
+        "_apply_boundary_reconciliation_segments",
+    ):
+        assert hasattr(pkg, name), f"{name} dropped from package root re-export"
+
+    # The orchestrator lives in core; the window worker lives in diarization.
+    assert hasattr(core, "_reconcile_completed_windows_from_effective_point")
+    assert hasattr(diarization, "reconcile_diarization_window_result")
+    # diarization re-exports the orchestrator name via `from .core import` glue.
+    assert hasattr(diarization, "reconcile_completed_diarization_windows")
+
+
+@pytest.mark.anyio
+async def test_be006_reconciliation_preserves_manual_lock_and_records_candidate(
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Manual-edit authority: a confident auto candidate for a *different*
+    speaker must not overwrite a manually-locked utterance. The applied
+    speaker stays the manual one; the candidate is recorded for provenance;
+    the stable `public_id` and the window id survive."""
+    from backend.models.speaker import RecordingSpeaker
+    from backend.utils import canonical_pipeline
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        reconcile_diarization_window_result,
+        update_utterance_speaker,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "be006-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "manual authority wins",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_speaker(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="be006-utt-1",
+                new_speaker_name="LIVE_01",
+                diarization_label="LIVE_01",
+                source="test",
+            )
+        )
+        locked_speaker_id = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers WHERE recording_id = 1 "
+                    "AND diarization_label = 'LIVE_01'"
+                )
+            )
+        ).scalar_one()
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'be006-speaker-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    60, :now, :now, 'be006-window-60', 1,
+                    NULL, 1, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu',
+                    'be006-cfg-lock', 'completed', '{}'
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES (
+                    70, :now, :now, 60,
+                    'SPEAKER_00', 0, 1000, NULL,
+                    NULL, NULL
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    def _force_confident_other_speaker(*args, **kwargs):
+        sync_session = args[0]
+        other = sync_session.get(RecordingSpeaker, 2)
+        assert other is not None
+        return other, 0.99, {"provisional": False, "forced": True}
+
+    monkeypatch.setattr(
+        canonical_pipeline,
+        "_match_window_local_speaker",
+        _force_confident_other_speaker,
+    )
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: reconcile_diarization_window_result(
+                sync_session,
+                recording_id=1,
+                window_result_id=60,
+                source="be006",
+            )
+        )
+        await session.commit()
+
+        assert summary["matched_turn_count"] == 1
+        assert summary["updated_utterance_count"] == 0
+        assert summary["preserved_manual_lock_count"] == 1
+
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT public_id, speaker_label, recording_speaker_id, "
+                    "manual_speaker_locked, last_diarization_window_result_id, "
+                    "confidence_payload "
+                    "FROM transcript_utterances WHERE public_id = 'be006-utt-1'"
+                )
+            )
+        ).one()
+        confidence_payload = json.loads(row[5]) if isinstance(row[5], str) else row[5]
+
+        # Stable id survives reconciliation unchanged.
+        assert row[0] == "be006-utt-1"
+        # Manual speaker is preserved; the confident candidate did not win.
+        assert row[1] == "LIVE_01"
+        assert row[2] == int(locked_speaker_id)
+        assert bool(row[3]) is True
+        # The processing window is still recorded against the utterance.
+        assert row[4] == 60
+        # The losing candidate is recorded for provenance, not applied.
+        rolling = confidence_payload["rolling_diarization"]
+        assert rolling["applied_recording_speaker_id"] == int(locked_speaker_id)
+        assert rolling["candidate_recording_speaker_id"] == 2
+
+
+@pytest.mark.anyio
+async def test_be006_orchestrator_sums_window_summaries_after_effective_point(
+    test_session_maker: sessionmaker,
+) -> None:
+    """`_reconcile_completed_windows_from_effective_point` aggregates per-window
+    summaries and only processes completed windows ending after the effective
+    point. Pins the orchestrator contract before decomposition."""
+    from backend.utils.canonical_pipeline import (
+        _reconcile_completed_windows_from_effective_point,
+        append_utterances_from_segments,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "be006-orch-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "first speaker",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'be006-orch-speaker-2', 1,
+                    NULL, 'LIVE_02', NULL, NULL,
+                    NULL, NULL, 'active', 'automated',
+                    0, 1000, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        # A stale window ending at/before the effective point must be skipped.
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    80, :now, :now, 'be006-orch-window-stale', 1,
+                    NULL, 0, 0,
+                    400, 1, 5,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu',
+                    'be006-orch-cfg-stale', 'completed', '{}'
+                )
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        # A current window ending after the effective point must be processed.
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_results (
+                    id, created_at, updated_at, public_id, recording_id,
+                    processing_run_id, window_index, window_start_ms,
+                    window_end_ms, chunk_start_sequence, chunk_end_sequence,
+                    model_name, model_version, device, config_hash, status,
+                    raw_payload
+                ) VALUES (
+                    81, :now, :now, 'be006-orch-window-live', 1,
+                    NULL, 1, 0,
+                    20000, 1, 10,
+                    'pyannote/speaker-diarization-community-1', 'community-1', 'cpu',
+                    'be006-orch-cfg-live', 'completed',
+                    :raw_payload
+                )
+                """
+            ),
+            {
+                "now": "2026-05-20 00:00:00",
+                "raw_payload": json.dumps(
+                    {
+                        "speaker_metadata": {
+                            "SPEAKER_00": {
+                                "best_recording_speaker_id": 2,
+                                "best_recording_speaker_score": 0.99,
+                            }
+                        }
+                    }
+                ),
+            },
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO diarization_window_turns (
+                    id, created_at, updated_at, window_result_id,
+                    local_speaker_key, start_ms, end_ms, confidence,
+                    matched_recording_speaker_id, metadata_payload
+                ) VALUES
+                    (90, :now, :now, 80, 'SPEAKER_00', 0, 400, NULL, NULL, NULL),
+                    (91, :now, :now, 81, 'SPEAKER_00', 0, 1000, NULL, NULL, NULL)
+                """
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: _reconcile_completed_windows_from_effective_point(
+                sync_session,
+                recording_id=1,
+                effective_from_ms=500,
+                source="be006_orch",
+            )
+        )
+        await session.commit()
+
+    # Only window 81 ends after effective_from_ms=500, so exactly one window
+    # is counted and its single matched turn is summed.
+    assert summary["window_count"] == 1
+    assert summary["matched_turn_count"] == 1
+
+    async with test_session_maker() as session:
+        # Stable id survives orchestrated reconciliation.
+        row = (
+            await session.execute(
+                text(
+                    "SELECT public_id, last_diarization_window_result_id "
+                    "FROM transcript_utterances WHERE public_id = 'be006-orch-1'"
+                )
+            )
+        ).one()
+        assert row[0] == "be006-orch-1"
+        assert row[1] == 81
+
+
+@pytest.mark.anyio
+async def test_be006_orchestrator_none_effective_point_is_noop(
+    test_session_maker: sessionmaker,
+) -> None:
+    """A None effective point short-circuits to an all-zero summary without
+    touching any window — pins the early-return contract."""
+    from backend.utils.canonical_pipeline import (
+        _reconcile_completed_windows_from_effective_point,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        summary = await session.run_sync(
+            lambda sync_session: _reconcile_completed_windows_from_effective_point(
+                sync_session,
+                recording_id=1,
+                effective_from_ms=None,
+                source="be006_orch",
+            )
+        )
+        await session.commit()
+
+    assert summary == {
+        "window_count": 0,
+        "matched_turn_count": 0,
+        "updated_utterance_count": 0,
+        "preserved_manual_lock_count": 0,
+    }
