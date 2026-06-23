@@ -7,7 +7,10 @@ from sqlmodel import SQLModel
 # Import the database URL
 from backend.core.db import SYNC_DATABASE_URL
 
-# Import your models here so they are registered with SQLModel
+# Import the model registry so every table=True model is registered on
+# SQLModel.metadata before target_metadata is assigned below. Without this,
+# autogenerate sees empty metadata and can drop existing tables.
+from backend.models import registry  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
