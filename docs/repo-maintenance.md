@@ -122,8 +122,8 @@ Large refactors must preserve behavior and begin with characterization tests.
 
 ### Backend Decomposition
 
-- [ ] **BE-001:** Add characterization tests around backup conflict modes, identity remapping, file extraction, transaction boundaries, and proxy regeneration before decomposing restore logic.
-- [ ] **BE-002:** Split `BackupManager._restore_backup_sync` into cohesive validation, preflight, extraction, table-restore, identity-remap, and finalization services.
+- [x] **BE-001:** Add characterization tests around backup conflict modes, identity remapping, file extraction, transaction boundaries, and proxy regeneration before decomposing restore logic.
+- [x] **BE-002:** Split `BackupManager._restore_backup_sync` into cohesive validation, preflight, extraction, table-restore, identity-remap, and finalization services.
 - [ ] **BE-003:** Add stage-level characterization tests before decomposing `process_recording_task`.
 - [ ] **BE-004:** Split the processing task into explicit orchestration stages with typed inputs, outputs, and failure semantics while keeping heavy inference in Celery workers.
 - [ ] **BE-005:** Decompose `transcribe_segment_live_task` around sequence gating, audio buffering, ASR, persistence, diarisation dispatch, and best-effort failure handling.
