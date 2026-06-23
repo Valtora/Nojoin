@@ -149,7 +149,7 @@ Every pull request to `main` must have the required `CI gate` status check green
 - `Backend tests` and `Python quality` (Ruff lint, Ruff format check, mypy) — run when `backend/**`, `requirements/**`, `pyproject.toml`, or `scripts/**` changed.
 - `Frontend lint`, `Frontend unit tests`, and `Frontend build` — run when `frontend/**` changed.
 - A **deployment** change (`docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/**`) runs **both** the backend and frontend suites, since it can affect the built images or pipeline even without code changes. This is consistent with the deployment/release sensitive-scope rule below.
-- `Docs validation` and `Alembic validation` — always run (cheap).
+- `Whitespace check`, `Docs validation`, and `Alembic validation` — always run (cheap). `Whitespace check` is the only trailing-whitespace guard for Markdown, YAML, shell, and config files, so it is never gated.
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.
 

@@ -111,9 +111,6 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
 
-      - name: Check trailing whitespace
-        run: python scripts/check_whitespace.py
-
       - name: Check source file size
         run: python scripts/check_file_size.py
 
@@ -227,6 +224,25 @@ jobs:
       - name: Validate checked-in Alembic graph
         run: python scripts/validate_alembic.py
 
+  whitespace:
+    # Always run: this is the only trailing-whitespace guard for Markdown, YAML,
+    # shell, and config files, which the path-gated Python quality job no longer
+    # covers on a non-backend change. The script is pure stdlib, so it is cheap.
+    name: Whitespace check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Check trailing whitespace
+        run: python scripts/check_whitespace.py
+
   dependency-scan:
     name: Dependency vulnerability scan
     runs-on: ubuntu-latest
@@ -266,6 +282,7 @@ jobs:
       - frontend-build
       - docs-validation
       - alembic-validation
+      - whitespace
     runs-on: ubuntu-latest
 
     steps:

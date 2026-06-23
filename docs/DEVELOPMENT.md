@@ -69,6 +69,7 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 | `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
 | `Frontend build` | same as `Frontend lint` |
+| `Whitespace check` | always (the only trailing-whitespace guard for non-Python files) |
 | `Docs validation` | always |
 | `Alembic validation` | always |
 
