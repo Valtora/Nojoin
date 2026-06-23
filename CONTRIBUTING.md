@@ -86,8 +86,8 @@ Minimum pull request verification is:
 
 The pull request workflow runs these checks, and the aggregate `CI gate` must be green to merge. The expensive jobs run only when their area changed; the cheap validators always run:
 
-- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) — on backend changes.
-- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — on frontend changes.
+- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) — on backend or deployment changes.
+- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — on frontend or deployment changes.
 - `Docs validation` and `Alembic validation` — always.
 
 See the [Merge Requirements](#merge-requirements) section for how `CI gate` aggregates these and the exact path rules.
@@ -146,8 +146,9 @@ Review responsibility is recorded in [.github/CODEOWNERS](.github/CODEOWNERS). G
 
 Every pull request to `main` must have the required `CI gate` status check green before merge. `CI gate` is an aggregate that passes only when every applicable CI job passed. To save CI minutes, the expensive jobs run only when their area changed and are skipped (counted as a pass) otherwise:
 
-- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, mypy) — run when `backend/**`, `requirements/**`, `pyproject.toml`, `scripts/**`, or the CI workflow changed.
-- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — run when `frontend/**` or the CI workflow changed.
+- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, mypy) — run when `backend/**`, `requirements/**`, `pyproject.toml`, or `scripts/**` changed.
+- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — run when `frontend/**` changed.
+- A **deployment** change (`docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/**`) runs **both** the backend and frontend suites, since it can affect the built images or pipeline even without code changes. This is consistent with the deployment/release sensitive-scope rule below.
 - `Docs validation` and `Alembic validation` — always run (cheap).
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.

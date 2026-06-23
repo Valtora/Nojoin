@@ -64,15 +64,15 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 
 | Check | Runs when |
 | --- | --- |
-| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `scripts/**`, or `.github/workflows/ci.yml` changed |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `scripts/**`, or a deployment path changed |
 | `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | same as `Backend tests` |
-| `Frontend lint` | `frontend/**` or `.github/workflows/ci.yml` changed |
+| `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
 | `Frontend build` | same as `Frontend lint` |
 | `Docs validation` | always |
 | `Alembic validation` | always |
 
-A `detect-changes` job (using `dorny/paths-filter`) classifies the diff, and each heavy job gates on its output; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
+A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/**` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or workflow change can break the built images or pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../CONTRIBUTING.md#merge-requirements). Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
 
 Local equivalents:
 

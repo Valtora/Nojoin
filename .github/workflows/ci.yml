@@ -21,6 +21,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      deployment: ${{ steps.filter.outputs.deployment }}
 
     steps:
       - name: Checkout repository
@@ -34,21 +35,31 @@ jobs:
         id: filter
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
+          # `deployment` covers infrastructure that the backend/frontend code
+          # filters do not (Dockerfiles, compose, nginx, and any workflow). A
+          # change to those runs the full backend and frontend suite, matching
+          # the deployment/release verification policy in CONTRIBUTING.md and
+          # ensuring a deployment-only PR is never validated by the cheap
+          # validators alone. Workflow changes land here too, so editing this
+          # file exercises everything.
           filters: |
             backend:
               - 'backend/**'
               - 'requirements/**'
               - 'pyproject.toml'
               - 'scripts/**'
-              - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
-              - '.github/workflows/ci.yml'
+            deployment:
+              - 'docker/**'
+              - 'docker-compose*.yml'
+              - 'nginx/**'
+              - '.github/workflows/**'
 
   backend-tests:
     name: Backend tests
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -73,7 +84,7 @@ jobs:
   python-quality:
     name: Python quality
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -112,7 +123,7 @@ jobs:
   frontend-lint:
     name: Frontend lint
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -137,7 +148,7 @@ jobs:
   frontend-unit-tests:
     name: Frontend unit tests
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -162,7 +173,7 @@ jobs:
   frontend-build:
     name: Frontend build
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
