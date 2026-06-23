@@ -8,10 +8,58 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  # Classify the diff so the heavy jobs only run when their area changed. The
+  # expensive jobs below gate on these outputs; the cheap validators always run.
+  # `CI gate` (the single required status check) aggregates every result, so a
+  # skipped job never leaves a required check permanently pending.
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      deployment: ${{ steps.filter.outputs.deployment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # Full history lets paths-filter diff push events (e.g. pushes to main)
+          # via git; pull_request events are diffed through the API.
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          # `deployment` covers infrastructure that the backend/frontend code
+          # filters do not (Dockerfiles, compose, nginx, and any workflow). A
+          # change to those runs the full backend and frontend suite, matching
+          # the deployment/release verification policy in CONTRIBUTING.md and
+          # ensuring a deployment-only PR is never validated by the cheap
+          # validators alone. Workflow changes land here too, so editing this
+          # file exercises everything.
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'requirements/**'
+              - 'pyproject.toml'
+              - 'scripts/**'
+            frontend:
+              - 'frontend/**'
+            deployment:
+              - 'docker/**'
+              - 'docker-compose*.yml'
+              - 'nginx/**'
+              - '.github/workflows/**'
+
   backend-tests:
     name: Backend tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -35,6 +83,8 @@ jobs:
 
   python-quality:
     name: Python quality
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -61,9 +111,6 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
 
-      - name: Check trailing whitespace
-        run: python scripts/check_whitespace.py
-
       - name: Check source file size
         run: python scripts/check_file_size.py
 
@@ -72,6 +119,8 @@ jobs:
 
   frontend-lint:
     name: Frontend lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -95,6 +144,8 @@ jobs:
 
   frontend-unit-tests:
     name: Frontend unit tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -118,6 +169,8 @@ jobs:
 
   frontend-build:
     name: Frontend build
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -171,6 +224,25 @@ jobs:
       - name: Validate checked-in Alembic graph
         run: python scripts/validate_alembic.py
 
+  whitespace:
+    # Always run: this is the only trailing-whitespace guard for Markdown, YAML,
+    # shell, and config files, which the path-gated Python quality job no longer
+    # covers on a non-backend change. The script is pure stdlib, so it is cheap.
+    name: Whitespace check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Check trailing whitespace
+        run: python scripts/check_whitespace.py
+
   dependency-scan:
     name: Dependency vulnerability scan
     runs-on: ubuntu-latest
@@ -192,3 +264,38 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
           trivyignores: .trivyignore
+
+  # Single required status check. It depends on every meaningful job and passes
+  # only if none of them failed or were cancelled; a job that was skipped by the
+  # path filter counts as a pass. Branch protection requires this context (and
+  # only this one), so a required check is always reported even when the heavy
+  # jobs are skipped, which a per-job `paths` filter could never guarantee.
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs:
+      - detect-changes
+      - backend-tests
+      - python-quality
+      - frontend-lint
+      - frontend-unit-tests
+      - frontend-build
+      - docs-validation
+      - alembic-validation
+      - whitespace
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify required jobs passed or were skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "dependency results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [[ "${result}" == "failure" || "${result}" == "cancelled" ]]; then
+              echo "A required job did not pass (result: ${result})." >&2
+              exit 1
+            fi
+          done
+          echo "All required jobs passed or were skipped."
