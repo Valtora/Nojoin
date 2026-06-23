@@ -1,0 +1,43 @@
+# Code ownership and review responsibility for Nojoin (GOV-001).
+#
+# GitHub auto-requests a review from the owner of every changed path when a
+# pull request is opened. Matching is last-match-wins: the catch-all is first
+# and the most specific subsystem rules are last.
+#
+# Nojoin is currently maintained by a single person, so every subsystem maps to
+# the sole maintainer. The map still documents the responsibility boundaries and
+# is forward-compatible: when a co-maintainer joins, add their handle to the
+# relevant lines without restructuring the file.
+
+# --- Default owner for everything not matched more specifically ---
+*                                   @Valtora
+
+# --- Backend / API ---
+/backend/api/**                     @Valtora
+
+# --- Worker / ML and the processing pipeline ---
+/backend/worker/**                  @Valtora
+/backend/processing/**              @Valtora
+
+# --- Database migrations (sensitive: one checked-in head, no rename/delete) ---
+/backend/alembic/**                 @Valtora
+
+# --- Frontend and browser capture ---
+/frontend/src/**                    @Valtora
+/frontend/src/lib/capture/**        @Valtora
+
+# --- Security-sensitive code and policy ---
+/docs/SECURITY.md                   @Valtora
+/backend/core/security.py           @Valtora
+/backend/core/encryption.py         @Valtora
+/backend/api/deps.py                @Valtora
+/backend/api/v1/endpoints/login.py  @Valtora
+
+# --- Deployment, containers, and CI/release pipelines ---
+/docker/**                          @Valtora
+/docker-compose*.yml                @Valtora
+/.github/workflows/**               @Valtora
+
+# --- Documentation ---
+/docs/**                            @Valtora
+*.md                                @Valtora
