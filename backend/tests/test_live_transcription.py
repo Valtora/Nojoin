@@ -2722,3 +2722,63 @@ def test_live_task_registered_with_celery():
         "backend.processing.live_transcribe.transcribe_segment_live_task"
         in celery_app.tasks
     )
+
+
+def test_mute_non_speech_segments_uses_configured_vad_parameters(tmp_path, monkeypatch):
+    """Batch VAD muting must honour the user's configured vad_parameters.
+
+    Regression guard: mute_non_speech_segments previously used hardcoded
+    argument defaults and ignored the vad_parameters setting entirely, while
+    the live path honoured it. Both paths now resolve via
+    get_vad_config_from_settings().
+    """
+    import numpy as np
+    import soundfile as sf
+
+    from backend.processing import vad as vad_module
+    from backend.utils.config_manager import config_manager
+
+    custom = {
+        "threshold": 0.8,
+        "min_speech_duration_ms": 123,
+        "min_silence_duration_ms": 456,
+    }
+    monkeypatch.setattr(
+        config_manager,
+        "get",
+        lambda key, default=None: custom if key == "vad_parameters" else default,
+    )
+
+    input_path = tmp_path / "in.wav"
+    sf.write(input_path, np.zeros(16000, dtype="float32"), 16000)
+    output_path = tmp_path / "out.wav"
+
+    class MockModel:
+        def to(self, device):
+            return self
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "load_silero_vad", lambda *a, **k: MockModel()
+    )
+
+    def fake_save_audio(path, tensor, sampling_rate=16000):
+        sf.write(path, np.zeros(16000, dtype="float32"), sampling_rate)
+
+    monkeypatch.setattr(vad_module.silero_vad, "save_audio", fake_save_audio)
+
+    captured = {}
+
+    def fake_get_speech_timestamps(*a, **k):
+        captured.update(k)
+        return [{"start": 0, "end": 16000}]
+
+    monkeypatch.setattr(
+        vad_module.silero_vad, "get_speech_timestamps", fake_get_speech_timestamps
+    )
+
+    success, _ = vad_module.mute_non_speech_segments(str(input_path), str(output_path))
+
+    assert success is True
+    assert captured["threshold"] == 0.8
+    assert captured["min_speech_duration_ms"] == 123
+    assert captured["min_silence_duration_ms"] == 456

@@ -45,12 +45,12 @@ def mute_non_speech_segments(
     input_wav_path: str,
     output_wav_path: str,
     sampling_rate: int = 16000,
-    threshold: float = 0.5,
+    threshold: float | None = None,
     window_size_samples: int = 512,
-    min_speech_duration_ms: int = 300,
-    min_silence_duration_ms: int = 100,
-    fade_duration_ms: int = 50,
-    silence_method: str = "mute",  # "mute" or "fade"
+    min_speech_duration_ms: int | None = None,
+    min_silence_duration_ms: int | None = None,
+    fade_duration_ms: int | None = None,
+    silence_method: str | None = None,  # "mute" or "fade"
     start_mute_ms: int = 1000,  # Mute first X ms to remove recording artifacts
     end_mute_ms: int = 1000,  # Mute last X ms to remove recording artifacts
 ) -> Tuple[bool, float]:
@@ -72,7 +72,23 @@ def mute_non_speech_segments(
 
     Returns:
         Tuple (success: bool, speech_duration_seconds: float)
+
+    Any of threshold, min_speech_duration_ms, min_silence_duration_ms,
+    fade_duration_ms, and silence_method left as None default from the user's
+    VAD settings (get_vad_config_from_settings), matching the live path.
     """
+    vad_config = get_vad_config_from_settings()
+    if threshold is None:
+        threshold = vad_config["threshold"]
+    if min_speech_duration_ms is None:
+        min_speech_duration_ms = vad_config["min_speech_duration_ms"]
+    if min_silence_duration_ms is None:
+        min_silence_duration_ms = vad_config["min_silence_duration_ms"]
+    if fade_duration_ms is None:
+        fade_duration_ms = vad_config["fade_duration_ms"]
+    if silence_method is None:
+        silence_method = vad_config["silence_method"]
+
     try:
         logger.info("[VAD] Starting VAD processing...")
         logger.info(f"[VAD] Input: {input_wav_path}")
