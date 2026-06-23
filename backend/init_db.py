@@ -5,7 +5,10 @@ from sqlmodel import SQLModel
 
 from backend.core.db import engine
 
-# Import all models to ensure they are registered
+# Import the model registry so every table=True model is registered on
+# SQLModel.metadata before create_all runs below; otherwise a fresh database
+# is created with only the tables reachable through other imports.
+from backend.models import registry  # noqa: F401
 from backend.seed_demo import seed_demo_data
 
 logger = logging.getLogger(__name__)
