@@ -135,10 +135,10 @@ Large refactors must preserve behavior and begin with characterization tests.
 
 - [x] **FE-010:** Split `frontend/src/lib/api.ts` into typed resource clients while preserving a single public API layer.
 - [x] **FE-011:** Decompose the recording detail page into data orchestration, live-state, transcript, notes, documents, and action modules.
-- [ ] **FE-012:** Decompose oversized dashboard, navigation, sidebar, transcript, speaker, and settings components into focused components and hooks.
+- [x] **FE-012:** Decompose oversized dashboard, navigation, sidebar, transcript, speaker, and settings components into focused components and hooks.
 - [x] **FE-013:** Introduce shared test renderers that provide navigation, notification, viewport-density, and other required application contexts.
-- [ ] **FE-014:** Add focused component tests before moving behavior out of large components.
-- [ ] **FE-015:** Keep recording actions synchronized between `RecordingCard.tsx` and `Sidebar.tsx` until a shared action model removes the duplication safely.
+- [x] **FE-014:** Add focused component tests before moving behavior out of large components.
+- [x] **FE-015:** Keep recording actions synchronized between `RecordingCard.tsx` and `Sidebar.tsx` until a shared action model removes the duplication safely.
 
 ## Phase 4: Improve Documentation And Contributor Experience
 
