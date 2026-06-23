@@ -6,7 +6,7 @@ onnx-asr==0.11.0
 # onnxruntime-gpu (CUDA build) is installed in docker/Dockerfile.worker: it must
 # replace the CPU-only onnxruntime that fastembed pulls in, not coexist with it.
 silero-vad==6.2.1
-numpy==2.5.0
+numpy==2.4.4
 pandas==3.0.3
 openai==2.43.0
 anthropic==0.111.0
@@ -34,5 +34,5 @@ torchmetrics==1.9.0
 soundfile==0.14.0
 matplotlib==3.11.0
 pyannoteai-sdk==0.4.0
-torchcodec==0.14.0
+torchcodec==0.11.1
 fastembed==0.8.0
