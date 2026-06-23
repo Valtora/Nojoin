@@ -45,15 +45,26 @@ Typical host setup from a fresh checkout:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
+# Full GPU host (live processing stack): use local.txt.
+# Tests + linting + type-checking only (CPU, no CUDA): use dev.txt instead.
 python -m pip install -r requirements/local.txt
 
 cd frontend
 npm install
 ```
 
+Install the git pre-commit hook so linting and formatting run automatically:
+
+```bash
+pre-commit install
+```
+
 Minimum pull request verification is:
 
 - Backend/API/worker changes: `source .venv/bin/activate && pytest`
+- Python lint, format, and type checks: `python scripts/check.py` (runs Ruff,
+  the formatter check, mypy, the doc and Alembic validators, and pytest; pass
+  `--fix` to auto-fix lint and formatting first)
 - Frontend changes: `cd frontend && npm run lint && npm run test && npm run build`
 - Documentation changes: `python3 scripts/validate_docs.py`
 - Alembic migration changes: `python3 scripts/validate_alembic.py`
@@ -61,6 +72,7 @@ Minimum pull request verification is:
 The pull request workflow requires these checks to pass on `main`:
 
 - `Backend tests`
+- `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries)
 - `Frontend lint`
 - `Frontend unit tests`
 - `Frontend build`
@@ -73,6 +85,7 @@ Additional scope rules:
 
 - Recording context-menu changes must keep `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx` in sync.
 - Security-sensitive changes must preserve the documented auth and token boundaries in `docs/SECURITY.md` and update that guide in the same pull request when behavior changes.
+- API changes must keep backend response schemas (`backend/models/*_public.py` and related Pydantic models) and the corresponding frontend interfaces in `frontend/src/types/index.ts` synchronized in the same pull request.
 
 ## Code of Conduct
 

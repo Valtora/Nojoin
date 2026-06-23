@@ -65,29 +65,29 @@ These items are release blockers. Complete them before treating `main` as produc
 
 ### Python Tooling
 
-- [ ] **PY-001:** Align Ruff's `target-version` with the production Python 3.12 runtime.
-- [ ] **PY-002:** Add an explicit development or test requirements file that pins `pytest`, required pytest plugins, Ruff, and any other repository tooling.
-- [ ] **PY-003:** Document creation of `.venv`, dependency installation, activation, linting, formatting, migration checks, and testing from a fresh checkout.
-- [ ] **PY-004:** Enable Ruff rules for undefined names, unused imports, unused variables, and redefinitions.
-- [ ] **PY-005:** Add deterministic Python formatting and import ordering, then apply it in a dedicated mechanical change.
-- [ ] **PY-006:** Add a type-checking strategy for stable backend boundaries, beginning with API schemas, configuration, and shared processing contracts.
-- [ ] **PY-007:** Add pre-commit or an equivalent single local command that runs the same fast checks used by CI.
-- [ ] **PY-008:** Ensure the documented local setup can run Ruff and pytest without relying on undeclared transitive dependencies.
+- [x] **PY-001:** Align Ruff's `target-version` with the production Python 3.12 runtime.
+- [x] **PY-002:** Add an explicit development or test requirements file that pins `pytest`, required pytest plugins, Ruff, and any other repository tooling.
+- [x] **PY-003:** Document creation of `.venv`, dependency installation, activation, linting, formatting, migration checks, and testing from a fresh checkout.
+- [x] **PY-004:** Enable Ruff rules for undefined names, unused imports, unused variables, and redefinitions.
+- [x] **PY-005:** Add deterministic Python formatting and import ordering, then apply it in a dedicated mechanical change.
+- [x] **PY-006:** Add a type-checking strategy for stable backend boundaries, beginning with API schemas, configuration, and shared processing contracts.
+- [x] **PY-007:** Add pre-commit or an equivalent single local command that runs the same fast checks used by CI.
+- [x] **PY-008:** Ensure the documented local setup can run Ruff and pytest without relying on undeclared transitive dependencies.
 
 ### Exception Handling And Logging
 
-- [ ] **PY-009:** Inventory the 265 broad `except Exception` handlers and classify each as required boundary handling, retry handling, or overly broad handling.
-- [ ] **PY-010:** Remove unjustified `BLE001` suppressions and catch narrower exception types where recovery behavior differs.
-- [ ] **PY-011:** Require broad boundary catches to log actionable context, preserve exception chaining where appropriate, and avoid exposing secrets.
-- [ ] **PY-012:** Standardize lazy logger formatting instead of eager f-string formatting in frequently executed paths.
-- [ ] **PY-013:** Add focused tests around exception paths changed during cleanup.
+- [x] **PY-009:** Inventory the 265 broad `except Exception` handlers and classify each as required boundary handling, retry handling, or overly broad handling.
+- [x] **PY-010:** Remove unjustified `BLE001` suppressions and catch narrower exception types where recovery behavior differs.
+- [x] **PY-011:** Require broad boundary catches to log actionable context, preserve exception chaining where appropriate, and avoid exposing secrets.
+- [x] **PY-012:** Standardize lazy logger formatting instead of eager f-string formatting in frequently executed paths.
+- [x] **PY-013:** Add focused tests around exception paths changed during cleanup.
 
 ### Type And Interface Discipline
 
-- [ ] **PY-014:** Reconcile the documented mandatory type-hint policy with the current backend and define an incremental enforcement boundary.
-- [ ] **PY-015:** Add missing annotations to public functions and cross-module interfaces before internal helpers.
-- [ ] **FE-008:** Keep backend response schemas and frontend interfaces synchronized for every API change.
-- [ ] **FE-009:** Add reusable type guards for Axios errors, API error payloads, and unknown runtime data.
+- [x] **PY-014:** Reconcile the documented mandatory type-hint policy with the current backend and define an incremental enforcement boundary.
+- [x] **PY-015:** Add missing annotations to public functions and cross-module interfaces before internal helpers.
+- [x] **FE-008:** Keep backend response schemas and frontend interfaces synchronized for every API change.
+- [x] **FE-009:** Add reusable type guards for Axios errors, API error payloads, and unknown runtime data.
 
 ## Phase 2: Clean Up Source Comments And Mechanical Debt
 

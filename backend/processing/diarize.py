@@ -38,7 +38,9 @@ def release_pipeline_cache():
     """Releases all loaded Pyannote pipelines from memory and clears CUDA cache."""
     global _pipeline_cache
     if _pipeline_cache:
-        logger.info(f"Releasing {_pipeline_cache.keys()} from Pyannote pipeline cache.")
+        logger.info(
+            "Releasing %s from Pyannote pipeline cache.", _pipeline_cache.keys()
+        )
         _pipeline_cache.clear()
 
     if torch.cuda.is_available():
@@ -109,7 +111,7 @@ def load_diarization_pipeline(device_str: str, hf_token: str = None):
     except OSError as e:
         error_msg = str(e)
         if "403" in error_msg or "forbidden" in error_msg.lower():
-            logger.error(f"Permission denied for Pyannote model: {e}")
+            logger.error("Permission denied for Pyannote model: %s", e)
             raise RuntimeError(
                 "Permission denied for Pyannote model. "
                 "Please ensure you have accepted the terms of use on the Hugging Face model page "
@@ -121,7 +123,7 @@ def load_diarization_pipeline(device_str: str, hf_token: str = None):
             )
             raise RuntimeError(f"Could not load diarization pipeline: {e}") from e
     except Exception as e:
-        logger.error(f"Failed to load diarization pipeline: {e}", exc_info=True)
+        logger.error("Failed to load diarization pipeline: %s", e, exc_info=True)
         raise RuntimeError(
             "Could not load diarization pipeline. Please check your HF token, local bundled assets, or network access."
         ) from e
@@ -138,7 +140,7 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
         A pyannote.core.Annotation object containing speaker segments, or None on failure.
     """
     if not os.path.exists(audio_path):
-        logger.error(f"Audio file not found for diarization: {audio_path}")
+        logger.error("Audio file not found for diarization: %s", audio_path)
         return None
 
     if not audio_path.lower().endswith(".wav"):
@@ -176,7 +178,7 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
                     f"Audio file info - samplerate: {f.samplerate}, channels: {f.channels}, duration: {len(f) / f.samplerate:.2f}s"
                 )
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"Could not read audio file info for logging: {e}")
+            logger.warning("Could not read audio file info for logging: %s", e)
 
         # Run diarization
         logger.info("Running diarization inference...")
@@ -204,7 +206,7 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
         return _filter_short_segments(diarization_result, min_duration_s=0.1)
 
     except Exception as e:
-        logger.error(f"Diarization failed with error: {e}", exc_info=True)
+        logger.error("Diarization failed with error: %s", e, exc_info=True)
         # Clear cache if it's a runtime error (e.g. CUDA OOM or device issue)
         if isinstance(e, RuntimeError):
             cache_key = (DEFAULT_PIPELINE, device_str)
@@ -229,7 +231,7 @@ def diarize_audio_with_progress(
     import tempfile
 
     if not os.path.exists(audio_path):
-        logger.error(f"Audio file not found for diarization: {audio_path}")
+        logger.error("Audio file not found for diarization: %s", audio_path)
         return None
 
     device_str = config_manager.get("processing_device", "cpu")
@@ -278,7 +280,7 @@ def diarize_audio_with_progress(
                     last_percent = percent
             # Log the line for debugging
             if line.strip():
-                logger.debug(f"[diarization-subprocess] {line.strip()}")
+                logger.debug("[diarization-subprocess] %s", line.strip())
         process.wait()
         if cancel_check and cancel_check():
             logger.info("Diarization cancelled after subprocess wait.")
@@ -294,7 +296,7 @@ def diarize_audio_with_progress(
         # Load result from output file
         with open(output_path, "rb") as f:
             diarization_result = pickle.load(f)
-        logger.info(f"Diarization completed for {audio_path} (subprocess mode).")
+        logger.info("Diarization completed for %s (subprocess mode).", audio_path)
         return _filter_short_segments(diarization_result, min_duration_s=0.1)
     except Exception as e:
         logger.error(

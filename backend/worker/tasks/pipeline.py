@@ -298,12 +298,12 @@ def process_recording_task(
 
     recording = session.get(Recording, recording_id)
     if not recording:
-        logger.error(f"Recording {recording_id} not found.")
+        logger.error("Recording %s not found.", recording_id)
         return
 
     # Check if cancelled
     if recording.status == RecordingStatus.CANCELLED:
-        logger.info(f"Recording {recording_id} was cancelled. Aborting task.")
+        logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
     user_settings = {}
@@ -397,15 +397,15 @@ def process_recording_task(
         try:
             validate_audio_file(audio_path)
         except AudioFormatError as e:
-            logger.warning(f"Invalid audio file detected: {e}. Attempting repair...")
+            logger.warning("Invalid audio file detected: %s. Attempting repair...", e)
             repaired_path = repair_audio_file(audio_path)
 
             if repaired_path:
-                logger.info(f"Using repaired audio file: {repaired_path}")
+                logger.info("Using repaired audio file: %s", repaired_path)
                 audio_path = repaired_path
                 temp_files.append(repaired_path)  # Ensure cleanup
             else:
-                logger.error(f"Audio repair failed for {audio_path}")
+                logger.error("Audio repair failed for %s", audio_path)
                 recording.status = RecordingStatus.ERROR
                 recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
                 session.add(recording)
@@ -716,7 +716,7 @@ def process_recording_task(
             payload={"segment_count": len(final_segments)},
             log=logger,
         )
-        logger.info(f"Final segments after consolidation: {len(final_segments)}")
+        logger.info("Final segments after consolidation: %s", len(final_segments))
 
         transcript = session.exec(
             select(Transcript).where(Transcript.recording_id == recording.id)
@@ -825,7 +825,7 @@ def process_recording_task(
             if existing_speaker:
                 # 1. Check if this speaker was merged into another
                 if existing_speaker.merged_into_id:
-                    logger.info(f"Speaker {label} is merged. Resolving target...")
+                    logger.info("Speaker %s is merged. Resolving target...", label)
                     current_spk = existing_speaker
                     visited_ids = {current_spk.id}
 
@@ -853,7 +853,7 @@ def process_recording_task(
                         or current_spk.local_name
                         or current_spk.diarization_label
                     )
-                    logger.info(f"Resolved {label} (Merged) -> {resolved_name}")
+                    logger.info("Resolved %s (Merged) -> %s", label, resolved_name)
                     if current_spk.global_speaker_id:
                         global_speaker_id = current_spk.global_speaker_id
                         is_identified = True  # Don't re-identify
@@ -989,7 +989,7 @@ def process_recording_task(
                     continue
 
             label_map[label] = resolved_name
-            logger.info(f"Mapped {label} -> {resolved_name}")
+            logger.info("Mapped %s -> %s", label, resolved_name)
 
             current_speaker_id = None
             if existing_speaker:
@@ -1071,7 +1071,7 @@ def process_recording_task(
             final_speaker_counts[spk] = final_speaker_counts.get(spk, 0) + 1
             for ov_spk in seg.get("overlapping_speakers", []):
                 final_speaker_counts[ov_spk] = final_speaker_counts.get(ov_spk, 0) + 1
-        logger.info(f"Final transcript speaker distribution: {final_speaker_counts}")
+        logger.info("Final transcript speaker distribution: %s", final_speaker_counts)
 
         transcript.segments = updated_segments
         session.add(transcript)
@@ -1201,7 +1201,9 @@ def process_recording_task(
             status="error",
             log=logger,
         )
-        logger.error(f"Audio processing error for {recording_id}: {e}", exc_info=True)
+        logger.error(
+            "Audio processing error for %s: %s", recording_id, e, exc_info=True
+        )
         if hasattr(session, "rollback"):
             try:
                 session.rollback()
@@ -1233,7 +1235,7 @@ def process_recording_task(
             status="error",
             log=logger,
         )
-        logger.error(f"Processing failed for {recording_id}: {e}", exc_info=True)
+        logger.error("Processing failed for %s: %s", recording_id, e, exc_info=True)
         if hasattr(session, "rollback"):
             try:
                 session.rollback()
@@ -1308,7 +1310,7 @@ def process_recording_task(
 
                 logger.info("VRAM released successfully.")
             except Exception as e:  # noqa: BLE001
-                logger.error(f"Error releasing VRAM: {e}")
+                logger.error("Error releasing VRAM: %s", e)
 
 
 @worker_ready.connect
@@ -1327,14 +1329,14 @@ def check_queued_recordings(sender, **kwargs):
             logger.info("No pending recordings found.")
             return
 
-        logger.info(f"Found {len(recordings)} pending recordings. Re-queueing...")
+        logger.info("Found %s pending recordings. Re-queueing...", len(recordings))
 
         for recording in recordings:
-            logger.info(f"Re-queueing recording {recording.id}: {recording.name}")
+            logger.info("Re-queueing recording %s: %s", recording.id, recording.name)
             process_recording_task.delay(recording.id)  # type: ignore
 
     except Exception as e:
-        logger.error(f"Failed to check pending recordings: {e}", exc_info=True)
+        logger.error("Failed to check pending recordings: %s", e, exc_info=True)
     finally:
         session.close()
 
