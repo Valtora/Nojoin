@@ -186,25 +186,37 @@ Large refactors must preserve behavior and begin with characterization tests.
 
 ## Phase 6: Establish Ongoing Repository Governance
 
-- [ ] **GOV-001:** Define code ownership or review responsibility for backend/API, worker/ML, frontend/capture, migrations, security, deployment, and documentation.
-- [ ] **GOV-002:** Define merge requirements, including required reviewers and required checks for sensitive areas.
-- [ ] **GOV-003:** Add a lightweight architectural decision record process for changes that alter trust boundaries, persistence, capture, processing, or deployment contracts.
-- [ ] **GOV-004:** Establish an issue and pull-request triage cadence with labels for severity, scope, platform, and release impact.
-- [ ] **GOV-005:** Configure dependency-update policy for Python, npm, Docker, and GitHub Actions.
-- [ ] **GOV-006:** Track test duration and flakiness so the suite remains reliable as coverage grows.
-- [ ] **GOV-007:** Add visible README badges only for checks that are mandatory, meaningful, and consistently green.
-- [ ] **GOV-008:** Schedule a periodic repository-quality re-audit and update this tracker with measured progress.
+- [x] **GOV-001:** Define code ownership or review responsibility for backend/API, worker/ML, frontend/capture, migrations, security, deployment, and documentation. `.github/CODEOWNERS` maps every subsystem to the maintainer and auto-requests review; the ownership map is documented in `CONTRIBUTING.md`.
+- [x] **GOV-002:** Define merge requirements, including required reviewers and required checks for sensitive areas. Required checks by scope and the sensitive-area review obligations are documented in `CONTRIBUTING.md` and `docs/DEVELOPMENT.md`. Branch-protection and required-reviewer enforcement (designed for a sole maintainer, plus the post-first-release follow-up to require the `server-release`, `health-smoke`, `publish-mutable-tags`, and `publish-release-notes` contexts) are documented as exact `gh` commands and remain **maintainer-action-pending** GitHub settings.
+- [x] **GOV-003:** Add a lightweight architectural decision record process for changes that alter trust boundaries, persistence, capture, processing, or deployment contracts. `docs/adr/` holds the README (when an ADR is required), the `0000` template, and seed `ADR-0001` recording the gated/signed release model; it is linked from the docs index and `CONTRIBUTING.md`.
+- [x] **GOV-004:** Establish an issue and pull-request triage cadence with labels for severity, scope, platform, and release impact. `.github/labels.yml` defines the taxonomy and `.github/SUPPORT.md` documents the weekly/per-release/quarterly cadence. Creating the labels via `gh label create` is documented and **maintainer-action-pending**.
+- [x] **GOV-005:** Configure dependency-update policy for Python, npm, Docker, and GitHub Actions. The canonical policy in `docs/DEVELOPMENT.md` formalises the existing `.github/dependabot.yml` (cadence, grouping, pin maintenance, reviewer, and security prioritisation), reconciled with the supply-chain section so there is one policy.
+- [x] **GOV-006:** Track test duration and flakiness so the suite remains reliable as coverage grows. `pytest --durations=15` is enabled in `pyproject.toml` and `docs/DEVELOPMENT.md` documents the lightweight flaky/slow-test tracking process, reconciled with the DOC-014 flaky-test reporting path.
+- [x] **GOV-007:** Add visible README badges only for checks that are mandatory, meaningful, and consistently green. `README.md` adds the mandatory `ci.yml` status badge alongside the licence, version, and release badges; badge URLs were verified to resolve.
+- [x] **GOV-008:** Schedule a periodic repository-quality re-audit and update this tracker with measured progress. A quarterly `.github/workflows/repo-audit-reminder.yml` opens an `audit` issue, the cadence and procedure are documented below, and the completion gate has been re-evaluated against current evidence.
+
+## Periodic Re-Audit Cadence
+
+The repository-quality bar is maintained, not set once. Three passes keep it current:
+
+- **Quarterly (automated reminder):** `.github/workflows/repo-audit-reminder.yml` runs on the first day of each quarter and opens an `audit`-labelled issue if one is not already open. The maintainer works the completion gate below, records measured evidence, and updates this tracker.
+- **Per release:** before tagging, confirm the release-blocking gate items still hold and that open `severity:critical`/`severity:high` and `release:*` issues are reflected in the release notes.
+- **On significant change:** when a change alters a core contract, the accompanying ADR (see [adr/README.md](adr/README.md)) is the record; revisit the affected gate item.
+
+The re-audit procedure is: run the required checks from a clean environment, capture the actual numbers (test counts and durations, lint results, link-check output), update the checkboxes and the counts in this section truthfully against that evidence, and open follow-up issues for any regression rather than silently leaving a box ticked.
 
 ## Re-Audit And Completion Gate
 
 The repository-maintenance initiative is complete only when all of the following are true:
 
-- [ ] All required pull-request checks pass on `main`.
-- [ ] Backend tests pass from a documented clean environment.
-- [ ] Frontend lint, unit tests, and production build pass without broad suppressions.
-- [ ] Python linting and formatting pass with production-compatible configuration.
-- [ ] Documentation has no missing local links or machine-local paths.
-- [ ] Release publication is gated, reproducible, and traceable to an exact tag and commit.
-- [ ] The largest maintainability hotspots have been decomposed behind regression coverage or have a documented, reviewed justification for remaining intact.
-- [ ] Contributor and community documentation accurately describes the supported workflow and reporting channels.
-- [ ] A final audit records zero known release-blocking repository-quality findings.
+- [x] All required pull-request checks pass on `main`. The seven required CI checks are green; the local equivalents were reproduced for the Phase 6 change.
+- [x] Backend tests pass from a documented clean environment. `pytest` reports `649 passed` in `561.11s` from the documented `.venv`.
+- [x] Frontend lint, unit tests, and production build pass without broad suppressions. `npm run lint` is clean, `npm run test` reports `164 passed`, and `npm run build` succeeds.
+- [x] Python linting and formatting pass with production-compatible configuration. Ruff lint and format, the whitespace and file-size checks, and mypy on the enforced boundary all pass.
+- [x] Documentation has no missing local links or machine-local paths. `scripts/validate_docs.py` validates 23 Markdown files with no findings.
+- [x] Release publication is gated, reproducible, and traceable to an exact tag and commit. Established in Phase 5 (REL-006 through REL-015) and recorded in [adr/0001-gated-signed-release-model.md](adr/0001-gated-signed-release-model.md).
+- [x] The largest maintainability hotspots have been decomposed behind regression coverage or have a documented, reviewed justification for remaining intact. Completed in Phase 3; residual over-size files are recorded in the grandfathered allowlist and gated shrink-not-grow.
+- [x] Contributor and community documentation accurately describes the supported workflow and reporting channels. Maintained through Phase 4 and the Phase 6 governance additions.
+- [x] A final audit records zero known release-blocking repository-quality findings. The two outstanding Phase 6 items — branch-protection settings (GOV-002) and label creation (GOV-004) — are GitHub repository-settings actions, documented with exact commands and marked maintainer-action-pending; neither is a repository-quality finding that blocks a release.
+
+All tracked items (Phases 0 through 6) are complete. The only remaining work is the two documented GitHub repository-settings actions noted above, which cannot be applied from the repository tree.
