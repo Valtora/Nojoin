@@ -60,14 +60,19 @@ If you are working on a narrower area, you can install a smaller Python dependen
 
 ## Required Pull Request Checks
 
-The `CI` workflow enforces these required checks on pull requests and on pushes to `main`:
+The `CI` workflow runs these checks on pull requests and on pushes to `main`. To avoid wasting minutes on irrelevant work, the expensive jobs only run when their area changed; the cheap validators always run:
 
-- `Backend tests`
-- `Frontend lint`
-- `Frontend unit tests`
-- `Frontend build`
-- `Docs validation`
-- `Alembic validation`
+| Check | Runs when |
+| --- | --- |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `scripts/**`, or `.github/workflows/ci.yml` changed |
+| `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | same as `Backend tests` |
+| `Frontend lint` | `frontend/**` or `.github/workflows/ci.yml` changed |
+| `Frontend unit tests` | same as `Frontend lint` |
+| `Frontend build` | same as `Frontend lint` |
+| `Docs validation` | always |
+| `Alembic validation` | always |
+
+A `detect-changes` job (using `dorny/paths-filter`) classifies the diff, and each heavy job gates on its output; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
 
 Local equivalents:
 
@@ -95,13 +100,7 @@ gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
   "required_status_checks": {
     "strict": true,
     "contexts": [
-      "Backend tests",
-      "Python quality",
-      "Frontend lint",
-      "Frontend unit tests",
-      "Frontend build",
-      "Docs validation",
-      "Alembic validation"
+      "CI gate"
     ]
   },
   "enforce_admins": true,
@@ -121,13 +120,13 @@ JSON
 
 - `required_approving_review_count` is `0`: GitHub never allows approving your own pull request, so any value of `1` or more would make every merge impossible for a sole author. With `0`, a green pull request is mergeable by you alone.
 - `require_code_owner_reviews` is `false`: with it `true` and you as the only code owner, the required code-owner approval could never be supplied and your own pull requests would be permanently unmergeable. It stays `false` while the project is single-maintainer. You still get a review auto-requested on every pull request, because that comes from the [CODEOWNERS](../.github/CODEOWNERS) file itself, not from this setting — you keep the review prompt without the merge gate.
-- `enforce_admins` is `true` so the status checks apply to you too and nothing merges red. This is not a lockout: every required check runs on every pull request, so a green pull request is always mergeable, and as the repository owner you can edit or remove this protection in **Settings → Branches** at any time (for example to land a fix for a broken CI workflow). Protection is never an irreversible state.
+- `enforce_admins` is `true` so the status check applies to you too and nothing merges red. This is not a lockout: the `CI gate` check always reports on every pull request, so a green pull request is always mergeable, and as the repository owner you can edit or remove this protection in **Settings → Branches** at any time (for example to land a fix for a broken CI workflow). Protection is never an irreversible state.
 
 **When a second maintainer joins**, set `require_code_owner_reviews` to `true` and raise `required_approving_review_count` to `1` to turn this into a genuine second-reviewer gate.
 
 This step is maintainer-action-pending: it is documented here but not enforced from the repository tree.
 
-**Do not add the release jobs to this required-checks list.** The contexts above are exactly the seven checks the CI workflow runs on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all.
+**Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
 
 The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release` and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow (see [adr/0001-gated-signed-release-model.md](adr/0001-gated-signed-release-model.md)).
 

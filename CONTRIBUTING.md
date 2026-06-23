@@ -84,15 +84,13 @@ Minimum pull request verification is:
 - Documentation changes: `python3 scripts/validate_docs.py`
 - Alembic migration changes: `python3 scripts/validate_alembic.py`
 
-The pull request workflow requires these checks to pass on `main`:
+The pull request workflow runs these checks, and the aggregate `CI gate` must be green to merge. The expensive jobs run only when their area changed; the cheap validators always run:
 
-- `Backend tests`
-- `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries)
-- `Frontend lint`
-- `Frontend unit tests`
-- `Frontend build`
-- `Docs validation`
-- `Alembic validation`
+- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) — on backend changes.
+- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — on frontend changes.
+- `Docs validation` and `Alembic validation` — always.
+
+See the [Merge Requirements](#merge-requirements) section for how `CI gate` aggregates these and the exact path rules.
 
 Run the checks for every area you touched before opening a pull request. Capture-related changes also require manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour. Migration changes must keep a single checked-in Alembic head and must not delete or rename committed revision files.
 
@@ -146,15 +144,13 @@ Review responsibility is recorded in [.github/CODEOWNERS](.github/CODEOWNERS). G
 
 ### Merge Requirements
 
-Every pull request to `main`, regardless of scope, must have all required status checks green before merge:
+Every pull request to `main` must have the required `CI gate` status check green before merge. `CI gate` is an aggregate that passes only when every applicable CI job passed. To save CI minutes, the expensive jobs run only when their area changed and are skipped (counted as a pass) otherwise:
 
-- `Backend tests`
-- `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries)
-- `Frontend lint`
-- `Frontend unit tests`
-- `Frontend build`
-- `Docs validation`
-- `Alembic validation`
+- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, mypy) — run when `backend/**`, `requirements/**`, `pyproject.toml`, `scripts/**`, or the CI workflow changed.
+- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — run when `frontend/**` or the CI workflow changed.
+- `Docs validation` and `Alembic validation` — always run (cheap).
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.
 
 Sensitive scopes carry an additional review obligation that the maintainer (or, in future, a designated CODEOWNER) must satisfy before merging:
 
@@ -168,7 +164,7 @@ Sensitive scopes carry an additional review obligation that the maintainer (or, 
 Branch protection and required-reviewer enforcement cannot be applied from the repository tree; they are GitHub repository settings. The settings to apply on `main` are designed so the sole maintainer can always merge their own green pull request and are never an irreversible lockout:
 
 - Require a pull request before merging, with **0** required approvals while the project is single-maintainer. GitHub forbids approving your own pull request, so a non-zero count would make every merge impossible for a sole author; raise it to **1** and enable **Require review from Code Owners** only when a second maintainer joins.
-- Require the seven status checks listed above (their job names) to pass before merging, with branches required to be up to date. These are enforced for admins too, so nothing merges red.
+- Require the single `CI gate` status check to pass before merging, with branches required to be up to date. It is enforced for admins too, so nothing merges red. (Only `CI gate` is required, not the individual jobs, because those are skipped by the path filter when irrelevant and a skipped job would otherwise leave a required check pending forever.)
 - Require linear history and disallow force pushes and deletions.
 
 The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [ADR-0001](docs/adr/0001-gated-signed-release-model.md).
