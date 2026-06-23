@@ -7,7 +7,7 @@ import {
   RecordingId,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Play,
   Pause,
@@ -24,8 +24,13 @@ import {
 import { getColorByKey } from "@/lib/constants";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import SpeakerAssignmentPopover from "./SpeakerAssignmentPopover";
-import Fuse from "fuse.js";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
+import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
+import {
+  buildTranscriptGroups,
+  indexSegments,
+} from "./transcript/transcriptGroups";
 
 interface TranscriptViewProps {
   recordingId: RecordingId;
@@ -101,13 +106,6 @@ export default function TranscriptView({
   onActiveEditUtteranceChange,
   pendingRemoteUtteranceIds = [],
 }: TranscriptViewProps) {
-  const activeSegmentRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const scrollAnchorRef = useRef<{
-    segmentId: string;
-    offset: number;
-    orderIndex: number;
-  } | null>(null);
   const { addNotification } = useNotificationStore();
 
   // Editing State
@@ -126,27 +124,11 @@ export default function TranscriptView({
   const [editValue, setEditValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Find & Replace State
+  // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [findText, setFindText] = useState("");
-  const [replaceText, setReplaceText] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [isFuzzy, setIsFuzzy] = useState(false);
-  const [useRegex, setUseRegex] = useState(false);
 
-  // Search Matches State
-  const [matches, setMatches] = useState<
-    {
-      segmentId: string;
-      orderIndex: number;
-      startIndex: number;
-      length: number;
-    }[]
-  >([]);
-  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
-  const prevFindTextRef = useRef(findText);
   const pendingRemoteUtteranceIdSet = useMemo(
     () => new Set(pendingRemoteUtteranceIds),
     [pendingRemoteUtteranceIds],
@@ -158,31 +140,39 @@ export default function TranscriptView({
     ? "Finish the current transcript edit before exporting"
     : "Export";
 
-  const scrollSegmentIntoView = useCallback(
-    (segmentKey: string, behavior: ScrollBehavior = "smooth") => {
-      const container = scrollContainerRef.current;
-      const element = document.getElementById(`segment-${segmentKey}`);
-      if (!container || !element) {
-        return;
-      }
-
-      const elementTop = element.offsetTop;
-      const elementBottom = elementTop + element.offsetHeight;
-      const visibleTop = container.scrollTop;
-      const visibleBottom = visibleTop + container.clientHeight;
-
-      if (elementTop >= visibleTop && elementBottom <= visibleBottom) {
-        return;
-      }
-
-      const centeredTop = Math.max(
-        0,
-        elementTop - container.clientHeight / 2 + element.offsetHeight / 2,
-      );
-      container.scrollTo({ top: centeredTop, behavior });
-    },
-    [],
+  const activeSegmentIndex = segments.findIndex(
+    (s) => currentTime >= s.start && currentTime < s.end,
   );
+  const activeSegmentKey =
+    activeSegmentIndex >= 0
+      ? getTranscriptSegmentKey(segments[activeSegmentIndex], activeSegmentIndex)
+      : null;
+
+  const {
+    scrollContainerRef,
+    activeSegmentRef,
+    scrollSegmentIntoView,
+    updateScrollAnchor,
+  } = useTranscriptScroll({ segments, activeSegmentKey });
+
+  const {
+    findText,
+    setFindText,
+    replaceText,
+    setReplaceText,
+    caseSensitive,
+    setCaseSensitive,
+    isFuzzy,
+    setIsFuzzy,
+    useRegex,
+    setUseRegex,
+    matches,
+    currentMatchIndex,
+    nextMatch,
+    prevMatch,
+    renderHighlightedText,
+    resetFindReplace,
+  } = useTranscriptSearch({ segments, showSearch, scrollSegmentIntoView });
 
   useEffect(() => {
     if (!onActiveEditUtteranceChange) {
@@ -207,178 +197,6 @@ export default function TranscriptView({
     segments,
   ]);
 
-  // Calculate matches when findText or segments change
-  useEffect(() => {
-    if (!findText.trim() || !showSearch) {
-      setMatches([]);
-      setCurrentMatchIndex(-1);
-      return;
-    }
-
-    const newMatches: {
-      segmentId: string;
-      orderIndex: number;
-      startIndex: number;
-      length: number;
-    }[] = [];
-
-    if (isFuzzy && !useRegex) {
-      const fuse = new Fuse(segments, {
-        keys: ["text"],
-        includeMatches: true,
-        threshold: 0.4,
-        ignoreLocation: true,
-        isCaseSensitive: caseSensitive,
-      });
-
-      const results = fuse.search(findText);
-
-      results.forEach((result) => {
-        if (result.matches) {
-          result.matches.forEach((match) => {
-            if (match.key === "text" && match.indices) {
-              match.indices.forEach((range) => {
-                const segment = segments[result.refIndex];
-                newMatches.push({
-                  segmentId: getTranscriptSegmentKey(segment, result.refIndex),
-                  orderIndex: result.refIndex,
-                  startIndex: range[0],
-                  length: range[1] - range[0] + 1,
-                });
-              });
-            }
-          });
-        }
-      });
-
-      // Sort matches by segmentIndex then startIndex
-      newMatches.sort((a, b) => {
-        if (a.orderIndex !== b.orderIndex)
-          return a.orderIndex - b.orderIndex;
-        return a.startIndex - b.startIndex;
-      });
-    } else if (useRegex) {
-      try {
-        const flags = caseSensitive ? "g" : "gi";
-        const regex = new RegExp(findText, flags);
-
-        segments.forEach((segment, sIndex) => {
-          let match;
-          // Reset lastIndex for each segment if using global flag
-          regex.lastIndex = 0;
-
-          while ((match = regex.exec(segment.text)) !== null) {
-            newMatches.push({
-              segmentId: getTranscriptSegmentKey(segment, sIndex),
-              orderIndex: sIndex,
-              startIndex: match.index,
-              length: match[0].length,
-            });
-            // Prevent infinite loop with zero-width matches
-            if (match.index === regex.lastIndex) {
-              regex.lastIndex++;
-            }
-          }
-        });
-      } catch {
-        // Invalid regex, ignore
-      }
-    } else {
-      segments.forEach((segment, sIndex) => {
-        const text = caseSensitive ? segment.text : segment.text.toLowerCase();
-        const search = caseSensitive ? findText : findText.toLowerCase();
-
-        let pos = 0;
-        while (pos < text.length) {
-          const index = text.indexOf(search, pos);
-          if (index === -1) break;
-          newMatches.push({
-            segmentId: getTranscriptSegmentKey(segment, sIndex),
-            orderIndex: sIndex,
-            startIndex: index,
-            length: search.length,
-          });
-          pos = index + 1;
-        }
-      });
-    }
-
-    setMatches(newMatches);
-
-    // Smart index management
-    setCurrentMatchIndex((prevIndex) => {
-      // If search term changed, reset to first match
-      if (findText !== prevFindTextRef.current) {
-        return newMatches.length > 0 ? 0 : -1;
-      }
-
-      // If segments updated (e.g. replace), try to maintain relative position
-      if (newMatches.length === 0) return -1;
-      if (prevIndex >= newMatches.length) return newMatches.length - 1;
-      // If we just replaced the current match, the next one slides into this index (or close to it)
-      return prevIndex;
-    });
-
-    prevFindTextRef.current = findText;
-  }, [findText, segments, showSearch, caseSensitive, isFuzzy, useRegex]);
-
-  // Scroll to current match
-  useEffect(() => {
-    if (currentMatchIndex >= 0 && matches[currentMatchIndex]) {
-      const match = matches[currentMatchIndex];
-      scrollSegmentIntoView(match.segmentId, "smooth");
-    }
-  }, [currentMatchIndex, matches, scrollSegmentIntoView]);
-
-  const nextMatch = () => {
-    if (matches.length === 0) return;
-    setCurrentMatchIndex((prev) => (prev + 1) % matches.length);
-  };
-
-  const prevMatch = () => {
-    if (matches.length === 0) return;
-    setCurrentMatchIndex(
-      (prev) => (prev - 1 + matches.length) % matches.length,
-    );
-  };
-
-  const renderHighlightedText = (text: string, segmentId: string) => {
-    if (!findText || !showSearch || matches.length === 0) return text;
-
-    const segmentMatches = matches.filter((m) => m.segmentId === segmentId);
-    if (segmentMatches.length === 0) return text;
-
-    let lastIndex = 0;
-    const parts = [];
-
-    segmentMatches.forEach((match) => {
-      // Text before match
-      if (match.startIndex > lastIndex) {
-        parts.push(text.substring(lastIndex, match.startIndex));
-      }
-
-      // The match itself
-      const isCurrent = matches[currentMatchIndex] === match;
-      parts.push(
-        <mark
-          key={`${segmentId}-${match.startIndex}`}
-          className={`${isCurrent ? "bg-orange-400 text-white" : "bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-gray-100"} rounded-sm px-0.5`}
-        >
-          {text.substring(match.startIndex, match.startIndex + match.length)}
-        </mark>,
-      );
-
-      lastIndex = match.startIndex + match.length;
-    });
-
-    // Remaining text
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
-    return parts;
-  };
-
   const getSpeakerColor = (speakerLabel: string) => {
     // Get the color key from speakerColors, default to 'gray' if not found
     const colorKey = speakerColors[speakerLabel] || "gray";
@@ -387,13 +205,6 @@ export default function TranscriptView({
     return `${colorOption.bg} ${colorOption.border}`;
   };
 
-  const activeSegmentIndex = segments.findIndex(
-    (s) => currentTime >= s.start && currentTime < s.end,
-  );
-  const activeSegmentKey =
-    activeSegmentIndex >= 0
-      ? getTranscriptSegmentKey(segments[activeSegmentIndex], activeSegmentIndex)
-      : null;
 
   const isRecentlyUpdatedSegment = useCallback((segment: TranscriptSegment) => {
     return (
@@ -402,78 +213,6 @@ export default function TranscriptView({
     );
   }, []);
 
-  const updateScrollAnchor = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const segmentElements = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-segment-id]"),
-    );
-    if (segmentElements.length === 0) {
-      scrollAnchorRef.current = null;
-      return;
-    }
-
-    const firstVisible =
-      segmentElements.find(
-        (element) => element.offsetTop + element.offsetHeight > container.scrollTop,
-      ) || segmentElements[segmentElements.length - 1];
-    const segmentId = firstVisible?.dataset.segmentId;
-    if (!firstVisible || !segmentId) {
-      return;
-    }
-
-    scrollAnchorRef.current = {
-      segmentId,
-      offset: firstVisible.offsetTop - container.scrollTop,
-      orderIndex: Number(firstVisible.dataset.orderIndex ?? 0),
-    };
-  }, []);
-
-  useEffect(() => {
-    if (activeSegmentRef.current) {
-      const segmentKey = activeSegmentRef.current.dataset.segmentId;
-      if (segmentKey) {
-        scrollSegmentIntoView(segmentKey, "smooth");
-      }
-    }
-  }, [activeSegmentKey, scrollSegmentIntoView]);
-
-  useLayoutEffect(() => {
-    const container = scrollContainerRef.current;
-    const anchor = scrollAnchorRef.current;
-    if (!container || !anchor) {
-      return;
-    }
-
-    const segmentElements = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-segment-id]"),
-    );
-    if (segmentElements.length === 0) {
-      return;
-    }
-
-    const anchorElement =
-      segmentElements.find((element) => element.dataset.segmentId === anchor.segmentId) ||
-      segmentElements.find(
-        (element) => Number(element.dataset.orderIndex ?? -1) >= anchor.orderIndex,
-      ) ||
-      segmentElements[segmentElements.length - 1];
-    if (!anchorElement) {
-      return;
-    }
-
-    const nextScrollTop = Math.max(0, anchorElement.offsetTop - anchor.offset);
-    if (Math.abs(container.scrollTop - nextScrollTop) > 1) {
-      container.scrollTop = nextScrollTop;
-    }
-  }, [segments]);
-
-  useEffect(() => {
-    updateScrollAnchor();
-  }, [segments, updateScrollAnchor]);
 
   const handleSpeakerRenameSubmit = async () => {
     if (editingSpeaker && editValue.trim()) {
@@ -550,8 +289,7 @@ export default function TranscriptView({
         caseSensitive,
         useRegex,
       });
-      setFindText("");
-      setReplaceText("");
+      resetFindReplace();
       setShowReplace(false);
       setShowSearch(false);
     } finally {
@@ -607,11 +345,7 @@ export default function TranscriptView({
   const hasKnownSpeakers = segments.some((s) => s.speaker !== "UNKNOWN");
 
   // Map to preserve original indices before filtering
-  const indexedSegments = segments.map((segment, index) => ({
-    segment,
-    index,
-    segmentId: getTranscriptSegmentKey(segment, index),
-  }));
+  const indexedSegments = indexSegments(segments);
 
   const speakerFilteredSegments = hasKnownSpeakers
     ? indexedSegments.filter(
@@ -640,54 +374,7 @@ export default function TranscriptView({
   }, [displaySegments]);
 
   // --- Grouping Logic ---
-  const trackGroups: {
-    start: number;
-    end: number;
-    involved: Set<string>;
-    items: typeof displaySegments;
-  }[] = [];
-  let currentGroup: typeof trackGroups[0] | null = null;
-
-  const areSetsEqual = (a: Set<string>, b: Set<string>) =>
-    a.size === b.size && [...a].every((value) => b.has(value));
-
-  for (const item of displaySegments) {
-    const involvedArray = [
-      item.segment.speaker,
-      ...(item.segment.overlapping_speakers || []),
-    ];
-    const involvedSet = new Set(involvedArray);
-
-    if (!currentGroup) {
-      currentGroup = {
-        start: item.segment.start,
-        end: item.segment.end,
-        involved: involvedSet,
-        items: [item],
-      };
-    } else {
-      const isTimeOverlap = item.segment.start < currentGroup.end;
-      const isSameOverlapEvent =
-        involvedSet.size > 1 &&
-        currentGroup.involved.size > 1 &&
-        areSetsEqual(involvedSet, currentGroup.involved);
-
-      if (isTimeOverlap || isSameOverlapEvent) {
-        currentGroup!.items.push(item);
-        currentGroup!.end = Math.max(currentGroup!.end, item.segment.end);
-        involvedSet.forEach((spk) => currentGroup!.involved.add(spk));
-      } else {
-        trackGroups.push(currentGroup!);
-        currentGroup = {
-          start: item.segment.start,
-          end: item.segment.end,
-          involved: involvedSet,
-          items: [item],
-        };
-      }
-    }
-  }
-  if (currentGroup) trackGroups.push(currentGroup);
+  const trackGroups = buildTranscriptGroups(displaySegments);
 
   const renderSegmentContent = (item: typeof displaySegments[0]) => {
     const { segment, segmentId } = item;

@@ -1,8 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  fireEvent,
+  renderWithProviders,
+  screen,
+  waitFor,
+} from "@/test/renderWithProviders";
 import Sidebar from "./Sidebar";
-import { ViewportDensityProvider } from "./ViewportDensityProvider";
 import { RecordingStatus, type Recording } from "@/types";
 
 const routerPush = vi.fn();
@@ -90,8 +94,12 @@ vi.mock("./RecordingInfoModal", () => ({
   default: () => null,
 }));
 
+let lastMenuItems: { label: string }[] = [];
 vi.mock("./ContextMenu", () => ({
-  default: () => null,
+  default: ({ items }: { items: { label: string }[] }) => {
+    lastMenuItems = items;
+    return <div data-testid="sidebar-context-menu" />;
+  },
 }));
 
 vi.mock("./ConfirmationModal", () => ({
@@ -133,11 +141,7 @@ describe("Sidebar", () => {
   });
 
   it("keeps the recordings list on /recordings instead of redirecting to the latest item", async () => {
-    render(
-      <ViewportDensityProvider>
-        <Sidebar />
-      </ViewportDensityProvider>,
-    );
+    renderWithProviders(<Sidebar />);
 
     expect(await screen.findByRole("heading", { name: "Latest meeting" })).toBeInTheDocument();
 
@@ -146,5 +150,36 @@ describe("Sidebar", () => {
     });
 
     expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("exposes the recordings-view context menu action set", async () => {
+    lastMenuItems = [];
+    renderWithProviders(<Sidebar />);
+
+    const heading = await screen.findByRole("heading", { name: "Latest meeting" });
+    fireEvent.contextMenu(heading);
+
+    expect(await screen.findByTestId("sidebar-context-menu")).toBeInTheDocument();
+    expect(lastMenuItems.map((item) => item.label)).toEqual([
+      "Rename",
+      "Retry Speaker Inference",
+      "Retry Processing",
+      "Show Recording Info",
+      "Archive",
+      "Delete",
+    ]);
+  });
+
+  it("re-fetches recordings when a recording-updated event fires", async () => {
+    renderWithProviders(<Sidebar />);
+
+    await screen.findByRole("heading", { name: "Latest meeting" });
+    const callsAfterMount = getRecordings.mock.calls.length;
+
+    fireEvent(window, new CustomEvent("recording-updated", { detail: {} }));
+
+    await waitFor(() => {
+      expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
   });
 });

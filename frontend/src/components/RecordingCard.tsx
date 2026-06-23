@@ -14,12 +14,7 @@ import RecordingInfoModal from "./RecordingInfoModal";
 import ReprocessDialog from "./ReprocessDialog";
 import { useState } from "react";
 import ContextMenu from "./ContextMenu";
-import {
-  deleteRecording,
-  inferSpeakers,
-  renameRecording,
-  cancelProcessing,
-} from "@/lib/api";
+import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useRouter } from "next/navigation";
 
@@ -144,6 +139,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { addNotification } = useNotificationStore();
+  const actions = useRecordingActions();
 
   const isDemo = recording.name === "Welcome to Nojoin";
 
@@ -167,74 +163,45 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
 
     setIsSubmitting(true);
     try {
-      await renameRecording(recording.id, renameValue.trim());
-      setIsRenaming(false);
-      router.refresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to rename recording", e);
-      addNotification({
-        message: "Failed to rename recording.",
-        type: "error",
+      await actions.rename(recording.id, renameValue.trim(), {
+        onSuccess: () => {
+          setIsRenaming(false);
+          router.refresh();
+        },
       });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this recording?")) return;
-    try {
-      await deleteRecording(recording.id);
-      router.refresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to delete recording", e);
-      addNotification({
-        message: "Failed to delete recording.",
-        type: "error",
-      });
-    }
+    await actions.delete(recording.id, {
+      onSuccess: () => router.refresh(),
+    });
   };
 
   const handleInferSpeakers = async () => {
-    try {
-      await inferSpeakers(recording.id);
-      addNotification({
-        message:
-          "Speaker inference started. Review the suggested names when they are ready.",
-        type: "success",
-      });
-      window.dispatchEvent(
-        new CustomEvent("recording-updated", { detail: { id: recording.id } }),
-      );
-      router.refresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to infer speakers", e);
-      addNotification({ message: "Failed to infer speakers.", type: "error" });
-    }
+    await actions.inferSpeakers(recording.id, {
+      onSuccess: () => {
+        window.dispatchEvent(
+          new CustomEvent("recording-updated", {
+            detail: { id: recording.id },
+          }),
+        );
+        router.refresh();
+      },
+    });
   };
 
   const handleCancel = async () => {
-    try {
-      await cancelProcessing(recording.id);
-      addNotification({
-        message: "Processing cancelled.",
-        type: "success",
-      });
-      router.refresh();
-      // Force reload after short delay to ensure UI updates
-      setTimeout(() => router.refresh(), 1000);
-
-        } catch (e: unknown) {
-      console.error("Failed to cancel processing", e);
-      addNotification({
-        message: "Failed to cancel processing.",
-        type: "error",
-      });
-    }
+    await actions.cancel(recording.id, {
+      onSuccess: () => {
+        router.refresh();
+        // Force reload after short delay to ensure UI updates
+        setTimeout(() => router.refresh(), 1000);
+      },
+    });
   };
 
   const showCancelOption =

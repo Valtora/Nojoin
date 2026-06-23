@@ -2782,3 +2782,274 @@ def test_mute_non_speech_segments_uses_configured_vad_parameters(tmp_path, monke
     assert captured["threshold"] == 0.8
     assert captured["min_speech_duration_ms"] == 123
     assert captured["min_silence_duration_ms"] == 456
+
+
+# --- BE-005 characterization tests ------------------------------------------
+# These pin the CURRENT observable behaviour of the seams about to be extracted
+# from transcribe_segment_live_task: sequence gating accept/skip, audio
+# buffering/concat, ASR result handling, persistence, diarisation (Meeting Edge)
+# dispatch, and best-effort failure paths that must not crash the task.
+
+
+def test_live_skips_when_upload_buffer_missing(monkeypatch, tmp_path):
+    """A missing upload temp dir short-circuits with a skipped outcome metric.
+
+    Sequence-gating seam: the task must bail before touching the live dir when
+    the upload buffer is gone, recording a 'skipped'/'upload_buffer_missing'
+    outcome rather than crashing or writing state.
+    """
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    missing_dir = tmp_path / "nope"
+
+    outcomes: list[dict] = []
+    monkeypatch.setattr(
+        lt,
+        "_record_live_sequence_outcome_metric",
+        lambda **kwargs: outcomes.append(kwargs),
+    )
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: missing_dir
+    )
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    session = _FakeSession(recording)
+
+    _run_live_task(monkeypatch, 99, 0, session)
+
+    assert transcript.segments == []
+    assert not missing_dir.exists()
+    assert outcomes
+    assert outcomes[-1]["outcome"] == "skipped"
+    assert outcomes[-1]["reason"] == "upload_buffer_missing"
+
+
+def test_live_already_consumed_sequence_is_skipped(monkeypatch, tmp_path):
+    """A sequence below next_expected is recorded as skipped/already_consumed.
+
+    Sequence-gating seam (sequence < next_expected): the late duplicate must
+    not re-drain; it records the outcome in state and advances nothing.
+    """
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "21"
+    temp_dir.mkdir()
+    live_dir = temp_dir / "live"
+    live_dir.mkdir()
+    lt.write_live_state(live_dir, {"next_expected": 5, "buffer_abs_start": 0.0})
+
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    _make_segment_wav(temp_dir, 2, 2.0, audio_store)
+
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    session = _FakeSession(recording)
+
+    _run_live_task(monkeypatch, 21, 2, session)
+
+    assert transcript.segments == []
+    state = lt.read_live_state(live_dir)
+    assert state["next_expected"] == 5
+    assert state["sequence_outcomes"]["2"] == {
+        "outcome": "skipped",
+        "reason": "already_consumed",
+    }
+
+
+def test_live_triggering_segment_missing_is_skipped(monkeypatch, tmp_path):
+    """When the triggering segment file is absent the run drains nothing.
+
+    Sequence-gating seam (sequence == next_expected but no file on disk): the
+    defensive empty-run branch records skipped/triggering_segment_missing.
+    """
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "22"
+    temp_dir.mkdir()
+
+    _patch_live_deps(monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}])
+    # Deliberately do NOT create 0.wav: next_expected==0 but nothing on disk.
+
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    session = _FakeSession(recording)
+
+    _run_live_task(monkeypatch, 22, 0, session)
+
+    assert transcript.segments == []
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 0
+    assert state["sequence_outcomes"]["0"] == {
+        "outcome": "skipped",
+        "reason": "triggering_segment_missing",
+    }
+
+
+def test_concat_live_audio_channels_appends_along_time(monkeypatch):
+    """Audio-buffering seam: concat joins parts along the sample (time) axis."""
+    import torch
+
+    from backend.processing.live_transcribe import _concat_live_audio_channels
+
+    part_a = torch.zeros((1, 3))
+    part_b = torch.ones((1, 2))
+
+    combined = _concat_live_audio_channels([part_a, part_b])
+
+    assert combined.shape == (1, 5)
+    assert combined[0].tolist() == [0.0, 0.0, 0.0, 1.0, 1.0]
+
+
+def test_concat_live_audio_channels_expands_mono_to_match_channels():
+    """Audio-buffering seam: a mono part is expanded to the max channel count."""
+    import torch
+
+    from backend.processing.live_transcribe import _concat_live_audio_channels
+
+    mono = torch.zeros((1, 2))
+    stereo = torch.ones((2, 2))
+
+    combined = _concat_live_audio_channels([mono, stereo])
+
+    assert combined.shape == (2, 4)
+
+
+def test_mix_live_audio_channels_averages_channels():
+    """Audio-buffering seam: mixing collapses channels to a mono mean."""
+    import torch
+
+    from backend.processing.live_transcribe import _mix_live_audio_channels
+
+    stereo = torch.tensor([[0.0, 2.0], [2.0, 0.0]])
+
+    mixed = _mix_live_audio_channels(stereo)
+
+    assert mixed.tolist() == [1.0, 1.0]
+
+
+def test_live_empty_asr_result_emits_no_segment(monkeypatch, tmp_path):
+    """ASR-result seam: a falsy engine result yields no provisional segment but
+    still advances the lane cleanly (no crash)."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+    from backend.processing import transcribe as transcribe_module
+
+    temp_dir = tmp_path / "23"
+    temp_dir.mkdir()
+
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+
+    # Engine returns an empty dict: the 'if not result' guard must skip it.
+    monkeypatch.setattr(
+        transcribe_module, "transcribe_audio", lambda path, config=None: {}
+    )
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    session = _FakeSession(recording)
+
+    _run_live_task(monkeypatch, 23, 0, session)
+
+    assert transcript.segments == []
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 1
+    assert state["sequence_outcomes"]["0"]["outcome"] == "consumed"
+
+
+def test_live_meeting_edge_dispatch_failure_is_best_effort(monkeypatch, tmp_path):
+    """Diarisation-dispatch seam: a raising Meeting Edge dispatch must not crash
+    the task, and the run must still complete and advance the lane."""
+    from types import SimpleNamespace
+
+    import backend.worker.tasks as tasks_module
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "24"
+    temp_dir.mkdir()
+
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    # _patch_live_deps disables Meeting Edge; re-enable dispatch for this case so
+    # the best-effort failure path is actually exercised.
+    monkeypatch.setattr(lt, "is_meeting_edge_enabled", lambda user_settings=None: True)
+
+    def boom_delay(*args, **kwargs):
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(
+        tasks_module,
+        "refresh_meeting_edge_task",
+        SimpleNamespace(delay=boom_delay),
+    )
+
+    transcript = _FakeTranscript()
+    recording = _FakeRecording(RecordingStatus.UPLOADING, transcript)
+    recording.user = SimpleNamespace(settings={"enable_meeting_edge": True})
+    session = _FakeSession(recording)
+
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+
+    # Must not raise even though dispatch fails.
+    _run_live_task(monkeypatch, 24, 0, session)
+
+    assert len(transcript.segments) == 1
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 1
+    assert state["sequence_outcomes"]["0"]["outcome"] == "consumed"
+
+
+def test_persist_asr_window_result_best_effort_swallows_errors(monkeypatch):
+    """Best-effort seam: a failing ledger mutator is logged, rolled back, and
+    never propagates out of _persist_asr_window_result_best_effort."""
+    from backend.core import db as db_module
+    from backend.processing import live_transcribe as lt
+
+    events: list[str] = []
+
+    class _RollbackSession:
+        def commit(self):
+            events.append("commit")
+
+        def rollback(self):
+            events.append("rollback")
+
+        def close(self):
+            events.append("close")
+
+    session = _RollbackSession()
+    monkeypatch.setattr(db_module, "get_sync_session", lambda: session)
+
+    def boom(_session):
+        raise RuntimeError("ledger write failed")
+
+    # Must not raise.
+    lt._persist_asr_window_result_best_effort(boom)
+
+    assert "commit" not in events
+    assert events == ["rollback", "close"]

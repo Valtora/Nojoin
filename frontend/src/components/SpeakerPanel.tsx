@@ -5,8 +5,6 @@ import {
   RecordingId,
   SpeakerNameSuggestion,
   TranscriptSegment,
-  VoiceprintExtractResult,
-  BatchVoiceprintResponse,
   GlobalSpeaker,
 } from "@/types";
 import {
@@ -19,39 +17,20 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
 import SplitPersonModal from "./people/SplitPersonModal";
 import { InlineColorPicker } from "./ColorPicker";
-import {
-  updateSpeaker,
-  mergeRecordingSpeakers,
-  deleteRecordingSpeaker,
-  extractVoiceprint,
-  promoteToGlobalSpeaker,
-  acceptSpeakerNameSuggestion,
-  rejectSpeakerNameSuggestion,
-} from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { getErrorMessage } from "@/lib/errors";
+import { getResolvedGlobalSpeakerId } from "@/lib/recordingSpeakerUtils";
 import {
-  buildGlobalSpeakerById,
-  buildUniqueGlobalSpeakerIdByName,
-  getRecordingSpeakerDisplayName,
-  getRecordingSpeakerGroupKey,
-  getResolvedGlobalSpeakerId,
-} from "@/lib/recordingSpeakerUtils";
-
-interface SpeakerPanelEntry {
-  key: string;
-  speaker: RecordingSpeaker;
-  members: RecordingSpeaker[];
-  labels: string[];
-  displayName: string;
-  hasVoiceprint: boolean;
-}
+  useSpeakerPanelEntries,
+  type SpeakerPanelEntry,
+} from "./speakers/_hooks/useSpeakerPanelEntries";
+import { useSpeakerSnippetPlayback } from "./speakers/_hooks/useSpeakerSnippetPlayback";
+import { useSpeakerPanelActions } from "./speakers/_hooks/useSpeakerPanelActions";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -93,67 +72,66 @@ export default function SpeakerPanel({
     speaker: SpeakerPanelEntry;
   } | null>(null);
 
-  // Rename State
-  const [renamingSpeaker, setRenamingSpeaker] =
-    useState<SpeakerPanelEntry | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  const closeContextMenu = () => setContextMenu(null);
 
-  // Merge State
-  const [mergingSpeaker, setMergingSpeaker] = useState<SpeakerPanelEntry | null>(
-    null,
-  );
-  const [mergeTargetLabel, setMergeTargetLabel] = useState("");
-
-  // Delete State
-  const [deletingSpeaker, setDeletingSpeaker] =
-    useState<SpeakerPanelEntry | null>(null);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [resolvingSuggestionId, setResolvingSuggestionId] = useState<
-    string | null
-  >(null);
-
-  // Voiceprint State
-  const [extractingVoiceprint, setExtractingVoiceprint] = useState<
-    string | null
-  >(null); // diarization_label
-  const [voiceprintModalOpen, setVoiceprintModalOpen] = useState(false);
-  const [voiceprintExtractResult, setVoiceprintExtractResult] =
-    useState<VoiceprintExtractResult | null>(null);
-  const [batchVoiceprintResults, setBatchVoiceprintResults] =
-    useState<BatchVoiceprintResponse | null>(null);
-
-  // Split Speaker State
-  const [splitModalOpen, setSplitModalOpen] = useState(false);
-  const [speakerToSplit, setSpeakerToSplit] = useState<SpeakerPanelEntry | null>(
-    null,
+  const { speakerEntries } = useSpeakerPanelEntries(
+    speakers,
+    segments,
+    globalSpeakers,
   );
 
-  const globalSpeakerById = useMemo(
-    () => buildGlobalSpeakerById(globalSpeakers),
-    [globalSpeakers],
-  );
-
-  const uniqueGlobalSpeakerIdByName = useMemo(
-    () => buildUniqueGlobalSpeakerIdByName(speakers, globalSpeakerById),
-    [globalSpeakerById, speakers],
-  );
-
-  const getSpeakerName = useCallback(
-    (speaker: RecordingSpeaker): string =>
-      getRecordingSpeakerDisplayName(speaker, globalSpeakerById),
-    [globalSpeakerById],
-  );
-
-  const segmentCountByLabel = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    segments.forEach((segment) => {
-      counts.set(segment.speaker, (counts.get(segment.speaker) || 0) + 1);
+  const { playSnippet: handlePlaySnippet, nextSnippet: handleNextSnippet } =
+    useSpeakerSnippetPlayback({
+      segments,
+      currentTime,
+      isPlaying,
+      onPlaySegment,
+      onPause,
+      onResume,
     });
 
-    return counts;
-  }, [segments]);
+  const actions = useSpeakerPanelActions({
+    recordingId,
+    onRefresh,
+    onSpeakerRenamed,
+    closeContextMenu,
+  });
+
+  const {
+    renamingSpeaker,
+    setRenamingSpeaker,
+    renameValue,
+    setRenameValue,
+    startRename: handleRenameStart,
+    submitRename: handleRenameSubmit,
+    mergingSpeaker,
+    setMergingSpeaker,
+    mergeTargetLabel,
+    setMergeTargetLabel,
+    startMerge: handleMergeStart,
+    submitMerge: handleMergeSubmit,
+    deletingSpeaker,
+    setDeletingSpeaker,
+    requestDelete: handleDeleteClick,
+    confirmDelete,
+    splitModalOpen,
+    setSplitModalOpen,
+    speakerToSplit,
+    setSpeakerToSplit,
+    startSplit: handleSplitStart,
+    extractingVoiceprint,
+    voiceprintModalOpen,
+    setVoiceprintModalOpen,
+    voiceprintExtractResult,
+    setVoiceprintExtractResult,
+    batchVoiceprintResults,
+    setBatchVoiceprintResults,
+    createVoiceprint: handleCreateVoiceprint,
+    promoteToGlobal: handlePromoteToGlobal,
+    resolvingSuggestionId,
+    acceptSuggestion: handleAcceptSuggestion,
+    rejectSuggestion: handleRejectSuggestion,
+  } = actions;
 
   const pendingSuggestions = useMemo(
     () =>
@@ -163,328 +141,12 @@ export default function SpeakerPanel({
     [speakerNameSuggestions],
   );
 
-  const speakerEntries = useMemo(() => {
-    const groupedSpeakers = new Map<string, RecordingSpeaker[]>();
-
-    speakers
-      .filter((speaker) => !speaker.merged_into_id)
-      .forEach((speaker) => {
-        const key = getRecordingSpeakerGroupKey(
-          speaker,
-          globalSpeakerById,
-          uniqueGlobalSpeakerIdByName,
-        );
-        const existing = groupedSpeakers.get(key);
-
-        if (existing) {
-          existing.push(speaker);
-          return;
-        }
-
-        groupedSpeakers.set(key, [speaker]);
-      });
-
-    return Array.from(groupedSpeakers.entries())
-      .map(([key, members]) => {
-        const sortedMembers = [...members].sort((left, right) => {
-          const segmentCountDiff =
-            (segmentCountByLabel.get(right.diarization_label) || 0) -
-            (segmentCountByLabel.get(left.diarization_label) || 0);
-
-          if (segmentCountDiff !== 0) {
-            return segmentCountDiff;
-          }
-
-          return getSpeakerName(left).localeCompare(getSpeakerName(right));
-        });
-
-        const representative =
-          sortedMembers.find((speaker) => getResolvedGlobalSpeakerId(speaker)) ||
-          sortedMembers[0];
-        const globalSpeakerId = getResolvedGlobalSpeakerId(representative);
-        const hasVoiceprint =
-          sortedMembers.some((speaker) => speaker.has_voiceprint) ||
-          !!(globalSpeakerId && globalSpeakerById.get(globalSpeakerId)?.has_voiceprint);
-
-        return {
-          key,
-          speaker: representative,
-          members: sortedMembers,
-          labels: sortedMembers.map((speaker) => speaker.diarization_label),
-          displayName: getSpeakerName(representative),
-          hasVoiceprint,
-        } satisfies SpeakerPanelEntry;
-      })
-      .sort((left, right) => {
-        return left.displayName.localeCompare(right.displayName);
-      });
-  }, [
-    getSpeakerName,
-    globalSpeakerById,
-    segmentCountByLabel,
-    speakers,
-    uniqueGlobalSpeakerIdByName,
-  ]);
-
-  const handlePlaySnippet = (
-    labels: string[],
-    isEntryActive: boolean,
-  ) => {
-    if (isEntryActive) {
-      if (isPlaying) {
-        onPause();
-      } else {
-        onResume();
-      }
-      return;
-    }
-
-    const labelSet = new Set(labels);
-    const speakerSegments = segments.filter((segment) =>
-      labelSet.has(segment.speaker),
-    );
-    if (speakerSegments.length === 0) {
-      addNotification({
-        type: "warning",
-        message: "No audio segments found for this speaker.",
-      });
-      return;
-    }
-    const randomSegment =
-      speakerSegments[Math.floor(Math.random() * speakerSegments.length)];
-    onPlaySegment(randomSegment.start, randomSegment.end);
-  };
-
-  const handleNextSnippet = (labels: string[]) => {
-    const labelSet = new Set(labels);
-    const speakerSegments = segments.filter((segment) =>
-      labelSet.has(segment.speaker),
-    );
-    if (speakerSegments.length === 0) {
-      addNotification({
-        type: "warning",
-        message: "No audio segments found for this speaker.",
-      });
-      return;
-    }
-
-    // Try to find a segment that is not currently playing
-    let candidates = speakerSegments;
-    if (speakerSegments.length > 1) {
-      candidates = speakerSegments.filter(
-        (s) => !(currentTime >= s.start && currentTime < s.end),
-      );
-      if (candidates.length === 0) candidates = speakerSegments;
-    }
-
-    const randomSegment =
-      candidates[Math.floor(Math.random() * candidates.length)];
-    onPlaySegment(randomSegment.start, randomSegment.end);
-  };
-
   const handleContextMenu = (
     e: React.MouseEvent,
     speaker: SpeakerPanelEntry,
   ) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, speaker });
-  };
-
-  const handleRenameStart = (speaker: SpeakerPanelEntry) => {
-    setRenamingSpeaker(speaker);
-    setRenameValue(speaker.displayName);
-    setContextMenu(null);
-  };
-
-  const handleMergeStart = (speaker: SpeakerPanelEntry) => {
-    setMergingSpeaker(speaker);
-    setMergeTargetLabel("");
-    setContextMenu(null);
-  };
-
-  const handleSplitStart = (speaker: SpeakerPanelEntry) => {
-    setSpeakerToSplit(speaker);
-    setSplitModalOpen(true);
-    setContextMenu(null);
-  };
-
-  const handleRenameSubmit = async () => {
-    if (!renamingSpeaker || !renameValue.trim() || isSubmitting) return;
-
-    setIsSubmitting(true);
-    try {
-      const oldName = renamingSpeaker.displayName;
-      const newName = renameValue.trim();
-
-      for (const speaker of renamingSpeaker.members) {
-        await updateSpeaker(recordingId, speaker.diarization_label, newName);
-      }
-
-      if (oldName !== newName && onSpeakerRenamed) {
-        await onSpeakerRenamed(oldName, newName);
-      }
-
-      setRenamingSpeaker(null);
-      onRefresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to rename speaker", e);
-      addNotification({ type: "error", message: "Failed to rename speaker." });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleMergeSubmit = async () => {
-    if (!mergingSpeaker || !mergeTargetLabel || isSubmitting) return;
-
-    setIsSubmitting(true);
-    try {
-      for (const label of mergingSpeaker.labels) {
-        if (label === mergeTargetLabel) {
-          continue;
-        }
-
-        await mergeRecordingSpeakers(recordingId, mergeTargetLabel, label);
-      }
-      setMergingSpeaker(null);
-
-      // Dispatch custom event to notify parent components of the merge
-      window.dispatchEvent(
-        new CustomEvent("recording-updated", { detail: { recordingId } }),
-      );
-
-      onRefresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to merge speakers", e);
-      addNotification({ type: "error", message: "Failed to merge speakers." });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteClick = (speaker: SpeakerPanelEntry) => {
-    setContextMenu(null);
-    setDeletingSpeaker(speaker);
-  };
-
-  const confirmDelete = async () => {
-    if (!deletingSpeaker) return;
-
-    setIsSubmitting(true);
-    try {
-      for (const label of deletingSpeaker.labels) {
-        await deleteRecordingSpeaker(recordingId, label);
-      }
-      setDeletingSpeaker(null);
-      onRefresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to delete speaker", e);
-      addNotification({ type: "error", message: "Failed to delete speaker." });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCreateVoiceprint = async (speakerEntry: SpeakerPanelEntry) => {
-    setContextMenu(null);
-    setExtractingVoiceprint(speakerEntry.speaker.diarization_label);
-
-    try {
-      const result = await extractVoiceprint(
-        recordingId,
-        speakerEntry.speaker.diarization_label,
-      );
-      setVoiceprintExtractResult(result);
-      setBatchVoiceprintResults(null);
-      setVoiceprintModalOpen(true);
-
-        } catch (e: unknown) {
-      console.error("Failed to extract voiceprint", e);
-      addNotification({
-        type: "error",
-        message: getErrorMessage(e, "Failed to extract voiceprint."),
-      });
-    } finally {
-      setExtractingVoiceprint(null);
-    }
-  };
-
-  const handlePromoteToGlobal = async (speakerEntry: SpeakerPanelEntry) => {
-    setContextMenu(null);
-    setIsSubmitting(true);
-
-    try {
-      await promoteToGlobalSpeaker(
-        recordingId,
-        speakerEntry.speaker.diarization_label,
-      );
-      onRefresh();
-      addNotification({
-        type: "success",
-        message: "Speaker added to Global Library.",
-      });
-
-        } catch (e: unknown) {
-      console.error("Failed to promote speaker", e);
-      addNotification({
-        type: "error",
-        message:
-          getErrorMessage(e, "Failed to promote speaker to global library."),
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAcceptSuggestion = async (suggestion: SpeakerNameSuggestion) => {
-    setResolvingSuggestionId(suggestion.id);
-    try {
-      await acceptSpeakerNameSuggestion(
-        recordingId,
-        suggestion.diarization_label,
-      );
-      addNotification({
-        type: "success",
-        message: `Accepted suggestion: ${suggestion.suggested_name}.`,
-      });
-      onRefresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to accept speaker suggestion", e);
-      addNotification({
-        type: "error",
-        message: "Failed to accept speaker suggestion.",
-      });
-    } finally {
-      setResolvingSuggestionId(null);
-    }
-  };
-
-  const handleRejectSuggestion = async (suggestion: SpeakerNameSuggestion) => {
-    setResolvingSuggestionId(suggestion.id);
-    try {
-      await rejectSpeakerNameSuggestion(
-        recordingId,
-        suggestion.diarization_label,
-      );
-      addNotification({
-        type: "success",
-        message: `Rejected suggestion for ${suggestion.diarization_label}.`,
-      });
-      onRefresh();
-
-        } catch (e: unknown) {
-      console.error("Failed to reject speaker suggestion", e);
-      addNotification({
-        type: "error",
-        message: "Failed to reject speaker suggestion.",
-      });
-    } finally {
-      setResolvingSuggestionId(null);
-    }
   };
 
   const handleVoiceprintModalComplete = () => {

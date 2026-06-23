@@ -122,23 +122,23 @@ Large refactors must preserve behavior and begin with characterization tests.
 
 ### Backend Decomposition
 
-- [ ] **BE-001:** Add characterization tests around backup conflict modes, identity remapping, file extraction, transaction boundaries, and proxy regeneration before decomposing restore logic.
-- [ ] **BE-002:** Split `BackupManager._restore_backup_sync` into cohesive validation, preflight, extraction, table-restore, identity-remap, and finalization services.
-- [ ] **BE-003:** Add stage-level characterization tests before decomposing `process_recording_task`.
-- [ ] **BE-004:** Split the processing task into explicit orchestration stages with typed inputs, outputs, and failure semantics while keeping heavy inference in Celery workers.
-- [ ] **BE-005:** Decompose `transcribe_segment_live_task` around sequence gating, audio buffering, ASR, persistence, diarisation dispatch, and best-effort failure handling.
-- [ ] **BE-006:** Decompose the largest canonical-pipeline reconciliation functions without weakening stable-id alignment or manual-edit authority.
-- [ ] **BE-007:** Split oversized API endpoint modules by resource or responsibility while preserving route contracts.
-- [ ] **BE-008:** Define and enforce review thresholds for new modules and functions that grow beyond an agreed size or complexity.
+- [x] **BE-001:** Add characterization tests around backup conflict modes, identity remapping, file extraction, transaction boundaries, and proxy regeneration before decomposing restore logic.
+- [x] **BE-002:** Split `BackupManager._restore_backup_sync` into cohesive validation, preflight, extraction, table-restore, identity-remap, and finalization services.
+- [x] **BE-003:** Add stage-level characterization tests before decomposing `process_recording_task`.
+- [x] **BE-004:** Split the processing task into explicit orchestration stages with typed inputs, outputs, and failure semantics while keeping heavy inference in Celery workers.
+- [x] **BE-005:** Decompose `transcribe_segment_live_task` around sequence gating, audio buffering, ASR, persistence, diarisation dispatch, and best-effort failure handling.
+- [x] **BE-006:** Decompose the largest canonical-pipeline reconciliation functions without weakening stable-id alignment or manual-edit authority.
+- [x] **BE-007:** Split oversized API endpoint modules by resource or responsibility while preserving route contracts.
+- [x] **BE-008:** Define and enforce review thresholds for new modules and functions that grow beyond an agreed size or complexity.
 
 ### Frontend Decomposition
 
-- [ ] **FE-010:** Split `frontend/src/lib/api.ts` into typed resource clients while preserving a single public API layer.
-- [ ] **FE-011:** Decompose the recording detail page into data orchestration, live-state, transcript, notes, documents, and action modules.
-- [ ] **FE-012:** Decompose oversized dashboard, navigation, sidebar, transcript, speaker, and settings components into focused components and hooks.
-- [ ] **FE-013:** Introduce shared test renderers that provide navigation, notification, viewport-density, and other required application contexts.
-- [ ] **FE-014:** Add focused component tests before moving behavior out of large components.
-- [ ] **FE-015:** Keep recording actions synchronized between `RecordingCard.tsx` and `Sidebar.tsx` until a shared action model removes the duplication safely.
+- [x] **FE-010:** Split `frontend/src/lib/api.ts` into typed resource clients while preserving a single public API layer.
+- [x] **FE-011:** Decompose the recording detail page into data orchestration, live-state, transcript, notes, documents, and action modules.
+- [x] **FE-012:** Decompose oversized dashboard, navigation, sidebar, transcript, speaker, and settings components into focused components and hooks.
+- [x] **FE-013:** Introduce shared test renderers that provide navigation, notification, viewport-density, and other required application contexts.
+- [x] **FE-014:** Add focused component tests before moving behavior out of large components.
+- [x] **FE-015:** Keep recording actions synchronized between `RecordingCard.tsx` and `Sidebar.tsx` until a shared action model removes the duplication safely.
 
 ## Phase 4: Improve Documentation And Contributor Experience
 

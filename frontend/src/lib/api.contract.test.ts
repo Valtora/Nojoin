@@ -1,0 +1,199 @@
+import { describe, expect, it, vi } from "vitest";
+
+// FE-010 characterization guard: pin the public runtime surface of the API
+// layer before it is split into resource modules. The barrel that replaces the
+// monolithic api.ts must re-export exactly these names (plus the default axios
+// instance), so any dropped or renamed export fails here rather than silently
+// breaking one of the ~53 import sites. Type-only exports (interfaces, type
+// aliases) are erased at runtime and are guarded by the TypeScript build instead.
+
+vi.mock("axios", () => ({
+  default: {
+    create: vi.fn(() => ({
+      patch: vi.fn(),
+      put: vi.fn(),
+      get: vi.fn(),
+      post: vi.fn(),
+      delete: vi.fn(),
+      interceptors: {
+        request: { use: vi.fn() },
+        response: { use: vi.fn() },
+      },
+    })),
+  },
+}));
+
+describe("api public surface", () => {
+  it("exports the same named runtime members after decomposition", async () => {
+    const api = await import("./api");
+    const runtimeNames = Object.keys(api)
+      .filter((name) => name !== "default")
+      .sort();
+
+    expect(runtimeNames).toMatchInlineSnapshot(`
+      [
+        "API_BASE_URL",
+        "acceptSpeakerNameSuggestion",
+        "addPersonalDictionaryWord",
+        "addSpellcheckIgnoredWord",
+        "addTagToRecording",
+        "applyVoiceprintAction",
+        "archiveRecording",
+        "batchAddTagToRecordings",
+        "batchArchiveRecordings",
+        "batchPermanentlyDeleteRecordings",
+        "batchRemoveTagFromRecordings",
+        "batchRestoreRecordings",
+        "batchSoftDeleteRecordings",
+        "cancelProcessing",
+        "checkFFmpeg",
+        "clearChatHistory",
+        "createGlobalSpeaker",
+        "createInvitation",
+        "createPeopleTag",
+        "createTag",
+        "createUser",
+        "createUserTask",
+        "deleteDocument",
+        "deleteGlobalSpeaker",
+        "deleteGlobalSpeakerEmbedding",
+        "deleteInvitation",
+        "deleteModel",
+        "deletePeopleTag",
+        "deleteRecording",
+        "deleteRecordingSpeaker",
+        "deleteTag",
+        "deleteUser",
+        "deleteUserTask",
+        "deleteVoiceprint",
+        "discardRecordingCapture",
+        "disconnectCalendarConnection",
+        "downloadBackupFile",
+        "exportAudio",
+        "exportBackupAsync",
+        "exportContent",
+        "extractAllVoiceprints",
+        "extractVoiceprint",
+        "fetchProxyModels",
+        "finalizeRecordingCapture",
+        "findAndReplace",
+        "findAndReplaceNotes",
+        "generateNotes",
+        "getAdminHealth",
+        "getBackupStatus",
+        "getCalendarAuthorisationStartUrl",
+        "getCalendarDashboardSummary",
+        "getCalendarOverview",
+        "getCalendarProviderStatuses",
+        "getChatHistory",
+        "getCurrentUser",
+        "getDemoRecording",
+        "getDocuments",
+        "getDownloadProgress",
+        "getGlobalSpeakers",
+        "getInitialConfig",
+        "getInvitations",
+        "getLanguageOptions",
+        "getModelsStatus",
+        "getNotes",
+        "getPausedRecordings",
+        "getPeopleTags",
+        "getPersonalDictionary",
+        "getRecording",
+        "getRecordingCalendarEventCandidates",
+        "getRecordingInfo",
+        "getRecordingStreamUrl",
+        "getRecordings",
+        "getRecordingsCalendar",
+        "getSettings",
+        "getSpeakerSegments",
+        "getSpellcheckIgnoredWords",
+        "getSupportedAudioFormats",
+        "getSystemStatus",
+        "getTags",
+        "getTaskStatus",
+        "getTlsFingerprint",
+        "getTranscriptUtterances",
+        "getUserMe",
+        "getUserNotes",
+        "getUserTasks",
+        "getUsers",
+        "getVersion",
+        "importAudio",
+        "importBackup",
+        "inferSpeakers",
+        "initRecording",
+        "isActiveRecordingConflictDetail",
+        "linkRecordingCalendarEvent",
+        "listModels",
+        "login",
+        "logout",
+        "mergeRecordingSpeakers",
+        "mergeSpeakers",
+        "pauseRecordingCapture",
+        "permanentlyDeleteRecording",
+        "promoteToGlobalSpeaker",
+        "recalibrateSpeaker",
+        "registerUser",
+        "rejectSpeakerNameSuggestion",
+        "removePersonalDictionaryWord",
+        "removeSpellcheckIgnoredWord",
+        "removeTagFromRecording",
+        "renameRecording",
+        "reportRecordingCaptureSources",
+        "reprocessRecording",
+        "restoreRecording",
+        "resumeRecordingCapture",
+        "revokeInvitation",
+        "scanMatches",
+        "seedDemoData",
+        "setupSystem",
+        "softDeleteRecording",
+        "splitLocalSpeaker",
+        "splitSpeaker",
+        "startCalendarAuthorisation",
+        "streamChatMessage",
+        "syncCalendarConnection",
+        "updateCalendarColor",
+        "updateCalendarProviderConfiguration",
+        "updateCalendarSelection",
+        "updateGlobalSpeaker",
+        "updateMeetingEdgeFocus",
+        "updateNotes",
+        "updatePasswordMe",
+        "updatePeopleTag",
+        "updateSettings",
+        "updateSpeaker",
+        "updateSpeakerColor",
+        "updateTag",
+        "updateTranscriptSegmentSpeaker",
+        "updateTranscriptSegmentText",
+        "updateTranscriptSegments",
+        "updateTranscriptUtteranceSpeaker",
+        "updateTranscriptUtteranceText",
+        "updateUser",
+        "updateUserMe",
+        "updateUserNotes",
+        "updateUserRole",
+        "updateUserTask",
+        "uploadBackupChunked",
+        "uploadDocument",
+        "uploadRecordingSegment",
+        "validateHF",
+        "validateInvitation",
+        "validateLLM",
+      ]
+    `);
+  });
+
+  it("preserves the default axios instance export", async () => {
+    const api = await import("./api");
+    const instance = api.default as Record<string, unknown>;
+
+    expect(typeof instance.get).toBe("function");
+    expect(typeof instance.post).toBe("function");
+    expect(typeof instance.put).toBe("function");
+    expect(typeof instance.patch).toBe("function");
+    expect(typeof instance.delete).toBe("function");
+  });
+});

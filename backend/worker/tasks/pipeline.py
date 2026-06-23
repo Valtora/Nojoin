@@ -233,6 +233,1047 @@ def refresh_meeting_edge_task(self, recording_id: int):
         return None
 
 
+# ---------------------------------------------------------------------------
+# process_recording_task orchestration stages (BE-004)
+#
+# The canonical finalize pipeline is decomposed into explicit stages with typed
+# inputs/outputs and clear failure semantics. The stages run inside the task's
+# try/except/finally so Celery retry/ack/error handling, temp-file cleanup, and
+# VRAM release stay exactly where they were. Heavy ML inference imports remain
+# INSIDE the stage functions (whisper/pyannote/torch/embeddings/etc.) so the API
+# process never pays for them at module import time.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _PipelineRunContext:
+    """Shared handles threaded through the orchestration stages.
+
+    ``task`` is the bound Celery task (used for ``update_state`` progress
+    reporting); ``temp_files`` is the running cleanup list the finally block
+    drains. These are mutable, deliberately shared references -- the stages
+    mutate ``recording``/``temp_files`` in place exactly as the original inline
+    code did, preserving every DB write and progress emission.
+    """
+
+    task: Task
+    session: Any
+    recording_id: int
+    device_suffix: str
+    temp_files: list[str]
+    merged_config: dict
+    # Set once the VAD stage produces the processed (16k mono) audio; consumed by
+    # the speaker-assignment and segmentation-refinement stages.
+    processed_audio_path: str | None = None
+
+
+@dataclass
+class _InputAudioResolution:
+    """Outcome of resolving the source audio for processing.
+
+    ``audio_path`` is the path to transcribe/diarize. ``finished`` signals an
+    early return: repair failed and the task has already persisted ERROR state,
+    so the orchestrator returns ``None`` without raising.
+    """
+
+    audio_path: str | None
+    finished: bool = False
+
+
+@dataclass
+class _VadStageResult:
+    """Outcome of the VAD/preprocess stage.
+
+    ``processed_audio_path`` feeds ASR/diarization. ``finished`` signals the
+    "no speech detected" short-circuit: an empty transcript has been persisted
+    and the recording marked PROCESSED, so the orchestrator returns ``None``.
+    """
+
+    processed_audio_path: str | None
+    finished: bool = False
+
+
+def _resolve_input_audio(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+) -> _InputAudioResolution:
+    """Resolve, restore, validate/repair, and duration-backfill the source audio.
+
+    Restores from the proxy when the source is missing; repairs invalid audio
+    (persisting ERROR and returning early when repair fails); and backfills a
+    missing duration best-effort. Raises ``FileNotFoundError`` when no usable
+    audio can be obtained -- the orchestrator's handler maps that to ERROR.
+    """
+    from backend.utils.audio import get_audio_duration
+
+    session = ctx.session
+    device_suffix = ctx.device_suffix
+    temp_files = ctx.temp_files
+
+    audio_path = recording.audio_path
+    if not audio_path or not os.path.exists(audio_path):
+        if recording.proxy_path and os.path.exists(recording.proxy_path):
+            logger.info(
+                "Source audio missing, but proxy exists. Restoring from proxy..."
+            )
+            from backend.utils.audio import convert_to_wav
+
+            restore_audio_path = audio_path
+            if not restore_audio_path:
+                base_path, _ = os.path.splitext(recording.proxy_path)
+                restore_audio_path = f"{base_path}.restored.wav"
+                recording.audio_path = restore_audio_path
+            elif not restore_audio_path.lower().endswith(".wav"):
+                base_path, _ = os.path.splitext(restore_audio_path)
+                restore_audio_path = f"{base_path}.restored.wav"
+                recording.audio_path = restore_audio_path
+
+            recording.processing_step = f"Restoring audio from proxy...{device_suffix}"
+            session.add(recording)
+            session.commit()
+
+            if convert_to_wav(recording.proxy_path, restore_audio_path):
+                logger.info("Successfully restored source audio from proxy.")
+                audio_path = restore_audio_path
+            else:
+                raise FileNotFoundError(
+                    "Source audio missing and failed to restore from proxy."
+                )
+        else:
+            raise FileNotFoundError(
+                f"Audio file not found: {audio_path} and no proxy available."
+            )
+
+    from backend.processing.audio_preprocessing import (
+        repair_audio_file,
+        validate_audio_file,
+    )
+
+    try:
+        validate_audio_file(audio_path)
+    except AudioFormatError as e:
+        logger.warning("Invalid audio file detected: %s. Attempting repair...", e)
+        repaired_path = repair_audio_file(audio_path)
+
+        if repaired_path:
+            logger.info("Using repaired audio file: %s", repaired_path)
+            audio_path = repaired_path
+            temp_files.append(repaired_path)  # Ensure cleanup
+        else:
+            logger.error("Audio repair failed for %s", audio_path)
+            recording.status = RecordingStatus.ERROR
+            recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
+            session.add(recording)
+            session.commit()
+            return _InputAudioResolution(audio_path=None, finished=True)
+
+    # Fix missing duration if needed
+    if not recording.duration_seconds or recording.duration_seconds == 0:
+        try:
+            duration = get_audio_duration(audio_path)
+            recording.duration_seconds = duration
+            session.add(recording)
+            session.commit()
+            session.refresh(recording)
+        except Exception as e:  # noqa: BLE001 -- boundary: duration backfill is best-effort
+            logger.warning(
+                f"Could not determine duration for recording {ctx.recording_id}: {e}"
+            )
+
+    return _InputAudioResolution(audio_path=audio_path)
+
+
+def _run_vad_stage(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+    audio_path: str,
+) -> _VadStageResult:
+    """Preprocess audio to 16k mono and (when enabled) mute non-speech regions.
+
+    On the "no speech" short-circuit, persists an empty transcript, marks the
+    recording PROCESSED, and returns ``finished=True`` so the orchestrator
+    returns without running ASR. Otherwise returns the processed audio path.
+    """
+    from backend.processing.audio_preprocessing import preprocess_audio_for_vad
+    from backend.processing.vad import mute_non_speech_segments
+
+    session = ctx.session
+    device_suffix = ctx.device_suffix
+    temp_files = ctx.temp_files
+    recording_id = ctx.recording_id
+
+    enable_vad = ctx.merged_config.get("enable_vad", True)
+
+    if enable_vad:
+        ctx.task.update_state(state="PROCESSING", meta={"progress": 30, "stage": "VAD"})
+        recording.processing_step = f"Filtering silence and noise...{device_suffix}"
+        recording.processing_progress = 30
+        session.add(recording)
+        session.commit()
+
+        # Preprocess for VAD (resample to 16k mono)
+        vad_input_path = preprocess_audio_for_vad(audio_path)
+        if not vad_input_path:
+            raise RuntimeError("VAD preprocessing failed")
+        temp_files.append(vad_input_path)
+
+        # Run VAD (mute silence)
+        vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
+        vad_success, speech_duration = mute_non_speech_segments(
+            vad_input_path, vad_output_path
+        )
+
+        if not vad_success:
+            raise RuntimeError("VAD execution failed")
+        temp_files.append(vad_output_path)
+
+        # Check for silence
+        if speech_duration < 1.0:
+            logger.warning(
+                f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)"
+            )
+            recording.status = RecordingStatus.PROCESSED
+            recording.client_status = ClientStatus.IDLE
+            recording.processing_step = "Completed (No speech detected)"
+            recording.processing_completed_at = utc_now()
+
+            # Create empty transcript
+            transcript = session.exec(
+                select(Transcript).where(Transcript.recording_id == recording.id)
+            ).first()
+            if not transcript:
+                transcript = Transcript(recording_id=recording.id)
+
+            transcript.text = ""  # Empty string to prevent hallucinations
+            transcript.segments = []
+            transcript.transcript_status = "completed"
+
+            mark_recording_audio_chunks_ready_for_cleanup(
+                session,
+                recording_id=recording.id,
+                upload_status="finalized",
+            )
+            auto_link_recording(session, recording)
+            session.add(transcript)
+            session.add(recording)
+            session.commit()
+            return _VadStageResult(processed_audio_path=None, finished=True)
+
+        # Use WAV for processing to avoid sample count mismatches in Pyannote
+        processed_audio_path = vad_output_path
+    else:
+        logger.info("VAD disabled, skipping silence filtering.")
+        # Still need to preprocess to ensure 16k mono wav for Whisper/Pyannote
+        vad_input_path = preprocess_audio_for_vad(audio_path)
+        if not vad_input_path:
+            raise RuntimeError("Audio preprocessing failed")
+        temp_files.append(vad_input_path)
+        processed_audio_path = vad_input_path
+
+    logger.info(
+        f"Using processed audio for transcription/diarization: {processed_audio_path}"
+    )
+    if not os.path.exists(processed_audio_path):
+        raise FileNotFoundError(f"Processed audio file missing: {processed_audio_path}")
+
+    return _VadStageResult(processed_audio_path=processed_audio_path)
+
+
+def _run_final_asr_stage(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+    processed_audio_path: str,
+    engine_override: dict | None,
+) -> dict | None:
+    """Run the configured transcription engine with ASR-ledger bookkeeping.
+
+    Records a ledger row (start/complete/fail) when the ledger is enabled so the
+    manifest/asr_status semantics survive a crash mid-finalize. Re-raises any
+    ASR exception after marking the ledger row failed -- the failure flows to the
+    orchestrator's error handler unchanged.
+    """
+    from backend.processing.transcribe import transcribe_audio
+
+    session = ctx.session
+    merged_config = ctx.merged_config
+    recording_id = ctx.recording_id
+
+    ctx.task.update_state(
+        state="PROCESSING", meta={"progress": 50, "stage": "Transcription"}
+    )
+    recording.processing_step = f"Transcribing audio...{ctx.device_suffix}"
+    recording.processing_progress = 50
+    session.add(recording)
+    session.commit()
+
+    # Apply per-reprocess transcription-engine override, if provided.
+    if engine_override:
+        merged_config.update(engine_override)
+        logger.info("Reprocess: engine override applied: %s", engine_override)
+
+    transcription_result = None
+
+    # Run the configured transcription engine.
+    with pipeline_metric_timer(
+        stage="final_asr_invocation",
+        recording_id=recording_id,
+        payload={
+            "engine": merged_config.get("transcription_backend"),
+            "engine_override": bool(engine_override),
+            "input_path": processed_audio_path,
+        },
+        log=logger,
+    ) as metric:
+        asr_source_kind = "reprocess" if engine_override else "finalize"
+        span_end_ms = int(round(float(recording.duration_seconds or 0.0) * 1000.0))
+        if config_manager.get("enable_asr_window_result_ledger", True):
+            start_recording_asr_window_result(
+                session,
+                recording_id=recording.id,
+                source_kind=asr_source_kind,
+                span_start_ms=0,
+                span_end_ms=span_end_ms,
+                config=merged_config,
+                config_hash=_final_asr_config_hash(merged_config),
+            )
+        try:
+            transcription_result = transcribe_audio(
+                processed_audio_path, config=merged_config
+            )
+        except Exception as exc:
+            if config_manager.get("enable_asr_window_result_ledger", True):
+                fail_recording_asr_window_result(
+                    session,
+                    recording_id=recording.id,
+                    source_kind=asr_source_kind,
+                    span_start_ms=0,
+                    span_end_ms=span_end_ms,
+                    config=merged_config,
+                    config_hash=_final_asr_config_hash(merged_config),
+                    error_summary=str(exc).strip()[:500]
+                    or "Final ASR invocation failed.",
+                    error_payload={"error_type": exc.__class__.__name__},
+                )
+            raise
+        if config_manager.get("enable_asr_window_result_ledger", True):
+            if transcription_result is None:
+                fail_recording_asr_window_result(
+                    session,
+                    recording_id=recording.id,
+                    source_kind=asr_source_kind,
+                    span_start_ms=0,
+                    span_end_ms=span_end_ms,
+                    config=merged_config,
+                    config_hash=_final_asr_config_hash(merged_config),
+                    error_summary="Final ASR returned no result.",
+                    error_payload={"error_type": "empty_result"},
+                )
+            else:
+                complete_recording_asr_window_result(
+                    session,
+                    recording_id=recording.id,
+                    source_kind=asr_source_kind,
+                    span_start_ms=0,
+                    span_end_ms=span_end_ms,
+                    config=merged_config,
+                    config_hash=_final_asr_config_hash(merged_config),
+                    result_payload={
+                        "segment_count": len(
+                            (transcription_result or {}).get("segments", [])
+                        ),
+                        "text_chars": len(
+                            (transcription_result or {}).get("text") or ""
+                        ),
+                        "engine_override": bool(engine_override),
+                    },
+                )
+        metric["payload"]["segment_count"] = len(
+            (transcription_result or {}).get("segments", [])
+        )
+
+    return transcription_result
+
+
+def _run_final_diarization_stage(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+    processed_audio_path: str,
+):
+    """Run pyannote diarization and the best-effort phantom-speaker filter.
+
+    Returns ``None`` (single-speaker fallback) when diarization is disabled or
+    produced no result. The phantom filter is wrapped so a failure there never
+    crashes finalize -- the unfiltered diarization is used instead.
+    """
+    from backend.processing.diarize import diarize_audio
+
+    session = ctx.session
+    merged_config = ctx.merged_config
+    recording_id = ctx.recording_id
+
+    enable_diarization = merged_config.get("enable_diarization", True)
+    diarization_result = None
+
+    if enable_diarization:
+        ctx.task.update_state(
+            state="PROCESSING", meta={"progress": 70, "stage": "Diarization"}
+        )
+        recording.processing_step = f"Determining who said what...{ctx.device_suffix}"
+        recording.processing_progress = 70
+        session.add(recording)
+        session.commit()
+
+        # Run Pyannote
+        with pipeline_metric_timer(
+            stage="final_diarization_invocation",
+            recording_id=recording_id,
+            payload={
+                "input_path": processed_audio_path,
+                "enabled": True,
+            },
+            log=logger,
+        ) as metric:
+            diarization_result = diarize_audio(
+                processed_audio_path, config=merged_config
+            )
+            metric["payload"]["result_available"] = diarization_result is not None
+
+        if diarization_result is None:
+            msg = "Diarization failed (check HF token), falling back to single speaker."
+            logger.warning(msg)
+            recording.processing_step = msg
+            session.add(recording)
+            session.commit()
+        else:
+            # Post-diarization phantom speaker filter
+            from backend.processing.phantom_filter import filter_phantom_speakers
+
+            try:
+                diarization_result = filter_phantom_speakers(
+                    diarization_result, processed_audio_path, config=merged_config
+                )
+            except Exception as e:  # noqa: BLE001 -- boundary: phantom filter is best-effort
+                logger.warning(
+                    f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
+                )
+    else:
+        logger.info("Diarization disabled, skipping speaker separation.")
+
+    return diarization_result
+
+
+def _combine_and_consolidate_segments(
+    transcription_result: dict | None,
+    diarization_result,
+    *,
+    enable_diarization: bool,
+    recording_id: int,
+) -> list[dict]:
+    """Merge ASR + diarization into consolidated final segments.
+
+    When no combined result is available (combination skipped or failed) every
+    ASR segment is emitted pinned to the ``UNKNOWN`` speaker, preserving any
+    ``id``/``words`` payload. This is the load-bearing fallback that keeps a
+    transcript even without usable diarization.
+    """
+    from backend.utils.transcript_utils import (
+        combine_transcription_diarization,
+        consolidate_diarized_transcript,
+    )
+
+    # Combine Transcription and Diarization
+    combined_segments = []
+    if transcription_result:
+        # Only attempt combination if we have both results
+        if diarization_result:
+            combined_segments = combine_transcription_diarization(
+                transcription_result, diarization_result
+            )
+        else:
+            logger.info("Diarization result missing or disabled. Skipping combination.")
+
+    logger.info(
+        f"Combined segments count: {len(combined_segments) if combined_segments else 0}"
+    )
+
+    if not combined_segments:
+        # Fallback if combination fails or was skipped
+        if enable_diarization and diarization_result:
+            logger.warning(
+                "Combination failed despite having diarization result. Using raw transcription segments with UNKNOWN speaker."
+            )
+        else:
+            logger.info(
+                "Using raw transcription segments (Diarization disabled or failed)."
+            )
+
+        # Check if transcription_result is None before accessing
+        if transcription_result and "segments" in transcription_result:
+            combined_segments = []
+            for seg in transcription_result.get("segments", []):
+                fallback_segment = {
+                    "start": seg["start"],
+                    "end": seg["end"],
+                    "speaker": "UNKNOWN",
+                    "text": seg["text"].strip(),
+                }
+                if seg.get("id"):
+                    fallback_segment["id"] = seg["id"]
+                if seg.get("words"):
+                    fallback_segment["words"] = seg["words"]
+                combined_segments.append(fallback_segment)
+        else:
+            logger.error(
+                "Transcription result is None or missing segments during fallback."
+            )
+            combined_segments = []
+
+    # Consolidate segments
+    final_segments = consolidate_diarized_transcript(combined_segments)
+    record_pipeline_metric(
+        stage="final_segments_built",
+        recording_id=recording_id,
+        payload={"segment_count": len(final_segments)},
+        log=logger,
+    )
+    logger.info("Final segments after consolidation: %s", len(final_segments))
+    return final_segments
+
+
+def _persist_final_transcript(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+    final_segments: list[dict],
+    transcription_result: dict | None,
+) -> Transcript:
+    """Create or update the transcript row with the consolidated segments.
+
+    Handles a ``None`` transcription result by persisting empty text, and resets
+    a stale ``notes_status == "error"`` back to ``pending`` so notes regenerate.
+    """
+    session = ctx.session
+
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording.id)
+    ).first()
+
+    # Create or Update Transcript Record
+    # Handle case where transcription_result is None (e.g. due to error)
+    full_text = transcription_result.get("text", "") if transcription_result else ""
+
+    if transcript:
+        transcript.text = full_text
+        transcript.segments = final_segments
+        transcript.transcript_status = "completed"
+        transcript.error_message = None
+        if transcript.notes_status == "error":
+            transcript.notes_status = "pending"
+        session.add(transcript)
+    else:
+        transcript = Transcript(
+            recording_id=recording.id,
+            text=full_text,
+            segments=final_segments,
+            transcript_status="completed",
+        )
+        session.add(transcript)
+
+    session.commit()
+    return transcript
+
+
+def _assign_and_identify_speakers(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+    final_segments: list[dict],
+    diarization_result,
+) -> None:
+    """Resolve diarization labels to speakers, persisting RecordingSpeaker rows.
+
+    Preserves two load-bearing invariants:
+
+    * Manual-edit authority -- a speaker carrying a ``local_name`` (or a merge
+      target) is treated as identified and is never re-matched against global
+      voiceprints.
+    * Stable-id alignment -- when a resolved name was already assigned to an
+      earlier label, this label is auto-merged into the first one and the
+      in-memory ``final_segments`` (and any ``overlapping_speakers``) are
+      rewritten to the canonical target label so the transcript stays coherent.
+
+    Heavy embedding imports stay local to this stage.
+    """
+    from backend.processing.embedding import (
+        AUTO_UPDATE_THRESHOLD,
+        find_matching_global_speaker,
+        merge_embeddings,
+    )
+    from backend.processing.embedding_core import extract_embeddings
+
+    session = ctx.session
+    merged_config = ctx.merged_config
+
+    # Save Speakers & Embeddings
+    # Processes speakers in order of appearance to assign "Speaker 1", "Speaker 2", etc.
+    ordered_speakers = _collect_ordered_final_speaker_labels(final_segments)
+
+    logger.info(
+        f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
+    )
+
+    # Extract embeddings for all speakers in the diarization result (if enabled)
+    # Voiceprint extraction can be disabled to speed up processing
+    enable_auto_voiceprints = merged_config.get("enable_auto_voiceprints", True)
+    speaker_embeddings = {}
+
+    # label_map_from_final_to_live is reserved for live-reuse alignment; it stays
+    # empty in the canonical finalize path but its remap is preserved verbatim.
+    label_map_from_final_to_live: dict = {}
+
+    if enable_auto_voiceprints and diarization_result:
+        ctx.task.update_state(
+            state="PROCESSING", meta={"progress": 90, "stage": "Voiceprints"}
+        )
+        recording.processing_step = f"Learning voiceprints...{ctx.device_suffix}"
+        recording.processing_progress = 90
+        session.add(recording)
+        session.commit()
+        logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
+        speaker_embeddings = extract_embeddings(
+            ctx.processed_audio_path,
+            diarization_result,
+            device_str=merged_config.get("processing_device", "cpu"),
+            config=merged_config,
+        )
+        if label_map_from_final_to_live:
+            speaker_embeddings = {
+                label_map_from_final_to_live.get(label, label): embedding
+                for label, embedding in speaker_embeddings.items()
+            }
+    elif not enable_auto_voiceprints:
+        logger.info("Skipping voiceprint extraction (enable_auto_voiceprints=False)")
+
+    # Map local labels (SPEAKER_00) to resolved names (John Doe or Speaker 1)
+    label_map = {}
+    speaker_counter = 1
+
+    # Track which names have been assigned to which speaker ID/Label to detect duplicates
+    # Format: name -> {'id': recording_speaker_id, 'label': diarization_label}
+    resolved_names_map = {}
+
+    for label in ordered_speakers:
+        # Check if speaker already exists for this recording (idempotency)
+        existing_speaker = session.exec(
+            select(RecordingSpeaker)
+            .where(RecordingSpeaker.recording_id == recording.id)
+            .where(RecordingSpeaker.diarization_label == label)
+        ).first()
+
+        embedding = speaker_embeddings.get(label)
+        resolved_name = label  # Default fallback
+        global_speaker_id = None
+        is_identified = False
+
+        # --- LOGIC UPDATE: Check for Manual Names & Merges ---
+        if existing_speaker:
+            # 1. Check if this speaker was merged into another
+            if existing_speaker.merged_into_id:
+                logger.info("Speaker %s is merged. Resolving target...", label)
+                current_spk = existing_speaker
+                visited_ids = {current_spk.id}
+
+                # Follow the merge chain (prevent infinite loops)
+                while current_spk.merged_into_id:
+                    next_spk = session.get(RecordingSpeaker, current_spk.merged_into_id)
+                    if not next_spk:
+                        logger.warning(
+                            f"Merge chain broken for speaker {label} at ID {current_spk.merged_into_id}"
+                        )
+                        break
+                    if next_spk.id in visited_ids:
+                        logger.warning(f"Circular merge detected for speaker {label}")
+                        break
+                    visited_ids.add(next_spk.id)
+                    current_spk = next_spk
+
+                # Use the target speaker's name
+                resolved_name = (
+                    current_spk.name
+                    or current_spk.local_name
+                    or current_spk.diarization_label
+                )
+                logger.info("Resolved %s (Merged) -> %s", label, resolved_name)
+                if current_spk.global_speaker_id:
+                    global_speaker_id = current_spk.global_speaker_id
+                    is_identified = True  # Don't re-identify
+                else:
+                    # It's a local merge, so we trust the local name
+                    is_identified = True
+
+            # 2. Check for manual rename (if not merged)
+            elif existing_speaker.local_name:
+                resolved_name = existing_speaker.local_name
+                logger.info(
+                    f"Preserving manual name for {label}: {existing_speaker.local_name}"
+                )
+                is_identified = True  # Skip inference
+
+                if existing_speaker.global_speaker_id:
+                    global_speaker_id = existing_speaker.global_speaker_id
+
+        # Try to identify speaker using embedding (ONLY if not manually named/merged)
+        if not is_identified and embedding:
+            # Fetch all global speakers with embeddings belonging to this user
+            # Filter out any potential placeholder names from the global list to prevent bad linking
+            all_global_speakers = session.exec(
+                select(GlobalSpeaker)
+                .where(GlobalSpeaker.embedding != None)
+                .where(GlobalSpeaker.user_id == recording.user_id)
+            ).all()
+
+            import re
+
+            placeholder_pattern = re.compile(
+                r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
+            )
+
+            global_speakers = [
+                gs
+                for gs in all_global_speakers
+                if not placeholder_pattern.match(gs.name)
+                and gs.embedding
+                and len(gs.embedding) > 0
+                and not any(x is None for x in gs.embedding)
+            ]
+
+            # Use centralized matching logic with 0.75 threshold and margin of victory
+            best_match, best_score = find_matching_global_speaker(
+                embedding, global_speakers, threshold=0.75, margin=0.05
+            )
+
+            if best_match:
+                logger.info(
+                    f"Identified {label} as {best_match.name} (Score: {best_score:.2f})"
+                )
+                resolved_name = best_match.name
+                global_speaker_id = best_match.id
+                is_identified = True
+
+                # Active Learning: only update the global embedding when the
+                # match confidence is high enough to avoid polluting it with
+                # borderline or false-positive identifications.
+                if (
+                    not best_match.is_voiceprint_locked
+                    and best_score >= AUTO_UPDATE_THRESHOLD
+                ):
+                    try:
+                        new_emb = merge_embeddings(best_match.embedding, embedding)
+                        best_match.embedding = new_emb
+                        session.add(best_match)
+                    except Exception as e:  # noqa: BLE001 -- boundary: embedding update is best-effort
+                        logger.warning(
+                            f"Failed to update embedding for {best_match.name}: {e}"
+                        )
+                elif not best_match.is_voiceprint_locked:
+                    logger.info(
+                        f"Skipping auto-update for {best_match.name} "
+                        f"(score {best_score:.2f} < auto-update threshold {AUTO_UPDATE_THRESHOLD})"
+                    )
+            else:
+                logger.info(
+                    f"No match found for {label} (Best score: {best_score:.2f})."
+                )
+
+        # If not identified as a global speaker, assign a friendly sequential name
+        if not is_identified:
+            resolved_name = f"Speaker {speaker_counter}"
+            speaker_counter += 1
+
+        # Auto-promotion logic removed. Speakers must be manually promoted.
+
+        # Auto-merge duplicate name detection: if this resolved name was already
+        # assigned to a previous speaker in this loop, merge into the existing one.
+        if resolved_name and resolved_name in resolved_names_map:
+            target_info = resolved_names_map[resolved_name]
+            target_label = target_info["label"]
+            target_id = target_info["id"]
+
+            if target_label != label:
+                logger.info(
+                    f"Auto-Merge: '{resolved_name}' already assigned to {target_label}. Merging {label} into {target_label}."
+                )
+
+                if existing_speaker:
+                    existing_speaker.merged_into_id = target_id
+                    existing_speaker.name = resolved_name  # Keep consistent name
+                    existing_speaker.local_name = None
+                    session.add(existing_speaker)
+                    session.flush()  # Ensure it's saved
+                else:
+                    # Create the record but immediately merge it
+                    rec_speaker = RecordingSpeaker(
+                        recording_id=recording.id,
+                        diarization_label=label,
+                        name=resolved_name,
+                        embedding=embedding,
+                        global_speaker_id=global_speaker_id,
+                        merged_into_id=target_id,
+                    )
+                    session.add(rec_speaker)
+                    session.flush()
+
+                # rewrite segments in memory to point to the target label
+                # This ensures the transcript assumes they are the same speaker
+                for seg in final_segments:
+                    if seg["speaker"] == label:
+                        seg["speaker"] = target_label
+
+                    if "overlapping_speakers" in seg:
+                        for idx, ov_spk in enumerate(seg["overlapping_speakers"]):
+                            if ov_spk == label:
+                                seg["overlapping_speakers"][idx] = target_label
+
+                # No addition to resolved_names_map needed; the canonical entry already exists.
+                label_map[label] = resolved_name
+                continue
+
+        label_map[label] = resolved_name
+        logger.info("Mapped %s -> %s", label, resolved_name)
+
+        current_speaker_id = None
+        if existing_speaker:
+            if embedding is not None:
+                existing_speaker.embedding = embedding
+            elif existing_speaker.embedding:
+                logger.info(
+                    "Preserving existing voiceprint for %s because final diarization produced no embedding.",
+                    label,
+                )
+            existing_speaker.name = resolved_name
+            if (
+                global_speaker_id is not None
+                or existing_speaker.global_speaker_id is None
+            ):
+                existing_speaker.global_speaker_id = global_speaker_id
+            session.add(existing_speaker)
+            session.flush()
+            current_speaker_id = existing_speaker.id
+        else:
+            rec_speaker = RecordingSpeaker(
+                recording_id=recording.id,
+                diarization_label=label,
+                name=resolved_name,
+                embedding=embedding,
+                global_speaker_id=global_speaker_id,
+            )
+            session.add(rec_speaker)
+            session.flush()
+            current_speaker_id = rec_speaker.id
+
+        # Register this name as taken
+        if resolved_name and current_speaker_id:
+            resolved_names_map[resolved_name] = {
+                "id": current_speaker_id,
+                "label": label,
+            }
+
+    # --- Embedding-based speaker merge pass ---
+    # Catches over-clustered speakers that the name-based auto-merge
+    # above cannot detect (e.g. two clusters both named "Speaker N"
+    # before global identification, or same global speaker split into
+    # two RecordingSpeaker rows).
+    try:
+        from backend.processing.speaker_merge import merge_duplicate_speakers
+
+        merge_pairs = merge_duplicate_speakers(
+            session,
+            recording_id=recording.id,
+            segments=final_segments,
+        )
+        if merge_pairs:
+            logger.info(
+                "[SpeakerMerge] Merged %d duplicate speaker(s) in recording %d",
+                len(merge_pairs),
+                ctx.recording_id,
+            )
+    except Exception as e:  # noqa: BLE001 -- boundary: merge pass is best-effort
+        logger.warning("[SpeakerMerge] Merge pass failed, continuing: %s", e)
+
+
+def _finalize_transcript_and_notes(
+    ctx: _PipelineRunContext,
+    recording: Recording,
+    transcript: Transcript,
+    final_segments: list[dict],
+    llm_config: ResolvedLLMConfig,
+    transcription_result: dict | None,
+    reused_live_transcript_segments: Sequence[dict],
+) -> None:
+    """Persist final segments, run canonical writes + segmentation refinement,
+    and trigger the automatic meeting-intelligence (notes/title) stage.
+
+    Canonical writes and the frame-level segmentation refinement safety net are
+    gated on ``enable_canonical_transcript_writes``; the refinement pass is
+    wrapped best-effort so a failure never aborts finalize.
+    """
+    session = ctx.session
+    device_suffix = ctx.device_suffix
+    merged_config = ctx.merged_config
+    recording_id = ctx.recording_id
+
+    # Keep the diarization_label in the segments to maintain the link to RecordingSpeaker
+    # The frontend will resolve the display name using the speaker map
+    updated_segments = []
+    for seg in final_segments:
+        updated_segments.append(seg)
+
+    ctx.task.update_state(
+        state="PROCESSING", meta={"progress": 92, "stage": "Finalizing"}
+    )
+    recording.processing_step = f"Finalizing transcript structure...{device_suffix}"
+    recording.processing_progress = 92
+    session.add(recording)
+    session.commit()
+
+    # Log final speaker distribution in updated segments
+    final_speaker_counts = {}
+    for seg in updated_segments:
+        spk = seg["speaker"]
+        final_speaker_counts[spk] = final_speaker_counts.get(spk, 0) + 1
+        for ov_spk in seg.get("overlapping_speakers", []):
+            final_speaker_counts[ov_spk] = final_speaker_counts.get(ov_spk, 0) + 1
+    logger.info("Final transcript speaker distribution: %s", final_speaker_counts)
+
+    transcript.segments = updated_segments
+    session.add(transcript)
+    if config_manager.get("enable_canonical_transcript_writes", True):
+        finalize_utterances_from_segments(
+            session,
+            recording_id=recording.id,
+            segments=[dict(segment) for segment in updated_segments],
+            reused_live_asr=bool(reused_live_transcript_segments),
+            trigger_source="worker",
+        )
+        updated_segments = refresh_transcript_projection_from_canonical(
+            session,
+            recording.id,
+        )
+
+        # Phase F4: frame-level segmentation safety net for utterances
+        # that span a speaker change but slipped through rolling
+        # diarization's coarser turn boundaries.
+        try:
+            ctx.task.update_state(
+                state="PROCESSING", meta={"progress": 94, "stage": "Refining"}
+            )
+            recording.processing_step = f"Refining speaker boundaries...{device_suffix}"
+            recording.processing_progress = 94
+            session.add(recording)
+            session.commit()
+            with pipeline_metric_timer(
+                stage="segmentation_refinement",
+                recording_id=recording_id,
+                payload={"input_path": ctx.processed_audio_path},
+                log=logger,
+            ) as seg_metric:
+                seg_summary = refine_recording_utterances_via_segmentation(
+                    session,
+                    recording_id=recording.id,
+                    audio_path=ctx.processed_audio_path,
+                    device_str=str(merged_config.get("processing_device", "auto")),
+                    hf_token=config_manager.get("hf_token"),
+                    source="finalize_segmentation_refinement",
+                )
+                seg_metric["payload"].update(seg_summary)
+            if (seg_summary or {}).get("refined_utterance_count", 0) > 0:
+                updated_segments = refresh_transcript_projection_from_canonical(
+                    session,
+                    recording.id,
+                )
+        except Exception as seg_exc:  # noqa: BLE001 -- boundary: refinement pass is best-effort
+            logger.warning(
+                "Segmentation refinement pass failed for recording %s: %s",
+                recording.id,
+                seg_exc,
+                exc_info=True,
+            )
+
+    recording_speakers = session.exec(
+        select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
+    ).all()
+    unresolved_speakers = get_speakers_eligible_for_llm_renaming(recording_speakers)
+    speaker_map = build_recording_speaker_map(recording_speakers)
+    transcript_text = _build_automatic_meeting_intelligence_transcript(
+        updated_segments,
+        speaker_map,
+        unresolved_speakers,
+    )
+
+    _run_automatic_meeting_intelligence_stage(
+        session=session,
+        task=ctx.task,
+        recording=recording,
+        transcript=transcript,
+        speakers=recording_speakers,
+        transcript_text=transcript_text,
+        unresolved_speakers=unresolved_speakers,
+        llm_config=llm_config,
+        prefer_short_titles=merged_config.get("prefer_short_titles", True),
+        device_suffix=device_suffix,
+        detected_transcription_language=(transcription_result or {}).get("language"),
+    )
+
+
+def _release_pipeline_vram() -> None:
+    """Best-effort release of cached ML models / VRAM after the task.
+
+    Heavy ML imports stay inside this helper so importing the worker module
+    never loads torch/whisper/pyannote. Wrapped so cleanup never crashes the
+    task's finally block.
+    """
+    import torch
+
+    try:
+        logger.info("Releasing VRAM (keep_models_loaded=False)...")
+
+        # 1. Whisper
+        from backend.processing.transcribe import release_model_cache
+
+        release_model_cache()
+
+        # 2. Pyannote
+        from backend.processing.diarize import release_pipeline_cache
+
+        release_pipeline_cache()
+
+        # 3. Speaker Embeddings
+        from backend.processing.embedding_core import release_embedding_model_cache
+
+        release_embedding_model_cache()
+
+        # 4. Segmentation Refinement
+        from backend.processing.segmentation_refinement import (
+            release_segmentation_model_cache,
+        )
+
+        release_segmentation_model_cache()
+
+        # 5. Text Embeddings
+        from backend.processing.text_embedding import release_embedding_model
+
+        release_embedding_model()
+
+        # 6. Garbage Collection
+        import gc
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        logger.info("VRAM released successfully.")
+    except Exception as e:  # noqa: BLE001 -- boundary: VRAM release is best-effort
+        logger.error("Error releasing VRAM: %s", e)
+
+
 @celery_app.task(
     name="backend.worker.tasks.process_recording_task",
     base=DatabaseTask,
@@ -253,45 +1294,18 @@ def process_recording_task(
 ):
     """
     Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
-    """
-    from backend.processing.audio_preprocessing import (
-        cleanup_temp_file,
-        convert_wav_to_mp3,
-        preprocess_audio_for_vad,
-        repair_audio_file,
-        validate_audio_file,
-    )
-    from backend.processing.diarize import diarize_audio
-    from backend.processing.embedding import (
-        AUTO_UPDATE_THRESHOLD,
-        cosine_similarity,
-        find_matching_global_speaker,
-        merge_embeddings,
-    )
-    from backend.processing.embedding_core import extract_embeddings
-    from backend.processing.transcribe import transcribe_audio
-    from backend.processing.vad import mute_non_speech_segments
-    from backend.utils.audio import (
-        convert_to_mp3,
-        convert_to_proxy_mp3,
-        get_audio_duration,
-    )
-    from backend.utils.live_transcript import (
-        apply_live_authority_to_segments,
-        build_transcription_result_from_segments,
-        map_final_speakers_to_live_labels,
-        merge_reusable_segments,
-    )
-    from backend.utils.transcript_utils import (
-        combine_transcription_diarization,
-        consolidate_diarized_transcript,
-    )
 
+    The body is a slim orchestrator: it sets up the run context, then drives the
+    explicit stages (resolve audio -> VAD -> ASR -> diarization -> combine/persist
+    -> speaker assignment -> finalize/notes). The surrounding try/except/finally
+    owns Celery retry/error semantics, temp-file cleanup, and VRAM release, all
+    unchanged from the original inline implementation.
+    """
     config_manager.reload()
 
     start_time = time.time()
     session = self.session
-    temp_files = []
+    temp_files: list[str] = []
     catch_up_run: ProcessingRun | None = None
     catch_up_processed_window_ids: set[int] = set()
     catch_up_failed_window_ids: set[int] = set()
@@ -345,6 +1359,19 @@ def process_recording_task(
     # "Gentle" warning suffix
     device_suffix = " (GPU)" if device_type == "cuda" else " (CPU, may take a while)"
 
+    ctx = _PipelineRunContext(
+        task=self,
+        session=session,
+        recording_id=recording_id,
+        device_suffix=device_suffix,
+        temp_files=temp_files,
+        merged_config=merged_config,
+    )
+
+    from backend.processing.audio_preprocessing import cleanup_temp_file
+
+    reused_live_transcript_segments: list = []
+
     try:
         recording.status = RecordingStatus.PROCESSING
         recording.processing_progress = 20
@@ -358,392 +1385,48 @@ def process_recording_task(
         session.commit()
         session.refresh(recording)
 
-        audio_path = recording.audio_path
-        if not audio_path or not os.path.exists(audio_path):
-            if recording.proxy_path and os.path.exists(recording.proxy_path):
-                logger.info(
-                    "Source audio missing, but proxy exists. Restoring from proxy..."
-                )
-                from backend.utils.audio import convert_to_wav
+        # --- Stage: resolve/restore/validate source audio ---
+        audio_resolution = _resolve_input_audio(ctx, recording)
+        if audio_resolution.finished:
+            return
+        audio_path = audio_resolution.audio_path
 
-                restore_audio_path = audio_path
-                if not restore_audio_path:
-                    base_path, _ = os.path.splitext(recording.proxy_path)
-                    restore_audio_path = f"{base_path}.restored.wav"
-                    recording.audio_path = restore_audio_path
-                elif not restore_audio_path.lower().endswith(".wav"):
-                    base_path, _ = os.path.splitext(restore_audio_path)
-                    restore_audio_path = f"{base_path}.restored.wav"
-                    recording.audio_path = restore_audio_path
+        # --- Stage: VAD / preprocess ---
+        vad_result = _run_vad_stage(ctx, recording, audio_path)
+        if vad_result.finished:
+            return
+        processed_audio_path = vad_result.processed_audio_path
+        # Cache for the speaker-assignment / refinement stages.
+        ctx.processed_audio_path = processed_audio_path
 
-                recording.processing_step = (
-                    f"Restoring audio from proxy...{device_suffix}"
-                )
-                session.add(recording)
-                session.commit()
-
-                if convert_to_wav(recording.proxy_path, restore_audio_path):
-                    logger.info("Successfully restored source audio from proxy.")
-                    audio_path = restore_audio_path
-                else:
-                    raise FileNotFoundError(
-                        "Source audio missing and failed to restore from proxy."
-                    )
-            else:
-                raise FileNotFoundError(
-                    f"Audio file not found: {audio_path} and no proxy available."
-                )
-
-        try:
-            validate_audio_file(audio_path)
-        except AudioFormatError as e:
-            logger.warning("Invalid audio file detected: %s. Attempting repair...", e)
-            repaired_path = repair_audio_file(audio_path)
-
-            if repaired_path:
-                logger.info("Using repaired audio file: %s", repaired_path)
-                audio_path = repaired_path
-                temp_files.append(repaired_path)  # Ensure cleanup
-            else:
-                logger.error("Audio repair failed for %s", audio_path)
-                recording.status = RecordingStatus.ERROR
-                recording.processing_step = f"Invalid audio (Repair failed): {str(e)}"
-                session.add(recording)
-                session.commit()
-                return
-
-        # Fix missing duration if needed
-        if not recording.duration_seconds or recording.duration_seconds == 0:
-            try:
-                duration = get_audio_duration(audio_path)
-                recording.duration_seconds = duration
-                session.add(recording)
-                session.commit()
-                session.refresh(recording)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    f"Could not determine duration for recording {recording_id}: {e}"
-                )
-
-        # --- VAD Stage ---
-        enable_vad = merged_config.get("enable_vad", True)
-
-        if enable_vad:
-            self.update_state(state="PROCESSING", meta={"progress": 30, "stage": "VAD"})
-            recording.processing_step = f"Filtering silence and noise...{device_suffix}"
-            recording.processing_progress = 30
-            session.add(recording)
-            session.commit()
-
-            # Preprocess for VAD (resample to 16k mono)
-            vad_input_path = preprocess_audio_for_vad(audio_path)
-            if not vad_input_path:
-                raise RuntimeError("VAD preprocessing failed")
-            temp_files.append(vad_input_path)
-
-            # Run VAD (mute silence)
-            vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
-            vad_success, speech_duration = mute_non_speech_segments(
-                vad_input_path, vad_output_path
-            )
-
-            if not vad_success:
-                raise RuntimeError("VAD execution failed")
-            temp_files.append(vad_output_path)
-
-            # Check for silence
-            if speech_duration < 1.0:
-                logger.warning(
-                    f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)"
-                )
-                recording.status = RecordingStatus.PROCESSED
-                recording.client_status = ClientStatus.IDLE
-                recording.processing_step = "Completed (No speech detected)"
-                recording.processing_completed_at = utc_now()
-
-                # Create empty transcript
-                transcript = session.exec(
-                    select(Transcript).where(Transcript.recording_id == recording.id)
-                ).first()
-                if not transcript:
-                    transcript = Transcript(recording_id=recording.id)
-
-                transcript.text = ""  # Empty string to prevent hallucinations
-                transcript.segments = []
-                transcript.transcript_status = "completed"
-
-                mark_recording_audio_chunks_ready_for_cleanup(
-                    session,
-                    recording_id=recording.id,
-                    upload_status="finalized",
-                )
-                auto_link_recording(session, recording)
-                session.add(transcript)
-                session.add(recording)
-                session.commit()
-                return
-
-            # Use WAV for processing to avoid sample count mismatches in Pyannote
-            processed_audio_path = vad_output_path
-        else:
-            logger.info("VAD disabled, skipping silence filtering.")
-            # Still need to preprocess to ensure 16k mono wav for Whisper/Pyannote
-            vad_input_path = preprocess_audio_for_vad(audio_path)
-            if not vad_input_path:
-                raise RuntimeError("Audio preprocessing failed")
-            temp_files.append(vad_input_path)
-            processed_audio_path = vad_input_path
-            pass
-
-        logger.info(
-            f"Using processed audio for transcription/diarization: {processed_audio_path}"
+        # --- Stage: transcription (ASR) ---
+        transcription_result = _run_final_asr_stage(
+            ctx, recording, processed_audio_path, engine_override
         )
-        if not os.path.exists(processed_audio_path):
-            raise FileNotFoundError(
-                f"Processed audio file missing: {processed_audio_path}"
-            )
 
-        # --- Transcription Stage ---
-        self.update_state(
-            state="PROCESSING", meta={"progress": 50, "stage": "Transcription"}
+        # --- Stage: diarization ---
+        diarization_result = _run_final_diarization_stage(
+            ctx, recording, processed_audio_path
         )
-        recording.processing_step = f"Transcribing audio...{device_suffix}"
-        recording.processing_progress = 50
-        session.add(recording)
-        session.commit()
-
-        # Apply per-reprocess transcription-engine override, if provided.
-        if engine_override:
-            merged_config.update(engine_override)
-            logger.info("Reprocess: engine override applied: %s", engine_override)
-
-        transcription_result = None
-        reused_live_transcript_segments = []
-
-        if not transcription_result:
-            # Run the configured transcription engine.
-            with pipeline_metric_timer(
-                stage="final_asr_invocation",
-                recording_id=recording_id,
-                payload={
-                    "engine": merged_config.get("transcription_backend"),
-                    "engine_override": bool(engine_override),
-                    "input_path": processed_audio_path,
-                },
-                log=logger,
-            ) as metric:
-                asr_source_kind = "reprocess" if engine_override else "finalize"
-                span_end_ms = int(
-                    round(float(recording.duration_seconds or 0.0) * 1000.0)
-                )
-                if config_manager.get("enable_asr_window_result_ledger", True):
-                    start_recording_asr_window_result(
-                        session,
-                        recording_id=recording.id,
-                        source_kind=asr_source_kind,
-                        span_start_ms=0,
-                        span_end_ms=span_end_ms,
-                        config=merged_config,
-                        config_hash=_final_asr_config_hash(merged_config),
-                    )
-                try:
-                    transcription_result = transcribe_audio(
-                        processed_audio_path, config=merged_config
-                    )
-                except Exception as exc:
-                    if config_manager.get("enable_asr_window_result_ledger", True):
-                        fail_recording_asr_window_result(
-                            session,
-                            recording_id=recording.id,
-                            source_kind=asr_source_kind,
-                            span_start_ms=0,
-                            span_end_ms=span_end_ms,
-                            config=merged_config,
-                            config_hash=_final_asr_config_hash(merged_config),
-                            error_summary=str(exc).strip()[:500]
-                            or "Final ASR invocation failed.",
-                            error_payload={"error_type": exc.__class__.__name__},
-                        )
-                    raise
-                if config_manager.get("enable_asr_window_result_ledger", True):
-                    if transcription_result is None:
-                        fail_recording_asr_window_result(
-                            session,
-                            recording_id=recording.id,
-                            source_kind=asr_source_kind,
-                            span_start_ms=0,
-                            span_end_ms=span_end_ms,
-                            config=merged_config,
-                            config_hash=_final_asr_config_hash(merged_config),
-                            error_summary="Final ASR returned no result.",
-                            error_payload={"error_type": "empty_result"},
-                        )
-                    else:
-                        complete_recording_asr_window_result(
-                            session,
-                            recording_id=recording.id,
-                            source_kind=asr_source_kind,
-                            span_start_ms=0,
-                            span_end_ms=span_end_ms,
-                            config=merged_config,
-                            config_hash=_final_asr_config_hash(merged_config),
-                            result_payload={
-                                "segment_count": len(
-                                    (transcription_result or {}).get("segments", [])
-                                ),
-                                "text_chars": len(
-                                    (transcription_result or {}).get("text") or ""
-                                ),
-                                "engine_override": bool(engine_override),
-                            },
-                        )
-                metric["payload"]["segment_count"] = len(
-                    (transcription_result or {}).get("segments", [])
-                )
-
-        # --- Diarization Stage ---
         enable_diarization = merged_config.get("enable_diarization", True)
-        diarization_result = None
 
-        if enable_diarization:
-            self.update_state(
-                state="PROCESSING", meta={"progress": 70, "stage": "Diarization"}
-            )
-            recording.processing_step = f"Determining who said what...{device_suffix}"
-            recording.processing_progress = 70
-            session.add(recording)
-            session.commit()
-
-            # Run Pyannote
-            with pipeline_metric_timer(
-                stage="final_diarization_invocation",
-                recording_id=recording_id,
-                payload={
-                    "input_path": processed_audio_path,
-                    "enabled": True,
-                },
-                log=logger,
-            ) as metric:
-                diarization_result = diarize_audio(
-                    processed_audio_path, config=merged_config
-                )
-                metric["payload"]["result_available"] = diarization_result is not None
-
-            if diarization_result is None:
-                msg = "Diarization failed (check HF token), falling back to single speaker."
-                logger.warning(msg)
-                recording.processing_step = msg
-                session.add(recording)
-                session.commit()
-            else:
-                # Post-diarization phantom speaker filter
-                from backend.processing.phantom_filter import filter_phantom_speakers
-
-                try:
-                    diarization_result = filter_phantom_speakers(
-                        diarization_result, processed_audio_path, config=merged_config
-                    )
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(
-                        f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
-                    )
-        else:
-            logger.info("Diarization disabled, skipping speaker separation.")
-
-        # --- Merge & Save ---
+        # --- Stage: merge & save ---
         self.update_state(state="PROCESSING", meta={"progress": 85, "stage": "Saving"})
         recording.processing_step = f"Saving transcript...{device_suffix}"
         recording.processing_progress = 85
         session.add(recording)
         session.commit()
 
-        # Combine Transcription and Diarization
-        combined_segments = []
-        if transcription_result:
-            # Only attempt combination if we have both results
-            if diarization_result:
-                combined_segments = combine_transcription_diarization(
-                    transcription_result, diarization_result
-                )
-            else:
-                logger.info(
-                    "Diarization result missing or disabled. Skipping combination."
-                )
-
-        logger.info(
-            f"Combined segments count: {len(combined_segments) if combined_segments else 0}"
-        )
-
-        if not combined_segments:
-            # Fallback if combination fails or was skipped
-            if enable_diarization and diarization_result:
-                logger.warning(
-                    "Combination failed despite having diarization result. Using raw transcription segments with UNKNOWN speaker."
-                )
-            else:
-                logger.info(
-                    "Using raw transcription segments (Diarization disabled or failed)."
-                )
-
-            # Check if transcription_result is None before accessing
-            if transcription_result and "segments" in transcription_result:
-                combined_segments = []
-                for seg in transcription_result.get("segments", []):
-                    fallback_segment = {
-                        "start": seg["start"],
-                        "end": seg["end"],
-                        "speaker": "UNKNOWN",
-                        "text": seg["text"].strip(),
-                    }
-                    if seg.get("id"):
-                        fallback_segment["id"] = seg["id"]
-                    if seg.get("words"):
-                        fallback_segment["words"] = seg["words"]
-                    combined_segments.append(fallback_segment)
-            else:
-                logger.error(
-                    "Transcription result is None or missing segments during fallback."
-                )
-                combined_segments = []
-
-        label_map_from_final_to_live = {}
-
-        # Consolidate segments
-        final_segments = consolidate_diarized_transcript(combined_segments)
-        record_pipeline_metric(
-            stage="final_segments_built",
+        final_segments = _combine_and_consolidate_segments(
+            transcription_result,
+            diarization_result,
+            enable_diarization=enable_diarization,
             recording_id=recording_id,
-            payload={"segment_count": len(final_segments)},
-            log=logger,
         )
-        logger.info("Final segments after consolidation: %s", len(final_segments))
 
-        transcript = session.exec(
-            select(Transcript).where(Transcript.recording_id == recording.id)
-        ).first()
-
-        # Create or Update Transcript Record
-        # Handle case where transcription_result is None (e.g. due to error)
-        full_text = transcription_result.get("text", "") if transcription_result else ""
-
-        if transcript:
-            transcript.text = full_text
-            transcript.segments = final_segments
-            transcript.transcript_status = "completed"
-            transcript.error_message = None
-            if transcript.notes_status == "error":
-                transcript.notes_status = "pending"
-            session.add(transcript)
-        else:
-            transcript = Transcript(
-                recording_id=recording.id,
-                text=full_text,
-                segments=final_segments,
-                transcript_status="completed",
-            )
-            session.add(transcript)
-
-        session.commit()
+        transcript = _persist_final_transcript(
+            ctx, recording, final_segments, transcription_result
+        )
 
         if (
             catch_up_run is not None
@@ -762,400 +1445,20 @@ def process_recording_task(
             session.commit()
         # update_recording_status(session, recording.id) # Removed to prevent premature status update (flash)
 
-        # Save Speakers & Embeddings
-        # Processes speakers in order of appearance to assign "Speaker 1", "Speaker 2", etc.
-        ordered_speakers = _collect_ordered_final_speaker_labels(final_segments)
-
-        logger.info(
-            f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
+        # --- Stage: speaker assignment / identification ---
+        _assign_and_identify_speakers(
+            ctx, recording, final_segments, diarization_result
         )
 
-        # Extract embeddings for all speakers in the diarization result (if enabled)
-        # Voiceprint extraction can be disabled to speed up processing
-        enable_auto_voiceprints = merged_config.get("enable_auto_voiceprints", True)
-        speaker_embeddings = {}
-
-        if enable_auto_voiceprints and diarization_result:
-            self.update_state(
-                state="PROCESSING", meta={"progress": 90, "stage": "Voiceprints"}
-            )
-            recording.processing_step = f"Learning voiceprints...{device_suffix}"
-            recording.processing_progress = 90
-            session.add(recording)
-            session.commit()
-            logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
-            speaker_embeddings = extract_embeddings(
-                processed_audio_path,
-                diarization_result,
-                device_str=merged_config.get("processing_device", "cpu"),
-                config=merged_config,
-            )
-            if label_map_from_final_to_live:
-                speaker_embeddings = {
-                    label_map_from_final_to_live.get(label, label): embedding
-                    for label, embedding in speaker_embeddings.items()
-                }
-        elif not enable_auto_voiceprints:
-            logger.info(
-                "Skipping voiceprint extraction (enable_auto_voiceprints=False)"
-            )
-
-        # Map local labels (SPEAKER_00) to resolved names (John Doe or Speaker 1)
-        label_map = {}
-        speaker_counter = 1
-
-        # Track which names have been assigned to which speaker ID/Label to detect duplicates
-        # Format: name -> {'id': recording_speaker_id, 'label': diarization_label}
-        resolved_names_map = {}
-
-        for label in ordered_speakers:
-            # Check if speaker already exists for this recording (idempotency)
-            existing_speaker = session.exec(
-                select(RecordingSpeaker)
-                .where(RecordingSpeaker.recording_id == recording.id)
-                .where(RecordingSpeaker.diarization_label == label)
-            ).first()
-
-            embedding = speaker_embeddings.get(label)
-            resolved_name = label  # Default fallback
-            global_speaker_id = None
-            is_identified = False
-
-            # --- LOGIC UPDATE: Check for Manual Names & Merges ---
-            if existing_speaker:
-                # 1. Check if this speaker was merged into another
-                if existing_speaker.merged_into_id:
-                    logger.info("Speaker %s is merged. Resolving target...", label)
-                    current_spk = existing_speaker
-                    visited_ids = {current_spk.id}
-
-                    # Follow the merge chain (prevent infinite loops)
-                    while current_spk.merged_into_id:
-                        next_spk = session.get(
-                            RecordingSpeaker, current_spk.merged_into_id
-                        )
-                        if not next_spk:
-                            logger.warning(
-                                f"Merge chain broken for speaker {label} at ID {current_spk.merged_into_id}"
-                            )
-                            break
-                        if next_spk.id in visited_ids:
-                            logger.warning(
-                                f"Circular merge detected for speaker {label}"
-                            )
-                            break
-                        visited_ids.add(next_spk.id)
-                        current_spk = next_spk
-
-                    # Use the target speaker's name
-                    resolved_name = (
-                        current_spk.name
-                        or current_spk.local_name
-                        or current_spk.diarization_label
-                    )
-                    logger.info("Resolved %s (Merged) -> %s", label, resolved_name)
-                    if current_spk.global_speaker_id:
-                        global_speaker_id = current_spk.global_speaker_id
-                        is_identified = True  # Don't re-identify
-                    else:
-                        # It's a local merge, so we trust the local name
-                        is_identified = True
-
-                # 2. Check for manual rename (if not merged)
-                elif existing_speaker.local_name:
-                    resolved_name = existing_speaker.local_name
-                    logger.info(
-                        f"Preserving manual name for {label}: {existing_speaker.local_name}"
-                    )
-                    is_identified = True  # Skip inference
-
-                    if existing_speaker.global_speaker_id:
-                        global_speaker_id = existing_speaker.global_speaker_id
-
-            # Try to identify speaker using embedding (ONLY if not manually named/merged)
-            if not is_identified and embedding:
-                # Fetch all global speakers with embeddings belonging to this user
-                # Filter out any potential placeholder names from the global list to prevent bad linking
-                all_global_speakers = session.exec(
-                    select(GlobalSpeaker)
-                    .where(GlobalSpeaker.embedding != None)
-                    .where(GlobalSpeaker.user_id == recording.user_id)
-                ).all()
-
-                import re
-
-                placeholder_pattern = re.compile(
-                    r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
-                )
-
-                global_speakers = [
-                    gs
-                    for gs in all_global_speakers
-                    if not placeholder_pattern.match(gs.name)
-                    and gs.embedding
-                    and len(gs.embedding) > 0
-                    and not any(x is None for x in gs.embedding)
-                ]
-
-                # Use centralized matching logic with 0.75 threshold and margin of victory
-                best_match, best_score = find_matching_global_speaker(
-                    embedding, global_speakers, threshold=0.75, margin=0.05
-                )
-
-                if best_match:
-                    logger.info(
-                        f"Identified {label} as {best_match.name} (Score: {best_score:.2f})"
-                    )
-                    resolved_name = best_match.name
-                    global_speaker_id = best_match.id
-                    is_identified = True
-
-                    # Active Learning: only update the global embedding when the
-                    # match confidence is high enough to avoid polluting it with
-                    # borderline or false-positive identifications.
-                    if (
-                        not best_match.is_voiceprint_locked
-                        and best_score >= AUTO_UPDATE_THRESHOLD
-                    ):
-                        try:
-                            new_emb = merge_embeddings(best_match.embedding, embedding)
-                            best_match.embedding = new_emb
-                            session.add(best_match)
-                        except Exception as e:  # noqa: BLE001
-                            logger.warning(
-                                f"Failed to update embedding for {best_match.name}: {e}"
-                            )
-                    elif not best_match.is_voiceprint_locked:
-                        logger.info(
-                            f"Skipping auto-update for {best_match.name} "
-                            f"(score {best_score:.2f} < auto-update threshold {AUTO_UPDATE_THRESHOLD})"
-                        )
-                else:
-                    logger.info(
-                        f"No match found for {label} (Best score: {best_score:.2f})."
-                    )
-
-            # If not identified as a global speaker, assign a friendly sequential name
-            if not is_identified:
-                resolved_name = f"Speaker {speaker_counter}"
-                speaker_counter += 1
-
-            # Auto-promotion logic removed. Speakers must be manually promoted.
-
-            # Auto-merge duplicate name detection: if this resolved name was already
-            # assigned to a previous speaker in this loop, merge into the existing one.
-            if resolved_name and resolved_name in resolved_names_map:
-                target_info = resolved_names_map[resolved_name]
-                target_label = target_info["label"]
-                target_id = target_info["id"]
-
-                if target_label != label:
-                    logger.info(
-                        f"Auto-Merge: '{resolved_name}' already assigned to {target_label}. Merging {label} into {target_label}."
-                    )
-
-                    if existing_speaker:
-                        existing_speaker.merged_into_id = target_id
-                        existing_speaker.name = resolved_name  # Keep consistent name
-                        existing_speaker.local_name = None
-                        session.add(existing_speaker)
-                        session.flush()  # Ensure it's saved
-                    else:
-                        # Create the record but immediately merge it
-                        rec_speaker = RecordingSpeaker(
-                            recording_id=recording.id,
-                            diarization_label=label,
-                            name=resolved_name,
-                            embedding=embedding,
-                            global_speaker_id=global_speaker_id,
-                            merged_into_id=target_id,
-                        )
-                        session.add(rec_speaker)
-                        session.flush()
-
-                    # rewrite segments in memory to point to the target label
-                    # This ensures the transcript assumes they are the same speaker
-                    for seg in final_segments:
-                        if seg["speaker"] == label:
-                            seg["speaker"] = target_label
-
-                        if "overlapping_speakers" in seg:
-                            for idx, ov_spk in enumerate(seg["overlapping_speakers"]):
-                                if ov_spk == label:
-                                    seg["overlapping_speakers"][idx] = target_label
-
-                    # No addition to resolved_names_map needed; the canonical entry already exists.
-                    label_map[label] = resolved_name
-                    continue
-
-            label_map[label] = resolved_name
-            logger.info("Mapped %s -> %s", label, resolved_name)
-
-            current_speaker_id = None
-            if existing_speaker:
-                if embedding is not None:
-                    existing_speaker.embedding = embedding
-                elif existing_speaker.embedding:
-                    logger.info(
-                        "Preserving existing voiceprint for %s because final diarization produced no embedding.",
-                        label,
-                    )
-                existing_speaker.name = resolved_name
-                if (
-                    global_speaker_id is not None
-                    or existing_speaker.global_speaker_id is None
-                ):
-                    existing_speaker.global_speaker_id = global_speaker_id
-                session.add(existing_speaker)
-                session.flush()
-                current_speaker_id = existing_speaker.id
-            else:
-                rec_speaker = RecordingSpeaker(
-                    recording_id=recording.id,
-                    diarization_label=label,
-                    name=resolved_name,
-                    embedding=embedding,
-                    global_speaker_id=global_speaker_id,
-                )
-                session.add(rec_speaker)
-                session.flush()
-                current_speaker_id = rec_speaker.id
-
-            # Register this name as taken
-            if resolved_name and current_speaker_id:
-                resolved_names_map[resolved_name] = {
-                    "id": current_speaker_id,
-                    "label": label,
-                }
-
-        # --- Embedding-based speaker merge pass ---
-        # Catches over-clustered speakers that the name-based auto-merge
-        # above cannot detect (e.g. two clusters both named "Speaker N"
-        # before global identification, or same global speaker split into
-        # two RecordingSpeaker rows).
-        try:
-            from backend.processing.speaker_merge import merge_duplicate_speakers
-
-            merge_pairs = merge_duplicate_speakers(
-                session,
-                recording_id=recording.id,
-                segments=final_segments,
-            )
-            if merge_pairs:
-                logger.info(
-                    "[SpeakerMerge] Merged %d duplicate speaker(s) in recording %d",
-                    len(merge_pairs),
-                    recording_id,
-                )
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[SpeakerMerge] Merge pass failed, continuing: %s", e)
-
-        # Keep the diarization_label in the segments to maintain the link to RecordingSpeaker
-        # The frontend will resolve the display name using the speaker map
-        updated_segments = []
-        for seg in final_segments:
-            updated_segments.append(seg)
-
-        self.update_state(
-            state="PROCESSING", meta={"progress": 92, "stage": "Finalizing"}
-        )
-        recording.processing_step = f"Finalizing transcript structure...{device_suffix}"
-        recording.processing_progress = 92
-        session.add(recording)
-        session.commit()
-
-        # Log final speaker distribution in updated segments
-        final_speaker_counts = {}
-        for seg in updated_segments:
-            spk = seg["speaker"]
-            final_speaker_counts[spk] = final_speaker_counts.get(spk, 0) + 1
-            for ov_spk in seg.get("overlapping_speakers", []):
-                final_speaker_counts[ov_spk] = final_speaker_counts.get(ov_spk, 0) + 1
-        logger.info("Final transcript speaker distribution: %s", final_speaker_counts)
-
-        transcript.segments = updated_segments
-        session.add(transcript)
-        if config_manager.get("enable_canonical_transcript_writes", True):
-            finalize_utterances_from_segments(
-                session,
-                recording_id=recording.id,
-                segments=[dict(segment) for segment in updated_segments],
-                reused_live_asr=bool(reused_live_transcript_segments),
-                trigger_source="worker",
-            )
-            updated_segments = refresh_transcript_projection_from_canonical(
-                session,
-                recording.id,
-            )
-
-            # Phase F4: frame-level segmentation safety net for utterances
-            # that span a speaker change but slipped through rolling
-            # diarization's coarser turn boundaries.
-            try:
-                self.update_state(
-                    state="PROCESSING", meta={"progress": 94, "stage": "Refining"}
-                )
-                recording.processing_step = (
-                    f"Refining speaker boundaries...{device_suffix}"
-                )
-                recording.processing_progress = 94
-                session.add(recording)
-                session.commit()
-                with pipeline_metric_timer(
-                    stage="segmentation_refinement",
-                    recording_id=recording_id,
-                    payload={"input_path": processed_audio_path},
-                    log=logger,
-                ) as seg_metric:
-                    seg_summary = refine_recording_utterances_via_segmentation(
-                        session,
-                        recording_id=recording.id,
-                        audio_path=processed_audio_path,
-                        device_str=str(merged_config.get("processing_device", "auto")),
-                        hf_token=config_manager.get("hf_token"),
-                        source="finalize_segmentation_refinement",
-                    )
-                    seg_metric["payload"].update(seg_summary)
-                if (seg_summary or {}).get("refined_utterance_count", 0) > 0:
-                    updated_segments = refresh_transcript_projection_from_canonical(
-                        session,
-                        recording.id,
-                    )
-            except Exception as seg_exc:  # noqa: BLE001
-                logger.warning(
-                    "Segmentation refinement pass failed for recording %s: %s",
-                    recording.id,
-                    seg_exc,
-                    exc_info=True,
-                )
-
-        recording_speakers = session.exec(
-            select(RecordingSpeaker).where(
-                RecordingSpeaker.recording_id == recording.id
-            )
-        ).all()
-        unresolved_speakers = get_speakers_eligible_for_llm_renaming(recording_speakers)
-        speaker_map = build_recording_speaker_map(recording_speakers)
-        transcript_text = _build_automatic_meeting_intelligence_transcript(
-            updated_segments,
-            speaker_map,
-            unresolved_speakers,
-        )
-
-        _run_automatic_meeting_intelligence_stage(
-            session=session,
-            task=self,
-            recording=recording,
-            transcript=transcript,
-            speakers=recording_speakers,
-            transcript_text=transcript_text,
-            unresolved_speakers=unresolved_speakers,
-            llm_config=llm_config,
-            prefer_short_titles=merged_config.get("prefer_short_titles", True),
-            device_suffix=device_suffix,
-            detected_transcription_language=(transcription_result or {}).get(
-                "language"
-            ),
+        # --- Stage: finalize transcript + notes/title ---
+        _finalize_transcript_and_notes(
+            ctx,
+            recording,
+            transcript,
+            final_segments,
+            llm_config,
+            transcription_result,
+            reused_live_transcript_segments,
         )
 
         # Update Recording Status
@@ -1207,7 +1510,7 @@ def process_recording_task(
         if hasattr(session, "rollback"):
             try:
                 session.rollback()
-            except Exception as rollback_exc:  # noqa: BLE001
+            except Exception as rollback_exc:  # noqa: BLE001 -- boundary: rollback is best-effort
                 logger.warning(
                     "Failed to rollback session after audio processing error for %s: %s",
                     recording_id,
@@ -1239,7 +1542,7 @@ def process_recording_task(
         if hasattr(session, "rollback"):
             try:
                 session.rollback()
-            except Exception as rollback_exc:  # noqa: BLE001
+            except Exception as rollback_exc:  # noqa: BLE001 -- boundary: rollback is best-effort
                 logger.warning(
                     "Failed to rollback session after processing error for %s: %s",
                     recording_id,
@@ -1269,48 +1572,7 @@ def process_recording_task(
         keep_loaded = config_manager.get("keep_models_loaded", False)
 
         if not keep_loaded:
-            try:
-                logger.info("Releasing VRAM (keep_models_loaded=False)...")
-
-                # 1. Whisper
-                from backend.processing.transcribe import release_model_cache
-
-                release_model_cache()
-
-                # 2. Pyannote
-                from backend.processing.diarize import release_pipeline_cache
-
-                release_pipeline_cache()
-
-                # 3. Speaker Embeddings
-                from backend.processing.embedding_core import (
-                    release_embedding_model_cache,
-                )
-
-                release_embedding_model_cache()
-
-                # 4. Segmentation Refinement
-                from backend.processing.segmentation_refinement import (
-                    release_segmentation_model_cache,
-                )
-
-                release_segmentation_model_cache()
-
-                # 5. Text Embeddings
-                from backend.processing.text_embedding import release_embedding_model
-
-                release_embedding_model()
-
-                # 6. Garbage Collection
-                import gc
-
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-                logger.info("VRAM released successfully.")
-            except Exception as e:  # noqa: BLE001
-                logger.error("Error releasing VRAM: %s", e)
+            _release_pipeline_vram()
 
 
 @worker_ready.connect

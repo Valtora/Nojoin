@@ -5,8 +5,9 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Set, Tuple, Type
 from uuid import uuid4
 
 from sqlmodel import Session, SQLModel, delete, select
@@ -68,6 +69,41 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("transcripts", Transcript),
     ("chat_messages", ChatMessage),
 ]
+
+
+@dataclass
+class _RestoreState:
+    """Mutable state threaded through the restore stages.
+
+    Collecting the additive-restore bookkeeping here lets ``_restore_backup_sync``
+    delegate to cohesive validation/preflight/extraction/finalization stages while
+    preserving the exact cross-stage invariants (id remapping, identity matching,
+    deferred speaker merges, proxy regeneration) the monolithic implementation relied on.
+    """
+
+    job_id: str
+    clear_existing: bool
+    overwrite_existing: bool
+    recordings_dir: Any
+    config_path: Any
+    user_data_dir: Any
+    # table_name -> { old_id: new_id } for additive foreign-key remapping.
+    id_map: Dict[str, Dict[int, int]]
+    # Identity key (meeting_uid:/public_id:/audio_path:) -> new recording id, so later
+    # backup rows sharing any identifier collapse onto the same restored recording.
+    restored_recording_keys: Dict[str, int] = field(default_factory=dict)
+    # Identity key -> existing recording row already present in the target database.
+    existing_recordings_by_identity: Dict[str, Any] = field(default_factory=dict)
+    # old_id set for recordings skipped under the safe-merge strategy; their children skip too.
+    skipped_recording_ids: Set[int] = field(default_factory=set)
+    # Deferred self-referential remaps for recording-speaker merges (new_id, old_target_id).
+    pending_recording_speaker_merges: List[Tuple[int, int]] = field(
+        default_factory=list
+    )
+    # Restored recordings whose audio landed on disk need a regenerated playback proxy.
+    recordings_requiring_proxy: Set[int] = field(default_factory=set)
+    # Archive members extracted under recordings/, used for orphan cleanup.
+    extracted_files: Set[str] = field(default_factory=set)
 
 
 class BackupManager:
@@ -710,6 +746,245 @@ class BackupManager:
         )
 
     @staticmethod
+    def _restore_check_version(zipf: zipfile.ZipFile) -> None:
+        """Validation stage: log version compatibility between the backup and runtime."""
+        # Check version compatibility
+        if "backup_info.json" in zipf.namelist():
+            try:
+                info = json.loads(zipf.read("backup_info.json"))
+                backup_version = info.get("version", "0.0.0")
+                current_version = BackupManager._get_app_version()
+
+                if backup_version != current_version:
+                    logger.info(
+                        f"Restoring backup from version {backup_version} to {current_version}"
+                    )
+                    if backup_version > current_version:
+                        logger.warning(
+                            f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues."
+                        )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to read backup info: {e}")
+
+    @staticmethod
+    def _restore_clear_existing_data(state: "_RestoreState") -> None:
+        """Preflight stage: when requested, wipe non-user tables and recordings before restore.
+
+        Users are intentionally preserved to avoid locking the operator out.
+        """
+        clear_existing = state.clear_existing
+        recordings_dir = state.recordings_dir
+        job_id = state.job_id
+
+        # 1. Clear Existing Data if requested
+        if clear_existing:
+            logger.info("Clearing existing data...")
+            # Clear DB, but skip users to prevent lockout.
+            # Restore runs in a worker thread, so use a synchronous Session here.
+            from sqlmodel import Session
+
+            from backend.core.db import sync_engine
+
+            with Session(sync_engine) as session:
+                # Delete in reverse order
+                for table_name, model_cls in reversed(MODELS):
+                    if table_name == "users":
+                        continue
+                    session.exec(delete(model_cls))
+                session.commit()
+
+            # Clear Recordings
+            if recordings_dir.exists():
+                shutil.rmtree(recordings_dir)
+            recordings_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Existing data cleared.")
+            BackupManager.restore_jobs[job_id]["progress"] = "Old data cleared"
+
+    @staticmethod
+    def _restore_extract_files(zipf: zipfile.ZipFile, state: "_RestoreState") -> None:
+        """Extraction stage: unpack recording files with zip-slip protection.
+
+        A zip-slip path (one that escapes the user data directory) aborts the restore
+        with a ``ValueError``. Config is only merged in on a clearing restore.
+        """
+        user_data_dir = state.user_data_dir
+        config_path = state.config_path
+        clear_existing = state.clear_existing
+        job_id = state.job_id
+        extracted_files = state.extracted_files
+
+        # 2. Restore Files
+
+        # Extract recordings
+        logger.info("Extracting files...")
+        BackupManager.restore_jobs[job_id]["progress"] = "Extracting files..."
+        for file in zipf.namelist():
+            if file.startswith("recordings/"):
+                # Zip Slip Mitigation
+                target_path = os.path.abspath(os.path.join(user_data_dir, file))
+                if not target_path.startswith(os.path.abspath(user_data_dir) + os.sep):
+                    error_msg = (
+                        f"Zip Slip detected: Skipping malicious file path {file}"
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+                # Optimization: Extract all files. If the DB record is skipped,
+                # the file will be orphaned but cleaned up later.
+                zipf.extract(file, user_data_dir)
+                extracted_files.add(file)
+            elif file == "config.json":
+                if clear_existing:
+                    # Only restore config if we are clearing data, otherwise keep current system config
+                    try:
+                        # Zip Slip Mitigation for config
+                        target_path = os.path.abspath(os.path.join(user_data_dir, file))
+                        if not target_path.startswith(
+                            os.path.abspath(user_data_dir) + os.sep
+                        ):
+                            error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
+                            logger.error(error_msg)
+                            raise ValueError(error_msg)
+
+                        new_config = json.loads(zipf.read("config.json"))
+                        if config_path.exists():
+                            current_config = json.loads(config_path.read_text())
+                            # Merge: Update current with new, but keep current if new is REDACTED
+                            for k, v in new_config.items():
+                                if v != "REDACTED":
+                                    current_config[k] = v
+
+                            # Write to string first then file
+                            config_path_obj = PathManager().config_path
+                            config_path_obj.write_text(
+                                json.dumps(current_config, indent=2)
+                            )
+                        else:
+                            zipf.extract(file, user_data_dir)
+                    except Exception as e:
+                        if isinstance(e, ValueError) and "Zip Slip detected" in str(e):
+                            raise
+                        logger.error(f"Failed to restore config: {e}")
+        logger.info("File extraction complete.")
+
+    @staticmethod
+    def _restore_preflight_overwrite(
+        zipf: zipfile.ZipFile, state: "_RestoreState"
+    ) -> None:
+        """Preflight stage: under overwrite, pre-delete conflicting recordings.
+
+        Deleting through the ``Recording`` table lets the configured ON DELETE cascades
+        remove dependent rows so the incoming backup rows insert without a unique clash.
+        """
+        overwrite_existing = state.overwrite_existing
+        clear_existing = state.clear_existing
+
+        # 2a. Pre-flight Cleanup (Overwrite Strategy)
+        if overwrite_existing and not clear_existing:
+            if "recordings.json" in zipf.namelist():
+                try:
+                    rec_data = json.loads(zipf.read("recordings.json"))
+                    backup_recording_keys: set[str] = set()
+                    for item in rec_data:
+                        backup_recording_keys.update(
+                            BackupManager._get_recording_match_keys(
+                                item.get("audio_path"),
+                                item.get("meeting_uid"),
+                                item.get("public_id"),
+                            )
+                        )
+
+                    if backup_recording_keys:
+                        from sqlmodel import Session
+
+                        from backend.core.db import sync_engine
+
+                        with Session(sync_engine) as session:
+                            existing_rows = session.exec(select(Recording)).all()
+                            existing_ids = [
+                                row.id
+                                for row in existing_rows
+                                if BackupManager._get_recording_match_keys(
+                                    row.audio_path,
+                                    getattr(row, "meeting_uid", None),
+                                    getattr(row, "public_id", None),
+                                )
+                                & backup_recording_keys
+                            ]
+
+                            if existing_ids:
+                                logger.info(
+                                    f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings."
+                                )
+                                # Delete via the Recording table so the configured
+                                # ON DELETE cascades remove dependent rows.
+                                session.exec(
+                                    delete(Recording).where(
+                                        Recording.id.in_(existing_ids)
+                                    )
+                                )
+                                session.commit()
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"Pre-flight cleanup failed: {e}")
+
+    @staticmethod
+    def _restore_enqueue_proxies(state: "_RestoreState") -> None:
+        """Finalization stage: queue proxy regeneration for restored on-disk recordings."""
+        recordings_requiring_proxy = state.recordings_requiring_proxy
+        for recording_id in sorted(recordings_requiring_proxy):
+            try:
+                BackupManager._enqueue_proxy_generation(recording_id)
+            except Exception as e:  # noqa: BLE001
+                logger.error(
+                    "Failed to enqueue proxy generation for restored recording %s: %s",
+                    recording_id,
+                    e,
+                )
+
+    @staticmethod
+    def _restore_cleanup_orphans(state: "_RestoreState") -> None:
+        """Finalization stage: delete extracted files not referenced by any restored recording."""
+        user_data_dir = state.user_data_dir
+        job_id = state.job_id
+        extracted_files = state.extracted_files
+
+        # 4. Cleanup Orphaned Files
+        # Identifies files extracted from the backup that are not referenced in the database.
+        logger.info("Cleaning up orphaned files...")
+        BackupManager.restore_jobs[job_id]["progress"] = "Cleaning up..."
+        from sqlmodel import Session
+
+        from backend.core.db import sync_engine
+
+        with Session(sync_engine) as session:
+            # Fetches all audio paths currently in the DB to verify against extracted files.
+            all_recordings = session.exec(select(Recording.audio_path)).all()
+            valid_paths = set()
+            for vp in all_recordings:
+                recording_identity = BackupManager._get_recording_identity(vp)
+                if recording_identity:
+                    valid_paths.add(recording_identity)
+
+            orphans = []
+            for file_path in extracted_files:
+                normalized_path = BackupManager._get_recording_identity(file_path)
+
+                if normalized_path not in valid_paths:
+                    orphans.append(file_path)
+
+            if orphans:
+                logger.info(f"Cleaning up {len(orphans)} orphaned files from restore.")
+                for orphan in orphans:
+                    full_path = os.path.join(user_data_dir, orphan)
+                    if os.path.exists(full_path):
+                        try:
+                            os.remove(full_path)
+                        except OSError:
+                            logger.warning(
+                                f"Failed to delete orphaned file: {full_path}"
+                            )
+
+    @staticmethod
     def _restore_backup_sync(
         job_id: str,
         zip_path: str,
@@ -726,179 +1001,31 @@ class BackupManager:
         BackupManager.restore_jobs[job_id]["progress"] = "Starting..."
         logger.info(f"Starting synchronous restore process for {zip_path}")
 
-        # ID Mapping for additive restore
-        # Map: table_name -> { old_id: new_id }
-        id_map: Dict[str, Dict[int, int]] = {name: {} for name, _ in MODELS}
+        state = _RestoreState(
+            job_id=job_id,
+            clear_existing=clear_existing,
+            overwrite_existing=overwrite_existing,
+            recordings_dir=recordings_dir,
+            config_path=config_path,
+            user_data_dir=user_data_dir,
+            id_map={name: {} for name, _ in MODELS},
+        )
 
-        # Map: identifier key (meeting_uid:/public_id:/audio_path:) -> new_id.
-        # Each restored recording contributes every key it owns so subsequent backup rows that
-        # share any identifier collapse onto the same new id.
-        restored_recording_keys: Dict[str, int] = {}
-
-        # Map: identifier key -> existing recording in the target database.
-        existing_recordings_by_identity: Dict[str, Recording] = {}
+        # Local aliases share the same mutable objects as ``state`` so the inline
+        # database-restore loop and the extracted stages observe one set of bookkeeping.
+        id_map = state.id_map
+        restored_recording_keys = state.restored_recording_keys
+        existing_recordings_by_identity = state.existing_recordings_by_identity
         existing_recordings_loaded = False
-
-        # Set of skipped recording IDs (old_id) - used to skip children
-        skipped_recording_ids = set()
-
-        # Deferred self-referential remaps for recording speakers.
-        pending_recording_speaker_merges: List[Tuple[int, int]] = []
-
-        # Recordings restored with audio files need a fresh playback proxy.
-        recordings_requiring_proxy: set[int] = set()
+        skipped_recording_ids = state.skipped_recording_ids
+        pending_recording_speaker_merges = state.pending_recording_speaker_merges
+        recordings_requiring_proxy = state.recordings_requiring_proxy
 
         with zipfile.ZipFile(zip_path, "r") as zipf:
-            # Check version compatibility
-            if "backup_info.json" in zipf.namelist():
-                try:
-                    info = json.loads(zipf.read("backup_info.json"))
-                    backup_version = info.get("version", "0.0.0")
-                    current_version = BackupManager._get_app_version()
-
-                    if backup_version != current_version:
-                        logger.info(
-                            f"Restoring backup from version {backup_version} to {current_version}"
-                        )
-                        if backup_version > current_version:
-                            logger.warning(
-                                f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues."
-                            )
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(f"Failed to read backup info: {e}")
-
-            # 1. Clear Existing Data if requested
-            if clear_existing:
-                logger.info("Clearing existing data...")
-                # Clear DB, but skip users to prevent lockout.
-                # Restore runs in a worker thread, so use a synchronous Session here.
-                from sqlmodel import Session
-
-                from backend.core.db import sync_engine
-
-                with Session(sync_engine) as session:
-                    # Delete in reverse order
-                    for table_name, model_cls in reversed(MODELS):
-                        if table_name == "users":
-                            continue
-                        session.exec(delete(model_cls))
-                    session.commit()
-
-                # Clear Recordings
-                if recordings_dir.exists():
-                    shutil.rmtree(recordings_dir)
-                recordings_dir.mkdir(parents=True, exist_ok=True)
-                logger.info("Existing data cleared.")
-                BackupManager.restore_jobs[job_id]["progress"] = "Old data cleared"
-
-            # 2. Restore Files
-            extracted_files = set()
-
-            # Extract recordings
-            logger.info("Extracting files...")
-            BackupManager.restore_jobs[job_id]["progress"] = "Extracting files..."
-            for file in zipf.namelist():
-                if file.startswith("recordings/"):
-                    # Zip Slip Mitigation
-                    target_path = os.path.abspath(os.path.join(user_data_dir, file))
-                    if not target_path.startswith(
-                        os.path.abspath(user_data_dir) + os.sep
-                    ):
-                        error_msg = (
-                            f"Zip Slip detected: Skipping malicious file path {file}"
-                        )
-                        logger.error(error_msg)
-                        raise ValueError(error_msg)
-
-                    # Optimization: Extract all files. If the DB record is skipped,
-                    # the file will be orphaned but cleaned up later.
-                    zipf.extract(file, user_data_dir)
-                    extracted_files.add(file)
-                elif file == "config.json":
-                    if clear_existing:
-                        # Only restore config if we are clearing data, otherwise keep current system config
-                        try:
-                            # Zip Slip Mitigation for config
-                            target_path = os.path.abspath(
-                                os.path.join(user_data_dir, file)
-                            )
-                            if not target_path.startswith(
-                                os.path.abspath(user_data_dir) + os.sep
-                            ):
-                                error_msg = f"Zip Slip detected: Skipping malicious file path {file}"
-                                logger.error(error_msg)
-                                raise ValueError(error_msg)
-
-                            new_config = json.loads(zipf.read("config.json"))
-                            if config_path.exists():
-                                current_config = json.loads(config_path.read_text())
-                                # Merge: Update current with new, but keep current if new is REDACTED
-                                for k, v in new_config.items():
-                                    if v != "REDACTED":
-                                        current_config[k] = v
-
-                                # Write to string first then file
-                                config_path_obj = PathManager().config_path
-                                config_path_obj.write_text(
-                                    json.dumps(current_config, indent=2)
-                                )
-                            else:
-                                zipf.extract(file, user_data_dir)
-                        except Exception as e:
-                            if isinstance(e, ValueError) and "Zip Slip detected" in str(
-                                e
-                            ):
-                                raise
-                            logger.error(f"Failed to restore config: {e}")
-            logger.info("File extraction complete.")
-
-            # 2a. Pre-flight Cleanup (Overwrite Strategy)
-            if overwrite_existing and not clear_existing:
-                if "recordings.json" in zipf.namelist():
-                    try:
-                        rec_data = json.loads(zipf.read("recordings.json"))
-                        backup_recording_keys: set[str] = set()
-                        for item in rec_data:
-                            backup_recording_keys.update(
-                                BackupManager._get_recording_match_keys(
-                                    item.get("audio_path"),
-                                    item.get("meeting_uid"),
-                                    item.get("public_id"),
-                                )
-                            )
-
-                        if backup_recording_keys:
-                            from sqlmodel import Session
-
-                            from backend.core.db import sync_engine
-
-                            with Session(sync_engine) as session:
-                                existing_rows = session.exec(select(Recording)).all()
-                                existing_ids = [
-                                    row.id
-                                    for row in existing_rows
-                                    if BackupManager._get_recording_match_keys(
-                                        row.audio_path,
-                                        getattr(row, "meeting_uid", None),
-                                        getattr(row, "public_id", None),
-                                    )
-                                    & backup_recording_keys
-                                ]
-
-                                if existing_ids:
-                                    logger.info(
-                                        f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings."
-                                    )
-                                    # Delete via the Recording table so the configured
-                                    # ON DELETE cascades remove dependent rows.
-                                    session.exec(
-                                        delete(Recording).where(
-                                            Recording.id.in_(existing_ids)
-                                        )
-                                    )
-                                    session.commit()
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"Pre-flight cleanup failed: {e}")
+            BackupManager._restore_check_version(zipf)
+            BackupManager._restore_clear_existing_data(state)
+            BackupManager._restore_extract_files(zipf, state)
+            BackupManager._restore_preflight_overwrite(zipf, state)
 
             # 3. Restore Database
             logger.info("Restoring database records...")
@@ -1975,56 +2102,12 @@ class BackupManager:
                 logger.info("Database restore complete.")
                 BackupManager.restore_jobs[job_id]["progress"] = "Database restored"
 
-            for recording_id in sorted(recordings_requiring_proxy):
-                try:
-                    BackupManager._enqueue_proxy_generation(recording_id)
-                except Exception as e:  # noqa: BLE001
-                    logger.error(
-                        "Failed to enqueue proxy generation for restored recording %s: %s",
-                        recording_id,
-                        e,
-                    )
+            BackupManager._restore_enqueue_proxies(state)
+            BackupManager._restore_cleanup_orphans(state)
 
-            # 4. Cleanup Orphaned Files
-            # Identifies files extracted from the backup that are not referenced in the database.
-            logger.info("Cleaning up orphaned files...")
-            BackupManager.restore_jobs[job_id]["progress"] = "Cleaning up..."
-            from sqlmodel import Session
-
-            from backend.core.db import sync_engine
-
-            with Session(sync_engine) as session:
-                # Fetches all audio paths currently in the DB to verify against extracted files.
-                all_recordings = session.exec(select(Recording.audio_path)).all()
-                valid_paths = set()
-                for vp in all_recordings:
-                    recording_identity = BackupManager._get_recording_identity(vp)
-                    if recording_identity:
-                        valid_paths.add(recording_identity)
-
-                orphans = []
-                for file_path in extracted_files:
-                    normalized_path = BackupManager._get_recording_identity(file_path)
-
-                    if normalized_path not in valid_paths:
-                        orphans.append(file_path)
-
-                if orphans:
-                    logger.info(
-                        f"Cleaning up {len(orphans)} orphaned files from restore."
-                    )
-                    for orphan in orphans:
-                        full_path = os.path.join(user_data_dir, orphan)
-                        if os.path.exists(full_path):
-                            try:
-                                os.remove(full_path)
-                            except OSError:
-                                logger.warning(
-                                    f"Failed to delete orphaned file: {full_path}"
-                                )
-            logger.info("Restore process finished successfully.")
-            BackupManager.restore_jobs[job_id]["status"] = "completed"
-            BackupManager.restore_jobs[job_id]["progress"] = "Done"
+        logger.info("Restore process finished successfully.")
+        BackupManager.restore_jobs[job_id]["status"] = "completed"
+        BackupManager.restore_jobs[job_id]["progress"] = "Done"
 
     @staticmethod
     async def restore_backup(

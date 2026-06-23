@@ -5,6 +5,7 @@ import shutil
 import time
 import urllib.error
 import warnings
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 

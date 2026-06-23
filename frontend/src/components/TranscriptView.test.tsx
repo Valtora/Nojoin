@@ -141,6 +141,59 @@ describe("TranscriptView", () => {
     ).toBeDisabled();
   });
 
+  it("highlights search matches and reports the match count", () => {
+    renderTranscriptView([
+      buildSegment({
+        id: "utt-1",
+        text: "alpha beta alpha",
+        speaker: "SPEAKER_00",
+      }),
+      buildSegment({
+        id: "utt-2",
+        text: "gamma alpha",
+        speaker: "SPEAKER_00",
+      }),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByPlaceholderText("Find..."), {
+      target: { value: "alpha" },
+    });
+
+    // 3 occurrences of "alpha" across both segments are highlighted with <mark>
+    const marks = document.querySelectorAll("mark");
+    expect(marks.length).toBe(3);
+    marks.forEach((mark) => expect(mark.textContent).toBe("alpha"));
+  });
+
+  it("invokes onFindAndReplace with the search options on Replace All", () => {
+    const onFindAndReplace = vi.fn();
+    renderTranscriptView(
+      [
+        buildSegment({
+          id: "utt-1",
+          text: "hello world",
+          speaker: "SPEAKER_00",
+        }),
+      ],
+      { onFindAndReplace },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Find & Replace" }));
+    fireEvent.change(screen.getByPlaceholderText("Find..."), {
+      target: { value: "world" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Replace..."), {
+      target: { value: "there" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Replace All/ }));
+
+    expect(onFindAndReplace).toHaveBeenCalledWith("world", "there", {
+      caseSensitive: false,
+      useRegex: false,
+    });
+  });
+
   it("keeps overlap lanes in transcript order and reserves space for revised overlap groups", () => {
     const now = new Date().toISOString();
 

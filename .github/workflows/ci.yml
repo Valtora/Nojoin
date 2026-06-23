@@ -64,6 +64,9 @@ jobs:
       - name: Check trailing whitespace
         run: python scripts/check_whitespace.py
 
+      - name: Check source file size
+        run: python scripts/check_file_size.py
+
       - name: Type-check stable boundaries
         run: mypy
 
