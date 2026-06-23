@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   getRecordings,
   getGlobalSpeakers,
@@ -39,8 +39,9 @@ import { useNavigationStore } from "@/lib/store";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
-import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { useViewportDensity } from "./ViewportDensityProvider";
+import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
+import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return "0s";
@@ -109,9 +110,6 @@ export default function Sidebar() {
   const { addNotification } = useNotificationStore();
   const actions = useRecordingActions();
   const { isCompact } = useViewportDensity();
-  const prevRecordingsRef = useRef<Map<RecordingId, RecordingStatus>>(new Map());
-  const prevNotesStatusRef = useRef<Map<RecordingId, string>>(new Map());
-  const prevTranscriptStatusRef = useRef<Map<RecordingId, string>>(new Map());
   const {
     currentView,
     selectedTagIds,
@@ -142,13 +140,18 @@ export default function Sidebar() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoModalRecording, setInfoModalRecording] =
     useState<Recording | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
   const [reprocessRecordingId, setReprocessRecordingId] = useState<RecordingId | null>(null);
   const MIN_SIDEBAR_WIDTH = isCompact ? 240 : 256;
   const MAX_SIDEBAR_WIDTH = isCompact ? 520 : 600;
   const resolvedSidebarWidth = isCompact
     ? Math.min(recordingsSidebarWidth, 304)
     : recordingsSidebarWidth;
+
+  const { onResizePointerDown: handleResizePointerDown } = useSidebarResize({
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+    setWidth: setRecordingsSidebarWidth,
+  });
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -237,74 +240,7 @@ export default function Sidebar() {
     return () => window.removeEventListener("tags-updated", handleTagsUpdated);
   }, []);
 
-  useEffect(() => {
-    recordings.forEach((rec) => {
-      // Check Recording Status (General Processing)
-      const prevStatus = prevRecordingsRef.current.get(rec.id);
-      if (
-        prevStatus &&
-        prevStatus !== RecordingStatus.PROCESSED &&
-        rec.status === RecordingStatus.PROCESSED
-      ) {
-        addNotification({
-          type: "success",
-          message: `Processing completed for "${rec.name}"`,
-        });
-      }
-      prevRecordingsRef.current.set(rec.id, rec.status);
-
-      // Check Notes Status (Specific)
-      if (rec.transcript) {
-        const prevNotesStatus = prevNotesStatusRef.current.get(rec.id);
-        const currentNotesStatus = rec.transcript.notes_status;
-
-        if (
-          prevNotesStatus &&
-          prevNotesStatus !== "completed" &&
-          currentNotesStatus === "completed"
-        ) {
-          addNotification({
-            type: "success",
-            message: `Meeting notes generated for "${rec.name}"`,
-          });
-        }
-        if (
-          prevNotesStatus &&
-          prevNotesStatus !== "error" &&
-          currentNotesStatus === "error"
-        ) {
-          addNotification({
-            type: "error",
-            message: rec.transcript.error_message
-              ? `Meeting notes failed for "${rec.name}": ${rec.transcript.error_message}`
-              : `Meeting notes failed for "${rec.name}"`,
-          });
-        }
-        prevNotesStatusRef.current.set(rec.id, currentNotesStatus || "pending");
-
-        // Check Transcript Status (Specific)
-        const prevTranscriptStatus = prevTranscriptStatusRef.current.get(
-          rec.id,
-        );
-        const currentTranscriptStatus = rec.transcript.transcript_status;
-
-        if (
-          prevTranscriptStatus &&
-          prevTranscriptStatus !== "completed" &&
-          currentTranscriptStatus === "completed"
-        ) {
-          addNotification({
-            type: "success",
-            message: `Transcript ready for "${rec.name}"`,
-          });
-        }
-        prevTranscriptStatusRef.current.set(
-          rec.id,
-          currentTranscriptStatus || "pending",
-        );
-      }
-    });
-  }, [recordings, addNotification]);
+  useRecordingStatusNotifications(recordings);
 
   const filteredRecordings = useMemo(() => {
     if (!debouncedSearchQuery) return recordings;
@@ -438,48 +374,6 @@ export default function Sidebar() {
   useEffect(() => {
     clearSelection();
   }, [currentView, clearSelection]);
-
-  // Handle resizing
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handlePointerMove = (e: PointerEvent) => {
-      // Don't resize on mobile
-      if (window.innerWidth < 1024) return;
-
-      const sidebarElement = document.getElementById("sidebar-recordings-list");
-      if (!sidebarElement) return;
-
-      const sidebarRect = sidebarElement.getBoundingClientRect();
-      // Calculate width relative to the left edge of the sidebar
-      const newWidth = e.clientX - sidebarRect.left;
-
-      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
-        setRecordingsSidebarWidth(newWidth);
-      }
-    };
-
-    const handlePointerUp = () => {
-      setIsResizing(false);
-    };
-
-    document.addEventListener("pointermove", handlePointerMove);
-    document.addEventListener("pointerup", handlePointerUp);
-    document.addEventListener("pointercancel", handlePointerUp);
-
-    return () => {
-      document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
-      document.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [isResizing, setRecordingsSidebarWidth, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]);
-
-  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    window.getSelection()?.removeAllRanges();
-    setIsResizing(true);
-  };
 
   const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
     e.preventDefault();
@@ -718,8 +612,6 @@ export default function Sidebar() {
     dateRange.end ||
     selectedSpeakers.length > 0 ||
     selectedTagIds.length > 0;
-
-  useDragSelectionLock(isResizing);
 
   // Prevent hydration mismatch
   const view = mounted ? currentView : "recordings";
