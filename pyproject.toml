@@ -16,6 +16,9 @@ markers = [
 # security/persistence contracts, and API-facing schemas -- and expand the
 # `files` list as more modules are annotated (see docs/repo-maintenance.md).
 python_version = "3.12"
+# The Pydantic plugin teaches mypy about SQLModel/Pydantic models, including
+# @computed_field stacked on @property.
+plugins = ["pydantic.mypy"]
 # Heavy ML and third-party libraries ship no stubs; don't fail on their imports.
 ignore_missing_imports = true
 # Process imported modules for type information but only report errors in the
@@ -26,12 +29,27 @@ warn_redundant_casts = true
 no_implicit_optional = true
 check_untyped_defs = true
 files = [
+    # Configuration and core security/persistence contracts.
     "backend/utils/config_manager.py",
+    "backend/utils/time.py",
     "backend/core/exceptions.py",
     "backend/core/security.py",
     "backend/core/encryption.py",
+    "backend/core/db.py",
+    "backend/api/error_handling.py",
+    # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",
+    "backend/models/recording.py",
     "backend/models/recording_public.py",
+    "backend/models/speaker.py",
+    "backend/models/transcript.py",
+    "backend/models/user.py",
+    "backend/models/calendar.py",
+    "backend/models/task.py",
+    "backend/models/document.py",
+    "backend/models/chat.py",
+    "backend/models/tag.py",
+    "backend/models/pipeline.py",
     "backend/models/people_tag_schemas.py",
 ]
 

@@ -35,7 +35,12 @@ sync_engine = create_engine(
     SYNC_DATABASE_URL, echo=False, future=True, pool_pre_ping=True, pool_recycle=3600
 )
 
-async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# sessionmaker's overloads don't model the AsyncSession class_ argument; the
+# async factory is functionally correct here. async_sessionmaker is the typed
+# successor and is the intended future migration.
+async_session_maker = sessionmaker(  # type: ignore[call-overload]
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

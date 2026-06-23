@@ -248,7 +248,8 @@ def recording_supports_unified_mutations(recording: Optional["Recording"]) -> bo
         return False
 
     generation = getattr(recording, "pipeline_generation", None)
-    if hasattr(generation, "value"):
-        generation = generation.value
+    # Accept both the enum and its raw string value; getattr falls back to the
+    # original when there is no .value (e.g. already a plain string or None).
+    generation_value = getattr(generation, "value", generation)
 
-    return str(generation or "") == RecordingPipelineGeneration.UNIFIED.value
+    return str(generation_value or "") == RecordingPipelineGeneration.UNIFIED.value

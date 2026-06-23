@@ -56,7 +56,7 @@ class GlobalSpeaker(BaseDBModel, table=True):
         }
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # mypy doesn't support @computed_field over @property
     @property
     def has_voiceprint(self) -> bool:
         """Returns True if this speaker has a voiceprint (embedding) stored."""
@@ -192,7 +192,7 @@ class RecordingSpeaker(BaseDBModel, table=True):
         sa_relationship_kwargs={"remote_side": "RecordingSpeaker.id"}
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # mypy doesn't support @computed_field over @property
     @property
     def has_voiceprint(self) -> bool:
         """Returns True if this speaker has a voiceprint (embedding) stored."""
