@@ -4,8 +4,8 @@
 # install it quickly. Ruff needs no project dependencies; mypy follows imports
 # for the typed boundaries it checks and ignores the heavy ML stack via config
 # in pyproject.toml.
-ruff==0.15.15
-mypy==1.18.2
+ruff==0.15.18
+mypy==2.1.0
 pre-commit==4.6.0
 
 # Type stubs for third-party libraries used on the typed backend boundary.
