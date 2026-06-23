@@ -5,7 +5,10 @@ FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb836
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install -g npm@latest && npm ci
+# Use the npm bundled with the pinned node:20-alpine base for reproducible
+# installs. Do not reintroduce `npm install -g npm@latest`: it pulls an
+# unpinned npm over the network on every build and undermines reproducibility.
+RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -16,7 +19,7 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-RUN npm install -g npm@latest && npm run build
+RUN npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
