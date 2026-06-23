@@ -29,6 +29,7 @@ jobs:
     name: Validate release ref
     runs-on: ubuntu-latest
     outputs:
+      image_base: ${{ steps.release.outputs.image_base }}
       major_minor: ${{ steps.release.outputs.major_minor }}
       publish_latest: ${{ steps.release.outputs.publish_latest }}
       release_ref: ${{ steps.release.outputs.release_ref }}
@@ -37,7 +38,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref }}
@@ -77,11 +78,16 @@ jobs:
             exit 1
           fi
 
+          # Container repositories must be lowercase; github.repository can be
+          # mixed case, so derive a lowercase image base for every direct ref.
+          image_base="$(printf '%s/%s' "${REGISTRY}" "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+
           echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
           echo "release_ref=${release_ref}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "major_minor=${version%.*}" >> "${GITHUB_OUTPUT}"
           echo "publish_latest=${publish_latest}" >> "${GITHUB_OUTPUT}"
+          echo "image_base=${image_base}" >> "${GITHUB_OUTPUT}"
 
   backend-tests:
     name: Backend tests
@@ -90,12 +96,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
           cache: pip
@@ -116,12 +122,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "20"
           cache: npm
@@ -142,12 +148,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "20"
           cache: npm
@@ -168,12 +174,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "20"
           cache: npm
@@ -194,12 +200,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
 
@@ -213,12 +219,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
 
@@ -226,7 +232,7 @@ jobs:
         run: python scripts/validate_alembic.py
 
   server-release:
-    name: Build & Push Docker Images
+    name: Build, scan & sign images
     needs:
       - validate-release-ref
       - backend-tests
@@ -236,6 +242,12 @@ jobs:
       - docs-validation
       - alembic-validation
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      # Required for cosign keyless signing via the GitHub OIDC token.
+      id-token: write
 
     strategy:
       fail-fast: false
@@ -257,7 +269,7 @@ jobs:
 
     steps:
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true
           android: true
@@ -267,33 +279,38 @@ jobs:
           swap-storage: true
 
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           ref: ${{ needs.validate-release-ref.outputs.release_ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Only immutable tags (exact version and commit SHA) are published here.
+      # The rolling latest/major.minor tags are published by publish-mutable-tags
+      # after scanning, the health smoke, and signing all pass.
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image_suffix }}
+          images: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}
           tags: |
-            type=raw,value=latest,enable=${{ needs.validate-release-ref.outputs.publish_latest == 'true' }}
             type=raw,value=${{ needs.validate-release-ref.outputs.version }}
-            type=raw,value=${{ needs.validate-release-ref.outputs.major_minor }}
             type=sha
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -305,3 +322,284 @@ jobs:
             ${{ matrix.service == 'api' && format('NOJOIN_SERVER_VERSION={0}', needs.validate-release-ref.outputs.version) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Attach a signed build-provenance attestation and an SBOM to each
+          # published image so consumers can audit how it was built (REL-007).
+          provenance: mode=max
+          sbom: true
+
+      # First-party severity gate (REL-008): fail the release on CRITICAL/HIGH
+      # vulnerabilities that have a fix available. ignore-unfixed keeps the
+      # CVE-heavy CUDA/PyTorch worker base releasable, because findings with no
+      # upstream fix cannot be actioned by us; documented exceptions for fixed
+      # findings we are temporarily accepting live in .trivyignore.
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          image-ref: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Sign image with cosign (keyless)
+        env:
+          IMAGE_DIGEST: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          # Keyless signing binds the signature to this workflow's OIDC identity;
+          # no long-lived private key is stored. Signing by digest covers every
+          # tag that resolves to this image (REL-009).
+          cosign sign --yes "${IMAGE_DIGEST}"
+
+  health-smoke:
+    name: Image health & non-root smoke
+    needs:
+      - validate-release-ref
+      - server-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Prepare smoke-test environment
+        env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Minimal .env: FIRST_RUN_PASSWORD is required by the compose file; the
+          # encryption key is generated fresh. All other secrets fall back to the
+          # tracked example defaults, which match between services.
+          data_encryption_key="$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+          cat > .env <<EOF
+          FIRST_RUN_PASSWORD=ci-smoke-first-run
+          DATA_ENCRYPTION_KEY=${data_encryption_key}
+          EOF
+
+          # Pin the api and frontend services to the freshly built version images.
+          cat > docker-compose.ci.yml <<EOF
+          services:
+            api:
+              image: ${IMAGE_BASE}-api:${VERSION}
+            frontend:
+              image: ${IMAGE_BASE}-frontend:${VERSION}
+          EOF
+
+      - name: Start backend stack (db, redis, socket-proxy, api)
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.example.yml -f docker-compose.ci.yml \
+            up -d db redis socket-proxy api
+
+      - name: Wait for API health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            status="$(docker inspect --format '{{ .State.Health.Status }}' nojoin-api 2>/dev/null || echo starting)"
+            echo "api health: ${status} (attempt ${i})"
+            if [[ "${status}" == "healthy" ]]; then exit 0; fi
+            if [[ "${status}" == "unhealthy" ]]; then break; fi
+            sleep 10
+          done
+          echo "API did not become healthy in time" >&2
+          docker logs nojoin-api --tail 200 || true
+          exit 1
+
+      - name: Start frontend and wait for health
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.example.yml -f docker-compose.ci.yml \
+            up -d frontend
+          for i in $(seq 1 18); do
+            status="$(docker inspect --format '{{ .State.Health.Status }}' nojoin-frontend 2>/dev/null || echo starting)"
+            echo "frontend health: ${status} (attempt ${i})"
+            if [[ "${status}" == "healthy" ]]; then exit 0; fi
+            if [[ "${status}" == "unhealthy" ]]; then break; fi
+            sleep 10
+          done
+          echo "Frontend did not become healthy in time" >&2
+          docker logs nojoin-frontend --tail 200 || true
+          exit 1
+
+      - name: Assert containers run as non-root
+        env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+        run: |
+          set -euo pipefail
+          # api and frontend are running: check the live runtime uid.
+          for c in nojoin-api nojoin-frontend; do
+            uid="$(docker exec "${c}" id -u)"
+            echo "${c} runtime uid: ${uid}"
+            if [[ "${uid}" -eq 0 ]]; then
+              echo "${c} is running as root" >&2
+              exit 1
+            fi
+          done
+          # The worker needs a GPU and models to boot, so assert its non-root
+          # USER from the published image config without pulling the large layers.
+          # The published artifact is an OCI index (provenance + SBOM
+          # attestations), so `{{json .Image}}` is a platform-keyed map; the jq
+          # also handles a single-image config object so a shape change cannot
+          # turn this into a template error that aborts the release.
+          worker_image="$(docker buildx imagetools inspect \
+            "${IMAGE_BASE}-worker:${VERSION}" --format '{{json .Image}}')"
+          worker_user="$(printf '%s' "${worker_image}" | jq -r \
+            '(if has("config") then .config.User else (first(to_entries[] | select(.key|startswith("linux/")) | .value.config.User)) end) // empty')"
+          echo "worker image USER: ${worker_user:-<empty>}"
+          if [[ -z "${worker_user}" || "${worker_user}" == "root" || "${worker_user}" == "0" ]]; then
+            echo "worker image does not declare a non-root USER" >&2
+            exit 1
+          fi
+
+      - name: Tear down stack
+        if: always()
+        run: |
+          docker compose -f docker-compose.example.yml -f docker-compose.ci.yml down -v || true
+
+  publish-mutable-tags:
+    name: Publish rolling tags
+    needs:
+      - validate-release-ref
+      - server-release
+      - health-smoke
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        image_suffix:
+          - -api
+          - -worker
+          - -frontend
+
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # Promote the verified immutable image to the rolling tags. major.minor
+      # always advances on a successful release; latest only advances when the
+      # release flow authorised it. cosign signatures attach to the digest, so
+      # these tags inherit the existing signature without re-signing.
+      - name: Promote rolling tags from verified image
+        env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}${{ matrix.image_suffix }}
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+          MAJOR_MINOR: ${{ needs.validate-release-ref.outputs.major_minor }}
+          PUBLISH_LATEST: ${{ needs.validate-release-ref.outputs.publish_latest }}
+        run: |
+          set -euo pipefail
+          tags=( "--tag" "${IMAGE_BASE}:${MAJOR_MINOR}" )
+          if [[ "${PUBLISH_LATEST}" == "true" ]]; then
+            tags+=( "--tag" "${IMAGE_BASE}:latest" )
+          fi
+          docker buildx imagetools create "${tags[@]}" "${IMAGE_BASE}:${VERSION}"
+
+  publish-release-notes:
+    name: Publish release notes
+    needs:
+      - validate-release-ref
+      - publish-mutable-tags
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # Full history is required to compute the previous-tag..this-tag range.
+          fetch-depth: 0
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Render release notes
+        id: notes
+        env:
+          IMAGE_BASE: ${{ needs.validate-release-ref.outputs.image_base }}
+          TAG: ${{ needs.validate-release-ref.outputs.tag_name }}
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Resolve the previous release tag reachable from this tag. The range is
+          # exactly previous-tag..this-tag (REL-013); fall back to full history
+          # for the very first release.
+          if prev_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${TAG}^" 2>/dev/null)"; then
+            range="${prev_tag}..${TAG}"
+            echo "Changelog range: ${range}"
+          else
+            range="${TAG}"
+            echo "No previous tag found; using full history."
+          fi
+
+          git log --no-merges --pretty=format:'- %s (%h)' "${range}" > changelog.txt
+          if [[ ! -s changelog.txt ]]; then
+            echo "- No notable changes." > changelog.txt
+          fi
+
+          # Resolve the published image digests for reproducible-pin guidance.
+          : > image-digests.txt
+          for suffix in -api -worker -frontend; do
+            digest="$(docker buildx imagetools inspect "${IMAGE_BASE}${suffix}:${VERSION}" \
+              --format '{{ .Manifest.Digest }}' 2>/dev/null || echo unknown)"
+            printf -- '- `%s%s@%s`\n' "${IMAGE_BASE}" "${suffix}" "${digest}" >> image-digests.txt
+          done
+
+          python3 - <<'PY'
+          import os
+
+          version = os.environ["VERSION"]
+          template = open(".github/release-notes-template.md", encoding="utf-8").read()
+          changelog = open("changelog.txt", encoding="utf-8").read().strip()
+          digests = open("image-digests.txt", encoding="utf-8").read().strip()
+
+          body = (
+              template
+              .replace("{{VERSION}}", version)
+              .replace("{{IMAGE_DIGESTS}}", digests)
+              .replace("{{CHANGELOG}}", changelog)
+          )
+          with open("release-notes.md", "w", encoding="utf-8") as handle:
+              handle.write(body)
+          PY
+
+          echo "Rendered release notes:"
+          cat release-notes.md
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          tag_name: ${{ needs.validate-release-ref.outputs.tag_name }}
+          name: Nojoin ${{ needs.validate-release-ref.outputs.version }}
+          body_path: release-notes.md
+          make_latest: ${{ needs.validate-release-ref.outputs.publish_latest }}

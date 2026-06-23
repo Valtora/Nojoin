@@ -1,0 +1,66 @@
+# Dependabot keeps Nojoin's supply chain current without manual tracking.
+#
+# Notes:
+# - GitHub Actions are pinned to commit SHAs in the workflows. Dependabot
+#   updates those SHAs in place and keeps the trailing `# vX.Y.Z` comment
+#   accurate, so SHA pinning does not mean the actions go stale.
+# - Docker base images are pinned by digest in the Dockerfiles. Dependabot
+#   bumps the digest (and tag comment) when a new image is published.
+# - Updates are grouped where practical to keep pull-request volume reviewable.
+version: 2
+
+updates:
+  # --- GitHub Actions used by CI and the release workflow ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # --- Python dependencies (split requirement files) ---
+  - package-ecosystem: pip
+    directory: /requirements
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  # --- Frontend npm dependencies ---
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    groups:
+      npm-development:
+        dependency-type: development
+      npm-production:
+        dependency-type: production
+
+  # --- Container base images ---
+  - package-ecosystem: docker
+    directories:
+      - /docker
+      - /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    groups:
+      docker-base-images:
+        patterns:
+          - "*"

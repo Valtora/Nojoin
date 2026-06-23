@@ -173,16 +173,16 @@ Large refactors must preserve behavior and begin with characterization tests.
 
 ## Phase 5: Harden Release And Supply-Chain Governance
 
-- [ ] **REL-006:** Pin third-party GitHub Actions to reviewed commit SHAs and use automated updates to keep them current.
-- [ ] **REL-007:** Generate build provenance and an SBOM for each published image.
-- [ ] **REL-008:** Add container and dependency vulnerability scanning with a documented severity policy.
-- [ ] **REL-009:** Publish checksums or signatures appropriate to every release artifact.
-- [ ] **REL-010:** Remove `npm install -g npm@latest` from Docker builds and use a deliberate, reproducible npm version.
-- [ ] **REL-011:** Pin or otherwise govern mutable container base images and document the update policy.
-- [ ] **REL-012:** Verify release images run as non-root and pass health checks before publication.
-- [ ] **REL-013:** Automate release-note generation or validation from the exact previous-tag-to-current-tag range.
-- [ ] **REL-014:** Publish release notes with upgrade, migration, rollback, known-issue, and browser-capture compatibility sections where applicable.
-- [ ] **REL-015:** Add a documented emergency security-release and artifact-revocation procedure.
+- [x] **REL-006:** Pin third-party GitHub Actions to reviewed commit SHAs and use automated updates to keep them current. Every action in `.github/workflows/ci.yml` and `release.yml` is pinned to a commit SHA with a version comment, and `.github/dependabot.yml` keeps github-actions, pip, npm, and docker ecosystems current weekly.
+- [x] **REL-007:** Generate build provenance and an SBOM for each published image. The build step sets `provenance: mode=max` and `sbom: true`; verification commands are documented in `docs/DEPLOYMENT.md`.
+- [x] **REL-008:** Add container and dependency vulnerability scanning with a documented severity policy. Trivy scans each image before its rolling tags publish (fail on fixable CRITICAL/HIGH), a non-blocking dependency scan runs on pull requests, exceptions live in `.trivyignore`, and the policy is recorded in `docs/SECURITY.md`.
+- [x] **REL-009:** Publish checksums or signatures appropriate to every release artifact. Every image is cosign-signed by digest using keyless OIDC signing; published image digests are listed in the release notes.
+- [x] **REL-010:** Remove `npm install -g npm@latest` from Docker builds and use a deliberate, reproducible npm version. `frontend/Dockerfile` now uses the npm bundled with the digest-pinned `node:20-alpine` base (npm 10, compatible with `lockfileVersion 3`).
+- [x] **REL-011:** Pin or otherwise govern mutable container base images and document the update policy. All three Dockerfiles pin their base images by `@sha256:` digest with tag comments; Dependabot governs updates and the policy is documented for contributors and operators.
+- [x] **REL-012:** Verify release images run as non-root and pass health checks before publication. The `health-smoke` job boots the api and frontend with their real dependencies, waits for the production healthchecks, asserts non-root runtime uids, and asserts the worker's non-root image `USER`; rolling tags are gated on it passing.
+- [x] **REL-013:** Automate release-note generation or validation from the exact previous-tag-to-current-tag range. The `publish-release-notes` job derives the changelog from `git describe`-resolved previous-tag..this-tag history.
+- [x] **REL-014:** Publish release notes with upgrade, migration, rollback, known-issue, and browser-capture compatibility sections where applicable. `.github/release-notes-template.md` carries those sections and is filled automatically, then refined by maintainers.
+- [x] **REL-015:** Add a documented emergency security-release and artifact-revocation procedure. `docs/SECURITY.md` documents the expedited gated-release path, advisory/CVE coordination, GHCR artifact revocation, digest untrusting, operator notification, and secret rotation.
 
 ## Phase 6: Establish Ongoing Repository Governance
 

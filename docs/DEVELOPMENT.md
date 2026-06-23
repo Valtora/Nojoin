@@ -390,19 +390,67 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 ## Release Workflow and Version Detection
 
 ### Unified Release Process
-Nojoin uses a single Git Tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step:
-1. **Update Version**: Update [VERSION](VERSION) to the new version string (e.g. `0.6.0`).
-2. **Commit and Tag**: Commit the version file change and create/push the tag:
+
+Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step. The maintainer steps are unchanged by the supply-chain hardening; what changed is that more happens automatically after the tag is pushed, and the release can now be blocked by a gate.
+
+**Maintainer steps (manual):**
+
+1. **Merge and sync**: Merge the work for the release into `main` and ensure your local `main` is up to date.
+2. **Update version**: Update [VERSION](VERSION) to the new version string (e.g. `0.6.0`). The tag must match this value exactly or the release fails fast.
+3. **Commit and tag**: Commit the version bump, then create and push the tag:
    ```bash
    git add docs/VERSION
    git commit -m "chore: bump version to 0.6.0"
    git tag v0.6.0
    git push origin v0.6.0
    ```
-3. **CI/CD Pipeline**: The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml). Release publishing now re-runs the backend, frontend, docs, and Alembic validation set before any image push, verifies `docs/VERSION` matches the tag, and only publishes `latest` automatically from the tag-triggered release flow. Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly. Update release notes manually in the GitHub Releases interface.
+4. **Refine release notes (after the run succeeds)**: The pipeline creates the GitHub Release automatically (see below). Edit its editorial sections — Migration, Rollback, Known Issues, Browser-Capture Compatibility — in the GitHub Releases interface where the release needs specific guidance. You no longer author release notes from scratch.
+
+**What the pipeline does automatically (on tag push):** The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml), which runs in this order:
+
+1. Re-runs the full backend, frontend, docs, and Alembic validation set and verifies `docs/VERSION` matches the tag.
+2. Builds each image and publishes only the immutable `version` and commit-`sha` tags, with provenance and SBOM attestations.
+3. Scans each image with Trivy and **fails the release on fixable CRITICAL/HIGH vulnerabilities** (see [Image Provenance, SBOM, and Signing](#image-provenance-sbom-and-signing) and the severity policy in [SECURITY.md](SECURITY.md)).
+4. Signs each image with cosign, then runs the non-root and health smoke.
+5. Publishes the rolling `latest` and `major.minor` tags only after all the above pass.
+6. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes-rel-013-rel-014)).
+
+Because of step 3, a tag push no longer guarantees published images: if scanning finds a fixable CRITICAL/HIGH vulnerability the run fails and the rolling tags are not moved. The usual fix is to merge the relevant Dependabot base-image or dependency update (or, for a justified unfixable case, add a documented, dated entry to [.trivyignore](../.trivyignore)) and cut the tag again.
+
+Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly.
 
 ### Runtime Version Detection
 The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
+
+## Supply-Chain and Release Hardening
+
+The release pipeline is hardened to make published images reproducible, traceable, and verifiable. Contributors changing CI, the release workflow, or the Dockerfiles must keep the controls below intact.
+
+### Pinned Actions and Base Images
+
+- Every third-party GitHub Action in [.github/workflows/](../.github/workflows/) is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment. Do not reintroduce floating tags such as `@v5`; a mutable tag can be repointed at malicious code after review.
+- Every container base image in the Dockerfiles is pinned by `@sha256:` digest with the human-readable tag kept as a comment. The digest is the immutable identity of the image; the tag alone is mutable.
+- When you intentionally upgrade an action or base image, update both the SHA/digest and the version comment in the same change.
+
+### Dependabot
+
+[.github/dependabot.yml](../.github/dependabot.yml) keeps four ecosystems current on a weekly cadence: GitHub Actions, Python (`requirements/`), npm (`frontend/`), and Docker base images. Dependabot rewrites pinned SHAs and digests in place and updates the version comment, so pinning does not cause drift. Review and merge these update pull requests like any other change; they run the full CI suite.
+
+### Image Provenance, SBOM, and Signing
+
+Every published image is signed with cosign keyless (OIDC) signing and carries build-provenance and SBOM attestations (`provenance: mode=max`, `sbom: true` in the build step). The signature is bound to the release workflow identity, so the `server-release` job requires `id-token: write`. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
+
+### Gated Tag Publication
+
+The release flow publishes the immutable `version` and commit-`sha` tags during the build, then publishes the rolling `latest` and `major.minor` tags from a separate `publish-mutable-tags` job only after vulnerability scanning, the image health smoke, and signing all pass. This means a build that fails a gate can briefly expose an immutable `vX.Y.Z` tag (with the run visibly failing) but can never advance the `latest` tag that operators pull by default. Keep this ordering intact when editing the release workflow.
+
+### Health and Non-Root Smoke (REL-012)
+
+The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts each running container's uid is non-root. The worker requires a GPU and preloaded models to boot, so its non-root `USER` is asserted from the published image config via `docker buildx imagetools inspect` (which reads the config without pulling the large layers) rather than by booting it. The rolling tags are not published unless this job passes.
+
+### Automated Release Notes (REL-013, REL-014)
+
+After the rolling tags publish, the `publish-release-notes` job creates the GitHub Release. It resolves the exact previous-tag→this-tag commit range with `git describe`, renders the changelog from that range, resolves the published image digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md). The template carries the required sections — Upgrade, Migration, Rollback, Known Issues, and Browser-Capture Compatibility — with sensible defaults that maintainers refine in the GitHub Releases UI when a release needs specific guidance. `make_latest` follows the same `publish_latest` decision as the image tags.
 
 ## Related Docs
 
