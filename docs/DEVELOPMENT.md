@@ -127,25 +127,9 @@ JSON
 
 This step is maintainer-action-pending: it is documented here but not enforced from the repository tree.
 
-Once the release pipeline has run green on at least one tag, the release-only checks become selectable as required contexts. Add them for release tags so a release cannot publish on a broken pipeline:
+**Do not add the release jobs to this required-checks list.** The contexts above are exactly the seven checks the CI workflow runs on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all.
 
-```bash
-gh api -X PUT repos/Valtora/Nojoin/branches/main/protection/required_status_checks \
-  -f strict=true \
-  -f 'contexts[]=Backend tests' \
-  -f 'contexts[]=Python quality' \
-  -f 'contexts[]=Frontend lint' \
-  -f 'contexts[]=Frontend unit tests' \
-  -f 'contexts[]=Frontend build' \
-  -f 'contexts[]=Docs validation' \
-  -f 'contexts[]=Alembic validation' \
-  -f 'contexts[]=Build, scan & sign images' \
-  -f 'contexts[]=Image health & non-root smoke' \
-  -f 'contexts[]=Publish rolling tags' \
-  -f 'contexts[]=Publish release notes'
-```
-
-The release-job display names (`Build, scan & sign images`, `Image health & non-root smoke`, `Publish rolling tags`, `Publish release notes`) correspond to the `server-release`, `health-smoke`, `publish-mutable-tags`, and `publish-release-notes` jobs in [release.yml](../.github/workflows/release.yml). They do not exist as selectable check contexts until the first release run reports them, which is why this is a deliberate Phase 5 follow-up rather than part of the initial protection rule.
+The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release` and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow (see [adr/0001-gated-signed-release-model.md](adr/0001-gated-signed-release-model.md)).
 
 ## Verification By Change Scope
 

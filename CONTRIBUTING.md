@@ -171,7 +171,7 @@ Branch protection and required-reviewer enforcement cannot be applied from the r
 - Require the seven status checks listed above (their job names) to pass before merging, with branches required to be up to date. These are enforced for admins too, so nothing merges red.
 - Require linear history and disallow force pushes and deletions.
 
-The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). Once a tagged release has run the release pipeline green at least once, also add `server-release`, `health-smoke`, `publish-mutable-tags`, and `publish-release-notes` to the required checks for release tags — those contexts do not exist until the first release run creates them.
+The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [ADR-0001](docs/adr/0001-gated-signed-release-model.md).
 
 ### Architecture Decision Records
 
