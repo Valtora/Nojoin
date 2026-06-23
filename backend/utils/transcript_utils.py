@@ -542,24 +542,13 @@ def consolidate_diarized_transcript(
         # Splits segment if longer than max duration.
         # This handles cases where Whisper returned a 30s block that needs breaking.
         if (curr_end - curr_start) > max_duration_s:
-            # Smart Word-Level Splitting (Soft Limit Strategy)
             if curr_words:
-                # Target splitting window: 8s to 12s (centered around 10s default)
-                # But hard cap is usually max_duration_s (10s) passed in.
-                # If the user wants a soft limit up to 12s, they should ideally pass max_duration_s=12.0
-                # However, the requirement says "limit to 10s... soft limit 8-12s".
-                # Treats max_duration_s as the ideal target (10s).
-
-                # Logic:
-                # 1. Look for a sentence break (.!?) between curr_start + 8s and curr_start + 12s.
-                # 2. If found, split there.
-                # 3. If not, split at the word boundary closest to curr_start + 10s (but not exceeding 12s).
-
+                # Split within an 8-12s window centred on a 10s target: prefer the
+                # sentence break (.!?) nearest the target, otherwise the nearest word
+                # boundary in the window, otherwise the first word ending past 10s.
                 soft_min = curr_start + 8.0
                 soft_max = curr_start + 12.0
                 hard_target = curr_start + 10.0
-
-                # split_idx = -1 # Not used directly in loop
 
                 # Track best sentence break vs best word break separately
                 best_sentence_idx = -1
@@ -647,15 +636,11 @@ def consolidate_diarized_transcript(
 
             # --- Fallback: Naive Character Split (No Words) ---
             else:
-                # Calculates number of full chunks.
                 duration = curr_end - curr_start
-
-                # Split point
                 split_end = curr_start + max_duration_s
 
-                # Uses naive text split due to missing word timestamps.
-                # If we had word timestamps, they are lost in this dict structure usually (unless passed through).
-                # We'll just do a rough ratio split for text.
+                # No word timestamps: split the text by character ratio at the
+                # max-duration point, nudged to the nearest space below.
                 ratio = max_duration_s / duration
                 split_idx = int(len(curr_text) * ratio)
 
@@ -687,12 +672,9 @@ def consolidate_diarized_transcript(
                 }
                 consolidated.append(_copy_consolidation_metadata(curr, split_segment))
 
-                # Now we set up the remainder as the new 'curr' for the next iteration of the loop
-                # But we can't easily modify `segments` list in place safely or insert.
-                # Easiest way: Update `segments[i]` to be the remainder and STAY on `i` (don't increment).
-                # Infinite-loop safety: split_end > curr_start is guaranteed by max_duration_s > 0,
-                # so the remainder shrinks on each iteration.
-
+                # Replace segments[i] with the remainder and re-process at the same
+                # index. Infinite-loop safety: split_end > curr_start is guaranteed
+                # by max_duration_s > 0, so the remainder shrinks each iteration.
                 remainder_segment = {
                     "start": split_end,
                     "end": curr_end,  # Original end
@@ -712,11 +694,7 @@ def consolidate_diarized_transcript(
             next_speaker = next_seg["speaker"]
             next_overlapping = set(next_seg.get("overlapping_speakers", []))
 
-            # Predictive check: Would merging this segment exceed the max duration?
-            # Checks if merging exceeds max duration.
-            # If so, we STOP merging here, unless it's a single segment that is already too long (which we can't help without word split)
-            # But the logic here merges consecutive small segments.
-
+            # Stop merging if adding this segment would exceed max_duration_s.
             potential_end = max(curr_end, next_seg["end"])
             if (potential_end - curr_start) > max_duration_s:
                 # Break the merge loop to enforce the split

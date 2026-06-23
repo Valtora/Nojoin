@@ -53,7 +53,7 @@ export default function LoginPage() {
         // no-op, user is not logged in
       }
     };
-    
+
     checkCurrentUser();
   }, [router]);
 

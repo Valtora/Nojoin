@@ -6,7 +6,7 @@ CRT_FILE="$CERT_DIR/cert.crt"
 
 if [ ! -f "$KEY_FILE" ] || [ ! -f "$CRT_FILE" ]; then
     echo "Generating self-signed SSL certificates..."
-    
+
     # Install openssl if not present (assuming alpine)
     if ! command -v openssl >/dev/null 2>&1; then
         apk add --no-cache openssl
@@ -16,9 +16,9 @@ if [ ! -f "$KEY_FILE" ] || [ ! -f "$CRT_FILE" ]; then
         -keyout "$KEY_FILE" \
         -out "$CRT_FILE" \
         -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
-    
+
     echo "Certificates generated successfully."
-    
+
     # Set permissions: public certificate is world-readable, private key is owner-only
     chmod 644 "$CRT_FILE"
     chmod 600 "$KEY_FILE"

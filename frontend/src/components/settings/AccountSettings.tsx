@@ -37,7 +37,7 @@ export default function AccountSettings({
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [username, setUsername] = useState('');
   const { addNotification } = useNotificationStore();
-  
+
   const [passwordData, setPasswordData] = useState({
     current_password: '',
     new_password: '',
@@ -126,7 +126,7 @@ export default function AccountSettings({
       addNotification({ message: 'New passwords do not match', type: 'error' });
       return;
     }
-    
+
     setPasswordLoading(true);
     try {
       await updatePasswordMe({

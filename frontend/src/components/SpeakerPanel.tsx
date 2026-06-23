@@ -319,11 +319,11 @@ export default function SpeakerPanel({
       for (const speaker of renamingSpeaker.members) {
         await updateSpeaker(recordingId, speaker.diarization_label, newName);
       }
-      
+
       if (oldName !== newName && onSpeakerRenamed) {
         await onSpeakerRenamed(oldName, newName);
       }
-      
+
       setRenamingSpeaker(null);
       onRefresh();
 

@@ -44,9 +44,8 @@ from backend.utils.speaker_name_suggestions import (
     parse_speaker_inference_response,
 )
 
-# Lazy imports for LLM providers to avoid heavy dependencies in API
-# import openai
-# import anthropic
+# Provider SDKs (openai, anthropic) are imported lazily inside the functions
+# that use them to keep heavy dependencies out of the API import path.
 
 logger = logging.getLogger(__name__)
 

@@ -50,7 +50,7 @@ export default function LinkModal({ isOpen, onClose, onSubmit, initialUrl = '' }
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -65,7 +65,7 @@ export default function LinkModal({ isOpen, onClose, onSubmit, initialUrl = '' }
               className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
             />
           </div>
-          
+
           <div className="flex justify-end gap-2">
             <button
               type="button"

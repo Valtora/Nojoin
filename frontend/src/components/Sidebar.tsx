@@ -451,14 +451,14 @@ export default function Sidebar() {
     const handlePointerMove = (e: PointerEvent) => {
       // Don't resize on mobile
       if (window.innerWidth < 1024) return;
-      
+
       const sidebarElement = document.getElementById("sidebar-recordings-list");
       if (!sidebarElement) return;
 
       const sidebarRect = sidebarElement.getBoundingClientRect();
       // Calculate width relative to the left edge of the sidebar
       const newWidth = e.clientX - sidebarRect.left;
-      
+
       if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
         setRecordingsSidebarWidth(newWidth);
       }

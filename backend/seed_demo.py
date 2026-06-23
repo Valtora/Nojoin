@@ -82,10 +82,9 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
                     f"Force re-seeding: Deleting existing demo recording for user {target_user.username}..."
                 )
                 await session.delete(existing_recording)
-                # Don't commit yet, we will commit when we add new stuff, or we can commit here.
-                # Committing here is safer for the delete.
+                # Commit the delete before inserting the replacement so a failure
+                # mid-reseed cannot leave two demo recordings for the same user.
                 await session.commit()
-                # Proceed to create new data
             else:
                 logger.info(
                     f"Demo recording already exists for user {target_user.username}."
@@ -244,8 +243,6 @@ The team gathered to demonstrate the core features of the Nojoin platform, highl
             role="assistant",
             content="The key features mentioned are local GPU processing, a user-friendly interface for transcript editing, speaker management tools, and AI-generated notes and action items.",
         )
-        session.add(chat_response)
-
         session.add(chat_response)
 
         # Mark user as having seen the demo

@@ -50,7 +50,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
     }
   };
 
-  const filteredTags = tags.filter(tag => 
+  const filteredTags = tags.filter(tag =>
     tag.name.toLowerCase().includes(inputValue.toLowerCase())
   );
 
@@ -67,7 +67,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         <div className="mb-4">
           <input
             autoFocus
@@ -77,7 +77,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
             placeholder="Search tags..."
             className="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none mb-2"
           />
-          
+
           <div className="max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
             {filteredTags.map(tag => {
               const color = getColorByKey(tag.color);
@@ -86,8 +86,8 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
                   key={tag.id}
                   onClick={() => setSelectedTag(tag.name)}
                   className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between group transition-colors ${
-                    selectedTag === tag.name 
-                      ? 'bg-orange-50 dark:bg-orange-900/20' 
+                    selectedTag === tag.name
+                      ? 'bg-orange-50 dark:bg-orange-900/20'
                       : 'hover:bg-gray-50 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -99,7 +99,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
                 </button>
               );
             })}
-            
+
             {mode === 'add' && inputValue && !filteredTags.some(t => t.name.toLowerCase() === inputValue.toLowerCase()) && (
               <button
                 onClick={handleCreateTag}
@@ -109,7 +109,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
                 Create &quot;{inputValue}&quot;
               </button>
             )}
-            
+
             {filteredTags.length === 0 && !inputValue && (
               <div className="px-3 py-4 text-sm text-gray-500 text-center">
                 No tags found
@@ -134,8 +134,8 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
             }}
             disabled={!selectedTag}
             className={`px-4 py-2 text-white rounded-lg text-sm font-medium transition-opacity ${
-              selectedTag 
-                ? 'bg-orange-600 hover:bg-orange-700' 
+              selectedTag
+                ? 'bg-orange-600 hover:bg-orange-700'
                 : 'bg-orange-400 cursor-not-allowed opacity-50'
             }`}
           >

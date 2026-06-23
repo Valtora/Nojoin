@@ -303,7 +303,7 @@ Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibilit
 
 ### Spellcheck Dictionaries
 
-Spellcheck dictionaries are stored under `frontend/public/dictionaries/` in gzip-compressed format (`index.aff.gz` and `index.dic.gz`) to optimize repository size and container image build footprint. 
+Spellcheck dictionaries are stored under `frontend/public/dictionaries/` in gzip-compressed format (`index.aff.gz` and `index.dic.gz`) to optimize repository size and container image build footprint.
 
 If you add a new language or update an existing dictionary:
 1. Obtain the raw `.aff` and `.dic` files.
@@ -322,6 +322,14 @@ If you add a new language or update an existing dictionary:
 - **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues. Catch specific exception types where recovery differs; a deliberately broad `except Exception` at a recovery boundary must log actionable context (or re-raise with `raise ... from`) and carry a justification comment in the form `# noqa: BLE001 -- boundary: <reason>`.
 - **Logging**: Use lazy `%`-style formatting (`logger.info("processed %s", count)`), not eager f-strings, in frequently executed paths so the interpolation is skipped when the level is disabled.
 
+### Comments
+These rules apply to all tracked source (backend, worker, and frontend), not just Python.
+
+- **Explain intent, not syntax**: A comment should document an invariant, constraint, risk, compatibility requirement, or other non-obvious intent. Do not narrate what the code already says line by line.
+- **No indecisive developer-thought comments**: Remove musings such as "we can commit here", "usually", "assume consistency", "maybe skipped?", or questions embedded in authorization rules. If the code's behaviour is a deliberate rule, state the rule.
+- **Rewrite uncertainty as a contract**: If something is genuinely uncertain or conditional, express it as an explicit invariant, a documented fallback policy, a tracked issue reference, or a testable assumption — not as a hedge. Where the rule is security- or authorization-sensitive, lock it with a test rather than a comment.
+- **Preserve load-bearing comments**: Keep comments that document live/final pipeline alignment, security and authorization boundaries, migration and backward-compatibility requirements, browser-capture contracts, and non-obvious build or runtime constraints. When in doubt, make such a comment more precise rather than deleting it.
+
 ### Local Checks From A Fresh Checkout
 Reproduce the CI Python checks locally with a single command:
 
@@ -331,7 +339,7 @@ source .venv/bin/activate
 python -m pip install -r requirements/dev.txt   # tests + lint/format/type tooling (CPU)
 pre-commit install                              # optional: run lint/format on commit
 
-python scripts/check.py            # ruff lint, format check, mypy, doc/alembic validators, pytest
+python scripts/check.py            # ruff lint, format check, trailing-whitespace, mypy, doc/alembic validators, pytest
 python scripts/check.py --fix      # auto-fix lint + formatting first
 python scripts/check.py lint mypy  # run a subset
 ```

@@ -14,7 +14,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       const publicPaths = ['/login', '/setup', '/register'];
-      
+
       let currentUser = null;
       try {
         currentUser = await getCurrentUser();
@@ -29,7 +29,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           setError(getErrorMessage(e, "Failed to connect to server"));
         }
       }
-      
+
       if (!currentUser && !publicPaths.some(p => pathname?.startsWith(p))) {
         router.push('/login');
         return;
@@ -54,7 +54,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         router.push('/settings?tab=account&forcePasswordChange=1');
         return;
       }
-      
+
       setChecked(true);
     };
 
@@ -71,7 +71,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             Please ensure the backend server is running and accessible at <br/>
             <code className="bg-black/30 px-1 rounded">https://localhost:14443/api/v1</code>
           </p>
-          <button 
+          <button
             onClick={() => window.location.reload()}
             className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white text-sm font-medium"
           >

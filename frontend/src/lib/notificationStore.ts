@@ -14,7 +14,7 @@ export interface Notification {
 interface NotificationState {
   activeNotifications: Notification[];
   history: Notification[];
-  
+
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => string;
   dismissToast: (id: string) => void;
   clearHistory: () => void;
@@ -55,7 +55,7 @@ export const useNotificationStore = create<NotificationState>()(
           activeNotifications: state.activeNotifications.filter((n) => n.id !== id),
         }));
       },
-      
+
       removeActiveNotification: (id) => {
           set((state) => ({
               activeNotifications: state.activeNotifications.filter((n) => n.id !== id),

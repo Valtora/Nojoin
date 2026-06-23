@@ -11,11 +11,11 @@ interface ColorPickerProps {
   className?: string;
 }
 
-export default function ColorPicker({ 
-  selectedColor, 
-  onColorSelect, 
+export default function ColorPicker({
+  selectedColor,
+  onColorSelect,
   trigger,
-  className = '' 
+  className = ''
 }: ColorPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -138,9 +138,9 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
         className={`w-3 h-3 rounded-full ${selectedColorOption?.dot || 'bg-gray-400'} hover:ring-2 hover:ring-offset-1 hover:ring-gray-400 transition-all`}
         title="Change color"
       />
-      
+
       {isOpen && (
-        <div 
+        <div
           className="absolute left-0 top-full mt-1 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-max"
           onClick={(e) => e.stopPropagation()}
         >

@@ -13,11 +13,6 @@ from typing import List, Literal, Optional
 from docx import Document as DocxDocument
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
-
-# ReportLab imports for PDF removed
-# from reportlab.lib import colors
-# ...
-# Markdown PDF imports
 from markdown_pdf import MarkdownPdf, Section
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession

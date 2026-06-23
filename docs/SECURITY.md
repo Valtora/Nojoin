@@ -86,7 +86,7 @@ Please report any security vulnerabilities privately. Do not open public GitHub 
 
 ### Private Reporting Channel
 
-We use GitHub's Private Vulnerability Reporting feature to receive security disclosures securely and privately. 
+We use GitHub's Private Vulnerability Reporting feature to receive security disclosures securely and privately.
 
 - **Submit a Report:** Visit [GitHub Private Vulnerability Report](https://github.com/Valtora/Nojoin/security/advisories/new) to submit your report.
 - **Provide Details:** Please include a detailed description of the vulnerability, steps to reproduce, and any proof of concept (PoC) or exploit code.

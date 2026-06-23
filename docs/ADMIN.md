@@ -52,7 +52,7 @@ Read [CALENDAR.md](CALENDAR.md) for the full provider registration and tenant gu
 
 ### AI and Models
 
-Use **Settings > AI** for installation-wide provider defaults, model operations, and Ollama configuration. 
+Use **Settings > AI** for installation-wide provider defaults, model operations, and Ollama configuration.
 
 > [!IMPORTANT]
 > For security, LLM provider API keys and Hugging Face tokens are server-side environment-only variables and must be configured via environment variables (e.g., `.env`) and the container restarted, rather than through UI settings fields.

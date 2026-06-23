@@ -634,8 +634,8 @@ class BackupManager:
                 # Append children to the end of the queue (BFS traversal).
                 queue.extend(children)
 
-        # checks for cycles or disconnected items (shouldn't happen in valid trees)
-        # If we missed any, just append them at the end (fallback)
+        # Items in a cycle or with a missing parent are never reached by the BFS
+        # above; append any leftovers so no row is dropped from the restore.
         if len(sorted_items) < len(data):
             processed_ids = {x.get("id") for x in sorted_items}
             for item in data:
@@ -658,11 +658,10 @@ class BackupManager:
             for table_name, model_cls in MODELS:
                 statement = select(model_cls)
 
-                # Safe Order for Tags (Parents First)
                 if table_name in ["tags", "p_tags"]:
-                    # Order by parent_id NULLS FIRST, then ID
-                    # This isn't strictly perfect for deep nesting without recursive CTE,
-                    # but it helps simple 1-level nesting which is common.
+                    # Order parents before children (parent_id NULLS FIRST, then id)
+                    # so the dump lists a parent ahead of any child referencing it.
+                    # Deeper nesting is reordered by _sort_items_by_hierarchy on restore.
                     statement = statement.order_by(
                         model_cls.parent_id.nullsfirst(), model_cls.id
                     )
@@ -771,8 +770,8 @@ class BackupManager:
             # 1. Clear Existing Data if requested
             if clear_existing:
                 logger.info("Clearing existing data...")
-                # Clear DB, BUT SKIP USERS to prevent lockout
-                # NOTE: We need a new session here since we are in a thread
+                # Clear DB, but skip users to prevent lockout.
+                # Restore runs in a worker thread, so use a synchronous Session here.
                 from sqlmodel import Session
 
                 from backend.core.db import sync_engine
@@ -890,7 +889,8 @@ class BackupManager:
                                     logger.info(
                                         f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings."
                                     )
-                                    # Specific delete to trigger cascades if needed (though delete from recordings usually cascades)
+                                    # Delete via the Recording table so the configured
+                                    # ON DELETE cascades remove dependent rows.
                                     session.exec(
                                         delete(Recording).where(
                                             Recording.id.in_(existing_ids)
@@ -1023,12 +1023,11 @@ class BackupManager:
                             )
 
                             if existing_rec:
-                                # Conflict detected. If overwrite_existing is True, this record should have been
-                                # removed during pre-flight cleanup, suggesting a potential race condition.
-
+                                # Identity conflict with a recording already present.
                                 if overwrite_existing:
-                                    # Fallback: Delete row
-                                    # NOTE: Pre-flight should have caught this. If we are here, it's a straggler or race condition.
+                                    # Overwrite mode: pre-flight cleanup removes conflicting
+                                    # rows up front; delete any that survived it so this
+                                    # backup row can be inserted without a unique clash.
                                     logger.warning(
                                         f"Fallback delete triggered for recording match (audio_path={audio_path}, "
                                         f"meeting_uid={meeting_uid}, public_id={public_id}). Deleting ID {existing_rec.id}."
@@ -1046,8 +1045,8 @@ class BackupManager:
                                     session.delete(existing_rec)
                                     session.flush()
                                 else:
-                                    # Strategy: SKIP (Safe Merge)
-                                    # Uses existing ID map.
+                                    # Skip strategy (safe merge): map the backup row's
+                                    # id onto the existing row and reuse it.
                                     if old_id is not None:
                                         id_map["recordings"][old_id] = existing_rec.id
                                         skipped_recording_ids.add(old_id)
@@ -1691,7 +1690,8 @@ class BackupManager:
                                     item_data["parent_id"]
                                 ]
                             elif item_data.get("parent_id"):
-                                # Parent not found (maybe skipped or not yet processed?)
+                                # Parent tag was not restored (skipped or absent from the
+                                # backup); null the link to avoid a dangling foreign key.
                                 item_data["parent_id"] = None
 
                         elif table_name == "people_tag_links":
@@ -1817,9 +1817,9 @@ class BackupManager:
                             if old_rec_id in id_map["recordings"]:
                                 new_rec_id = id_map["recordings"][old_rec_id]
 
-                                # SANITY CHECK: Does this recording exist?
-                                # (Since we are in same transaction, we might need flush first or check local session)
-                                # But we're just setting IDs, assume consistency if map is valid.
+                                # recordings are restored before recording_speakers, so
+                                # an id present in id_map["recordings"] always refers to a
+                                # row already inserted earlier in this transaction.
                                 item_data["recording_id"] = new_rec_id
                             else:
                                 continue
@@ -2039,7 +2039,7 @@ class BackupManager:
         path_manager = PathManager()
         import asyncio
 
-        # Initialize job status if not exists (though entry point should have set it)
+        # Defensively initialise job status; the entry point normally sets it first.
         if job_id not in BackupManager.restore_jobs:
             BackupManager.restore_jobs[job_id] = {
                 "status": "pending",

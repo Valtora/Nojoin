@@ -968,11 +968,6 @@ export const exportContent = async (
   }
 };
 
-// Keep for backward compatibility
-export const exportTranscript = async (recordingId: RecordingId): Promise<void> => {
-  return exportContent(recordingId, "transcript");
-};
-
 // Meeting Notes API
 export const getNotes = async (
   recordingId: RecordingId,
@@ -1814,8 +1809,8 @@ export const importBackup = async (
       },
     );
 
-    // If we get a job_id (202 Accepted), start polling
-    // Legacy support: If it returns 200 with message, it's done (old behavior, though we changed backend)
+    // A 202 response carries a job_id to poll; a response without one means the
+    // import already completed synchronously.
     const jobId = response.data.job_id;
 
     if (jobId) {
@@ -1853,9 +1848,8 @@ export const importBackup = async (
       });
     }
 
-    // Immediate success (fallback if backend logic changes)
+    // No job_id: the import completed synchronously, so report done.
     if (onProgress) onProgress(100);
-    // Synchronous completion fallback for older API versions or small files.
     return;
 
     } catch (error: unknown) {

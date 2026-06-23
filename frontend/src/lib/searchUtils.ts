@@ -6,12 +6,12 @@ import Fuse from 'fuse.js';
  */
 export const fuzzyMatch = (query: string, keywords: string[], threshold = 0.3): boolean => {
   if (!query) return true;
-  
+
   const fuse = new Fuse(keywords, {
     threshold, // 0.0 = perfect match, 1.0 = match anything
     distance: 100,
   });
-  
+
   const results = fuse.search(query);
   return results.length > 0;
 };
@@ -19,7 +19,7 @@ export const fuzzyMatch = (query: string, keywords: string[], threshold = 0.3): 
 /**
  * Returns the best match score for a query against a list of keywords.
  * Lower score is better. Returns 1.0 if no match.
- * 
+ *
  * Scoring hierarchy:
  * 0.0: Exact match
  * 0.1: Starts with match
@@ -54,7 +54,7 @@ export const getMatchScore = (query: string, keywords: string[]): number => {
 
   const results = fuse.search(query);
   if (results.length === 0) return 1.0;
-  
+
   // Return the lowest (best) score
   // Map Fuse score [0, 1] to [0.3, 1.0] to ensure manual matches are prioritized
   const bestFuseScore = Math.min(...results.map(r => r.score || 1.0));

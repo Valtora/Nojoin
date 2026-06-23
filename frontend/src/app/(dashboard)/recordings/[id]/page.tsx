@@ -1312,7 +1312,7 @@ export default function RecordingPage({ params }: PageProps) {
         )}
 
         {/* Audio Player in Header */}
-        {recording && 
+        {recording &&
           recording.status !== RecordingStatus.PAUSED &&
          recording.status !== RecordingStatus.UPLOADING &&
          recording.status !== RecordingStatus.PROCESSING &&

@@ -93,28 +93,28 @@ These items are release blockers. Complete them before treating `main` as produc
 
 ### Comment Policy
 
-- [ ] **SRC-001:** Document that comments should explain invariants, constraints, risk, compatibility requirements, or non-obvious intent rather than narrating syntax.
-- [ ] **SRC-002:** Remove indecisive developer-thought comments such as "we can commit here", "usually", "assume consistency", and questions embedded in authorization rules.
-- [ ] **SRC-003:** Rewrite necessary uncertainty as an explicit invariant, fallback policy, issue reference, or testable assumption.
-- [ ] **SRC-004:** Preserve comments that document live/final pipeline alignment, security boundaries, migration compatibility, and browser-capture contracts.
+- [x] **SRC-001:** Document that comments should explain invariants, constraints, risk, compatibility requirements, or non-obvious intent rather than narrating syntax.
+- [x] **SRC-002:** Remove indecisive developer-thought comments such as "we can commit here", "usually", "assume consistency", and questions embedded in authorization rules.
+- [x] **SRC-003:** Rewrite necessary uncertainty as an explicit invariant, fallback policy, issue reference, or testable assumption.
+- [x] **SRC-004:** Preserve comments that document live/final pipeline alignment, security boundaries, migration compatibility, and browser-capture contracts.
 
 ### Targeted Comment Cleanup
 
-- [ ] **SRC-005:** Clean up commit narration and stale guidance in `backend/seed_demo.py`.
-- [ ] **SRC-006:** Replace ambiguous owner-role comments in `backend/api/v1/endpoints/users.py` with explicit authorization policy and tests.
-- [ ] **SRC-007:** Simplify narrated implementation comments in `backend/utils/transcript_utils.py` while retaining split/merge invariants.
-- [ ] **SRC-008:** Replace speculative restore comments in `backend/core/backup_manager.py` with verified transaction and identity rules.
-- [ ] **SRC-009:** Remove stale legacy narration from `frontend/src/lib/api.ts` once compatibility behavior is confirmed or retired.
-- [ ] **SRC-010:** Remove obsolete example usage, removed-function markers, and duplicate section labels from `backend/utils/config_manager.py`.
-- [ ] **SRC-011:** Remove commented-out imports, state declarations, filters, logger configuration, and destructive database calls unless they are retained as documented operational examples.
-- [ ] **SRC-012:** Trim redundant Dockerfile narration that merely restates the following instruction.
+- [x] **SRC-005:** Clean up commit narration and stale guidance in `backend/seed_demo.py`.
+- [x] **SRC-006:** Replace ambiguous owner-role comments in `backend/api/v1/endpoints/users.py` with explicit authorization policy and tests.
+- [x] **SRC-007:** Simplify narrated implementation comments in `backend/utils/transcript_utils.py` while retaining split/merge invariants.
+- [x] **SRC-008:** Replace speculative restore comments in `backend/core/backup_manager.py` with verified transaction and identity rules.
+- [x] **SRC-009:** Remove stale legacy narration from `frontend/src/lib/api.ts` once compatibility behavior is confirmed or retired.
+- [x] **SRC-010:** Remove obsolete example usage, removed-function markers, and duplicate section labels from `backend/utils/config_manager.py`.
+- [x] **SRC-011:** Remove commented-out imports, state declarations, filters, logger configuration, and destructive database calls unless they are retained as documented operational examples.
+- [x] **SRC-012:** Trim redundant Dockerfile narration that merely restates the following instruction.
 
 ### Formatting And Dead Code
 
-- [ ] **SRC-013:** Remove trailing whitespace across tracked source and documentation in one reviewable mechanical change.
-- [ ] **SRC-014:** Normalize indentation, blank-line spacing, quote style, and line wrapping through configured formatters.
-- [ ] **SRC-015:** Remove unused imports, unused state, abandoned helpers, and dead compatibility branches verified as unreachable.
-- [ ] **SRC-016:** Add checks that prevent trailing whitespace and formatter drift from returning.
+- [x] **SRC-013:** Remove trailing whitespace across tracked source and documentation in one reviewable mechanical change.
+- [x] **SRC-014:** Normalize indentation, blank-line spacing, quote style, and line wrapping through configured formatters.
+- [x] **SRC-015:** Remove unused imports, unused state, abandoned helpers, and dead compatibility branches verified as unreachable.
+- [x] **SRC-016:** Add checks that prevent trailing whitespace and formatter drift from returning.
 
 ## Phase 3: Reduce Maintainability Hotspots
 
