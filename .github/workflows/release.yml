@@ -349,11 +349,127 @@ jobs:
           # tag that resolves to this image (REL-009).
           cosign sign --yes "${IMAGE_DIGEST}"
 
+  health-smoke:
+    name: Image health & non-root smoke
+    needs:
+      - validate-release-ref
+      - server-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ needs.validate-release-ref.outputs.release_ref }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Prepare smoke-test environment
+        env:
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+        run: |
+          set -euo pipefail
+          image_base="$(printf '%s/%s' "${REGISTRY}" "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          echo "IMAGE_BASE=${image_base}" >> "${GITHUB_ENV}"
+
+          # Minimal .env: FIRST_RUN_PASSWORD is required by the compose file; the
+          # encryption key is generated fresh. All other secrets fall back to the
+          # tracked example defaults, which match between services.
+          data_encryption_key="$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+          cat > .env <<EOF
+          FIRST_RUN_PASSWORD=ci-smoke-first-run
+          DATA_ENCRYPTION_KEY=${data_encryption_key}
+          EOF
+
+          # Pin the api and frontend services to the freshly built version images.
+          cat > docker-compose.ci.yml <<EOF
+          services:
+            api:
+              image: ${image_base}-api:${VERSION}
+            frontend:
+              image: ${image_base}-frontend:${VERSION}
+          EOF
+
+      - name: Start backend stack (db, redis, socket-proxy, api)
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.example.yml -f docker-compose.ci.yml \
+            up -d db redis socket-proxy api
+
+      - name: Wait for API health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            status="$(docker inspect --format '{{ .State.Health.Status }}' nojoin-api 2>/dev/null || echo starting)"
+            echo "api health: ${status} (attempt ${i})"
+            if [[ "${status}" == "healthy" ]]; then exit 0; fi
+            if [[ "${status}" == "unhealthy" ]]; then break; fi
+            sleep 10
+          done
+          echo "API did not become healthy in time" >&2
+          docker logs nojoin-api --tail 200 || true
+          exit 1
+
+      - name: Start frontend and wait for health
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.example.yml -f docker-compose.ci.yml \
+            up -d frontend
+          for i in $(seq 1 18); do
+            status="$(docker inspect --format '{{ .State.Health.Status }}' nojoin-frontend 2>/dev/null || echo starting)"
+            echo "frontend health: ${status} (attempt ${i})"
+            if [[ "${status}" == "healthy" ]]; then exit 0; fi
+            if [[ "${status}" == "unhealthy" ]]; then break; fi
+            sleep 10
+          done
+          echo "Frontend did not become healthy in time" >&2
+          docker logs nojoin-frontend --tail 200 || true
+          exit 1
+
+      - name: Assert containers run as non-root
+        env:
+          VERSION: ${{ needs.validate-release-ref.outputs.version }}
+        run: |
+          set -euo pipefail
+          # api and frontend are running: check the live runtime uid.
+          for c in nojoin-api nojoin-frontend; do
+            uid="$(docker exec "${c}" id -u)"
+            echo "${c} runtime uid: ${uid}"
+            if [[ "${uid}" -eq 0 ]]; then
+              echo "${c} is running as root" >&2
+              exit 1
+            fi
+          done
+          # The worker needs a GPU and models to boot, so assert its non-root
+          # USER from the published image config without pulling the large layers.
+          worker_user="$(docker buildx imagetools inspect \
+            --format '{{ (index .Image "linux/amd64").Config.User }}' \
+            "${IMAGE_BASE}-worker:${VERSION}")"
+          echo "worker image USER: ${worker_user:-<empty>}"
+          if [[ -z "${worker_user}" || "${worker_user}" == "root" || "${worker_user}" == "0" ]]; then
+            echo "worker image does not declare a non-root USER" >&2
+            exit 1
+          fi
+
+      - name: Tear down stack
+        if: always()
+        run: |
+          docker compose -f docker-compose.example.yml -f docker-compose.ci.yml down -v || true
+
   publish-mutable-tags:
     name: Publish rolling tags
     needs:
       - validate-release-ref
       - server-release
+      - health-smoke
     runs-on: ubuntu-latest
 
     permissions:

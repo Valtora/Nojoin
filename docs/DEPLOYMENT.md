@@ -267,6 +267,7 @@ Published Nojoin images are built by a hardened, gated release pipeline. Operato
 - **Update policy:** Pinned actions and base images are kept current automatically by Dependabot on a weekly cadence. Each update passes the full CI gate before it can merge, and a new release must be cut to publish updated images.
 - **Signed images:** Every published image is signed with [cosign](https://github.com/sigstore/cosign) using keyless (OIDC) signing. The signature is bound to the release workflow's identity rather than a stored key.
 - **Provenance and SBOM:** Every image carries a build-provenance attestation and a Software Bill of Materials (SBOM) attestation describing how it was built and what it contains.
+- **Pre-publication verification:** Before the rolling `latest` and `major.minor` tags are published, the api and frontend images are booted with their real dependencies and must pass their production healthchecks, and all images are asserted to run as a non-root user.
 
 ### Verifying an Image Before Deploying
 
