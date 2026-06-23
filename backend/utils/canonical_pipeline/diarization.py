@@ -22,29 +22,62 @@ def reconcile_completed_diarization_windows(
     )
 
 
-def reconcile_diarization_window_result(
+@dataclass
+class _WindowReconciliationContext:
+    """Shared per-window state threaded through the reconciliation helpers
+    extracted from `reconcile_diarization_window_result` (BE-006).
+
+    Holds the loaded inputs (window row, turns, transcript projection,
+    recording speakers, overlapping utterances, prior-window support turns)
+    plus the resolved replay policy and call-level provenance (source,
+    processing_run_id). Bundling these keeps the orchestrator a thin sequence
+    of phases without changing any reconciliation decision: the helpers read
+    exactly the values the original inline code read.
+    """
+
+    session: Any
+    recording_id: int
+    window_result: Any
+    turn_rows: list[Any]
+    effective_policy: Any
+    projection_by_public_id: dict[str, Any]
+    recording_speakers_by_id: dict[int, RecordingSpeaker]
+    overlapping_utterances: list[Any]
+    previous_turn_rows: list[Any]
+    support_turn_rows: list[Any]
+    source: str
+    processing_run_id: int | None
+
+
+@dataclass
+class _UtteranceReconcileOutcome:
+    """Result of reconciling one overlapping utterance: how many utterances
+    were updated (splits/merges can yield more than one), whether a manual
+    speaker lock was preserved, and whether the projection must be rebuilt."""
+
+    updated_utterance_count: int = 0
+    preserved_manual_lock_count: int = 0
+    projection_dirty: bool = False
+
+
+def _load_window_reconciliation_context(
     session,
     *,
     recording_id: int,
     window_result_id: int,
-    processing_run_id: int | None = None,
-    source: str = "rolling_diarization",
-    effective_from_ms: int | None = None,
-    allow_speaker_reassignment: bool = True,
-    replay_policy: SpeakerReplayPolicy | None = None,
-) -> dict[str, int]:
-    from .core import (
-        list_active_utterances,
-        refresh_transcript_projection_from_canonical,
-    )
-
+    source: str,
+    processing_run_id: int | None,
+    effective_from_ms: int | None,
+    allow_speaker_reassignment: bool,
+    replay_policy: SpeakerReplayPolicy | None,
+) -> _WindowReconciliationContext | None:
+    """Phase 1: load every input the reconciliation needs for a single
+    completed diarization window. Returns None when the window is missing,
+    belongs to another recording, or has no turns — the same early-return
+    conditions the original function used to skip work."""
     window_result = session.get(DiarizationWindowResult, window_result_id)
     if window_result is None or window_result.recording_id != recording_id:
-        return {
-            "matched_turn_count": 0,
-            "updated_utterance_count": 0,
-            "preserved_manual_lock_count": 0,
-        }
+        return None
 
     turn_rows = list(
         session.execute(
@@ -60,11 +93,7 @@ def reconcile_diarization_window_result(
         .all()
     )
     if not turn_rows:
-        return {
-            "matched_turn_count": 0,
-            "updated_utterance_count": 0,
-            "preserved_manual_lock_count": 0,
-        }
+        return None
 
     effective_policy = _effective_speaker_replay_policy(
         replay_policy,
@@ -84,6 +113,8 @@ def reconcile_diarization_window_result(
     recording_speakers_by_id = {
         speaker.id: speaker for speaker in recording_speakers if speaker.id is not None
     }
+    # The effective point clamps how far back into already-finalized
+    # utterances this window is allowed to reach when finding overlaps.
     overlap_start_ms = int(window_result.window_start_ms)
     if effective_from_ms is not None:
         overlap_start_ms = max(overlap_start_ms, int(effective_from_ms))
@@ -117,6 +148,33 @@ def reconcile_diarization_window_result(
         .all()
     )
 
+    return _WindowReconciliationContext(
+        session=session,
+        recording_id=recording_id,
+        window_result=window_result,
+        turn_rows=turn_rows,
+        effective_policy=effective_policy,
+        projection_by_public_id=projection_by_public_id,
+        recording_speakers_by_id=recording_speakers_by_id,
+        overlapping_utterances=overlapping_utterances,
+        previous_turn_rows=previous_turn_rows,
+        support_turn_rows=[*previous_turn_rows, *turn_rows],
+        source=source,
+        processing_run_id=processing_run_id,
+    )
+
+
+def _match_window_turns_to_speakers(ctx: _WindowReconciliationContext) -> int:
+    """Phase 2: match each local diarization speaker to a recording speaker,
+    enforce distinct matches, apply identity-replay normalization, and persist
+    the resulting per-turn metadata plus the window's `speaker_metadata`
+    payload. Returns the matched-turn count. Calls `_match_window_local_speaker`
+    by name so test monkeypatches on the package root still take effect."""
+    session = ctx.session
+    window_result = ctx.window_result
+    effective_policy = ctx.effective_policy
+    recording_speakers_by_id = ctx.recording_speakers_by_id
+
     raw_payload = dict(window_result.raw_payload or {})
     speaker_metadata_by_key = {
         str(local_speaker_key): dict(metadata or {})
@@ -126,7 +184,7 @@ def reconcile_diarization_window_result(
     }
 
     turns_by_local_speaker: dict[str, list[DiarizationWindowTurn]] = defaultdict(list)
-    for turn_row in turn_rows:
+    for turn_row in ctx.turn_rows:
         turns_by_local_speaker[str(turn_row.local_speaker_key)].append(turn_row)
 
     local_speaker_matches: dict[str, dict[str, Any]] = {}
@@ -136,8 +194,8 @@ def reconcile_diarization_window_result(
                 session,
                 local_turn_rows=local_turn_rows,
                 speaker_metadata=speaker_metadata_by_key.get(local_speaker_key, {}),
-                overlapping_utterances=overlapping_utterances,
-                previous_turn_rows=previous_turn_rows,
+                overlapping_utterances=ctx.overlapping_utterances,
+                previous_turn_rows=ctx.previous_turn_rows,
                 recording_speakers_by_id=recording_speakers_by_id,
             )
         )
@@ -149,11 +207,11 @@ def reconcile_diarization_window_result(
 
     _enforce_distinct_window_local_speaker_matches(
         session,
-        recording_id=recording_id,
-        processing_run_id=processing_run_id,
+        recording_id=ctx.recording_id,
+        processing_run_id=ctx.processing_run_id,
         local_speaker_matches=local_speaker_matches,
         turns_by_local_speaker=turns_by_local_speaker,
-        previous_turn_rows=previous_turn_rows,
+        previous_turn_rows=ctx.previous_turn_rows,
         speaker_metadata_by_key=speaker_metadata_by_key,
         recording_speakers_by_id=recording_speakers_by_id,
         replay_policy=effective_policy,
@@ -214,29 +272,37 @@ def reconcile_diarization_window_result(
     window_result.raw_payload = raw_payload
     flag_modified(window_result, "raw_payload")
     session.add(window_result)
+    return matched_turn_count
 
-    support_turn_rows = [*previous_turn_rows, *turn_rows]
+
+def _apply_window_merge_plans(
+    ctx: _WindowReconciliationContext,
+) -> tuple[int, set[int]]:
+    """Phase 3a: apply diarization-driven merges of adjacent same-speaker
+    utterances. Returns the number of replacement utterances created and the
+    set of source utterance ids that were merged away (so the per-utterance
+    pass can skip them). Skipped entirely under identity-replay policies, which
+    must never re-segment finalized boundaries."""
+    if _is_identity_replay_policy(ctx.effective_policy):
+        return 0, set()
+
+    merge_plans = _build_merge_replacement_plans_from_diarization(
+        ctx.overlapping_utterances,
+        turn_rows=ctx.turn_rows,
+        recording_speakers_by_id=ctx.recording_speakers_by_id,
+        window_result_id=int(ctx.window_result.id),
+    )
+
     updated_utterance_count = 0
-    preserved_manual_lock_count = 0
-    projection_dirty = False
     merge_source_utterance_ids: set[int] = set()
-
-    merge_plans = []
-    if not _is_identity_replay_policy(effective_policy):
-        merge_plans = _build_merge_replacement_plans_from_diarization(
-            overlapping_utterances,
-            turn_rows=turn_rows,
-            recording_speakers_by_id=recording_speakers_by_id,
-            window_result_id=int(window_result.id),
-        )
     for merge_plan in merge_plans:
         replacement_utterances = _apply_boundary_reconciliation_segments(
-            session,
-            recording_id=recording_id,
+            ctx.session,
+            recording_id=ctx.recording_id,
             source_utterances=merge_plan["source_utterances"],
             replacement_segments=merge_plan["replacement_segments"],
-            processing_run_id=processing_run_id,
-            source=source,
+            processing_run_id=ctx.processing_run_id,
+            source=ctx.source,
         )
         if not replacement_utterances:
             continue
@@ -246,385 +312,268 @@ def reconcile_diarization_window_result(
             for source_utterance in merge_plan["source_utterances"]
             if source_utterance.id is not None
         )
+    return updated_utterance_count, merge_source_utterance_ids
 
-    for utterance in overlapping_utterances:
-        if utterance.id is not None and int(utterance.id) in merge_source_utterance_ids:
-            continue
-        projection = projection_by_public_id.get(utterance.public_id, {})
-        support_summary = _summarize_utterance_turn_support(
+
+def _reconcile_overlapping_utterance(
+    ctx: _WindowReconciliationContext,
+    utterance,
+) -> _UtteranceReconcileOutcome:
+    """Phase 3b: reconcile a single overlapping utterance against this window's
+    diarization turns.
+
+    Behaviour is identical to the inline per-utterance block this was extracted
+    from. The ordering of guards is load-bearing and preserved exactly:
+
+      1. Word-level / turn-boundary splits (skipped under identity replay).
+      2. No-candidate path: refresh overlap projection only.
+      3. **Manual-edit authority**: a `manual_speaker_locked` utterance keeps
+         its current speaker; the auto candidate is recorded for provenance but
+         never applied. This guard runs before any reassignment path.
+      4. Same-speaker reinforcement, boundary-only-mode rejection, identity
+         replay guards, stable-speaker / confidence-margin guards, and finally
+         the reassignment that bumps the revision and appends an event.
+    """
+    session = ctx.session
+    window_result = ctx.window_result
+    effective_policy = ctx.effective_policy
+    recording_speakers_by_id = ctx.recording_speakers_by_id
+    recording_id = ctx.recording_id
+    source = ctx.source
+    outcome = _UtteranceReconcileOutcome()
+
+    projection = ctx.projection_by_public_id.get(utterance.public_id, {})
+    support_summary = _summarize_utterance_turn_support(
+        utterance,
+        turn_rows=ctx.support_turn_rows,
+        replay_policy=effective_policy,
+    )
+    existing_payload = dict(utterance.confidence_payload or {})
+    existing_rolling_payload = dict(existing_payload.get("rolling_diarization") or {})
+    current_overlap_labels = _rolling_overlap_labels_for_utterance(
+        utterance,
+        projection=projection,
+        recording_speakers_by_id=recording_speakers_by_id,
+    )
+    has_existing_overlap = bool(
+        current_overlap_labels
+        or list(projection.get("overlapping_speakers") or [])
+        or list(existing_rolling_payload.get("overlapping_recording_speaker_ids") or [])
+        or list(existing_rolling_payload.get("overlapping_speakers") or [])
+        or utterance.overlap_group_id
+    )
+    if not _is_identity_replay_policy(effective_policy):
+        split_replacement_segments = _build_split_replacement_segments_from_diarization(
             utterance,
-            turn_rows=support_turn_rows,
+            turn_rows=ctx.turn_rows,
+            recording_speakers_by_id=recording_speakers_by_id,
+            window_result_id=int(window_result.id),
+        )
+        if split_replacement_segments:
+            replacement_utterances = _apply_boundary_reconciliation_segments(
+                session,
+                recording_id=recording_id,
+                source_utterances=[utterance],
+                replacement_segments=split_replacement_segments,
+                processing_run_id=ctx.processing_run_id,
+                source=source,
+            )
+            if replacement_utterances:
+                outcome.updated_utterance_count += len(replacement_utterances)
+            return outcome
+
+        turn_boundary_replacement_segments = (
+            _build_turn_boundary_split_segments_from_diarization(
+                utterance,
+                turn_rows=ctx.turn_rows,
+                recording_speakers_by_id=recording_speakers_by_id,
+                window_result_id=int(window_result.id),
+            )
+        )
+        if turn_boundary_replacement_segments:
+            replacement_utterances = _apply_boundary_reconciliation_segments(
+                session,
+                recording_id=recording_id,
+                source_utterances=[utterance],
+                replacement_segments=turn_boundary_replacement_segments,
+                processing_run_id=ctx.processing_run_id,
+                source=source,
+            )
+            if replacement_utterances:
+                outcome.updated_utterance_count += len(replacement_utterances)
+            return outcome
+
+    candidate_speaker, candidate_confidence, candidate_payload = (
+        _match_utterance_from_diarization_turns(
+            utterance,
+            turn_rows=ctx.turn_rows,
+            recording_speakers_by_id=recording_speakers_by_id,
             replay_policy=effective_policy,
         )
-        existing_payload = dict(utterance.confidence_payload or {})
-        existing_rolling_payload = dict(
-            existing_payload.get("rolling_diarization") or {}
-        )
-        current_overlap_labels = _rolling_overlap_labels_for_utterance(
+    )
+    current_speaker_id = utterance.recording_speaker_id
+    identity_anchor_speaker_id = _identity_replay_anchor_recording_speaker_id(
+        effective_policy
+    )
+    current_is_identity_cluster_member = _identity_replay_scope_contains(
+        effective_policy,
+        current_speaker_id,
+    )
+    existing_speaker_confidence = (
+        _to_optional_float(utterance.speaker_confidence) or 0.0
+    )
+
+    def overlap_payload_for(applied_speaker_id: int | None) -> dict[str, Any]:
+        return _build_utterance_overlap_projection_payload(
             utterance,
-            projection=projection,
+            turn_rows=ctx.turn_rows,
             recording_speakers_by_id=recording_speakers_by_id,
-        )
-        has_existing_overlap = bool(
-            current_overlap_labels
-            or list(projection.get("overlapping_speakers") or [])
-            or list(
-                existing_rolling_payload.get("overlapping_recording_speaker_ids") or []
-            )
-            or list(existing_rolling_payload.get("overlapping_speakers") or [])
-            or utterance.overlap_group_id
-        )
-        if not _is_identity_replay_policy(effective_policy):
-            split_replacement_segments = (
-                _build_split_replacement_segments_from_diarization(
-                    utterance,
-                    turn_rows=turn_rows,
-                    recording_speakers_by_id=recording_speakers_by_id,
-                    window_result_id=int(window_result.id),
-                )
-            )
-            if split_replacement_segments:
-                replacement_utterances = _apply_boundary_reconciliation_segments(
-                    session,
-                    recording_id=recording_id,
-                    source_utterances=[utterance],
-                    replacement_segments=split_replacement_segments,
-                    processing_run_id=processing_run_id,
-                    source=source,
-                )
-                if replacement_utterances:
-                    updated_utterance_count += len(replacement_utterances)
-                continue
-
-            turn_boundary_replacement_segments = (
-                _build_turn_boundary_split_segments_from_diarization(
-                    utterance,
-                    turn_rows=turn_rows,
-                    recording_speakers_by_id=recording_speakers_by_id,
-                    window_result_id=int(window_result.id),
-                )
-            )
-            if turn_boundary_replacement_segments:
-                replacement_utterances = _apply_boundary_reconciliation_segments(
-                    session,
-                    recording_id=recording_id,
-                    source_utterances=[utterance],
-                    replacement_segments=turn_boundary_replacement_segments,
-                    processing_run_id=processing_run_id,
-                    source=source,
-                )
-                if replacement_utterances:
-                    updated_utterance_count += len(replacement_utterances)
-                continue
-
-        candidate_speaker, candidate_confidence, candidate_payload = (
-            _match_utterance_from_diarization_turns(
-                utterance,
-                turn_rows=turn_rows,
-                recording_speakers_by_id=recording_speakers_by_id,
-                replay_policy=effective_policy,
-            )
-        )
-        current_speaker_id = utterance.recording_speaker_id
-        identity_anchor_speaker_id = _identity_replay_anchor_recording_speaker_id(
-            effective_policy
-        )
-        current_is_identity_cluster_member = _identity_replay_scope_contains(
-            effective_policy,
-            current_speaker_id,
-        )
-        existing_speaker_confidence = (
-            _to_optional_float(utterance.speaker_confidence) or 0.0
+            primary_speaker_id=_replay_normalized_recording_speaker_id(
+                effective_policy,
+                applied_speaker_id,
+            ),
+            replay_policy=effective_policy,
         )
 
-        def overlap_payload_for(applied_speaker_id: int | None) -> dict[str, Any]:
-            return _build_utterance_overlap_projection_payload(
-                utterance,
-                turn_rows=turn_rows,
-                recording_speakers_by_id=recording_speakers_by_id,
-                primary_speaker_id=_replay_normalized_recording_speaker_id(
-                    effective_policy,
-                    applied_speaker_id,
-                ),
-                replay_policy=effective_policy,
-            )
-
-        if candidate_speaker is None:
-            overlap_payload = overlap_payload_for(
-                int(current_speaker_id) if current_speaker_id is not None else None
-            )
-            if not _rolling_overlap_payload_changed(
-                existing_rolling_payload, overlap_payload
-            ):
-                continue
-            rolling_payload = dict(existing_rolling_payload)
-            rolling_payload["window_result_id"] = int(window_result.id)
-            _merge_overlap_payload_into_rolling(rolling_payload, overlap_payload)
-            existing_payload["rolling_diarization"] = rolling_payload
-            utterance.confidence_payload = existing_payload
-            utterance.last_diarization_window_result_id = window_result.id
-            session.add(utterance)
-            projection_dirty = True
-            continue
-
-        rolling_payload = dict(candidate_payload)
-        rolling_payload.update(
-            {
-                "window_result_id": int(window_result.id),
-                "matched_recording_speaker_id": int(candidate_speaker.id),
-                "confidence": round(float(candidate_confidence), 4),
-            }
+    if candidate_speaker is None:
+        overlap_payload = overlap_payload_for(
+            int(current_speaker_id) if current_speaker_id is not None else None
         )
-
-        candidate_state_payload = _build_utterance_speaker_state_payload(
-            utterance,
-            speaker_id=int(candidate_speaker.id),
-            confidence=candidate_confidence,
-            support_summary=support_summary,
-        )
-
-        current_state_payload = None
-        if current_speaker_id == candidate_speaker.id:
-            current_state_payload = dict(candidate_state_payload)
-        elif current_speaker_id is not None:
-            current_state_payload = _build_utterance_speaker_state_payload(
-                utterance,
-                speaker_id=int(current_speaker_id),
-                confidence=existing_speaker_confidence,
-                support_summary=support_summary,
-                manual_override=utterance.manual_speaker_locked,
-            )
-        cluster_normalization = (
-            _is_identity_replay_policy(effective_policy)
-            and identity_anchor_speaker_id is not None
-            and current_speaker_id is not None
-            and current_is_identity_cluster_member
-            and int(candidate_speaker.id) == int(identity_anchor_speaker_id)
-            and int(current_speaker_id) != int(candidate_speaker.id)
-        )
-        if cluster_normalization:
-            current_state_payload = dict(candidate_state_payload)
-
-        def reject_candidate(
-            rejection_reason: str,
-            *,
-            metric_reason: str | None = None,
-        ) -> None:
-            if current_state_payload is not None:
-                rolling_payload.update(current_state_payload)
-            rolling_payload["applied_recording_speaker_id"] = (
-                int(current_speaker_id) if current_speaker_id is not None else None
-            )
-            rolling_payload["candidate_recording_speaker_id"] = int(
-                candidate_speaker.id
-            )
-            rolling_payload["candidate_confidence"] = round(
-                float(candidate_confidence), 4
-            )
-            rolling_payload["candidate_rejected"] = True
-            rolling_payload["rejection_reason"] = rejection_reason
-            _merge_overlap_payload_into_rolling(
-                rolling_payload,
-                overlap_payload_for(
-                    int(current_speaker_id) if current_speaker_id is not None else None
-                ),
-            )
-            existing_payload["rolling_diarization"] = rolling_payload
-            utterance.confidence_payload = existing_payload
-            utterance.last_diarization_window_result_id = window_result.id
-            session.add(utterance)
-            if metric_reason is not None:
-                _record_guarded_replay_rejection(
-                    recording_id=recording_id,
-                    window_result_id=int(window_result.id),
-                    replay_policy=effective_policy,
-                    reason=metric_reason,
-                    utterance=utterance,
-                    candidate_speaker_id=int(candidate_speaker.id),
-                    current_speaker_id=(
-                        int(current_speaker_id)
-                        if current_speaker_id is not None
-                        else None
-                    ),
-                )
-
-        if utterance.manual_speaker_locked:
-            preserved_manual_lock_count += 1
-            rolling_payload.update(
-                current_state_payload
-                or _build_utterance_speaker_state_payload(
-                    utterance,
-                    speaker_id=(
-                        int(current_speaker_id)
-                        if current_speaker_id is not None
-                        else int(candidate_speaker.id)
-                    ),
-                    confidence=existing_speaker_confidence or candidate_confidence,
-                    support_summary=support_summary,
-                    manual_override=True,
-                )
-            )
-            rolling_payload["applied_recording_speaker_id"] = (
-                int(current_speaker_id) if current_speaker_id is not None else None
-            )
-            rolling_payload["candidate_recording_speaker_id"] = int(
-                candidate_speaker.id
-            )
-            _merge_overlap_payload_into_rolling(
-                rolling_payload,
-                overlap_payload_for(
-                    int(current_speaker_id) if current_speaker_id is not None else None
-                ),
-            )
-            existing_payload["rolling_diarization"] = rolling_payload
-            utterance.confidence_payload = existing_payload
-            utterance.last_diarization_window_result_id = window_result.id
-            session.add(utterance)
-            projection_dirty = True
-            continue
-
-        if current_speaker_id == candidate_speaker.id:
-            rolling_payload.update(candidate_state_payload)
-            rolling_payload["applied_recording_speaker_id"] = int(candidate_speaker.id)
-            _merge_overlap_payload_into_rolling(
-                rolling_payload,
-                overlap_payload_for(int(candidate_speaker.id)),
-            )
-            utterance.speaker_confidence = max(
-                existing_speaker_confidence, candidate_confidence
-            )
-            utterance.last_diarization_window_result_id = window_result.id
-            existing_payload["rolling_diarization"] = rolling_payload
-            utterance.confidence_payload = existing_payload
-            _set_utterance_speaker_assignment_provenance(
-                utterance,
-                source=source,
-                authority=_max_speaker_assignment_authority(
-                    _utterance_speaker_assignment_authority(
-                        utterance, projection=projection
-                    ),
-                    _derive_default_speaker_assignment_authority(
-                        state=utterance.state,
-                        manual_speaker_locked=bool(utterance.manual_speaker_locked),
-                    ),
-                ),
-            )
-            session.add(utterance)
-            projection_dirty = True
-            continue
-
-        if not effective_policy.allow_speaker_reassignment:
-            reject_candidate("boundary_only_live_tail_reconciliation")
-            projection_dirty = True
-            continue
-
-        if (
-            _is_identity_replay_policy(effective_policy)
-            and current_speaker_id is not None
-            and int(current_speaker_id) != int(candidate_speaker.id)
+        if not _rolling_overlap_payload_changed(
+            existing_rolling_payload, overlap_payload
         ):
-            utterance_state_value = (
-                utterance.state.value
-                if hasattr(utterance.state, "value")
-                else str(utterance.state)
-            )
-            if (
-                effective_policy.preserve_finalized_overlap_primary
-                and utterance_state_value == TranscriptUtteranceState.FINALIZED.value
-                and has_existing_overlap
-            ):
-                reject_candidate(
-                    "overlap_primary_preserved",
-                    metric_reason="overlap_primary_preserved",
-                )
-                projection_dirty = True
-                continue
-            if (
-                effective_policy.preserve_finalized_boundary_primary
-                and utterance_state_value == TranscriptUtteranceState.FINALIZED.value
-                and (
-                    candidate_payload.get("is_boundary_utterance")
-                    or existing_rolling_payload.get("is_boundary_utterance")
-                )
-            ):
-                reject_candidate(
-                    "boundary_primary_preserved",
-                    metric_reason="boundary_primary_preserved",
-                )
-                projection_dirty = True
-                continue
-
-        if (
-            _is_identity_replay_policy(effective_policy)
-            and identity_anchor_speaker_id is not None
-            and int(candidate_speaker.id) != int(identity_anchor_speaker_id)
-        ):
-            candidate_status = str(
-                getattr(candidate_speaker, "speaker_status", "") or ""
-            )
-            if (
-                not effective_policy.allow_inactive_candidate_reactivation
-                and candidate_status not in {"", "active"}
-            ):
-                reject_candidate(
-                    "inactive_candidate_blocked",
-                    metric_reason="inactive_candidate_blocked",
-                )
-                projection_dirty = True
-                continue
-            reject_candidate(
-                "out_of_cluster_candidate",
-                metric_reason="out_of_cluster_candidate",
-            )
-            projection_dirty = True
-            continue
-
-        if (
-            not cluster_normalization
-            and current_speaker_id is not None
-            and current_state_payload is not None
-            and current_state_payload.get("speaker_state")
-            == ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
-            and int(candidate_state_payload.get("supporting_window_count", 0))
-            < ROLLING_DIARIZATION_STABLE_WINDOW_COUNT
-        ):
-            rolling_payload["candidate_supporting_window_count"] = int(
-                candidate_state_payload.get("supporting_window_count", 0)
-            )
-            reject_candidate("stable_speaker_requires_repeated_evidence")
-            projection_dirty = True
-            continue
-
-        if not cluster_normalization and existing_speaker_confidence >= (
-            candidate_confidence + ROLLING_DIARIZATION_EXISTING_CONFIDENCE_MARGIN
-        ):
-            overlap_payload = overlap_payload_for(
-                int(current_speaker_id) if current_speaker_id is not None else None
-            )
-            if not _rolling_overlap_payload_changed(
-                existing_rolling_payload, overlap_payload
-            ):
-                continue
-            reject_candidate("existing_speaker_confidence_higher")
-            projection_dirty = True
-            continue
-
-        old_values = {
-            "speaker_label": utterance.speaker_label,
-            "recording_speaker_id": utterance.recording_speaker_id,
-            "speaker_confidence": utterance.speaker_confidence,
-            "revision": utterance.revision,
-        }
-        utterance.speaker_label = candidate_speaker.diarization_label
-        utterance.recording_speaker_id = candidate_speaker.id
-        utterance.speaker_confidence = candidate_confidence
+            return outcome
+        rolling_payload = dict(existing_rolling_payload)
+        rolling_payload["window_result_id"] = int(window_result.id)
+        _merge_overlap_payload_into_rolling(rolling_payload, overlap_payload)
+        existing_payload["rolling_diarization"] = rolling_payload
+        utterance.confidence_payload = existing_payload
         utterance.last_diarization_window_result_id = window_result.id
+        session.add(utterance)
+        outcome.projection_dirty = True
+        return outcome
+
+    rolling_payload = dict(candidate_payload)
+    rolling_payload.update(
+        {
+            "window_result_id": int(window_result.id),
+            "matched_recording_speaker_id": int(candidate_speaker.id),
+            "confidence": round(float(candidate_confidence), 4),
+        }
+    )
+
+    candidate_state_payload = _build_utterance_speaker_state_payload(
+        utterance,
+        speaker_id=int(candidate_speaker.id),
+        confidence=candidate_confidence,
+        support_summary=support_summary,
+    )
+
+    current_state_payload = None
+    if current_speaker_id == candidate_speaker.id:
+        current_state_payload = dict(candidate_state_payload)
+    elif current_speaker_id is not None:
+        current_state_payload = _build_utterance_speaker_state_payload(
+            utterance,
+            speaker_id=int(current_speaker_id),
+            confidence=existing_speaker_confidence,
+            support_summary=support_summary,
+            manual_override=utterance.manual_speaker_locked,
+        )
+    cluster_normalization = (
+        _is_identity_replay_policy(effective_policy)
+        and identity_anchor_speaker_id is not None
+        and current_speaker_id is not None
+        and current_is_identity_cluster_member
+        and int(candidate_speaker.id) == int(identity_anchor_speaker_id)
+        and int(current_speaker_id) != int(candidate_speaker.id)
+    )
+    if cluster_normalization:
+        current_state_payload = dict(candidate_state_payload)
+
+    def reject_candidate(
+        rejection_reason: str,
+        *,
+        metric_reason: str | None = None,
+    ) -> None:
+        if current_state_payload is not None:
+            rolling_payload.update(current_state_payload)
+        rolling_payload["applied_recording_speaker_id"] = (
+            int(current_speaker_id) if current_speaker_id is not None else None
+        )
+        rolling_payload["candidate_recording_speaker_id"] = int(candidate_speaker.id)
+        rolling_payload["candidate_confidence"] = round(float(candidate_confidence), 4)
+        rolling_payload["candidate_rejected"] = True
+        rolling_payload["rejection_reason"] = rejection_reason
+        _merge_overlap_payload_into_rolling(
+            rolling_payload,
+            overlap_payload_for(
+                int(current_speaker_id) if current_speaker_id is not None else None
+            ),
+        )
+        existing_payload["rolling_diarization"] = rolling_payload
+        utterance.confidence_payload = existing_payload
+        utterance.last_diarization_window_result_id = window_result.id
+        session.add(utterance)
+        if metric_reason is not None:
+            _record_guarded_replay_rejection(
+                recording_id=recording_id,
+                window_result_id=int(window_result.id),
+                replay_policy=effective_policy,
+                reason=metric_reason,
+                utterance=utterance,
+                candidate_speaker_id=int(candidate_speaker.id),
+                current_speaker_id=(
+                    int(current_speaker_id) if current_speaker_id is not None else None
+                ),
+            )
+
+    # Manual-edit authority: a user-locked speaker is authoritative. Record the
+    # auto candidate for provenance, but never overwrite the manual assignment.
+    if utterance.manual_speaker_locked:
+        outcome.preserved_manual_lock_count += 1
+        rolling_payload.update(
+            current_state_payload
+            or _build_utterance_speaker_state_payload(
+                utterance,
+                speaker_id=(
+                    int(current_speaker_id)
+                    if current_speaker_id is not None
+                    else int(candidate_speaker.id)
+                ),
+                confidence=existing_speaker_confidence or candidate_confidence,
+                support_summary=support_summary,
+                manual_override=True,
+            )
+        )
+        rolling_payload["applied_recording_speaker_id"] = (
+            int(current_speaker_id) if current_speaker_id is not None else None
+        )
+        rolling_payload["candidate_recording_speaker_id"] = int(candidate_speaker.id)
+        _merge_overlap_payload_into_rolling(
+            rolling_payload,
+            overlap_payload_for(
+                int(current_speaker_id) if current_speaker_id is not None else None
+            ),
+        )
+        existing_payload["rolling_diarization"] = rolling_payload
+        utterance.confidence_payload = existing_payload
+        utterance.last_diarization_window_result_id = window_result.id
+        session.add(utterance)
+        outcome.projection_dirty = True
+        return outcome
+
+    if current_speaker_id == candidate_speaker.id:
         rolling_payload.update(candidate_state_payload)
         rolling_payload["applied_recording_speaker_id"] = int(candidate_speaker.id)
         _merge_overlap_payload_into_rolling(
             rolling_payload,
             overlap_payload_for(int(candidate_speaker.id)),
         )
+        utterance.speaker_confidence = max(
+            existing_speaker_confidence, candidate_confidence
+        )
+        utterance.last_diarization_window_result_id = window_result.id
         existing_payload["rolling_diarization"] = rolling_payload
         utterance.confidence_payload = existing_payload
         _set_utterance_speaker_assignment_provenance(
@@ -640,26 +589,210 @@ def reconcile_diarization_window_result(
                 ),
             ),
         )
-        utterance.revision += 1
         session.add(utterance)
-        session.flush()
-        _append_utterance_event(
-            session,
-            utterance=utterance,
-            processing_run_id=processing_run_id,
-            event_type="update_speaker",
-            source=source,
-            old_values=old_values,
-            new_values={
-                "speaker_label": utterance.speaker_label,
-                "recording_speaker_id": utterance.recording_speaker_id,
-                "speaker_confidence": utterance.speaker_confidence,
-                "last_diarization_window_result_id": utterance.last_diarization_window_result_id,
-            },
-            resulting_revision=utterance.revision,
+        outcome.projection_dirty = True
+        return outcome
+
+    if not effective_policy.allow_speaker_reassignment:
+        reject_candidate("boundary_only_live_tail_reconciliation")
+        outcome.projection_dirty = True
+        return outcome
+
+    if (
+        _is_identity_replay_policy(effective_policy)
+        and current_speaker_id is not None
+        and int(current_speaker_id) != int(candidate_speaker.id)
+    ):
+        utterance_state_value = (
+            utterance.state.value
+            if hasattr(utterance.state, "value")
+            else str(utterance.state)
         )
-        updated_utterance_count += 1
-        projection_dirty = True
+        if (
+            effective_policy.preserve_finalized_overlap_primary
+            and utterance_state_value == TranscriptUtteranceState.FINALIZED.value
+            and has_existing_overlap
+        ):
+            reject_candidate(
+                "overlap_primary_preserved",
+                metric_reason="overlap_primary_preserved",
+            )
+            outcome.projection_dirty = True
+            return outcome
+        if (
+            effective_policy.preserve_finalized_boundary_primary
+            and utterance_state_value == TranscriptUtteranceState.FINALIZED.value
+            and (
+                candidate_payload.get("is_boundary_utterance")
+                or existing_rolling_payload.get("is_boundary_utterance")
+            )
+        ):
+            reject_candidate(
+                "boundary_primary_preserved",
+                metric_reason="boundary_primary_preserved",
+            )
+            outcome.projection_dirty = True
+            return outcome
+
+    if (
+        _is_identity_replay_policy(effective_policy)
+        and identity_anchor_speaker_id is not None
+        and int(candidate_speaker.id) != int(identity_anchor_speaker_id)
+    ):
+        candidate_status = str(getattr(candidate_speaker, "speaker_status", "") or "")
+        if (
+            not effective_policy.allow_inactive_candidate_reactivation
+            and candidate_status not in {"", "active"}
+        ):
+            reject_candidate(
+                "inactive_candidate_blocked",
+                metric_reason="inactive_candidate_blocked",
+            )
+            outcome.projection_dirty = True
+            return outcome
+        reject_candidate(
+            "out_of_cluster_candidate",
+            metric_reason="out_of_cluster_candidate",
+        )
+        outcome.projection_dirty = True
+        return outcome
+
+    if (
+        not cluster_normalization
+        and current_speaker_id is not None
+        and current_state_payload is not None
+        and current_state_payload.get("speaker_state")
+        == ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
+        and int(candidate_state_payload.get("supporting_window_count", 0))
+        < ROLLING_DIARIZATION_STABLE_WINDOW_COUNT
+    ):
+        rolling_payload["candidate_supporting_window_count"] = int(
+            candidate_state_payload.get("supporting_window_count", 0)
+        )
+        reject_candidate("stable_speaker_requires_repeated_evidence")
+        outcome.projection_dirty = True
+        return outcome
+
+    if not cluster_normalization and existing_speaker_confidence >= (
+        candidate_confidence + ROLLING_DIARIZATION_EXISTING_CONFIDENCE_MARGIN
+    ):
+        overlap_payload = overlap_payload_for(
+            int(current_speaker_id) if current_speaker_id is not None else None
+        )
+        if not _rolling_overlap_payload_changed(
+            existing_rolling_payload, overlap_payload
+        ):
+            return outcome
+        reject_candidate("existing_speaker_confidence_higher")
+        outcome.projection_dirty = True
+        return outcome
+
+    old_values = {
+        "speaker_label": utterance.speaker_label,
+        "recording_speaker_id": utterance.recording_speaker_id,
+        "speaker_confidence": utterance.speaker_confidence,
+        "revision": utterance.revision,
+    }
+    utterance.speaker_label = candidate_speaker.diarization_label
+    utterance.recording_speaker_id = candidate_speaker.id
+    utterance.speaker_confidence = candidate_confidence
+    utterance.last_diarization_window_result_id = window_result.id
+    rolling_payload.update(candidate_state_payload)
+    rolling_payload["applied_recording_speaker_id"] = int(candidate_speaker.id)
+    _merge_overlap_payload_into_rolling(
+        rolling_payload,
+        overlap_payload_for(int(candidate_speaker.id)),
+    )
+    existing_payload["rolling_diarization"] = rolling_payload
+    utterance.confidence_payload = existing_payload
+    _set_utterance_speaker_assignment_provenance(
+        utterance,
+        source=source,
+        authority=_max_speaker_assignment_authority(
+            _utterance_speaker_assignment_authority(utterance, projection=projection),
+            _derive_default_speaker_assignment_authority(
+                state=utterance.state,
+                manual_speaker_locked=bool(utterance.manual_speaker_locked),
+            ),
+        ),
+    )
+    utterance.revision += 1
+    session.add(utterance)
+    session.flush()
+    _append_utterance_event(
+        session,
+        utterance=utterance,
+        processing_run_id=ctx.processing_run_id,
+        event_type="update_speaker",
+        source=source,
+        old_values=old_values,
+        new_values={
+            "speaker_label": utterance.speaker_label,
+            "recording_speaker_id": utterance.recording_speaker_id,
+            "speaker_confidence": utterance.speaker_confidence,
+            "last_diarization_window_result_id": utterance.last_diarization_window_result_id,
+        },
+        resulting_revision=utterance.revision,
+    )
+    outcome.updated_utterance_count += 1
+    outcome.projection_dirty = True
+    return outcome
+
+
+def reconcile_diarization_window_result(
+    session,
+    *,
+    recording_id: int,
+    window_result_id: int,
+    processing_run_id: int | None = None,
+    source: str = "rolling_diarization",
+    effective_from_ms: int | None = None,
+    allow_speaker_reassignment: bool = True,
+    replay_policy: SpeakerReplayPolicy | None = None,
+) -> dict[str, int]:
+    """Reconcile one completed diarization window against the canonical
+    transcript. Slim orchestrator (BE-006): load context, match turns to
+    speakers, apply merges, then reconcile each remaining overlapping
+    utterance. Stable-id alignment and manual-edit authority are enforced by
+    `_reconcile_overlapping_utterance`; this function only sequences the phases
+    and aggregates their counts."""
+    from .core import refresh_transcript_projection_from_canonical
+
+    empty_summary = {
+        "matched_turn_count": 0,
+        "updated_utterance_count": 0,
+        "preserved_manual_lock_count": 0,
+    }
+
+    ctx = _load_window_reconciliation_context(
+        session,
+        recording_id=recording_id,
+        window_result_id=window_result_id,
+        source=source,
+        processing_run_id=processing_run_id,
+        effective_from_ms=effective_from_ms,
+        allow_speaker_reassignment=allow_speaker_reassignment,
+        replay_policy=replay_policy,
+    )
+    if ctx is None:
+        return dict(empty_summary)
+
+    matched_turn_count = _match_window_turns_to_speakers(ctx)
+
+    updated_utterance_count, merge_source_utterance_ids = _apply_window_merge_plans(ctx)
+    preserved_manual_lock_count = 0
+    # Merges flush their own events inside _apply_boundary_reconciliation_segments;
+    # the projection refresh below is driven solely by per-utterance outcomes, as
+    # in the original inline implementation.
+    projection_dirty = False
+
+    for utterance in ctx.overlapping_utterances:
+        if utterance.id is not None and int(utterance.id) in merge_source_utterance_ids:
+            continue
+        outcome = _reconcile_overlapping_utterance(ctx, utterance)
+        updated_utterance_count += outcome.updated_utterance_count
+        preserved_manual_lock_count += outcome.preserved_manual_lock_count
+        projection_dirty = projection_dirty or outcome.projection_dirty
 
     if projection_dirty:
         refresh_transcript_projection_from_canonical(session, recording_id)
