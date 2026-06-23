@@ -126,6 +126,75 @@ Use the GitHub issue templates and choose the closest match. Route sensitive rep
 - **Dependency issues:** open a bug report describing the dependency, the pinned and installed versions, the platform (CPU or CUDA, operating system, Python or Node version), and the exact install or runtime error. State whether it affects `requirements/local.txt`, `requirements/dev.txt`, or the frontend lockfile.
 - **Security vulnerabilities:** do not open a public issue. Use GitHub Private Vulnerability Reporting as described in the [security policy](docs/SECURITY.md).
 
+## Repository Governance
+
+Nojoin is currently maintained by a single maintainer. The governance below is designed around that reality: code ownership, merge discipline, and the re-audit cadence are self-applied rather than relying on a second human reviewer. The structure is forward-compatible — when a co-maintainer joins, the same rules gain a genuine second-reviewer gate without restructuring.
+
+### Code Ownership
+
+Review responsibility is recorded in [.github/CODEOWNERS](.github/CODEOWNERS). GitHub auto-requests a review from the listed owner for every pull request that touches a matched path. The current map is:
+
+| Area | Paths | Owner |
+| --- | --- | --- |
+| Backend / API | `backend/api/**` | `@Valtora` |
+| Worker / ML and processing | `backend/worker/**`, `backend/processing/**` | `@Valtora` |
+| Migrations | `backend/alembic/**` | `@Valtora` |
+| Frontend / capture | `frontend/src/**`, `frontend/src/lib/capture/**` | `@Valtora` |
+| Security | `docs/SECURITY.md`, `backend/core/security.py`, `backend/core/encryption.py`, `backend/api/deps.py`, `backend/api/v1/endpoints/login.py` | `@Valtora` |
+| Deployment / CI | `docker/**`, `docker-compose*.yml`, `.github/workflows/**` | `@Valtora` |
+| Documentation | `docs/**`, `*.md` | `@Valtora` |
+
+### Merge Requirements
+
+Every pull request to `main`, regardless of scope, must have all required status checks green before merge:
+
+- `Backend tests`
+- `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries)
+- `Frontend lint`
+- `Frontend unit tests`
+- `Frontend build`
+- `Docs validation`
+- `Alembic validation`
+
+Sensitive scopes carry an additional review obligation that the maintainer (or, in future, a designated CODEOWNER) must satisfy before merging:
+
+- **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head and never delete or rename a committed revision. Confirm `Alembic validation` is green.
+- **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
+- **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and keep `RecordingCard.tsx` and `Sidebar.tsx` context menus in sync.
+- **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
+
+### Branch Protection (maintainer-action-pending)
+
+Branch protection and required-reviewer enforcement cannot be applied from the repository tree; they are GitHub repository settings. The settings to apply on `main` are designed so the sole maintainer can always merge their own green pull request and are never an irreversible lockout:
+
+- Require a pull request before merging, with **0** required approvals while the project is single-maintainer. GitHub forbids approving your own pull request, so a non-zero count would make every merge impossible for a sole author; raise it to **1** and enable **Require review from Code Owners** only when a second maintainer joins.
+- Require the seven status checks listed above (their job names) to pass before merging, with branches required to be up to date. These are enforced for admins too, so nothing merges red.
+- Require linear history and disallow force pushes and deletions.
+
+The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [ADR-0001](docs/adr/0001-gated-signed-release-model.md).
+
+### Architecture Decision Records
+
+Changes that alter trust boundaries, persistence, capture, processing, or deployment contracts require an Architecture Decision Record. See [docs/adr/README.md](docs/adr/README.md) for when an ADR is required and how to add one.
+
+### Periodic Re-Audit
+
+The repository-quality bar is maintained, not set once. Three passes keep it current:
+
+- **Quarterly (automated reminder):** `.github/workflows/repo-audit-reminder.yml` runs on the first day of each quarter and opens an `audit`-labelled issue if one is not already open. That issue carries the re-audit checklist; the maintainer works through it, records the measured evidence in the issue, and opens follow-up issues for any regression.
+- **Per release:** before tagging, confirm the release-blocking quality checks still hold and that open `severity:critical`/`severity:high` and `release:*` issues are reflected in the release notes.
+- **On significant change:** when a change alters a core contract (trust boundary, persistence, capture, processing, or deployment), the accompanying ADR is the record — see [docs/adr/README.md](docs/adr/README.md).
+
+The re-audit procedure is to run the required checks from a clean environment, capture the actual numbers (test counts and durations, lint results, link-check output) in the audit issue, and resolve regressions with tracked follow-up issues rather than silently closing the audit.
+
+### Other Governance Policies
+
+To avoid duplication, the remaining policies live in their canonical homes:
+
+- **Triage cadence and labels:** [.github/SUPPORT.md](.github/SUPPORT.md) and [.github/labels.yml](.github/labels.yml).
+- **Dependency-update policy:** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#dependency-update-policy).
+- **Test reliability (duration and flakiness):** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#test-reliability) and the flaky-test reporting path under [Reporting Issues](#reporting-issues).
+
 ## Code of Conduct
 
 Please note that this project is released with a [Code of Conduct](docs/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.

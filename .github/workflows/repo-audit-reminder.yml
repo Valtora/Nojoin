@@ -1,0 +1,71 @@
+name: Repository Re-Audit Reminder
+
+# Opens a quarterly issue reminding the maintainer to run the repository-quality
+# re-audit (GOV-008); the re-audit process is documented in CONTRIBUTING.md. It
+# uses the runner's built-in gh CLI rather than a third-party action, so there is
+# no extra pinned SHA to maintain, and it is idempotent: it never stacks a second
+# open reminder.
+
+on:
+  schedule:
+    # 09:00 UTC on the first day of each quarter (Jan, Apr, Jul, Oct).
+    - cron: "0 9 1 1,4,7,10 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  open-reminder:
+    name: Open re-audit reminder issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or skip the quarterly re-audit issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Ensure the audit label exists so issue creation and the dedup query
+          # work even before labels.yml has been applied manually.
+          gh label create audit \
+            --color 0052cc \
+            --description "Periodic repository-quality re-audit (GOV-008)" \
+            --force
+
+          # Idempotency: if an open audit issue already exists, do nothing.
+          existing="$(gh issue list --label audit --state open --json number --jq 'length')"
+          if [[ "${existing}" -gt 0 ]]; then
+            echo "An open audit issue already exists; nothing to do."
+            exit 0
+          fi
+
+          stamp="$(date -u +'%Y-%m')"
+          body_file="$(mktemp)"
+          cat > "${body_file}" <<'EOF'
+          Quarterly repository-quality re-audit (GOV-008). The re-audit process
+          is documented under "Periodic Re-Audit" in CONTRIBUTING.md.
+
+          Work through the checklist below and record measured evidence in this
+          issue, not impressions:
+
+          - [ ] Required pull-request checks are green on `main`.
+          - [ ] Backend tests pass from a clean environment; note the count and duration, and review the `--durations` output for new slow outliers.
+          - [ ] Frontend lint, unit tests, and production build pass without broad suppressions.
+          - [ ] Python lint, format, and mypy pass on the enforced boundary.
+          - [ ] Docs validation reports no missing local links or machine-local paths.
+          - [ ] Release publication is still gated, signed, and traceable to an exact tag and commit.
+          - [ ] No maintainability hotspot has regressed past its grandfathered baseline.
+          - [ ] Contributor and community docs still match the supported workflow and reporting channels.
+          - [ ] Open issues are triaged and labelled; stale `flaky`/`slow-test` items are reviewed.
+
+          Record the findings in this issue, open follow-up issues for any
+          regression, then close this issue.
+          EOF
+
+          gh issue create \
+            --title "Repository quality re-audit (${stamp})" \
+            --label audit \
+            --body-file "${body_file}"

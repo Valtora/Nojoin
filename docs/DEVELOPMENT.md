@@ -85,6 +85,52 @@ python3 scripts/validate_docs.py
 python3 scripts/validate_alembic.py
 ```
 
+### Branch Protection (maintainer action)
+
+Required status checks and required reviewers are enforced through GitHub branch-protection settings, which cannot be applied from the repository tree. Apply them once on `main` with an authenticated `gh`:
+
+```bash
+gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "Backend tests",
+      "Python quality",
+      "Frontend lint",
+      "Frontend unit tests",
+      "Frontend build",
+      "Docs validation",
+      "Alembic validation"
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0
+  },
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "restrictions": null
+}
+JSON
+```
+
+**This configuration cannot lock out a sole maintainer.** It is deliberately built so that a single person who is also the only code owner can always merge their own green pull request:
+
+- `required_approving_review_count` is `0`: GitHub never allows approving your own pull request, so any value of `1` or more would make every merge impossible for a sole author. With `0`, a green pull request is mergeable by you alone.
+- `require_code_owner_reviews` is `false`: with it `true` and you as the only code owner, the required code-owner approval could never be supplied and your own pull requests would be permanently unmergeable. It stays `false` while the project is single-maintainer. You still get a review auto-requested on every pull request, because that comes from the [CODEOWNERS](../.github/CODEOWNERS) file itself, not from this setting — you keep the review prompt without the merge gate.
+- `enforce_admins` is `true` so the status checks apply to you too and nothing merges red. This is not a lockout: every required check runs on every pull request, so a green pull request is always mergeable, and as the repository owner you can edit or remove this protection in **Settings → Branches** at any time (for example to land a fix for a broken CI workflow). Protection is never an irreversible state.
+
+**When a second maintainer joins**, set `require_code_owner_reviews` to `true` and raise `required_approving_review_count` to `1` to turn this into a genuine second-reviewer gate.
+
+This step is maintainer-action-pending: it is documented here but not enforced from the repository tree.
+
+**Do not add the release jobs to this required-checks list.** The contexts above are exactly the seven checks the CI workflow runs on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all.
+
+The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release` and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow (see [adr/0001-gated-signed-release-model.md](adr/0001-gated-signed-release-model.md)).
+
 ## Verification By Change Scope
 
 - Backend or worker code: run `pytest`.
@@ -268,6 +314,17 @@ Development guardrails:
 - The localhost dev compose template at the end of this document sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on the API service. If a local dev database is stamped to a revision that no longer exists in your checkout, startup will restamp it to the current checked-in head before running `alembic upgrade head`.
 - Keep that auto-repair flag limited to disposable local databases. For persistent deployments, fix the migration graph or reconcile the database revision manually instead of auto-stamping.
 
+### Test Reliability
+
+The suite must stay fast and trustworthy as coverage grows. The mechanism is deliberately lightweight — no flaky-test database or retry plugin, just visible signal and a reporting path.
+
+- **Duration reporting is always on.** `pyproject.toml` sets `addopts = "--durations=15"`, so every local and CI `pytest` run prints the fifteen slowest tests at the end. Skim that list when you add or change tests. If a test you touched appears near the top, prefer trimming fixtures, narrowing scope, or marking it rather than letting the suite drift slower.
+- **Flag slow outliers.** When a genuinely slow test is worth keeping, open a tracking issue and apply the `slow-test` label so it is visible for later optimisation.
+- **Report flaky tests.** A test that passes and fails without a code change is flaky and should never be silently re-run away. Follow the flaky-test reporting path in [CONTRIBUTING.md](../CONTRIBUTING.md#reporting-issues): open a bug report titled `[flaky]` with the test name, the CI job or local command, how often it fails, and whether it reproduces locally or only in CI. Triage applies the `flaky` label.
+- **Fix forward, do not paper over.** Resolve flakiness by removing the nondeterminism (timing, ordering, shared state, network). Skipping or `xfail`-ing a flaky test is a temporary measure that needs a linked tracking issue and a stated condition for removal.
+
+The `flaky` and `slow-test` labels are defined in [.github/labels.yml](../.github/labels.yml); the per-release and quarterly triage passes in [.github/SUPPORT.md](../.github/SUPPORT.md) review open items under both.
+
 ## Browser Capture Development
 
 Browser capture code lives under `frontend/src/lib/capture/` and is exercised by the recording page and capture settings surfaces.
@@ -432,9 +489,24 @@ The release pipeline is hardened to make published images reproducible, traceabl
 - Every container base image in the Dockerfiles is pinned by `@sha256:` digest with the human-readable tag kept as a comment. The digest is the immutable identity of the image; the tag alone is mutable.
 - When you intentionally upgrade an action or base image, update both the SHA/digest and the version comment in the same change.
 
-### Dependabot
+### Dependency-Update Policy
 
-[.github/dependabot.yml](../.github/dependabot.yml) keeps four ecosystems current on a weekly cadence: GitHub Actions, Python (`requirements/`), npm (`frontend/`), and Docker base images. Dependabot rewrites pinned SHAs and digests in place and updates the version comment, so pinning does not cause drift. Review and merge these update pull requests like any other change; they run the full CI suite.
+This is the canonical dependency-update policy for Nojoin; the supply-chain controls above (pinned actions and base-image digests, provenance, scanning, and signing) are what these updates keep current.
+
+[.github/dependabot.yml](../.github/dependabot.yml) keeps four ecosystems current on a **weekly** cadence:
+
+- **GitHub Actions** (`/`): grouped into a single `github-actions` pull request. Dependabot rewrites the pinned commit SHA and the trailing `# vX.Y.Z` comment in place, so SHA pinning does not cause drift.
+- **Python** (`/requirements`): grouped into one `python-dependencies` pull request across the split requirement files.
+- **npm** (`/frontend`): split into `npm-production` and `npm-development` groups so a runtime-affecting update is reviewed separately from tooling churn.
+- **Docker base images** (`/docker`, `/frontend`): grouped into `docker-base-images`. Dependabot bumps the `@sha256:` digest and the human-readable tag comment together.
+
+Each ecosystem is capped at five open pull requests so the queue stays reviewable.
+
+**How pins stay current.** Pinning to SHAs and digests is what makes updates auditable, not what makes them stale: Dependabot edits the pin and its version comment in the same pull request, so the immutable identity always advances deliberately and visibly. Never replace a pinned SHA or digest with a floating tag to "simplify" an update.
+
+**Who reviews, and how.** The maintainer (per [CODEOWNERS](../.github/CODEOWNERS)) reviews and merges update pull requests like any other change. They run the full required CI suite; a green run plus a scan of the changelog for behavioural or breaking changes is the bar for a routine update. Group updates that touch a runtime dependency (`npm-production`, `python-dependencies`, base images) warrant a closer look than tooling-only groups.
+
+**Security prioritisation.** Dependabot security alerts and any update that resolves a known CVE take priority over routine version bumps and should be merged promptly once CI is green. Because the release pipeline fails on fixable CRITICAL/HIGH image findings (REL-008), a security update is often the unblocking fix for a release: merge the relevant base-image or dependency update, then re-cut the tag. For a finding with no upstream fix, record a dated, justified entry in [.trivyignore](../.trivyignore) rather than blocking indefinitely.
 
 ### Image Provenance, SBOM, and Signing
 
