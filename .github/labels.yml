@@ -1,0 +1,97 @@
+# Canonical label taxonomy for Nojoin issues and pull requests (GOV-004).
+#
+# This file is the single source of truth for the label set. Labels themselves
+# live in GitHub repository settings, so this file is applied with `gh` rather
+# than read by the application; the exact commands are documented in
+# .github/SUPPORT.md. Colours are 6-digit hex without a leading '#'.
+#
+# Keep this file and the live labels in sync: add a label here first, then apply
+# it. When removing a label, remove it here and delete it in GitHub.
+
+# --- Severity: how badly the issue affects users ---
+- name: "severity:critical"
+  color: "b60205"
+  description: "Data loss, security exposure, or the product is unusable."
+- name: "severity:high"
+  color: "d93f0b"
+  description: "Major function broken with no easy workaround."
+- name: "severity:medium"
+  color: "fbca04"
+  description: "Important but with a workaround, or affects a subset of users."
+- name: "severity:low"
+  color: "0e8a16"
+  description: "Minor issue, cosmetic, or low-impact edge case."
+
+# --- Scope: which subsystem the work belongs to (mirrors CODEOWNERS) ---
+- name: "scope:backend"
+  color: "1d76db"
+  description: "Backend API and shared backend code."
+- name: "scope:worker"
+  color: "1d76db"
+  description: "Celery worker, ML, and the processing pipeline."
+- name: "scope:frontend"
+  color: "1d76db"
+  description: "Web frontend (excluding browser capture)."
+- name: "scope:capture"
+  color: "1d76db"
+  description: "Browser capture under frontend/src/lib/capture."
+- name: "scope:migration"
+  color: "5319e7"
+  description: "Alembic migrations and database schema changes."
+- name: "scope:deployment"
+  color: "5319e7"
+  description: "Docker, compose, CI, and the release pipeline."
+- name: "scope:docs"
+  color: "0075ca"
+  description: "Documentation only."
+- name: "scope:security"
+  color: "b60205"
+  description: "Auth, session, token, or encryption boundaries."
+
+# --- Platform: where a problem reproduces ---
+- name: "platform:windows"
+  color: "c5def5"
+  description: "Specific to Windows."
+- name: "platform:linux"
+  color: "c5def5"
+  description: "Specific to Linux."
+- name: "platform:macos"
+  color: "c5def5"
+  description: "Specific to macOS."
+- name: "platform:android"
+  color: "c5def5"
+  description: "Specific to Chrome on Android (microphone-only capture)."
+- name: "platform:ios"
+  color: "c5def5"
+  description: "Specific to Chrome on iOS (microphone-only capture)."
+- name: "platform-issue"
+  color: "d4c5f9"
+  description: "Browser-capture or platform compatibility report (triage queue)."
+
+# --- Release impact: what shipping the change implies for operators ---
+- name: "release:breaking"
+  color: "b60205"
+  description: "Backwards-incompatible change for operators or API clients."
+- name: "release:migration-required"
+  color: "d93f0b"
+  description: "Requires a database migration on upgrade."
+- name: "release:safe"
+  color: "0e8a16"
+  description: "Drop-in change with no upgrade action required."
+
+# --- Workflow: triage and quality signals ---
+- name: "needs-triage"
+  color: "ededed"
+  description: "Awaiting maintainer triage and labelling."
+- name: "flaky"
+  color: "e99695"
+  description: "Intermittently failing test (see DEVELOPMENT.md test reliability)."
+- name: "slow-test"
+  color: "fef2c0"
+  description: "Test flagged as slow by pytest --durations."
+- name: "dependencies"
+  color: "0366d6"
+  description: "Dependency update (used by Dependabot pull requests)."
+- name: "audit"
+  color: "0052cc"
+  description: "Periodic repository-quality re-audit (GOV-008)."
