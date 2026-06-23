@@ -456,9 +456,14 @@ jobs:
           done
           # The worker needs a GPU and models to boot, so assert its non-root
           # USER from the published image config without pulling the large layers.
-          worker_user="$(docker buildx imagetools inspect \
-            --format '{{ (index .Image "linux/amd64").Config.User }}' \
-            "${IMAGE_BASE}-worker:${VERSION}")"
+          # The published artifact is an OCI index (provenance + SBOM
+          # attestations), so `{{json .Image}}` is a platform-keyed map; the jq
+          # also handles a single-image config object so a shape change cannot
+          # turn this into a template error that aborts the release.
+          worker_image="$(docker buildx imagetools inspect \
+            "${IMAGE_BASE}-worker:${VERSION}" --format '{{json .Image}}')"
+          worker_user="$(printf '%s' "${worker_image}" | jq -r \
+            '(if has("config") then .config.User else (first(to_entries[] | select(.key|startswith("linux/")) | .value.config.User)) end) // empty')"
           echo "worker image USER: ${worker_user:-<empty>}"
           if [[ -z "${worker_user}" || "${worker_user}" == "root" || "${worker_user}" == "0" ]]; then
             echo "worker image does not declare a non-root USER" >&2
