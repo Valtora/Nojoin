@@ -1,6 +1,6 @@
 # --- Builder Stage ---
 # Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime@sha256:79c5599719e0b1afdb56ac2d14588b530283752d7ae6ec3c36e18ec9deb8b229 AS builder
+FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -48,7 +48,7 @@ RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
 RUN pip install --no-cache-dir triton
 
 # --- Runtime Stage ---
-FROM pytorch/pytorch:2.12.1-cuda12.6-cudnn9-runtime@sha256:79c5599719e0b1afdb56ac2d14588b530283752d7ae6ec3c36e18ec9deb8b229 AS runtime
+FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
