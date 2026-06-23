@@ -339,7 +339,7 @@ source .venv/bin/activate
 python -m pip install -r requirements/dev.txt   # tests + lint/format/type tooling (CPU)
 pre-commit install                              # optional: run lint/format on commit
 
-python scripts/check.py            # ruff lint, format check, mypy, doc/alembic validators, pytest
+python scripts/check.py            # ruff lint, format check, trailing-whitespace, mypy, doc/alembic validators, pytest
 python scripts/check.py --fix      # auto-fix lint + formatting first
 python scripts/check.py lint mypy  # run a subset
 ```

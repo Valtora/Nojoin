@@ -25,6 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CHECKS: dict[str, list[str]] = {
     "lint": ["ruff", "check", "."],
     "format": ["ruff", "format", "--check", "."],
+    "whitespace": [sys.executable, "scripts/check_whitespace.py"],
     "typecheck": ["mypy"],
     "docs": [sys.executable, "scripts/validate_docs.py"],
     "alembic": [sys.executable, "scripts/validate_alembic.py"],

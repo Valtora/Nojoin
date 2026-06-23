@@ -9,7 +9,10 @@ const eslintConfig = defineConfig([
     rules: {
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/exhaustive-deps": "warn",
-      "@typescript-eslint/no-explicit-any": "error"
+      "@typescript-eslint/no-explicit-any": "error",
+      // Prevent trailing-whitespace and missing-final-newline drift from returning.
+      "no-trailing-spaces": "error",
+      "eol-last": ["error", "always"]
     }
   },
   {
