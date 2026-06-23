@@ -1,4 +1,7 @@
 [tool.pytest.ini_options]
+# --durations reports the slowest tests on every local and CI run so duration
+# creep and slow outliers stay visible without extra tooling (GOV-006).
+addopts = "--durations=15"
 pythonpath = [
   "."
 ]
