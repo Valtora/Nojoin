@@ -40,21 +40,21 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/nspell": "^2.1.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "baseline-browser-mapping": "^2.9.2",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint": "^10",
+    "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^4.1.6"
+    "typescript": "^6",
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "brace-expansion@<1.1.13": "1.1.13",
