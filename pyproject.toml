@@ -17,7 +17,7 @@ markers = [
 # Rather than type-checking the whole (largely untyped) backend at once, we
 # enforce types on a curated set of stable boundaries -- configuration, core
 # security/persistence contracts, and API-facing schemas -- and expand the
-# `files` list as more modules are annotated (see docs/repo-maintenance.md).
+# `files` list as more modules are annotated (see docs/DEVELOPMENT.md).
 python_version = "3.12"
 # The Pydantic plugin teaches mypy about SQLModel/Pydantic models, including
 # @computed_field stacked on @property.
