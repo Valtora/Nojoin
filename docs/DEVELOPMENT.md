@@ -365,7 +365,7 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 
 ### Architecture & UI Guidelines
 - **State Management**: **Zustand** (defined in [frontend/src/lib/store.ts](../frontend/src/lib/store.ts)) is the global UI state manager (handling navigation, selection, and filters). Avoid prop drilling wherever possible.
-- **API Client Layer**: All API communication must go through [frontend/src/lib/api.ts](../frontend/src/lib/api.ts).
+- **API Client Layer**: All API communication must go through the [frontend/src/lib/api/](../frontend/src/lib/api/) layer, a barrel that re-exports the typed per-resource clients.
 - **Security & Tokens**:
   - Browser auth uses HttpOnly session cookies issued by `/api/v1/login/session`.
   - Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
