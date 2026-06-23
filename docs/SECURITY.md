@@ -106,3 +106,26 @@ We use GitHub's Private Vulnerability Reporting feature to receive security disc
 2. **Evaluation:** The maintainers will investigate the report and determine the severity and scope of the vulnerability.
 3. **Remediation:** If the vulnerability is confirmed, we will work on a patch. A security advisory will be drafted, and a fix will be released.
 4. **Disclosure:** Once a patch is available and deployed, we will coordinate public disclosure through a GitHub Security Advisory.
+
+## Emergency Security Release and Artifact Revocation
+
+When a confirmed vulnerability requires an out-of-band fix, maintainers follow an expedited release path. The goal is to ship a patched, verifiable image quickly without bypassing the integrity controls that make a release trustworthy.
+
+### Expedited Release
+
+1. **Draft privately.** Develop the fix on a private branch or through a GitHub Security Advisory draft so the change is not disclosed before an image is available.
+2. **Bump and tag.** Update `docs/VERSION` and push a strict `vX.Y.Z` tag exactly as for a normal release. The same release pipeline runs: full test, lint, build, documentation, and migration gates, followed by image build, vulnerability scan, the health and non-root smoke, and cosign signing. The security urgency does not remove these gates; it only compresses the schedule.
+3. **Publish notes.** The automated release notes are generated for the tag. Add an explicit security section describing the affected versions, severity, and required operator action (for example, "upgrade immediately").
+4. **Advisory.** Publish or update the GitHub Security Advisory, request a CVE where appropriate, and credit the reporter per the coordinated-disclosure workflow above.
+
+### Artifact Revocation
+
+If a published image is found to be compromised or dangerously vulnerable, revoke it rather than relying on a newer tag alone, because deployments may still be pulling the old tag or digest.
+
+1. **Stop the bleeding.** Repoint the rolling tags (`latest`, `major.minor`) to the patched image immediately by cutting the patched release; never leave `latest` pointing at a known-bad image.
+2. **Remove or mark the bad version.** Delete the affected immutable version tag and its digest from the GitHub Container Registry package, or, where deletion would break audit history, mark the version as deprecated and document it in the advisory. Note that container digests cannot be silently rewritten — a removed digest fails to pull, which is the intended fail-closed behaviour.
+3. **Invalidate trust signals.** Because images are signed by digest, a revoked digest should be called out in the advisory as no-longer-to-be-trusted. Operators verifying signatures should treat the advisory's listed bad digests as untrusted even if a historical signature exists.
+4. **Notify operators.** Communicate the revocation through the GitHub Security Advisory and the release notes, including the bad digests, the fixed digest to upgrade to, and any data-safety steps. Operators who pin by digest must be told the exact digest to move to.
+5. **Rotate exposed secrets.** If the incident could have exposed signing material, deployment credentials, or registry tokens, rotate them and record the rotation in the advisory timeline.
+
+Operators should subscribe to repository releases and security advisories so that emergency releases and revocations reach them promptly.
