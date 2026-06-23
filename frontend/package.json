@@ -49,14 +49,15 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "baseline-browser-mapping": "^2.9.2",
-    "eslint": "^10",
-    "eslint-config-next": "16.2.9",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^4.1.9"
   },
   "overrides": {
+    "eslint-plugin-react-hooks": "7.0.1",
     "brace-expansion@<1.1.13": "1.1.13",
     "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
     "follow-redirects": "1.16.0",
