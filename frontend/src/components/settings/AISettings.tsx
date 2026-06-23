@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { LanguageRegistry, Settings, SystemModelStatus } from "@/types";
+import { useState } from "react";
+import { LanguageRegistry, Settings } from "@/types";
 import {
   Check,
   X,
@@ -14,25 +14,31 @@ import {
   Server,
 } from "lucide-react";
 import { fuzzyMatch } from "@/lib/searchUtils";
-import { getErrorMessage } from "@/lib/errors";
 import {
   clampMeetingEdgeContextLevel,
   MEETING_EDGE_CONTEXT_OPTIONS,
 } from "@/lib/meetingEdgeContext";
-import {
-  validateLLM,
-  getModelsStatus,
-  deleteModel,
-  listModels,
-  getLanguageOptions,
-} from "@/lib/api";
-import { useNotificationStore } from "@/lib/notificationStore";
+import { listModels } from "@/lib/api";
 import Tooltip from "@/components/ui/Tooltip";
 import { Switch } from "@/components/ui/Switch";
 import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 import WhisperModelModal from "./WhisperModelModal";
+import { useAISettingsModels } from "./useAISettingsModels";
+import {
+  DEFAULT_OLLAMA_CONTEXT_WINDOW,
+  checkLlmConfigured as checkLlmConfiguredFor,
+  getModelOptionsForProvider as getModelOptionsFor,
+  getSecondaryProviderApiKey as getSecondaryApiKeyFor,
+  getSecondaryProviderLiveModel as getSecondaryLiveModelFor,
+  getSecondaryProviderModel as getSecondaryModelFor,
+  getSelectedModelForProvider as getSelectedModelFor,
+  parseContextWindow as parseContextWindowValue,
+  withSecondaryProviderLiveModel,
+  withSecondaryProviderModel,
+  withSelectedModelForProvider,
+} from "./aiSettingsModels";
 
 const WHISPER_MODELS = [
   { id: "tiny", label: "Tiny", params: "39 M", vram: "~1 GB", speed: "~10x" },
@@ -55,8 +61,6 @@ const WHISPER_MODELS = [
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
 
-const DEFAULT_OLLAMA_CONTEXT_WINDOW = 131072;
-
 interface AISettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
@@ -72,28 +76,25 @@ export default function AISettings({
   searchQuery = "",
   isAdmin = false,
 }: AISettingsProps) {
-  const { addNotification } = useNotificationStore();
   const [showWhisperModal, setShowWhisperModal] = useState(false);
 
-  // Validation & Model State
-  const [validating, setValidating] = useState<string | null>(null);
-  const [validationMsg, setValidationMsg] = useState<{
-    type: "success" | "error";
-    msg: string;
-    provider: string;
-  } | null>(null);
-  const [modelStatus, setModelStatus] = useState<SystemModelStatus | null>(
-    null,
-  );
-  const [languageRegistry, setLanguageRegistry] =
-    useState<LanguageRegistry | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-
-  // Dynamic Model Lists
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
-  const [secondaryAvailableModels, setSecondaryAvailableModels] = useState<string[]>([]);
-  const [secondaryFetchingModels, setSecondaryFetchingModels] = useState(false);
+  const {
+    validating,
+    validationMsg,
+    modelStatus,
+    languageRegistry,
+    deleting,
+    availableModels,
+    setAvailableModels,
+    fetchingModels,
+    setFetchingModels,
+    secondaryAvailableModels,
+    setSecondaryAvailableModels,
+    secondaryFetchingModels,
+    setSecondaryFetchingModels,
+    handleValidate,
+    handleDeleteModel,
+  } = useAISettingsModels({ settings, onPersist });
 
   const persistSettingsUpdate = (updates: Settings) => {
     onUpdate(updates);
@@ -106,325 +107,55 @@ export default function AISettings({
     });
   };
 
-  const checkLlmConfigured = () => {
-    const provider = settings.llm_provider || "gemini";
-    if (provider === "gemini") return Boolean(settings.gemini_api_key);
-    if (provider === "openai") return Boolean(settings.openai_api_key);
-    if (provider === "anthropic") return Boolean(settings.anthropic_api_key);
-    if (provider === "ollama") return Boolean(settings.ollama_api_url);
-    return false;
-  };
+  const checkLlmConfigured = () => checkLlmConfiguredFor(settings);
 
-  const getSelectedModelForProvider = (kind: "main" | "live") => {
-    const provider = settings.llm_provider || "gemini";
-    if (provider === "openai") {
-      return kind === "live"
-        ? settings.openai_live_model || ""
-        : settings.openai_model || "";
-    }
-    if (provider === "anthropic") {
-      return kind === "live"
-        ? settings.anthropic_live_model || ""
-        : settings.anthropic_model || "";
-    }
-    if (provider === "ollama") {
-      return kind === "live"
-        ? settings.ollama_live_model || ""
-        : settings.ollama_model || "";
-    }
-    return kind === "live"
-      ? settings.gemini_live_model || ""
-      : settings.gemini_model || "";
-  };
+  const getSelectedModelForProvider = (kind: "main" | "live") =>
+    getSelectedModelFor(settings, kind);
 
-  const parseContextWindow = (value: string): number => {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed)) {
-      return DEFAULT_OLLAMA_CONTEXT_WINDOW;
-    }
-    return Math.max(1024, parsed);
-  };
+  const parseContextWindow = (value: string): number =>
+    parseContextWindowValue(value);
 
   const updateSelectedModelForProvider = (
     kind: "main" | "live",
     value: string,
   ) => {
-    const provider = settings.llm_provider || "gemini";
-    const updates: Settings = { ...settings };
-
-    if (provider === "openai") {
-      if (kind === "live") updates.openai_live_model = value || null;
-      else updates.openai_model = value;
-    } else if (provider === "anthropic") {
-      if (kind === "live") updates.anthropic_live_model = value || null;
-      else updates.anthropic_model = value;
-    } else if (provider === "ollama") {
-      if (kind === "live") updates.ollama_live_model = value || null;
-      else updates.ollama_model = value;
-    } else {
-      if (kind === "live") updates.gemini_live_model = value || null;
-      else updates.gemini_model = value;
-    }
-
-    persistSettingsUpdate(updates);
+    persistSettingsUpdate(withSelectedModelForProvider(settings, kind, value));
   };
 
   const getSecondaryProviderApiKey = (
     provider: Settings["secondary_llm_provider"],
-  ): string => {
-    switch (provider) {
-      case "openai":
-        return settings.secondary_openai_api_key || "";
-      case "anthropic":
-        return settings.secondary_anthropic_api_key || "";
-      case "gemini":
-        return settings.secondary_gemini_api_key || "";
-      default:
-        return "";
-    }
-  };
+  ): string => getSecondaryApiKeyFor(settings, provider);
 
   const getSecondaryProviderModel = (
     provider: Settings["secondary_llm_provider"],
-  ): string => {
-    switch (provider) {
-      case "openai":
-        return settings.secondary_openai_model || "";
-      case "anthropic":
-        return settings.secondary_anthropic_model || "";
-      case "ollama":
-        return settings.secondary_ollama_model || "";
-      case "gemini":
-        return settings.secondary_gemini_model || "";
-      default:
-        return "";
-    }
-  };
+  ): string => getSecondaryModelFor(settings, provider);
 
   const getSecondaryProviderLiveModel = (
     provider: Settings["secondary_llm_provider"],
-  ): string => {
-    switch (provider) {
-      case "openai":
-        return settings.secondary_openai_live_model || "";
-      case "anthropic":
-        return settings.secondary_anthropic_live_model || "";
-      case "ollama":
-        return settings.secondary_ollama_live_model || "";
-      case "gemini":
-        return settings.secondary_gemini_live_model || "";
-      default:
-        return "";
-    }
-  };
+  ): string => getSecondaryLiveModelFor(settings, provider);
 
   const updateSecondaryProviderModel = (
     provider: Settings["secondary_llm_provider"],
     value: string,
   ) => {
-    if (!provider) {
-      return;
+    const updates = withSecondaryProviderModel(settings, provider, value);
+    if (updates) {
+      onUpdate(updates);
     }
-
-    const updates: Settings = { ...settings };
-    if (provider === "openai") {
-      updates.secondary_openai_model = value;
-    } else if (provider === "anthropic") {
-      updates.secondary_anthropic_model = value;
-    } else if (provider === "ollama") {
-      updates.secondary_ollama_model = value;
-    } else {
-      updates.secondary_gemini_model = value;
-    }
-
-    onUpdate(updates);
   };
 
   const updateSecondaryProviderLiveModel = (
     provider: Settings["secondary_llm_provider"],
     value: string,
   ) => {
-    if (!provider) {
-      return;
-    }
-
-    const updates: Settings = { ...settings };
-    if (provider === "openai") {
-      updates.secondary_openai_live_model = value || null;
-    } else if (provider === "anthropic") {
-      updates.secondary_anthropic_live_model = value || null;
-    } else if (provider === "ollama") {
-      updates.secondary_ollama_live_model = value || null;
-    } else {
-      updates.secondary_gemini_live_model = value || null;
-    }
-
-    onUpdate(updates);
-  };
-
-  const getModelOptionsForProvider = (kind: "main" | "live") => {
-    const selectedModel = getSelectedModelForProvider(kind);
-    if (!selectedModel) {
-      return availableModels;
-    }
-
-    return [
-      selectedModel,
-      ...availableModels.filter((model) => model !== selectedModel),
-    ];
-  };
-
-  useEffect(() => {
-    getModelsStatus(settings.whisper_model_size)
-      .then(setModelStatus)
-      .catch(console.error);
-  }, [settings.whisper_model_size]);
-
-  useEffect(() => {
-    getLanguageOptions().then(setLanguageRegistry).catch(console.error);
-  }, []);
-
-  // Fetch models automatically when provider or ollama_api_url changes
-  useEffect(() => {
-    const fetchModels = async () => {
-      const provider = settings.llm_provider;
-      const url = provider === "ollama" ? settings.ollama_api_url || "" : "";
-
-      if (provider) {
-        setFetchingModels(true);
-        try {
-          const res = await listModels(provider, "", url);
-          setAvailableModels(res.models);
-
-                } catch (e: unknown) {
-          console.error("Failed to fetch models", e);
-          setAvailableModels([]);
-        } finally {
-          setFetchingModels(false);
-        }
-      } else {
-        setAvailableModels([]);
-      }
-    };
-
-    const timeout = setTimeout(fetchModels, 1000);
-    return () => clearTimeout(timeout);
-  }, [
-    settings.llm_provider,
-    settings.ollama_api_url,
-  ]);
-
-  // Fetch secondary provider models independently
-  useEffect(() => {
-    const fetchSecondaryModels = async () => {
-      const provider = settings.secondary_llm_provider;
-      if (!provider) {
-        setSecondaryAvailableModels([]);
-        return;
-      }
-      const url = provider === "ollama" ? settings.secondary_ollama_api_url || "" : "";
-
-      setSecondaryFetchingModels(true);
-      try {
-        const res = await listModels(provider, "", url);
-        setSecondaryAvailableModels(res.models);
-      } catch (e: unknown) {
-        console.error("Failed to fetch secondary models", e);
-        setSecondaryAvailableModels([]);
-      } finally {
-        setSecondaryFetchingModels(false);
-      }
-    };
-
-    const timeout = setTimeout(fetchSecondaryModels, 1000);
-    return () => clearTimeout(timeout);
-  }, [
-    settings.secondary_llm_provider,
-    settings.secondary_ollama_api_url,
-  ]);
-
-  const handleValidate = async (provider: string) => {
-    setValidating(provider);
-    setValidationMsg(null);
-
-    const isSecondary = provider === settings.secondary_llm_provider && provider !== settings.llm_provider;
-    const url = provider === "ollama"
-      ? (isSecondary ? settings.secondary_ollama_api_url || "" : settings.ollama_api_url || "")
-      : "";
-
-    try {
-      const res = await validateLLM(provider, "", url);
-      // If models are returned (e.g. from Ollama), update the appropriate list
-      if (res.models) {
-        if (isSecondary) {
-          setSecondaryAvailableModels(res.models);
-        } else {
-          setAvailableModels(res.models);
-        }
-      } else {
-        // Otherwise refresh models explicitly
-        const modelsRes = await listModels(provider, "", url);
-        if (isSecondary) {
-          setSecondaryAvailableModels(modelsRes.models);
-        } else {
-          setAvailableModels(modelsRes.models);
-        }
-      }
-
-      if (onPersist) {
-        await onPersist(settings);
-      }
-
-      setValidationMsg({
-        type: "success",
-        msg: `${res.message || "Validation successful"}${onPersist ? " Settings saved." : ""}`,
-        provider,
-      });
-
-        } catch (e: unknown) {
-      setValidationMsg({
-        type: "error",
-        msg: getErrorMessage(e, "Validation failed"),
-        provider,
-      });
-    } finally {
-      setValidating(null);
+    const updates = withSecondaryProviderLiveModel(settings, provider, value);
+    if (updates) {
+      onUpdate(updates);
     }
   };
 
-  const handleDeleteModel = async (modelName: string) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete the ${modelName} model? You will need to download it again to use it.`,
-      )
-    )
-      return;
-
-    setDeleting(modelName);
-    try {
-      await deleteModel(modelName);
-      addNotification({
-        type: "success",
-        message: `${modelName} model deleted successfully`,
-      });
-      refreshStatus();
-
-        } catch (e: unknown) {
-      console.error(e);
-      addNotification({
-        type: "error",
-        message: `Failed to delete model: ${getErrorMessage(e, "Unknown error")}`,
-      });
-    } finally {
-      setDeleting(null);
-    }
-  };
-
-  const refreshStatus = () => {
-    getModelsStatus(settings.whisper_model_size)
-      .then(setModelStatus)
-      .catch(console.error);
-  };
+  const getModelOptionsForProvider = (kind: "main" | "live") =>
+    getModelOptionsFor(settings, availableModels, kind);
 
   // Search Logic
   const showLLM = fuzzyMatch(searchQuery, [
