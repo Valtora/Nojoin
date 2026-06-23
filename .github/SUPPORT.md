@@ -53,23 +53,35 @@ The canonical label set is defined in [labels.yml](labels.yml), grouped as:
 
 ### Applying the Labels (maintainer-action-pending)
 
-Labels exist only in GitHub repository settings, so `labels.yml` must be applied with the GitHub CLI. From a checkout with the project virtual environment active (it provides PyYAML) and an authenticated `gh`:
+Labels exist only in GitHub repository settings, so `labels.yml` must be applied with the GitHub CLI. The commands below mirror `labels.yml`; run them once from an authenticated `gh` (no other tooling required). `gh label create --force` creates the label or updates it in place, so the set is safe to re-run whenever `labels.yml` changes:
 
 ```bash
-source .venv/bin/activate
-python3 - <<'PY' | bash
-import shlex
-import yaml
-
-for label in yaml.safe_load(open(".github/labels.yml")):
-    print(
-        "gh label create {name} --color {color} --description {desc} --force".format(
-            name=shlex.quote(label["name"]),
-            color=shlex.quote(label["color"]),
-            desc=shlex.quote(label["description"]),
-        )
-    )
-PY
+gh label create "severity:critical" --color b60205 --description "Data loss, security exposure, or the product is unusable." --force
+gh label create "severity:high"     --color d93f0b --description "Major function broken with no easy workaround." --force
+gh label create "severity:medium"   --color fbca04 --description "Important but with a workaround, or affects a subset of users." --force
+gh label create "severity:low"      --color 0e8a16 --description "Minor issue, cosmetic, or low-impact edge case." --force
+gh label create "scope:backend"     --color 1d76db --description "Backend API and shared backend code." --force
+gh label create "scope:worker"      --color 1d76db --description "Celery worker, ML, and the processing pipeline." --force
+gh label create "scope:frontend"    --color 1d76db --description "Web frontend (excluding browser capture)." --force
+gh label create "scope:capture"     --color 1d76db --description "Browser capture under frontend/src/lib/capture." --force
+gh label create "scope:migration"   --color 5319e7 --description "Alembic migrations and database schema changes." --force
+gh label create "scope:deployment"  --color 5319e7 --description "Docker, compose, CI, and the release pipeline." --force
+gh label create "scope:docs"        --color 0075ca --description "Documentation only." --force
+gh label create "scope:security"    --color b60205 --description "Auth, session, token, or encryption boundaries." --force
+gh label create "platform:windows"  --color c5def5 --description "Specific to Windows." --force
+gh label create "platform:linux"    --color c5def5 --description "Specific to Linux." --force
+gh label create "platform:macos"    --color c5def5 --description "Specific to macOS." --force
+gh label create "platform:android"  --color c5def5 --description "Specific to Chrome on Android (microphone-only capture)." --force
+gh label create "platform:ios"      --color c5def5 --description "Specific to Chrome on iOS (microphone-only capture)." --force
+gh label create "platform-issue"    --color d4c5f9 --description "Browser-capture or platform compatibility report (triage queue)." --force
+gh label create "release:breaking"  --color b60205 --description "Backwards-incompatible change for operators or API clients." --force
+gh label create "release:migration-required" --color d93f0b --description "Requires a database migration on upgrade." --force
+gh label create "release:safe"      --color 0e8a16 --description "Drop-in change with no upgrade action required." --force
+gh label create "needs-triage"      --color ededed --description "Awaiting maintainer triage and labelling." --force
+gh label create "flaky"             --color e99695 --description "Intermittently failing test (see DEVELOPMENT.md test reliability)." --force
+gh label create "slow-test"         --color fef2c0 --description "Test flagged as slow by pytest --durations." --force
+gh label create "dependencies"      --color 0366d6 --description "Dependency update (used by Dependabot pull requests)." --force
+gh label create "audit"             --color 0052cc --description "Periodic repository-quality re-audit (GOV-008)." --force
 ```
 
-`gh label create --force` creates the label or updates it in place, so the command is safe to re-run whenever `labels.yml` changes. This step is a one-time (then on-change) maintainer action and is not enforced from the repository tree.
+This step is a one-time (then on-change) maintainer action and is not enforced from the repository tree. `.github/labels.yml` remains the canonical definition; keep these commands in step with it when the taxonomy changes.
