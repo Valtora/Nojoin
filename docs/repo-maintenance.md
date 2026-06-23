@@ -133,7 +133,7 @@ Large refactors must preserve behavior and begin with characterization tests.
 
 ### Frontend Decomposition
 
-- [ ] **FE-010:** Split `frontend/src/lib/api.ts` into typed resource clients while preserving a single public API layer.
+- [x] **FE-010:** Split `frontend/src/lib/api.ts` into typed resource clients while preserving a single public API layer.
 - [ ] **FE-011:** Decompose the recording detail page into data orchestration, live-state, transcript, notes, documents, and action modules.
 - [ ] **FE-012:** Decompose oversized dashboard, navigation, sidebar, transcript, speaker, and settings components into focused components and hooks.
 - [ ] **FE-013:** Introduce shared test renderers that provide navigation, notification, viewport-density, and other required application contexts.
