@@ -30,7 +30,7 @@ function RegisterForm() {
         setIsValidating(false);
         return;
       }
-      
+
       try {
         await validateInvitation(inviteCode);
         setFormData(prev => ({ ...prev, invite_code: inviteCode }));
@@ -42,7 +42,7 @@ function RegisterForm() {
         setIsValidating(false);
       }
     };
-    
+
     checkInvite();
   }, [inviteCode]);
 
@@ -63,10 +63,10 @@ function RegisterForm() {
         formData.password,
         formData.invite_code
       );
-      
+
       // Auto-login after registration
       await login(formData.username, formData.password);
-      
+
       // Redirect to dashboard (or setup if needed, but usually dashboard)
       router.push('/');
 
@@ -90,11 +90,11 @@ function RegisterForm() {
       <div className="max-w-md w-full space-y-8 p-10 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
-            <Image 
-              src="/assets/NojoinLogo.png" 
-              alt="Nojoin Logo" 
-              width={68} 
-              height={68} 
+            <Image
+              src="/assets/NojoinLogo.png"
+              alt="Nojoin Logo"
+              width={68}
+              height={68}
               className="object-contain"
             />
             <h2 className="text-3xl font-bold text-orange-600">
@@ -145,7 +145,7 @@ function RegisterForm() {
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               />
             </div>
-            
+
             <div className="relative">
               <label htmlFor="register-new-password" className="sr-only">
                 Password
@@ -193,7 +193,7 @@ function RegisterForm() {
             </div>
           </div>
 
-          {/* Hidden invite code field, or visible if missing/error? 
+          {/* Hidden invite code field, or visible if missing/error?
               User requested it not be necessary. We'll keep it in state but not show input unless there's no code in URL?
               Actually, if there is no code in URL, they probably shouldn't be here or should enter it manually.
               Let's show it only if it wasn't in the URL.

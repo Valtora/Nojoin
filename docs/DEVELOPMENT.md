@@ -303,7 +303,7 @@ Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibilit
 
 ### Spellcheck Dictionaries
 
-Spellcheck dictionaries are stored under `frontend/public/dictionaries/` in gzip-compressed format (`index.aff.gz` and `index.dic.gz`) to optimize repository size and container image build footprint. 
+Spellcheck dictionaries are stored under `frontend/public/dictionaries/` in gzip-compressed format (`index.aff.gz` and `index.dic.gz`) to optimize repository size and container image build footprint.
 
 If you add a new language or update an existing dictionary:
 1. Obtain the raw `.aff` and `.dic` files.

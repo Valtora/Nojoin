@@ -32,7 +32,7 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Logs**
-Please attach any relevant logs. 
+Please attach any relevant logs.
 - Browser: Open DevTools and copy any relevant console or network errors
 - Docker: Collect `docker compose logs api worker frontend`
 

@@ -37,7 +37,7 @@ export default function DashboardLayout({
           <TourGuide />
           <MainNav />
           {!isSettingsPage && !isPeoplePage && showSidebar && <Sidebar />}
-          
+
           <main
             ref={mainRef}
             className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full"

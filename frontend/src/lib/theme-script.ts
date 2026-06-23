@@ -4,16 +4,16 @@
 export const themeScript = `
 (function() {
   const THEME_STORAGE_KEY = 'nojoin-theme';
-  
+
   function getSystemTheme() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
-  
+
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
     const theme = stored || 'system';
     const resolved = theme === 'system' ? getSystemTheme() : theme;
-    
+
     if (resolved === 'dark') {
       document.documentElement.classList.add('dark');
     } else {

@@ -37,7 +37,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const { addNotification } = useNotificationStore();
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
@@ -78,10 +78,10 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
       setUploadState('idle');
       return;
     }
-    
+
     setSelectedFile(file);
     setUploadState('idle');
-    
+
     // Auto-fill meeting name from filename (without extension)
     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
     if (!meetingName) {
@@ -112,7 +112,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handleFileSelect(files[0]);
@@ -128,19 +128,19 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
 
   const handleImport = async () => {
     if (!selectedFile) return;
-    
+
     setUploadState('uploading');
     setUploadProgress(0);
-    
+
     try {
       await importAudio(selectedFile, {
         name: meetingName || undefined,
         recordedAt: recordedAt || undefined,
         onUploadProgress: setUploadProgress,
       });
-      
+
       setUploadState('success');
-      
+
       // Auto-close after success
       setTimeout(() => {
         onSuccess?.();
@@ -179,15 +179,15 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Audio</h2>
-          <button 
-            onClick={handleClose} 
+          <button
+            onClick={handleClose}
             disabled={uploadState === 'uploading'}
             className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
-        
+
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Drop Zone */}
@@ -200,10 +200,10 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
             onDrop={handleDrop}
             className={`
               relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-              ${isDragging 
-                ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20' 
-                : selectedFile 
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20' 
+              ${isDragging
+                ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20'
+                : selectedFile
+                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                   : 'border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600'
               }
               ${uploadState === 'uploading' ? 'pointer-events-none opacity-75' : ''}
@@ -216,7 +216,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
               onChange={handleFileInputChange}
               className="hidden"
             />
-            
+
             {selectedFile ? (
               <div className="space-y-2">
                 <FileAudio className="w-12 h-12 mx-auto text-green-500" />
@@ -256,7 +256,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                 <span className="text-gray-900 dark:text-white font-medium">{uploadProgress}%</span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div 
+                <div
                   className="bg-orange-500 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
                 />
@@ -278,7 +278,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Optional Details
               </h3>
-              
+
               {/* Meeting Name */}
               <div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
@@ -294,7 +294,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                   className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-50"
                 />
               </div>
-              
+
               {/* Recording Date */}
               <div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">

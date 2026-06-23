@@ -1,9 +1,9 @@
 export const GENERAL_KEYWORDS = ['appearance', 'theme', 'light', 'dark', 'mode', 'color', 'spellcheck', 'spell', 'language', 'dictionary', 'timezone', 'time zone', 'date', 'time', 'clock', 'utc', 'gmt', 'bst'];
 
 export const AI_KEYWORDS = [
-  'provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai', 
-  'api key', 'gpt', 'claude', 'hugging face', 'token', 'diarization', 
-  'pyannote', 'speaker', 'separation', 'voiceprint', 'auto-create', 
+  'provider', 'llm', 'gemini', 'openai', 'anthropic', 'model', 'ai',
+  'api key', 'gpt', 'claude', 'hugging face', 'token', 'diarization',
+  'pyannote', 'speaker', 'separation', 'voiceprint', 'auto-create',
   'identification', 'recognition', 'whisper', 'transcription', 'speech to text',
   'automatic enhancement', 'meeting intelligence', 'short titles', 'title', 'titles', 'ollama'
 ];
@@ -22,7 +22,7 @@ export const CAPTURE_KEYWORDS = [
 ];
 
 export const SYSTEM_KEYWORDS = [
-  'infrastructure', 'worker', 'redis', 'url', 'broker', 'connection', 
+  'infrastructure', 'worker', 'redis', 'url', 'broker', 'connection',
   'backend', 'api', 'port', 'address'
 ];
 

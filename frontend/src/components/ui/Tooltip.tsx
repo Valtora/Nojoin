@@ -17,7 +17,7 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
   };
 
   return (
-    <div 
+    <div
       className="relative inline-block"
       onMouseEnter={() => setIsVisible(true)}
       onMouseLeave={() => setIsVisible(false)}
@@ -31,7 +31,7 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
           className={`pointer-events-none absolute z-50 w-max max-w-xs rounded bg-gray-800 px-3 py-2 text-left text-xs leading-relaxed text-white shadow-lg whitespace-normal break-words ${positionClasses[position]}`}
         >
           {content}
-          <div className={`absolute w-2 h-2 bg-gray-800 transform rotate-45 
+          <div className={`absolute w-2 h-2 bg-gray-800 transform rotate-45
             ${position === 'top' ? 'bottom-[-4px] left-1/2 -translate-x-1/2' : ''}
             ${position === 'bottom' ? 'top-[-4px] left-1/2 -translate-x-1/2' : ''}
             ${position === 'left' ? 'right-[-4px] top-1/2 -translate-y-1/2' : ''}

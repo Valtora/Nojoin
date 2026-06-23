@@ -12,10 +12,10 @@ interface VoiceprintModalProps {
   onClose: () => void;
   onComplete: () => void;
   recordingId: RecordingId;
-  
+
   // Single speaker mode
   extractResult?: VoiceprintExtractResult;
-  
+
   // Batch mode
   batchResults?: BatchVoiceprintResult[];
   allGlobalSpeakers?: Array<{ id: number; name: string; has_voiceprint: boolean }>;
@@ -39,12 +39,12 @@ export default function VoiceprintModal({
   const [mounted, setMounted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Single speaker mode state
   const [selectedAction, setSelectedAction] = useState<VoiceprintAction | null>(null);
   const [selectedGlobalSpeakerId, setSelectedGlobalSpeakerId] = useState<number | null>(null);
   const [newSpeakerName, setNewSpeakerName] = useState('');
-  
+
   // Batch mode state
   const [batchActions, setBatchActions] = useState<Record<string, SpeakerAction>>({});
   const [currentBatchIndex, setCurrentBatchIndex] = useState(0);
@@ -66,7 +66,7 @@ export default function VoiceprintModal({
       setNewSpeakerName('');
       setBatchActions({});
       setCurrentBatchIndex(0);
-      
+
       // Pre-select action based on match
       if (extractResult?.matched_speaker?.is_strong_match) {
         setSelectedAction('link_existing');
@@ -77,10 +77,10 @@ export default function VoiceprintModal({
 
   const handleSingleSubmit = async () => {
     if (!extractResult || !selectedAction) return;
-    
+
     setIsSubmitting(true);
     setError(null);
-    
+
     try {
       await applyVoiceprintAction(
         recordingId,
@@ -103,10 +103,10 @@ export default function VoiceprintModal({
 
   const handleBatchSubmit = async () => {
     if (!batchResults) return;
-    
+
     setIsSubmitting(true);
     setError(null);
-    
+
     try {
       // Process each speaker action
       for (const result of successfulResults) {
@@ -146,7 +146,7 @@ export default function VoiceprintModal({
         </div>
       );
     }
-    
+
     return (
       <div className={`flex items-center gap-2 text-sm ${match.is_strong_match ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
         {match.is_strong_match ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -159,18 +159,18 @@ export default function VoiceprintModal({
 
   const renderSingleSpeakerContent = () => {
     if (!extractResult) return null;
-    
+
     return (
       <div className="space-y-4">
         {/* Match Info */}
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
           {renderMatchInfo(extractResult.matched_speaker)}
         </div>
-        
+
         {/* Action Options */}
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">What would you like to do?</p>
-          
+
           {/* Link to matched speaker (if match exists) */}
           {extractResult.matched_speaker && (
             <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'link_existing' && selectedGlobalSpeakerId === extractResult.matched_speaker.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'}`}>
@@ -193,7 +193,7 @@ export default function VoiceprintModal({
               </div>
             </label>
           )}
-          
+
           {/* Create new global speaker */}
           <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'create_new' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'}`}>
             <input
@@ -221,7 +221,7 @@ export default function VoiceprintModal({
               )}
             </div>
           </label>
-          
+
           {/* Force link to different speaker */}
           <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'force_link' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'}`}>
             <input
@@ -253,7 +253,7 @@ export default function VoiceprintModal({
               )}
             </div>
           </label>
-          
+
           {/* Keep local only */}
           <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'local_only' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'}`}>
             <input
@@ -284,10 +284,10 @@ export default function VoiceprintModal({
         </div>
       );
     }
-    
+
     const currentResult = successfulResults[currentBatchIndex];
     const currentAction = batchActions[currentResult.diarization_label];
-    
+
     return (
       <div className="space-y-4">
         {/* Progress indicator */}
@@ -295,20 +295,20 @@ export default function VoiceprintModal({
           <span>Speaker {currentBatchIndex + 1} of {successfulResults.length}</span>
           <span className="font-medium">{currentResult.speaker_name}</span>
         </div>
-        
+
         {/* Progress bar */}
         <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div 
+          <div
             className="h-full bg-blue-500 transition-all duration-300"
             style={{ width: `${((currentBatchIndex + 1) / successfulResults.length) * 100}%` }}
           />
         </div>
-        
+
         {/* Match Info */}
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
           {renderMatchInfo(currentResult.matched_speaker)}
         </div>
-        
+
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -340,19 +340,19 @@ export default function VoiceprintModal({
             Keep Local
           </button>
         </div>
-        
+
         {/* Current selection indicator */}
         {currentAction && (
           <div className="text-sm text-blue-600 dark:text-blue-400 flex items-center gap-2">
             <Check className="w-4 h-4" />
             <span>
-              Selected: {currentAction.action === 'link_existing' ? `Link to speaker` : 
+              Selected: {currentAction.action === 'link_existing' ? `Link to speaker` :
                         currentAction.action === 'create_new' ? `Create "${currentAction.newSpeakerName}"` :
                         currentAction.action === 'force_link' ? 'Force link' : 'Keep local'}
             </span>
           </div>
         )}
-        
+
         {/* Navigation */}
         <div className="flex justify-between pt-2">
           <button
@@ -400,7 +400,7 @@ export default function VoiceprintModal({
                 {isBatchMode ? 'Configure Voiceprints' : 'Voiceprint Created'}
               </h2>
               <p className="text-sm text-gray-500">
-                {isBatchMode 
+                {isBatchMode
                   ? `${successfulResults.length} voiceprint(s) extracted`
                   : 'Choose how to use this voice fingerprint'
                 }
@@ -414,7 +414,7 @@ export default function VoiceprintModal({
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         {/* Content */}
         <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
           {error && (
@@ -423,10 +423,10 @@ export default function VoiceprintModal({
               {error}
             </div>
           )}
-          
+
           {isBatchMode ? renderBatchContent() : renderSingleSpeakerContent()}
         </div>
-        
+
         {/* Footer */}
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
           <button

@@ -1103,7 +1103,7 @@ export default function TranscriptView({
           const groupHasRecentRevision = group.items.some(({ segment }) =>
             isRecentlyUpdatedSegment(segment),
           );
-          
+
           const involvedSpeakers = Array.from(group.involved).sort((left, right) => {
             const leftOrder = speakerDisplayOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
             const rightOrder = speakerDisplayOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
