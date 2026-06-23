@@ -67,7 +67,7 @@ If the user refreshes, closes, or navigates away from the Nojoin tab while recor
 
 Switching focus to another browser tab, window, or application does not pause capture. Navigating between pages within the Nojoin app also does not pause capture. Only a real Nojoin tab unload (pagehide/beforeunload) invokes the guarded pause path.
 
-When a recording is active, a floating recording badge appears at the top-center of the viewport showing the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. The badge remains visible on every page except the recording detail page so the user never loses visibility of the active recording while navigating the app.
+When a recording is active, a floating recording badge appears at the top-centre of the viewport showing the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. The badge remains visible on every page except the recording detail page so the user never loses visibility of the active recording while navigating the app.
 
 ## Processing Pipeline
 
@@ -196,10 +196,10 @@ meetings rather than a frontend-driven migration workflow.
 3. That cutover acquires a database advisory lock, sweeps any recordings whose
    `pipeline_generation` marker is still unset, and classifies each one into a
    backend-only compatibility state.
-4. Successfully canonicalized historical meetings are marked `legacy_backfilled`
+4. Successfully canonicalised historical meetings are marked `legacy_backfilled`
    and remain viewable through the compatibility projection.
 5. Historical meetings that were still in flight during upgrade or that cannot
-   be canonicalized safely are marked `legacy_reprocess_required` and normalized
+   be canonicalised safely are marked `legacy_reprocess_required` and normalized
    for explicit reprocess instead of continuing to rely on legacy mutation
    paths.
 6. Only meetings created or explicitly rebuilt through the unified pipeline are

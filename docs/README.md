@@ -7,7 +7,7 @@ Use the links below by task rather than treating the root README as the source o
 ## Start Here
 
 - [GETTING_STARTED.md](GETTING_STARTED.md): First deployment, first admin account, and the shortest path to your first recording.
-- [CAPTURE.md](CAPTURE.md): Browser capture setup, supported browsers, sharing audio, pause/resume behavior, and capture troubleshooting.
+- [CAPTURE.md](CAPTURE.md): Browser capture setup, supported browsers, sharing audio, pause/resume behaviour, and capture troubleshooting.
 - [DEPLOYMENT.md](DEPLOYMENT.md): Hosting, Docker, environment variables, reverse proxy, and updating.
 - [USAGE.md](USAGE.md): Day-to-day product usage for normal users.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development prerequisites and main source-build commands.

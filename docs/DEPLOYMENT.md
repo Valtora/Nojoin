@@ -271,12 +271,13 @@ location / {
   chmod -R 700 ./data
   ```
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
-- The browser-capture cutover retires the Windows desktop helper. Users start live recordings directly from the Nojoin web app in a supported browser.
-- Existing recordings remain viewable and process through the same backend pipeline. Existing native-helper installs are obsolete and should be removed from user machines.
-- Current pipeline-cutover releases run a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on the first boot after upgrade if the database still contains pre-cutover recordings.
-- During that startup cutover, existing recordings are classified entirely on the backend. Successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalized safely are marked for explicit reprocess instead of being edited in place.
-- The supported rollback model for this cutover is code rollback only. Canonical rows created during startup migration are additive and are not converted back into legacy-only transcript state.
-- The live pipeline lane-state migration adds ASR and diarisation fields to `recording_audio_window_manifests` and backfills them from legacy window status plus completed diarisation window results. No operator action is required beyond allowing Alembic to run during the normal container startup, but take a database backup before upgrade and avoid downgrading after the migration unless you are prepared to restore from backup.
+### One-Time Migrations From Pre-Browser-Capture Releases
+
+The notes below describe one-time migrations that run automatically when you first upgrade across the relevant cutover. They apply only if your database or installation predates that cutover. On a clean install, or on any installation already past these cutovers, they require no action and can be treated as historical context.
+
+- Browser-capture cutover: the Windows desktop helper has been retired. Users start live recordings directly from the Nojoin web app in a supported browser. Existing recordings remain viewable and process through the same backend pipeline; any remaining native-helper installs are obsolete and should be removed from user machines.
+- Canonical-pipeline cutover (first upgrade only): if the database still contains pre-cutover recordings, the first upgrade across this cutover runs a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on that first boot. During the sweep, existing recordings are classified entirely on the backend: successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalised safely are marked for explicit reprocess instead of being edited in place. The supported rollback model for this cutover is code rollback only; canonical rows created during the migration are additive and are not converted back into legacy-only transcript state.
+- Live-pipeline lane-state migration: this adds ASR and diarisation fields to `recording_audio_window_manifests` and backfills them from legacy window status plus completed diarisation window results. No operator action is required beyond allowing Alembic to run during normal container startup, but take a database backup before upgrade and avoid downgrading after the migration unless you are prepared to restore from backup.
 
 ### Live Pipeline Readiness Notes
 

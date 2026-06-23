@@ -37,7 +37,7 @@ Windows:
 - Chrome on Windows, Linux, or macOS, or another supported desktop Chromium browser, for manual shared-audio live-capture validation
 - Chrome on Android or iOS for manual microphone-only mobile capture validation
 - Browser microphone permission for local smoke tests
-- PipeWire screen capture support when validating Linux shared-screen or system audio behavior
+- PipeWire screen capture support when validating Linux shared-screen or system audio behaviour
 
 ## Fresh Checkout Setup
 
@@ -89,11 +89,11 @@ python3 scripts/validate_alembic.py
 
 - Backend or worker code: run `pytest`.
 - Frontend code: run `npm run lint`, `npm run test`, and `npm run build`.
-- Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behavior, selected microphone behavior, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
+- Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behaviour, selected microphone behaviour, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
 - Documentation-only changes: run `python3 scripts/validate_docs.py`.
 - Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision.
 - Deployment or release workflow changes: run the backend, frontend, docs, and Alembic validation set together before opening the pull request.
-- Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behavior changes.
+- Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behaviour changes.
 - Recording context-menu changes: update both `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx`, then run the full frontend lint, test, and build set.
 
 ## Compose Files
@@ -272,14 +272,14 @@ Development guardrails:
 
 Browser capture code lives under `frontend/src/lib/capture/` and is exercised by the recording page and capture settings surfaces.
 
-When changing capture behavior, validate the relevant parts of this path:
+When changing capture behaviour, validate the relevant parts of this path:
 
 - Supported-browser gating for desktop Chromium on Windows, Linux, and macOS.
 - Unsupported-browser messaging for Firefox, Safari, and mobile browsers other than Chrome.
 - Mobile Chrome microphone-only start, waveform, pause/resume, stop/finalize, and clear copy that shared app/tab/system audio is not captured.
 - Browser share picker flow for tab, window, and screen sharing.
 - Shared-audio track detection and missing-audio messaging.
-- Microphone permission and selected-device behavior.
+- Microphone permission and selected-device behaviour.
 - Per-source gain controls in **Settings > Capture**.
 - Segment creation, sequential upload, worker transcode, live transcript dispatch, stop/finalize, pause/resume, and discard.
 - The paused-recording lock after refresh or close (actual tab unload, not in-app navigation).
@@ -299,7 +299,7 @@ If you are validating through the containerised localhost stack, rebuild the fro
 docker compose up -d --build frontend
 ```
 
-Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility behavior, or troubleshooting guidance.
+Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility behaviour, or troubleshooting guidance.
 
 ### Spellcheck Dictionaries
 
@@ -335,9 +335,9 @@ Existing violators predate the gate and are **grandfathered**: the complexity/si
 These rules apply to all tracked source (backend, worker, and frontend), not just Python.
 
 - **Explain intent, not syntax**: A comment should document an invariant, constraint, risk, compatibility requirement, or other non-obvious intent. Do not narrate what the code already says line by line.
-- **No indecisive developer-thought comments**: Remove musings such as "we can commit here", "usually", "assume consistency", "maybe skipped?", or questions embedded in authorization rules. If the code's behaviour is a deliberate rule, state the rule.
-- **Rewrite uncertainty as a contract**: If something is genuinely uncertain or conditional, express it as an explicit invariant, a documented fallback policy, a tracked issue reference, or a testable assumption — not as a hedge. Where the rule is security- or authorization-sensitive, lock it with a test rather than a comment.
-- **Preserve load-bearing comments**: Keep comments that document live/final pipeline alignment, security and authorization boundaries, migration and backward-compatibility requirements, browser-capture contracts, and non-obvious build or runtime constraints. When in doubt, make such a comment more precise rather than deleting it.
+- **No indecisive developer-thought comments**: Remove musings such as "we can commit here", "usually", "assume consistency", "maybe skipped?", or questions embedded in authorisation rules. If the code's behaviour is a deliberate rule, state the rule.
+- **Rewrite uncertainty as a contract**: If something is genuinely uncertain or conditional, express it as an explicit invariant, a documented fallback policy, a tracked issue reference, or a testable assumption — not as a hedge. Where the rule is security- or authorisation-sensitive, lock it with a test rather than a comment.
+- **Preserve load-bearing comments**: Keep comments that document live/final pipeline alignment, security and authorisation boundaries, migration and backward-compatibility requirements, browser-capture contracts, and non-obvious build or runtime constraints. When in doubt, make such a comment more precise rather than deleting it.
 
 ### Local Checks From A Fresh Checkout
 Reproduce the CI Python checks locally with a single command:
@@ -365,8 +365,8 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 ### Audio Processing & ML Operations
 - **Library Imports**: ML libraries (such as `torch`, `whisper`, `pyannote`) are computationally heavy and must be imported **inside** Celery task functions (under [backend/worker/tasks/](../backend/worker/tasks/)) to ensure quick backend API startup.
 - **Pluggable ASR Engines**: The ASR Transcribe step dispatches to a pluggable engine under [backend/processing/engines/](../backend/processing/engines/), determined by the `transcription_backend` configuration key. Pluggable engines (e.g. Whisper, or onnx-asr engines like Parakeet and Canary) share the `OnnxAsrEngine` base class. Note that Parakeet offers faster transcription on compatible NVIDIA systems but trades off accuracy and language coverage compared to Whisper.
-- **Diarization manifests**: `RecordingAudioWindowManifest.status` is a legacy compatibility projection. Use `asr_status` for live/catch-up ASR coverage and `diarization_status`, `diarization_config_hash`, and `diarization_window_result_id` for rolling or catch-up speaker-window coverage. Never treat legacy `live_processed` as diarization-complete.
-- **Phantom Speaker Filter**: The post-diarization stage [backend/processing/phantom_filter.py](../backend/processing/phantom_filter.py) filters and reassigns speech segments caused by non-speech notification sounds or background noise. It uses heuristic duration/segment count checks followed by embedding-based validation. Constant thresholds (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, and `PHANTOM_MERGE_THRESHOLD`) are defined in that file.
+- **Diarisation manifests**: `RecordingAudioWindowManifest.status` is a legacy compatibility projection. Use `asr_status` for live/catch-up ASR coverage and `diarization_status`, `diarization_config_hash`, and `diarization_window_result_id` for rolling or catch-up speaker-window coverage. Never treat legacy `live_processed` as diarisation-complete.
+- **Phantom Speaker Filter**: The post-diarisation stage [backend/processing/phantom_filter.py](../backend/processing/phantom_filter.py) filters and reassigns speech segments caused by non-speech notification sounds or background noise. It uses heuristic duration/segment count checks followed by embedding-based validation. Constant thresholds (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, and `PHANTOM_MERGE_THRESHOLD`) are defined in that file.
 - **Speaker Identification Constants**: All speaker matching thresholds are centralized in [backend/processing/embedding.py](../backend/processing/embedding.py). Do not hardcode threshold values elsewhere; import and reference the named constants (such as `IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD`, `SCAN_MATCH_THRESHOLD`, `UI_SHOW_MATCH_THRESHOLD`, and `UI_STRONG_MATCH_THRESHOLD`).
 - **PyTorch 2.6+ safe globals**: PyTorch 2.6+ defaults to `weights_only=True` in `torch.load` for security, blocking loading of custom classes (like `pyannote.audio.core.task.Specifications` and `torch.torch_version.TorchVersion`) from model checkpoints. These classes must be explicitly registered prior to loading models via `torch.serialization.add_safe_globals([...])` at the module level in `embedding_core.py` and `diarize.py`.
 
