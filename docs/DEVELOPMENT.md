@@ -519,6 +519,37 @@ Every published image is signed with cosign keyless (OIDC) signing and carries b
 
 The release flow publishes the immutable `version` and commit-`sha` tags during the build, then publishes the rolling `latest` and `major.minor` tags from a separate `publish-mutable-tags` job only after vulnerability scanning, the image health smoke, and signing all pass. This means a build that fails a gate can briefly expose an immutable `vX.Y.Z` tag (with the run visibly failing) but can never advance the `latest` tag that operators pull by default. Keep this ordering intact when editing the release workflow.
 
+### Validating Images Locally Before Cutting a Tag
+
+The scan gate fails on *fixable* CRITICAL/HIGH findings and always pulls a fresh vulnerability database, so a previously-green pinned base image can start failing as new CVEs are disclosed — a tag push is not guaranteed to publish even with no code change. Validate the three images locally before pushing (or re-pushing) a `vX.Y.Z` tag to avoid burning tag cycles on a blocked release.
+
+Install Trivy (the maintainer host keeps it at `~/.local/bin/trivy`, installed without sudo):
+
+```bash
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
+```
+
+Build each image exactly as the release workflow does, then run the same gate against all three:
+
+```bash
+docker build -f docker/Dockerfile.api --build-arg NOJOIN_SERVER_VERSION=<version> -t nojoin-api:scan .
+docker build -f docker/Dockerfile.worker -t nojoin-worker:scan .
+docker build -f frontend/Dockerfile --build-arg NEXT_PUBLIC_API_URL=/api -t nojoin-frontend:scan frontend
+
+for img in nojoin-api:scan nojoin-worker:scan nojoin-frontend:scan; do
+  trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .trivyignore --exit-code 1 "$img"
+done
+```
+
+These flags mirror the gate in [release.yml](../.github/workflows/release.yml). Building the worker pulls the large PyTorch/CUDA base on first run. Add `--scanners vuln` to focus on the CVE gate and skip Trivy's secret scanner, which can flag locally generated material (see below).
+
+**Remediation patterns the `requirements/` files and lockfiles do not cover.** Trivy scans files present in the built image, so several classes of finding live outside the dependency graph and need an image-level fix:
+
+- **Base-image system Python (worker).** The worker venv is created with `--system-site-packages` to reuse the base's torch, so the PyTorch base's own system interpreter (`/usr/bin/python3`, packages under `/usr/local/lib/pythonX.Y/dist-packages`) keeps its pre-installed copies of packages such as `pillow` and `urllib3` on disk even after those packages are pinned in [requirements/base.txt](../requirements/base.txt). Upgrade them in place, as root before the `USER` switch, with `pip install --break-system-packages --root-user-action=ignore --upgrade <pkg>==<version>`, keeping the versions in step with the requirements pins. See [docker/Dockerfile.worker](../docker/Dockerfile.worker).
+- **Build tooling in runtime images.** Remove toolchain the runtime never executes: `npm` (the node base bundles a vulnerable `undici`) from the frontend runner, and `uv`/`uvx` (which bundle `rustls-webpki`) from the worker runtime. Each removal eliminates an inherited finding without affecting the running service.
+- **Kernel headers (`linux-libc-dev`).** These flag the in-image kernel *header* package, not the running kernel; a container shares the host kernel, so they are not a runtime exposure. Accept them with dated, justified entries in [.trivyignore](../.trivyignore) rather than chasing base-kernel versions, and remove the entries when a newer base ships the fix.
+- **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes TLS key and certificate material so locally generated files (for example `nginx/cert.key` from [docker/init-ssl.sh](../docker/init-ssl.sh)) are never copied into an image. `.dockerignore` patterns need a `**/` prefix to match nested paths — a bare `*.key` only matches the context root. A clean CI checkout never contains this material, but a local build can, which is why the secret scanner may flag it locally and not in CI.
+
 ### Health and Non-Root Smoke (REL-012)
 
 The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts each running container's uid is non-root. The worker requires a GPU and preloaded models to boot, so its non-root `USER` is asserted from the published image config via `docker buildx imagetools inspect` (which reads the config without pulling the large layers) rather than by booting it. The rolling tags are not published unless this job passes.
