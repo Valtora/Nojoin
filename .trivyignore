@@ -17,3 +17,24 @@
 # # CVE-XXXX-NNNNN: base-image-only, fix lands in next pytorch base bump.
 # #   Owner: maintainers. Review by: YYYY-MM-DD.
 # CVE-XXXX-NNNNN
+
+# linux-libc-dev kernel CVEs inherited from the pinned PyTorch/CUDA worker base
+# image. These flag the kernel *header* package version, not the running kernel:
+# a container shares the host's kernel, so the in-image linux-libc-dev version is
+# not a runtime exposure for the worker. Accepted until a newer pytorch base ships
+# patched headers.
+#   Owner: maintainers. Review by: 2026-09-24.
+CVE-2025-68263
+CVE-2026-22984
+CVE-2026-23111
+CVE-2026-23112
+CVE-2026-23172
+CVE-2026-23231
+CVE-2026-31431
+CVE-2026-43284
+CVE-2026-43500
+CVE-2026-46300
+CVE-2026-46323
+CVE-2026-46333
+CVE-2026-47331
+CVE-2026-47333

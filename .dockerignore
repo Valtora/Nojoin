@@ -30,3 +30,12 @@ LICENSE
 data/
 .env
 .env.*
+# Never bake TLS private keys or certificates into images. None are tracked;
+# this stops locally generated material (e.g. nginx/cert.key from
+# docker/init-ssl.sh) from leaking into a local build context. The **/ prefix is
+# required to match nested paths — a bare *.key only matches the context root.
+**/*.key
+**/*.crt
+**/*.pem
+**/*.p12
+**/*.pfx
