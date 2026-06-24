@@ -55,40 +55,61 @@ def _commits(rng: str) -> list[tuple[str, str]]:
     return rows
 
 
+def _summarise(message: str) -> str:
+    """Keep only the headline summary, dropping any ` — detail` tail.
+
+    Conventional Commit subjects in this repo put a short summary before an
+    em-dash and the rationale after it; the release notes only need the summary.
+    """
+    return message.split("—", 1)[0].strip()
+
+
 def _format_entry(short: str, scope: str | None, message: str, raw_subject: str) -> str:
-    body = message or raw_subject
+    body = _summarise(message) or raw_subject
     body = body[:1].upper() + body[1:] if body else raw_subject
     prefix = f"**{scope}:** " if scope else ""
     return f"- {prefix}{body} (`{short}`)"
 
 
+def _parse(subject: str) -> tuple[str | None, str | None, bool, str]:
+    """Return (type, scope, is_breaking, message) for a commit subject."""
+    match = _SUBJECT.match(subject)
+    if not match:
+        return None, None, False, subject
+    return (
+        match.group("type").lower(),
+        match.group("scope"),
+        bool(match.group("bang")),
+        match.group("msg"),
+    )
+
+
+def _section_for(typ: str | None, scope: str | None, bang: bool, subject: str) -> str:
+    """Pick the changelog section a commit belongs in.
+
+    Breaking changes and security fixes win over type; `maintenance`-scoped
+    tracker churn is folded into the collapsed block.
+    """
+    if bang:
+        return BREAKING
+    if scope == "security" or _SECURITY_HINT.search(subject):
+        return SECURITY
+    if scope == "maintenance":
+        return OTHER
+    for name, types in TYPE_SECTIONS:
+        if typ in types:
+            return name
+    return OTHER
+
+
 def render(rng: str) -> str:
-    buckets: dict[str, list[str]] = {BREAKING: [], SECURITY: []}
-    for name, _ in TYPE_SECTIONS:
-        buckets[name] = []
-    buckets[OTHER] = []
+    names = [BREAKING, SECURITY, *(n for n, _ in TYPE_SECTIONS), OTHER]
+    buckets: dict[str, list[str]] = {name: [] for name in names}
 
     for short, subject in _commits(rng):
-        match = _SUBJECT.match(subject)
-        typ = match.group("type").lower() if match else None
-        scope = match.group("scope") if match else None
-        bang = bool(match.group("bang")) if match else False
-        message = match.group("msg") if match else subject
-
+        typ, scope, bang, message = _parse(subject)
         entry = _format_entry(short, scope, message, subject)
-
-        if bang:
-            buckets[BREAKING].append(entry)
-            continue
-        if scope == "security" or _SECURITY_HINT.search(subject):
-            buckets[SECURITY].append(entry)
-            continue
-        for name, types in TYPE_SECTIONS:
-            if typ in types:
-                buckets[name].append(entry)
-                break
-        else:
-            buckets[OTHER].append(entry)
+        buckets[_section_for(typ, scope, bang, subject)].append(entry)
 
     parts: list[str] = []
     for name in [BREAKING, SECURITY] + [n for n, _ in TYPE_SECTIONS]:
