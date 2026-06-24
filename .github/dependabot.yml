@@ -35,6 +35,17 @@ updates:
       python-dependencies:
         patterns:
           - "*"
+    # Held pins (see PR #43). Remove an entry when its blocker clears.
+    ignore:
+      # torchaudio publishes no 2.12.x; 2.11.0 is the matched-stack ceiling.
+      - dependency-name: "torch"
+        versions: [">=2.12.0"]
+      # torchcodec stays matched to torch 2.11 (the 0.11.x line).
+      - dependency-name: "torchcodec"
+        versions: [">=0.12.0"]
+      # numpy 2.5 forces an ancient numba that breaks the openai-whisper resolve.
+      - dependency-name: "numpy"
+        versions: [">=2.5.0"]
 
   # --- Frontend npm dependencies ---
   - package-ecosystem: npm
@@ -49,6 +60,14 @@ updates:
         dependency-type: development
       npm-production:
         dependency-type: production
+    # Held pins (see PR #43). Remove an entry when its blocker clears.
+    ignore:
+      # eslint 10 + the new React-Compiler lint rules need a code migration first.
+      - dependency-name: "eslint"
+        versions: [">=10.0.0"]
+      # react-resizable-panels 4 is an API redesign (Group/Separator).
+      - dependency-name: "react-resizable-panels"
+        versions: [">=4.0.0"]
 
   # --- Container base images ---
   - package-ecosystem: docker
@@ -64,3 +83,7 @@ updates:
       docker-base-images:
         patterns:
           - "*"
+    # Held pin (see PR #43). Remove when torchaudio ships a 2.12.x release.
+    ignore:
+      - dependency-name: "pytorch/pytorch"
+        versions: [">=2.12.0"]
