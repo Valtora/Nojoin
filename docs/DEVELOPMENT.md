@@ -64,8 +64,8 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 
 | Check | Runs when |
 | --- | --- |
-| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `scripts/**`, or a deployment path changed |
-| `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | same as `Backend tests` |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, or a deployment path changed |
+| `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | as `Backend tests`, plus `scripts/**` |
 | `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
 | `Frontend build` | same as `Frontend lint` |
@@ -73,7 +73,7 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 | `Docs validation` | always |
 | `Alembic validation` | always |
 
-A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/**` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or workflow change can break the built images or pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../CONTRIBUTING.md#merge-requirements). Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
+A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, `scripts`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/ci.yml` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or CI-workflow change can break the built images or the test pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../CONTRIBUTING.md#merge-requirements). Only `ci.yml` is included from `.github/workflows/`: it defines the suites, so editing it must re-exercise them. Other workflows (such as the tag-driven [release pipeline](#release-workflow-and-version-detection)) cannot be validated by the unit suites and run on their own triggers — the release pipeline re-runs the full validation set on every tag push — so a change to them is not gated here and runs only the always-on validators. The `scripts` filter runs the `Python quality` job (which lints and type-checks scripts and runs the validators) without the full `Backend tests` suite, since the standalone tooling under `scripts/` is not imported by the backend tests. Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
 
 Local equivalents:
 
