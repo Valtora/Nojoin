@@ -562,9 +562,20 @@ jobs:
             echo "No previous tag found; using full history."
           fi
 
-          git log --no-merges --pretty=format:'- %s (%h)' "${range}" > changelog.txt
-          if [[ ! -s changelog.txt ]]; then
-            echo "- No notable changes." > changelog.txt
+          # Render a categorised, human-readable changelog (grouped by Conventional
+          # Commit type, with internal churn folded away). The script emits a
+          # "No notable changes." line for an empty range, so the release never
+          # fails on changelog generation.
+          #
+          # The checkout is the release ref, so a workflow_dispatch backfill of a
+          # tag cut before this script existed will not contain it. Fall back to a
+          # flat commit list in that case rather than failing the notes job after
+          # the rolling image tags have already published.
+          if [[ -f scripts/render_release_notes.py ]]; then
+            python3 scripts/render_release_notes.py "${range}" > changelog.txt
+          else
+            git log --no-merges --pretty=format:'- %s (%h)' "${range}" > changelog.txt
+            [[ -s changelog.txt ]] || echo "- No notable changes." > changelog.txt
           fi
 
           # Resolve the published image digests for reproducible-pin guidance.
