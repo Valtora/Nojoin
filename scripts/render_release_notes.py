@@ -36,7 +36,11 @@ OTHER = "Other changes"
 _SUBJECT = re.compile(
     r"^(?P<type>\w+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<msg>.*)$"
 )
-_SECURITY_HINT = re.compile(r"CVE-\d|GHSA-", re.IGNORECASE)
+# Security markers used across this repo's history: CVE/GHSA advisory ids and the
+# internal SEC-NNN issue tags. The `\b` guards against matching inside words
+# (e.g. "msec-5"). The `sec` and `security` commit scopes are handled separately.
+_SECURITY_HINT = re.compile(r"\b(?:CVE-\d|GHSA-|SEC-\d)", re.IGNORECASE)
+_SECURITY_SCOPES = {"security", "sec"}
 
 
 def _commits(rng: str) -> list[tuple[str, str]]:
@@ -92,7 +96,7 @@ def _section_for(typ: str | None, scope: str | None, bang: bool, subject: str) -
     """
     if bang:
         return BREAKING
-    if scope == "security" or _SECURITY_HINT.search(subject):
+    if scope in _SECURITY_SCOPES or _SECURITY_HINT.search(subject):
         return SECURITY
     if scope == "maintenance":
         return OTHER
