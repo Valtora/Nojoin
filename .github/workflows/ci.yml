@@ -21,6 +21,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      scripts: ${{ steps.filter.outputs.scripts }}
       deployment: ${{ steps.filter.outputs.deployment }}
 
     steps:
@@ -35,26 +36,31 @@ jobs:
         id: filter
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
-          # `deployment` covers infrastructure that the backend/frontend code
-          # filters do not (Dockerfiles, compose, nginx, and any workflow). A
-          # change to those runs the full backend and frontend suite, matching
-          # the deployment/release verification policy in CONTRIBUTING.md and
-          # ensuring a deployment-only PR is never validated by the cheap
-          # validators alone. Workflow changes land here too, so editing this
-          # file exercises everything.
+          # `deployment` covers infrastructure the code filters do not: Dockerfiles,
+          # compose, and nginx affect the built images, so a change runs the full
+          # backend and frontend suite. Only this CI workflow is included from
+          # `.github/workflows/` — it defines the suites, so editing it must
+          # re-exercise everything. Other workflows (e.g. the tag-driven release
+          # pipeline) cannot be validated by the unit suites and run on their own
+          # triggers, so they are not gated here.
+          #
+          # `scripts` runs only the Python quality gate (lint, format, mypy, and the
+          # validators) — not the full pytest suite — since scripts/ are standalone
+          # tooling the backend tests do not import.
           filters: |
             backend:
               - 'backend/**'
               - 'requirements/**'
               - 'pyproject.toml'
-              - 'scripts/**'
             frontend:
               - 'frontend/**'
+            scripts:
+              - 'scripts/**'
             deployment:
               - 'docker/**'
               - 'docker-compose*.yml'
               - 'nginx/**'
-              - '.github/workflows/**'
+              - '.github/workflows/ci.yml'
 
   backend-tests:
     name: Backend tests
@@ -84,7 +90,7 @@ jobs:
   python-quality:
     name: Python quality
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.scripts == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
     steps:
