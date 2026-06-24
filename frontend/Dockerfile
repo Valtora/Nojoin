@@ -1,11 +1,11 @@
 # Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS base
+FROM node:26-alpine@sha256:a2dc166a387cc6ca1e62d0c8e265e49ca985d6e60abc9fe6e6c3d6ce8e63f606 AS base
 
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-# Use the npm bundled with the pinned node:20-alpine base for reproducible
+# Use the npm bundled with the pinned node:26-alpine base for reproducible
 # installs. Do not reintroduce `npm install -g npm@latest`: it pulls an
 # unpinned npm over the network on every build and undermines reproducibility.
 RUN npm ci

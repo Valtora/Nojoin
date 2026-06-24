@@ -7,32 +7,32 @@ onnx-asr==0.11.0
 # replace the CPU-only onnxruntime that fastembed pulls in, not coexist with it.
 silero-vad==6.2.1
 numpy==2.4.4
-pandas==3.0.2
-openai==2.32.0
-anthropic==0.95.0
-google-genai==1.73.1
+pandas==3.0.3
+openai==2.43.0
+anthropic==0.111.0
+google-genai==2.9.0
 watchdog==6.0.0
-PyMuPDF==1.27.2.2
+PyMuPDF==1.27.2.3
 
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks==0.4.0
 einops==0.8.2
-huggingface_hub==1.11.0
-lightning==2.6.1
-opentelemetry-api==1.41.0
-opentelemetry-sdk==1.41.0
-opentelemetry-exporter-otlp==1.41.0
+huggingface_hub==1.20.1
+lightning==2.6.5
+opentelemetry-api==1.42.1
+opentelemetry-sdk==1.42.1
+opentelemetry-exporter-otlp==1.42.1
 pyannote-core==6.0.1
 pyannote-database==6.1.1
-pyannote-metrics==4.0.0
+pyannote-metrics==4.1
 pyannote-pipeline==4.0.0
 pytorch-metric-learning==2.9.0
 rich==15.0.0
-safetensors==0.7.0
+safetensors==0.8.0
 torch-audiomentations==0.12.0
 torchmetrics==1.9.0
-soundfile==0.13.1
-matplotlib==3.10.8
+soundfile==0.14.0
+matplotlib==3.11.0
 pyannoteai-sdk==0.4.0
 torchcodec==0.11.1
 fastembed==0.8.0

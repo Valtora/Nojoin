@@ -1,7 +1,7 @@
 -r backend.txt
 -r worker.txt
 aiosqlite==0.22.1
-pytest==9.0.3
+pytest==9.1.1
 # torch and torchaudio must move together with the CUDA stack in local.txt,
 # the torchcodec pin in worker.txt, and the base image in docker/Dockerfile.worker.
 # torchaudio publishes no 2.12.x, so 2.11.0 is the current matched-stack ceiling.
