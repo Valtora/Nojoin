@@ -33,6 +33,11 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# The runtime only runs `node server.js` and never needs npm. Remove the npm
+# the node base image bundles so its vendored undici (a build-time-only DoS
+# CVE surface, e.g. CVE-2026-12151) is absent from the published runtime image.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 COPY --from=builder /app/public ./public
 
 # Automatically leverage output traces to reduce image size
