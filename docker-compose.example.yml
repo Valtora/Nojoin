@@ -86,6 +86,23 @@ services:
       - nojoin_net
     logging: *default-logging
 
+  init-perms:
+    container_name: nojoin-init-perms
+    image: busybox:stable
+    # One-shot, root-only: the api and worker run as non-root (uid 1000), but
+    # Docker creates a missing bind-mount source (./data) as root on first start,
+    # which would stop those containers from creating their data subdirectories.
+    # Ensure the data and recordings directories exist and are owned by uid 1000
+    # before the app services boot. This runs to completion and exits.
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /app/data/recordings && chown -R 1000:1000 /app/data"]
+    volumes:
+      - ./data:/app/data
+    restart: "no"
+    networks:
+      - nojoin_net
+    logging: *default-logging
+
   api:
     container_name: nojoin-api
     image: ghcr.io/valtora/nojoin-api:latest
@@ -103,6 +120,8 @@ services:
       HF_HOME: /shared_model_cache/huggingface
       NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
     depends_on:
+      init-perms:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -155,6 +174,8 @@ services:
               count: 1
               capabilities: [gpu]
     depends_on:
+      init-perms:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
