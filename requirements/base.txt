@@ -8,5 +8,12 @@ python-multipart==0.0.32
 aiofiles==25.1.0
 requests==2.34.2
 httpx==0.28.1
+# Security pins: force patched transitive dependencies across both images.
+# urllib3 (via requests/httpx): CVE-2026-44431 (sensitive header leak on
+#   cross-origin redirect), CVE-2026-44432 (DoS via response decompression).
+# pillow (via reportlab in the api image; matplotlib/fastembed in the worker):
+#   CVE-2026-40192 (FITS decompression-bomb DoS), CVE-2026-42311.
+urllib3==2.7.0
+pillow==12.2.0
 alembic==1.18.4
 pgvector==0.4.2

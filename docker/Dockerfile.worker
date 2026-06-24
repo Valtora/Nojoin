@@ -57,12 +57,31 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV MALLOC_ARENA_MAX=2
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && \
+    # Patch the base image's OpenSSL against CVE-2026-45447 (PKCS7_verify UAF);
+    # the pinned PyTorch base predates the Ubuntu fix (3.0.13-0ubuntu3.11).
+    apt-get install -y --no-install-recommends --only-upgrade openssl libssl3t64 && \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     libpq5 \
     libjemalloc2 \
-    && rm -rf /var/lib/apt/lists/*
+    && \
+    # The worker runs Celery and never invokes uv; remove the base image's uv
+    # binaries so their bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) is absent
+    # from the published runtime image.
+    rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
+    rm -rf /var/lib/apt/lists/*
+
+# The PyTorch base ships a system Python with vulnerable pillow/urllib3 in
+# /usr/local/lib/.../dist-packages. The venv (system-site-packages) shadows them
+# at import time with the patched versions from requirements, but the old files
+# remain on disk and are flagged by the image scan. Upgrade the system copies in
+# place (as root, before the USER switch) to the same patched versions:
+# pillow CVE-2026-40192/42311, urllib3 CVE-2026-44431/44432. Keep these versions
+# in step with the pins in requirements/base.txt.
+RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
+    --root-user-action=ignore --upgrade pillow==12.2.0 urllib3==2.7.0
 
 COPY --from=builder /opt/venv /opt/venv
 
