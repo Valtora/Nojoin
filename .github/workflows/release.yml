@@ -562,10 +562,11 @@ jobs:
             echo "No previous tag found; using full history."
           fi
 
-          git log --no-merges --pretty=format:'- %s (%h)' "${range}" > changelog.txt
-          if [[ ! -s changelog.txt ]]; then
-            echo "- No notable changes." > changelog.txt
-          fi
+          # Render a categorised, human-readable changelog (grouped by Conventional
+          # Commit type, with internal churn folded away). The script emits a
+          # "No notable changes." line for an empty range, so the release never
+          # fails on changelog generation.
+          python3 scripts/render_release_notes.py "${range}" > changelog.txt
 
           # Resolve the published image digests for reproducible-pin guidance.
           : > image-digests.txt
