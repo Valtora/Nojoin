@@ -389,6 +389,8 @@ def process_document_task(self, document_id: int):
             return
 
         # Embed chunks
+        from backend.processing.text_embedding import get_text_embedding_service
+
         embedding_service = get_text_embedding_service()
         vectors = embedding_service.embed(chunks)
 
@@ -522,6 +524,8 @@ def index_transcript_task(self, recording_id: int):
 
         if not chunks_to_embed:
             return
+
+        from backend.processing.text_embedding import get_text_embedding_service
 
         embedding_service = get_text_embedding_service()
         vectors = embedding_service.embed(chunks_to_embed)
