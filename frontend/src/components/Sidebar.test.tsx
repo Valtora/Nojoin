@@ -48,6 +48,15 @@ vi.mock("@/lib/api", () => ({
   getRecordingsCalendar: (...args: unknown[]) => getRecordingsCalendar(...args),
 }));
 
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => ({
+    cancel: vi.fn(),
+    recordingId: null,
+    pausedRecording: null,
+    runtimeActive: false,
+  }),
+}));
+
 vi.mock("@/lib/timezone", () => ({
   getUserTimeZone: () => Promise.resolve("Europe/London"),
   localDayRangeToUtc: () => ({

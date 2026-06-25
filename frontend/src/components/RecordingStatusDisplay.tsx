@@ -4,14 +4,13 @@ import { useState } from "react";
 import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
 
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
-import { discardRecordingCapture } from "@/lib/api";
-import { useNotificationStore } from "@/lib/notificationStore";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
+import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
@@ -71,29 +70,23 @@ export default function RecordingStatusDisplay({
   onDiscarded,
   showMobileBackButton = false,
 }: RecordingStatusDisplayProps) {
-  const { addNotification } = useNotificationStore();
+  const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
 
-  // Discard path for a recording that is queued or already processing: there is
-  // no live capture runtime to tear down, so call the discard endpoint directly.
-  // It revokes the worker task and removes the meeting server-side.
+  // Discard path for a recording shown on the processing/queued screen. Routed
+  // through the shared action so that, if this browser still owns the capture
+  // (e.g. an upload finalising), the controller tears down the recorder,
+  // uploader, and paused context too; otherwise it falls back to a plain
+  // server-side discard that revokes the worker task and removes the meeting.
   const handleProcessingDiscard = async () => {
     if (isDiscarding || !window.confirm(DISCARD_CONFIRM_MESSAGE)) {
       return;
     }
     setIsDiscarding(true);
-    try {
-      await discardRecordingCapture(recording.id, "user_discarded");
-      addNotification({ message: "Recording discarded.", type: "success" });
-      onDiscarded?.();
-    } catch (e: unknown) {
-      console.error("Failed to discard recording", e);
-      addNotification({
-        message: "Failed to discard recording.",
-        type: "error",
-      });
-      setIsDiscarding(false);
-    }
+    await actions.discard(recording.id, {
+      onSuccess: onDiscarded,
+      onError: () => setIsDiscarding(false),
+    });
   };
 
   const isActiveRecording =

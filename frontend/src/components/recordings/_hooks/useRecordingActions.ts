@@ -12,6 +12,7 @@ import {
   restoreRecording,
   softDeleteRecording,
 } from "@/lib/api";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingId } from "@/types";
 
@@ -94,6 +95,12 @@ export interface RecordingActions {
 
 export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
+  const {
+    cancel: cancelCapture,
+    recordingId: captureRecordingId,
+    pausedRecording,
+    runtimeActive,
+  } = useCapture();
 
   return useMemo<RecordingActions>(() => {
     return {
@@ -132,7 +139,21 @@ export function useRecordingActions(): RecordingActions {
 
       discard: async (id, callbacks) => {
         try {
-          await discardRecordingCapture(id, "user_discarded");
+          // If this browser owns the live or paused capture for this recording,
+          // route through the capture controller so the MediaRecorder, uploader,
+          // and persisted paused context/capture lock are torn down before (and
+          // as part of) the backend discard. A bare POST /discard would delete
+          // the row while the client kept recording to a missing recording or
+          // stayed blocked behind a stale paused lock. For a queued/processing
+          // recording, or one owned by another tab, a plain discard is correct.
+          const ownsLiveCapture =
+            runtimeActive && captureRecordingId === id;
+          const ownsPausedCapture = pausedRecording?.id === id;
+          if (ownsLiveCapture || ownsPausedCapture) {
+            await cancelCapture(id);
+          } else {
+            await discardRecordingCapture(id, "user_discarded");
+          }
           addNotification({
             message: "Recording discarded.",
             type: "success",
@@ -202,5 +223,11 @@ export function useRecordingActions(): RecordingActions {
         }
       },
     };
-  }, [addNotification]);
+  }, [
+    addNotification,
+    cancelCapture,
+    captureRecordingId,
+    pausedRecording,
+    runtimeActive,
+  ]);
 }

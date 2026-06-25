@@ -31,6 +31,22 @@ vi.mock("@/lib/api", () => ({
     api.permanentlyDeleteRecording(...a),
 }));
 
+const captureState: {
+  cancel: ReturnType<typeof vi.fn>;
+  recordingId: string | null;
+  pausedRecording: { id: string } | null;
+  runtimeActive: boolean;
+} = {
+  cancel: vi.fn(),
+  recordingId: null,
+  pausedRecording: null,
+  runtimeActive: false,
+};
+
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => captureState,
+}));
+
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
 }));
@@ -39,6 +55,10 @@ describe("useRecordingActions", () => {
   beforeEach(() => {
     addNotification.mockReset();
     Object.values(api).forEach((fn) => fn.mockReset().mockResolvedValue(undefined));
+    captureState.cancel.mockReset().mockResolvedValue(undefined);
+    captureState.recordingId = null;
+    captureState.pausedRecording = null;
+    captureState.runtimeActive = false;
   });
 
   it("exposes exactly the shared recording action set", () => {
@@ -91,10 +111,61 @@ describe("useRecordingActions", () => {
       "rec-1",
       "user_discarded",
     );
+    expect(captureState.cancel).not.toHaveBeenCalled();
     expect(addNotification).toHaveBeenCalledWith({
       message: "Recording discarded.",
       type: "success",
     });
+  });
+
+  it("routes discard through the capture controller when this browser owns the live capture", async () => {
+    captureState.runtimeActive = true;
+    captureState.recordingId = "rec-live";
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.discard("rec-live");
+    });
+
+    // The controller tears down the recorder/uploader/paused context and still
+    // performs the backend discard, so the bare API call must not be used.
+    expect(captureState.cancel).toHaveBeenCalledWith("rec-live");
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+    expect(addNotification).toHaveBeenCalledWith({
+      message: "Recording discarded.",
+      type: "success",
+    });
+  });
+
+  it("routes discard through the capture controller when this browser owns the paused capture", async () => {
+    captureState.pausedRecording = { id: "rec-paused" };
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.discard("rec-paused");
+    });
+
+    expect(captureState.cancel).toHaveBeenCalledWith("rec-paused");
+    expect(api.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("uses a plain backend discard for a recording owned by another capture session", async () => {
+    // An active capture exists for a different recording (e.g. recording A is
+    // live in this tab while the user discards queued recording B). Discarding B
+    // must not tear down A's runtime.
+    captureState.runtimeActive = true;
+    captureState.recordingId = "rec-A";
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.discard("rec-B");
+    });
+
+    expect(api.discardRecordingCapture).toHaveBeenCalledWith(
+      "rec-B",
+      "user_discarded",
+    );
+    expect(captureState.cancel).not.toHaveBeenCalled();
   });
 
   it("runs onSuccess for the lifecycle actions (delete/archive/restore/softDelete/permanentDelete)", async () => {
