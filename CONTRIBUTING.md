@@ -86,9 +86,11 @@ Minimum pull request verification is:
 
 The pull request workflow runs these checks, and the aggregate `CI gate` must be green to merge. The expensive jobs run only when their area changed; the cheap validators always run:
 
-- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) — on backend or deployment changes.
+- `Backend tests` — on backend or deployment changes. `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) also runs on `scripts/**` changes, since it lints and type-checks the standalone tooling there.
 - `Frontend lint`, `Frontend unit tests`, and `Frontend build` — on frontend or deployment changes.
 - `Docs validation` and `Alembic validation` — always.
+
+A deployment change here means `docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/ci.yml`. Other workflow files (e.g. the tag-driven release pipeline) are not gated by the unit suites — they cannot be validated by them and run on their own triggers — though they remain a sensitive review scope (see below).
 
 See the [Merge Requirements](#merge-requirements) section for how `CI gate` aggregates these and the exact path rules.
 
@@ -148,7 +150,7 @@ Every pull request to `main` must have the required `CI gate` status check green
 
 - `Backend tests` and `Python quality` (Ruff lint, Ruff format check, mypy) — run when `backend/**`, `requirements/**`, `pyproject.toml`, or `scripts/**` changed.
 - `Frontend lint`, `Frontend unit tests`, and `Frontend build` — run when `frontend/**` changed.
-- A **deployment** change (`docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/**`) runs **both** the backend and frontend suites, since it can affect the built images or pipeline even without code changes. This is consistent with the deployment/release sensitive-scope rule below.
+- A **deployment** change (`docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/ci.yml`) runs **both** the backend and frontend suites, since it can affect the built images or the test pipeline even without code changes. Other workflow files (such as the release pipeline) are not gated by the unit suites — they run on their own triggers — but remain a sensitive review scope (see below). A `scripts/**` change runs `Python quality` only.
 - `Whitespace check`, `Docs validation`, and `Alembic validation` — always run (cheap). `Whitespace check` is the only trailing-whitespace guard for Markdown, YAML, shell, and config files, so it is never gated.
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.
