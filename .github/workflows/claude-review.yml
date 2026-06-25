@@ -24,8 +24,15 @@ jobs:
   review:
     name: Claude review
     runs-on: ubuntu-latest
-    # Skip drafts and anything Dependabot opens to avoid noisy/auth-limited runs.
-    if: github.event.pull_request.draft == false && github.actor != 'dependabot[bot]'
+    # Skip drafts and Dependabot (noisy/auth-limited), and skip PRs opened from
+    # forks: GitHub withholds repo secrets from pull_request runs whose head is a
+    # fork, so CLAUDE_CODE_OAUTH_TOKEN would be empty and the action would fail
+    # red. CONTRIBUTING.md routes external contributors through forks, and those
+    # PRs are instead covered by the Codex reviewer (a GitHub App, not secret-gated).
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
