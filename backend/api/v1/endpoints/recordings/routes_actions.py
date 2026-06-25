@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_db
 from backend.models.calendar import CalendarEvent
-from backend.models.recording import ClientStatus, RecordingStatus, RecordingUpdate
+from backend.models.recording import RecordingStatus, RecordingUpdate
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
 
@@ -296,45 +296,3 @@ async def infer_speakers_for_recording(
         "status": "queued",
         "message": "Speaker suggestion refresh started in background.",
     }
-
-
-@router.post("/{recording_id}/cancel", response_model=RecordingPublicRead)
-async def cancel_processing(
-    recording_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Cancel the processing task for a recording.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    if recording.status not in [
-        RecordingStatus.PROCESSING,
-        RecordingStatus.QUEUED,
-        RecordingStatus.UPLOADING,
-    ]:
-        raise HTTPException(status_code=400, detail="Recording is not being processed")
-
-    if recording.celery_task_id:
-        try:
-            recordings_module.celery_app.control.revoke(
-                recording.celery_task_id, terminate=True
-            )
-        except Exception:  # noqa: BLE001
-            pass
-
-    recording.celery_task_id = None
-    recording.status = RecordingStatus.CANCELLED
-    recording.client_status = ClientStatus.IDLE
-    recording.upload_progress = 0
-    recording.processing_step = "Cancelled by user"
-    recording.processing_progress = 0
-    recording.processing_started_at = None
-    recording.processing_completed_at = None
-
-    db.add(recording)
-    await db.commit()
-    await db.refresh(recording)
-
-    return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))

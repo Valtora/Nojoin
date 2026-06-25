@@ -105,12 +105,14 @@ You can switch to another browser tab, window, or application while recording. N
 
 While a recording is active, a floating badge appears at the top-centre of the viewport on every page. The badge shows the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. You can control the recording from any page without navigating back to the recording workspace first.
 
-### Pause, Resume, Stop, And Cancel
+### Pause, Resume, Stop, And Discard
 
 - **Pause** temporarily stops capture while preserving uploaded segments.
 - **Resume** opens the browser share picker again and continues the same recording.
 - **Stop** finalises the recording and starts processing.
-- **Cancel** discards an in-progress recording.
+- **Discard** permanently removes an in-progress recording in one step. It stops capture, cancels any processing, deletes the captured audio, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
+
+Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu, so you can abandon a recording from wherever you are.
 
 If the browser is closed, refreshed, or loses the active recording page during capture, Nojoin pauses the recording to protect already uploaded data. When you return, Nojoin requires you to resume or discard that recording before starting anything else.
 
@@ -136,15 +138,18 @@ Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPU
 
 The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
 
-### Cancel Processing
+### Discard Recording
 
-Use **Cancel Processing** from the recordings list or recording actions when a meeting is still uploading, queued, or processing.
+Use **Discard Recording** from the recordings list or recording actions when a meeting is still recording, paused, queued, or processing and you no longer want it.
 
-Cancel Processing:
+Discard Recording:
 
-- Stops backend processing for that recording.
-- Closes any active live upload or finalisation session for that meeting.
-- Leaves the recording marked `Cancelled` instead of silently requeueing more work.
+- Revokes any running processing task for that meeting.
+- Closes any active live upload or finalisation session.
+- Deletes the captured audio and derived files.
+- Removes the recording entirely, so there is no leftover `Cancelled` entry to clean up afterwards.
+
+Because it permanently deletes the meeting, Nojoin asks you to confirm before discarding. To remove a meeting that has already finished processing, use **Delete** instead.
 
 ### Retry Processing
 

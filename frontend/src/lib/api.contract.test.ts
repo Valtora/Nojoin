@@ -45,7 +45,6 @@ describe("api public surface", () => {
         "batchRemoveTagFromRecordings",
         "batchRestoreRecordings",
         "batchSoftDeleteRecordings",
-        "cancelProcessing",
         "checkFFmpeg",
         "clearChatHistory",
         "createGlobalSpeaker",

@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, Loader2, Mic, Pause } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
 
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
@@ -9,6 +10,10 @@ import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
+import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
+
+const DISCARD_CONFIRM_MESSAGE =
+  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatClock(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -50,6 +55,7 @@ interface RecordingStatusDisplayProps {
   onSaveMeetingEdgeContextLevel?: (level: number) => Promise<void>;
   showMeetingEdge?: boolean;
   onBack?: () => void;
+  onDiscarded?: () => void;
   showMobileBackButton?: boolean;
 }
 
@@ -61,8 +67,28 @@ export default function RecordingStatusDisplay({
   onSaveMeetingEdgeContextLevel,
   showMeetingEdge = true,
   onBack,
+  onDiscarded,
   showMobileBackButton = false,
 }: RecordingStatusDisplayProps) {
+  const actions = useRecordingActions();
+  const [isDiscarding, setIsDiscarding] = useState(false);
+
+  // Discard path for a recording shown on the processing/queued screen. Routed
+  // through the shared action so that, if this browser still owns the capture
+  // (e.g. an upload finalising), the controller tears down the recorder,
+  // uploader, and paused context too; otherwise it falls back to a plain
+  // server-side discard that revokes the worker task and removes the meeting.
+  const handleProcessingDiscard = async () => {
+    if (isDiscarding || !window.confirm(DISCARD_CONFIRM_MESSAGE)) {
+      return;
+    }
+    setIsDiscarding(true);
+    await actions.discard(recording.id, {
+      onSuccess: onDiscarded,
+      onError: () => setIsDiscarding(false),
+    });
+  };
+
   const isActiveRecording =
     recording.status === RecordingStatus.PAUSED ||
     (recording.status === RecordingStatus.UPLOADING &&
@@ -176,6 +202,7 @@ export default function RecordingStatusDisplay({
                     onMeetingEnd={() => {
                       window.dispatchEvent(new Event("recording-updated"));
                     }}
+                    onMeetingDiscard={onDiscarded}
                   />
                 </>
               ) : (
@@ -210,6 +237,23 @@ export default function RecordingStatusDisplay({
                     <div className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">
                       {formatClock(Math.round(recording.duration_seconds || 0))}
                     </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleProcessingDiscard}
+                      disabled={isDiscarding}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/30 dark:bg-gray-950/60 dark:text-red-300 dark:hover:bg-red-500/10"
+                      title="Discard this recording and stop processing"
+                    >
+                      {isDiscarding ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Discard Recording
+                    </button>
                   </div>
                 </>
               )}

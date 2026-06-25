@@ -111,11 +111,6 @@ export const reprocessRecording = async (
   return response.data;
 };
 
-export const cancelProcessing = async (id: RecordingId): Promise<Recording> => {
-  const response = await api.post<Recording>(`/recordings/${id}/cancel`);
-  return response.data;
-};
-
 export const getRecordingStreamUrl = (id: RecordingId): string => {
   return `${API_BASE_URL}/recordings/${id}/stream`;
 };
