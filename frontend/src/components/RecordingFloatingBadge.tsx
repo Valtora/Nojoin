@@ -1,10 +1,13 @@
 "use client";
 
-import { Pause, Play, Square } from "lucide-react";
+import { Pause, Play, Square, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
+
+const DISCARD_CONFIRM_MESSAGE =
+  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatTime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -20,6 +23,7 @@ export default function RecordingFloatingBadge() {
   const pathname = usePathname();
   const router = useRouter();
   const {
+    cancel,
     controller,
     elapsedSeconds,
     pause,
@@ -65,6 +69,25 @@ export default function RecordingFloatingBadge() {
             err instanceof Error && err.message
               ? err.message
               : `Failed to ${command} the browser recording.`,
+        });
+      }
+    }
+  };
+
+  const handleDiscard = async () => {
+    if (!window.confirm(DISCARD_CONFIRM_MESSAGE)) {
+      return;
+    }
+    try {
+      await cancel();
+    } catch (err: unknown) {
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message:
+            err instanceof Error && err.message
+              ? err.message
+              : "Failed to discard the browser recording.",
         });
       }
     }
@@ -131,6 +154,17 @@ export default function RecordingFloatingBadge() {
           aria-label="Stop recording"
         >
           <Square className="h-4 w-4 fill-current" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDiscard}
+          disabled={disabled}
+          className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+          title="Discard recording"
+          aria-label="Discard recording"
+        >
+          <Trash2 className="h-4 w-4" />
         </button>
       </div>
     </div>

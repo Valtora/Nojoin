@@ -627,6 +627,80 @@ async def test_discard_allows_paused_recordings_and_cleans_temp_dir(
 
 
 @pytest.mark.anyio
+async def test_discard_cancels_processing_recording_and_revokes_task(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A discard issued while the pipeline is running must revoke the Celery task
+    and remove the recording, so the user does not have to cancel then delete."""
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    revoked: list[tuple[str, bool]] = []
+
+    def fake_revoke(task_id, terminate=False, **kwargs):
+        revoked.append((task_id, terminate))
+
+    monkeypatch.setattr(recordings_module.celery_app.control, "revoke", fake_revoke)
+
+    await insert_recording(
+        test_session_maker,
+        recording_id=4242,
+        public_id="discard-processing",
+        status="PROCESSING",
+    )
+    async with test_session_maker() as session:
+        await session.execute(
+            text("UPDATE recordings SET celery_task_id = :tid WHERE id = :id"),
+            {"tid": "task-9", "id": 4242},
+        )
+        await session.commit()
+
+    set_session_cookie(client)
+
+    discard_response = await client.post(
+        "/api/v1/recordings/discard-processing/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert discard_response.status_code == 200
+    assert discard_response.json() == {"ok": True}
+
+    # The running pipeline task is revoked with terminate=True before deletion.
+    assert revoked == [("task-9", True)]
+
+    async with test_session_maker() as session:
+        remaining = (
+            await session.execute(
+                text("SELECT COUNT(*) FROM recordings WHERE id = :id"),
+                {"id": 4242},
+            )
+        ).scalar_one()
+        assert remaining == 0
+
+
+@pytest.mark.anyio
+async def test_discard_rejects_completed_recording(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Terminal recordings are removed through the delete flow, not discard."""
+    await insert_recording(
+        test_session_maker,
+        recording_id=4343,
+        public_id="discard-completed",
+        status="PROCESSED",
+    )
+
+    set_session_cookie(client)
+
+    discard_response = await client.post(
+        "/api/v1/recordings/discard-completed/discard",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert discard_response.status_code == 400
+
+
+@pytest.mark.anyio
 async def test_get_recording_hides_in_flight_transcript_content(
     client: AsyncClient,
     test_session_maker: sessionmaker,

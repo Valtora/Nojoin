@@ -1,14 +1,20 @@
 "use client";
 
-import { ArrowLeft, Loader2, Mic, Pause } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
 
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
+import { discardRecordingCapture } from "@/lib/api";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
+
+const DISCARD_CONFIRM_MESSAGE =
+  "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
 function formatClock(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -50,6 +56,7 @@ interface RecordingStatusDisplayProps {
   onSaveMeetingEdgeContextLevel?: (level: number) => Promise<void>;
   showMeetingEdge?: boolean;
   onBack?: () => void;
+  onDiscarded?: () => void;
   showMobileBackButton?: boolean;
 }
 
@@ -61,8 +68,34 @@ export default function RecordingStatusDisplay({
   onSaveMeetingEdgeContextLevel,
   showMeetingEdge = true,
   onBack,
+  onDiscarded,
   showMobileBackButton = false,
 }: RecordingStatusDisplayProps) {
+  const { addNotification } = useNotificationStore();
+  const [isDiscarding, setIsDiscarding] = useState(false);
+
+  // Discard path for a recording that is queued or already processing: there is
+  // no live capture runtime to tear down, so call the discard endpoint directly.
+  // It revokes the worker task and removes the meeting server-side.
+  const handleProcessingDiscard = async () => {
+    if (isDiscarding || !window.confirm(DISCARD_CONFIRM_MESSAGE)) {
+      return;
+    }
+    setIsDiscarding(true);
+    try {
+      await discardRecordingCapture(recording.id, "user_discarded");
+      addNotification({ message: "Recording discarded.", type: "success" });
+      onDiscarded?.();
+    } catch (e: unknown) {
+      console.error("Failed to discard recording", e);
+      addNotification({
+        message: "Failed to discard recording.",
+        type: "error",
+      });
+      setIsDiscarding(false);
+    }
+  };
+
   const isActiveRecording =
     recording.status === RecordingStatus.PAUSED ||
     (recording.status === RecordingStatus.UPLOADING &&
@@ -176,6 +209,7 @@ export default function RecordingStatusDisplay({
                     onMeetingEnd={() => {
                       window.dispatchEvent(new Event("recording-updated"));
                     }}
+                    onMeetingDiscard={onDiscarded}
                   />
                 </>
               ) : (
@@ -210,6 +244,23 @@ export default function RecordingStatusDisplay({
                     <div className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">
                       {formatClock(Math.round(recording.duration_seconds || 0))}
                     </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleProcessingDiscard}
+                      disabled={isDiscarding}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/30 dark:bg-gray-950/60 dark:text-red-300 dark:hover:bg-red-500/10"
+                      title="Discard this recording and stop processing"
+                    >
+                      {isDiscarding ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Discard Recording
+                    </button>
                   </div>
                 </>
               )}

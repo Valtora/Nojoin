@@ -4,8 +4,8 @@ import { useMemo } from "react";
 
 import {
   archiveRecording,
-  cancelProcessing,
   deleteRecording,
+  discardRecordingCapture,
   inferSpeakers,
   permanentlyDeleteRecording,
   renameRecording,
@@ -38,7 +38,7 @@ import { RecordingId } from "@/types";
 export const RECORDING_ACTION_IDS = [
   "rename",
   "inferSpeakers",
-  "cancel",
+  "discard",
   "delete",
   "archive",
   "restore",
@@ -66,7 +66,7 @@ export interface RecordingActions {
     id: RecordingId,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
-  cancel: (
+  discard: (
     id: RecordingId,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
@@ -130,18 +130,18 @@ export function useRecordingActions(): RecordingActions {
         }
       },
 
-      cancel: async (id, callbacks) => {
+      discard: async (id, callbacks) => {
         try {
-          await cancelProcessing(id);
+          await discardRecordingCapture(id, "user_discarded");
           addNotification({
-            message: "Processing cancelled.",
+            message: "Recording discarded.",
             type: "success",
           });
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
-          console.error("Failed to cancel processing", e);
+          console.error("Failed to discard recording", e);
           addNotification({
-            message: "Failed to cancel processing.",
+            message: "Failed to discard recording.",
             type: "error",
           });
           callbacks?.onError?.();

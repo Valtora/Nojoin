@@ -44,7 +44,7 @@ vi.mock("@/lib/api", () => ({
   softDeleteRecording: vi.fn(),
   permanentlyDeleteRecording: vi.fn(),
   getTags: (...args: unknown[]) => getTags(...args),
-  cancelProcessing: vi.fn(),
+  discardRecordingCapture: vi.fn(),
   getRecordingsCalendar: (...args: unknown[]) => getRecordingsCalendar(...args),
 }));
 

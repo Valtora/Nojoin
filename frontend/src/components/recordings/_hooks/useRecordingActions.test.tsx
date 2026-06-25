@@ -10,7 +10,7 @@ const addNotification = vi.fn();
 const api = {
   renameRecording: vi.fn(),
   inferSpeakers: vi.fn(),
-  cancelProcessing: vi.fn(),
+  discardRecordingCapture: vi.fn(),
   deleteRecording: vi.fn(),
   archiveRecording: vi.fn(),
   restoreRecording: vi.fn(),
@@ -21,7 +21,8 @@ const api = {
 vi.mock("@/lib/api", () => ({
   renameRecording: (...a: unknown[]) => api.renameRecording(...a),
   inferSpeakers: (...a: unknown[]) => api.inferSpeakers(...a),
-  cancelProcessing: (...a: unknown[]) => api.cancelProcessing(...a),
+  discardRecordingCapture: (...a: unknown[]) =>
+    api.discardRecordingCapture(...a),
   deleteRecording: (...a: unknown[]) => api.deleteRecording(...a),
   archiveRecording: (...a: unknown[]) => api.archiveRecording(...a),
   restoreRecording: (...a: unknown[]) => api.restoreRecording(...a),
@@ -70,7 +71,7 @@ describe("useRecordingActions", () => {
     });
   });
 
-  it("notifies on inferSpeakers and cancel success", async () => {
+  it("notifies on inferSpeakers and discard success", async () => {
     const { result } = renderHook(() => useRecordingActions());
 
     await act(async () => {
@@ -84,11 +85,14 @@ describe("useRecordingActions", () => {
     });
 
     await act(async () => {
-      await result.current.cancel("rec-1");
+      await result.current.discard("rec-1");
     });
-    expect(api.cancelProcessing).toHaveBeenCalledWith("rec-1");
+    expect(api.discardRecordingCapture).toHaveBeenCalledWith(
+      "rec-1",
+      "user_discarded",
+    );
     expect(addNotification).toHaveBeenCalledWith({
-      message: "Processing cancelled.",
+      message: "Recording discarded.",
       type: "success",
     });
   });

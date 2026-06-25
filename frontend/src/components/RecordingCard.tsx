@@ -194,9 +194,20 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     });
   };
 
-  const handleCancel = async () => {
-    await actions.cancel(recording.id, {
+  const handleDiscard = async () => {
+    if (
+      !confirm(
+        "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+      )
+    )
+      return;
+    await actions.discard(recording.id, {
       onSuccess: () => {
+        window.dispatchEvent(
+          new CustomEvent("recording-updated", {
+            detail: { id: recording.id },
+          }),
+        );
         router.refresh();
         // Force reload after short delay to ensure UI updates
         setTimeout(() => router.refresh(), 1000);
@@ -204,11 +215,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
     });
   };
 
-  const showCancelOption =
-    recording.status === RecordingStatus.PROCESSING ||
+  const isInFlight =
+    recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.PAUSED ||
     recording.status === RecordingStatus.QUEUED ||
-    recording.status === RecordingStatus.UPLOADING;
-  const showRetryOption = !showCancelOption;
+    recording.status === RecordingStatus.PROCESSING;
+  const showRetryOption = !isInFlight;
 
   return (
     <>
@@ -305,12 +317,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
               label: "Retry Speaker Inference",
               onClick: handleInferSpeakers,
             },
-            ...(showCancelOption
+            ...(isInFlight
               ? [
                   {
-                    label: "Cancel Processing",
-                    onClick: handleCancel,
-                    className: "text-amber-600 dark:text-amber-400",
+                    label: "Discard Recording",
+                    onClick: handleDiscard,
+                    className: "text-red-600 dark:text-red-400",
                   },
                 ]
               : []),

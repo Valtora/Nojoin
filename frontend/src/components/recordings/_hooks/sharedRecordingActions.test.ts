@@ -52,9 +52,9 @@ describe("shared recording action model (FE-015)", () => {
     }
 
     // The two menus exercise overlapping core actions (rename, infer speakers,
-    // cancel) plus their view-specific lifecycle actions; the rename/infer/
-    // cancel trio is the synchronised behaviour FE-015 protects.
-    for (const shared of ["rename", "inferSpeakers", "cancel"] as const) {
+    // discard) plus their view-specific lifecycle actions; the rename/infer/
+    // discard trio is the synchronised behaviour FE-015 protects.
+    for (const shared of ["rename", "inferSpeakers", "discard"] as const) {
       expect(sidebarActions).toContain(shared);
       expect(cardActions).toContain(shared);
     }
