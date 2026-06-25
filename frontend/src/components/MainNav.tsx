@@ -175,6 +175,12 @@ export default function MainNav() {
   // nodes (see TagItem's TagGuides). Roots receive `null` and render no guides;
   // each child appends its own "has sibling below" flag so the parent's
   // connector becomes the child's ancestor rail.
+  // Effective collapsed state: the persisted flag only applies on desktop, and
+  // we fall back to expanded until mounted to avoid a hydration mismatch. The
+  // tag tree must key off this (not the raw store value) so the mobile sidebar,
+  // which is always expanded, still renders sub-tags.
+  const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
+
   const renderTagTree = (
     nodes: TagWithChildren[],
     parentLines: boolean[] | null = null,
@@ -196,7 +202,7 @@ export default function MainNav() {
             isEditing={editingTagId === node.id}
             onStartEdit={() => setEditingTagId(node.id)}
             onCancelEdit={() => setEditingTagId(null)}
-            collapsed={isNavCollapsed}
+            collapsed={collapsed}
             lines={lines}
             hasChildren={node.children.length > 0}
             childCount={node.children.length}
@@ -204,7 +210,7 @@ export default function MainNav() {
             onToggleExpand={() => toggleExpandedTag(node.id)}
           />
           {/* Collapsed sidebar shows root tags only, so stop recursing. */}
-          {!isNavCollapsed &&
+          {!collapsed &&
             node.children.length > 0 &&
             expandedTagIds.has(node.id) &&
             renderTagTree(node.children, lines)}
@@ -217,8 +223,6 @@ export default function MainNav() {
     window.dispatchEvent(new CustomEvent("recording-updated"));
   };
 
-  // Prevent hydration mismatch by using default state until mounted
-  const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
   const isDashboardRoute = pathname === "/";
   const isTasksRoute = pathname === "/tasks";
   const isRecordingsRoute =
