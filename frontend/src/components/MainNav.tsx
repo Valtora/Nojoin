@@ -171,40 +171,58 @@ export default function MainNav() {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
 
-  const renderTagTree = (nodes: TagWithChildren[], level = 0) => {
-    return nodes.map((node) => (
-      <React.Fragment key={node.id}>
-        <TagItem
-          tag={node}
-          isSelected={selectedTagIds.includes(node.id)}
-          onToggle={() => toggleTagFilter(node.id)}
-          onColorChange={(color) => handleColorChange(node.id, color)}
-          onDelete={() => handleDeleteTag(node.id)}
-          onRename={(name) => handleRenameTag(node.id, name)}
-          onAddChild={() => handleAddSubTag(node.id)}
-          onContextMenu={(e) => handleContextMenu(e, node.id)}
-          isEditing={editingTagId === node.id}
-          onStartEdit={() => setEditingTagId(node.id)}
-          onCancelEdit={() => setEditingTagId(null)}
-          collapsed={isNavCollapsed}
-          level={level}
-          hasChildren={node.children.length > 0}
-          isExpanded={expandedTagIds.has(node.id)}
-          onToggleExpand={() => toggleExpandedTag(node.id)}
-        />
-        {node.children.length > 0 &&
-          expandedTagIds.has(node.id) &&
-          renderTagTree(node.children, level + 1)}
-      </React.Fragment>
-    ));
+  // `parentLines` carries the tree-guide flags from the ancestors down to these
+  // nodes (see TagItem's TagGuides). Roots receive `null` and render no guides;
+  // each child appends its own "has sibling below" flag so the parent's
+  // connector becomes the child's ancestor rail.
+  // Effective collapsed state: the persisted flag only applies on desktop, and
+  // we fall back to expanded until mounted to avoid a hydration mismatch. The
+  // tag tree must key off this (not the raw store value) so the mobile sidebar,
+  // which is always expanded, still renders sub-tags.
+  const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
+
+  const renderTagTree = (
+    nodes: TagWithChildren[],
+    parentLines: boolean[] | null = null,
+  ) => {
+    return nodes.map((node, index) => {
+      const hasSiblingBelow = index < nodes.length - 1;
+      const lines = parentLines === null ? [] : [...parentLines, hasSiblingBelow];
+      return (
+        <React.Fragment key={node.id}>
+          <TagItem
+            tag={node}
+            isSelected={selectedTagIds.includes(node.id)}
+            onToggle={() => toggleTagFilter(node.id)}
+            onColorChange={(color) => handleColorChange(node.id, color)}
+            onDelete={() => handleDeleteTag(node.id)}
+            onRename={(name) => handleRenameTag(node.id, name)}
+            onAddChild={() => handleAddSubTag(node.id)}
+            onContextMenu={(e) => handleContextMenu(e, node.id)}
+            isEditing={editingTagId === node.id}
+            onStartEdit={() => setEditingTagId(node.id)}
+            onCancelEdit={() => setEditingTagId(null)}
+            collapsed={collapsed}
+            lines={lines}
+            hasChildren={node.children.length > 0}
+            childCount={node.children.length}
+            isExpanded={expandedTagIds.has(node.id)}
+            onToggleExpand={() => toggleExpandedTag(node.id)}
+          />
+          {/* Collapsed sidebar shows root tags only, so stop recursing. */}
+          {!collapsed &&
+            node.children.length > 0 &&
+            expandedTagIds.has(node.id) &&
+            renderTagTree(node.children, lines)}
+        </React.Fragment>
+      );
+    });
   };
 
   const handleImportSuccess = () => {
     window.dispatchEvent(new CustomEvent("recording-updated"));
   };
 
-  // Prevent hydration mismatch by using default state until mounted
-  const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
   const isDashboardRoute = pathname === "/";
   const isTasksRoute = pathname === "/tasks";
   const isRecordingsRoute =
