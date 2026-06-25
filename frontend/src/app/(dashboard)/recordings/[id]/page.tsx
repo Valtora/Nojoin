@@ -162,6 +162,7 @@ export default function RecordingPage({ params }: PageProps) {
               onSaveMeetingEdgeContextLevel={handleMeetingEdgeContextLevelChange}
               showMeetingEdge={meetingEdgeEnabled}
               onBack={navigateToRecordings}
+              onDiscarded={navigateToRecordings}
               showMobileBackButton={isMobile}
             />
           </div>

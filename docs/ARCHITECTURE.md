@@ -85,6 +85,8 @@ The normal backend processing path is:
 10. Automatic meeting intelligence when an AI provider and model are configured.
   11. Persistence of unresolved speaker suggestions, meeting title, and Markdown meeting notes.
 
+A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes every on-disk artefact, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
+
 Per-user language preferences are resolved once through the shared backend language registry. The effective transcription language is propagated to live, catch-up, final, imported, and reprocessed ASR calls and included in ASR result hashes. Whisper receives an explicit language only when one is selected; Canary receives its supported source-language parameter; Parakeet remains multilingual auto-detection and therefore hashes as automatic language.
 
 Generated-content language is independent from source-audio language. Manual notes generation, unified automatic meeting intelligence, standalone title generation, and secondary-provider fallback receive the same resolved output-language instruction. Prompt control text and JSON keys remain stable, while titles and Markdown content can be localized. The automatic intelligence contract accepts any non-empty top-level Markdown heading rather than requiring the English `# Meeting Notes` heading.

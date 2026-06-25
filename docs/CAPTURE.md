@@ -104,14 +104,16 @@ If the share button is disabled, select a source first and confirm that any requ
 
 Chrome on Android and iOS can start recording from the same **Start Meeting** button, but it records only the phone microphone. It does not capture another mobile app, browser tab, headset output, or system audio. For best results, keep the meeting audio audible to the phone microphone, keep Nojoin visible, and prevent the phone from locking.
 
-## Pause, Resume, Stop, And Cancel
+## Pause, Resume, Stop, And Discard
 
 - **Pause** keeps uploaded segments and stops new segment capture until you resume.
 - **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
 - **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing.
-- **Cancel** discards an uploading or paused recording and clears the capture lock.
+- **Discard** permanently removes a recording in one step. It works for any recording that has not finished: uploading, paused, queued, or processing. Discard revokes any running processing task, releases the capture lock, deletes the captured audio and derived files, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
 
-Closing the browser share picker with **Cancel** is different from using Nojoin's in-app **Cancel** action. Picker cancel simply backs out of starting or resuming capture without creating a visible error in the UI.
+Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu.
+
+Closing the browser share picker with **Cancel** is different from Nojoin's in-app **Discard** action. Picker cancel simply backs out of starting or resuming capture without creating a visible error in the UI, and never deletes an existing recording.
 
 If you are recording in a shared-audio capture mode and click the browser's native **Stop sharing** button (or close the sharing indicator), Nojoin automatically detects that the sharing stream has ended. It will immediately stop and finalise the recording, saving all audio captured up to that point, and display a notification informing you that screen sharing ended and the recording was saved.
 

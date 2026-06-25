@@ -504,31 +504,58 @@ async def discard_upload(
     current_user: User = Depends(get_current_recording_client_user),
 ):
     """
-    Discard an in-flight recording before it is finalised.
+    Discard a recording that has not yet completed.
+
+    This is the single graceful "give up on this meeting" path. It accepts any
+    in-flight state: an active or paused live capture (``UPLOADING``/``PAUSED``),
+    a meeting waiting in the processing queue (``QUEUED``), or one whose
+    pipeline is actively running (``PROCESSING``). Whatever stage it is at, the
+    backend revokes any running Celery task, removes every on-disk artefact, and
+    deletes the recording row so no manual cancel-then-delete is required.
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
 
-    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
+    discardable_states = {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.PAUSED,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
+    if recording.status not in discardable_states:
         raise HTTPException(
             status_code=400,
-            detail="Only in-flight uploads can be discarded",
+            detail="Only in-flight or processing recordings can be discarded",
         )
 
     if reason:
         logger.info(
-            "Discarding in-flight recording %s for user %s with reason=%s",
+            "Discarding recording %s (status=%s) for user %s with reason=%s",
             recording.public_id,
+            recording.status.value,
             current_user.id,
             reason,
         )
     else:
         logger.info(
-            "Discarding in-flight recording %s for user %s",
+            "Discarding recording %s (status=%s) for user %s",
             recording.public_id,
+            recording.status.value,
             current_user.id,
         )
+
+    # Revoke any in-flight processing task first so the worker stops touching the
+    # recording before its row and files disappear. terminate=True sends SIGTERM
+    # to a task that is already running; a queued-but-not-started task is simply
+    # dropped. Mirrors the permanent-delete path in routes_actions.py.
+    if recording.celery_task_id:
+        try:
+            recordings_module.celery_app.control.revoke(
+                recording.celery_task_id, terminate=True
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,

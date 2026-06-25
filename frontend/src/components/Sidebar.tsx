@@ -460,8 +460,26 @@ export default function Sidebar() {
     });
   };
 
-  const handleCancel = async (id: RecordingId) => {
-    await actions.cancel(id, { onSuccess: fetchRecordings });
+  const handleDiscard = (id: RecordingId) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Discard Recording",
+      message:
+        "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.",
+      isDangerous: true,
+      confirmText: "Discard",
+      onConfirm: async () => {
+        setRecordings((prev) => prev.filter((r) => r.id !== id));
+        await actions.discard(id, {
+          onSuccess: () => {
+            if (pathname === `/recordings/${id}`) {
+              router.push("/recordings");
+            }
+          },
+          onError: fetchRecordings,
+        });
+      },
+    });
   };
 
   const handleRecordingClick = (
@@ -518,18 +536,20 @@ export default function Sidebar() {
         },
         ...(recording.status === RecordingStatus.PROCESSING ||
         recording.status === RecordingStatus.QUEUED ||
-        recording.status === RecordingStatus.UPLOADING
+        recording.status === RecordingStatus.UPLOADING ||
+        recording.status === RecordingStatus.PAUSED
           ? [
               {
-                label: "Cancel Processing",
-                onClick: () => handleCancel(recording.id),
-                className: "text-amber-600 dark:text-amber-400",
+                label: "Discard Recording",
+                onClick: () => handleDiscard(recording.id),
+                className: "text-red-600 dark:text-red-400",
               },
             ]
           : []),
         ...(recording.status !== RecordingStatus.PROCESSING &&
         recording.status !== RecordingStatus.QUEUED &&
-        recording.status !== RecordingStatus.UPLOADING
+        recording.status !== RecordingStatus.UPLOADING &&
+        recording.status !== RecordingStatus.PAUSED
           ? [
               {
                 label: "Retry Processing",

@@ -25,6 +25,17 @@ vi.mock("./ProcessingNotesPanel", () => ({
   default: () => <div data-testid="processing-notes-panel" />,
 }));
 
+// RecordingStatusDisplay drives discard through useRecordingActions, which reads
+// capture state; stub the provider so the component renders without one.
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => ({
+    cancel: vi.fn(),
+    recordingId: null,
+    pausedRecording: null,
+    runtimeActive: false,
+  }),
+}));
+
 const buildRecording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1",
   created_at: "2026-05-26T10:00:00Z",

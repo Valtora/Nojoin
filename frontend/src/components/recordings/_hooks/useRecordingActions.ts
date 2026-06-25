@@ -4,14 +4,15 @@ import { useMemo } from "react";
 
 import {
   archiveRecording,
-  cancelProcessing,
   deleteRecording,
+  discardRecordingCapture,
   inferSpeakers,
   permanentlyDeleteRecording,
   renameRecording,
   restoreRecording,
   softDeleteRecording,
 } from "@/lib/api";
+import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingId } from "@/types";
 
@@ -38,7 +39,7 @@ import { RecordingId } from "@/types";
 export const RECORDING_ACTION_IDS = [
   "rename",
   "inferSpeakers",
-  "cancel",
+  "discard",
   "delete",
   "archive",
   "restore",
@@ -66,7 +67,7 @@ export interface RecordingActions {
     id: RecordingId,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
-  cancel: (
+  discard: (
     id: RecordingId,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
@@ -94,6 +95,12 @@ export interface RecordingActions {
 
 export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
+  const {
+    cancel: cancelCapture,
+    recordingId: captureRecordingId,
+    pausedRecording,
+    runtimeActive,
+  } = useCapture();
 
   return useMemo<RecordingActions>(() => {
     return {
@@ -130,18 +137,32 @@ export function useRecordingActions(): RecordingActions {
         }
       },
 
-      cancel: async (id, callbacks) => {
+      discard: async (id, callbacks) => {
         try {
-          await cancelProcessing(id);
+          // If this browser owns the live or paused capture for this recording,
+          // route through the capture controller so the MediaRecorder, uploader,
+          // and persisted paused context/capture lock are torn down before (and
+          // as part of) the backend discard. A bare POST /discard would delete
+          // the row while the client kept recording to a missing recording or
+          // stayed blocked behind a stale paused lock. For a queued/processing
+          // recording, or one owned by another tab, a plain discard is correct.
+          const ownsLiveCapture =
+            runtimeActive && captureRecordingId === id;
+          const ownsPausedCapture = pausedRecording?.id === id;
+          if (ownsLiveCapture || ownsPausedCapture) {
+            await cancelCapture(id);
+          } else {
+            await discardRecordingCapture(id, "user_discarded");
+          }
           addNotification({
-            message: "Processing cancelled.",
+            message: "Recording discarded.",
             type: "success",
           });
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
-          console.error("Failed to cancel processing", e);
+          console.error("Failed to discard recording", e);
           addNotification({
-            message: "Failed to cancel processing.",
+            message: "Failed to discard recording.",
             type: "error",
           });
           callbacks?.onError?.();
@@ -202,5 +223,11 @@ export function useRecordingActions(): RecordingActions {
         }
       },
     };
-  }, [addNotification]);
+  }, [
+    addNotification,
+    cancelCapture,
+    captureRecordingId,
+    pausedRecording,
+    runtimeActive,
+  ]);
 }
