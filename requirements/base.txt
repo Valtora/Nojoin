@@ -1,4 +1,4 @@
-sqlmodel==0.0.38
+sqlmodel==0.0.39
 psycopg2-binary==2.9.12
 asyncpg==0.31.0
 python-dotenv==1.2.2
@@ -15,5 +15,5 @@ httpx==0.28.1
 #   CVE-2026-40192 (FITS decompression-bomb DoS), CVE-2026-42311.
 urllib3==2.7.0
 pillow==12.2.0
-alembic==1.18.4
+alembic==1.18.5
 pgvector==0.4.2
