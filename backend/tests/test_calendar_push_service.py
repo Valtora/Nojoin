@@ -76,11 +76,13 @@ def test_needs_renewal_uses_per_provider_thresholds() -> None:
     assert push._needs_renewal(CalendarProvider.MICROSOFT.value, ms_soon, NOW) is True
     assert push._needs_renewal(CalendarProvider.MICROSOFT.value, ms_mid, NOW) is False
 
+    # A NULL expiration is treated as "unknown / assume expired" so the channel
+    # is reprovisioned rather than silently left to lapse.
     assert (
         push._needs_renewal(
             CalendarProvider.GOOGLE.value, _channel(expiration=None), NOW
         )
-        is False
+        is True
     )
 
 
@@ -105,6 +107,42 @@ def test_should_provision_missing_failed_stopped_and_healthy() -> None:
 
     healthy = _channel(expiration=NOW + timedelta(days=5))
     assert push._should_provision(provider, healthy, NOW) is False
+
+    # An ACTIVE channel with an unknown (NULL) expiration must be reprovisioned.
+    active_unknown_expiry = _channel(expiration=None)
+    assert push._should_provision(provider, active_unknown_expiry, NOW) is True
+
+
+def test_debounced_enqueue_closes_redis_client_when_set_fails(monkeypatch) -> None:
+    """A failing debounce write must still close the Redis client.
+
+    ``redis.from_url`` allocates a fresh connection pool per call; without
+    closing it on the error path, every inbound notification during a Redis
+    outage would leak a pool until the process runs out of file descriptors.
+    """
+    import backend.celery_app as celery_mod
+
+    class _FakeRedis:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def set(self, *args, **kwargs):
+            raise RuntimeError("redis unavailable")
+
+        async def close(self) -> None:
+            self.closed = True
+
+    fake = _FakeRedis()
+    monkeypatch.setattr(push.redis, "from_url", lambda url: fake)
+    sent: list = []
+    monkeypatch.setattr(
+        celery_mod.celery_app, "send_task", lambda *args, **kwargs: sent.append(1)
+    )
+
+    asyncio.run(push._debounced_enqueue_sync(123))
+
+    assert fake.closed is True  # closed even though set() raised
+    assert len(sent) == 1  # fell back to enqueuing the sync directly
 
 
 def _patch_enqueue(monkeypatch) -> list[int]:

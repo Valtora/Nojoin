@@ -281,9 +281,6 @@ async def microsoft_calendar_webhook(
     within 10 seconds. Otherwise the body carries notifications, authenticated
     per-subscription by ``clientState``.
     """
-    if validationToken is not None:
-        return PlainTextResponse(validationToken, status_code=200)
-
     await enforce_rate_limit(
         request,
         namespace="calendar-webhook-microsoft",
@@ -291,6 +288,15 @@ async def microsoft_calendar_webhook(
         window_seconds=60,
         detail="Too many calendar webhook requests.",
     )
+    if validationToken is not None:
+        # Bound the reflected token. Graph's validation tokens are short
+        # URL-encoded strings, so anything larger is not a legitimate call and
+        # must not be echoed back. The rate limit above (keyed per client IP)
+        # also covers this path without affecting Graph's own validation call.
+        if len(validationToken) > 512:
+            return Response(status_code=400)
+        return PlainTextResponse(validationToken, status_code=200)
+
     try:
         payload = await request.json()
     except Exception:  # noqa: BLE001

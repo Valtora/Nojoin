@@ -1832,6 +1832,18 @@ async def test_microsoft_webhook_echoes_validation_token(
 
 
 @pytest.mark.anyio
+async def test_microsoft_webhook_rejects_oversized_validation_token(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/calendar/webhooks/microsoft",
+        params={"validationToken": "x" * 600},
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.anyio
 async def test_google_webhook_acknowledges_unknown_channel(
     client: AsyncClient,
 ) -> None:

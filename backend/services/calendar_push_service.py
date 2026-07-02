@@ -113,7 +113,11 @@ def _truncate_error(value: str | None) -> str | None:
 
 def _needs_renewal(provider: str, channel: CalendarPushChannel, now: datetime) -> bool:
     if channel.expiration is None:
-        return False
+        # Unknown expiration (provider omitted it, or it failed to parse):
+        # assume expired and reprovision. Otherwise an ACTIVE row with a NULL
+        # expiration would never renew and would silently stop delivering once
+        # the provider expires the channel on their side.
+        return True
     within = (
         GOOGLE_RENEW_WITHIN
         if provider == CalendarProvider.GOOGLE.value
@@ -682,10 +686,18 @@ async def _debounced_enqueue_sync(connection_id: int) -> None:
     should_enqueue = True
     try:
         client = redis.from_url(REDIS_URL)
-        key = f"nojoin:calendar:push:debounce:{connection_id}"
-        was_set = await client.set(key, "1", ex=NOTIFICATION_DEBOUNCE_SECONDS, nx=True)
-        await client.close()
-        should_enqueue = bool(was_set)
+        try:
+            key = f"nojoin:calendar:push:debounce:{connection_id}"
+            was_set = await client.set(
+                key, "1", ex=NOTIFICATION_DEBOUNCE_SECONDS, nx=True
+            )
+            should_enqueue = bool(was_set)
+        finally:
+            # redis.from_url allocates a fresh connection pool per call, so the
+            # client must be closed even when set() raises (e.g. Redis is
+            # restarting) -- otherwise every inbound notification during an
+            # outage leaks a pool until the process runs out of descriptors.
+            await client.close()
     except Exception as exc:  # noqa: BLE001
         logger.debug("Push debounce unavailable; enqueueing directly: %s", exc)
         should_enqueue = True
