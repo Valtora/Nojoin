@@ -30,6 +30,7 @@ export default function MeetingControls({
   const { backend } = useServiceStatusStore();
   const {
     controller,
+    finalizeRetry,
     pausedRecording,
     runtimeActive,
     start,
@@ -73,12 +74,18 @@ export default function MeetingControls({
           : isBusy
             ? {
                 buttonLabel:
-                  status === "finalizing" ? "Finalizing meeting..." : "Starting meeting...",
+                  status === "finalizing"
+                    ? finalizeRetry
+                      ? `Finalizing meeting (waiting ${finalizeRetry.attempt}/${finalizeRetry.maxAttempts})...`
+                      : "Finalizing meeting..."
+                    : "Starting meeting...",
                 buttonMode: "wait",
                 buttonDisabled: true,
                 buttonTooltip:
                   status === "finalizing"
-                    ? "Nojoin is finalizing the current meeting recording."
+                    ? finalizeRetry
+                      ? `Nojoin is waiting for the last uploaded segments to be processed (attempt ${finalizeRetry.attempt} of ${finalizeRetry.maxAttempts}).`
+                      : "Nojoin is finalizing the current meeting recording."
                     : "Nojoin is preparing browser capture.",
               }
           : {

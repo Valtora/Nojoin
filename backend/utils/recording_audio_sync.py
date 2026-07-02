@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 
 BROWSER_AUDIO_SEGMENT_SUFFIXES = frozenset({".webm", ".ogg", ".m4a"})
 TRANSCODE_FAILED_SUFFIX = ".transcode_failed"
+# Terminally corrupt segments are quarantined under this suffix during finalize
+# so they stop counting as pending uploads and their sequence gap is accepted.
+SEGMENT_CORRUPT_SUFFIX = ".corrupt"
 PENDING_TRANSCODE_SUFFIXES = frozenset(
     {*BROWSER_AUDIO_SEGMENT_SUFFIXES, TRANSCODE_FAILED_SUFFIX}
 )

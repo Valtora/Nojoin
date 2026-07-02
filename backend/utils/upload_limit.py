@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
@@ -25,6 +26,10 @@ async def stream_and_validate_upload(
     Streams an UploadFile to a local path in bounded chunks, checking size limits.
     If the size limit is exceeded (either via Content-Length or actual read bytes),
     the partial file is deleted and an HTTPException with status 413 is raised.
+
+    The stream is written to a unique temporary file next to the destination and
+    moved into place with os.replace() only after the body completes, so an
+    interrupted upload never leaves a truncated file at dest_path.
     """
     # 1. Check Content-Length header if present
     content_length_str = file.headers.get("content-length")
@@ -43,8 +48,11 @@ async def stream_and_validate_upload(
             pass
 
     size_so_far = 0
+    # ".upload-tmp" keeps in-flight files invisible to every directory scan that
+    # keys on known media suffixes or an integer-parseable stem.
+    temp_path = f"{dest_path}.{uuid.uuid4().hex}.upload-tmp"
     try:
-        async with aiofiles.open(dest_path, "wb") as out_file:
+        async with aiofiles.open(temp_path, "wb") as out_file:
             while True:
                 chunk = await file.read(chunk_size)
                 if not chunk:
@@ -59,14 +67,15 @@ async def stream_and_validate_upload(
                         detail=f"Upload size exceeds the maximum limit of {max_size} bytes.",
                     )
                 await out_file.write(chunk)
+        os.replace(temp_path, dest_path)
     except Exception as e:
         # Clean up partial file on failure
         try:
-            if os.path.exists(dest_path):
-                os.unlink(dest_path)
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
         except OSError as cleanup_err:
             logger.error(
-                f"Failed to clean up partial upload file {dest_path}: {cleanup_err}"
+                f"Failed to clean up partial upload file {temp_path}: {cleanup_err}"
             )
         raise e
 

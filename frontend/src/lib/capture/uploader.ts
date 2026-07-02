@@ -8,7 +8,7 @@ export interface SegmentUploaderOptions {
   initialSequence?: number;
   uploadSegment?: typeof uploadRecordingSegment;
   onUploaded?: (sequence: number) => void;
-  onFatal?: (error: Error) => void | Promise<void>;
+  onStalled?: (error: Error) => void | Promise<void>;
   retryDelaysMs?: number[];
   wait?: (ms: number) => Promise<void>;
 }
@@ -20,7 +20,7 @@ export class SegmentUploader {
 
   private readonly onUploaded?: (sequence: number) => void;
 
-  private readonly onFatal?: (error: Error) => void | Promise<void>;
+  private readonly onStalled?: (error: Error) => void | Promise<void>;
 
   private readonly retryDelaysMs: number[];
 
@@ -34,7 +34,7 @@ export class SegmentUploader {
 
   private drainScheduled = false;
 
-  private fatalError: Error | null = null;
+  private stalledError: Error | null = null;
 
   private closed = false;
 
@@ -42,25 +42,43 @@ export class SegmentUploader {
     this.recordingId = options.recordingId;
     this.uploadSegmentFn = options.uploadSegment ?? uploadRecordingSegment;
     this.onUploaded = options.onUploaded;
-    this.onFatal = options.onFatal;
+    this.onStalled = options.onStalled;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
     this.wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.nextExpectedSequence = options.initialSequence ?? 0;
   }
 
   enqueue(sequence: number, blob: Blob) {
-    if (this.closed || this.fatalError) {
+    if (this.closed) {
       return;
     }
 
+    // Segments are kept while the uploader is stalled so a later recover()
+    // can retry them instead of dropping recorded audio.
     this.pending.set(sequence, blob);
     this.scheduleDrain();
   }
 
+  /**
+   * Clears a stalled state and retries the queued segments. Returns false
+   * only when the uploader has been disposed and cannot upload again.
+   */
+  recover() {
+    if (this.closed) {
+      return false;
+    }
+
+    if (this.stalledError) {
+      this.stalledError = null;
+      this.scheduleDrain();
+    }
+    return true;
+  }
+
   async waitForIdle() {
     while (true) {
-      if (this.fatalError) {
-        throw this.fatalError;
+      if (this.stalledError) {
+        throw this.stalledError;
       }
 
       if (!this.drainPromise) {
@@ -93,7 +111,7 @@ export class SegmentUploader {
 
     this.drainPromise = (async () => {
       try {
-        while (!this.closed && !this.fatalError) {
+        while (!this.closed && !this.stalledError) {
           const nextBlob = this.pending.get(this.nextExpectedSequence);
           if (!nextBlob) {
             break;
@@ -106,7 +124,7 @@ export class SegmentUploader {
         }
       } finally {
         this.drainPromise = null;
-        if (!this.closed && !this.fatalError && this.pending.has(this.nextExpectedSequence)) {
+        if (!this.closed && !this.stalledError && this.pending.has(this.nextExpectedSequence)) {
           this.scheduleDrain();
           return;
         }
@@ -118,7 +136,7 @@ export class SegmentUploader {
   }
 
   private scheduleDrain() {
-    if (this.drainScheduled || this.drainPromise || this.closed || this.fatalError) {
+    if (this.drainScheduled || this.drainPromise || this.closed || this.stalledError) {
       return;
     }
 
@@ -128,7 +146,7 @@ export class SegmentUploader {
       if (
         this.drainPromise ||
         this.closed ||
-        this.fatalError ||
+        this.stalledError ||
         !this.pending.has(this.nextExpectedSequence)
       ) {
         return;
@@ -153,9 +171,11 @@ export class SegmentUploader {
             : new Error("The browser uploader failed to send a recording segment.");
 
         if (attempt === this.retryDelaysMs.length) {
-          this.fatalError = lastError;
-          this.closed = true;
-          await this.onFatal?.(lastError);
+          // Put the segment back so recover() can retry it later; the
+          // uploader stalls rather than permanently dropping audio.
+          this.pending.set(sequence, blob);
+          this.stalledError = lastError;
+          await this.onStalled?.(lastError);
           throw lastError;
         }
 
