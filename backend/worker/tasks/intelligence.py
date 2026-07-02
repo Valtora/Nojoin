@@ -682,9 +682,8 @@ def _auto_apply_persisted_speaker_name_suggestions(
     """
     from datetime import UTC
 
-    from backend.processing.embedding import merge_embeddings
     from backend.utils.canonical_pipeline import (
-        ensure_recording_speaker_aliases_for_speaker,
+        apply_recording_speaker_identity_fields,
     )
     from backend.utils.speaker_name_suggestions import (
         SPEAKER_SUGGESTION_STATUS_ACCEPTED,
@@ -709,33 +708,23 @@ def _auto_apply_persisted_speaker_name_suggestions(
             if raw_global_speaker_id is not None
             else None
         )
-        if global_speaker is not None:
-            speaker.global_speaker_id = global_speaker.id
-            speaker.local_name = None
-            if speaker.embedding:
-                if global_speaker.embedding:
-                    if not global_speaker.is_voiceprint_locked:
-                        global_speaker.embedding = merge_embeddings(
-                            global_speaker.embedding, speaker.embedding, alpha=0.3
-                        )
-                else:
-                    global_speaker.embedding = list(speaker.embedding)
-                session.add(global_speaker)
-        else:
-            speaker.local_name = suggested_name
-            speaker.global_speaker_id = None
-        speaker.name = None
-        # Record the model's confidence but leave identity_locked False:
-        # locking is reserved for human-confirmed identity, so auto-applied
-        # names stay overridable by future higher-authority signals.
         raw_confidence = suggestion.get("confidence")
-        if isinstance(raw_confidence, (int, float)):
-            speaker.identity_confidence = float(raw_confidence)
-        # Keep canonical alias lookups consistent with the new name, matching
-        # update_recording_speaker_identity's behaviour after identity changes.
-        if aliases_available:
-            ensure_recording_speaker_aliases_for_speaker(session, speaker)
-        session.add(speaker)
+        # identity_locked stays untouched: locking is reserved for
+        # human-confirmed identity, so auto-applied names remain overridable
+        # by future higher-authority signals.
+        apply_recording_speaker_identity_fields(
+            session,
+            speaker,
+            new_speaker_name=suggested_name,
+            target_global_speaker=global_speaker,
+            merge_global_embedding_alpha=0.3 if global_speaker is not None else None,
+            identity_confidence=(
+                float(raw_confidence)
+                if isinstance(raw_confidence, (int, float))
+                else None
+            ),
+            sync_aliases=aliases_available,
+        )
 
         suggestion["status"] = SPEAKER_SUGGESTION_STATUS_ACCEPTED
         suggestion["updated_at"] = timestamp
