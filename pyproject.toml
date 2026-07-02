@@ -145,6 +145,7 @@ max-complexity = 10
 "backend/utils/canonical_pipeline/constants.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/core.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/utils/canonical_pipeline/diarization.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/identity_fields.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/segmentation.py" = ["C901", "PLR0913", "PLR0915"]
 "backend/utils/canonical_pipeline/speaker.py" = ["C901", "PLR0912", "PLR0913"]
 "backend/utils/config_manager.py" = ["C901", "PLR0912"]
