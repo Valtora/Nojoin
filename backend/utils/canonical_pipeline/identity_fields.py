@@ -21,7 +21,6 @@ def apply_recording_speaker_identity_fields(
     merge_global_embedding_alpha: float | None = None,
     identity_confidence: float | None = None,
     identity_locked: bool | None = None,
-    sync_aliases: bool = True,
 ) -> None:
     """Mutate one recording speaker's identity fields in place.
 
@@ -61,6 +60,5 @@ def apply_recording_speaker_identity_fields(
         recording_speaker.identity_confidence = identity_confidence
     if identity_locked is not None:
         recording_speaker.identity_locked = identity_locked
-    if sync_aliases:
-        ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
+    ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
     session.add(recording_speaker)

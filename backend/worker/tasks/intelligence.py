@@ -680,19 +680,6 @@ def _auto_apply_persisted_speaker_name_suggestions(
     Successfully applied suggestions are mutated in place to status "accepted"
     with resolution reason "auto_applied".
     """
-    from datetime import UTC
-
-    from backend.utils.canonical_pipeline import (
-        apply_recording_speaker_identity_fields,
-    )
-    from backend.utils.speaker_name_suggestions import (
-        SPEAKER_SUGGESTION_STATUS_ACCEPTED,
-    )
-
-    bind = session.get_bind()
-    aliases_available = bind is not None and inspect(bind).has_table(
-        "recording_speaker_aliases"
-    )
     speakers_by_id = {speaker.id: speaker for speaker in speakers}
     timestamp = datetime.now(UTC).isoformat()
     applied = 0
@@ -712,24 +699,41 @@ def _auto_apply_persisted_speaker_name_suggestions(
         # identity_locked stays untouched: locking is reserved for
         # human-confirmed identity, so auto-applied names remain overridable
         # by future higher-authority signals.
-        apply_recording_speaker_identity_fields(
-            session,
-            speaker,
-            new_speaker_name=suggested_name,
-            target_global_speaker=global_speaker,
-            merge_global_embedding_alpha=0.3 if global_speaker is not None else None,
-            identity_confidence=(
-                float(raw_confidence)
-                if isinstance(raw_confidence, (int, float))
-                else None
-            ),
-            sync_aliases=aliases_available,
-        )
+        try:
+            apply_recording_speaker_identity_fields(
+                session,
+                speaker,
+                new_speaker_name=suggested_name,
+                target_global_speaker=global_speaker,
+                merge_global_embedding_alpha=(
+                    0.3 if global_speaker is not None else None
+                ),
+                identity_confidence=(
+                    float(raw_confidence)
+                    if isinstance(raw_confidence, (int, float))
+                    else None
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            # Keep the batch going: one speaker failing to apply must not
+            # abort the rest or skip persistence for the whole run. The
+            # unapplied suggestion stays pending and is superseded next run.
+            logger.warning(
+                "Failed to auto-apply speaker name suggestion for label %s "
+                "on recording %s; leaving it pending.",
+                suggestion.get("diarization_label"),
+                recording.id,
+                exc_info=True,
+            )
+            continue
 
         suggestion["status"] = SPEAKER_SUGGESTION_STATUS_ACCEPTED
         suggestion["updated_at"] = timestamp
         suggestion["resolved_at"] = timestamp
         suggestion["resolution_reason"] = "auto_applied"
+        # No human actor for auto-applied names; set explicitly so the audit
+        # trail is consistent with the accepted/rejected/superseded paths.
+        suggestion["resolution_actor_user_id"] = None
         applied += 1
 
     if applied:
@@ -756,8 +760,6 @@ def _persist_generated_speaker_name_suggestions_impl(
     provider: str | None,
     replaced_reason: str,
 ) -> int:
-    from backend.models.recording import recording_supports_unified_mutations
-
     if not inference_result.suggestions:
         return 0
 
