@@ -1141,6 +1141,10 @@ def update_recording_speaker_identity(
             merge_global_embedding_alpha=merge_global_embedding_alpha,
             identity_confidence=1.0,
             identity_locked=True,
+            # Manual rename/promote is a human action; the lock only guards
+            # against automated updates, so an explicit link still updates
+            # the voiceprint (pre-refactor behaviour of this path).
+            respect_voiceprint_lock=False,
         )
 
     effective_event_type = event_type or (

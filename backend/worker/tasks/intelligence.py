@@ -671,18 +671,20 @@ def _auto_apply_persisted_speaker_name_suggestions(
     recording: Recording,
     speakers: Sequence[RecordingSpeaker],
     persisted: list[dict[str, object]],
-) -> int:
+) -> list[dict[str, object]]:
     """Apply inferred speaker names immediately instead of holding them for review.
 
     Mirrors the manual rename endpoint: an exact global speaker match links the
     recording speaker to the global library entry (merging voiceprint
-    embeddings), otherwise the suggested name becomes the local name.
-    Successfully applied suggestions are mutated in place to status "accepted"
-    with resolution reason "auto_applied".
+    embeddings), otherwise the suggested name becomes the local name. Returns
+    the suggestion dicts that were applied (mutated in place to status
+    "accepted" with resolution reason "auto_applied"). Suggestions that could
+    not be applied are omitted from the result so no unresolvable "pending"
+    entry is persisted now that the accept/reject review flow is gone.
     """
     speakers_by_id = {speaker.id: speaker for speaker in speakers}
     timestamp = datetime.now(UTC).isoformat()
-    applied = 0
+    applied: list[dict[str, object]] = []
     for suggestion in persisted:
         suggested_name = str(suggestion.get("suggested_name") or "").strip()
         speaker = speakers_by_id.get(suggestion.get("recording_speaker_id"))
@@ -700,27 +702,32 @@ def _auto_apply_persisted_speaker_name_suggestions(
         # human-confirmed identity, so auto-applied names remain overridable
         # by future higher-authority signals.
         try:
-            apply_recording_speaker_identity_fields(
-                session,
-                speaker,
-                new_speaker_name=suggested_name,
-                target_global_speaker=global_speaker,
-                merge_global_embedding_alpha=(
-                    0.3 if global_speaker is not None else None
-                ),
-                identity_confidence=(
-                    float(raw_confidence)
-                    if isinstance(raw_confidence, (int, float))
-                    else None
-                ),
-            )
+            # Savepoint per speaker: a flush-time DB error would otherwise
+            # leave the session in a rolled-back state that breaks every
+            # later speaker and the final commit. The nested transaction
+            # confines a failure to this speaker and keeps the session usable.
+            with session.begin_nested():
+                apply_recording_speaker_identity_fields(
+                    session,
+                    speaker,
+                    new_speaker_name=suggested_name,
+                    target_global_speaker=global_speaker,
+                    merge_global_embedding_alpha=(
+                        0.3 if global_speaker is not None else None
+                    ),
+                    identity_confidence=(
+                        float(raw_confidence)
+                        if isinstance(raw_confidence, (int, float))
+                        else None
+                    ),
+                )
         except Exception:  # noqa: BLE001
-            # Keep the batch going: one speaker failing to apply must not
-            # abort the rest or skip persistence for the whole run. The
-            # unapplied suggestion stays pending and is superseded next run.
+            # The savepoint rolled this speaker back, so the session is clean
+            # for the next one. Skip the suggestion entirely rather than
+            # persisting an unresolvable "pending" entry.
             logger.warning(
                 "Failed to auto-apply speaker name suggestion for label %s "
-                "on recording %s; leaving it pending.",
+                "on recording %s; skipping it (not persisted).",
                 suggestion.get("diarization_label"),
                 recording.id,
                 exc_info=True,
@@ -734,14 +741,14 @@ def _auto_apply_persisted_speaker_name_suggestions(
         # No human actor for auto-applied names; set explicitly so the audit
         # trail is consistent with the accepted/rejected/superseded paths.
         suggestion["resolution_actor_user_id"] = None
-        applied += 1
+        applied.append(suggestion)
 
     if applied:
         record_pipeline_metric(
             stage="speaker_name_suggestions_auto_applied",
             recording_id=recording.id,
             payload={
-                "applied_count": applied,
+                "applied_count": len(applied),
                 "suggestion_count": len(persisted),
             },
             log=logger,
@@ -786,21 +793,26 @@ def _persist_generated_speaker_name_suggestions_impl(
         return 0
 
     # Apply before persisting: persist_transcript_speaker_suggestions copies
-    # the dicts, so resolution fields must already be set on them.
-    _auto_apply_persisted_speaker_name_suggestions(
+    # the dicts, so resolution fields must already be set on them. Only the
+    # successfully-applied suggestions are persisted, as an audit trail; ones
+    # that could not be applied are dropped rather than left as unresolvable
+    # "pending" entries.
+    applied = _auto_apply_persisted_speaker_name_suggestions(
         session,
         recording=recording,
         speakers=speakers,
         persisted=persisted,
     )
+    if not applied:
+        return 0
     persist_transcript_speaker_suggestions(
         transcript,
-        persisted,
+        applied,
         replaced_reason=replaced_reason,
     )
     flag_modified(transcript, "speaker_name_suggestions")
     session.add(transcript)
-    return len(persisted)
+    return len(applied)
 
 
 def _supersede_pending_speaker_name_suggestions_for_labels_impl(
