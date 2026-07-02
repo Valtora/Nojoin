@@ -35,12 +35,12 @@ describe("capture uploader", () => {
     expect(wait).toHaveBeenCalledWith(25);
   });
 
-  it("surfaces a fatal error after retries are exhausted and stops draining", async () => {
-    const fatalError = new Error("fatal upload failure");
-    const onFatal = vi.fn(async () => {});
+  it("stalls after retries are exhausted and keeps queued segments", async () => {
+    const stallError = new Error("stalled upload failure");
+    const onStalled = vi.fn(async () => {});
     const wait = vi.fn(async () => {});
     const uploadSegment = vi.fn(async () => {
-      throw fatalError;
+      throw stallError;
     });
 
     const uploader = createSegmentUploader({
@@ -48,20 +48,68 @@ describe("capture uploader", () => {
       uploadSegment,
       wait,
       retryDelaysMs: [10, 20],
-      onFatal,
+      onStalled,
     });
 
     uploader.enqueue(0, new Blob(["first"]));
     uploader.enqueue(1, new Blob(["second"]));
 
-    await expect(uploader.waitForIdle()).rejects.toThrow("fatal upload failure");
+    await expect(uploader.waitForIdle()).rejects.toThrow("stalled upload failure");
 
     expect(uploadSegment).toHaveBeenCalledTimes(3);
     expect(uploadSegment).toHaveBeenNthCalledWith(1, 7, 0, expect.any(Blob));
     expect(uploadSegment).toHaveBeenNthCalledWith(2, 7, 0, expect.any(Blob));
     expect(uploadSegment).toHaveBeenNthCalledWith(3, 7, 0, expect.any(Blob));
     expect(wait).toHaveBeenCalledTimes(2);
-    expect(onFatal).toHaveBeenCalledTimes(1);
-    expect(onFatal).toHaveBeenCalledWith(fatalError);
+    expect(onStalled).toHaveBeenCalledTimes(1);
+    expect(onStalled).toHaveBeenCalledWith(stallError);
+  });
+
+  it("recovers from a stall and uploads the retained segments", async () => {
+    const uploaded: number[] = [];
+    const onStalled = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    let networkDown = true;
+    const uploadSegment = vi.fn(async (_recordingId: number, sequence: number) => {
+      if (networkDown) {
+        throw new Error("network outage");
+      }
+      uploaded.push(sequence);
+    });
+
+    const uploader = createSegmentUploader({
+      recordingId: 7,
+      uploadSegment,
+      wait,
+      retryDelaysMs: [10],
+      onStalled,
+    });
+
+    uploader.enqueue(0, new Blob(["first"]));
+    uploader.enqueue(1, new Blob(["second"]));
+
+    await expect(uploader.waitForIdle()).rejects.toThrow("network outage");
+    expect(onStalled).toHaveBeenCalledTimes(1);
+
+    // Segments queued while stalled are retained rather than dropped.
+    uploader.enqueue(2, new Blob(["third"]));
+
+    networkDown = false;
+    expect(uploader.recover()).toBe(true);
+
+    await uploader.waitForIdle();
+
+    expect(uploaded).toEqual([0, 1, 2]);
+  });
+
+  it("refuses to recover once disposed", () => {
+    const uploader = createSegmentUploader({
+      recordingId: 7,
+      uploadSegment: vi.fn(),
+    });
+
+    uploader.dispose();
+
+    expect(uploader.recover()).toBe(false);
   });
 });

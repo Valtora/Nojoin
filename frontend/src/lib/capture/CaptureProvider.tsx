@@ -98,5 +98,6 @@ export function useCapture() {
     runtimeActive: state.runtimeActive,
     support: state.support,
     settings: state.settings,
+    finalizeRetry: state.finalizeRetry,
   };
 }

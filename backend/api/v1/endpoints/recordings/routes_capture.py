@@ -329,32 +329,13 @@ async def finalize_upload(
         chunk_rows=chunk_rows,
     )
     if pending_transcode_sequences:
-        await recordings_module._transcode_pending_browser_segments_for_finalize(
-            recording.id,
+        (
+            chunk_rows,
             pending_transcode_sequences,
-        )
-        await recordings_module._sync_recording_audio_chunks_from_directory(
+        ) = await recordings_module._rescue_pending_browser_segments_for_finalize(
             db,
             recording_id=recording.id,
-            source_kind="browser",
-            suffix=".wav",
-        )
-        await recordings_module._sync_recording_audio_window_manifests(
-            db,
-            recording_id=recording.id,
-            source_kind="browser",
-            seal_tail=True,
-        )
-        chunk_rows = await recordings_module._list_recording_audio_chunks(
-            db,
-            recording_id=recording.id,
-            source_kind="browser",
-        )
-        pending_transcode_sequences = (
-            recordings_module._find_pending_transcode_sequences(
-                recording.id,
-                chunk_rows=chunk_rows,
-            )
+            pending_sequences=pending_transcode_sequences,
         )
 
     if pending_transcode_sequences:
@@ -365,7 +346,14 @@ async def finalize_upload(
     if not chunk_rows:
         raise HTTPException(status_code=400, detail="No valid segments found")
 
-    missing_sequences = recordings_module._find_missing_chunk_sequences(chunk_rows)
+    corrupt_sequences = recordings_module._list_corrupt_browser_segment_sequences(
+        recording.id
+    )
+    missing_sequences = [
+        sequence
+        for sequence in recordings_module._find_missing_chunk_sequences(chunk_rows)
+        if sequence not in corrupt_sequences
+    ]
     if missing_sequences:
         raise HTTPException(
             status_code=409,

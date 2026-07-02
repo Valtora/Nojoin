@@ -35,9 +35,12 @@ from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.recording_audio_sync import (
     BROWSER_AUDIO_SEGMENT_SUFFIXES,
+    SEGMENT_CORRUPT_SUFFIX,
+    TRANSCODE_FAILED_SUFFIX,
     find_missing_chunk_sequences,
     find_pending_recording_upload_sequences,
     list_recording_audio_chunks,
+    list_recording_upload_sequences,
     sync_recording_audio_chunks_from_directory,
     sync_recording_audio_chunks_from_entries,
     sync_recording_audio_window_manifests,
@@ -437,6 +440,147 @@ async def _transcode_pending_browser_segments_for_finalize(
                 exc,
             )
     return failed_sequences
+
+
+async def _rescue_pending_browser_segments_for_finalize(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    pending_sequences: list[int],
+) -> tuple[list[RecordingAudioChunk], list[int]]:
+    """Rescue-transcode pending segments and quarantine terminally corrupt ones.
+
+    Returns the refreshed chunk rows and the sequences that are still pending
+    after the rescue attempt (that is, genuinely still uploading).
+    """
+    failed_sequences = await _transcode_pending_browser_segments_for_finalize(
+        recording_id,
+        pending_sequences,
+    )
+    await _sync_recording_audio_chunks_from_directory(
+        db,
+        recording_id=recording_id,
+        source_kind="browser",
+        suffix=".wav",
+    )
+    await _sync_recording_audio_window_manifests(
+        db,
+        recording_id=recording_id,
+        source_kind="browser",
+        seal_tail=True,
+    )
+    chunk_rows = await _list_recording_audio_chunks(
+        db,
+        recording_id=recording_id,
+        source_kind="browser",
+    )
+    still_pending = _find_pending_transcode_sequences(
+        recording_id,
+        chunk_rows=chunk_rows,
+    )
+
+    # The rescue transcode is the last chance for a staged segment: a sequence
+    # that still failed here is terminally corrupt (for example a truncated
+    # body from an interrupted upload). Quarantine it so finalize proceeds
+    # with an audio gap instead of returning 409 forever.
+    still_failed_sequences = [
+        sequence for sequence in failed_sequences if sequence in set(still_pending)
+    ]
+    if still_failed_sequences:
+        quarantined_sequences = set(
+            _quarantine_corrupt_browser_segments(recording_id, still_failed_sequences)
+        )
+        still_pending = [
+            sequence
+            for sequence in still_pending
+            if sequence not in quarantined_sequences
+        ]
+    return chunk_rows, still_pending
+
+
+def _quarantine_corrupt_browser_segments(
+    recording_id: int,
+    sequences: list[int],
+) -> list[int]:
+    """Retire staged segments whose finalize rescue transcode failed.
+
+    The corrupt payload is renamed to a durable ``{sequence}.corrupt``
+    tombstone (or the tombstone records the failure reason when the payload is
+    already gone) so subsequent finalize attempts treat the sequence as
+    intentionally skipped rather than pending or missing.
+    """
+    temp_dir = recordings_module.recording_upload_temp_dir(recording_id, create=False)
+    if not temp_dir.exists():
+        return []
+
+    quarantined: list[int] = []
+    for sequence in sequences:
+        marker_path = temp_dir / f"{sequence}{TRANSCODE_FAILED_SUFFIX}"
+        failure_reason = ""
+        if marker_path.exists():
+            try:
+                failure_reason = marker_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                failure_reason = ""
+
+        corrupt_path = temp_dir / f"{sequence}{SEGMENT_CORRUPT_SUFFIX}"
+        raw_path = None
+        for suffix in sorted(BROWSER_AUDIO_SEGMENT_SUFFIXES):
+            candidate = temp_dir / f"{sequence}{suffix}"
+            if candidate.exists():
+                raw_path = candidate
+                break
+
+        try:
+            if raw_path is not None:
+                os.replace(raw_path, corrupt_path)
+            elif not corrupt_path.exists():
+                corrupt_path.write_text(f"{failure_reason}\n", encoding="utf-8")
+            marker_path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.error(
+                "Failed to quarantine corrupt browser segment %s for recording %s: %s",
+                sequence,
+                recording_id,
+                exc,
+            )
+            continue
+
+        quarantined.append(sequence)
+        logger.warning(
+            "Skipping corrupt browser segment %s for recording %s during finalize; "
+            "the final audio will have a gap.",
+            sequence,
+            recording_id,
+        )
+        try:
+            recordings_module.record_pipeline_metric(
+                stage="segment_corrupt_skipped",
+                recording_id=recording_id,
+                payload={
+                    "sequence": sequence,
+                    "quarantined_path": str(corrupt_path),
+                    "error": failure_reason,
+                },
+                log=logger,
+            )
+        except Exception as exc:  # noqa: BLE001 -- boundary: metrics must not block finalize
+            logger.warning(
+                "Failed to record corrupt segment metric for recording %s segment %s: %s",
+                recording_id,
+                sequence,
+                exc,
+            )
+    return quarantined
+
+
+def _list_corrupt_browser_segment_sequences(recording_id: int) -> set[int]:
+    temp_dir = recordings_module.recording_upload_temp_dir(recording_id, create=False)
+    return list_recording_upload_sequences(
+        recording_id,
+        suffixes={SEGMENT_CORRUPT_SUFFIX},
+        temp_dir=temp_dir,
+    )
 
 
 async def _mark_recording_audio_chunks_ready_for_cleanup(
