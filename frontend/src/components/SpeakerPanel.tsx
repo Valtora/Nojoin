@@ -3,7 +3,6 @@
 import {
   RecordingSpeaker,
   RecordingId,
-  SpeakerNameSuggestion,
   TranscriptSegment,
   GlobalSpeaker,
 } from "@/types";
@@ -14,10 +13,8 @@ import {
   User,
   UserCheck,
   Loader2,
-  Check,
-  X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -34,7 +31,6 @@ import { useSpeakerPanelActions } from "./speakers/_hooks/useSpeakerPanelActions
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
-  speakerNameSuggestions?: SpeakerNameSuggestion[];
   segments: TranscriptSegment[];
   onPlaySegment: (time: number, end?: number) => void;
   recordingId: RecordingId;
@@ -51,7 +47,6 @@ interface SpeakerPanelProps {
 
 export default function SpeakerPanel({
   speakers,
-  speakerNameSuggestions = [],
   segments,
   onPlaySegment,
   recordingId,
@@ -128,18 +123,7 @@ export default function SpeakerPanel({
     setBatchVoiceprintResults,
     createVoiceprint: handleCreateVoiceprint,
     promoteToGlobal: handlePromoteToGlobal,
-    resolvingSuggestionId,
-    acceptSuggestion: handleAcceptSuggestion,
-    rejectSuggestion: handleRejectSuggestion,
   } = actions;
-
-  const pendingSuggestions = useMemo(
-    () =>
-      speakerNameSuggestions.filter(
-        (suggestion) => suggestion.status === "pending",
-      ),
-    [speakerNameSuggestions],
-  );
 
   const handleContextMenu = (
     e: React.MouseEvent,
@@ -220,9 +204,6 @@ export default function SpeakerPanel({
             }
 
             const entryLabelSet = new Set(entry.labels);
-            const entrySuggestions = pendingSuggestions.filter((suggestion) =>
-              entryLabelSet.has(suggestion.diarization_label),
-            );
             const isSpeakerActive = segments.some(
               (segment) =>
                 entryLabelSet.has(segment.speaker) &&
@@ -298,53 +279,6 @@ export default function SpeakerPanel({
                             </p>
                           )}
                         </>
-                      )}
-                      {entrySuggestions.length > 0 && (
-                        <div className="mt-2 space-y-2">
-                          {entrySuggestions.map((suggestion) => {
-                            const isResolving = resolvingSuggestionId === suggestion.id;
-
-                            return (
-                              <div
-                                key={suggestion.id}
-                                className="rounded-md border border-amber-200 bg-amber-50/80 px-2 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="font-semibold">
-                                      Suggestion: {suggestion.suggested_name}
-                                      {entrySuggestions.length > 1 && (
-                                        <span className="ml-1 text-[11px] font-normal opacity-80">
-                                          ({suggestion.diarization_label})
-                                        </span>
-                                      )}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                      onClick={() => handleAcceptSuggestion(suggestion)}
-                                      disabled={isResolving}
-                                    >
-                                      <Check className="h-3 w-3" />
-                                      Accept
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-[11px] font-medium text-amber-950 ring-1 ring-inset ring-amber-300 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-transparent dark:text-amber-100 dark:ring-amber-700 dark:hover:bg-amber-900/40"
-                                      onClick={() => handleRejectSuggestion(suggestion)}
-                                      disabled={isResolving}
-                                    >
-                                      <X className="h-3 w-3" />
-                                      Reject
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
                       )}
                     </div>
                   </div>

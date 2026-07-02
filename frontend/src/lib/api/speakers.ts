@@ -89,24 +89,6 @@ export const updateSpeakerColor = async (
   );
 };
 
-export const acceptSpeakerNameSuggestion = async (
-  recordingId: RecordingId,
-  diarizationLabel: string,
-): Promise<void> => {
-  await api.post(
-    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/accept`,
-  );
-};
-
-export const rejectSpeakerNameSuggestion = async (
-  recordingId: RecordingId,
-  diarizationLabel: string,
-): Promise<void> => {
-  await api.post(
-    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/reject`,
-  );
-};
-
 export const mergeRecordingSpeakers = async (
   recordingId: RecordingId,
   targetSpeakerLabel: string,

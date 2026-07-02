@@ -33,7 +33,6 @@ describe("api public surface", () => {
     expect(runtimeNames).toMatchInlineSnapshot(`
       [
         "API_BASE_URL",
-        "acceptSpeakerNameSuggestion",
         "addPersonalDictionaryWord",
         "addSpellcheckIgnoredWord",
         "addTagToRecording",
@@ -136,7 +135,6 @@ describe("api public surface", () => {
         "promoteToGlobalSpeaker",
         "recalibrateSpeaker",
         "registerUser",
-        "rejectSpeakerNameSuggestion",
         "removePersonalDictionaryWord",
         "removeSpellcheckIgnoredWord",
         "removeTagFromRecording",

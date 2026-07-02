@@ -50,6 +50,7 @@ interface ActiveRuntime {
   uploader: SegmentUploader;
   waveform: WaveformMonitor;
   displayTracksCleanup?: () => void;
+  mediaReleased?: boolean;
 }
 
 const sequenceToElapsedSeconds = (lastSequence: number) =>
@@ -150,6 +151,7 @@ export class CaptureController {
       pausedRecording: null,
       runtimeActive: false,
       settings: readCaptureSettings(),
+      finalizeRetry: null,
     };
 
     this.lifecycle = new CaptureLifecycle({
@@ -391,6 +393,9 @@ export class CaptureController {
 
     if (this.runtime && this.state.status === "paused") {
       const response = await resumeRecordingCapture(targetRecordingId);
+      // A stalled uploader (for example after a network outage) still holds
+      // the queued segments; recovering it retries them before new audio.
+      this.runtime.uploader.recover();
       this.runtime.recorder.resume();
       this.startElapsedTimer(this.state.elapsedSeconds);
       clearPausedCaptureContext();
@@ -500,17 +505,24 @@ export class CaptureController {
       throw new Error("No active recording is available to finalize.");
     }
 
-    this.setState({ status: "finalizing", error: null });
-    if (this.state.status === "paused") {
-      await resumeRecordingCapture(this.state.recordingId);
+    const recordingId = this.state.recordingId;
+    const wasPaused = this.state.status === "paused";
+    this.setState({ status: "finalizing", error: null, finalizeRetry: null });
+    if (wasPaused) {
+      await resumeRecordingCapture(recordingId);
     }
 
     try {
       if (this.runtime) {
         await this.runtime.recorder.stop({ emitTail: true });
+        this.runtime.uploader.recover();
         await this.runtime.uploader.waitForIdle();
+        // Every recorded segment is queued server-side at this point, so stop
+        // the microphone/tab capture now instead of keeping the tracks (and
+        // the browser recording indicator) live through the finalize retries.
+        await this.releaseRuntimeMedia();
       }
-      const recording = await this.finalizeRecordingWhenReady(this.state.recordingId);
+      const recording = await this.finalizeRecordingWhenReady(recordingId);
       clearPausedCaptureContext();
       await this.disposeRuntime();
       this.setState({
@@ -522,6 +534,7 @@ export class CaptureController {
         pausedRecording: null,
         runtimeActive: false,
         levels: DEFAULT_CAPTURE_LEVELS,
+        finalizeRetry: null,
       });
       await this.refreshPausedRecording().catch(() => {});
       this.lifecycle.updateRecordingId(null);
@@ -529,7 +542,7 @@ export class CaptureController {
 
     } catch (error: unknown) {
       const message = formatCaptureError(error);
-      this.setState({ status: "error", error: message });
+      this.setState({ status: "error", error: message, finalizeRetry: null });
       throw new Error(message);
     }
   };
@@ -590,8 +603,8 @@ export class CaptureController {
           ),
         });
       },
-      onFatal: async (error) => {
-        await this.handleUploaderFatal(options.recordingId, error);
+      onStalled: async (error) => {
+        await this.handleUploaderStalled(options.recordingId, error);
       },
     });
 
@@ -673,7 +686,7 @@ export class CaptureController {
     this.lifecycle.resetGuard();
   };
 
-  private handleUploaderFatal = async (
+  private handleUploaderStalled = async (
     recordingId: RecordingId,
     error: Error,
   ) => {
@@ -683,9 +696,16 @@ export class CaptureController {
       return;
     }
 
+    if (this.state.status === "finalizing") {
+      // stop() owns the stalled uploader here: it surfaces the failure and
+      // leaves the recording resumable, so do not pause underneath it.
+      return;
+    }
+
+    // The stalled uploader keeps its queued segments; pause capture so no
+    // further audio is recorded until the user resumes and uploads retry.
     try {
       await this.runtime.recorder.pause();
-      await this.runtime.uploader.waitForIdle();
       const response = await pauseRecordingCapture(recordingId);
       writePausedCaptureContext({
         recordingId,
@@ -712,24 +732,32 @@ export class CaptureController {
   };
 
   private finalizeRecordingWhenReady = async (recordingId: RecordingId) => {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await finalizeRecordingCapture(recordingId);
+    const maxAttempts = FINALIZE_RETRY_DELAYS_MS.length;
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await finalizeRecordingCapture(recordingId);
 
-      } catch (error: unknown) {
-        const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
-        const canRetry =
-          error instanceof AxiosError &&
-          error.response?.status === 409 &&
-          detail === FINALIZE_UPLOAD_IN_PROGRESS_DETAIL &&
-          attempt < FINALIZE_RETRY_DELAYS_MS.length;
+        } catch (error: unknown) {
+          const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
+          const canRetry =
+            error instanceof AxiosError &&
+            error.response?.status === 409 &&
+            detail === FINALIZE_UPLOAD_IN_PROGRESS_DETAIL &&
+            attempt < maxAttempts;
 
-        if (!canRetry) {
-          throw error;
+          if (!canRetry) {
+            throw error;
+          }
+
+          this.setState({
+            finalizeRetry: { attempt: attempt + 1, maxAttempts },
+          });
+          await wait(FINALIZE_RETRY_DELAYS_MS[attempt]);
         }
-
-        await wait(FINALIZE_RETRY_DELAYS_MS[attempt]);
       }
+    } finally {
+      this.setState({ finalizeRetry: null });
     }
   };
 
@@ -778,19 +806,31 @@ export class CaptureController {
     }
   };
 
+  private releaseRuntimeMedia = async () => {
+    const runtime = this.runtime;
+    if (!runtime || runtime.mediaReleased) {
+      return;
+    }
+
+    runtime.mediaReleased = true;
+    this.stopElapsedTimer();
+    runtime.waveform.stop();
+    runtime.displayTracksCleanup?.();
+    runtime.sources.release();
+    await runtime.mixer.dispose();
+    this.setState({ levels: DEFAULT_CAPTURE_LEVELS });
+  };
+
   private disposeRuntime = async () => {
     if (!this.runtime) {
       return;
     }
 
     const runtime = this.runtime;
-    this.runtime = null;
     this.stopElapsedTimer();
-    runtime.waveform.stop();
+    await this.releaseRuntimeMedia();
+    this.runtime = null;
     runtime.uploader.dispose();
-    runtime.displayTracksCleanup?.();
-    runtime.sources.release();
-    await runtime.mixer.dispose();
     this.setState({ levels: DEFAULT_CAPTURE_LEVELS, runtimeActive: false });
   };
 

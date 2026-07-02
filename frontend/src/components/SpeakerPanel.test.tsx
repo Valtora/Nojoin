@@ -22,8 +22,6 @@ vi.mock("@/lib/api", () => ({
   deleteRecordingSpeaker: (...a: unknown[]) => deleteRecordingSpeaker(...a),
   extractVoiceprint: vi.fn(),
   promoteToGlobalSpeaker: vi.fn(),
-  acceptSpeakerNameSuggestion: vi.fn(),
-  rejectSpeakerNameSuggestion: vi.fn(),
 }));
 
 // Capture the items handed to the context menu so the action set is testable

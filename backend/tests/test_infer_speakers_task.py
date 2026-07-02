@@ -330,7 +330,7 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
             ).one()
             speaker_rows = session.exec(
                 text(
-                    "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
+                    "SELECT diarization_label, local_name, name, identity_confidence, identity_locked FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
             raw_suggestions = session.exec(
@@ -347,14 +347,23 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
         assert row[0] == "PROCESSED"
         assert row[1] == "Completed"
         assert row[2] == 100
-        assert dict(speaker_rows) == {
-            "SPEAKER_00": "Speaker 1",
-            "SPEAKER_01": "Dana",
+        assert {
+            label: (local_name, name) for label, local_name, name, _, _ in speaker_rows
+        } == {
+            "SPEAKER_00": ("Alex", None),
+            "SPEAKER_01": (None, "Dana"),
         }
+        confidence_by_label = {
+            label: (identity_confidence, bool(identity_locked))
+            for label, _, _, identity_confidence, identity_locked in speaker_rows
+        }
+        # Auto-apply records the model confidence but never locks identity.
+        assert confidence_by_label["SPEAKER_00"] == (0.92, False)
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
-        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert "SPEAKER_00 - Hello team." in captured["transcript"]
         assert "SPEAKER_01 - The rollout is on Friday." in captured["transcript"]
         assert captured["user_notes"] == "Remember the launch date"
@@ -445,6 +454,8 @@ def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
         assert suggestions[0]["suggested_name"] == "Alex"
         assert suggestions[0]["source"] == "llm"
         assert suggestions[0]["provider"] == "openai"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
     finally:
         verification_engine.dispose()
 
@@ -664,7 +675,8 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
         assert suggestions[0]["source"] == "deterministic_rule"
-        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert suggestions[0]["evidence_spans"][0]["reason"] == "self_introduction"
     finally:
         verification_engine.dispose()
@@ -743,7 +755,7 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
         with Session(verification_engine) as session:
             speaker_rows = session.exec(
                 text(
-                    "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
+                    "SELECT diarization_label, local_name, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
             raw_suggestions = session.exec(
@@ -757,14 +769,101 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
                 else raw_suggestions
             )
 
-        assert dict(speaker_rows) == {
-            "SPEAKER_00": "Speaker 1",
-            "SPEAKER_01": "Dana",
+        assert {
+            label: (local_name, name) for label, local_name, name in speaker_rows
+        } == {
+            "SPEAKER_00": ("Alex", None),
+            "SPEAKER_01": (None, "Dana"),
         }
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
         assert "SPEAKER_00 - Canonical intro." in captured["transcript"]
         assert "SPEAKER_01 - Canonical rollout plan." in captured["transcript"]
+    finally:
+        verification_engine.dispose()
+
+
+def test_infer_speakers_task_skips_suggestion_persistence_for_legacy_recordings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_infer_speakers_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "openai",
+            "openai_api_key": "sk-openai-valid",
+            "openai_model": "gpt-test",
+        },
+    )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE recordings SET pipeline_generation = 'legacy_reprocess_required' WHERE id = 1"
+            )
+        )
+
+    class FakeLLM:
+        def infer_speaker_suggestions(
+            self,
+            transcript: str,
+            prompt_template: str | None = None,
+            timeout: int = 60,
+            user_notes: str | None = None,
+            meeting_context=None,
+            eligible_labels=None,
+        ) -> SpeakerInferenceResult:
+            return SpeakerInferenceResult(
+                (
+                    SpeakerInferenceSuggestion(
+                        diarization_label="SPEAKER_00",
+                        suggested_name="Alex",
+                        confidence=0.92,
+                        rationale="The speaker introduces themselves as Alex.",
+                        evidence_spans=(
+                            SpeakerSuggestionEvidenceSpan(
+                                quote="Hello team.",
+                                reason="self_introduction",
+                                start_seconds=0.0,
+                                end_seconds=1.5,
+                            ),
+                        ),
+                    ),
+                )
+            )
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            speaker_rows = session.exec(
+                text(
+                    "SELECT diarization_label, local_name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
+                )
+            ).all()
+            raw_suggestions = session.exec(
+                text(
+                    "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
+                )
+            ).one()[0]
+            suggestions = (
+                json.loads(raw_suggestions)
+                if isinstance(raw_suggestions, str)
+                else raw_suggestions
+            )
+
+        # Legacy recordings get neither applied names nor stranded pending
+        # suggestions now that the review flow is gone.
+        assert dict(speaker_rows) == {"SPEAKER_00": None, "SPEAKER_01": None}
+        assert suggestions in (None, [])
     finally:
         verification_engine.dispose()

@@ -43,6 +43,11 @@ export interface PausedCaptureContext {
   persistedAt: number;
 }
 
+export interface FinalizeRetryProgress {
+  attempt: number;
+  maxAttempts: number;
+}
+
 export interface CaptureState {
   status: CaptureStatus;
   support: CaptureSupport;
@@ -54,6 +59,7 @@ export interface CaptureState {
   pausedRecording: Recording | null;
   runtimeActive: boolean;
   settings: CaptureSettings;
+  finalizeRetry: FinalizeRetryProgress | null;
 }
 
 export interface StartCaptureResult {

@@ -665,6 +665,97 @@ def _build_persisted_speaker_name_suggestions(
     return persisted
 
 
+def _auto_apply_persisted_speaker_name_suggestions(
+    session,
+    *,
+    recording: Recording,
+    speakers: Sequence[RecordingSpeaker],
+    persisted: list[dict[str, object]],
+) -> int:
+    """Apply inferred speaker names immediately instead of holding them for review.
+
+    Mirrors the manual rename endpoint: an exact global speaker match links the
+    recording speaker to the global library entry (merging voiceprint
+    embeddings), otherwise the suggested name becomes the local name.
+    Successfully applied suggestions are mutated in place to status "accepted"
+    with resolution reason "auto_applied".
+    """
+    from datetime import UTC
+
+    from backend.processing.embedding import merge_embeddings
+    from backend.utils.canonical_pipeline import (
+        ensure_recording_speaker_aliases_for_speaker,
+    )
+    from backend.utils.speaker_name_suggestions import (
+        SPEAKER_SUGGESTION_STATUS_ACCEPTED,
+    )
+
+    bind = session.get_bind()
+    aliases_available = bind is not None and inspect(bind).has_table(
+        "recording_speaker_aliases"
+    )
+    speakers_by_id = {speaker.id: speaker for speaker in speakers}
+    timestamp = datetime.now(UTC).isoformat()
+    applied = 0
+    for suggestion in persisted:
+        suggested_name = str(suggestion.get("suggested_name") or "").strip()
+        speaker = speakers_by_id.get(suggestion.get("recording_speaker_id"))
+        if speaker is None or not suggested_name:
+            continue
+
+        raw_global_speaker_id = suggestion.get("suggested_global_speaker_id")
+        global_speaker = (
+            session.get(GlobalSpeaker, int(raw_global_speaker_id))
+            if raw_global_speaker_id is not None
+            else None
+        )
+        if global_speaker is not None:
+            speaker.global_speaker_id = global_speaker.id
+            speaker.local_name = None
+            if speaker.embedding:
+                if global_speaker.embedding:
+                    if not global_speaker.is_voiceprint_locked:
+                        global_speaker.embedding = merge_embeddings(
+                            global_speaker.embedding, speaker.embedding, alpha=0.3
+                        )
+                else:
+                    global_speaker.embedding = list(speaker.embedding)
+                session.add(global_speaker)
+        else:
+            speaker.local_name = suggested_name
+            speaker.global_speaker_id = None
+        speaker.name = None
+        # Record the model's confidence but leave identity_locked False:
+        # locking is reserved for human-confirmed identity, so auto-applied
+        # names stay overridable by future higher-authority signals.
+        raw_confidence = suggestion.get("confidence")
+        if isinstance(raw_confidence, (int, float)):
+            speaker.identity_confidence = float(raw_confidence)
+        # Keep canonical alias lookups consistent with the new name, matching
+        # update_recording_speaker_identity's behaviour after identity changes.
+        if aliases_available:
+            ensure_recording_speaker_aliases_for_speaker(session, speaker)
+        session.add(speaker)
+
+        suggestion["status"] = SPEAKER_SUGGESTION_STATUS_ACCEPTED
+        suggestion["updated_at"] = timestamp
+        suggestion["resolved_at"] = timestamp
+        suggestion["resolution_reason"] = "auto_applied"
+        applied += 1
+
+    if applied:
+        record_pipeline_metric(
+            stage="speaker_name_suggestions_auto_applied",
+            recording_id=recording.id,
+            payload={
+                "applied_count": applied,
+                "suggestion_count": len(persisted),
+            },
+            log=logger,
+        )
+    return applied
+
+
 def _persist_generated_speaker_name_suggestions_impl(
     session,
     *,
@@ -676,7 +767,20 @@ def _persist_generated_speaker_name_suggestions_impl(
     provider: str | None,
     replaced_reason: str,
 ) -> int:
+    from backend.models.recording import recording_supports_unified_mutations
+
     if not inference_result.suggestions:
+        return 0
+
+    # Single legacy gate: without unified mutations the names cannot be
+    # applied, and persisting pending suggestions would strand them forever
+    # now that the accept/reject review flow no longer exists.
+    if not recording_supports_unified_mutations(recording):
+        logger.info(
+            "Skipping speaker suggestion persistence for recording %s: "
+            "legacy recordings require reprocess before speaker mutations.",
+            recording.id,
+        )
         return 0
 
     persisted = _build_persisted_speaker_name_suggestions(
@@ -690,6 +794,14 @@ def _persist_generated_speaker_name_suggestions_impl(
     if not persisted:
         return 0
 
+    # Apply before persisting: persist_transcript_speaker_suggestions copies
+    # the dicts, so resolution fields must already be set on them.
+    _auto_apply_persisted_speaker_name_suggestions(
+        session,
+        recording=recording,
+        speakers=speakers,
+        persisted=persisted,
+    )
     persist_transcript_speaker_suggestions(
         transcript,
         persisted,
