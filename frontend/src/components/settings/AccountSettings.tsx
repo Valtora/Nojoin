@@ -7,6 +7,7 @@ import { Loader2, User, Lock } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 import CalendarConnectionsSettings from './CalendarConnectionsSettings';
+import ConnectedAppsSettings from './ConnectedAppsSettings';
 import SettingsCallout from './SettingsCallout';
 import SettingsField from './SettingsField';
 import SettingsSection from './SettingsSection';
@@ -110,7 +111,21 @@ export default function AccountSettings({
         'events',
       ]));
 
-  if (!showProfile && !showSecurity && !showCalendars && searchQuery) {
+  const showConnectedApps =
+    includeCalendarConnections &&
+    !forcePasswordChange &&
+    (!searchQuery ||
+      fuzzyMatch(searchQuery, [
+        'connected apps',
+        'connections',
+        'connector',
+        'mcp',
+        'claude',
+        'integrations',
+        'oauth',
+      ]));
+
+  if (!showProfile && !showSecurity && !showCalendars && !showConnectedApps && searchQuery) {
     return suppressNoMatch ? null : (
       <SettingsCallout
         tone="neutral"
@@ -247,6 +262,8 @@ export default function AccountSettings({
       )}
 
       {showCalendars && <CalendarConnectionsSettings />}
+
+      {showConnectedApps && <ConnectedAppsSettings />}
     </div>
   );
 }

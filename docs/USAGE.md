@@ -199,6 +199,10 @@ Nojoin can connect to Google Calendar and Microsoft Calendar when an administrat
 
 Calendar events can provide meeting context, dashboard agenda views, linked recording history, and Meeting Edge context. Read [CALENDAR.md](CALENDAR.md) before changing calendar provider settings or troubleshooting OAuth.
 
+## AI Assistant Connections (MCP)
+
+Nojoin includes a read-only MCP connector so AI assistants such as Claude can search your recordings and read transcripts, meeting notes, and tags on your behalf. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Personal → Connected Apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
+
 ## Settings
 
 Settings are grouped by task.

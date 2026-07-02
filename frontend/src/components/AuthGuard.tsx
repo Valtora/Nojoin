@@ -14,6 +14,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       const publicPaths = ['/login', '/setup', '/register'];
+      // Neutral paths are reachable signed-in or signed-out. The OAuth
+      // consent page renders its own inline sign-in so the authorization
+      // parameters survive instead of being lost on a /login redirect.
+      const neutralPaths = ['/oauth/authorize'];
+      const isNeutralPath = neutralPaths.some(p => pathname?.startsWith(p));
 
       let currentUser = null;
       try {
@@ -23,6 +28,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         currentUser = null;
         if (
           !publicPaths.some(p => pathname?.startsWith(p)) &&
+          !isNeutralPath &&
           getErrorStatus(e) !== 401
         ) {
           console.error("Failed to validate current user", e);
@@ -30,7 +36,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (!currentUser && !publicPaths.some(p => pathname?.startsWith(p))) {
+      if (
+        !currentUser &&
+        !publicPaths.some(p => pathname?.startsWith(p)) &&
+        !isNeutralPath
+      ) {
         router.push('/login');
         return;
       }

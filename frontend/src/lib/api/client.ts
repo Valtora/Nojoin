@@ -88,7 +88,10 @@ api.interceptors.response.use(
         typeof window !== "undefined" &&
         !window.location.pathname.includes("/login") &&
         !window.location.pathname.includes("/setup") &&
-        !window.location.pathname.includes("/register")
+        !window.location.pathname.includes("/register") &&
+        // The OAuth consent page handles its own inline sign-in; a redirect
+        // here would discard the client's authorization parameters.
+        !window.location.pathname.startsWith("/oauth/authorize")
       ) {
         window.location.href = "/login";
       }

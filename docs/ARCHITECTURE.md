@@ -222,6 +222,7 @@ Nojoin uses different auth shapes for different clients:
 
 - **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
 - **Non-browser API clients**: Explicit bearer tokens.
+- **MCP connector clients**: OAuth 2.1 bearer tokens (token type `mcp`) minted by Nojoin's built-in authorization server. These tokens authenticate only the read-only `/mcp` endpoint, never the general API, and are contained by the same `token_version` and denylist machinery as sessions. See [MCP.md](MCP.md).
 - **Browser recording operations**: Session-authenticated init, segment, pause, resume, discard, and finalize calls owned by the current user.
 - **Legacy native-helper routes**: Retired routes return structured `410 Gone` responses that point operators to [CAPTURE.md](CAPTURE.md).
 
