@@ -327,15 +327,20 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
             names_by_label = {
                 speaker.diarization_label: speaker.name for speaker in speakers
             }
+            local_names_by_label = {
+                speaker.diarization_label: speaker.local_name for speaker in speakers
+            }
             suggestions = transcript.speaker_name_suggestions
 
         assert result is not None
-        assert names_by_label["SPEAKER_00"] == "Speaker 1"
+        assert local_names_by_label["SPEAKER_00"] == "Alex"
+        assert names_by_label["SPEAKER_00"] is None
         assert names_by_label["SPEAKER_01"] == "Dana"
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
-        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
         assert recording.status == "PROCESSED"

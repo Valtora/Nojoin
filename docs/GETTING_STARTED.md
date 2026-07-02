@@ -89,7 +89,7 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 6. Stop the recording when finished.
 7. Open the recording in the `/recordings` workspace.
 8. Wait for transcription and diarisation to complete.
-9. If AI is configured, Nojoin then runs one automatic meeting-intelligence pass that can apply unresolved speaker suggestions, a meeting title, and Markdown meeting notes.
+9. If AI is configured, Nojoin then runs one automatic meeting-intelligence pass that can name unresolved speakers, set a meeting title, and write Markdown meeting notes. Inferred speaker names are applied automatically; you can rename any speaker afterwards.
 10. If AI is not configured, the meeting still completes normally and remains available for transcript review. You can configure AI later before using Generate Notes, meeting chat, or Retry Speaker Inference.
 
 ## 6. Recommended Next Steps

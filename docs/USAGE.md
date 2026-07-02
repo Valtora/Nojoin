@@ -181,7 +181,7 @@ Nojoin maintains a global speaker library across recordings.
 
 Common workflows include linking an unknown in-recording speaker to an existing global speaker, promoting a recording speaker into the People library, creating or updating voiceprints, recalibrating voiceprints from better samples, and merging duplicate speakers.
 
-Voiceprint-backed speaker suggestions can appear during final processing and manual retry flows. Manual speaker edits are authoritative.
+Inferred speaker names from final processing and manual retry flows are applied automatically to speakers that do not already have a trusted name. Manual speaker edits are authoritative: renaming, merging, promoting, or deleting a speaker always overrides inferred names, and speakers you have already named are never renamed by inference.
 
 ## Notes, Chat, Documents, And Search
 

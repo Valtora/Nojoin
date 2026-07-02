@@ -330,7 +330,7 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
             ).one()
             speaker_rows = session.exec(
                 text(
-                    "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
+                    "SELECT diarization_label, local_name, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
             raw_suggestions = session.exec(
@@ -347,14 +347,17 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
         assert row[0] == "PROCESSED"
         assert row[1] == "Completed"
         assert row[2] == 100
-        assert dict(speaker_rows) == {
-            "SPEAKER_00": "Speaker 1",
-            "SPEAKER_01": "Dana",
+        assert {
+            label: (local_name, name) for label, local_name, name in speaker_rows
+        } == {
+            "SPEAKER_00": ("Alex", None),
+            "SPEAKER_01": (None, "Dana"),
         }
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
-        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert "SPEAKER_00 - Hello team." in captured["transcript"]
         assert "SPEAKER_01 - The rollout is on Friday." in captured["transcript"]
         assert captured["user_notes"] == "Remember the launch date"
@@ -445,6 +448,8 @@ def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
         assert suggestions[0]["suggested_name"] == "Alex"
         assert suggestions[0]["source"] == "llm"
         assert suggestions[0]["provider"] == "openai"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
     finally:
         verification_engine.dispose()
 
@@ -664,7 +669,8 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
         assert suggestions[0]["source"] == "deterministic_rule"
-        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert suggestions[0]["evidence_spans"][0]["reason"] == "self_introduction"
     finally:
         verification_engine.dispose()
@@ -743,7 +749,7 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
         with Session(verification_engine) as session:
             speaker_rows = session.exec(
                 text(
-                    "SELECT diarization_label, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
+                    "SELECT diarization_label, local_name, name FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
             raw_suggestions = session.exec(
@@ -757,9 +763,11 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
                 else raw_suggestions
             )
 
-        assert dict(speaker_rows) == {
-            "SPEAKER_00": "Speaker 1",
-            "SPEAKER_01": "Dana",
+        assert {
+            label: (local_name, name) for label, local_name, name in speaker_rows
+        } == {
+            "SPEAKER_00": ("Alex", None),
+            "SPEAKER_01": (None, "Dana"),
         }
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"

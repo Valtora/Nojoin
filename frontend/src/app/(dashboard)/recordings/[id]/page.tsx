@@ -239,9 +239,6 @@ export default function RecordingPage({ params }: PageProps) {
                 <Panel defaultSize={100 - compactChatPanelHeight} minSize={20}>
                   <SpeakerPanel
                     speakers={recording.speakers || []}
-                    speakerNameSuggestions={
-                      recording.transcript?.speaker_name_suggestions || []
-                    }
                     segments={transcriptSegments}
                     onPlaySegment={handlePlaySegment}
                     recordingId={recording.id}

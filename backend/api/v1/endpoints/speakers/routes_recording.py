@@ -27,9 +27,6 @@ from backend.utils.canonical_pipeline import (
     update_recording_speaker_identity,
 )
 from backend.utils.speaker_name_suggestions import (
-    SPEAKER_SUGGESTION_STATUS_ACCEPTED,
-    SPEAKER_SUGGESTION_STATUS_REJECTED,
-    resolve_pending_transcript_speaker_suggestion,
     supersede_pending_transcript_speaker_suggestions,
 )
 
@@ -297,119 +294,6 @@ async def update_recording_speaker(
         recording_speakers,
         recording_public_id=recording.public_id,
     )
-
-
-@router.post(
-    "/recordings/{recording_id}/speakers/{diarization_label}/suggestions/accept",
-    response_model=dict,
-)
-async def accept_recording_speaker_suggestion(
-    recording_id: str,
-    diarization_label: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
-    transcript = (
-        await db.execute(
-            select(Transcript).where(Transcript.recording_id == recording.id)
-        )
-    ).scalar_one_or_none()
-    if transcript is None:
-        raise HTTPException(status_code=404, detail="Transcript not found")
-
-    suggestion = resolve_pending_transcript_speaker_suggestion(
-        transcript,
-        diarization_label=diarization_label,
-        resolution=SPEAKER_SUGGESTION_STATUS_ACCEPTED,
-        actor_user_id=current_user.id,
-        reason="accepted_by_user",
-    )
-    if suggestion is None:
-        raise HTTPException(
-            status_code=404, detail="Pending speaker suggestion not found"
-        )
-
-    flag_modified(transcript, "speaker_name_suggestions")
-    db.add(transcript)
-
-    await update_recording_speaker(
-        recording_id,
-        SpeakerUpdate(
-            diarization_label=diarization_label,
-            global_speaker_name=str(suggestion.get("suggested_name", "")).strip(),
-        ),
-        db,
-        current_user,
-    )
-
-    speakers_module.record_pipeline_metric(
-        stage="speaker_name_suggestion_resolved",
-        recording_id=recording.id,
-        payload={
-            "diarization_label": diarization_label,
-            "resolution": SPEAKER_SUGGESTION_STATUS_ACCEPTED,
-            "suggested_name": suggestion.get("suggested_name"),
-            "origin": suggestion.get("origin"),
-            "source": suggestion.get("source"),
-            "provider": suggestion.get("provider"),
-        },
-        log=logger,
-    )
-    return {"ok": True}
-
-
-@router.post(
-    "/recordings/{recording_id}/speakers/{diarization_label}/suggestions/reject",
-    response_model=dict,
-)
-async def reject_recording_speaker_suggestion(
-    recording_id: str,
-    diarization_label: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-    _require_recording_speaker_mutations_supported(recording)
-    transcript = (
-        await db.execute(
-            select(Transcript).where(Transcript.recording_id == recording.id)
-        )
-    ).scalar_one_or_none()
-    if transcript is None:
-        raise HTTPException(status_code=404, detail="Transcript not found")
-
-    suggestion = resolve_pending_transcript_speaker_suggestion(
-        transcript,
-        diarization_label=diarization_label,
-        resolution=SPEAKER_SUGGESTION_STATUS_REJECTED,
-        actor_user_id=current_user.id,
-        reason="rejected_by_user",
-    )
-    if suggestion is None:
-        raise HTTPException(
-            status_code=404, detail="Pending speaker suggestion not found"
-        )
-
-    flag_modified(transcript, "speaker_name_suggestions")
-    db.add(transcript)
-    await db.commit()
-
-    speakers_module.record_pipeline_metric(
-        stage="speaker_name_suggestion_resolved",
-        recording_id=recording.id,
-        payload={
-            "diarization_label": diarization_label,
-            "resolution": SPEAKER_SUGGESTION_STATUS_REJECTED,
-            "suggested_name": suggestion.get("suggested_name"),
-            "origin": suggestion.get("origin"),
-            "source": suggestion.get("source"),
-            "provider": suggestion.get("provider"),
-        },
-        log=logger,
-    )
-    return {"ok": True}
 
 
 @router.post(
