@@ -1,9 +1,12 @@
 """Shared chat-prompt assembly for the LLM backends.
 
 Kept out of ``llm_services`` so the large stable context (meeting notes plus the
-full diarized transcript) is defined once and laid out cache-first: providers
-that support prompt caching reuse the leading context across turns, while the
-volatile user question is always sent last.
+full diarized transcript) is defined once. It is laid out cache-first: the
+context is sent via the provider's system field (Anthropic ``system=`` with a
+cache breakpoint, or a leading OpenAI ``system`` message) so it forms a reusable
+prefix across turns, while the volatile user question is always the last message.
+Sending it out of band (rather than as a leading ``user`` message) keeps
+user/assistant role alternation clean.
 """
 
 from __future__ import annotations
@@ -37,25 +40,22 @@ def build_chat_prompt(
     )
 
 
+def anthropic_cached_system(context: str) -> list[dict[str, Any]]:
+    """Anthropic ``system`` blocks with a cache breakpoint on the stable context."""
+    return [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}]
+
+
 def build_chat_messages(
-    meeting_notes: str,
-    diarized_transcript: str,
     user_question: str,
     conversation_history: Optional[list] = None,
-    *,
-    cache_context: bool = False,
 ) -> list[dict[str, Any]]:
-    """Assemble chat messages cache-first: the stable context leads (optionally
-    marked with Anthropic ``cache_control``), then prior turns, then the volatile
-    question last. History role ``model`` is normalised to ``assistant``.
+    """Conversation turns for a chat request: prior history followed by the
+    volatile question last. The Gemini-style ``model`` history role is normalised
+    to ``assistant``. The stable meeting context is NOT included here — callers
+    send it via the provider's system field (see the module docstring) so it
+    caches without disturbing user/assistant role alternation.
     """
-    context = build_chat_context(meeting_notes, diarized_transcript)
-    context_content: Any = (
-        [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}]
-        if cache_context
-        else context
-    )
-    messages: list[dict[str, Any]] = [{"role": "user", "content": context_content}]
+    messages: list[dict[str, Any]] = []
     for msg in conversation_history or []:
         if msg.get("role") and msg.get("parts"):
             role = "assistant" if msg["role"] == "model" else msg["role"]

@@ -25,6 +25,13 @@ MEETING_EDGE_CONTEXT_GUIDANCE = {
     5: "Detailed (Least Complex). Be generous with clarifications for non-trivial technical, domain-specific, or abbreviated terms, while still avoiding obvious plain-language words.",
 }
 
+# Heading that separates the stable instruction prefix from the volatile
+# per-refresh context in the Meeting Edge prompt. It appears verbatim in
+# DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE below and is the split point used by
+# build_meeting_edge_prompt_parts for prompt caching. A test keeps the two in
+# sync so a heading rename can't silently disable caching.
+MEETING_EDGE_CACHE_SPLIT_MARKER = "# Earlier Context Summary"
+
 DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE = """You are Meeting Edge, a live meeting assistant.
 
 Your task is to produce concise, high-signal, real-time guidance that helps the user participate more effectively in the current meeting.
@@ -229,8 +236,7 @@ def build_meeting_edge_prompt_parts(
     custom template), which callers treat as "do not cache".
     """
     full_prompt = build_meeting_edge_prompt(request, prompt_template)
-    marker = "# Earlier Context Summary"
-    boundary = full_prompt.find(marker)
+    boundary = full_prompt.find(MEETING_EDGE_CACHE_SPLIT_MARKER)
     if boundary <= 0:
         return "", full_prompt
     return full_prompt[:boundary], full_prompt[boundary:]

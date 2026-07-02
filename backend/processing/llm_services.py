@@ -3,7 +3,12 @@ import logging
 import re
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
-from backend.utils.chat_prompt import build_chat_messages, build_chat_prompt
+from backend.utils.chat_prompt import (
+    anthropic_cached_system,
+    build_chat_context,
+    build_chat_messages,
+    build_chat_prompt,
+)
 from backend.utils.config_manager import config_manager
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import (
@@ -1318,11 +1323,12 @@ class OpenAILLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        messages = build_chat_messages(
-            meeting_notes,
-            diarized_transcript,
-            user_question,
-            conversation_history,
+        # Lead with the stable meeting context as a system message so OpenAI's
+        # automatic prefix caching can reuse it across turns; the volatile
+        # question is sent last.
+        context = build_chat_context(meeting_notes, diarized_transcript)
+        messages = [{"role": "system", "content": context}] + build_chat_messages(
+            user_question, conversation_history
         )
         if not self.model:
             raise ValueError(
@@ -1356,11 +1362,12 @@ class OpenAILLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        messages = build_chat_messages(
-            meeting_notes,
-            diarized_transcript,
-            user_question,
-            conversation_history,
+        # Lead with the stable meeting context as a system message so OpenAI's
+        # automatic prefix caching can reuse it across turns; the volatile
+        # question is sent last.
+        context = build_chat_context(meeting_notes, diarized_transcript)
+        messages = [{"role": "system", "content": context}] + build_chat_messages(
+            user_question, conversation_history
         )
 
         tools = [
@@ -1740,13 +1747,11 @@ class AnthropicLLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        messages = build_chat_messages(
-            meeting_notes,
-            diarized_transcript,
-            user_question,
-            conversation_history,
-            cache_context=True,
-        )
+        # Put the stable meeting context in the cached system prompt (render order
+        # is tools -> system -> messages), so it is reused across turns while the
+        # messages array carries only the volatile history and question.
+        context = build_chat_context(meeting_notes, diarized_transcript)
+        messages = build_chat_messages(user_question, conversation_history)
         if not self.model:
             raise ValueError(
                 "No Anthropic model configured. Please select a model in Settings."
@@ -1755,6 +1760,7 @@ class AnthropicLLMBackend(LLMBackend):
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
+                system=anthropic_cached_system(context),
                 messages=messages,
                 temperature=0.2,
             )
@@ -1779,13 +1785,11 @@ class AnthropicLLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        messages = build_chat_messages(
-            meeting_notes,
-            diarized_transcript,
-            user_question,
-            conversation_history,
-            cache_context=True,
-        )
+        # Put the stable meeting context in the cached system prompt (render order
+        # is tools -> system -> messages), so it is reused across turns while the
+        # messages array carries only the volatile history and question.
+        context = build_chat_context(meeting_notes, diarized_transcript)
+        messages = build_chat_messages(user_question, conversation_history)
 
         tool_definition = {
             "name": "update_meeting_notes",
@@ -1806,6 +1810,7 @@ class AnthropicLLMBackend(LLMBackend):
             with self.client.messages.stream(
                 model=self.model,
                 max_tokens=1024,
+                system=anthropic_cached_system(context),
                 messages=messages,
                 temperature=0.2,
                 tools=[tool_definition],
