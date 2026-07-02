@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
@@ -16,6 +18,10 @@ from backend.models.calendar import (
     CalendarSourceColourUpdate,
 )
 from backend.models.user import User
+from backend.services.calendar_push_service import (
+    handle_google_notification,
+    handle_microsoft_notification,
+)
 from backend.services.calendar_service import (
     _build_account_redirect,
     disconnect_connection,
@@ -30,6 +36,8 @@ from backend.services.calendar_service import (
     update_provider_configuration,
 )
 from backend.utils.rate_limit import enforce_rate_limit
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -229,6 +237,75 @@ async def delete_calendar_connection(
     return CalendarActionResponse(success=True, detail="Calendar connection removed")
 
 
+@router.post("/webhooks/google", include_in_schema=False)
+async def google_calendar_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Receive Google Calendar push notifications.
+
+    Called by Google, not by an authenticated user, so this endpoint has no user
+    auth. Notifications are authenticated by the per-channel token; the payload
+    is treated only as a change signal that enqueues an incremental sync.
+    """
+    await enforce_rate_limit(
+        request,
+        namespace="calendar-webhook-google",
+        limit=300,
+        window_seconds=60,
+        detail="Too many calendar webhook requests.",
+    )
+    try:
+        await handle_google_notification(
+            db,
+            channel_id=request.headers.get("X-Goog-Channel-ID"),
+            channel_token=request.headers.get("X-Goog-Channel-Token"),
+            resource_state=request.headers.get("X-Goog-Resource-State"),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to process Google calendar webhook", exc_info=True)
+    # Always acknowledge so Google does not mark the channel as failing.
+    return Response(status_code=200)
+
+
+@router.post("/webhooks/microsoft", include_in_schema=False)
+async def microsoft_calendar_webhook(
+    request: Request,
+    validationToken: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Receive Microsoft Graph change notifications.
+
+    Graph validates the subscription by calling this endpoint with a
+    ``validationToken`` query parameter that must be echoed back as text/plain
+    within 10 seconds. Otherwise the body carries notifications, authenticated
+    per-subscription by ``clientState``.
+    """
+    if validationToken is not None:
+        return PlainTextResponse(validationToken, status_code=200)
+
+    await enforce_rate_limit(
+        request,
+        namespace="calendar-webhook-microsoft",
+        limit=300,
+        window_seconds=60,
+        detail="Too many calendar webhook requests.",
+    )
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001
+        payload = None
+    if payload is not None:
+        try:
+            await handle_microsoft_notification(db, payload)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to process Microsoft calendar webhook", exc_info=True
+            )
+    # 202 Accepted is the expected response for Graph change notifications.
+    return Response(status_code=202)
+
+
 @router.get("/admin/providers", response_model=list[CalendarProviderStatusRead])
 async def get_calendar_provider_statuses(
     _: User = Depends(get_current_admin_user),
@@ -253,4 +330,5 @@ async def save_calendar_provider_configuration(
         tenant_id=payload.tenant_id,
         enabled=payload.enabled,
         clear_client_secret=payload.clear_client_secret,
+        push_enabled=payload.push_enabled,
     )

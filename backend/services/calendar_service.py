@@ -11,13 +11,13 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from http import HTTPStatus
 from typing import Any, Iterable
 from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 import redis.asyncio as redis
 import sqlalchemy as sa
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import delete, select
@@ -39,6 +39,8 @@ from backend.models.calendar import (
     CalendarProviderAvailabilityRead,
     CalendarProviderConfig,
     CalendarProviderStatusRead,
+    CalendarPushChannel,
+    CalendarPushChannelStatus,
     CalendarSelectionUpdate,
     CalendarSource,
     CalendarSourceColourUpdate,
@@ -58,6 +60,14 @@ from backend.utils.timezones import (
     utc_naive_to_aware,
     utc_naive_to_timezone,
 )
+
+# HTTPException is raised only from this module's API-facing helpers, never from
+# the sync/reconcile path the Celery worker runs. The worker image ships no web
+# framework, so import it lazily and tolerate its absence there.
+try:
+    from fastapi import HTTPException
+except ModuleNotFoundError:  # pragma: no cover - worker image has no fastapi
+    HTTPException = None  # type: ignore[assignment, misc]
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +176,7 @@ class ProviderRuntimeConfig:
     tenant_id: str | None
     enabled: bool
     source: str
+    push_enabled: bool = False
 
     @property
     def configured(self) -> bool:
@@ -520,6 +531,31 @@ def _build_redirect_uri(provider: str) -> str:
     return f"{get_trusted_web_origin()}/api/v1/calendar/oauth/{provider}/callback"
 
 
+def _build_push_notification_url(provider: str) -> str:
+    return f"{get_trusted_web_origin()}/api/v1/calendar/webhooks/{provider}"
+
+
+def _enqueue_push_channel_refresh(connection_id: int) -> None:
+    """Best-effort background provisioning/renewal of push channels.
+
+    Runs in the worker so API paths (connect, calendar selection) stay fast and
+    are not coupled to the provider's synchronous webhook validation.
+    """
+    try:
+        from backend.celery_app import celery_app
+
+        celery_app.send_task(
+            "backend.worker.tasks.ensure_calendar_push_channels_task",
+            args=[connection_id],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Could not enqueue calendar push refresh for connection %s: %s",
+            connection_id,
+            exc,
+        )
+
+
 def _build_account_redirect(status_value: str, provider: str) -> str:
     provider_redirects = ACCOUNT_REDIRECT_PATHS.get(provider)
     if provider_redirects is None:
@@ -682,6 +718,7 @@ async def get_provider_runtime_config(
                 tenant_id=row.tenant_id or env_tenant_id or MICROSOFT_COMMON_TENANT,
                 enabled=False,
                 source="database",
+                push_enabled=bool(row.push_enabled),
             )
 
         uses_database_values = any(
@@ -696,6 +733,7 @@ async def get_provider_runtime_config(
             source="database"
             if uses_database_values
             else ("environment" if env_client_id or env_client_secret else "none"),
+            push_enabled=bool(row.push_enabled),
         )
 
     return ProviderRuntimeConfig(
@@ -725,6 +763,8 @@ async def list_provider_statuses(db: AsyncSession) -> list[CalendarProviderStatu
                 if provider == CalendarProvider.MICROSOFT.value
                 else None,
                 has_client_secret=bool(runtime_config.client_secret),
+                push_enabled=runtime_config.push_enabled,
+                push_notification_url=_build_push_notification_url(provider),
             )
         )
     return statuses
@@ -749,6 +789,7 @@ async def update_provider_configuration(
     tenant_id: str | None,
     enabled: bool | None,
     clear_client_secret: bool,
+    push_enabled: bool | None = None,
 ) -> CalendarProviderStatusRead:
     statement = select(CalendarProviderConfig).where(
         CalendarProviderConfig.provider == provider
@@ -761,6 +802,8 @@ async def update_provider_configuration(
         row.client_id = client_id.strip() or None
     if enabled is not None:
         row.enabled = enabled
+    if push_enabled is not None:
+        row.push_enabled = push_enabled
     if provider == CalendarProvider.MICROSOFT.value and tenant_id is not None:
         row.tenant_id = tenant_id.strip() or MICROSOFT_COMMON_TENANT
     if provider == CalendarProvider.GOOGLE.value:
@@ -777,6 +820,23 @@ async def update_provider_configuration(
     db.add(row)
     await db.commit()
 
+    # A push toggle change should take effect promptly rather than waiting for
+    # the periodic renewal task: enabling provisions channels for existing
+    # connections, disabling tears them down. Best-effort; the periodic task is
+    # the backstop if the queue is unavailable.
+    if push_enabled is not None:
+        try:
+            from backend.celery_app import celery_app
+
+            celery_app.send_task(
+                "backend.worker.tasks.renew_calendar_push_channels_task"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Could not enqueue calendar push reconcile after provider update: %s",
+                exc,
+            )
+
     refreshed = await list_provider_statuses(db)
     return next(
         status_item for status_item in refreshed if status_item.provider == provider
@@ -787,7 +847,7 @@ async def start_authorisation(db: AsyncSession, provider: str, user: User) -> st
     runtime_config = await get_provider_runtime_config(db, provider)
     if not runtime_config.configured:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=HTTPStatus.BAD_REQUEST,
             detail=f"{PROVIDER_DISPLAY_NAMES[provider]} calendar integration is not configured",
         )
 
@@ -1148,7 +1208,7 @@ async def _sync_google_events(
                     page_token=next_page_token,
                 ),
             )
-            if sync_cursor and response.status_code == status.HTTP_410_GONE:
+            if sync_cursor and response.status_code == HTTPStatus.GONE:
                 raise IncrementalSyncResetRequired("Google sync token expired")
             response.raise_for_status()
             payload = response.json()
@@ -1360,8 +1420,8 @@ async def _sync_microsoft_events(
         while next_url:
             response = await client.get(next_url, headers=headers)
             if sync_cursor and response.status_code in {
-                status.HTTP_404_NOT_FOUND,
-                status.HTTP_410_GONE,
+                HTTPStatus.NOT_FOUND,
+                HTTPStatus.GONE,
             }:
                 raise IncrementalSyncResetRequired("Microsoft delta cursor expired")
             response.raise_for_status()
@@ -1658,7 +1718,9 @@ def _serialise_source(calendar: CalendarSource) -> CalendarSourceRead:
     )
 
 
-def _serialise_connection(connection: CalendarConnection) -> CalendarConnectionRead:
+def _serialise_connection(
+    connection: CalendarConnection, *, push_active: bool = False
+) -> CalendarConnectionRead:
     calendars = sorted(
         connection.calendars,
         key=lambda item: (not item.is_primary, item.name.lower()),
@@ -1676,7 +1738,39 @@ def _serialise_connection(connection: CalendarConnection) -> CalendarConnectionR
         selected_calendar_count=sum(
             1 for calendar in calendars if calendar.is_selected
         ),
+        push_active=push_active,
         calendars=[_serialise_source(calendar) for calendar in calendars],
+    )
+
+
+async def _active_push_connection_ids(
+    db: AsyncSession, connection_ids: list[int]
+) -> set[int]:
+    """Connection ids with at least one live (active, unexpired) push channel."""
+    if not connection_ids:
+        return set()
+    now = _utc_now()
+    statement = (
+        select(CalendarPushChannel.connection_id)
+        .where(
+            CalendarPushChannel.connection_id.in_(connection_ids),
+            CalendarPushChannel.status == CalendarPushChannelStatus.ACTIVE.value,
+            sa.or_(
+                CalendarPushChannel.expiration.is_(None),
+                CalendarPushChannel.expiration > now,
+            ),
+        )
+        .distinct()
+    )
+    return set((await db.execute(statement)).scalars().all())
+
+
+async def _serialise_connection_with_push(
+    db: AsyncSession, connection: CalendarConnection
+) -> CalendarConnectionRead:
+    active_push_ids = await _active_push_connection_ids(db, [connection.id])
+    return _serialise_connection(
+        connection, push_active=connection.id in active_push_ids
     )
 
 
@@ -1692,12 +1786,20 @@ async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
         )
     )
     connections = list((await db.execute(statement)).scalars().unique().all())
+    active_push_ids = await _active_push_connection_ids(
+        db, [connection.id for connection in connections]
+    )
     return CalendarOverviewRead(
         providers=[
             _serialise_provider_availability(provider_status)
             for provider_status in providers
         ],
-        connections=[_serialise_connection(connection) for connection in connections],
+        connections=[
+            _serialise_connection(
+                connection, push_active=connection.id in active_push_ids
+            )
+            for connection in connections
+        ],
     )
 
 
@@ -1753,6 +1855,7 @@ async def handle_callback(
             provider,
         )
     await db.refresh(connection)
+    _enqueue_push_channel_refresh(connection.id)
     return connection
 
 
@@ -1788,6 +1891,9 @@ async def update_connection_selection(
 
     if selected_ids:
         await sync_connection_in_session(db, connection.id)
+    # Reconcile push channels: provision for newly selected calendars, stop for
+    # deselected ones (including when the selection is now empty).
+    _enqueue_push_channel_refresh(connection.id)
 
     refreshed = (
         (
@@ -1806,7 +1912,7 @@ async def update_connection_selection(
             status_code=409,
             detail="Calendar connection was reset because its stored tokens could not be read. Reconnect the calendar account.",
         )
-    return _serialise_connection(refreshed)
+    return await _serialise_connection_with_push(db, refreshed)
 
 
 async def update_calendar_source_colour(
@@ -1851,7 +1957,7 @@ async def update_calendar_source_colour(
         .unique()
         .one()
     )
-    return _serialise_connection(refreshed)
+    return await _serialise_connection_with_push(db, refreshed)
 
 
 async def disconnect_connection(
@@ -1864,6 +1970,22 @@ async def disconnect_connection(
     connection = (await db.execute(statement)).scalar_one_or_none()
     if connection is None:
         raise HTTPException(status_code=404, detail="Calendar connection not found")
+
+    # Stop provider-side push subscriptions while we still hold valid tokens.
+    # The channel rows themselves cascade-delete with the connection.
+    from backend.services.calendar_push_service import (
+        teardown_push_channels_for_connection,
+    )
+
+    try:
+        await teardown_push_channels_for_connection(db, connection)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to stop push channels for connection %s during disconnect: %s",
+            connection.id,
+            exc,
+        )
+
     await db.delete(connection)
     await db.commit()
 
@@ -1902,7 +2024,7 @@ async def refresh_connection_now(
             status_code=409,
             detail="Calendar connection was reset because its stored tokens could not be read. Reconnect the calendar account.",
         )
-    return _serialise_connection(refreshed)
+    return await _serialise_connection_with_push(db, refreshed)
 
 
 async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> None:
@@ -2097,6 +2219,13 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
 async def sync_connection_by_id(connection_id: int) -> None:
     async with async_session_maker() as db:
         await sync_connection_in_session(db, connection_id)
+    # Keep push channels in step with the sync (background worker context only).
+    # Best-effort: never let push provisioning failures affect the sync result.
+    from backend.services.calendar_push_service import (
+        ensure_push_channels_for_connection,
+    )
+
+    await ensure_push_channels_for_connection(connection_id)
 
 
 async def sync_all_connections() -> int:

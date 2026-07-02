@@ -31,6 +31,12 @@ class CalendarSyncStatus(str, Enum):
     REAUTHORISATION_REQUIRED = "reauthorisation_required"
 
 
+class CalendarPushChannelStatus(str, Enum):
+    ACTIVE = "active"
+    FAILED = "failed"
+    STOPPED = "stopped"
+
+
 class CalendarDashboardState(str, Enum):
     READY = "ready"
     PROVIDER_NOT_CONFIGURED = "provider_not_configured"
@@ -56,6 +62,13 @@ class CalendarProviderConfig(BaseDBModel, table=True):
         default=None, sa_column=Column(String(255), nullable=True)
     )
     enabled: bool = Field(default=True, nullable=False)
+    # Per-provider opt-in for push (webhook) notifications. Left off by default
+    # because it requires the instance to be publicly reachable over HTTPS and,
+    # for Google, a verified callback domain in Google Cloud.
+    push_enabled: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default=sa.text("false")),
+    )
 
 
 class CalendarConnection(BaseDBModel, table=True):
@@ -240,6 +253,71 @@ class CalendarEvent(BaseDBModel, table=True):
     calendar: Optional[CalendarSource] = Relationship(back_populates="events")
 
 
+class CalendarPushChannel(BaseDBModel, table=True):
+    """A provider push/webhook subscription for one selected calendar.
+
+    Google uses per-calendar ``events.watch`` channels; Microsoft uses Graph
+    subscriptions against ``/me/calendars/{id}/events``. A row exists only while
+    push is active for that calendar. ``secret_encrypted`` holds the value we
+    hand the provider (Google channel token / Microsoft ``clientState``) and
+    later use to authenticate the inbound notification.
+    """
+
+    __tablename__ = "calendar_push_channels"
+    __table_args__ = (
+        UniqueConstraint(
+            "calendar_id",
+            "provider",
+            name="uq_calendar_push_channel_calendar_provider",
+        ),
+    )
+
+    connection_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("calendar_connections.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    calendar_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("calendar_sources.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    provider: str = Field(sa_column=Column(String(32), nullable=False, index=True))
+    # Google: the channel UUID we generate. Microsoft: the subscription id Graph
+    # assigns. Looked up when an inbound notification arrives. Nullable so a
+    # failed provisioning attempt can be recorded (for backoff) before any
+    # channel id exists.
+    provider_channel_id: Optional[str] = Field(
+        default=None, sa_column=Column(String(512), nullable=True, index=True)
+    )
+    # Google only: the opaque resourceId required to stop the channel.
+    resource_id: Optional[str] = Field(
+        default=None, sa_column=Column(String(512), nullable=True)
+    )
+    secret_encrypted: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    notification_url: Optional[str] = Field(
+        default=None, sa_column=Column(String(2048), nullable=True)
+    )
+    expiration: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True, index=True)
+    )
+    status: str = Field(
+        default=CalendarPushChannelStatus.ACTIVE.value,
+        sa_column=Column(String(32), nullable=False, index=True),
+    )
+    last_error: Optional[str] = Field(
+        default=None, sa_column=Column(String(512), nullable=True)
+    )
+
+
 class CalendarProviderStatusRead(SQLModel):
     provider: str
     display_name: str
@@ -250,6 +328,10 @@ class CalendarProviderStatusRead(SQLModel):
     client_id: Optional[str] = None
     tenant_id: Optional[str] = None
     has_client_secret: bool
+    push_enabled: bool = False
+    # Full webhook URL the provider must call. Surfaced so admins can register
+    # it (and, for Google, verify the callback domain).
+    push_notification_url: Optional[str] = None
 
 
 class CalendarProviderAvailabilityRead(SQLModel):
@@ -264,6 +346,7 @@ class CalendarProviderConfigUpdate(SQLModel):
     tenant_id: Optional[str] = None
     enabled: Optional[bool] = None
     clear_client_secret: bool = False
+    push_enabled: Optional[bool] = None
 
 
 class CalendarSourceRead(SQLModel):
@@ -292,6 +375,9 @@ class CalendarConnectionRead(SQLModel):
     last_sync_completed_at: Optional[datetime] = None
     last_synced_at: Optional[datetime] = None
     selected_calendar_count: int
+    # True when at least one selected calendar has a live, unexpired push
+    # channel, i.e. changes arrive by webhook rather than only the 15-min poll.
+    push_active: bool = False
     calendars: List[CalendarSourceRead]
 
 

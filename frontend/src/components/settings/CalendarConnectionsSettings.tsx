@@ -29,6 +29,7 @@ import {
   RefreshCw,
   ShieldAlert,
   Trash2,
+  Zap,
 } from "lucide-react";
 
 
@@ -383,6 +384,15 @@ export default function CalendarConnectionsSettings() {
                           <span className="text-xs contrast-helper">
                             {STATUS_LABELS[connection.sync_status]}
                           </span>
+                          {connection.push_active && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-500/10 dark:text-green-300"
+                              title="Live sync active: changes arrive by push notification"
+                            >
+                              <Zap className="h-3 w-3" />
+                              Live
+                            </span>
+                          )}
                         </div>
                         <div className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
                           {connection.email || connection.display_name || "Connected account"}

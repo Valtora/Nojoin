@@ -102,6 +102,15 @@ the configured Whisper model, Pyannote diarisation, and voice embeddings. The
 worker validates those assets on CPU where possible, caches them on disk, and
 releases model objects and CUDA memory before returning to idle.
 
+The worker also runs an embedded Celery Beat scheduler (`celery worker -B`) that
+drives Nojoin's periodic jobs: calendar sync every 15 minutes, calendar
+push-channel renewal every 30 minutes, and temporary-recording cleanup daily.
+Because Nojoin runs a single worker, embedded beat cannot double-schedule, and
+the beat schedule state lives on the persistent data volume so the cadence
+survives restarts. Optional calendar live sync (push notifications) additionally
+requires the instance to be reachable from the public internet over HTTPS at
+`WEB_APP_URL`; see [CALENDAR.md](CALENDAR.md).
+
 If an administrator switches transcription to Parakeet or Canary, Nojoin queues
 preparation for the selected ONNX ASR model after the setting is saved. Live and
 final processing still load inference models only for active work. After each

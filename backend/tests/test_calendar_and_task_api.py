@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import importlib
 import json
 import logging
+import pkgutil
 from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import JSON, BigInteger, Integer, text
+from sqlalchemy.dialects.sqlite.base import SQLiteDialect
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.schema import DefaultClause
+from sqlmodel import SQLModel
 
+import backend.models
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.core.encryption import encrypt_secret
@@ -19,184 +25,107 @@ from backend.models.user import User
 from backend.utils.config_manager import config_manager
 
 TEST_TIMESTAMP = datetime(2026, 4, 12, 10, 0, 0)
-SCHEMA_STATEMENTS = [
-    """
-    CREATE TABLE calendar_provider_configs (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        provider VARCHAR(32) NOT NULL,
-        client_id VARCHAR(512),
-        client_secret_encrypted TEXT,
-        tenant_id VARCHAR(255),
-        enabled BOOLEAN NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE calendar_connections (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        user_id INTEGER NOT NULL,
-        provider VARCHAR(32) NOT NULL,
-        provider_account_id VARCHAR(255) NOT NULL,
-        email VARCHAR(320),
-        display_name VARCHAR(255),
-        access_token_encrypted TEXT,
-        refresh_token_encrypted TEXT,
-        granted_scopes JSON NOT NULL,
-        token_expires_at DATETIME,
-        sync_status VARCHAR(32) NOT NULL,
-        sync_error VARCHAR(512),
-        last_sync_started_at DATETIME,
-        last_sync_completed_at DATETIME,
-        last_synced_at DATETIME
-    )
-    """,
-    """
-    CREATE TABLE calendar_sources (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        connection_id INTEGER NOT NULL,
-        provider_calendar_id VARCHAR(512) NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        time_zone VARCHAR(128),
-        colour VARCHAR(32),
-        user_colour VARCHAR(32),
-        is_primary BOOLEAN NOT NULL,
-        is_read_only BOOLEAN NOT NULL,
-        is_selected BOOLEAN NOT NULL,
-        sync_cursor TEXT,
-        last_synced_at DATETIME,
-        sync_window_start DATETIME,
-        sync_window_end DATETIME
-    )
-    """,
-    """
-    CREATE TABLE calendar_events (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        calendar_id INTEGER NOT NULL,
-        provider_event_id VARCHAR(512) NOT NULL,
-        title VARCHAR(512) NOT NULL,
-        status VARCHAR(32) NOT NULL,
-        is_all_day BOOLEAN NOT NULL,
-        starts_at DATETIME,
-        ends_at DATETIME,
-        start_date DATE,
-        end_date DATE,
-        location_text TEXT,
-        description TEXT,
-        attendees JSON,
-        meeting_url VARCHAR(2048),
-        source_url VARCHAR(2048),
-        external_updated_at DATETIME
-    )
-    """,
-    """
-    CREATE TABLE recordings (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        name VARCHAR NOT NULL,
-        public_id VARCHAR(36) NOT NULL,
-        meeting_uid VARCHAR(36) NOT NULL,
-        audio_path VARCHAR NOT NULL,
-        proxy_path VARCHAR,
-        celery_task_id VARCHAR,
-        duration_seconds FLOAT,
-        file_size_bytes INTEGER,
-        status VARCHAR NOT NULL,
-        client_status VARCHAR,
-        upload_progress INTEGER NOT NULL,
-        processing_progress INTEGER NOT NULL,
-        processing_step VARCHAR,
-        processing_started_at DATETIME,
-        processing_completed_at DATETIME,
-        pipeline_generation VARCHAR(32) DEFAULT 'unified',
-        is_archived BOOLEAN NOT NULL,
-        is_deleted BOOLEAN NOT NULL,
-        last_activity_at DATETIME,
-        user_id INTEGER,
-        calendar_event_id INTEGER
-    )
-    """,
-    """
-    CREATE TABLE global_speakers (
-        id INTEGER PRIMARY KEY,
-        name VARCHAR(255) NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE recording_speakers (
-        id INTEGER PRIMARY KEY,
-        recording_id INTEGER NOT NULL,
-        global_speaker_id INTEGER,
-        diarization_label VARCHAR(255) NOT NULL,
-        local_name VARCHAR(255),
-        name VARCHAR(255),
-        processing_run_id INTEGER,
-        last_speaker_correction_event_id INTEGER,
-        last_diarization_window_result_id INTEGER,
-        merged_into_id INTEGER,
-        speaker_status VARCHAR(32) NOT NULL DEFAULT 'active'
-    )
-    """,
-    """
-    CREATE TABLE tags (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        color VARCHAR(32),
-        user_id INTEGER,
-        parent_id INTEGER
-    )
-    """,
-    """
-    CREATE TABLE recording_tags (
-        id INTEGER PRIMARY KEY,
-        recording_id INTEGER NOT NULL,
-        tag_id INTEGER NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE user_tasks (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        body TEXT,
-        due_at DATETIME,
-        completed_at DATETIME,
-        archived_at DATETIME,
-        user_id INTEGER NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE user_task_tags (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        task_id INTEGER NOT NULL,
-        tag_id INTEGER NOT NULL,
-        UNIQUE (task_id, tag_id)
-    )
-    """,
-    """
-    CREATE TABLE user_task_recordings (
-        id INTEGER PRIMARY KEY,
-        created_at DATETIME NOT NULL,
-        updated_at DATETIME NOT NULL,
-        task_id INTEGER NOT NULL,
-        recording_id INTEGER NOT NULL,
-        UNIQUE (task_id, recording_id)
-    )
-    """,
+
+# Register every model so all foreign-key targets resolve, then build the subset
+# of tables these tests need straight from the ORM metadata. This keeps the test
+# schema in lock-step with the models instead of a hand-maintained DDL copy that
+# silently drifts whenever a column or table is added.
+for _model_info in pkgutil.iter_modules(backend.models.__path__):
+    importlib.import_module(f"backend.models.{_model_info.name}")
+
+TEST_TABLE_NAMES = [
+    "calendar_provider_configs",
+    "calendar_connections",
+    "calendar_sources",
+    "calendar_events",
+    "calendar_push_channels",
+    "recordings",
+    "global_speakers",
+    "recording_speakers",
+    "tags",
+    "recording_tags",
+    "user_tasks",
+    "user_task_tags",
+    "user_task_recordings",
 ]
+
+
+def _sqlite_server_default(column) -> DefaultClause | None:
+    """A SQLite server default mirroring the model's Python-side default.
+
+    Raw-SQL seeds bypass ORM defaults, so scalar column defaults (and the
+    timestamp mixin) need an equivalent server default to satisfy NOT NULL.
+    """
+    if column.name in ("created_at", "updated_at"):
+        return DefaultClause(text("CURRENT_TIMESTAMP"))
+    python_default = column.default
+    if python_default is None or not getattr(python_default, "is_scalar", False):
+        return None
+    value = python_default.arg
+    if isinstance(value, bool):
+        return DefaultClause(text("1" if value else "0"))
+    if isinstance(value, (int, float)):
+        return DefaultClause(text(str(value)))
+    if isinstance(value, str):
+        return DefaultClause(text(f"'{value}'"))
+    return None
+
+
+def _create_test_schema(sync_connection) -> None:
+    """Create the tables these tests use from the ORM metadata on SQLite.
+
+    A few models carry Postgres-only column types (JSONB, pgvector) and server
+    defaults (e.g. ``'[]'::json``) that SQLite cannot render. Those are
+    temporarily coerced to SQLite-compatible equivalents for the CREATE and then
+    restored, so the shared metadata is left untouched. SQLite-valid defaults
+    (such as boolean ``false``) are preserved so inserts that omit the column
+    still get the right value. Foreign keys to tables outside the subset are
+    harmless because SQLite does not enforce them.
+    """
+    tables = [SQLModel.metadata.tables[name] for name in TEST_TABLE_NAMES]
+    sqlite_dialect = SQLiteDialect()
+    restore: list[tuple] = []
+    for table in tables:
+        for column in table.columns:
+            server_default = column.server_default
+            if server_default is not None and "::" in str(
+                getattr(server_default, "arg", "")
+            ):
+                restore.append((column, "server_default", server_default))
+                column.server_default = None
+            elif server_default is None:
+                replacement = _sqlite_server_default(column)
+                if replacement is not None:
+                    restore.append((column, "server_default", None))
+                    column.server_default = replacement
+            # Any column still NOT NULL without a server default relies on a
+            # callable ORM default (e.g. a uuid factory) that raw-SQL seeds
+            # bypass. Relax it to nullable so seeds may omit it; real inserts go
+            # through the ORM and still populate it.
+            if (
+                not column.primary_key
+                and not column.nullable
+                and column.server_default is None
+            ):
+                restore.append((column, "nullable", column.nullable))
+                column.nullable = True
+            if isinstance(column.type, BigInteger):
+                # SQLite only autoincrements a single-column INTEGER PRIMARY KEY;
+                # a BIGINT PK is a plain NOT NULL column. Integer keeps 64-bit
+                # storage while restoring rowid autoincrement.
+                restore.append((column, "type", column.type))
+                column.type = Integer()
+            else:
+                try:
+                    column.type.compile(dialect=sqlite_dialect)
+                except Exception:  # noqa: BLE001 - Postgres-only type on SQLite
+                    restore.append((column, "type", column.type))
+                    column.type = JSON()
+    try:
+        SQLModel.metadata.create_all(sync_connection, tables=tables)
+    finally:
+        for column, attribute, value in restore:
+            setattr(column, attribute, value)
 
 
 def build_test_user(
@@ -760,8 +689,7 @@ async def test_session_maker() -> sessionmaker:
     session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as connection:
-        for statement in SCHEMA_STATEMENTS:
-            await connection.execute(text(statement))
+        await connection.run_sync(_create_test_schema)
 
     try:
         yield session_maker
@@ -1887,3 +1815,45 @@ async def test_update_calendar_colour_returns_effective_and_provider_values(
     assert cleared_calendar["colour"] == "#4285f4"
     assert cleared_calendar["custom_colour"] is None
     assert cleared_calendar["provider_colour"] == "#4285f4"
+
+
+@pytest.mark.anyio
+async def test_microsoft_webhook_echoes_validation_token(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/calendar/webhooks/microsoft",
+        params={"validationToken": "validate-me-123"},
+    )
+
+    assert response.status_code == 200
+    assert response.text == "validate-me-123"
+    assert response.headers["content-type"].startswith("text/plain")
+
+
+@pytest.mark.anyio
+async def test_google_webhook_acknowledges_unknown_channel(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/calendar/webhooks/google",
+        headers={
+            "X-Goog-Channel-ID": "unknown-channel",
+            "X-Goog-Channel-Token": "whatever",
+            "X-Goog-Resource-State": "exists",
+        },
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_microsoft_webhook_acknowledges_notification_payload(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/calendar/webhooks/microsoft",
+        json={"value": [{"subscriptionId": "unknown-sub", "clientState": "x"}]},
+    )
+
+    assert response.status_code == 202
