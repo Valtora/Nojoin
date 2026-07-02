@@ -97,6 +97,8 @@ If AI configuration is missing, the recording still completes with transcript, d
 
 A secondary LLM provider can be configured via the `SECONDARY_LLM_PROVIDER` environment variable. When set, all AI features (meeting intelligence, Meeting Edge, speaker inference, chat) automatically fall back to the secondary provider if the primary provider fails with any error, handled by `SecondaryLLMBackend`. The secondary provider has its own model, live model, and API key settings, configured independently. Fallback is transparent: the primary provider is tried first, and on failure the system logs a warning and retries with the secondary provider. If both fail, the primary provider's error is raised.
 
+To cut token cost on repeated context, Meeting Chat and Meeting Edge order their prompts so the large, stable portion forms a cache-friendly prefix: for chat this is the meeting notes and full transcript, and for Meeting Edge the system instructions and JSON schema. The Anthropic backend marks that prefix with an explicit `cache_control` breakpoint, while OpenAI-compatible providers reuse it through automatic prefix caching. The volatile part (the user's question, or the per-refresh rolling summary and recent transcript) is always sent last. Caching is transparent — the prompt text is unchanged, so model output is unaffected — and simply yields no benefit when a provider or model does not support it.
+
 Playback, transcript viewing, and export all operate on the full recording timeline without applying persisted trim offsets.
 
 ### Live Transcription Lane

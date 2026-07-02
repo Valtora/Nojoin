@@ -3,6 +3,7 @@ import logging
 import re
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
+from backend.utils.chat_prompt import build_chat_messages, build_chat_prompt
 from backend.utils.config_manager import config_manager
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import (
@@ -13,6 +14,9 @@ from backend.utils.meeting_edge import (
 )
 from backend.utils.meeting_edge import (
     build_meeting_edge_prompt as build_meeting_edge_prompt_text,
+)
+from backend.utils.meeting_edge import (
+    build_meeting_edge_prompt_parts as build_meeting_edge_prompt_parts_text,
 )
 from backend.utils.meeting_edge import (
     parse_meeting_edge_response as parse_meeting_edge_payload,
@@ -235,21 +239,7 @@ class LLMBackend:
     def _build_chat_prompt(
         self, user_question: str, meeting_notes: str, diarized_transcript: str
     ) -> str:
-        base_prompt = f"""
-You are a helpful AI assistant. You have access to the following meeting notes, full diarized transcript, and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
-
-# CRITICAL INSTRUCTION
-When referencing transcript content, always include the timestamp in [MM:SS] format (e.g., "At [12:30], Speaker A mentioned...").
-
-# Meeting Notes:
-{meeting_notes}
-
-# Full Diarized Transcript:
-{diarized_transcript}
-"""
-
-        base_prompt += f"\nUser Question: {user_question}\n"
-        return base_prompt
+        return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
 
     @staticmethod
     def get_default_speaker_prompt_template():
@@ -548,6 +538,13 @@ Now generate the meeting notes following the exact structure specified above, re
         prompt_template: str = None,
     ) -> str:
         return build_meeting_edge_prompt_text(request, prompt_template)
+
+    @staticmethod
+    def build_meeting_edge_prompt_parts(
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+    ) -> Tuple[str, str]:
+        return build_meeting_edge_prompt_parts_text(request, prompt_template)
 
     @staticmethod
     def finalise_meeting_notes(notes: str, user_notes: Optional[str] = None) -> str:
@@ -1321,21 +1318,12 @@ class OpenAILLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+        messages = build_chat_messages(
+            meeting_notes,
+            diarized_transcript,
+            user_question,
+            conversation_history,
         )
-
-        messages = []
-        if conversation_history:
-            for msg in conversation_history:
-                if msg.get("role") and msg.get("parts"):
-                    role = msg["role"]
-                    # Map 'model' to 'assistant' for OpenAI compatibility
-                    if role == "model":
-                        role = "assistant"
-                    for part in msg["parts"]:
-                        messages.append({"role": role, "content": part["text"]})
-        messages.append({"role": "user", "content": prompt})
         if not self.model:
             raise ValueError(
                 "No OpenAI model configured. Please select a model in Settings."
@@ -1368,21 +1356,12 @@ class OpenAILLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+        messages = build_chat_messages(
+            meeting_notes,
+            diarized_transcript,
+            user_question,
+            conversation_history,
         )
-
-        messages = []
-        if conversation_history:
-            for msg in conversation_history:
-                if msg.get("role") and msg.get("parts"):
-                    role = msg["role"]
-                    # Map 'model' to 'assistant' for OpenAI compatibility
-                    if role == "model":
-                        role = "assistant"
-                    for part in msg["parts"]:
-                        messages.append({"role": role, "content": part["text"]})
-        messages.append({"role": "user", "content": prompt})
 
         tools = [
             {
@@ -1703,7 +1682,21 @@ class AnthropicLLMBackend(LLMBackend):
         prompt_template: str = None,
         timeout: int = 60,
     ) -> MeetingEdgeResult:
-        prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        # Split into a stable instruction prefix and the volatile per-refresh
+        # context so the prefix can be cached across refreshes. The parts
+        # concatenate to the same prompt, so the model output is unchanged.
+        prefix, suffix = self.build_meeting_edge_prompt_parts(request, prompt_template)
+        if prefix:
+            user_content = [
+                {
+                    "type": "text",
+                    "text": prefix,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": suffix},
+            ]
+        else:
+            user_content = suffix
         if not self.model:
             raise ValueError(
                 "No Anthropic model configured. Please select a model in Settings."
@@ -1713,7 +1706,7 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 max_tokens=2048,
                 messages=[
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": user_content},
                     # Assistant prefill steers Claude into emitting raw JSON.
                     {"role": "assistant", "content": "{"},
                 ],
@@ -1747,17 +1740,13 @@ class AnthropicLLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+        messages = build_chat_messages(
+            meeting_notes,
+            diarized_transcript,
+            user_question,
+            conversation_history,
+            cache_context=True,
         )
-
-        messages = []
-        if conversation_history:
-            for msg in conversation_history:
-                if msg.get("role") and msg.get("parts"):
-                    for part in msg["parts"]:
-                        messages.append({"role": msg["role"], "content": part["text"]})
-        messages.append({"role": "user", "content": prompt})
         if not self.model:
             raise ValueError(
                 "No Anthropic model configured. Please select a model in Settings."
@@ -1790,17 +1779,13 @@ class AnthropicLLMBackend(LLMBackend):
         if recording_id is not None:
             diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
 
-        prompt = self._build_chat_prompt(
-            user_question, meeting_notes, diarized_transcript
+        messages = build_chat_messages(
+            meeting_notes,
+            diarized_transcript,
+            user_question,
+            conversation_history,
+            cache_context=True,
         )
-
-        messages = []
-        if conversation_history:
-            for msg in conversation_history:
-                if msg.get("role") and msg.get("parts"):
-                    for part in msg["parts"]:
-                        messages.append({"role": msg["role"], "content": part["text"]})
-        messages.append({"role": "user", "content": prompt})
 
         tool_definition = {
             "name": "update_meeting_notes",

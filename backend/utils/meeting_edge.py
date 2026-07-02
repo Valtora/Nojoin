@@ -212,6 +212,30 @@ def build_meeting_edge_prompt(
     )
 
 
+def build_meeting_edge_prompt_parts(
+    request: MeetingEdgeRequest,
+    prompt_template: str | None = None,
+) -> tuple[str, str]:
+    """Split the Meeting Edge prompt into a cache-stable prefix and volatile suffix.
+
+    The prefix (system instructions, technical-context policy, and JSON schema) is
+    identical across refreshes of the same meeting, so a provider that supports
+    prompt caching can cache it. The suffix carries the per-refresh context
+    (rolling summary, previous suggestions, notes, recent transcript). The parts
+    always concatenate back to ``build_meeting_edge_prompt`` output, so the model
+    sees an identical prompt; only the cache breakpoint differs.
+
+    Returns ``("", full_prompt)`` when the split marker is absent (for example a
+    custom template), which callers treat as "do not cache".
+    """
+    full_prompt = build_meeting_edge_prompt(request, prompt_template)
+    marker = "# Earlier Context Summary"
+    boundary = full_prompt.find(marker)
+    if boundary <= 0:
+        return "", full_prompt
+    return full_prompt[:boundary], full_prompt[boundary:]
+
+
 def parse_meeting_edge_response(
     response_text: str,
     *,
