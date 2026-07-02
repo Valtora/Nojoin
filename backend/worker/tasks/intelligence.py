@@ -682,7 +682,6 @@ def _auto_apply_persisted_speaker_name_suggestions(
     """
     from datetime import UTC
 
-    from backend.models.recording import recording_supports_unified_mutations
     from backend.processing.embedding import merge_embeddings
     from backend.utils.canonical_pipeline import (
         ensure_recording_speaker_aliases_for_speaker,
@@ -690,14 +689,6 @@ def _auto_apply_persisted_speaker_name_suggestions(
     from backend.utils.speaker_name_suggestions import (
         SPEAKER_SUGGESTION_STATUS_ACCEPTED,
     )
-
-    if not recording_supports_unified_mutations(recording):
-        logger.info(
-            "Skipping speaker suggestion auto-apply for recording %s: "
-            "legacy recordings require reprocess before speaker mutations.",
-            recording.id,
-        )
-        return 0
 
     bind = session.get_bind()
     aliases_available = bind is not None and inspect(bind).has_table(
@@ -734,6 +725,12 @@ def _auto_apply_persisted_speaker_name_suggestions(
             speaker.local_name = suggested_name
             speaker.global_speaker_id = None
         speaker.name = None
+        # Record the model's confidence but leave identity_locked False:
+        # locking is reserved for human-confirmed identity, so auto-applied
+        # names stay overridable by future higher-authority signals.
+        raw_confidence = suggestion.get("confidence")
+        if isinstance(raw_confidence, (int, float)):
+            speaker.identity_confidence = float(raw_confidence)
         # Keep canonical alias lookups consistent with the new name, matching
         # update_recording_speaker_identity's behaviour after identity changes.
         if aliases_available:
@@ -770,7 +767,20 @@ def _persist_generated_speaker_name_suggestions_impl(
     provider: str | None,
     replaced_reason: str,
 ) -> int:
+    from backend.models.recording import recording_supports_unified_mutations
+
     if not inference_result.suggestions:
+        return 0
+
+    # Single legacy gate: without unified mutations the names cannot be
+    # applied, and persisting pending suggestions would strand them forever
+    # now that the accept/reject review flow no longer exists.
+    if not recording_supports_unified_mutations(recording):
+        logger.info(
+            "Skipping speaker suggestion persistence for recording %s: "
+            "legacy recordings require reprocess before speaker mutations.",
+            recording.id,
+        )
         return 0
 
     persisted = _build_persisted_speaker_name_suggestions(
