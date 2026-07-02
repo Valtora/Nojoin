@@ -25,7 +25,8 @@ def apply_recording_speaker_identity_fields(
 ) -> None:
     """Mutate one recording speaker's identity fields in place.
 
-    Voiceprint-locked global speakers never receive embedding merges.
+    Voiceprint-locked global speakers never receive embedding updates,
+    whether merging into an existing voiceprint or seeding an empty one.
     ``identity_confidence`` and ``identity_locked`` are written only when a
     value is provided, so callers control whether the identity is asserted as
     human-confirmed.
@@ -47,7 +48,8 @@ def apply_recording_speaker_identity_fields(
                         alpha=merge_global_embedding_alpha,
                     )
             else:
-                target_global_speaker.embedding = list(recording_speaker.embedding)
+                if not target_global_speaker.is_voiceprint_locked:
+                    target_global_speaker.embedding = list(recording_speaker.embedding)
             session.add(target_global_speaker)
     else:
         recording_speaker.global_speaker_id = None

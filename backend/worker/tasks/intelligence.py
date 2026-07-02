@@ -705,7 +705,7 @@ def _auto_apply_persisted_speaker_name_suggestions(
         raw_global_speaker_id = suggestion.get("suggested_global_speaker_id")
         global_speaker = (
             session.get(GlobalSpeaker, int(raw_global_speaker_id))
-            if raw_global_speaker_id is not None
+            if isinstance(raw_global_speaker_id, (int, float))
             else None
         )
         raw_confidence = suggestion.get("confidence")
