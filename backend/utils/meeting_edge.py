@@ -25,6 +25,13 @@ MEETING_EDGE_CONTEXT_GUIDANCE = {
     5: "Detailed (Least Complex). Be generous with clarifications for non-trivial technical, domain-specific, or abbreviated terms, while still avoiding obvious plain-language words.",
 }
 
+# Heading that separates the stable instruction prefix from the volatile
+# per-refresh context in the Meeting Edge prompt. It appears verbatim in
+# DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE below and is the split point used by
+# build_meeting_edge_prompt_parts for prompt caching. A test keeps the two in
+# sync so a heading rename can't silently disable caching.
+MEETING_EDGE_CACHE_SPLIT_MARKER = "# Earlier Context Summary"
+
 DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE = """You are Meeting Edge, a live meeting assistant.
 
 Your task is to produce concise, high-signal, real-time guidance that helps the user participate more effectively in the current meeting.
@@ -210,6 +217,29 @@ def build_meeting_edge_prompt(
             request.previous_points,
         ),
     )
+
+
+def build_meeting_edge_prompt_parts(
+    request: MeetingEdgeRequest,
+    prompt_template: str | None = None,
+) -> tuple[str, str]:
+    """Split the Meeting Edge prompt into a cache-stable prefix and volatile suffix.
+
+    The prefix (system instructions, technical-context policy, and JSON schema) is
+    identical across refreshes of the same meeting, so a provider that supports
+    prompt caching can cache it. The suffix carries the per-refresh context
+    (rolling summary, previous suggestions, notes, recent transcript). The parts
+    always concatenate back to ``build_meeting_edge_prompt`` output, so the model
+    sees an identical prompt; only the cache breakpoint differs.
+
+    Returns ``("", full_prompt)`` when the split marker is absent (for example a
+    custom template), which callers treat as "do not cache".
+    """
+    full_prompt = build_meeting_edge_prompt(request, prompt_template)
+    boundary = full_prompt.find(MEETING_EDGE_CACHE_SPLIT_MARKER)
+    if boundary <= 0:
+        return "", full_prompt
+    return full_prompt[:boundary], full_prompt[boundary:]
 
 
 def parse_meeting_edge_response(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     build_meeting_edge_prompt,
+    build_meeting_edge_prompt_parts,
     merge_meeting_edge_concept_history,
     parse_meeting_edge_response,
     serialize_meeting_edge_result,
@@ -294,3 +295,48 @@ def test_merge_meeting_edge_concept_history_deduplicates_plurals() -> None:
     assert "Subsidies" in terms
     assert "Choke points" not in terms
     assert "Anticipatory price rises" not in terms
+
+
+def test_build_meeting_edge_prompt_parts_reconstructs_full_prompt() -> None:
+    request = MeetingEdgeRequest(
+        recent_transcript="Speaker A: lock the launch date.",
+        rolling_summary="Converging on launch readiness.",
+        context_level=1,
+    )
+
+    prefix, suffix = build_meeting_edge_prompt_parts(request)
+
+    # The two parts must concatenate back to the exact single-string prompt so the
+    # model sees identical input; only the cache breakpoint differs.
+    assert prefix + suffix == build_meeting_edge_prompt(request)
+    assert "# Earlier Context Summary" in suffix
+    assert "# Earlier Context Summary" not in prefix
+    assert "Speaker A: lock the launch date." in suffix
+
+
+def test_build_meeting_edge_prompt_parts_falls_back_without_marker() -> None:
+    request = MeetingEdgeRequest(recent_transcript="Speaker A: hi.")
+    template = "No marker here: {recent_transcript}"
+
+    prefix, suffix = build_meeting_edge_prompt_parts(request, prompt_template=template)
+
+    # A custom template without the split marker yields no cacheable prefix.
+    assert prefix == ""
+    assert suffix == build_meeting_edge_prompt(request, template)
+
+
+def test_meeting_edge_cache_split_marker_stays_in_sync_with_template() -> None:
+    from backend.utils.meeting_edge import (
+        DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE,
+        MEETING_EDGE_CACHE_SPLIT_MARKER,
+    )
+
+    # If the heading is renamed in the template without updating the marker (or
+    # vice versa), the split silently returns no prefix and caching stops. Bind
+    # the two so a rename fails here instead of regressing caching unnoticed.
+    assert MEETING_EDGE_CACHE_SPLIT_MARKER in DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE
+
+    # The default prompt must actually split into a non-empty cacheable prefix.
+    request = MeetingEdgeRequest(recent_transcript="Speaker A: hi.")
+    prefix, _ = build_meeting_edge_prompt_parts(request)
+    assert prefix != ""
