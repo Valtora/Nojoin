@@ -61,12 +61,17 @@ async def _save_oauth_state(state: str, payload: dict[str, Any]) -> None:
     expires_at = _utc_now() + timedelta(seconds=OAUTH_STATE_TTL_SECONDS)
     try:
         client = redis.from_url(REDIS_URL)
-        await client.set(
-            f"nojoin:calendar:oauth:{state}",
-            json.dumps(payload),
-            ex=OAUTH_STATE_TTL_SECONDS,
-        )
-        await client.close()
+        try:
+            await client.set(
+                f"nojoin:calendar:oauth:{state}",
+                json.dumps(payload),
+                ex=OAUTH_STATE_TTL_SECONDS,
+            )
+        finally:
+            # from_url allocates a fresh connection pool per call, so close it
+            # even when set() raises, otherwise a Redis outage on the connect
+            # path leaks a pool per authorisation attempt.
+            await client.close()
         return
     except Exception:  # noqa: BLE001
         pass
@@ -77,13 +82,15 @@ async def _save_oauth_state(state: str, payload: dict[str, Any]) -> None:
 async def _pop_oauth_state(state: str) -> dict[str, Any] | None:
     try:
         client = redis.from_url(REDIS_URL)
-        key = f"nojoin:calendar:oauth:{state}"
-        stored = await client.get(key)
-        if stored is not None:
-            await client.delete(key)
+        try:
+            key = f"nojoin:calendar:oauth:{state}"
+            stored = await client.get(key)
+            if stored is not None:
+                await client.delete(key)
+                return json.loads(stored)
+        finally:
+            # Close the pool even when get()/delete() raise (see _save_oauth_state).
             await client.close()
-            return json.loads(stored)
-        await client.close()
     except Exception:  # noqa: BLE001
         pass
 

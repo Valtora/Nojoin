@@ -250,6 +250,28 @@ def test_microsoft_notification_rejects_invalid_client_state(monkeypatch) -> Non
     assert enqueued == []
 
 
+def test_microsoft_notification_caps_oversized_batch(monkeypatch) -> None:
+    """An oversized (untrusted) batch is truncated so it cannot fan out into an
+    unbounded number of sequential per-item database lookups."""
+    lookups: list[str] = []
+
+    async def counting_find_channel(db, provider, provider_channel_id):
+        lookups.append(provider_channel_id)
+        return None
+
+    monkeypatch.setattr(push, "_find_channel", counting_find_channel)
+    payload = {
+        "value": [
+            {"subscriptionId": f"sub-{i}", "clientState": "x"} for i in range(150)
+        ]
+    }
+
+    count = asyncio.run(push.handle_microsoft_notification(None, payload))
+
+    assert count == 0  # _find_channel returned None, so nothing was enqueued
+    assert len(lookups) == 100  # only the first 100 of 150 items were processed
+
+
 def test_calendar_services_import_without_fastapi(monkeypatch) -> None:
     """The Celery worker image ships no web framework.
 

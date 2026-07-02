@@ -1,3 +1,4 @@
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -40,6 +41,11 @@ from backend.utils.rate_limit import enforce_rate_limit
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Ceiling for the buffered body of the unauthenticated Microsoft webhook. Graph
+# notification batches are small, so anything larger is rejected before parsing
+# to stop an attacker exhausting worker memory with a huge JSON body.
+MICROSOFT_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024
 
 
 def _validate_provider(provider: str) -> str:
@@ -297,8 +303,22 @@ async def microsoft_calendar_webhook(
             return Response(status_code=400)
         return PlainTextResponse(validationToken, status_code=200)
 
+    # Bound the buffered body on this unauthenticated endpoint before parsing:
+    # the rate limit above caps request count, not per-request size, so a
+    # multi-hundred-MB body could otherwise exhaust worker memory.
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            return Response(status_code=400)
+        if declared_length > MICROSOFT_WEBHOOK_MAX_BODY_BYTES:
+            return Response(status_code=413)
+    body = await request.body()
+    if len(body) > MICROSOFT_WEBHOOK_MAX_BODY_BYTES:
+        return Response(status_code=413)
     try:
-        payload = await request.json()
+        payload = json.loads(body)
     except Exception:  # noqa: BLE001
         payload = None
     if payload is not None:

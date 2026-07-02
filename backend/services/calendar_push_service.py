@@ -64,6 +64,10 @@ PUSH_FAILURE_BACKOFF = timedelta(minutes=30)
 # Coalesce notification bursts into a single sync per connection.
 NOTIFICATION_DEBOUNCE_SECONDS = 20
 SYNC_DEBOUNCE_COUNTDOWN = 3
+# Cap items processed from a single (unauthenticated) Microsoft notification
+# batch. Real Graph batches are small; a larger one is untrusted input that would
+# otherwise fan out into that many sequential per-item database lookups.
+MICROSOFT_MAX_NOTIFICATIONS_PER_BATCH = 100
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -750,6 +754,13 @@ async def handle_microsoft_notification(db, payload: Any) -> int:
     notifications = payload.get("value") if isinstance(payload, dict) else None
     if not isinstance(notifications, list):
         return 0
+    if len(notifications) > MICROSOFT_MAX_NOTIFICATIONS_PER_BATCH:
+        logger.warning(
+            "Microsoft notification batch has %d items; processing the first %d",
+            len(notifications),
+            MICROSOFT_MAX_NOTIFICATIONS_PER_BATCH,
+        )
+        notifications = notifications[:MICROSOFT_MAX_NOTIFICATIONS_PER_BATCH]
     connection_ids: set[int] = set()
     for item in notifications:
         if not isinstance(item, dict):

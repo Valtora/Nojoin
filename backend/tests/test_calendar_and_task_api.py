@@ -1844,6 +1844,20 @@ async def test_microsoft_webhook_rejects_oversized_validation_token(
 
 
 @pytest.mark.anyio
+async def test_microsoft_webhook_rejects_oversized_body(
+    client: AsyncClient,
+) -> None:
+    oversized = b"x" * (1024 * 1024 + 100)
+    response = await client.post(
+        "/api/v1/calendar/webhooks/microsoft",
+        content=oversized,
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 413
+
+
+@pytest.mark.anyio
 async def test_google_webhook_acknowledges_unknown_channel(
     client: AsyncClient,
 ) -> None:

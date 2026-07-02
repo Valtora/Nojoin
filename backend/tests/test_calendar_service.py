@@ -21,6 +21,35 @@ from backend.services.calendar_service import (
 )
 
 
+def test_save_oauth_state_closes_redis_client_on_failure(monkeypatch) -> None:
+    """A failed Redis write must still close the client and fall back in-memory.
+
+    Mirrors the push-service debounce fix: redis.from_url allocates a fresh
+    connection pool per call, so the client must be closed even when set()
+    raises, otherwise a Redis outage on the connect path leaks pools.
+    """
+    import asyncio
+
+    from backend.services.calendar_service import oauth as oauth_mod
+
+    closed: list[bool] = []
+
+    class _FakeRedis:
+        async def set(self, *args, **kwargs):
+            raise RuntimeError("redis unavailable")
+
+        async def close(self) -> None:
+            closed.append(True)
+
+    monkeypatch.setattr(oauth_mod.redis, "from_url", lambda url: _FakeRedis())
+    oauth_mod._oauth_state_fallback.clear()
+
+    asyncio.run(oauth_mod._save_oauth_state("state-x", {"user_id": 1}))
+
+    assert closed == [True]  # closed even though set() raised
+    assert "state-x" in oauth_mod._oauth_state_fallback  # fell back in-memory
+
+
 def test_encrypt_secret_round_trip() -> None:
     secret = "calendar-token"
 
