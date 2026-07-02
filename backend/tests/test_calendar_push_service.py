@@ -272,6 +272,91 @@ def test_microsoft_notification_caps_oversized_batch(monkeypatch) -> None:
     assert len(lookups) == 100  # only the first 100 of 150 items were processed
 
 
+def test_microsoft_renewal_recreates_when_address_changes(monkeypatch) -> None:
+    """If the webhook address changed, renewing in place would leave Microsoft
+    delivering to the old URL (PATCH only updates the expiry). The channel must be
+    recreated with the new notificationUrl and the stale subscription deleted."""
+    renewed: list[str] = []
+    created_with: list[str] = []
+    deleted: list[str] = []
+
+    async def fake_renew(access_token, subscription_id, expiration):
+        renewed.append(subscription_id)
+        return {"expirationDateTime": "2026-07-05T00:00:00Z"}
+
+    async def fake_create(access_token, calendar_id, address, secret, expiration):
+        created_with.append(address)
+        return {"id": "new-sub", "expirationDateTime": "2026-07-05T00:00:00Z"}
+
+    async def fake_delete(access_token, subscription_id):
+        deleted.append(subscription_id)
+
+    monkeypatch.setattr(push, "_microsoft_renew_subscription", fake_renew)
+    monkeypatch.setattr(push, "_microsoft_create_subscription", fake_create)
+    monkeypatch.setattr(push, "_safe_microsoft_delete", fake_delete)
+
+    new_address = "https://new.example.com/api/v1/calendar/webhooks/microsoft"
+    ctx = SimpleNamespace(
+        db=SimpleNamespace(add=lambda row: None),
+        connection=SimpleNamespace(id=7),
+        access_token="tok",
+        address=new_address,
+    )
+    calendar = SimpleNamespace(id=1, provider_calendar_id="cal-1")
+    existing = _channel(
+        provider=CalendarProvider.MICROSOFT.value,
+        provider_channel_id="old-sub",
+        status=CalendarPushChannelStatus.ACTIVE.value,
+        secret_encrypted=encrypt_secret("s"),
+        notification_url="https://old.example.com/api/v1/calendar/webhooks/microsoft",
+    )
+
+    asyncio.run(push._ensure_microsoft_channel(ctx, calendar, existing))
+
+    assert renewed == []  # did not renew in place
+    assert created_with == [new_address]  # recreated with the new address
+    assert deleted == ["old-sub"]  # stale subscription cleaned up
+    assert existing.provider_channel_id == "new-sub"
+    assert existing.notification_url == new_address
+
+
+def test_microsoft_renewal_updates_in_place_when_address_unchanged(monkeypatch) -> None:
+    renewed: list[str] = []
+    created: list[int] = []
+
+    async def fake_renew(access_token, subscription_id, expiration):
+        renewed.append(subscription_id)
+        return {"expirationDateTime": "2026-07-05T00:00:00Z"}
+
+    async def fake_create(*args, **kwargs):
+        created.append(1)
+        return {"id": "unused"}
+
+    monkeypatch.setattr(push, "_microsoft_renew_subscription", fake_renew)
+    monkeypatch.setattr(push, "_microsoft_create_subscription", fake_create)
+
+    address = "https://same.example.com/api/v1/calendar/webhooks/microsoft"
+    ctx = SimpleNamespace(
+        db=SimpleNamespace(add=lambda row: None),
+        connection=SimpleNamespace(id=7),
+        access_token="tok",
+        address=address,
+    )
+    calendar = SimpleNamespace(id=1, provider_calendar_id="cal-1")
+    existing = _channel(
+        provider=CalendarProvider.MICROSOFT.value,
+        provider_channel_id="sub-1",
+        status=CalendarPushChannelStatus.ACTIVE.value,
+        secret_encrypted=encrypt_secret("s"),
+        notification_url=address,
+    )
+
+    asyncio.run(push._ensure_microsoft_channel(ctx, calendar, existing))
+
+    assert renewed == ["sub-1"]  # renewed in place, kept the subscription
+    assert created == []  # did not recreate
+
+
 def test_calendar_services_import_without_fastapi(monkeypatch) -> None:
     """The Celery worker image ships no web framework.
 

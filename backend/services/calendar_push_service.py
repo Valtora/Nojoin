@@ -419,11 +419,15 @@ async def _ensure_microsoft_channel(
     existing: CalendarPushChannel | None,
 ) -> None:
     # Renew an existing subscription in place when possible (keeps id + secret).
+    # Graph's PATCH only updates the expiry, not the notificationUrl, so when the
+    # webhook address has changed we must recreate instead -- otherwise Graph keeps
+    # delivering to the old URL while the DB records the new one.
     if (
         existing is not None
         and existing.provider_channel_id
         and existing.status == CalendarPushChannelStatus.ACTIVE.value
         and existing.secret_encrypted
+        and existing.notification_url == ctx.address
     ):
         expiration = utc_now() + MICROSOFT_SUBSCRIPTION_TTL
         try:
