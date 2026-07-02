@@ -692,9 +692,12 @@ def _auto_apply_persisted_speaker_name_suggestions(
             continue
 
         raw_global_speaker_id = suggestion.get("suggested_global_speaker_id")
+        # Global speaker ids are integer PKs; bool is an int subclass and
+        # floats (incl. nan/inf) would break int(), so accept plain ints only.
         global_speaker = (
-            session.get(GlobalSpeaker, int(raw_global_speaker_id))
-            if isinstance(raw_global_speaker_id, (int, float))
+            session.get(GlobalSpeaker, raw_global_speaker_id)
+            if isinstance(raw_global_speaker_id, int)
+            and not isinstance(raw_global_speaker_id, bool)
             else None
         )
         raw_confidence = suggestion.get("confidence")
@@ -721,10 +724,13 @@ def _auto_apply_persisted_speaker_name_suggestions(
                         else None
                     ),
                 )
-        except Exception:  # noqa: BLE001
-            # The savepoint rolled this speaker back, so the session is clean
-            # for the next one. Skip the suggestion entirely rather than
-            # persisting an unresolvable "pending" entry.
+        except SQLAlchemyError:
+            # Catch only DB-infrastructure failures (e.g. a flush-time
+            # constraint error): the savepoint rolled this speaker back, so
+            # the session is clean for the next one. Skip the suggestion
+            # rather than persisting an unresolvable "pending" entry.
+            # Programming errors (ValueError from mismatched embedding dims,
+            # etc.) are left to propagate and fail the task loudly.
             logger.warning(
                 "Failed to auto-apply speaker name suggestion for label %s "
                 "on recording %s; skipping it (not persisted).",
@@ -743,16 +749,10 @@ def _auto_apply_persisted_speaker_name_suggestions(
         suggestion["resolution_actor_user_id"] = None
         applied.append(suggestion)
 
-    if applied:
-        record_pipeline_metric(
-            stage="speaker_name_suggestions_auto_applied",
-            recording_id=recording.id,
-            payload={
-                "applied_count": len(applied),
-                "suggestion_count": len(persisted),
-            },
-            log=logger,
-        )
+    # No metric emitted here: it would fire before the caller's commit and
+    # report a phantom success if that commit fails. The post-commit
+    # "speaker_name_suggestions_generated" metric already reports the persisted
+    # (== applied) count honestly.
     return applied
 
 
