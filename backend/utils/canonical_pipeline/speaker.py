@@ -1,4 +1,5 @@
 from .constants import *
+from .identity_fields import apply_recording_speaker_identity_fields
 
 
 @dataclass(frozen=True)
@@ -1132,30 +1133,19 @@ def update_recording_speaker_identity(
             raise LookupError("Global speaker not found")
 
     for recording_speaker in matching_speakers:
-        if target_global_speaker is not None:
-            recording_speaker.global_speaker_id = target_global_speaker.id
-            recording_speaker.global_speaker = target_global_speaker
-            recording_speaker.local_name = None
-            if merge_global_embedding_alpha is not None and recording_speaker.embedding:
-                if target_global_speaker.embedding:
-                    target_global_speaker.embedding = merge_embeddings(
-                        target_global_speaker.embedding,
-                        recording_speaker.embedding,
-                        alpha=merge_global_embedding_alpha,
-                    )
-                else:
-                    target_global_speaker.embedding = list(recording_speaker.embedding)
-                session.add(target_global_speaker)
-        else:
-            recording_speaker.global_speaker_id = None
-            recording_speaker.global_speaker = None
-            recording_speaker.local_name = new_speaker_name
-
-        recording_speaker.name = None
-        recording_speaker.identity_confidence = 1.0
-        recording_speaker.identity_locked = True
-        ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
-        session.add(recording_speaker)
+        apply_recording_speaker_identity_fields(
+            session,
+            recording_speaker,
+            new_speaker_name=new_speaker_name,
+            target_global_speaker=target_global_speaker,
+            merge_global_embedding_alpha=merge_global_embedding_alpha,
+            identity_confidence=1.0,
+            identity_locked=True,
+            # Manual rename/promote is a human action; the lock only guards
+            # against automated updates, so an explicit link still updates
+            # the voiceprint (pre-refactor behaviour of this path).
+            respect_voiceprint_lock=False,
+        )
 
     effective_event_type = event_type or (
         SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER

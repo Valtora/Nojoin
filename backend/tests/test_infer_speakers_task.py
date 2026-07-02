@@ -108,6 +108,20 @@ CREATE TABLE recording_speakers (
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL DEFAULT 0
 );
+
+CREATE TABLE recording_speaker_aliases (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_speaker_id INTEGER NOT NULL,
+    alias_type VARCHAR NOT NULL,
+    alias_value VARCHAR(255) NOT NULL,
+    source_run_id INTEGER,
+    active BOOLEAN NOT NULL DEFAULT 1,
+    valid_from_ms INTEGER,
+    valid_to_ms INTEGER,
+    confidence FLOAT
+);
 """
 
 
