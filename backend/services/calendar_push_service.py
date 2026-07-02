@@ -725,8 +725,8 @@ async def handle_google_notification(
         return False
     if not _secret_matches(channel, channel_token):
         logger.warning(
-            "Discarding Google push notification with invalid token for channel %s",
-            channel_id,
+            "Discarding Google push notification with invalid token for connection %s",
+            channel.connection_id,
         )
         return False
     await _debounced_enqueue_sync(channel.connection_id)
@@ -751,8 +751,8 @@ async def handle_microsoft_notification(db, payload: Any) -> int:
         if not _secret_matches(channel, item.get("clientState")):
             logger.warning(
                 "Discarding Microsoft push notification with invalid clientState "
-                "for subscription %s",
-                subscription_id,
+                "for connection %s",
+                channel.connection_id,
             )
             continue
         connection_ids.add(channel.connection_id)
