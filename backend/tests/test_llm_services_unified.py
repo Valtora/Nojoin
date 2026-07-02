@@ -431,3 +431,68 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
         "English (British)"
         in calls[-1]["secondary_request"].output_language_instruction
     )
+
+
+def test_ollama_chat_maps_model_history_role_to_assistant() -> None:
+    capture: dict[str, object] = {}
+
+    class FakeRequests:
+        def post(self, url, json, timeout, allow_redirects):
+            capture["json"] = json
+            return _FakeOllamaResponse("The answer.")
+
+    backend = object.__new__(OllamaLLMBackend)
+    backend.model = "llama3"
+    backend.api_url = "http://ollama.local"
+    backend.context_window = 131072
+    backend.requests = FakeRequests()
+
+    history = [
+        {"role": "user", "parts": [{"text": "Earlier question"}]},
+        {"role": "model", "parts": [{"text": "Earlier answer"}]},
+    ]
+    answer = backend.ask_question_about_meeting(
+        user_question="And then?",
+        meeting_notes="notes",
+        diarized_transcript="[00:00] Speaker A: hi",
+        conversation_history=history,
+    )
+
+    assert answer == "The answer."
+    roles = [message["role"] for message in capture["json"]["messages"]]
+    # Ollama's /api/chat rejects any role outside user/assistant/system, so the
+    # Gemini-style 'model' history role must be normalised or the whole
+    # multi-turn request fails.
+    assert "model" not in roles
+    assert roles == ["user", "assistant", "user"]
+    assert capture["json"]["messages"][1] == {
+        "role": "assistant",
+        "content": "Earlier answer",
+    }
+
+
+def test_anthropic_generate_meeting_edge_sends_no_assistant_prefill() -> None:
+    capture: dict[str, object] = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            capture.update(kwargs)
+            return SimpleNamespace(
+                content=[SimpleNamespace(text=_sample_meeting_edge_payload())]
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-test"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    result = backend.generate_meeting_edge(
+        MeetingEdgeRequest(
+            recent_transcript="Speaker A: We need final approval before launch."
+        ),
+        timeout=20,
+    )
+
+    assert result.summary == "Launch timing is the active thread."
+    # A last-assistant-turn prefill 400s on current Claude models, so Meeting Edge
+    # must send a single user message and rely on the tolerant JSON parser.
+    assert [message["role"] for message in capture["messages"]] == ["user"]

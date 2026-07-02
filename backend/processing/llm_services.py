@@ -1709,13 +1709,15 @@ class AnthropicLLMBackend(LLMBackend):
                 "No Anthropic model configured. Please select a model in Settings."
             )
         try:
+            # No assistant prefill: a last-assistant-turn prefill 400s on current
+            # Claude models (Opus 4.6+, Sonnet 5, Fable 5). The prompt already
+            # mandates a JSON object and the tolerant parser handles any
+            # fenced/prose wrapping, so raw JSON is not forced by a prefill.
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=2048,
                 messages=[
                     {"role": "user", "content": user_content},
-                    # Assistant prefill steers Claude into emitting raw JSON.
-                    {"role": "assistant", "content": "{"},
                 ],
                 temperature=0.2,
                 timeout=timeout,
@@ -1725,8 +1727,6 @@ class AnthropicLLMBackend(LLMBackend):
                 if hasattr(response.content[0], "text")
                 else response.content[0]
             )
-            # Re-attach the prefilled opening brace.
-            text = "{" + str(text)
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
@@ -2244,8 +2244,11 @@ class OllamaLLMBackend(LLMBackend):
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") and msg.get("parts"):
+                    # Ollama's /api/chat accepts only user/assistant/system, so
+                    # normalise the Gemini-style 'model' history role to 'assistant'.
+                    role = "assistant" if msg["role"] == "model" else msg["role"]
                     for part in msg["parts"]:
-                        messages.append({"role": msg["role"], "content": part["text"]})
+                        messages.append({"role": role, "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
 
         if not self.model:
@@ -2289,8 +2292,11 @@ class OllamaLLMBackend(LLMBackend):
         if conversation_history:
             for msg in conversation_history:
                 if msg.get("role") and msg.get("parts"):
+                    # Ollama's /api/chat accepts only user/assistant/system, so
+                    # normalise the Gemini-style 'model' history role to 'assistant'.
+                    role = "assistant" if msg["role"] == "model" else msg["role"]
                     for part in msg["parts"]:
-                        messages.append({"role": msg["role"], "content": part["text"]})
+                        messages.append({"role": role, "content": part["text"]})
         messages.append({"role": "user", "content": prompt})
 
         if not self.model:
