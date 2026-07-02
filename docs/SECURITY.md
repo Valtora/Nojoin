@@ -49,7 +49,8 @@ Recording capture uses the normal browser session token. There is no separate de
 
 Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access tokens of type `mcp` through Nojoin's own authorization server.
 
-- MCP tokens authenticate only the read-only `/mcp` endpoint. They carry the `mcp:read` scope and a resource binding, and are rejected by every general API route.
+- MCP tokens authenticate only the `/mcp` endpoint. They carry the `mcp:read` scope (all tools) and, for grants consented since the People import tool was introduced, the `mcp:write` scope, plus a resource binding; they are rejected by every general API route regardless of scope.
+- The only write surface behind `mcp:write` is the `import_people` tool, which creates or updates records in the consenting user's own People library. Recordings, transcripts, notes, and tags remain read-only. Grants that predate `mcp:write` keep working for every read tool; the write tool refuses them until the user reconnects and consents to the wider scope.
 - Authorization codes are single-use, PKCE-bound (S256), and expire after 60 seconds. Refresh tokens are stored hashed and rotate on every use; reuse of a rotated refresh token revokes the entire grant family.
 - Dynamic client registration is open (as the MCP specification requires) but rate limited, accepts only public PKCE clients with HTTPS redirect URIs, and grants no access by itself — every grant requires an interactive, origin-checked consent by a signed-in user.
 - Users can list and revoke connector grants under Personal settings. Password changes, admin resets, and session revocation invalidate outstanding MCP access tokens through the shared `token_version` mechanism.

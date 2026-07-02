@@ -31,12 +31,23 @@ current_mcp_user: ContextVar[Optional[User]] = ContextVar(
     "current_mcp_user", default=None
 )
 
+# The scopes carried by the request's access token. The endpoint gate is
+# mcp:read; write tools check mcp:write themselves so read-only grants
+# issued before the write scope existed keep working for every read tool.
+current_mcp_scopes: ContextVar[frozenset[str]] = ContextVar(
+    "current_mcp_scopes", default=frozenset()
+)
+
 
 def get_current_mcp_user() -> User:
     user = current_mcp_user.get()
     if user is None:
         raise RuntimeError("MCP tool invoked outside an authenticated request.")
     return user
+
+
+def get_current_mcp_scopes() -> frozenset[str]:
+    return current_mcp_scopes.get()
 
 
 def _challenge_header() -> dict[str, str]:
@@ -129,8 +140,15 @@ class MCPAuthMiddleware:
             )
             return
 
+        token_scopes = payload.get("scopes")
+        granted_scopes = frozenset(
+            item for item in (token_scopes or []) if isinstance(item, str)
+        )
+
         context_token = current_mcp_user.set(user)
+        scopes_token = current_mcp_scopes.set(granted_scopes)
         try:
             await self.app(scope, receive, send)
         finally:
+            current_mcp_scopes.reset(scopes_token)
             current_mcp_user.reset(context_token)
