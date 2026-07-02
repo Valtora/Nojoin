@@ -106,4 +106,9 @@ USER appuser
 # Entrypoint preloads ML models, then hands off to the CMD
 ENTRYPOINT ["backend/worker_entrypoint.sh"]
 
-CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "--loglevel=info", "--pool=solo", "--concurrency=1"]
+# Run the worker with embedded Celery Beat (-B) so periodic jobs (15-minute
+# calendar sync, 24-hour temp cleanup, calendar push-channel renewal) actually
+# fire. Nojoin runs a single worker, so embedded beat cannot double-schedule.
+# The beat schedule DB lives on the persistent ./data volume so the cadence
+# survives restarts instead of resetting.
+CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "-B", "-s", "/app/data/celerybeat-schedule", "--loglevel=info", "--pool=solo", "--concurrency=1"]

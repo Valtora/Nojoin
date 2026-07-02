@@ -24,6 +24,7 @@ interface ProviderFormState {
   tenant_id: string;
   enabled: boolean;
   clear_client_secret: boolean;
+  push_enabled: boolean;
 }
 
 
@@ -33,6 +34,7 @@ const EMPTY_FORM: ProviderFormState = {
   tenant_id: "common",
   enabled: true,
   clear_client_secret: false,
+  push_enabled: false,
 };
 
 
@@ -54,6 +56,7 @@ function buildInitialForms(
           : "",
       enabled: provider.enabled,
       clear_client_secret: false,
+      push_enabled: provider.push_enabled,
     };
   });
 
@@ -115,6 +118,7 @@ export default function CalendarProviderSettings() {
       client_id: form.client_id,
       enabled: form.enabled,
       clear_client_secret: form.clear_client_secret,
+      push_enabled: form.push_enabled,
     };
 
     if (provider === "microsoft") {
@@ -147,6 +151,7 @@ export default function CalendarProviderSettings() {
               : "",
           enabled: updatedProvider.enabled,
           clear_client_secret: false,
+          push_enabled: updatedProvider.push_enabled,
         },
       }));
       addNotification({
@@ -317,6 +322,42 @@ export default function CalendarProviderSettings() {
                   />
                   Clear saved secret on next save
                 </label>
+
+                <SettingsPanel
+                  variant="meta"
+                  className="space-y-2 text-xs contrast-helper"
+                >
+                  <label className="flex items-center gap-2 text-sm contrast-helper">
+                    <input
+                      type="checkbox"
+                      checked={form.push_enabled}
+                      onChange={(event) =>
+                        updateForm(provider.provider, {
+                          push_enabled: event.target.checked,
+                        })
+                      }
+                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    Enable live sync (push notifications)
+                  </label>
+                  <div>
+                    Requires this Nojoin instance to be reachable over public
+                    HTTPS. When live sync cannot be established, connected
+                    calendars still refresh every 15 minutes.
+                  </div>
+                  {provider.push_notification_url && (
+                    <>
+                      <div>
+                        {provider.provider === "google"
+                          ? "Verify this notification URL's domain in Google Cloud, then Nojoin registers the watch channels:"
+                          : "Nojoin registers this notification URL automatically:"}
+                      </div>
+                      <div className="break-all rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                        {provider.push_notification_url}
+                      </div>
+                    </>
+                  )}
+                </SettingsPanel>
 
                 <div className="flex justify-end">
                   <button

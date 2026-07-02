@@ -79,6 +79,7 @@ Live recording is initiated and controlled by the authenticated web app.
 - Switching focus to another tab, window, or application does not pause recording.
 - WebM/Opus, Ogg/Opus, and MP4 audio browser segments are transcoded in worker tasks before final WAV concatenation and final processing.
 - Retired native-helper endpoints return structured `410 Gone` responses and do not issue credentials or accept uploads.
+- Calendar push webhook endpoints (`/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft`) are called by Google and Microsoft rather than by an authenticated user, so they carry no session auth. Each inbound notification is authenticated by a per-subscription secret stored encrypted at rest (the Google channel token or Microsoft `clientState`); the payload is treated only as a change signal, and the handler merely enqueues an incremental sync that runs with the account's own stored tokens. Unrecognised or mismatched notifications are ignored, the endpoints never echo whether a subscription exists, and they are rate limited.
 
 For end-user capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
 

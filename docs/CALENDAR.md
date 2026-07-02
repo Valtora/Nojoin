@@ -74,6 +74,32 @@ When no calendar is connected and there are no unlinked recordings in view, the 
 
 Synced calendar events also store their description and attendee list, and recordings carry a nullable `calendar_event_id` so a recording can be linked to the calendar event it belongs to (see Meeting Intelligence in [USAGE.md](USAGE.md)). When a recording is linked, the dashboard suppresses the standalone Nojoin meeting item and shows only the calendar event.
 
+## Sync Frequency and Live Sync
+
+Nojoin keeps connected calendars up to date in two complementary ways.
+
+- **Scheduled sync (always on):** A background scheduler refreshes every connected account that has at least one selected calendar every 15 minutes. Sync is incremental, using each provider's change cursor (Google `syncToken`, Microsoft Graph `delta`), so only changes since the last run are fetched. This runs entirely on the worker and needs no inbound network access.
+- **Live sync (optional push notifications):** When enabled and supported, Nojoin registers a per-calendar push subscription with the provider so changes arrive by webhook within seconds instead of waiting for the next 15-minute cycle. Scheduled sync keeps running as a safety net, so calendars stay correct even if a push subscription lapses.
+
+You can also trigger an immediate refresh at any time with the **Sync now** action on a connected account.
+
+### Enabling Live Sync
+
+Live sync is off by default and is enabled per provider by an Owner or Admin in **Settings > Administration > Calendar providers**.
+
+Requirements:
+
+- The installation must be reachable from the public internet over HTTPS at the exact `WEB_APP_URL` origin. Localhost or LAN-only deployments cannot receive provider webhooks and should rely on scheduled sync.
+- For **Google**, the webhook domain must be verified in the Google Cloud project, because Google only delivers push notifications to verified domains.
+- For **Microsoft**, no extra verification is needed; Microsoft validates the webhook automatically when the subscription is created.
+
+When live sync is active for a connected account, that account shows a **Live** indicator in **Settings > Personal > Calendar Connections**. If a subscription cannot be created (for example, the instance is not publicly reachable, or the Google domain is unverified), Nojoin records the failure and continues with scheduled sync; no data is lost.
+
+Nojoin exposes these webhook endpoints for the providers to call:
+
+- Google: `<public-origin>/api/v1/calendar/webhooks/google`
+- Microsoft: `<public-origin>/api/v1/calendar/webhooks/microsoft`
+
 ## Google OAuth Setup
 
 1. Open Google Cloud Console and create or select the project you want to use.
@@ -94,6 +120,7 @@ Synced calendar events also store their description and attendee list, and recor
 
 8. Save the client.
 9. Enter the generated client ID and client secret into Nojoin Admin Calendar settings or the matching environment variables.
+10. Optional, for Live Sync only: verify the Nojoin public domain under the project's **Domain verification** settings so Google will deliver calendar push notifications to `<public-origin>/api/v1/calendar/webhooks/google`. Scheduled 15-minute sync works without this step.
 
 ## Microsoft OAuth Setup
 
@@ -130,6 +157,7 @@ Microsoft setup is slightly more sensitive because tenant choice affects which a
 10. Open **Certificates & secrets** and create a client secret.
 11. Copy the secret **Value** immediately. Do not use the **Secret ID**.
 12. Save the values into Nojoin Admin Calendar settings or the matching environment variables.
+13. Live Sync needs no extra Microsoft setup: the existing `Calendars.Read` permission covers change-notification subscriptions, and Microsoft validates the webhook automatically. It still requires Nojoin to be publicly reachable over HTTPS at `WEB_APP_URL`.
 
 ### Tenant Selection Rules
 
@@ -178,6 +206,17 @@ The delegated permissions exist, but the tenant blocks user consent. A tenant ad
 ### Google Testing Mode Blocks a User
 
 If the Google app is still in testing mode, that Google account must be listed as a test user until the consent screen is published.
+
+### Live Sync Not Activating
+
+If a connected account never shows the **Live** indicator:
+
+- Confirm the provider's push toggle is enabled in **Settings > Administration > Calendar providers**.
+- Confirm Nojoin is reachable from the public internet over HTTPS at exactly `WEB_APP_URL`. Localhost or LAN-only deployments cannot receive webhooks; scheduled 15-minute sync still works.
+- For Google, confirm the webhook domain is verified in the Google Cloud project.
+- Confirm a reverse proxy or tunnel forwards `POST` requests to `/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft` and preserves the `Host` header.
+
+Live sync is an accelerator only. When it cannot be established, calendars still refresh on the 15-minute schedule.
 
 ## Related Docs
 

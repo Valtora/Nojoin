@@ -111,6 +111,10 @@ celery_app.conf.update(
             "task": "backend.worker.tasks.sync_calendar_connections_task",
             "schedule": 900.0,
         },
+        "renew-calendar-push-channels-every-30m": {
+            "task": "backend.worker.tasks.renew_calendar_push_channels_task",
+            "schedule": 1800.0,
+        },
     },
 )
 

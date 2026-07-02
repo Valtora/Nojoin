@@ -418,6 +418,8 @@ export interface CalendarProviderStatus {
   client_id?: string | null;
   tenant_id?: string | null;
   has_client_secret: boolean;
+  push_enabled: boolean;
+  push_notification_url?: string | null;
 }
 
 export interface CalendarProviderAvailability {
@@ -452,6 +454,7 @@ export interface CalendarConnection {
   last_sync_completed_at?: string | null;
   last_synced_at?: string | null;
   selected_calendar_count: number;
+  push_active: boolean;
   calendars: CalendarSource[];
 }
 
@@ -466,6 +469,7 @@ export interface CalendarProviderConfigUpdate {
   tenant_id?: string | null;
   enabled?: boolean;
   clear_client_secret?: boolean;
+  push_enabled?: boolean;
 }
 
 export interface CalendarDashboardDayCount {

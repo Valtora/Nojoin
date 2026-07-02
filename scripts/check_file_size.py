@@ -38,7 +38,6 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 GRANDFATHERED: dict[str, int] = {
     "backend/worker/tasks/pipeline.py": 2867,
     "backend/processing/llm_services.py": 2686,
-    "backend/services/calendar_service.py": 2571,
     "backend/utils/canonical_pipeline/diarization.py": 2485,
     "backend/utils/canonical_pipeline/core.py": 2192,
     "backend/core/backup_manager.py": 2147,

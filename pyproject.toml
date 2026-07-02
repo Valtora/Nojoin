@@ -91,6 +91,7 @@ max-complexity = 10
 # fact the package's public surface, so F401 must not strip the re-export seams.
 "backend/utils/canonical_pipeline/*.py" = ["F401"]
 "backend/worker/tasks/*.py" = ["F401"]
+"backend/services/calendar_service/*.py" = ["F401"]
 # Pure re-export aggregator packages whose submodules and tests resolve symbols
 # from the package root via a dynamically-built __all__ Ruff cannot analyse.
 "backend/api/v1/endpoints/recordings/__init__.py" = ["F401"]
@@ -138,7 +139,9 @@ max-complexity = 10
 "backend/processing/speaker_merge.py" = ["C901", "PLR0912"]
 "backend/processing/vad.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/seed_demo.py" = ["C901", "PLR0915"]
-"backend/services/calendar_service.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/services/calendar_service/config.py" = ["C901", "PLR0913"]
+"backend/services/calendar_service/dashboard.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/services/calendar_service/sync.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/services/jwt_revocation_service.py" = ["PLR0913"]
 "backend/utils/asr_window_results.py" = ["PLR0913"]
 "backend/utils/audio_windows.py" = ["PLR0913"]
