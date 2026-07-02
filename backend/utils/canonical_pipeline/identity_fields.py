@@ -8,12 +8,17 @@ and alias sync instead of drifting copies.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding import merge_embeddings
 
+if TYPE_CHECKING:
+    from sqlmodel import Session
+
 
 def apply_recording_speaker_identity_fields(
-    session,
+    session: Session,
     recording_speaker: RecordingSpeaker,
     *,
     new_speaker_name: str,

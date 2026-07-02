@@ -13,7 +13,6 @@ import requests.exceptions
 from celery import Task
 from celery.signals import worker_ready
 from sqlalchemy import inspect
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 

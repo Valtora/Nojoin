@@ -678,9 +678,10 @@ def _auto_apply_persisted_speaker_name_suggestions(
     recording speaker to the global library entry (merging voiceprint
     embeddings), otherwise the suggested name becomes the local name. Returns
     the suggestion dicts that were applied (mutated in place to status
-    "accepted" with resolution reason "auto_applied"). Suggestions that could
-    not be applied are omitted from the result so no unresolvable "pending"
-    entry is persisted now that the accept/reject review flow is gone.
+    "accepted" with resolution reason "auto_applied"). A suggestion that
+    matches no live recording speaker is skipped and omitted from the result,
+    so no unresolvable "pending" entry is persisted now that the accept/reject
+    review flow is gone.
     """
     speakers_by_id = {speaker.id: speaker for speaker in speakers}
     timestamp = datetime.now(UTC).isoformat()
@@ -701,44 +702,28 @@ def _auto_apply_persisted_speaker_name_suggestions(
             else None
         )
         raw_confidence = suggestion.get("confidence")
-        # identity_locked stays untouched: locking is reserved for
-        # human-confirmed identity, so auto-applied names remain overridable
-        # by future higher-authority signals.
-        try:
-            # Savepoint per speaker: a flush-time DB error would otherwise
-            # leave the session in a rolled-back state that breaks every
-            # later speaker and the final commit. The nested transaction
-            # confines a failure to this speaker and keeps the session usable.
-            with session.begin_nested():
-                apply_recording_speaker_identity_fields(
-                    session,
-                    speaker,
-                    new_speaker_name=suggested_name,
-                    target_global_speaker=global_speaker,
-                    merge_global_embedding_alpha=(
-                        0.3 if global_speaker is not None else None
-                    ),
-                    identity_confidence=(
-                        float(raw_confidence)
-                        if isinstance(raw_confidence, (int, float))
-                        else None
-                    ),
-                )
-        except SQLAlchemyError:
-            # Catch only DB-infrastructure failures (e.g. a flush-time
-            # constraint error): the savepoint rolled this speaker back, so
-            # the session is clean for the next one. Skip the suggestion
-            # rather than persisting an unresolvable "pending" entry.
-            # Programming errors (ValueError from mismatched embedding dims,
-            # etc.) are left to propagate and fail the task loudly.
-            logger.warning(
-                "Failed to auto-apply speaker name suggestion for label %s "
-                "on recording %s; skipping it (not persisted).",
-                suggestion.get("diarization_label"),
-                recording.id,
-                exc_info=True,
-            )
-            continue
+        # No per-speaker error recovery: the inputs are already validated
+        # (global_speaker is a fetched row, so its FK is valid; local_name has
+        # no constraints), so this does not raise in normal operation. A real
+        # failure here is systemic (DB unavailable) or a genuine bug (e.g.
+        # mismatched embedding dimensions) and should fail the task loudly
+        # rather than be silently skipped; the stage-level handler then marks
+        # notes as errored while the transcript and diarisation already
+        # persisted in earlier stages remain intact. identity_locked stays
+        # untouched: locking is reserved for human-confirmed identity, so
+        # auto-applied names remain overridable by future signals.
+        apply_recording_speaker_identity_fields(
+            session,
+            speaker,
+            new_speaker_name=suggested_name,
+            target_global_speaker=global_speaker,
+            merge_global_embedding_alpha=0.3 if global_speaker is not None else None,
+            identity_confidence=(
+                float(raw_confidence)
+                if isinstance(raw_confidence, (int, float))
+                else None
+            ),
+        )
 
         suggestion["status"] = SPEAKER_SUGGESTION_STATUS_ACCEPTED
         suggestion["updated_at"] = timestamp
@@ -794,9 +779,9 @@ def _persist_generated_speaker_name_suggestions_impl(
 
     # Apply before persisting: persist_transcript_speaker_suggestions copies
     # the dicts, so resolution fields must already be set on them. Only the
-    # successfully-applied suggestions are persisted, as an audit trail; ones
-    # that could not be applied are dropped rather than left as unresolvable
-    # "pending" entries.
+    # applied suggestions are persisted, as an audit trail; a suggestion that
+    # matched no live speaker is dropped rather than written as an unresolvable
+    # "pending" entry now that the accept/reject review flow is gone.
     applied = _auto_apply_persisted_speaker_name_suggestions(
         session,
         recording=recording,
