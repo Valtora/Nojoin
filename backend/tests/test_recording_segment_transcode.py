@@ -967,7 +967,7 @@ def test_sync_recording_audio_chunks_preserves_received_at_on_rescan(
 
 
 @pytest.mark.anyio
-async def test_failed_webm_transcode_marks_sequence_incomplete_for_finalize(
+async def test_failed_webm_transcode_quarantines_corrupt_segment_on_finalize(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     live_dispatches,
@@ -1031,6 +1031,179 @@ async def test_failed_webm_transcode_marks_sequence_incomplete_for_finalize(
             },
         }
     ]
+
+    # The finalize rescue transcode also fails, so the segment is terminally
+    # corrupt: it is quarantined and, with no other valid segments, finalize
+    # reports a non-retriable 400 instead of the retriable 409.
+    finalize_metrics: list[dict[str, object]] = []
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    monkeypatch.setattr(
+        recordings_module,
+        "record_pipeline_metric",
+        lambda *, stage, recording_id, payload, log: finalize_metrics.append(
+            {
+                "stage": stage,
+                "recording_id": recording_id,
+                "payload": payload,
+            }
+        ),
+    )
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize_response.status_code == 400
+    assert finalize_response.json()["detail"] == "No valid segments found"
+    assert not (upload_dir / "0.webm").exists()
+    assert not failure_marker.exists()
+    corrupt_path = upload_dir / "0.corrupt"
+    assert corrupt_path.exists()
+    assert corrupt_path.read_bytes() == b"corrupted-webm"
+    assert {
+        "stage": "segment_corrupt_skipped",
+        "recording_id": recording_id,
+        "payload": {
+            "sequence": 0,
+            "quarantined_path": str(corrupt_path),
+            "error": "RuntimeError: broken container",
+        },
+    } in finalize_metrics
+
+
+@pytest.mark.anyio
+async def test_finalize_skips_corrupt_middle_segment_and_accepts_gap(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing import segment_transcode as segment_transcode_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Gappy browser meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker,
+        public_id=recording_public_id,
+    )
+
+    for sequence, body in (
+        (0, b"webm-ok-0"),
+        (1, b"webm-truncated"),
+        (2, b"webm-ok-2"),
+    ):
+        upload_response = await client.post(
+            f"/api/v1/recordings/{recording_public_id}/segment",
+            params={"sequence": sequence},
+            headers={"Origin": TRUSTED_ORIGIN},
+            files={"file": (f"{sequence}.webm", body, "audio/webm")},
+        )
+        assert upload_response.status_code == 200
+
+    def fake_ffmpeg_transcode(input_path, output_path):
+        if input_path.name.startswith("1."):
+            raise RuntimeError("truncated container")
+        output_path.write_bytes(make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT))
+
+    monkeypatch.setattr(
+        segment_transcode_module, "_run_ffmpeg_transcode", fake_ffmpeg_transcode
+    )
+    monkeypatch.setattr(
+        recordings_module,
+        "concatenate_media_files",
+        lambda paths, destination: Path(destination).write_bytes(
+            b"joined-browser-master"
+        ),
+    )
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 4.0)
+    monkeypatch.setattr(
+        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
+    )
+
+    finalize_metrics: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        recordings_module,
+        "record_pipeline_metric",
+        lambda *, stage, recording_id, payload, log: finalize_metrics.append(
+            {
+                "stage": stage,
+                "recording_id": recording_id,
+                "payload": payload,
+            }
+        ),
+    )
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    upload_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
+    corrupt_path = upload_dir / "1.corrupt"
+
+    assert finalize_response.status_code == 200
+    assert finalize_response.json()["status"] == "QUEUED"
+    assert corrupt_path.exists()
+    assert corrupt_path.read_bytes() == b"webm-truncated"
+    assert not (upload_dir / "1.webm").exists()
+    assert not (upload_dir / "1.transcode_failed").exists()
+    assert await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    ) == [
+        (0, str(upload_dir / "0.wav")),
+        (2, str(upload_dir / "2.wav")),
+    ]
+    assert [
+        metric
+        for metric in finalize_metrics
+        if metric["stage"] == "segment_corrupt_skipped"
+    ] == [
+        {
+            "stage": "segment_corrupt_skipped",
+            "recording_id": recording_id,
+            "payload": {
+                "sequence": 1,
+                "quarantined_path": str(corrupt_path),
+                "error": "",
+            },
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_finalize_still_reports_upload_in_progress_for_genuine_sequence_gap(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Gap without corruption"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+
+    for sequence in (0, 2):
+        upload_response = await client.post(
+            f"/api/v1/recordings/{recording_public_id}/segment",
+            params={"sequence": sequence},
+            headers={"Origin": TRUSTED_ORIGIN},
+            files={"file": (f"{sequence}.wav", make_wav_bytes(), "audio/wav")},
+        )
+        assert upload_response.status_code == 200
 
     finalize_response = await client.post(
         f"/api/v1/recordings/{recording_public_id}/finalize",

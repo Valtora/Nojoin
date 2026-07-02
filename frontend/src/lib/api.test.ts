@@ -87,26 +87,6 @@ describe("transcript speaker API", () => {
     );
   });
 
-  it("posts speaker suggestion acceptance by diarization label", async () => {
-    const { acceptSpeakerNameSuggestion } = await import("./api");
-
-    await acceptSpeakerNameSuggestion("rec-1", "SPEAKER_00");
-
-    expect(post).toHaveBeenCalledWith(
-      "/speakers/recordings/rec-1/speakers/SPEAKER_00/suggestions/accept",
-    );
-  });
-
-  it("posts speaker suggestion rejection by diarization label", async () => {
-    const { rejectSpeakerNameSuggestion } = await import("./api");
-
-    await rejectSpeakerNameSuggestion("rec-1", "SPEAKER_00");
-
-    expect(post).toHaveBeenCalledWith(
-      "/speakers/recordings/rec-1/speakers/SPEAKER_00/suggestions/reject",
-    );
-  });
-
   it("fetches the admin health dashboard payload", async () => {
     get.mockResolvedValueOnce({
       data: {

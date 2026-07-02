@@ -5,16 +5,13 @@ import { useState } from "react";
 import {
   BatchVoiceprintResponse,
   RecordingId,
-  SpeakerNameSuggestion,
   VoiceprintExtractResult,
 } from "@/types";
 import {
-  acceptSpeakerNameSuggestion,
   deleteRecordingSpeaker,
   extractVoiceprint,
   mergeRecordingSpeakers,
   promoteToGlobalSpeaker,
-  rejectSpeakerNameSuggestion,
   updateSpeaker,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -71,11 +68,6 @@ export interface SpeakerPanelActions {
   // Promote to global
   promoteToGlobal: (entry: SpeakerPanelEntry) => Promise<void>;
 
-  // Suggestions
-  resolvingSuggestionId: string | null;
-  acceptSuggestion: (suggestion: SpeakerNameSuggestion) => Promise<void>;
-  rejectSuggestion: (suggestion: SpeakerNameSuggestion) => Promise<void>;
-
   isSubmitting: boolean;
 
   /** Clears the active context menu before opening an inline editor/modal. */
@@ -84,10 +76,9 @@ export interface SpeakerPanelActions {
 
 /**
  * Owns the speaker mutation state and handlers for {@link SpeakerPanel}
- * (FE-012): rename, merge, delete, split, voiceprint extraction, promotion to
- * the global library, and suggestion accept/reject. Lifted verbatim from the
- * component so the side effects, notifications, and `recording-updated`
- * dispatch are unchanged.
+ * (FE-012): rename, merge, delete, split, voiceprint extraction, and promotion
+ * to the global library. Lifted verbatim from the component so the side
+ * effects, notifications, and `recording-updated` dispatch are unchanged.
  *
  * The caller supplies `closeContextMenu` so the menu-driven actions clear the
  * menu exactly as before.
@@ -110,9 +101,6 @@ export function useSpeakerPanelActions(
     useState<SpeakerPanelEntry | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [resolvingSuggestionId, setResolvingSuggestionId] = useState<
-    string | null
-  >(null);
 
   const [extractingVoiceprint, setExtractingVoiceprint] = useState<
     string | null
@@ -273,52 +261,6 @@ export function useSpeakerPanelActions(
     }
   };
 
-  const acceptSuggestion = async (suggestion: SpeakerNameSuggestion) => {
-    setResolvingSuggestionId(suggestion.id);
-    try {
-      await acceptSpeakerNameSuggestion(
-        recordingId,
-        suggestion.diarization_label,
-      );
-      addNotification({
-        type: "success",
-        message: `Accepted suggestion: ${suggestion.suggested_name}.`,
-      });
-      onRefresh();
-    } catch (e: unknown) {
-      console.error("Failed to accept speaker suggestion", e);
-      addNotification({
-        type: "error",
-        message: "Failed to accept speaker suggestion.",
-      });
-    } finally {
-      setResolvingSuggestionId(null);
-    }
-  };
-
-  const rejectSuggestion = async (suggestion: SpeakerNameSuggestion) => {
-    setResolvingSuggestionId(suggestion.id);
-    try {
-      await rejectSpeakerNameSuggestion(
-        recordingId,
-        suggestion.diarization_label,
-      );
-      addNotification({
-        type: "success",
-        message: `Rejected suggestion for ${suggestion.diarization_label}.`,
-      });
-      onRefresh();
-    } catch (e: unknown) {
-      console.error("Failed to reject speaker suggestion", e);
-      addNotification({
-        type: "error",
-        message: "Failed to reject speaker suggestion.",
-      });
-    } finally {
-      setResolvingSuggestionId(null);
-    }
-  };
-
   return {
     renamingSpeaker,
     setRenamingSpeaker,
@@ -355,10 +297,6 @@ export function useSpeakerPanelActions(
     createVoiceprint,
 
     promoteToGlobal,
-
-    resolvingSuggestionId,
-    acceptSuggestion,
-    rejectSuggestion,
 
     isSubmitting,
 

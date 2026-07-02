@@ -111,6 +111,7 @@ vi.mock("./uploader", () => ({
   createSegmentUploader: vi.fn(() => ({
     enqueue: vi.fn(),
     waitForIdle: vi.fn(),
+    recover: vi.fn(() => true),
     dispose: vi.fn(),
   })),
 }));
@@ -207,6 +208,79 @@ describe("capture controller", () => {
     expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledTimes(8);
   });
 
+  it("exposes finalize retry progress and clears it when finalize settles", async () => {
+    vi.useFakeTimers();
+
+    const detail =
+      "Recording upload is still in progress; finalize after all segment uploads complete.";
+    apiMocks.finalizeRecordingCapture
+      .mockRejectedValueOnce(buildConflictError(detail))
+      .mockRejectedValueOnce(buildConflictError(detail))
+      .mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+
+    const controller = new CaptureController();
+    const seenRetries: Array<{ attempt: number; maxAttempts: number } | null> = [];
+    controller.subscribe((state) => seenRetries.push(state.finalizeRetry));
+
+    const finalizePromise = (controller as any).finalizeRecordingWhenReady("rec-1");
+    await vi.runAllTimersAsync();
+
+    await expect(finalizePromise).resolves.toEqual({ id: "rec-1", status: "QUEUED" });
+    expect(seenRetries).toContainEqual({ attempt: 1, maxAttempts: 11 });
+    expect(seenRetries).toContainEqual({ attempt: 2, maxAttempts: 11 });
+    expect(controller.getState().finalizeRetry).toBeNull();
+  });
+
+  it("releases capture media as soon as uploads drain, before finalize completes", async () => {
+    const sources = {
+      mode: "microphone_only",
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "microphone_only",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: false,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Test meeting" });
+
+    let resolveFinalize: (value: unknown) => void = () => {};
+    apiMocks.finalizeRecordingCapture.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFinalize = resolve;
+      }),
+    );
+
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+
+    const stopPromise = controller.stop();
+
+    // stop() releases media before it calls finalize, so once finalize has
+    // been invoked the microphone must already have been released.
+    await vi.waitFor(() => {
+      expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalled();
+    });
+    expect(sources.release).toHaveBeenCalledTimes(1);
+    expect(controller.getState().status).toBe("finalizing");
+
+    resolveFinalize({ id: "rec-1", status: "QUEUED" });
+    await stopPromise;
+
+    // disposeRuntime must not release the media a second time.
+    expect(sources.release).toHaveBeenCalledTimes(1);
+    expect(controller.getState().status).toBe("idle");
+  });
+
   it("waits for the uploader to drain before pausing", async () => {
     const calls: string[] = [];
     apiMocks.pauseRecordingCapture.mockImplementation(async () => {
@@ -259,6 +333,17 @@ describe("capture controller", () => {
       },
       uploader: {
         waitForIdle: async () => {},
+        recover: () => true,
+        dispose: () => {},
+      },
+      waveform: {
+        stop: () => {},
+      },
+      sources: {
+        release: () => {},
+      },
+      mixer: {
+        dispose: async () => {},
       },
     };
     controller.finalizeRecordingWhenReady = vi.fn().mockRejectedValue(buildConflictError(detail));

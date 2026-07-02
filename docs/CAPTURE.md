@@ -41,7 +41,7 @@ On desktop shared-audio capture, the browser mixes those sources in the Nojoin t
 
 On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
 
-For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps. Live ASR and rolling speaker-window diarisation are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
+For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps while uploads are still in flight, but a segment that repeatedly fails transcoding (for example one truncated by a network outage) is quarantined and skipped so finalization can complete with a short audio gap instead of failing forever; each skipped segment is logged as a `segment_corrupt_skipped` pipeline metric. Live ASR and rolling speaker-window diarisation are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
 
 ## Before Your First Recording
 
@@ -108,7 +108,7 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 
 - **Pause** keeps uploaded segments and stops new segment capture until you resume.
 - **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
-- **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing.
+- **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button shows the finalize progress during that wait.
 - **Discard** permanently removes a recording in one step. It works for any recording that has not finished: uploading, paused, queued, or processing. Discard revokes any running processing task, releases the capture lock, deletes the captured audio and derived files, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
 
 Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu.

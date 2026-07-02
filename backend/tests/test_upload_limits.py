@@ -60,6 +60,44 @@ async def test_stream_and_validate_upload_chunk_reject(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_stream_and_validate_upload_interrupted_body_leaves_no_file(tmp_path):
+    dest = tmp_path / "dest.webm"
+
+    class InterruptedStream(io.RawIOBase):
+        def __init__(self) -> None:
+            self.reads = 0
+
+        def read(self, size=-1):
+            self.reads += 1
+            if self.reads == 1:
+                return b"partial-bytes"
+            raise ConnectionError("client disconnected mid-body")
+
+    file = UploadFile(file=InterruptedStream(), filename="dest.webm")
+
+    with pytest.raises(ConnectionError):
+        await stream_and_validate_upload(file, str(dest), max_size=1024, chunk_size=4)
+
+    # A truncated upload must never become visible at the destination path,
+    # and the temporary file must be cleaned up.
+    assert not dest.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.anyio
+async def test_stream_and_validate_upload_replaces_existing_destination(tmp_path):
+    dest = tmp_path / "dest.txt"
+    dest.write_bytes(b"old contents")
+    file = UploadFile(file=io.BytesIO(b"new contents"), filename="dest.txt")
+
+    bytes_written = await stream_and_validate_upload(file, str(dest), max_size=64)
+
+    assert bytes_written == 12
+    assert dest.read_bytes() == b"new contents"
+    assert list(tmp_path.iterdir()) == [dest]
+
+
+@pytest.mark.anyio
 async def test_concurrency_limiting_in_memory():
     key = "test_key_concurrency_limiting"
     # Reset state to clean

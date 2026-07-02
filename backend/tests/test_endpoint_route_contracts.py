@@ -114,18 +114,6 @@ SPEAKERS_ROUTE_CONTRACT = [
         "List",
     ),
     (
-        "/recordings/{recording_id}/speakers/{diarization_label}/suggestions/accept",
-        ("POST",),
-        "accept_recording_speaker_suggestion",
-        "dict",
-    ),
-    (
-        "/recordings/{recording_id}/speakers/{diarization_label}/suggestions/reject",
-        ("POST",),
-        "reject_recording_speaker_suggestion",
-        "dict",
-    ),
-    (
         "/recordings/{recording_id}/speakers/{diarization_label}/voiceprint",
         ("DELETE",),
         "delete_voiceprint",

@@ -114,6 +114,20 @@ CREATE TABLE recording_speakers (
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL DEFAULT 0
 );
+
+CREATE TABLE recording_speaker_aliases (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_speaker_id INTEGER NOT NULL,
+    alias_type VARCHAR NOT NULL,
+    alias_value VARCHAR(255) NOT NULL,
+    source_run_id INTEGER,
+    active BOOLEAN NOT NULL DEFAULT 1,
+    valid_from_ms INTEGER,
+    valid_to_ms INTEGER,
+    confidence FLOAT
+);
 """
 
 
@@ -327,15 +341,20 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
             names_by_label = {
                 speaker.diarization_label: speaker.name for speaker in speakers
             }
+            local_names_by_label = {
+                speaker.diarization_label: speaker.local_name for speaker in speakers
+            }
             suggestions = transcript.speaker_name_suggestions
 
         assert result is not None
-        assert names_by_label["SPEAKER_00"] == "Speaker 1"
+        assert local_names_by_label["SPEAKER_00"] == "Alex"
+        assert names_by_label["SPEAKER_00"] is None
         assert names_by_label["SPEAKER_01"] == "Dana"
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
-        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
         assert recording.status == "PROCESSED"
@@ -469,5 +488,82 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
         assert recording.processing_progress == 97
         assert transcript.notes_status == "error"
         assert transcript.error_message == "Unified AI contract failed"
+    finally:
+        engine.dispose()
+
+
+def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_worker_ai_database(tmp_path)
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE recording_speakers SET embedding = :embedding WHERE id = 1"),
+            {"embedding": json.dumps([0.0, 1.0, 0.0])},
+        )
+        connection.execute(
+            text("UPDATE global_speakers SET is_voiceprint_locked = 1 WHERE id = 11")
+        )
+
+    class FakeLLM:
+        def generate_meeting_intelligence(self, request, timeout: int = 60):
+            return AutomaticMeetingIntelligenceResult(
+                speaker_mapping={"SPEAKER_00": "Dana"},
+                title="Launch Readiness Review",
+                notes_markdown="# Meeting Notes\n\nGenerated notes.",
+            )
+
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
+
+    try:
+        with Session(engine) as session:
+            recording = session.get(Recording, 1)
+            transcript = session.exec(
+                select(Transcript).where(Transcript.recording_id == 1)
+            ).first()
+            speakers = session.exec(
+                select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
+            ).all()
+
+            tasks_module._run_automatic_meeting_intelligence_stage(
+                session=session,
+                task=None,
+                recording=recording,
+                transcript=transcript,
+                speakers=speakers,
+                transcript_text="[00:00:00 - 00:00:04] SPEAKER_00: Opening update.",
+                unresolved_speakers=("SPEAKER_00",),
+                llm_config=_sample_llm_config(),
+                prefer_short_titles=True,
+                device_suffix=" (CPU)",
+            )
+
+        with Session(engine) as verification_session:
+            speaker_row = verification_session.exec(
+                text(
+                    "SELECT global_speaker_id, local_name FROM recording_speakers WHERE id = 1"
+                )
+            ).one()
+            global_embedding = verification_session.exec(
+                text("SELECT embedding FROM global_speakers WHERE id = 11")
+            ).one()[0]
+            transcript = verification_session.exec(
+                select(Transcript).where(Transcript.recording_id == 1)
+            ).first()
+            suggestions = transcript.speaker_name_suggestions
+
+        # Exact global name match links the speaker instead of setting a
+        # local name, and the locked voiceprint is left untouched.
+        assert speaker_row[0] == 11
+        assert speaker_row[1] is None
+        assert json.loads(global_embedding) == [1.0, 0.0, 0.0]
+        assert len(suggestions) == 1
+        assert suggestions[0]["suggested_global_speaker_id"] == 11
+        assert suggestions[0]["status"] == "accepted"
+        assert suggestions[0]["resolution_reason"] == "auto_applied"
     finally:
         engine.dispose()

@@ -6,7 +6,7 @@ import time
 import urllib.error
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 import requests.exceptions
@@ -40,7 +40,12 @@ from backend.models.pipeline import (
     RecordingAudioWindowManifest,
     TranscriptUtteranceState,
 )
-from backend.models.recording import ClientStatus, Recording, RecordingStatus
+from backend.models.recording import (
+    ClientStatus,
+    Recording,
+    RecordingStatus,
+    recording_supports_unified_mutations,
+)
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
@@ -71,6 +76,7 @@ from backend.utils.audio_windows import (
 from backend.utils.canonical_pipeline import (
     ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
     ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL,
+    apply_recording_speaker_identity_fields,
     build_reusable_live_segments,
     build_transcript_segments_for_read,
     ensure_processing_run,
@@ -122,6 +128,7 @@ from backend.utils.rolling_diarization import (
     persist_diarization_window_result,
 )
 from backend.utils.speaker_name_suggestions import (
+    SPEAKER_SUGGESTION_STATUS_ACCEPTED,
     SpeakerInferenceResult,
     build_mapping_based_speaker_suggestions,
     build_persisted_speaker_suggestion,
