@@ -684,6 +684,9 @@ def _auto_apply_persisted_speaker_name_suggestions(
 
     from backend.models.recording import recording_supports_unified_mutations
     from backend.processing.embedding import merge_embeddings
+    from backend.utils.canonical_pipeline import (
+        ensure_recording_speaker_aliases_for_speaker,
+    )
     from backend.utils.speaker_name_suggestions import (
         SPEAKER_SUGGESTION_STATUS_ACCEPTED,
     )
@@ -696,6 +699,10 @@ def _auto_apply_persisted_speaker_name_suggestions(
         )
         return 0
 
+    bind = session.get_bind()
+    aliases_available = bind is not None and inspect(bind).has_table(
+        "recording_speaker_aliases"
+    )
     speakers_by_id = {speaker.id: speaker for speaker in speakers}
     timestamp = datetime.now(UTC).isoformat()
     applied = 0
@@ -721,12 +728,16 @@ def _auto_apply_persisted_speaker_name_suggestions(
                             global_speaker.embedding, speaker.embedding, alpha=0.3
                         )
                 else:
-                    global_speaker.embedding = speaker.embedding
+                    global_speaker.embedding = list(speaker.embedding)
                 session.add(global_speaker)
         else:
             speaker.local_name = suggested_name
             speaker.global_speaker_id = None
         speaker.name = None
+        # Keep canonical alias lookups consistent with the new name, matching
+        # update_recording_speaker_identity's behaviour after identity changes.
+        if aliases_available:
+            ensure_recording_speaker_aliases_for_speaker(session, speaker)
         session.add(speaker)
 
         suggestion["status"] = SPEAKER_SUGGESTION_STATUS_ACCEPTED
