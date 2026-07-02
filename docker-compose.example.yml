@@ -115,6 +115,7 @@ services:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
       WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
+      MCP_ENABLED: ${MCP_ENABLED:-true}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache
       HF_HOME: /shared_model_cache/huggingface

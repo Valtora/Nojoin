@@ -11,6 +11,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.api.v1.api import api_router
+from backend.api.v1.endpoints.oauth import well_known_router
+from backend.mcp_server import (
+    NormaliseMcpMountPathMiddleware,
+    build_mcp_asgi_app,
+    mcp_session_manager_context,
+)
 from backend.startup_migrations import (
     run_startup_migrations,
     should_skip_startup_migrations,
@@ -118,6 +124,7 @@ from backend.utils.config_manager import (
     get_cors_origin_list,
     get_trusted_host_list,
     get_trusted_web_origin,
+    is_mcp_enabled,
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
 
@@ -202,7 +209,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 
-    yield
+    if is_mcp_enabled():
+        # The MCP streamable-HTTP session manager must run for the lifetime
+        # of the app or requests to the /mcp mount fail.
+        async with mcp_session_manager_context():
+            yield
+    else:
+        yield
 
 
 def create_app(*, app_lifespan=lifespan) -> FastAPI:
@@ -232,8 +245,14 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
 
     app.add_middleware(EnforceCanonicalHttpsMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_trusted_host_list())
+    app.add_middleware(NormaliseMcpMountPathMiddleware)
 
     app.include_router(api_router, prefix="/api/v1")
+    if is_mcp_enabled():
+        # OAuth discovery documents must live at the server root (RFC 8414 /
+        # RFC 9728); the MCP endpoint is the resource they describe.
+        app.include_router(well_known_router)
+        app.mount("/mcp", build_mcp_asgi_app())
 
     @app.get("/health")
     @app.get("/api/health")

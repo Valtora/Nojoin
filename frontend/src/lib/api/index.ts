@@ -22,6 +22,7 @@ export * from "./export";
 export * from "./settings";
 export * from "./setup";
 export * from "./models";
+export * from "./oauth";
 export * from "./system";
 export * from "./users";
 export * from "./documents";

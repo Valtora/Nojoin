@@ -15,6 +15,7 @@ Use the links below by task rather than treating the root README as the source o
 ## Feature and Operations Guides
 
 - [CALENDAR.md](CALENDAR.md): Google and Microsoft calendar setup, user connection flow, dashboard behaviour, and troubleshooting.
+- [MCP.md](MCP.md): Connecting AI assistants (Claude and other MCP clients) to Nojoin, authorisation flow, and revocation.
 - [ADMIN.md](ADMIN.md): Roles, invitations, password rotation, admin settings, and system operations.
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
@@ -38,6 +39,7 @@ Use the links below by task rather than treating the root README as the source o
 | Deploy or upgrade a self-hosted instance | [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Learn how to use the dashboard and recordings workspace | [USAGE.md](USAGE.md) |
 | Configure Google or Outlook calendar sync | [CALENDAR.md](CALENDAR.md) |
+| Connect Claude or another MCP client to my meetings | [MCP.md](MCP.md) |
 | Manage users, invitations, and admin settings | [ADMIN.md](ADMIN.md) |
 | Understand backup sensitivity and restore modes | [BACKUP_RESTORE.md](BACKUP_RESTORE.md) |
 | Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |

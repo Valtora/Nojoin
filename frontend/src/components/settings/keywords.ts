@@ -28,7 +28,8 @@ export const SYSTEM_KEYWORDS = [
 
 export const ACCOUNT_KEYWORDS = [
   'profile', 'username', 'password', 'change password', 'account', 'user',
-  'calendar', 'calendars', 'agenda', 'events', 'gmail', 'google', 'outlook', 'microsoft'
+  'calendar', 'calendars', 'agenda', 'events', 'gmail', 'google', 'outlook', 'microsoft',
+  'connected apps', 'connector', 'mcp', 'claude', 'integrations', 'oauth'
 ];
 
 export const PERSONAL_KEYWORDS = [

@@ -12,6 +12,7 @@ from backend.core.db import get_session
 from backend.core.security import (
     API_ACCESS_SCOPE,
     API_TOKEN_TYPE,
+    MCP_TOKEN_TYPE,
     SESSION_TOKEN_TYPE,
     WEB_SESSION_SCOPE,
     decode_access_token,
@@ -25,7 +26,10 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 STANDARD_USER_TOKEN_TYPES = {SESSION_TOKEN_TYPE, API_TOKEN_TYPE}
-REVOCABLE_TOKEN_TYPES = {SESSION_TOKEN_TYPE, API_TOKEN_TYPE}
+# MCP connector tokens are deliberately NOT standard user tokens: they only
+# authenticate the /mcp mount, never the general API. They are revocable so
+# token_version bumps and the jti denylist contain them like sessions.
+REVOCABLE_TOKEN_TYPES = {SESSION_TOKEN_TYPE, API_TOKEN_TYPE, MCP_TOKEN_TYPE}
 STANDARD_USER_SCOPE_REQUIREMENTS = {
     SESSION_TOKEN_TYPE: {WEB_SESSION_SCOPE},
     API_TOKEN_TYPE: {API_ACCESS_SCOPE},

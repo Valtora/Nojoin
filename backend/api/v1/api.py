@@ -10,6 +10,7 @@ from backend.api.v1.endpoints import (
     invitations,
     llm,
     login,
+    oauth,
     people_tags,
     recordings,
     settings,
@@ -108,6 +109,7 @@ async def retired_companion_routes(**_: str) -> JSONResponse:
 
 api_router.include_router(api_docs.router, tags=["docs"])
 api_router.include_router(login.router, tags=["login"])
+api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth"])
 api_router.include_router(legacy_companion_router)
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(setup.router, prefix="/setup", tags=["setup"])

@@ -712,3 +712,20 @@ def get_trusted_host_list() -> list[str]:
 
 def get_trusted_web_origin() -> str:
     return get_configured_web_origin()
+
+
+MCP_ENABLED_ENV_KEY = "MCP_ENABLED"
+_FALSY_FLAG_VALUES = {"0", "false", "no", "off"}
+
+
+def is_mcp_enabled() -> bool:
+    """Master switch for the MCP connector surface. Defaults to enabled.
+
+    When disabled, the OAuth authorization-server endpoints, the discovery
+    documents, and the /mcp endpoint all respond 404. Changing the value
+    requires an API container restart, like other environment settings.
+    """
+    raw = os.environ.get(MCP_ENABLED_ENV_KEY)
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() not in _FALSY_FLAG_VALUES

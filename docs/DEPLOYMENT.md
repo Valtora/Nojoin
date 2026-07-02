@@ -152,6 +152,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `REDIS_PASSWORD`: Password for the internal Redis service.
 - `HF_TOKEN`: Optional Hugging Face token used only when you want to refresh the bundled Pyannote diarisation assets from upstream.
 - `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
+- `MCP_ENABLED`: Master switch for the built-in MCP connector ([MCP.md](MCP.md)). Defaults to `true`; set to `false` to remove the `/mcp` endpoint, the OAuth discovery documents, and the connector authorisation endpoints entirely. Requires an API container restart to change.
 - `LLM_PROVIDER`: Default LLM provider such as `gemini`, `openai`, `anthropic`, or `ollama`.
 - `GEMINI_API_KEY`: Gemini API key.
 - `OPENAI_API_KEY`: OpenAI API key.
@@ -226,6 +227,7 @@ By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to
 5. Preserve the public browser host when forwarding requests. The upstream `Host` and `X-Forwarded-Host` values should match the hostname in `WEB_APP_URL`.
 6. Forward `X-Forwarded-Proto: https` so Nojoin can recognise secure browser requests through the proxy chain.
 7. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
+8. Forward the whole site through one origin, including `/mcp` and `/.well-known/oauth-*`. Those paths serve the built-in MCP connector and its OAuth discovery documents (see [MCP.md](MCP.md)); the bundled Nginx proxy already routes them to the API service, so an edge proxy that forwards everything to port `14443` needs no extra rules.
 
 If API requests fail with `400 Invalid host header`, the edge proxy is usually forwarding an internal upstream host such as `nojoin-nginx:443` instead of the public `WEB_APP_URL` host.
 

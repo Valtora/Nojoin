@@ -35,7 +35,7 @@ Nojoin's normal browser session uses a Secure HttpOnly cookie, but state-changin
 
 ## Standard JWT Containment
 
-Standard browser session and explicit API JWTs (token types `session` and `api`) support active invalidation in addition to natural expiry.
+Standard browser session, explicit API, and MCP connector JWTs (token types `session`, `api`, and `mcp`) support active invalidation in addition to natural expiry.
 
 - Every issued session/API JWT carries a unique `jti` (token id), an `iat` (issued-at) timestamp, and a `tv` claim that mirrors the user's current `token_version`.
 - Verification rejects a token whose `tv` no longer matches the user record. Bumping `token_version` therefore acts as an immediate kill-switch for every previously issued session and API token belonging to that user.
@@ -44,6 +44,16 @@ Standard browser session and explicit API JWTs (token types `session` and `api`)
 - Calling `POST /api/v1/login/logout` records the cookie token's `jti` in a server-side denylist (`revoked_jwts`), so the captured JWT stops verifying immediately even if a copy was made outside the browser cookie.
 - The denylist also supports targeted revocation of an individual `jti`. Expired entries are pruned opportunistically.
 Recording capture uses the normal browser session token. There is no separate desktop-helper JWT path for live recording.
+
+## MCP Connector Access
+
+Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access tokens of type `mcp` through Nojoin's own authorization server.
+
+- MCP tokens authenticate only the read-only `/mcp` endpoint. They carry the `mcp:read` scope and a resource binding, and are rejected by every general API route.
+- Authorization codes are single-use, PKCE-bound (S256), and expire after 60 seconds. Refresh tokens are stored hashed and rotate on every use; reuse of a rotated refresh token revokes the entire grant family.
+- Dynamic client registration is open (as the MCP specification requires) but rate limited, accepts only public PKCE clients with HTTPS redirect URIs, and grants no access by itself — every grant requires an interactive, origin-checked consent by a signed-in user.
+- Users can list and revoke connector grants under Personal settings. Password changes, admin resets, and session revocation invalidate outstanding MCP access tokens through the shared `token_version` mechanism.
+- Operators can remove the entire connector surface with `MCP_ENABLED=false` (see [DEPLOYMENT.md](DEPLOYMENT.md)); every connector endpoint then responds `404`.
 
 ## JWT Signing Key Rotation
 
