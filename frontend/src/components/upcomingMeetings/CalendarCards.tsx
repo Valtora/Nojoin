@@ -6,6 +6,7 @@ import {
   Clock,
   ExternalLink,
   MapPin,
+  Mic,
   Users,
   Video,
 } from "lucide-react";
@@ -263,6 +264,17 @@ export function DayTimelineEventCard({
           </div>
           {!showJoinPill && (
             <div className="mt-1 flex shrink-0 items-center gap-1.5">
+              {event.linked_recordings.length > 0 && (
+                <span
+                  title={
+                    event.linked_recordings.length === 1
+                      ? "1 linked recording"
+                      : `${event.linked_recordings.length} linked recordings`
+                  }
+                >
+                  <Mic className={`${linkIndicatorClass} text-orange-600 dark:text-orange-300`} />
+                </span>
+              )}
               {hasLink && (
                 <ExternalLink className={`${linkIndicatorClass} text-gray-400 dark:text-gray-500`} />
               )}
