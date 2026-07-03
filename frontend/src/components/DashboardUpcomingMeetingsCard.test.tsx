@@ -205,6 +205,45 @@ describe("DashboardUpcomingMeetingsCard", () => {
     expect(within(card!).getByText("Alice, Bob")).toBeInTheDocument();
   });
 
+  it("renders a compact join label instead of the raw meeting URL in the agenda", async () => {
+    getCalendarDashboardSummary.mockResolvedValue(
+      makeSummary({
+        agenda_items: [
+          makeEvent({
+            title: "Investors call",
+            starts_at: "2026-06-16T16:00:00.000Z",
+            ends_at: "2026-06-16T17:00:00.000Z",
+            meeting_url:
+              "https://us02web.zoom.us/w/89206805925?tk=G2SKabvvz99wb7RA7XM2kJvfx0",
+            meeting_url_trusted: true,
+            meeting_url_host: "us02web.zoom.us",
+          }),
+        ],
+      }),
+    );
+
+    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("June 2026")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
+
+    const joinLink = await vi.waitFor(() =>
+      screen.getByRole("link", {
+        name: "Join meeting (us02web.zoom.us)",
+      }),
+    );
+    expect(joinLink).toHaveAttribute(
+      "href",
+      "https://us02web.zoom.us/w/89206805925?tk=G2SKabvvz99wb7RA7XM2kJvfx0",
+    );
+    expect(
+      screen.queryByText(/us02web\.zoom\.us\/w\/89206805925/),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens an event details popover when a timeline bubble is clicked", async () => {
     const location =
       "Huckletree Oxford Circus - West London Coworking & Office Space, 213 Oxford St, London W1D 2LG, UK";

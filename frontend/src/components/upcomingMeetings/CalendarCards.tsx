@@ -36,6 +36,7 @@ import {
   getTimelineMetadataRowCapacity,
   getTimelinePaddingClass,
   getTimelineTitleClass,
+  getUrlHost,
 } from "./calendarUtils";
 import { EventDetailsPopoverContent } from "./EventDetailsPopover";
 
@@ -386,6 +387,8 @@ export function AgendaEventCard({
     showLocation,
     showMeetingUrl,
   } = getAgendaEventPresentation(event);
+  const meetingHost = event.meeting_url_host || getUrlHost(meetingUrl);
+  const locationHost = getUrlHost(locationText);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/80">
@@ -412,10 +415,13 @@ export function AgendaEventCard({
                 href={locationText}
                 target="_blank"
                 rel="noopener noreferrer"
+                title={locationText}
                 className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
               >
                 <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
-                <span className="min-w-0 break-all">{locationText}</span>
+                <span className="min-w-0 break-words">
+                  Open link{locationHost ? ` (${locationHost})` : ""}
+                </span>
               </a>
             ) : (
               <div className="inline-flex items-start gap-2">
@@ -430,10 +436,13 @@ export function AgendaEventCard({
               href={meetingUrl}
               target="_blank"
               rel="noopener noreferrer"
+              title={meetingUrl}
               className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
             >
               <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
-              <span className="min-w-0 break-all">{meetingUrl}</span>
+              <span className="min-w-0 break-words">
+                Join meeting{meetingHost ? ` (${meetingHost})` : ""}
+              </span>
             </a>
           )}
         </div>
