@@ -246,7 +246,7 @@ async def test_discovery_documents(client: AsyncClient, fixed_origin):
     body = resource.json()
     assert body["resource"] == f"{TEST_ORIGIN}/mcp"
     assert body["authorization_servers"] == [TEST_ORIGIN]
-    assert body["scopes_supported"] == ["mcp:read"]
+    assert body["scopes_supported"] == ["mcp:read", "mcp:write"]
 
     server = await client.get("/.well-known/oauth-authorization-server")
     assert server.status_code == 200
@@ -299,7 +299,9 @@ async def test_authorize_info_validates_request(client: AsyncClient):
     )
     assert ok.status_code == 200
     assert ok.json()["client_name"] == "Claude"
-    assert ok.json()["scope"] == "mcp:read"
+    # Scope-less requests (what MCP clients send) get the full default grant.
+    assert ok.json()["scope"] == "mcp:read mcp:write"
+    assert ok.json()["scope_items"] == ["mcp:read", "mcp:write"]
 
     bad_redirect = await client.get(
         "/api/v1/oauth/authorize/info",
@@ -340,12 +342,12 @@ async def test_full_authorization_code_flow(
     assert token_response.status_code == 200, token_response.text
     tokens = token_response.json()
     assert tokens["token_type"] == "Bearer"
-    assert tokens["scope"] == "mcp:read"
+    assert tokens["scope"] == "mcp:read mcp:write"
     assert tokens["refresh_token"]
 
     payload = security.decode_access_token(tokens["access_token"])
     assert payload["token_type"] == security.MCP_TOKEN_TYPE
-    assert payload["scopes"] == [security.MCP_READ_SCOPE]
+    assert payload["scopes"] == [security.MCP_READ_SCOPE, security.MCP_WRITE_SCOPE]
     assert payload["sub"] == test_user.username
     assert payload["res"] == f"{TEST_ORIGIN}/mcp"
     assert payload["tv"] == test_user.token_version
@@ -465,7 +467,7 @@ async def test_grants_listing_and_revocation(
     grants = (await client.get("/api/v1/oauth/grants")).json()
     assert len(grants) == 1
     assert grants[0]["client_name"] == "Claude"
-    assert grants[0]["scope"] == "mcp:read"
+    assert grants[0]["scope"] == "mcp:read mcp:write"
 
     revoke = await client.delete(f"/api/v1/oauth/grants/{grants[0]['grant_id']}")
     assert revoke.status_code == 204
@@ -688,6 +690,21 @@ async def test_mcp_protocol_tools_list_end_to_end(
                     },
                 },
             )
+            # The bearer token above carries only mcp:read, standing in for
+            # a grant issued before the write scope existed.
+            import_refusal = await c.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "import_people",
+                        "arguments": {"people": [{"name": "Dana"}]},
+                    },
+                },
+            )
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -697,6 +714,13 @@ async def test_mcp_protocol_tools_list_end_to_end(
         "get_transcript",
         "get_meeting_notes",
         "list_tags",
+        "get_speakers",
+        "list_people",
+        "get_documents",
+        "get_person",
+        "import_people",
+        "set_speaker_name",
+        "append_meeting_notes",
     }
 
     assert init.status_code == 200, init.text
@@ -704,3 +728,17 @@ async def test_mcp_protocol_tools_list_end_to_end(
     assert server_info["name"] == "Nojoin"
     icons = server_info.get("icons")
     assert icons and icons[0]["src"].endswith("/assets/NojoinLogo.png")
+
+    # A grant issued before mcp:write existed passes the endpoint gate but
+    # the write tool refuses it with an instruction to reconnect. This must
+    # share the session-manager context above: the SDK allows only one
+    # .run() per FastMCP instance and therefore one such context per test
+    # process.
+    assert import_refusal.status_code == 200, import_refusal.text
+    result = import_refusal.json()["result"]
+    assert result["isError"] is True
+    text_blocks = " ".join(
+        block["text"] for block in result["content"] if block["type"] == "text"
+    )
+    assert "read-only" in text_blocks
+    assert "reconnect" in text_blocks.lower()
