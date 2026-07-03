@@ -17,7 +17,7 @@ import SettingsSection from "./SettingsSection";
 // sorted), as recorded when the connection was authorised.
 const SCOPE_LABELS: Record<string, string> = {
   "mcp:read": "Read-only",
-  "mcp:read mcp:write": "Read · Write people",
+  "mcp:read mcp:write": "Read · Write",
 };
 
 function formatTimestamp(value: string | null): string {

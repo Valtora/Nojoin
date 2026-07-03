@@ -44,12 +44,14 @@ const SCOPE_CAPABILITIES: Record<
 > = {
   "mcp:read": [
     { icon: Mic, label: "View your recordings" },
-    { icon: FileText, label: "Read transcripts and meeting notes" },
+    { icon: FileText, label: "Read transcripts, notes, and attached documents" },
     { icon: Users, label: "See meeting speakers and your People library" },
     { icon: Tag, label: "See your tags" },
   ],
   "mcp:write": [
     { icon: UserPlus, label: "Add or update people in your People library" },
+    { icon: Users, label: "Name meeting speakers and link them to people" },
+    { icon: FileText, label: "Append to a meeting's notes" },
   ],
 };
 
@@ -247,9 +249,9 @@ function AuthorizeContent() {
                   </>
                 ) : (
                   <>
-                    Write access is limited to your People library.{" "}
-                    {info.client_name} cannot change or delete recordings,
-                    transcripts, or notes.
+                    Write access is additive: {info.client_name} can add
+                    people, name speakers, and append notes, but cannot delete
+                    anything or change your recordings and transcripts.
                   </>
                 )}
               </p>

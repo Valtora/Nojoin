@@ -1,8 +1,8 @@
 # MCP Connector Guide
 
-Nojoin ships a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so AI assistants such as Claude can read your meeting library — recordings, transcripts, meeting notes, speakers, tags, and your People library — directly from your own deployment.
+Nojoin ships a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so AI assistants such as Claude can work with your meeting library — recordings, transcripts, meeting notes, attached documents, speakers, tags, and your People library — directly from your own deployment.
 
-The meeting library is **read-only**: connected assistants cannot create, edit, or delete recordings, transcripts, notes, or tags. The single write capability is the People import tool, which lets an assistant add or update people in your People library (for example, mapping contacts you paste from a CRM onto Nojoin's People records). It never touches voiceprints and never deletes anything.
+Most tools are **read-only**. A small set of **additive** write tools let an assistant add or update people in your People library, name a meeting's speakers (and link them to people), and append to a meeting's notes. Write tools never delete anything, never touch voiceprints, and never modify your recordings, transcripts, or AI-generated notes. Because Nojoin exposes clean read and write primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
 
 ## Requirements
 
@@ -25,7 +25,7 @@ Operators who do not want the connector surface at all can set `MCP_ENABLED=fals
    ```
 
 3. Leave the OAuth Client ID and Client Secret fields empty — Claude registers itself with your Nojoin instance automatically.
-4. Click **Add**, then **Connect**. Your browser opens Nojoin's authorisation page: sign in with your Nojoin credentials if needed, review the requested access — including the People-library write capability — and click **Allow access**.
+4. Click **Add**, then **Connect**. Your browser opens Nojoin's authorisation page: sign in with your Nojoin credentials if needed, review the requested access — including the additive write capabilities (People, speaker names, and notes) — and click **Allow access**.
 
 The connector then appears in Claude's tool list. Connectors added to a claude.ai account are also available in Claude Desktop and Cowork on the same account.
 
@@ -44,14 +44,18 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 | `list_recordings` | `mcp:read` | List recordings with free-text search and date filters. |
 | `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
+| `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
 | `list_tags` | `mcp:read` | Your tag list, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes, and tags. |
+| `get_person` | `mcp:read` | One person's profile plus the meetings they appear in. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by name. |
+| `set_speaker_name` | `mcp:write` | Name a meeting's speaker and link them to a person. |
+| `append_meeting_notes` | `mcp:write` | Append text to a meeting's user notes. |
 
-All tools operate only on data owned by the account that authorised the connection. `import_people` writes only the fields it is given: it can fill in or update a person's title, company, email, phone number, notes, and tags, but it cannot delete people, remove data, or modify voiceprints.
+All tools operate only on data owned by the account that authorised the connection. The write tools are additive: `import_people` fills in or updates a person's title, company, email, phone number, notes, and tags; `set_speaker_name` names a diarised speaker and links it to a matching person (importing the person first, if needed, lets it link rather than set a recording-local name); `append_meeting_notes` adds to your own meeting notes without altering the AI-generated notes. None of them delete data or modify voiceprints.
 
-Connections authorised before the People import tool existed carry only the `mcp:read` scope: every read tool keeps working, and `import_people` responds with an instruction to reconnect. Remove and re-add the connector to consent to the wider scope.
+Connections authorised before the write scope existed carry only the `mcp:read` scope: every read tool keeps working, and the write tools respond with an instruction to reconnect. Remove and re-add the connector to consent to the wider scope.
 
 ## Managing and Revoking Access
 
@@ -66,7 +70,7 @@ For operators who want the detail:
 - Discovery documents are served at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` (RFC 9728 / RFC 8414).
 - Clients self-register at `POST /api/v1/oauth/register` (RFC 7591 Dynamic Client Registration). Only public clients with PKCE are accepted; registration is rate limited.
 - The authorisation page at `/oauth/authorize` uses your normal Nojoin session and origin protections. Codes are single-use, PKCE-bound (S256), and expire after 60 seconds.
-- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. New grants carry the `mcp:read` and `mcp:write` scopes; the write scope unlocks nothing beyond the People import tool. Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
+- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. New grants carry the `mcp:read` and `mcp:write` scopes; the write scope unlocks only the additive People, speaker-name, and note-append tools. Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
 - The reverse proxy must forward `/mcp` and `/.well-known/oauth-*` to the API service. The bundled Nginx configuration does this out of the box; see [DEPLOYMENT.md](DEPLOYMENT.md) if you front Nojoin with your own edge proxy.
 
 ## Troubleshooting

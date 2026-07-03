@@ -1,8 +1,10 @@
-"""Tests for the MCP People tools: get_speakers, list_people, import_people.
+"""Tests for the Nojoin MCP tools.
 
-The tools are called directly (they are plain coroutines registered on the
-FastMCP instance), with the authenticated user and granted scopes injected
-through the same contextvars the auth middleware sets.
+Read tools (get_speakers, list_people, get_documents, get_person) and write
+tools (import_people, set_speaker_name, append_meeting_notes) are called
+directly as the plain coroutines registered on the FastMCP instance, with
+the authenticated user and granted scopes injected through the same
+contextvars the auth middleware sets.
 """
 
 from __future__ import annotations
@@ -20,15 +22,21 @@ from sqlmodel import select
 
 from backend.api.v1.api import api_router  # noqa: F401 - registers all model mappers
 from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
+from backend.mcp_server import server as mcp_server
 from backend.mcp_server.auth import current_mcp_scopes, current_mcp_user
 from backend.mcp_server.server import (
     PersonImportEntry,
+    append_meeting_notes,
+    get_documents,
+    get_person,
     get_speakers,
     import_people,
     list_people,
+    set_speaker_name,
 )
 from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.speaker import GlobalSpeaker
+from backend.models.transcript import Transcript
 from backend.models.user import User
 
 TEST_TIMESTAMP = datetime(2026, 6, 1, 12, 0, 0)
@@ -147,6 +155,52 @@ SCHEMA_STATEMENTS = [
         FOREIGN KEY(global_speaker_id) REFERENCES global_speakers(id)
     )
     """,
+    """
+    CREATE TABLE transcripts (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        recording_id INTEGER UNIQUE,
+        text TEXT,
+        segments JSON,
+        notes TEXT,
+        user_notes TEXT,
+        meeting_edge_focus TEXT,
+        meeting_edge_payload JSON,
+        meeting_edge_status VARCHAR DEFAULT 'idle',
+        meeting_edge_error_message TEXT,
+        meeting_edge_source_signature TEXT,
+        speaker_name_suggestions JSON,
+        notes_status VARCHAR,
+        transcript_status VARCHAR,
+        error_message TEXT
+    )
+    """,
+    """
+    CREATE TABLE documents (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        recording_id INTEGER NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        file_path VARCHAR(1024) NOT NULL,
+        file_type VARCHAR(128) NOT NULL DEFAULT 'text/plain',
+        status VARCHAR(32) NOT NULL DEFAULT 'READY',
+        error_message TEXT
+    )
+    """,
+    """
+    CREATE TABLE context_chunks (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        recording_id INTEGER NOT NULL,
+        document_id INTEGER,
+        content TEXT NOT NULL,
+        embedding BLOB,
+        meta JSON
+    )
+    """,
 ]
 
 
@@ -209,24 +263,11 @@ def bind_mcp_identity(
 
 
 async def seed_person(
-    session_maker,
-    *,
-    person_id: int,
-    name: str,
-    user_id: int,
-    title: str | None = None,
-    notes: str | None = None,
+    session_maker, *, person_id: int, name: str, user_id: int, **fields: str
 ) -> None:
+    """Insert a GlobalSpeaker row; extra CRM fields (title, notes, ...) pass through."""
     async with session_maker() as session:
-        session.add(
-            GlobalSpeaker(
-                id=person_id,
-                name=name,
-                user_id=user_id,
-                title=title,
-                notes=notes,
-            )
-        )
+        session.add(GlobalSpeaker(id=person_id, name=name, user_id=user_id, **fields))
         await session.commit()
 
 
@@ -329,9 +370,7 @@ async def test_get_speakers_resolves_names_and_person_links(
         user_id=test_user.id,
         title="CTO",
     )
-    public_id = await seed_recording_with_speakers(
-        session_maker, user_id=test_user.id
-    )
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
 
     result = await get_speakers(public_id)
 
@@ -389,9 +428,7 @@ async def test_import_people_creates_people_with_tags(
         people = (
             (
                 await session.execute(
-                    select(GlobalSpeaker).where(
-                        GlobalSpeaker.user_id == test_user.id
-                    )
+                    select(GlobalSpeaker).where(GlobalSpeaker.user_id == test_user.id)
                 )
             )
             .scalars()
@@ -476,6 +513,286 @@ async def test_import_people_rejects_empty_and_oversized_batches(
     with pytest.raises(ToolError, match="at least one"):
         await import_people([])
     with pytest.raises(ToolError, match="At most"):
-        await import_people(
-            [PersonImportEntry(name=f"Person {i}") for i in range(201)]
+        await import_people([PersonImportEntry(name=f"Person {i}") for i in range(201)])
+
+
+# --- get_documents ---------------------------------------------------------
+
+
+async def seed_document(
+    session_maker,
+    *,
+    document_id: int,
+    recording_id: int,
+    title: str,
+    chunks: list[str],
+) -> None:
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO documents (
+                    id, created_at, updated_at, recording_id, title,
+                    file_path, file_type, status
+                ) VALUES (
+                    :id, :ts, :ts, :rec, :title,
+                    :path, 'text/plain', 'READY'
+                )
+                """
+            ),
+            {
+                "id": document_id,
+                "ts": TEST_TIMESTAMP,
+                "rec": recording_id,
+                "title": title,
+                "path": f"/data/documents/{document_id}.txt",
+            },
         )
+        for index, content in enumerate(chunks):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO context_chunks (
+                        created_at, updated_at, recording_id, document_id, content
+                    ) VALUES (:ts, :ts, :rec, :doc, :content)
+                    """
+                ),
+                {
+                    "ts": TEST_TIMESTAMP,
+                    "rec": recording_id,
+                    "doc": document_id,
+                    "content": content,
+                },
+            )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_get_documents_reconstructs_text_from_chunks(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_document(
+        session_maker,
+        document_id=5,
+        recording_id=1,
+        title="Agenda",
+        chunks=["Part one. ", "Part two."],
+    )
+
+    docs = await get_documents(public_id)
+
+    assert len(docs) == 1
+    assert docs[0]["title"] == "Agenda"
+    assert docs[0]["text"] == "Part one. Part two."
+    assert docs[0]["text_truncated"] is False
+
+
+@pytest.mark.anyio
+async def test_get_documents_truncates_long_text(
+    session_maker, test_user: User, mcp_context, monkeypatch
+):
+    bind_mcp_identity(test_user)
+    monkeypatch.setattr(mcp_server, "_DOCUMENT_TEXT_CHAR_LIMIT", 10)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_document(
+        session_maker,
+        document_id=5,
+        recording_id=1,
+        title="Long",
+        chunks=["0123456789ABCDEF"],
+    )
+
+    docs = await get_documents(public_id)
+
+    assert docs[0]["text"] == "0123456789"
+    assert docs[0]["text_truncated"] is True
+
+
+@pytest.mark.anyio
+async def test_get_documents_rejects_other_users_recording(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=999)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_documents(public_id)
+    assert exc_info.value.status_code == 404
+
+
+# --- get_person ------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_person_includes_profile_tags_and_meetings(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(
+        session_maker,
+        person_id=11,
+        name="Dana",
+        user_id=test_user.id,
+        title="CTO",
+        company="Acme",
+    )
+    # Tag the person.
+    async with session_maker() as session:
+        session.add(PeopleTag(id=1, name="VIP", user_id=test_user.id))
+        session.add(PeopleTagLink(global_speaker_id=11, tag_id=1))
+        await session.commit()
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    person = await get_person(11)
+
+    assert person["id"] == 11
+    assert person["name"] == "Dana"
+    assert person["title"] == "CTO"
+    assert person["company"] == "Acme"
+    assert person["tags"] == ["VIP"]
+    # Dana is linked to the recording via SPEAKER_00 (not the merged speaker).
+    assert [m["id"] for m in person["meetings"]] == [public_id]
+    assert person["meetings"][0]["name"] == "Weekly sync"
+
+
+@pytest.mark.anyio
+async def test_get_person_rejects_missing_or_foreign_person(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Zoe", user_id=999)
+
+    with pytest.raises(ToolError, match="No person with id"):
+        await get_person(11)  # belongs to another user
+    with pytest.raises(ToolError, match="No person with id"):
+        await get_person(999)  # does not exist
+
+
+# --- set_speaker_name ------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_set_speaker_name_maps_to_global_speaker_name_field(
+    session_maker, test_user: User, mcp_context, monkeypatch
+):
+    """The tool must pass the name as SpeakerUpdate.global_speaker_name and
+    surface the linked person from the delegated call."""
+    from types import SimpleNamespace
+
+    captured: dict = {}
+
+    async def fake_update(recording_id, update, *, db, current_user):
+        captured["recording_id"] = recording_id
+        captured["update"] = update
+        captured["user"] = current_user
+        return [
+            SimpleNamespace(
+                diarization_label=update.diarization_label,
+                global_speaker=SimpleNamespace(name=update.global_speaker_name),
+            )
+        ]
+
+    monkeypatch.setattr(
+        "backend.api.v1.endpoints.speakers.routes_recording.update_recording_speaker",
+        fake_update,
+    )
+    bind_mcp_identity(test_user)
+
+    result = await set_speaker_name("rec-1", "SPEAKER_00", "Dana")
+
+    assert captured["recording_id"] == "rec-1"
+    assert captured["update"].diarization_label == "SPEAKER_00"
+    assert captured["update"].global_speaker_name == "Dana"
+    assert captured["user"].id == test_user.id
+    assert result["linked_person"] == "Dana"
+    assert result["diarization_label"] == "SPEAKER_00"
+
+
+@pytest.mark.anyio
+async def test_set_speaker_name_requires_write_scope(
+    session_maker, test_user: User, mcp_context, monkeypatch
+):
+    called = False
+
+    async def fake_update(*args, **kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(
+        "backend.api.v1.endpoints.speakers.routes_recording.update_recording_speaker",
+        fake_update,
+    )
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+
+    with pytest.raises(ToolError, match="read-only"):
+        await set_speaker_name("rec-1", "SPEAKER_00", "Dana")
+    assert called is False
+
+
+# --- append_meeting_notes --------------------------------------------------
+
+
+async def seed_transcript(session_maker, *, recording_id: int, user_notes: str) -> None:
+    async with session_maker() as session:
+        session.add(Transcript(recording_id=recording_id, user_notes=user_notes))
+        await session.commit()
+
+
+@pytest.fixture
+def no_meeting_edge_dispatch(monkeypatch):
+    """Stop the delegated notes update from dispatching a Meeting Edge refresh.
+
+    Otherwise update_user_notes calls celery_app.send_task, which blocks for
+    the broker connection timeout — irrelevant to the append logic here.
+    """
+    import backend.api.v1.endpoints.transcripts.routes_notes as routes_notes
+
+    monkeypatch.setattr(
+        routes_notes, "_dispatch_meeting_edge_refresh", lambda *a, **k: None
+    )
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_preserves_existing(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_transcript(session_maker, recording_id=1, user_notes="First line.")
+
+    result = await append_meeting_notes(public_id, "Second line.")
+
+    assert result["user_notes"] == "First line.\n\nSecond line."
+    async with session_maker() as session:
+        transcript = (await session.execute(select(Transcript))).scalar_one()
+        assert transcript.user_notes == "First line.\n\nSecond line."
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_creates_notes_when_absent(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    result = await append_meeting_notes(public_id, "Fresh note.")
+
+    assert result["user_notes"] == "Fresh note."
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_rejects_empty_text_and_read_only(
+    session_maker, test_user: User, mcp_context
+):
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    bind_mcp_identity(test_user)
+    with pytest.raises(ToolError, match="must not be empty"):
+        await append_meeting_notes(public_id, "   ")
+
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+    with pytest.raises(ToolError, match="read-only"):
+        await append_meeting_notes(public_id, "blocked")

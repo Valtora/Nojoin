@@ -716,7 +716,11 @@ async def test_mcp_protocol_tools_list_end_to_end(
         "list_tags",
         "get_speakers",
         "list_people",
+        "get_documents",
+        "get_person",
         "import_people",
+        "set_speaker_name",
+        "append_meeting_notes",
     }
 
     assert init.status_code == 200, init.text
