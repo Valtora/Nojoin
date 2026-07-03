@@ -30,6 +30,7 @@ import {
   eventOccursOnDay,
   getDayMarkerColours,
   recordingOccursOnDay,
+  splitMonthAgendaItems,
 } from "./calendarUtils";
 
 export function useCalendarDashboard() {
@@ -48,6 +49,7 @@ export function useCalendarDashboard() {
   const [calendarRefreshing, setCalendarRefreshing] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [initialisedView, setInitialisedView] = useState(false);
+  const [showPastAgendaItems, setShowPastAgendaItems] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +94,10 @@ export function useCalendarDashboard() {
   }, [currentDay, initialisedView, timeZoneReady]);
 
   const viewedMonthKey = format(viewedMonth, "yyyy-MM");
+
+  useEffect(() => {
+    setShowPastAgendaItems(false);
+  }, [viewedMonthKey]);
 
   useEffect(() => {
     if (!timeZoneReady) {
@@ -200,6 +206,15 @@ export function useCalendarDashboard() {
     [monthEvents, monthRecordings],
   );
   const monthHasContent = monthEvents.length > 0 || monthRecordings.length > 0;
+  const monthAgendaSplit = useMemo(
+    () => splitMonthAgendaItems(monthAgendaItems, now),
+    [monthAgendaItems, now],
+  );
+  const isViewingPastMonth =
+    viewedMonth.getTime() < startOfMonth(currentDay).getTime();
+  const agendaShowsPastItems = showPastAgendaItems || isViewingPastMonth;
+  const canTogglePastAgendaItems =
+    !isViewingPastMonth && monthAgendaSplit.pastItems.length > 0;
   const selectedDayEvents = useMemo(() => {
     if (!selectedDay) {
       return [];
@@ -260,6 +275,8 @@ export function useCalendarDashboard() {
     setViewedMonth((currentMonth) => addMonths(currentMonth, -1));
   const handleNextMonth = () =>
     setViewedMonth((currentMonth) => addMonths(currentMonth, 1));
+  const handleTogglePastAgendaItems = () =>
+    setShowPastAgendaItems((currentValue) => !currentValue);
 
   return {
     now,
@@ -280,6 +297,11 @@ export function useCalendarDashboard() {
     footerText,
     monthAgendaItems,
     monthHasContent,
+    agendaPastItems: monthAgendaSplit.pastItems,
+    agendaUpcomingItems: monthAgendaSplit.upcomingItems,
+    agendaShowsPastItems,
+    canTogglePastAgendaItems,
+    handleTogglePastAgendaItems,
     selectedDayEvents,
     selectedDayRecordings,
     selectedDayHasContent,

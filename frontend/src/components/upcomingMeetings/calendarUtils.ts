@@ -366,6 +366,41 @@ export function buildMonthAgendaItems(
   });
 }
 
+export function isAgendaItemPast(item: MonthAgendaItem, now: Date): boolean {
+  if (item.kind === "recording") {
+    const recordingEnd =
+      getRecordingEnd(item.recording) ?? getRecordingStart(item.recording);
+    return recordingEnd < now;
+  }
+
+  const eventEnd = getEventEnd(item.event);
+  if (!eventEnd) {
+    return false;
+  }
+
+  if (item.event.is_all_day) {
+    // getEventEnd returns the start of the last covered day for all-day
+    // events, so the item stays current until that day has fully elapsed.
+    return addDays(startOfDay(eventEnd), 1) <= now;
+  }
+
+  return eventEnd < now;
+}
+
+export function splitMonthAgendaItems(
+  items: MonthAgendaItem[],
+  now: Date,
+): { pastItems: MonthAgendaItem[]; upcomingItems: MonthAgendaItem[] } {
+  const pastItems: MonthAgendaItem[] = [];
+  const upcomingItems: MonthAgendaItem[] = [];
+
+  items.forEach((item) => {
+    (isAgendaItemPast(item, now) ? pastItems : upcomingItems).push(item);
+  });
+
+  return { pastItems, upcomingItems };
+}
+
 export function formatAgendaDate(
   event: CalendarDashboardEvent,
   timeZone: string,

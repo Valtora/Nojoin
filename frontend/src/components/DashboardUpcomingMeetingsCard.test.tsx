@@ -149,7 +149,9 @@ describe("DashboardUpcomingMeetingsCard", () => {
     });
   });
 
-  it("shows recordings and events in the agenda view", async () => {
+  it("shows upcoming items in the agenda view and reveals past items on demand", async () => {
+    // now is 10:00; the event ended at 09:30 (past), the recording ends at
+    // 11:45 (still upcoming).
     getCalendarDashboardSummary.mockResolvedValue(
       makeSummary({
         agenda_items: [makeEvent({ id: 1, title: "Planning meeting" })],
@@ -166,9 +168,19 @@ describe("DashboardUpcomingMeetingsCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
 
     await vi.waitFor(() => {
-      expect(screen.getByText("Planning meeting")).toBeInTheDocument();
+      expect(screen.getByText("Recorded sync")).toBeInTheDocument();
     });
+    expect(screen.queryByText("Planning meeting")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show 1 past event" }),
+    );
+
+    expect(screen.getByText("Planning meeting")).toBeInTheDocument();
     expect(screen.getByText("Recorded sync")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Hide past events" }),
+    ).toBeInTheDocument();
   });
 
   it("links a recording card to its recording detail page", async () => {
