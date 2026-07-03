@@ -44,6 +44,11 @@ On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts
 - Unlinked Nojoin recordings appear on the dashboard calendar as orange meeting items, while Google or Microsoft calendar sources keep their own colours.
 - Recorded meeting cards surface tags, speakers, and timestamps directly inside the selected-day agenda.
 - The agenda view is month-scoped and includes both synced calendar events and unlinked Nojoin meeting history for the viewed month.
+- In the current month, the agenda starts at the next upcoming item; use **Show past events** to expand earlier items. Past months always show their full history.
+- Clicking a timed event bubble in the day timeline opens a details popover with the full title, time, calendar, location, join link, and linked recordings.
+- Live events with a trusted meeting link show a **Join** button directly on the timeline bubble.
+- Meeting links render as compact **Join meeting** labels with the provider host rather than raw URLs; the full URL appears on hover.
+- Events continuing past midnight show dashed edges and chevrons on the day timeline.
 - Event times render in your configured Nojoin timezone.
 
 Read [CALENDAR.md](CALENDAR.md) for connection and setup details.

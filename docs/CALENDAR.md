@@ -64,11 +64,14 @@ When calendar sync is configured:
 - The dashboard month view shows dots on days with synced events and on days that contain unlinked Nojoin recordings.
 - Unlinked Nojoin recordings use the Nojoin orange accent so they remain visually distinct from Google or Microsoft calendar sources.
 - The agenda view is month-scoped and shows both calendar events and unlinked historical recordings for the viewed month.
+- In the current month, the agenda lists upcoming items first and collapses past items behind a `Show past events` control; past months render fully expanded.
 - Selecting a day in month view opens a day agenda, and selecting today shows a live now marker against timed events.
+- Clicking a timed event on the day timeline opens a details popover with the full event metadata, join link, and linked recordings; live events additionally show a `Join` button on the bubble.
+- Timeline bubbles size their metadata to the event duration: shorter events show fewer detail rows, and events spanning midnight are marked with dashed edges and chevrons.
 - The `Today` action jumps back to the current month and date context.
 - Per-calendar colours can be used so different sources remain visually distinct.
 - Event times render in the user's configured Nojoin timezone.
-- Meeting links and supported online meeting URLs can be surfaced directly from agenda items.
+- Meeting links and supported online meeting URLs surface from agenda items as compact `Join meeting` labels showing the provider host instead of the raw URL.
 
 When no calendar is connected and there are no unlinked recordings in view, the dashboard deliberately shows an honest empty state rather than mock data.
 
