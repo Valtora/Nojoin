@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import {
   ArrowRight,
   Calendar,
@@ -6,6 +7,7 @@ import {
   ExternalLink,
   MapPin,
   Users,
+  Video,
 } from "lucide-react";
 
 import { getColorByKey } from "@/lib/constants";
@@ -31,6 +33,7 @@ import {
   getTimelinePaddingClass,
   getTimelineTitleClass,
 } from "./calendarUtils";
+import { EventDetailsPopoverContent } from "./EventDetailsPopover";
 
 export function LinkedRecordingsMeta({
   recordings,
@@ -194,11 +197,10 @@ export function DayTimelineEventCard({
   } = getAgendaEventPresentation(event);
   const isLive = status === "live";
   const isPast = status === "past";
-  const primaryUrl = showMeetingUrl && meetingUrl
-    ? meetingUrl
-    : showLocation && locationText && locationIsUrl
-      ? locationText
-      : null;
+  const hasLink = Boolean(
+    (showMeetingUrl && meetingUrl) ||
+      (showLocation && locationText && locationIsUrl),
+  );
   const timelineDensity = layout === "timeline"
     ? visualHeight !== undefined && visualHeight < 28
       ? "dense"
@@ -223,16 +225,18 @@ export function DayTimelineEventCard({
   const dotSizeClass = layout === "timeline"
     ? getTimelineDotSizeClass(visualHeight)
     : "h-2.5 w-2.5";
-  const cardClasses = `relative h-full overflow-hidden rounded-[5px] border bg-white shadow-sm dark:bg-gray-900/95 ${
+  const showJoinPill = Boolean(
+    isLive &&
+      showMeetingUrl &&
+      meetingUrl &&
+      (layout === "stacked" || timelineDensity === "comfortable"),
+  );
+  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-white text-left shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 dark:bg-gray-900/95 dark:hover:border-orange-400/30 dark:hover:bg-orange-500/10 ${
     isLive
       ? "border-orange-300 shadow-orange-600/15 dark:border-orange-400/40"
       : "border-gray-200 dark:border-gray-700/70"
   } ${
     isPast ? "opacity-70" : ""
-  } ${
-    primaryUrl
-      ? "block cursor-pointer transition-colors hover:border-orange-200 hover:bg-orange-50/60 dark:hover:border-orange-400/30 dark:hover:bg-orange-500/10"
-      : ""
   }`;
   const cardContent = (
     <>
@@ -241,7 +245,7 @@ export function DayTimelineEventCard({
         style={calendarColour.style}
       />
       <div className={`h-full pl-4 pr-3 ${paddingClass}`}>
-        <div className="flex items-start justify-between gap-3">
+        <div className={`flex items-start justify-between gap-3 ${showJoinPill ? "pr-12" : ""}`}>
           <div className="min-w-0">
             {showTimeRow && (
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
@@ -257,15 +261,17 @@ export function DayTimelineEventCard({
               {event.title}
             </div>
           </div>
-          <div className="mt-1 flex shrink-0 items-center gap-1.5">
-            {primaryUrl && (
-              <ExternalLink className={`${linkIndicatorClass} text-gray-400 dark:text-gray-500`} />
-            )}
-            <span
-              className={`${dotSizeClass} rounded-full ${calendarColour.className}`}
-              style={calendarColour.style}
-            />
-          </div>
+          {!showJoinPill && (
+            <div className="mt-1 flex shrink-0 items-center gap-1.5">
+              {hasLink && (
+                <ExternalLink className={`${linkIndicatorClass} text-gray-400 dark:text-gray-500`} />
+              )}
+              <span
+                className={`${dotSizeClass} rounded-full ${calendarColour.className}`}
+                style={calendarColour.style}
+              />
+            </div>
+          )}
         </div>
 
         {showSecondaryMetadata && (
@@ -284,29 +290,47 @@ export function DayTimelineEventCard({
               </div>
             )}
 
-            {!isSmallTimelineEvent ? (
-              <LinkedRecordingsMeta recordings={event.linked_recordings} />
-            ) : null}
           </>
         )}
       </div>
     </>
   );
 
-  if (primaryUrl) {
-    return (
-      <a
-        href={primaryUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+  return (
+    <Popover className="relative block h-full">
+      <PopoverButton
         className={cardClasses}
+        aria-label={`View details for ${event.title}`}
       >
         {cardContent}
-      </a>
-    );
-  }
-
-  return <div className={cardClasses}>{cardContent}</div>;
+      </PopoverButton>
+      {showJoinPill && meetingUrl && (
+        <a
+          href={meetingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-orange-600 px-2.5 py-0.5 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-orange-700"
+        >
+          <Video className="h-3 w-3" />
+          Join
+        </a>
+      )}
+      <PopoverPanel
+        anchor={{
+          to: layout === "timeline" ? "right start" : "bottom",
+          gap: 8,
+          padding: 12,
+        }}
+        className="z-50 focus:outline-none"
+      >
+        <EventDetailsPopoverContent
+          event={event}
+          timeZone={timeZone}
+          status={status}
+        />
+      </PopoverPanel>
+    </Popover>
+  );
 }
 
 export function AgendaEventCard({

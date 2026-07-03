@@ -193,6 +193,51 @@ describe("DashboardUpcomingMeetingsCard", () => {
     expect(within(card!).getByText("Alice, Bob")).toBeInTheDocument();
   });
 
+  it("opens an event details popover when a timeline bubble is clicked", async () => {
+    const location =
+      "Huckletree Oxford Circus - West London Coworking & Office Space, 213 Oxford St, London W1D 2LG, UK";
+    getCalendarDashboardSummary.mockResolvedValue(
+      makeSummary({
+        agenda_items: [
+          makeEvent({
+            title: "Workshop",
+            starts_at: "2026-06-15T11:00:00.000Z",
+            ends_at: "2026-06-15T12:00:00.000Z",
+            location,
+            meeting_url: "https://meet.google.com/abc-defg-hij",
+            meeting_url_trusted: true,
+            meeting_url_host: "meet.google.com",
+          }),
+        ],
+      }),
+    );
+
+    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+
+    const bubbles = await vi.waitFor(() => {
+      const found = screen.getAllByRole("button", {
+        name: "View details for Workshop",
+      });
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+
+    expect(screen.queryByText(/Join meeting/)).not.toBeInTheDocument();
+
+    const [bubble] = bubbles;
+    fireEvent.click(bubble);
+
+    const joinLink = screen.getByRole("link", {
+      name: /Join meeting \(meet\.google\.com\)/,
+    });
+    expect(joinLink).toHaveAttribute(
+      "href",
+      "https://meet.google.com/abc-defg-hij",
+    );
+    // The popover shows the full, unclipped location.
+    expect(screen.getAllByText(location).length).toBeGreaterThan(0);
+  });
+
   it("disables the Today button while viewing today", async () => {
     renderWithProviders(<DashboardUpcomingMeetingsCard />);
 

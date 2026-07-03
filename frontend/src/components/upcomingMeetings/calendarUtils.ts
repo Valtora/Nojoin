@@ -417,6 +417,20 @@ export function isHttpUrl(value: string | null | undefined): boolean {
   }
 }
 
+export function getUrlHost(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname.replace(/^www\./, "") || null;
+  } catch {
+    // Bare hosts (e.g. backend-provided meeting_url_host) are not valid URLs.
+    return /^[\w.-]+\.[a-z]{2,}$/i.test(value) ? value.replace(/^www\./, "") : null;
+  }
+}
+
 export function normaliseComparableUrl(
   value: string | null | undefined,
 ): string | null {
