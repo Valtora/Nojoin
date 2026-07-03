@@ -33,6 +33,7 @@ import {
   getRecordingStatusClasses,
   getTimelineDotSizeClass,
   getTimelineIndicatorSizeClass,
+  getTimelineMetadataRowCapacity,
   getTimelinePaddingClass,
   getTimelineTitleClass,
 } from "./calendarUtils";
@@ -216,8 +217,15 @@ export function DayTimelineEventCard({
         : "comfortable"
     : "comfortable";
   const isSmallTimelineEvent = layout === "timeline" && timelineDensity !== "comfortable";
-  const showSecondaryMetadata = layout === "stacked" || timelineDensity === "comfortable";
-  const showPlainLocation = Boolean(showLocation && locationText && !locationIsUrl && showSecondaryMetadata);
+  const metadataRowCapacity = layout === "stacked"
+    ? 2
+    : timelineDensity === "comfortable"
+      ? getTimelineMetadataRowCapacity(visualHeight)
+      : 0;
+  const hasPlainLocation = Boolean(showLocation && locationText && !locationIsUrl);
+  const showPlainLocation = hasPlainLocation && metadataRowCapacity >= 1;
+  const showCalendarName =
+    metadataRowCapacity >= 2 || (metadataRowCapacity >= 1 && !hasPlainLocation);
   const showTimeRow = layout === "stacked" || !isSmallTimelineEvent;
   const showLiveBadge = layout === "stacked" && isLive;
   const titleClass = layout === "timeline"
@@ -302,11 +310,13 @@ export function DayTimelineEventCard({
           )}
         </div>
 
-        {showSecondaryMetadata && (
+        {(showCalendarName || showPlainLocation) && (
           <>
-            <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
-              {event.calendar_name}
-            </div>
+            {showCalendarName && (
+              <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                {event.calendar_name}
+              </div>
+            )}
 
             {showPlainLocation && locationText && (
               <div

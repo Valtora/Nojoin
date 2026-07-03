@@ -508,6 +508,27 @@ export function getTimelineTitleClass(
   return "truncate text-[13px] leading-4";
 }
 
+/**
+ * Number of secondary metadata rows (calendar name, location) that fit inside
+ * a timeline bubble without being clipped by its duration-derived height.
+ * Budget: vertical padding + time row + single-line title is roughly 62px,
+ * and each metadata row adds roughly 24px.
+ */
+export function getTimelineMetadataRowCapacity(
+  visualHeight: number | undefined,
+): number {
+  if (visualHeight === undefined) {
+    return 2;
+  }
+  if (visualHeight >= 108) {
+    return 2;
+  }
+  if (visualHeight >= 84) {
+    return 1;
+  }
+  return 0;
+}
+
 export function getTimelinePaddingClass(
   visualHeight: number | undefined,
   isSmallTimelineEvent: boolean,
