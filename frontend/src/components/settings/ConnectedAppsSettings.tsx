@@ -13,8 +13,11 @@ import { useNotificationStore } from "@/lib/notificationStore";
 
 import SettingsSection from "./SettingsSection";
 
+// Keyed by the grant's full normalised scope string (space-separated,
+// sorted), as recorded when the connection was authorised.
 const SCOPE_LABELS: Record<string, string> = {
   "mcp:read": "Read-only",
+  "mcp:read mcp:write": "Read · Write",
 };
 
 function formatTimestamp(value: string | null): string {
@@ -69,7 +72,7 @@ export default function ConnectedAppsSettings() {
     <SettingsSection
       eyebrow="Integrations"
       title="Connected Apps"
-      description="External assistants connected through the Nojoin MCP connector, such as Claude. Connections are read-only and can be revoked at any time."
+      description="External assistants connected through the Nojoin MCP connector, such as Claude. Connections can read your meeting library and, when granted, add or update people in your People library. Access can be revoked at any time."
       width="compact"
     >
       {apps === null ? (

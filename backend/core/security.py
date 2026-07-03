@@ -29,6 +29,9 @@ MCP_TOKEN_TYPE = "mcp"
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
 MCP_READ_SCOPE = "mcp:read"
+# Grants the People-library write tools on the MCP endpoint only; mcp-type
+# tokens remain rejected by every general API route regardless of scope.
+MCP_WRITE_SCOPE = "mcp:write"
 
 ALGORITHM = "HS256"
 DEFAULT_LEGACY_KID = "legacy"
