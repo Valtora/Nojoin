@@ -13,10 +13,13 @@ on the grant. Every read tool works with ``mcp:read`` alone, so grants
 issued before the write scope existed keep functioning unchanged.
 """
 
+import functools
+import inspect
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -31,6 +34,7 @@ from starlette.types import ASGIApp
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import (
     MCPAuthMiddleware,
+    current_mcp_user,
     get_current_mcp_scopes,
     get_current_mcp_user,
 )
@@ -75,6 +79,111 @@ mcp = FastMCP(
 )
 
 
+# Argument names safe to log verbatim: identifiers, pagination, and enums —
+# never free text (note bodies, search queries) or PII (names, contact
+# details), which are summarised by length/count instead. This keeps the
+# MCP call log useful for debugging without recording meeting content, in
+# line with the logging redaction policy in docs/SECURITY.md.
+_LOGGABLE_ARG_NAMES = frozenset(
+    {
+        "recording_id",
+        "person_id",
+        "diarization_label",
+        "on_conflict",
+        "limit",
+        "skip",
+        "start_date",
+        "end_date",
+    }
+)
+
+
+def _summarise_args(arguments: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for name, value in arguments.items():
+        if value is None:
+            continue
+        if name in _LOGGABLE_ARG_NAMES:
+            parts.append(f"{name}={value!r}")
+        elif isinstance(value, str):
+            parts.append(f"{name}=<str:{len(value)}>")
+        elif isinstance(value, (list, tuple, dict)):
+            parts.append(f"{name}=<{type(value).__name__}:{len(value)}>")
+        else:
+            parts.append(f"{name}=<{type(value).__name__}>")
+    return " ".join(parts) or "(no args)"
+
+
+def _summarise_result(result: Any) -> str:
+    if isinstance(result, (list, tuple, dict)):
+        return f"{type(result).__name__}:{len(result)}"
+    return type(result).__name__
+
+
+def _logged_tool(func: Callable) -> Callable:
+    """Wrap an MCP tool with structured call logging.
+
+    Emits one INFO line per successful call (tool, user, redacted args,
+    result shape, duration), a WARNING for a ToolError (an expected,
+    user-facing rejection), and an EXCEPTION for anything unexpected. The
+    signature is preserved via functools.wraps so FastMCP still builds the
+    tool's input schema from the original annotations.
+    """
+    signature = inspect.signature(func)
+
+    @functools.wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        user = current_mcp_user.get()
+        user_id = getattr(user, "id", None)
+        try:
+            bound = signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            arg_summary = _summarise_args(bound.arguments)
+        except TypeError:
+            arg_summary = "<unbindable args>"
+        started = time.monotonic()
+        try:
+            result = await func(*args, **kwargs)
+        except ToolError as exc:
+            logger.warning(
+                "mcp tool %s rejected user=%s %s: %s",
+                func.__name__,
+                user_id,
+                arg_summary,
+                exc,
+            )
+            raise
+        except Exception:
+            logger.exception(
+                "mcp tool %s failed user=%s %s",
+                func.__name__,
+                user_id,
+                arg_summary,
+            )
+            raise
+        duration_ms = (time.monotonic() - started) * 1000
+        logger.info(
+            "mcp tool %s ok user=%s %s -> %s (%.0fms)",
+            func.__name__,
+            user_id,
+            arg_summary,
+            _summarise_result(result),
+            duration_ms,
+        )
+        return result
+
+    return wrapper
+
+
+def mcp_tool() -> Callable[[Callable], Callable]:
+    """Register a coroutine as an MCP tool with call logging."""
+
+    def decorator(func: Callable) -> Callable:
+        return mcp.tool()(_logged_tool(func))
+
+    return decorator
+
+
 def _parse_iso_datetime(value: Optional[str], field_name: str) -> Optional[datetime]:
     if not value:
         return None
@@ -102,6 +211,13 @@ def _require_write_scope(capability: str) -> None:
 
 
 def _compact_recording(recording: Any) -> dict[str, Any]:
+    """Compact a Recording ORM row for the MCP client.
+
+    Expects ``tags`` (with each ``RecordingTag.tag``) and ``speakers`` (with
+    each ``RecordingSpeaker.global_speaker``) eager-loaded: the web endpoint's
+    serializer strips both unless explicitly asked, so list_recordings loads
+    the ORM row itself rather than relying on that projection.
+    """
     speakers = [
         speaker.local_name
         or (speaker.global_speaker.name if speaker.global_speaker else None)
@@ -110,21 +226,26 @@ def _compact_recording(recording: Any) -> dict[str, Any]:
         for speaker in recording.speakers
         if not speaker.merged_into_id
     ]
+    tags = [
+        recording_tag.tag.name
+        for recording_tag in recording.tags
+        if recording_tag.tag is not None
+    ]
     return {
-        "id": recording.id,
+        "id": recording.public_id,
         "name": recording.name,
         "created_at": recording.created_at.isoformat(),
         "duration_seconds": recording.duration_seconds,
         "status": str(recording.status.value)
         if hasattr(recording.status, "value")
         else str(recording.status),
-        "tags": [tag.name for tag in recording.tags],
+        "tags": tags,
         "speakers": speakers,
         "is_archived": recording.is_archived,
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def list_recordings(
     limit: int = 20,
     skip: int = 0,
@@ -150,11 +271,18 @@ async def list_recordings(
         list_recordings as api_list_recordings,
     )
     from backend.core.db import async_session_maker
+    from backend.models.recording import Recording
+    from backend.models.speaker import RecordingSpeaker
+    from backend.models.tag import RecordingTag
 
     user = get_current_mcp_user()
     limit = max(1, min(int(limit), 100))
 
     async with async_session_maker() as db:
+        # api_list_recordings owns the search/date/ownership filtering and
+        # ordering, but serializes without tags or speakers. Re-load the same
+        # rows as ORM objects with those relationships eager-loaded so the
+        # compact projection reports them instead of always-empty lists.
         results = await api_list_recordings(
             skip=max(0, int(skip)),
             limit=limit,
@@ -172,10 +300,33 @@ async def list_recordings(
             db=db,
             current_user=user,
         )
-    return [_compact_recording(recording) for recording in results]
+        ordered_public_ids = [recording.id for recording in results]
+        if not ordered_public_ids:
+            return []
+
+        orm_result = await db.execute(
+            select(Recording)
+            .where(
+                Recording.user_id == user.id,
+                Recording.public_id.in_(ordered_public_ids),
+            )
+            .options(
+                selectinload(Recording.tags).selectinload(RecordingTag.tag),
+                selectinload(Recording.speakers).selectinload(
+                    RecordingSpeaker.global_speaker
+                ),
+            )
+        )
+        by_public_id = {rec.public_id: rec for rec in orm_result.scalars()}
+
+    return [
+        _compact_recording(by_public_id[public_id])
+        for public_id in ordered_public_ids
+        if public_id in by_public_id
+    ]
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_transcript(recording_id: str) -> dict[str, Any]:
     """Get the full speaker-attributed transcript of a recording.
 
@@ -224,7 +375,7 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     """Get the AI-generated meeting notes and the user's own notes.
 
@@ -251,7 +402,7 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def list_tags() -> list[dict[str, Any]]:
     """List the user's tags. Tag names can be used with list_recordings' query."""
     from backend.api.v1.endpoints.tags import read_tags
@@ -285,7 +436,7 @@ def _compact_speaker(speaker: Any) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_speakers(recording_id: str) -> dict[str, Any]:
     """Get the speakers in a recording.
 
@@ -341,7 +492,7 @@ def _compact_person(person: Any) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def list_people(
     query: Optional[str] = None,
     limit: int = 50,
@@ -385,7 +536,7 @@ async def list_people(
 _DOCUMENT_TEXT_CHAR_LIMIT = 20000
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     """Get the documents attached to a recording, with their extracted text.
 
@@ -439,7 +590,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     return payload
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_person(person_id: int) -> dict[str, Any]:
     """Get one person from the People library, with the meetings they are in.
 
@@ -594,7 +745,7 @@ async def _import_one_person(
     return {"name": name, "action": action, "id": person.id}
 
 
-@mcp.tool()
+@mcp_tool()
 async def import_people(
     people: list[PersonImportEntry],
     on_conflict: Literal["update", "skip"] = "update",
@@ -653,7 +804,7 @@ async def import_people(
     return {"summary": summary, "results": results}
 
 
-@mcp.tool()
+@mcp_tool()
 async def set_speaker_name(
     recording_id: str, diarization_label: str, name: str
 ) -> dict[str, Any]:
@@ -707,7 +858,7 @@ async def set_speaker_name(
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
     """Append text to a recording's user notes.
 

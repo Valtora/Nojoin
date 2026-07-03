@@ -9,6 +9,7 @@ contextvars the auth middleware sets.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import pytest
@@ -32,6 +33,7 @@ from backend.mcp_server.server import (
     get_speakers,
     import_people,
     list_people,
+    list_recordings,
     set_speaker_name,
 )
 from backend.models.people_tag import PeopleTag, PeopleTagLink
@@ -201,6 +203,26 @@ SCHEMA_STATEMENTS = [
         meta JSON
     )
     """,
+    """
+    CREATE TABLE tags (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        color VARCHAR(64),
+        user_id INTEGER,
+        parent_id INTEGER
+    )
+    """,
+    """
+    CREATE TABLE recording_tags (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        recording_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL
+    )
+    """,
 ]
 
 
@@ -356,6 +378,58 @@ async def test_list_people_query_filter(session_maker, test_user: User, mcp_cont
     people = await list_people(query="acme")
 
     assert [person["name"] for person in people] == ["Dana"]
+
+
+async def seed_recording_tag(
+    session_maker, *, tag_id: int, recording_id: int, name: str, user_id: int
+) -> None:
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO tags (id, created_at, updated_at, name, user_id)
+                VALUES (:id, :ts, :ts, :name, :user_id)
+                """
+            ),
+            {"id": tag_id, "ts": TEST_TIMESTAMP, "name": name, "user_id": user_id},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_tags (created_at, updated_at, recording_id, tag_id)
+                VALUES (:ts, :ts, :rec, :tag)
+                """
+            ),
+            {"ts": TEST_TIMESTAMP, "rec": recording_id, "tag": tag_id},
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_list_recordings_includes_tags_and_speakers(
+    session_maker, test_user: User, mcp_context
+):
+    """Regression: list_recordings must report a recording's tags and speakers,
+    not the always-empty projection the web list serializer returns."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_recording_tag(
+        session_maker,
+        tag_id=1,
+        recording_id=1,
+        name="Dealflow",
+        user_id=test_user.id,
+    )
+
+    recordings = await list_recordings()
+
+    assert len(recordings) == 1
+    recording = recordings[0]
+    assert recording["id"] == public_id
+    assert recording["tags"] == ["Dealflow"]
+    # Linked person name resolves; the merged speaker is excluded.
+    assert set(recording["speakers"]) == {"Dana", "Guest"}
 
 
 @pytest.mark.anyio
@@ -796,3 +870,59 @@ async def test_append_meeting_notes_rejects_empty_text_and_read_only(
     bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
     with pytest.raises(ToolError, match="read-only"):
         await append_meeting_notes(public_id, "blocked")
+
+
+# --- tool-call logging -----------------------------------------------------
+
+MCP_LOGGER = "backend.mcp_server.server"
+
+
+@pytest.mark.anyio
+async def test_tool_logging_records_success(
+    session_maker, test_user: User, mcp_context, caplog
+):
+    bind_mcp_identity(test_user)
+    with caplog.at_level(logging.INFO, logger=MCP_LOGGER):
+        await list_people()
+
+    records = [r for r in caplog.records if r.name == MCP_LOGGER]
+    assert any(
+        r.levelno == logging.INFO
+        and "mcp tool list_people ok" in r.getMessage()
+        and f"user={test_user.id}" in r.getMessage()
+        for r in records
+    )
+
+
+@pytest.mark.anyio
+async def test_tool_logging_redacts_free_text(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch, caplog
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    secret = "CONFIDENTIAL-NOTE-BODY-9137"
+
+    with caplog.at_level(logging.INFO, logger=MCP_LOGGER):
+        await append_meeting_notes(public_id, secret)
+
+    messages = "\n".join(r.getMessage() for r in caplog.records if r.name == MCP_LOGGER)
+    # The note body must never reach the log; only its length is recorded.
+    assert secret not in messages
+    assert "text=<str:" in messages
+    assert "append_meeting_notes ok" in messages
+
+
+@pytest.mark.anyio
+async def test_tool_logging_warns_on_rejection(
+    session_maker, test_user: User, mcp_context, caplog
+):
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+    with caplog.at_level(logging.INFO, logger=MCP_LOGGER):
+        with pytest.raises(ToolError):
+            await import_people([PersonImportEntry(name="Dana")])
+
+    assert any(
+        r.levelno == logging.WARNING and "import_people rejected" in r.getMessage()
+        for r in caplog.records
+        if r.name == MCP_LOGGER
+    )
