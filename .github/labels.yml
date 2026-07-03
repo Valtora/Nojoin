@@ -95,3 +95,6 @@
 - name: "audit"
   color: "0052cc"
   description: "Periodic repository-quality re-audit (GOV-008)."
+- name: "claude-review"
+  color: "6f42c1"
+  description: "Request an on-demand Claude PR re-review (triggers claude-review.yml)."

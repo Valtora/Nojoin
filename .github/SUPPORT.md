@@ -49,7 +49,7 @@ The canonical label set is defined in [labels.yml](labels.yml), grouped as:
 - **Scope:** `scope:backend`, `scope:worker`, `scope:frontend`, `scope:capture`, `scope:migration`, `scope:deployment`, `scope:docs`, `scope:security` (mirrors [CODEOWNERS](CODEOWNERS)).
 - **Platform:** `platform:windows`, `platform:linux`, `platform:macos`, `platform:android`, `platform:ios`, plus the `platform-issue` triage label.
 - **Release impact:** `release:breaking`, `release:migration-required`, `release:safe`.
-- **Workflow:** `needs-triage`, `flaky`, `slow-test`, `dependencies`, `audit`.
+- **Workflow:** `needs-triage`, `flaky`, `slow-test`, `dependencies`, `audit`, `claude-review` (adding `claude-review` to a pull request triggers an on-demand Claude re-review).
 
 ### Applying the Labels (maintainer-action-pending)
 
@@ -82,6 +82,7 @@ gh label create "flaky"             --color e99695 --description "Intermittently
 gh label create "slow-test"         --color fef2c0 --description "Test flagged as slow by pytest --durations." --force
 gh label create "dependencies"      --color 0366d6 --description "Dependency update (used by Dependabot pull requests)." --force
 gh label create "audit"             --color 0052cc --description "Periodic repository-quality re-audit (GOV-008)." --force
+gh label create "claude-review"     --color 6f42c1 --description "Request an on-demand Claude PR re-review (triggers claude-review.yml)." --force
 ```
 
 This step is a one-time (then on-change) maintainer action and is not enforced from the repository tree. `.github/labels.yml` remains the canonical definition; keep these commands in step with it when the taxonomy changes.
