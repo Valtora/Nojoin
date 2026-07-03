@@ -419,6 +419,8 @@ export default function DashboardUpcomingMeetingsCard() {
                                   status={event.status}
                                   layout="timeline"
                                   visualHeight={event.height}
+                                  continuesBefore={event.continuesBefore}
+                                  continuesAfter={event.continuesAfter}
                                 />
                               </div>
                             ))}

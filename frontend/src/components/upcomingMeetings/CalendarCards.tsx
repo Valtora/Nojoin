@@ -3,6 +3,8 @@ import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import {
   ArrowRight,
   Calendar,
+  ChevronsDown,
+  ChevronsUp,
   Clock,
   ExternalLink,
   MapPin,
@@ -181,12 +183,16 @@ export function DayTimelineEventCard({
   status,
   layout,
   visualHeight,
+  continuesBefore,
+  continuesAfter,
 }: {
   event: CalendarDashboardEvent;
   timeZone: string;
   status: DayTimelineStatus;
   layout: "timeline" | "stacked";
   visualHeight?: number;
+  continuesBefore?: boolean;
+  continuesAfter?: boolean;
 }) {
   const calendarColour = getCalendarColourPresentation(event.calendar_colour);
   const {
@@ -238,6 +244,10 @@ export function DayTimelineEventCard({
       : "border-gray-200 dark:border-gray-700/70"
   } ${
     isPast ? "opacity-70" : ""
+  } ${
+    layout === "timeline" && continuesBefore ? "[border-top-style:dashed]" : ""
+  } ${
+    layout === "timeline" && continuesAfter ? "[border-bottom-style:dashed]" : ""
   }`;
   const cardContent = (
     <>
@@ -245,6 +255,12 @@ export function DayTimelineEventCard({
         className={`absolute inset-y-0 left-0 w-1.5 ${calendarColour.className}`}
         style={calendarColour.style}
       />
+      {layout === "timeline" && continuesBefore && (
+        <ChevronsUp className="pointer-events-none absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 text-gray-400 dark:text-gray-500" />
+      )}
+      {layout === "timeline" && continuesAfter && (
+        <ChevronsDown className="pointer-events-none absolute bottom-0 left-1/2 h-3 w-3 -translate-x-1/2 text-gray-400 dark:text-gray-500" />
+      )}
       <div className={`h-full pl-4 pr-3 ${paddingClass}`}>
         <div className={`flex items-start justify-between gap-3 ${showJoinPill ? "pr-12" : ""}`}>
           <div className="min-w-0">
