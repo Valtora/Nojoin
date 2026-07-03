@@ -275,9 +275,12 @@ export function DayTimelineEventCard({
             </div>
 
             {showPlainLocation && locationText && (
-              <div className="mt-2 inline-flex max-w-full items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-300" />
-                <span className="line-clamp-2">{locationText}</span>
+              <div
+                className="mt-2 flex min-w-0 items-center gap-2 text-xs text-gray-600 dark:text-gray-300"
+                title={locationText}
+              >
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-300" />
+                <span className="truncate">{locationText}</span>
               </div>
             )}
 
