@@ -41,7 +41,7 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List recordings with free-text search and date filters. |
+| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. |
 | `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
@@ -78,3 +78,4 @@ For operators who want the detail:
 - **Claude reports it cannot reach the server**: confirm `https://your-domain/.well-known/oauth-protected-resource/mcp` returns JSON from outside your network. If it returns the Nojoin web app instead, your edge proxy is not routing `/.well-known/oauth-*` and `/mcp` to the API service.
 - **Authorisation page shows "This authorization request is invalid"**: the client's registration may have been removed (for example after a database restore). Remove and re-add the connector so the client re-registers.
 - **Connector stopped working after a password change**: that is intentional containment. Reconnect from the assistant to authorise again.
+- **A tool returned unexpected or empty results**: the API service logs one line per MCP tool call — the tool name, the acting user id, a redacted argument summary, the result shape, and the duration (for example `mcp tool list_recordings ok user=1 limit=20 -> list:12 (18ms)`). Rejected calls log at `WARNING` and unexpected failures at `ERROR` with a traceback. Follow them with `docker compose logs -f api` (or your deployment's log viewer). Argument summaries never include note bodies, search text, or personal contact details — only lengths and counts — so the log stays useful without recording meeting content.
