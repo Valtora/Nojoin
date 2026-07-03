@@ -41,7 +41,7 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List recordings with free-text search and date filters. |
+| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. |
 | `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |

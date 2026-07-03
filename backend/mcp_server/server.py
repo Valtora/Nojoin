@@ -242,6 +242,7 @@ def _compact_recording(recording: Any) -> dict[str, Any]:
         "tags": tags,
         "speakers": speakers,
         "is_archived": recording.is_archived,
+        "is_deleted": recording.is_deleted,
     }
 
 
@@ -253,9 +254,12 @@ async def list_recordings(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    """List the user's meeting recordings, newest first.
+    """List and search the user's meeting recordings, newest first.
 
-    Archived and deleted recordings are excluded.
+    Search covers the whole library: archived and soft-deleted recordings are
+    included, so a search can find a meeting the user has archived or removed.
+    Each result carries `is_archived` and `is_deleted` so their state is
+    clear and the caller can filter them out when only active meetings matter.
 
     Args:
         limit: Maximum number of recordings to return (1-100).
@@ -291,8 +295,10 @@ async def list_recordings(
             end_date=_parse_iso_datetime(end_date, "end_date"),
             speaker_ids=None,
             tag_ids=None,
-            include_archived=False,
-            include_deleted=False,
+            # Search spans the whole library; is_archived/is_deleted in the
+            # result let the caller tell active meetings from the rest.
+            include_archived=True,
+            include_deleted=True,
             only_archived=False,
             only_deleted=False,
             status_filters=None,
@@ -402,6 +408,9 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     }
 
 
+_TAG_PAGE_SIZE = 200
+
+
 @mcp_tool()
 async def list_tags() -> list[dict[str, Any]]:
     """List the user's tags. Tag names can be used with list_recordings' query."""
@@ -409,9 +418,20 @@ async def list_tags() -> list[dict[str, Any]]:
     from backend.core.db import async_session_maker
 
     user = get_current_mcp_user()
+    collected: list[dict[str, Any]] = []
     async with async_session_maker() as db:
-        tags = await read_tags(db=db, current_user=user)
-    return [{"id": tag.id, "name": tag.name} for tag in tags]
+        # read_tags caps each call at its own default limit, so page through
+        # to the end rather than silently returning only the first page.
+        skip = 0
+        while True:
+            page = await read_tags(
+                skip=skip, limit=_TAG_PAGE_SIZE, db=db, current_user=user
+            )
+            collected.extend({"id": tag.id, "name": tag.name} for tag in page)
+            if len(page) < _TAG_PAGE_SIZE:
+                break
+            skip += _TAG_PAGE_SIZE
+    return collected
 
 
 def _compact_speaker(speaker: Any) -> dict[str, Any]:

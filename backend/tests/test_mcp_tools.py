@@ -34,6 +34,7 @@ from backend.mcp_server.server import (
     import_people,
     list_people,
     list_recordings,
+    list_tags,
     set_speaker_name,
 )
 from backend.models.people_tag import PeopleTag, PeopleTagLink
@@ -380,6 +381,55 @@ async def test_list_people_query_filter(session_maker, test_user: User, mcp_cont
     assert [person["name"] for person in people] == ["Dana"]
 
 
+@pytest.mark.anyio
+async def test_list_people_includes_person_tags(
+    session_maker, test_user: User, mcp_context
+):
+    """Guard the analogue of the list_recordings tag bug: list_people must
+    surface a person's People-library tags, not an empty list."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    async with session_maker() as session:
+        session.add(PeopleTag(id=1, name="VIP", user_id=test_user.id))
+        session.add(PeopleTagLink(global_speaker_id=11, tag_id=1))
+        await session.commit()
+
+    people = await list_people()
+
+    assert people[0]["tags"] == ["VIP"]
+
+
+@pytest.mark.anyio
+async def test_list_tags_returns_all_beyond_one_page(
+    session_maker, test_user: User, mcp_context
+):
+    """list_tags must page through read_tags rather than silently returning
+    only the first page for a user with many tags."""
+    bind_mcp_identity(test_user)
+    total = mcp_server._TAG_PAGE_SIZE + 25
+    async with session_maker() as session:
+        for index in range(total):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO tags (id, created_at, updated_at, name, user_id)
+                    VALUES (:id, :ts, :ts, :name, :uid)
+                    """
+                ),
+                {
+                    "id": index + 1,
+                    "ts": TEST_TIMESTAMP,
+                    "name": f"tag-{index:03d}",
+                    "uid": test_user.id,
+                },
+            )
+        await session.commit()
+
+    tags = await list_tags()
+
+    assert len(tags) == total
+
+
 async def seed_recording_tag(
     session_maker, *, tag_id: int, recording_id: int, name: str, user_id: int
 ) -> None:
@@ -428,8 +478,76 @@ async def test_list_recordings_includes_tags_and_speakers(
     recording = recordings[0]
     assert recording["id"] == public_id
     assert recording["tags"] == ["Dealflow"]
+    assert recording["is_archived"] is False
+    assert recording["is_deleted"] is False
     # Linked person name resolves; the merged speaker is excluded.
     assert set(recording["speakers"]) == {"Dana", "Guest"}
+
+
+async def seed_bare_recording(
+    session_maker, *, recording_id: int, public_id: str, user_id: int, state: str
+) -> None:
+    """Seed a recording in one of: active, archived, deleted."""
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recordings (
+                    id, created_at, updated_at, name, public_id, meeting_uid,
+                    audio_path, status, upload_progress, processing_progress,
+                    is_archived, is_deleted, user_id
+                ) VALUES (
+                    :id, :ts, :ts, :name, :public_id, :uid,
+                    '/tmp/a.wav', 'PROCESSED', 100, 100,
+                    :archived, :deleted, :user_id
+                )
+                """
+            ),
+            {
+                "id": recording_id,
+                "ts": TEST_TIMESTAMP,
+                "name": f"Recording {recording_id}",
+                "public_id": public_id,
+                "uid": f"uid-{recording_id}",
+                "archived": 1 if state == "archived" else 0,
+                "deleted": 1 if state == "deleted" else 0,
+                "user_id": user_id,
+            },
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_list_recordings_covers_archived_and_deleted(
+    session_maker, test_user: User, mcp_context
+):
+    """Search must reach archived and soft-deleted meetings, tagging each
+    result with its state so the caller can distinguish them."""
+    bind_mcp_identity(test_user)
+    for recording_id, public_id, state in (
+        (1, "rec-active", "active"),
+        (2, "rec-archived", "archived"),
+        (3, "rec-deleted", "deleted"),
+    ):
+        await seed_bare_recording(
+            session_maker,
+            recording_id=recording_id,
+            public_id=public_id,
+            user_id=test_user.id,
+            state=state,
+        )
+
+    everything = await list_recordings()
+
+    assert {r["id"] for r in everything} == {
+        "rec-active",
+        "rec-archived",
+        "rec-deleted",
+    }
+    states = {r["id"]: (r["is_archived"], r["is_deleted"]) for r in everything}
+    assert states["rec-active"] == (False, False)
+    assert states["rec-archived"] == (True, False)
+    assert states["rec-deleted"] == (False, True)
 
 
 @pytest.mark.anyio
