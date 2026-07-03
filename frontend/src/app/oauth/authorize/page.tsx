@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Tag,
   User as UserIcon,
+  UserPlus,
+  Users,
 } from "lucide-react";
 
 import {
@@ -34,11 +36,24 @@ function resolveClientLogo(clientName: string): string | null {
   return null;
 }
 
-const READ_SCOPE_CAPABILITIES = [
-  { icon: Mic, label: "View your recordings" },
-  { icon: FileText, label: "Read transcripts and meeting notes" },
-  { icon: Tag, label: "See your tags" },
-];
+// Human-readable consent copy per scope; an unknown scope falls back to
+// its raw name so the user is never shown less than what is requested.
+const SCOPE_CAPABILITIES: Record<
+  string,
+  { icon: typeof Mic; label: string }[]
+> = {
+  "mcp:read": [
+    { icon: Mic, label: "View your recordings" },
+    { icon: FileText, label: "Read transcripts, notes, and attached documents" },
+    { icon: Users, label: "See meeting speakers and your People library" },
+    { icon: Tag, label: "See your tags" },
+  ],
+  "mcp:write": [
+    { icon: UserPlus, label: "Add or update people in your People library" },
+    { icon: Users, label: "Name meeting speakers and link them to people" },
+    { icon: FileText, label: "Append to a meeting's notes" },
+  ],
+};
 
 function redirectHost(redirectUri: string): string | null {
   try {
@@ -148,6 +163,12 @@ function AuthorizeContent() {
   const isReadOnly = Boolean(
     info && info.scope_items.every((scope) => scope === "mcp:read"),
   );
+  const capabilities = info
+    ? info.scope_items.flatMap(
+        (scope) =>
+          SCOPE_CAPABILITIES[scope] ?? [{ icon: ShieldCheck, label: scope }],
+      )
+    : [];
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950 px-4 sm:px-6 lg:px-8">
@@ -208,13 +229,7 @@ function AuthorizeContent() {
 
               {/* Capability list */}
               <ul className="mt-5 divide-y divide-gray-100 dark:divide-gray-800 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40">
-                {(isReadOnly
-                  ? READ_SCOPE_CAPABILITIES
-                  : info.scope_items.map((scope) => ({
-                      icon: ShieldCheck,
-                      label: scope,
-                    }))
-                ).map(({ icon: Icon, label }) => (
+                {capabilities.map(({ icon: Icon, label }) => (
                   <li
                     key={label}
                     className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200"
@@ -225,13 +240,21 @@ function AuthorizeContent() {
                 ))}
               </ul>
 
-              {isReadOnly && (
-                <p className="mt-3 flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-green-600 dark:text-green-500" />
-                  Read-only access. {info.client_name} cannot change or delete
-                  anything in Nojoin.
-                </p>
-              )}
+              <p className="mt-3 flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-green-600 dark:text-green-500" />
+                {isReadOnly ? (
+                  <>
+                    Read-only access. {info.client_name} cannot change or
+                    delete anything in Nojoin.
+                  </>
+                ) : (
+                  <>
+                    Write access is additive: {info.client_name} can add
+                    people, name speakers, and append notes, but cannot delete
+                    anything or change your recordings and transcripts.
+                  </>
+                )}
+              </p>
 
               {error && (
                 <p
