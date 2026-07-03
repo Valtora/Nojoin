@@ -1,11 +1,16 @@
 import Link from "next/link";
+import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import {
   ArrowRight,
   Calendar,
+  ChevronsDown,
+  ChevronsUp,
   Clock,
   ExternalLink,
   MapPin,
+  Mic,
   Users,
+  Video,
 } from "lucide-react";
 
 import { getColorByKey } from "@/lib/constants";
@@ -28,9 +33,12 @@ import {
   getRecordingStatusClasses,
   getTimelineDotSizeClass,
   getTimelineIndicatorSizeClass,
+  getTimelineMetadataRowCapacity,
   getTimelinePaddingClass,
   getTimelineTitleClass,
+  getUrlHost,
 } from "./calendarUtils";
+import { EventDetailsPopoverContent } from "./EventDetailsPopover";
 
 export function LinkedRecordingsMeta({
   recordings,
@@ -177,12 +185,16 @@ export function DayTimelineEventCard({
   status,
   layout,
   visualHeight,
+  continuesBefore,
+  continuesAfter,
 }: {
   event: CalendarDashboardEvent;
   timeZone: string;
   status: DayTimelineStatus;
   layout: "timeline" | "stacked";
   visualHeight?: number;
+  continuesBefore?: boolean;
+  continuesAfter?: boolean;
 }) {
   const calendarColour = getCalendarColourPresentation(event.calendar_colour);
   const {
@@ -194,11 +206,10 @@ export function DayTimelineEventCard({
   } = getAgendaEventPresentation(event);
   const isLive = status === "live";
   const isPast = status === "past";
-  const primaryUrl = showMeetingUrl && meetingUrl
-    ? meetingUrl
-    : showLocation && locationText && locationIsUrl
-      ? locationText
-      : null;
+  const hasLink = Boolean(
+    (showMeetingUrl && meetingUrl) ||
+      (showLocation && locationText && locationIsUrl),
+  );
   const timelineDensity = layout === "timeline"
     ? visualHeight !== undefined && visualHeight < 28
       ? "dense"
@@ -207,8 +218,15 @@ export function DayTimelineEventCard({
         : "comfortable"
     : "comfortable";
   const isSmallTimelineEvent = layout === "timeline" && timelineDensity !== "comfortable";
-  const showSecondaryMetadata = layout === "stacked" || timelineDensity === "comfortable";
-  const showPlainLocation = Boolean(showLocation && locationText && !locationIsUrl && showSecondaryMetadata);
+  const metadataRowCapacity = layout === "stacked"
+    ? 2
+    : timelineDensity === "comfortable"
+      ? getTimelineMetadataRowCapacity(visualHeight)
+      : 0;
+  const hasPlainLocation = Boolean(showLocation && locationText && !locationIsUrl);
+  const showPlainLocation = hasPlainLocation && metadataRowCapacity >= 1;
+  const showCalendarName =
+    metadataRowCapacity >= 2 || (metadataRowCapacity >= 1 && !hasPlainLocation);
   const showTimeRow = layout === "stacked" || !isSmallTimelineEvent;
   const showLiveBadge = layout === "stacked" && isLive;
   const titleClass = layout === "timeline"
@@ -223,16 +241,22 @@ export function DayTimelineEventCard({
   const dotSizeClass = layout === "timeline"
     ? getTimelineDotSizeClass(visualHeight)
     : "h-2.5 w-2.5";
-  const cardClasses = `relative h-full overflow-hidden rounded-[5px] border bg-white shadow-sm dark:bg-gray-900/95 ${
+  const showJoinPill = Boolean(
+    isLive &&
+      showMeetingUrl &&
+      meetingUrl &&
+      (layout === "stacked" || timelineDensity === "comfortable"),
+  );
+  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-white text-left shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 dark:bg-gray-900/95 dark:hover:border-orange-400/30 dark:hover:bg-orange-500/10 ${
     isLive
       ? "border-orange-300 shadow-orange-600/15 dark:border-orange-400/40"
       : "border-gray-200 dark:border-gray-700/70"
   } ${
     isPast ? "opacity-70" : ""
   } ${
-    primaryUrl
-      ? "block cursor-pointer transition-colors hover:border-orange-200 hover:bg-orange-50/60 dark:hover:border-orange-400/30 dark:hover:bg-orange-500/10"
-      : ""
+    layout === "timeline" && continuesBefore ? "[border-top-style:dashed]" : ""
+  } ${
+    layout === "timeline" && continuesAfter ? "[border-bottom-style:dashed]" : ""
   }`;
   const cardContent = (
     <>
@@ -240,8 +264,14 @@ export function DayTimelineEventCard({
         className={`absolute inset-y-0 left-0 w-1.5 ${calendarColour.className}`}
         style={calendarColour.style}
       />
+      {layout === "timeline" && continuesBefore && (
+        <ChevronsUp className="pointer-events-none absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 text-gray-400 dark:text-gray-500" />
+      )}
+      {layout === "timeline" && continuesAfter && (
+        <ChevronsDown className="pointer-events-none absolute bottom-0 left-1/2 h-3 w-3 -translate-x-1/2 text-gray-400 dark:text-gray-500" />
+      )}
       <div className={`h-full pl-4 pr-3 ${paddingClass}`}>
-        <div className="flex items-start justify-between gap-3">
+        <div className={`flex items-start justify-between gap-3 ${showJoinPill ? "pr-12" : ""}`}>
           <div className="min-w-0">
             {showTimeRow && (
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
@@ -257,53 +287,89 @@ export function DayTimelineEventCard({
               {event.title}
             </div>
           </div>
-          <div className="mt-1 flex shrink-0 items-center gap-1.5">
-            {primaryUrl && (
-              <ExternalLink className={`${linkIndicatorClass} text-gray-400 dark:text-gray-500`} />
-            )}
-            <span
-              className={`${dotSizeClass} rounded-full ${calendarColour.className}`}
-              style={calendarColour.style}
-            />
-          </div>
+          {!showJoinPill && (
+            <div className="mt-1 flex shrink-0 items-center gap-1.5">
+              {event.linked_recordings.length > 0 && (
+                <span
+                  title={
+                    event.linked_recordings.length === 1
+                      ? "1 linked recording"
+                      : `${event.linked_recordings.length} linked recordings`
+                  }
+                >
+                  <Mic className={`${linkIndicatorClass} text-orange-600 dark:text-orange-300`} />
+                </span>
+              )}
+              {hasLink && (
+                <ExternalLink className={`${linkIndicatorClass} text-gray-400 dark:text-gray-500`} />
+              )}
+              <span
+                className={`${dotSizeClass} rounded-full ${calendarColour.className}`}
+                style={calendarColour.style}
+              />
+            </div>
+          )}
         </div>
 
-        {showSecondaryMetadata && (
+        {(showCalendarName || showPlainLocation) && (
           <>
-            <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
-              {event.calendar_name}
-            </div>
-
-            {showPlainLocation && locationText && (
-              <div className="mt-2 inline-flex max-w-full items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
-                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-300" />
-                <span className="line-clamp-2">{locationText}</span>
+            {showCalendarName && (
+              <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                {event.calendar_name}
               </div>
             )}
 
-            {!isSmallTimelineEvent ? (
-              <LinkedRecordingsMeta recordings={event.linked_recordings} />
-            ) : null}
+            {showPlainLocation && locationText && (
+              <div
+                className="mt-2 flex min-w-0 items-center gap-2 text-xs text-gray-600 dark:text-gray-300"
+                title={locationText}
+              >
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-300" />
+                <span className="truncate">{locationText}</span>
+              </div>
+            )}
+
           </>
         )}
       </div>
     </>
   );
 
-  if (primaryUrl) {
-    return (
-      <a
-        href={primaryUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+  return (
+    <Popover className="relative block h-full">
+      <PopoverButton
         className={cardClasses}
+        aria-label={`View details for ${event.title}`}
       >
         {cardContent}
-      </a>
-    );
-  }
-
-  return <div className={cardClasses}>{cardContent}</div>;
+      </PopoverButton>
+      {showJoinPill && meetingUrl && (
+        <a
+          href={meetingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-orange-600 px-2.5 py-0.5 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-orange-700"
+        >
+          <Video className="h-3 w-3" />
+          Join
+        </a>
+      )}
+      <PopoverPanel
+        anchor={{
+          to: layout === "timeline" ? "right start" : "bottom",
+          gap: 8,
+          padding: 12,
+        }}
+        className="z-50 focus:outline-none"
+      >
+        <EventDetailsPopoverContent
+          event={event}
+          timeZone={timeZone}
+          status={status}
+        />
+      </PopoverPanel>
+    </Popover>
+  );
 }
 
 export function AgendaEventCard({
@@ -321,6 +387,8 @@ export function AgendaEventCard({
     showLocation,
     showMeetingUrl,
   } = getAgendaEventPresentation(event);
+  const meetingHost = event.meeting_url_host || getUrlHost(meetingUrl);
+  const locationHost = getUrlHost(locationText);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/80">
@@ -347,10 +415,13 @@ export function AgendaEventCard({
                 href={locationText}
                 target="_blank"
                 rel="noopener noreferrer"
+                title={locationText}
                 className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
               >
                 <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
-                <span className="min-w-0 break-all">{locationText}</span>
+                <span className="min-w-0 break-words">
+                  Open link{locationHost ? ` (${locationHost})` : ""}
+                </span>
               </a>
             ) : (
               <div className="inline-flex items-start gap-2">
@@ -365,10 +436,13 @@ export function AgendaEventCard({
               href={meetingUrl}
               target="_blank"
               rel="noopener noreferrer"
+              title={meetingUrl}
               className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
             >
               <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
-              <span className="min-w-0 break-all">{meetingUrl}</span>
+              <span className="min-w-0 break-words">
+                Join meeting{meetingHost ? ` (${meetingHost})` : ""}
+              </span>
             </a>
           )}
         </div>

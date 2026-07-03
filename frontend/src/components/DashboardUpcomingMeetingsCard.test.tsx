@@ -149,7 +149,9 @@ describe("DashboardUpcomingMeetingsCard", () => {
     });
   });
 
-  it("shows recordings and events in the agenda view", async () => {
+  it("shows upcoming items in the agenda view and reveals past items on demand", async () => {
+    // now is 10:00; the event ended at 09:30 (past), the recording ends at
+    // 11:45 (still upcoming).
     getCalendarDashboardSummary.mockResolvedValue(
       makeSummary({
         agenda_items: [makeEvent({ id: 1, title: "Planning meeting" })],
@@ -166,9 +168,19 @@ describe("DashboardUpcomingMeetingsCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
 
     await vi.waitFor(() => {
-      expect(screen.getByText("Planning meeting")).toBeInTheDocument();
+      expect(screen.getByText("Recorded sync")).toBeInTheDocument();
     });
+    expect(screen.queryByText("Planning meeting")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show 1 past event" }),
+    );
+
+    expect(screen.getByText("Planning meeting")).toBeInTheDocument();
     expect(screen.getByText("Recorded sync")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Hide past events" }),
+    ).toBeInTheDocument();
   });
 
   it("links a recording card to its recording detail page", async () => {
@@ -191,6 +203,90 @@ describe("DashboardUpcomingMeetingsCard", () => {
     );
     expect(card).toHaveAttribute("href", "/recordings/100");
     expect(within(card!).getByText("Alice, Bob")).toBeInTheDocument();
+  });
+
+  it("renders a compact join label instead of the raw meeting URL in the agenda", async () => {
+    getCalendarDashboardSummary.mockResolvedValue(
+      makeSummary({
+        agenda_items: [
+          makeEvent({
+            title: "Investors call",
+            starts_at: "2026-06-16T16:00:00.000Z",
+            ends_at: "2026-06-16T17:00:00.000Z",
+            meeting_url:
+              "https://us02web.zoom.us/w/89206805925?tk=G2SKabvvz99wb7RA7XM2kJvfx0",
+            meeting_url_trusted: true,
+            meeting_url_host: "us02web.zoom.us",
+          }),
+        ],
+      }),
+    );
+
+    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("June 2026")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
+
+    const joinLink = await vi.waitFor(() =>
+      screen.getByRole("link", {
+        name: "Join meeting (us02web.zoom.us)",
+      }),
+    );
+    expect(joinLink).toHaveAttribute(
+      "href",
+      "https://us02web.zoom.us/w/89206805925?tk=G2SKabvvz99wb7RA7XM2kJvfx0",
+    );
+    expect(
+      screen.queryByText(/us02web\.zoom\.us\/w\/89206805925/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens an event details popover when a timeline bubble is clicked", async () => {
+    const location =
+      "Huckletree Oxford Circus - West London Coworking & Office Space, 213 Oxford St, London W1D 2LG, UK";
+    getCalendarDashboardSummary.mockResolvedValue(
+      makeSummary({
+        agenda_items: [
+          makeEvent({
+            title: "Workshop",
+            starts_at: "2026-06-15T11:00:00.000Z",
+            ends_at: "2026-06-15T12:00:00.000Z",
+            location,
+            meeting_url: "https://meet.google.com/abc-defg-hij",
+            meeting_url_trusted: true,
+            meeting_url_host: "meet.google.com",
+          }),
+        ],
+      }),
+    );
+
+    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+
+    const bubbles = await vi.waitFor(() => {
+      const found = screen.getAllByRole("button", {
+        name: "View details for Workshop",
+      });
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+
+    expect(screen.queryByText(/Join meeting/)).not.toBeInTheDocument();
+
+    const [bubble] = bubbles;
+    fireEvent.click(bubble);
+
+    const joinLink = screen.getByRole("link", {
+      name: /Join meeting \(meet\.google\.com\)/,
+    });
+    expect(joinLink).toHaveAttribute(
+      "href",
+      "https://meet.google.com/abc-defg-hij",
+    );
+    // The popover shows the full, unclipped location.
+    expect(screen.getAllByText(location).length).toBeGreaterThan(0);
   });
 
   it("disables the Today button while viewing today", async () => {

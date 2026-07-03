@@ -366,6 +366,41 @@ export function buildMonthAgendaItems(
   });
 }
 
+export function isAgendaItemPast(item: MonthAgendaItem, now: Date): boolean {
+  if (item.kind === "recording") {
+    const recordingEnd =
+      getRecordingEnd(item.recording) ?? getRecordingStart(item.recording);
+    return recordingEnd < now;
+  }
+
+  const eventEnd = getEventEnd(item.event);
+  if (!eventEnd) {
+    return false;
+  }
+
+  if (item.event.is_all_day) {
+    // getEventEnd returns the start of the last covered day for all-day
+    // events, so the item stays current until that day has fully elapsed.
+    return addDays(startOfDay(eventEnd), 1) <= now;
+  }
+
+  return eventEnd < now;
+}
+
+export function splitMonthAgendaItems(
+  items: MonthAgendaItem[],
+  now: Date,
+): { pastItems: MonthAgendaItem[]; upcomingItems: MonthAgendaItem[] } {
+  const pastItems: MonthAgendaItem[] = [];
+  const upcomingItems: MonthAgendaItem[] = [];
+
+  items.forEach((item) => {
+    (isAgendaItemPast(item, now) ? pastItems : upcomingItems).push(item);
+  });
+
+  return { pastItems, upcomingItems };
+}
+
 export function formatAgendaDate(
   event: CalendarDashboardEvent,
   timeZone: string,
@@ -414,6 +449,20 @@ export function isHttpUrl(value: string | null | undefined): boolean {
     return parsed.protocol === "http:" || parsed.protocol === "https:";
   } catch {
     return false;
+  }
+}
+
+export function getUrlHost(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname.replace(/^www\./, "") || null;
+  } catch {
+    // Bare hosts (e.g. backend-provided meeting_url_host) are not valid URLs.
+    return /^[\w.-]+\.[a-z]{2,}$/i.test(value) ? value.replace(/^www\./, "") : null;
   }
 }
 
@@ -492,6 +541,27 @@ export function getTimelineTitleClass(
   }
 
   return "truncate text-[13px] leading-4";
+}
+
+/**
+ * Number of secondary metadata rows (calendar name, location) that fit inside
+ * a timeline bubble without being clipped by its duration-derived height.
+ * Budget: vertical padding + time row + single-line title is roughly 62px,
+ * and each metadata row adds roughly 24px.
+ */
+export function getTimelineMetadataRowCapacity(
+  visualHeight: number | undefined,
+): number {
+  if (visualHeight === undefined) {
+    return 2;
+  }
+  if (visualHeight >= 108) {
+    return 2;
+  }
+  if (visualHeight >= 84) {
+    return 1;
+  }
+  return 0;
 }
 
 export function getTimelinePaddingClass(

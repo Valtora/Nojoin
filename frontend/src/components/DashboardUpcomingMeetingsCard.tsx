@@ -5,6 +5,7 @@ import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
+  History,
   LayoutGrid,
   Loader2,
   List,
@@ -47,6 +48,11 @@ export default function DashboardUpcomingMeetingsCard() {
     footerText,
     monthAgendaItems,
     monthHasContent,
+    agendaPastItems,
+    agendaUpcomingItems,
+    agendaShowsPastItems,
+    canTogglePastAgendaItems,
+    handleTogglePastAgendaItems,
     selectedDayEvents,
     selectedDayRecordings,
     selectedDayHasContent,
@@ -277,7 +283,22 @@ export default function DashboardUpcomingMeetingsCard() {
               </div>
             ) : monthAgendaItems.length ? (
               <div className="mt-4 space-y-3">
-                {monthAgendaItems.map((item) => (
+                {canTogglePastAgendaItems && (
+                  <button
+                    type="button"
+                    onClick={handleTogglePastAgendaItems}
+                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    {agendaShowsPastItems
+                      ? "Hide past events"
+                      : `Show ${agendaPastItems.length} past ${agendaPastItems.length === 1 ? "event" : "events"}`}
+                  </button>
+                )}
+                {(agendaShowsPastItems
+                  ? [...agendaPastItems, ...agendaUpcomingItems]
+                  : agendaUpcomingItems
+                ).map((item) => (
                   item.kind === "event" ? (
                     <AgendaEventCard key={`event-${item.event.id}`} event={item.event} timeZone={activeTimeZone} />
                   ) : (
@@ -289,6 +310,13 @@ export default function DashboardUpcomingMeetingsCard() {
                     />
                   )
                 ))}
+                {!agendaShowsPastItems && agendaUpcomingItems.length === 0 && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    <span suppressHydrationWarning>
+                      No upcoming events in {viewedMonthLabel}.
+                    </span>
+                  </p>
+                )}
               </div>
             ) : (
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
@@ -419,6 +447,8 @@ export default function DashboardUpcomingMeetingsCard() {
                                   status={event.status}
                                   layout="timeline"
                                   visualHeight={event.height}
+                                  continuesBefore={event.continuesBefore}
+                                  continuesAfter={event.continuesAfter}
                                 />
                               </div>
                             ))}
