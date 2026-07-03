@@ -1,33 +1,57 @@
-"""Read-only MCP tool surface for Nojoin.
+"""MCP tool surface for Nojoin.
 
 Every tool delegates to the same endpoint coroutines and helpers the REST
 API uses (ownership checks, canonical-transcript projection, speaker-name
 resolution), so the MCP surface can never drift from what the web client
 shows. All tools are scoped to the authenticated user resolved by
 :class:`backend.mcp_server.auth.MCPAuthMiddleware`.
+
+Most tools are read-only. The write tools (``import_people``,
+``set_speaker_name``, ``append_meeting_notes``) are additive — they create,
+link, or annotate, never delete — and each requires the ``mcp:write`` scope
+on the grant. Every read tool works with ``mcp:read`` alone, so grants
+issued before the write scope existed keep functioning unchanged.
 """
 
+import functools
+import inspect
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Callable, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import Icon
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from starlette.types import ASGIApp
 
-from backend.mcp_server.auth import MCPAuthMiddleware, get_current_mcp_user
+from backend.core.security import MCP_WRITE_SCOPE
+from backend.mcp_server.auth import (
+    MCPAuthMiddleware,
+    current_mcp_user,
+    get_current_mcp_scopes,
+    get_current_mcp_user,
+)
 from backend.utils.config_manager import get_trusted_web_origin
 
 logger = logging.getLogger(__name__)
 
 MCP_SERVER_INSTRUCTIONS = (
-    "Read-only access to the user's Nojoin meeting library: recordings, "
-    "transcripts, AI meeting notes, and tags. Recording identifiers are the "
-    "string `id` values returned by list_recordings."
+    "Access to the user's Nojoin meeting library: recordings, transcripts, "
+    "AI meeting notes, attached documents, tags, per-meeting speakers, and "
+    "the People library (the user's saved people with voiceprints and "
+    "contact details). Read tools cover all of these. Write tools are "
+    "additive only: import_people creates or updates People records, "
+    "set_speaker_name names a meeting's speaker and links it to a person, "
+    "and append_meeting_notes adds to a meeting's user notes. Recording "
+    "identifiers are the string `id` values returned by list_recordings; "
+    "person identifiers are the integer `id` values from list_people."
 )
 
 _PUBLIC_ORIGIN = get_trusted_web_origin().rstrip("/")
@@ -55,6 +79,111 @@ mcp = FastMCP(
 )
 
 
+# Argument names safe to log verbatim: identifiers, pagination, and enums —
+# never free text (note bodies, search queries) or PII (names, contact
+# details), which are summarised by length/count instead. This keeps the
+# MCP call log useful for debugging without recording meeting content, in
+# line with the logging redaction policy in docs/SECURITY.md.
+_LOGGABLE_ARG_NAMES = frozenset(
+    {
+        "recording_id",
+        "person_id",
+        "diarization_label",
+        "on_conflict",
+        "limit",
+        "skip",
+        "start_date",
+        "end_date",
+    }
+)
+
+
+def _summarise_args(arguments: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for name, value in arguments.items():
+        if value is None:
+            continue
+        if name in _LOGGABLE_ARG_NAMES:
+            parts.append(f"{name}={value!r}")
+        elif isinstance(value, str):
+            parts.append(f"{name}=<str:{len(value)}>")
+        elif isinstance(value, (list, tuple, dict)):
+            parts.append(f"{name}=<{type(value).__name__}:{len(value)}>")
+        else:
+            parts.append(f"{name}=<{type(value).__name__}>")
+    return " ".join(parts) or "(no args)"
+
+
+def _summarise_result(result: Any) -> str:
+    if isinstance(result, (list, tuple, dict)):
+        return f"{type(result).__name__}:{len(result)}"
+    return type(result).__name__
+
+
+def _logged_tool(func: Callable) -> Callable:
+    """Wrap an MCP tool with structured call logging.
+
+    Emits one INFO line per successful call (tool, user, redacted args,
+    result shape, duration), a WARNING for a ToolError (an expected,
+    user-facing rejection), and an EXCEPTION for anything unexpected. The
+    signature is preserved via functools.wraps so FastMCP still builds the
+    tool's input schema from the original annotations.
+    """
+    signature = inspect.signature(func)
+
+    @functools.wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        user = current_mcp_user.get()
+        user_id = getattr(user, "id", None)
+        try:
+            bound = signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            arg_summary = _summarise_args(bound.arguments)
+        except TypeError:
+            arg_summary = "<unbindable args>"
+        started = time.monotonic()
+        try:
+            result = await func(*args, **kwargs)
+        except ToolError as exc:
+            logger.warning(
+                "mcp tool %s rejected user=%s %s: %s",
+                func.__name__,
+                user_id,
+                arg_summary,
+                exc,
+            )
+            raise
+        except Exception:
+            logger.exception(
+                "mcp tool %s failed user=%s %s",
+                func.__name__,
+                user_id,
+                arg_summary,
+            )
+            raise
+        duration_ms = (time.monotonic() - started) * 1000
+        logger.info(
+            "mcp tool %s ok user=%s %s -> %s (%.0fms)",
+            func.__name__,
+            user_id,
+            arg_summary,
+            _summarise_result(result),
+            duration_ms,
+        )
+        return result
+
+    return wrapper
+
+
+def mcp_tool() -> Callable[[Callable], Callable]:
+    """Register a coroutine as an MCP tool with call logging."""
+
+    def decorator(func: Callable) -> Callable:
+        return mcp.tool()(_logged_tool(func))
+
+    return decorator
+
+
 def _parse_iso_datetime(value: Optional[str], field_name: str) -> Optional[datetime]:
     if not value:
         return None
@@ -66,7 +195,29 @@ def _parse_iso_datetime(value: Optional[str], field_name: str) -> Optional[datet
         ) from exc
 
 
+def _require_write_scope(capability: str) -> None:
+    """Guard a write tool: refuse grants that lack the mcp:write scope.
+
+    Grants issued before mcp:write existed carry only mcp:read, so rather
+    than failing opaquely the tool tells the assistant to have the user
+    reconnect and consent to the wider scope.
+    """
+    if MCP_WRITE_SCOPE not in get_current_mcp_scopes():
+        raise ToolError(
+            "This connection is read-only: its grant predates the "
+            f"{MCP_WRITE_SCOPE} scope. Ask the user to reconnect the Nojoin "
+            f"connector (remove and re-authorise it) to enable {capability}."
+        )
+
+
 def _compact_recording(recording: Any) -> dict[str, Any]:
+    """Compact a Recording ORM row for the MCP client.
+
+    Expects ``tags`` (with each ``RecordingTag.tag``) and ``speakers`` (with
+    each ``RecordingSpeaker.global_speaker``) eager-loaded: the web endpoint's
+    serializer strips both unless explicitly asked, so list_recordings loads
+    the ORM row itself rather than relying on that projection.
+    """
     speakers = [
         speaker.local_name
         or (speaker.global_speaker.name if speaker.global_speaker else None)
@@ -75,21 +226,27 @@ def _compact_recording(recording: Any) -> dict[str, Any]:
         for speaker in recording.speakers
         if not speaker.merged_into_id
     ]
+    tags = [
+        recording_tag.tag.name
+        for recording_tag in recording.tags
+        if recording_tag.tag is not None
+    ]
     return {
-        "id": recording.id,
+        "id": recording.public_id,
         "name": recording.name,
         "created_at": recording.created_at.isoformat(),
         "duration_seconds": recording.duration_seconds,
         "status": str(recording.status.value)
         if hasattr(recording.status, "value")
         else str(recording.status),
-        "tags": [tag.name for tag in recording.tags],
+        "tags": tags,
         "speakers": speakers,
         "is_archived": recording.is_archived,
+        "is_deleted": recording.is_deleted,
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def list_recordings(
     limit: int = 20,
     skip: int = 0,
@@ -97,9 +254,12 @@ async def list_recordings(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    """List the user's meeting recordings, newest first.
+    """List and search the user's meeting recordings, newest first.
 
-    Archived and deleted recordings are excluded.
+    Search covers the whole library: archived and soft-deleted recordings are
+    included, so a search can find a meeting the user has archived or removed.
+    Each result carries `is_archived` and `is_deleted` so their state is
+    clear and the caller can filter them out when only active meetings matter.
 
     Args:
         limit: Maximum number of recordings to return (1-100).
@@ -115,11 +275,18 @@ async def list_recordings(
         list_recordings as api_list_recordings,
     )
     from backend.core.db import async_session_maker
+    from backend.models.recording import Recording
+    from backend.models.speaker import RecordingSpeaker
+    from backend.models.tag import RecordingTag
 
     user = get_current_mcp_user()
     limit = max(1, min(int(limit), 100))
 
     async with async_session_maker() as db:
+        # api_list_recordings owns the search/date/ownership filtering and
+        # ordering, but serializes without tags or speakers. Re-load the same
+        # rows as ORM objects with those relationships eager-loaded so the
+        # compact projection reports them instead of always-empty lists.
         results = await api_list_recordings(
             skip=max(0, int(skip)),
             limit=limit,
@@ -128,8 +295,10 @@ async def list_recordings(
             end_date=_parse_iso_datetime(end_date, "end_date"),
             speaker_ids=None,
             tag_ids=None,
-            include_archived=False,
-            include_deleted=False,
+            # Search spans the whole library; is_archived/is_deleted in the
+            # result let the caller tell active meetings from the rest.
+            include_archived=True,
+            include_deleted=True,
             only_archived=False,
             only_deleted=False,
             status_filters=None,
@@ -137,10 +306,33 @@ async def list_recordings(
             db=db,
             current_user=user,
         )
-    return [_compact_recording(recording) for recording in results]
+        ordered_public_ids = [recording.id for recording in results]
+        if not ordered_public_ids:
+            return []
+
+        orm_result = await db.execute(
+            select(Recording)
+            .where(
+                Recording.user_id == user.id,
+                Recording.public_id.in_(ordered_public_ids),
+            )
+            .options(
+                selectinload(Recording.tags).selectinload(RecordingTag.tag),
+                selectinload(Recording.speakers).selectinload(
+                    RecordingSpeaker.global_speaker
+                ),
+            )
+        )
+        by_public_id = {rec.public_id: rec for rec in orm_result.scalars()}
+
+    return [
+        _compact_recording(by_public_id[public_id])
+        for public_id in ordered_public_ids
+        if public_id in by_public_id
+    ]
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_transcript(recording_id: str) -> dict[str, Any]:
     """Get the full speaker-attributed transcript of a recording.
 
@@ -189,7 +381,7 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+@mcp_tool()
 async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     """Get the AI-generated meeting notes and the user's own notes.
 
@@ -216,16 +408,512 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     }
 
 
-@mcp.tool()
+_TAG_PAGE_SIZE = 200
+
+
+@mcp_tool()
 async def list_tags() -> list[dict[str, Any]]:
     """List the user's tags. Tag names can be used with list_recordings' query."""
     from backend.api.v1.endpoints.tags import read_tags
     from backend.core.db import async_session_maker
 
     user = get_current_mcp_user()
+    collected: list[dict[str, Any]] = []
     async with async_session_maker() as db:
-        tags = await read_tags(db=db, current_user=user)
-    return [{"id": tag.id, "name": tag.name} for tag in tags]
+        # read_tags caps each call at its own default limit, so page through
+        # to the end rather than silently returning only the first page.
+        skip = 0
+        while True:
+            page = await read_tags(
+                skip=skip, limit=_TAG_PAGE_SIZE, db=db, current_user=user
+            )
+            collected.extend({"id": tag.id, "name": tag.name} for tag in page)
+            if len(page) < _TAG_PAGE_SIZE:
+                break
+            skip += _TAG_PAGE_SIZE
+    return collected
+
+
+def _compact_speaker(speaker: Any) -> dict[str, Any]:
+    display_name = (
+        speaker.local_name
+        or (speaker.global_speaker.name if speaker.global_speaker else None)
+        or speaker.name
+        or speaker.diarization_label
+    )
+    person = None
+    if speaker.global_speaker is not None:
+        person = {
+            "id": speaker.global_speaker.id,
+            "name": speaker.global_speaker.name,
+            "title": speaker.global_speaker.title,
+            "company": speaker.global_speaker.company,
+        }
+    return {
+        "display_name": display_name,
+        "diarization_label": speaker.diarization_label,
+        "person": person,
+    }
+
+
+@mcp_tool()
+async def get_speakers(recording_id: str) -> dict[str, Any]:
+    """Get the speakers in a recording.
+
+    Each speaker carries the display name used in the transcript and, when
+    the speaker is linked to a saved person, that person's People-library
+    entry (usable with list_people and import_people).
+
+    Args:
+        recording_id: The recording's string id from list_recordings.
+    """
+    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
+    from backend.core.db import async_session_maker
+    from backend.models.recording import Recording
+    from backend.models.speaker import RecordingSpeaker
+
+    user = get_current_mcp_user()
+    async with async_session_maker() as db:
+        recording = await _get_owned_recording(
+            db,
+            recording_id,
+            user.id,
+            options=(
+                selectinload(Recording.speakers).options(
+                    selectinload(RecordingSpeaker.global_speaker)
+                ),
+            ),
+        )
+        speakers = [
+            _compact_speaker(speaker)
+            for speaker in recording.speakers
+            if not speaker.merged_into_id
+        ]
+
+    return {
+        "recording_id": recording_id,
+        "name": recording.name,
+        "speakers": speakers,
+    }
+
+
+def _compact_person(person: Any) -> dict[str, Any]:
+    return {
+        "id": person.id,
+        "name": person.name,
+        "title": person.title,
+        "company": person.company,
+        "email": person.email,
+        "phone_number": person.phone_number,
+        "notes": person.notes,
+        "tags": [tag.name for tag in person.tags],
+        "recording_count": person.recording_count,
+        "has_voiceprint": person.has_voiceprint,
+    }
+
+
+@mcp_tool()
+async def list_people(
+    query: Optional[str] = None,
+    limit: int = 50,
+    skip: int = 0,
+) -> list[dict[str, Any]]:
+    """List the user's People library (saved people), sorted by name.
+
+    People are the user's global speaker records: name, contact details,
+    notes, tags, whether a voiceprint is stored, and how many recordings
+    they appear in.
+
+    Args:
+        query: Optional free-text search across name, email, company,
+            notes, and title.
+        limit: Maximum number of people to return (1-200).
+        skip: Number of people to skip, for pagination.
+    """
+    from backend.api.v1.endpoints.speakers.routes_global import (
+        list_global_speakers as api_list_people,
+    )
+    from backend.core.db import async_session_maker
+
+    user = get_current_mcp_user()
+    limit = max(1, min(int(limit), 200))
+
+    async with async_session_maker() as db:
+        results = await api_list_people(
+            skip=max(0, int(skip)),
+            limit=limit,
+            q=query,
+            tags=None,
+            db=db,
+            current_user=user,
+        )
+    return [_compact_person(person) for person in results]
+
+
+# A single document's reconstructed text is capped so a large attachment
+# cannot flood the assistant's context; the flag lets it request more if
+# it truly needs the tail.
+_DOCUMENT_TEXT_CHAR_LIMIT = 20000
+
+
+@mcp_tool()
+async def get_documents(recording_id: str) -> list[dict[str, Any]]:
+    """Get the documents attached to a recording, with their extracted text.
+
+    These are the files uploaded to a meeting to ground its chat and notes.
+    Text is reconstructed from the same chunks the meeting chat searches and
+    is truncated per document beyond a size limit.
+
+    Args:
+        recording_id: The recording's string id from list_recordings.
+    """
+    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
+    from backend.core.db import async_session_maker
+    from backend.models.context_chunk import ContextChunk
+    from backend.models.document import Document
+
+    user = get_current_mcp_user()
+    async with async_session_maker() as db:
+        recording = await _get_owned_recording(db, recording_id, user.id)
+        docs_result = await db.execute(
+            select(Document)
+            .where(Document.recording_id == recording.id)
+            .order_by(Document.created_at)
+        )
+        documents = docs_result.scalars().all()
+
+        payload: list[dict[str, Any]] = []
+        for document in documents:
+            # Select only content: loading whole ContextChunk rows would pull
+            # the 384-dim embedding vector we never use here.
+            chunk_result = await db.execute(
+                select(ContextChunk.content)
+                .where(ContextChunk.document_id == document.id)
+                .order_by(ContextChunk.id)
+            )
+            text = "".join(chunk_result.scalars())
+            truncated = len(text) > _DOCUMENT_TEXT_CHAR_LIMIT
+            payload.append(
+                {
+                    "id": document.id,
+                    "title": document.title,
+                    "file_type": document.file_type,
+                    "status": str(
+                        document.status.value
+                        if hasattr(document.status, "value")
+                        else document.status
+                    ),
+                    "text": text[:_DOCUMENT_TEXT_CHAR_LIMIT],
+                    "text_truncated": truncated,
+                }
+            )
+    return payload
+
+
+@mcp_tool()
+async def get_person(person_id: int) -> dict[str, Any]:
+    """Get one person from the People library, with the meetings they are in.
+
+    Args:
+        person_id: The person's integer id from list_people.
+    """
+    from backend.core.db import async_session_maker
+    from backend.models.recording import Recording
+    from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+
+    user = get_current_mcp_user()
+    async with async_session_maker() as db:
+        person = await db.get(GlobalSpeaker, person_id)
+        if person is None or person.user_id != user.id:
+            raise ToolError(f"No person with id {person_id} in your library.")
+
+        meetings_result = await db.execute(
+            select(Recording)
+            .join(RecordingSpeaker, RecordingSpeaker.recording_id == Recording.id)
+            .where(RecordingSpeaker.global_speaker_id == person_id)
+            .where(Recording.is_deleted.is_(False))
+            .where(RecordingSpeaker.merged_into_id.is_(None))
+            .order_by(Recording.created_at.desc())
+            .distinct()
+        )
+        meetings = [
+            {
+                "id": recording.public_id,
+                "name": recording.name,
+                "created_at": recording.created_at.isoformat(),
+            }
+            for recording in meetings_result.scalars()
+        ]
+
+    return {
+        "id": person.id,
+        "name": person.name,
+        "title": person.title,
+        "company": person.company,
+        "email": person.email,
+        "phone_number": person.phone_number,
+        "notes": person.notes,
+        "tags": [link.tag.name for link in person.tag_links if link.tag],
+        "has_voiceprint": person.has_voiceprint,
+        "meetings": meetings,
+    }
+
+
+class PersonImportEntry(BaseModel):
+    """One person to create or update in the People library."""
+
+    name: str
+    title: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    notes: Optional[str] = None
+    tags: list[str] = []
+
+
+_IMPORT_BATCH_LIMIT = 200
+_CRM_FIELDS = ("title", "company", "email", "phone_number", "notes")
+
+
+async def _resolve_tag_ids(
+    db: AsyncSession,
+    user_id: int,
+    tag_names: list[str],
+    cache: dict[str, int],
+) -> list[int]:
+    """Map tag names to PeopleTag ids for the user, creating missing tags."""
+    from backend.models.people_tag import PeopleTag
+
+    tag_ids: list[int] = []
+    for raw_name in tag_names:
+        name = raw_name.strip()
+        if not name:
+            continue
+        if name not in cache:
+            result = await db.execute(
+                select(PeopleTag).where(
+                    PeopleTag.name == name, PeopleTag.user_id == user_id
+                )
+            )
+            tag = result.scalars().first()
+            if tag is None:
+                tag = PeopleTag(name=name, user_id=user_id)
+                db.add(tag)
+                await db.flush()
+            cache[name] = tag.id
+        if cache[name] not in tag_ids:
+            tag_ids.append(cache[name])
+    return tag_ids
+
+
+async def _link_person_tags(
+    db: AsyncSession, global_speaker_id: int, tag_ids: list[int]
+) -> None:
+    from backend.models.people_tag import PeopleTagLink
+
+    if not tag_ids:
+        return
+    result = await db.execute(
+        select(PeopleTagLink.tag_id).where(
+            PeopleTagLink.global_speaker_id == global_speaker_id
+        )
+    )
+    existing = {row[0] for row in result.all()}
+    for tag_id in tag_ids:
+        if tag_id not in existing:
+            db.add(PeopleTagLink(global_speaker_id=global_speaker_id, tag_id=tag_id))
+
+
+async def _import_one_person(
+    db: AsyncSession,
+    user_id: int,
+    entry: PersonImportEntry,
+    on_conflict: str,
+    tag_cache: dict[str, int],
+) -> dict[str, Any]:
+    from backend.models.speaker import GlobalSpeaker
+
+    name = entry.name.strip()
+    if not name:
+        return {"name": entry.name, "action": "error", "detail": "name is required"}
+
+    result = await db.execute(
+        select(GlobalSpeaker).where(
+            GlobalSpeaker.name == name, GlobalSpeaker.user_id == user_id
+        )
+    )
+    person = result.scalars().first()
+    if person is not None and on_conflict == "skip":
+        return {"name": name, "action": "skipped", "detail": "person already exists"}
+
+    tag_ids = await _resolve_tag_ids(db, user_id, entry.tags, tag_cache)
+    if person is None:
+        action = "created"
+        person = GlobalSpeaker(name=name, user_id=user_id)
+        db.add(person)
+        await db.flush()
+    else:
+        action = "updated"
+    # Only fields present in the entry are written; voiceprints, colors,
+    # and existing tag links are never removed by an import.
+    for field in _CRM_FIELDS:
+        value = getattr(entry, field)
+        if value is not None:
+            setattr(person, field, value)
+    await _link_person_tags(db, person.id, tag_ids)
+    await db.commit()
+    return {"name": name, "action": action, "id": person.id}
+
+
+@mcp_tool()
+async def import_people(
+    people: list[PersonImportEntry],
+    on_conflict: Literal["update", "skip"] = "update",
+) -> dict[str, Any]:
+    """Import people into the user's People library.
+
+    Creates a People record for each entry, matching existing people by
+    exact name. Use this to bring people in from external sources (a CRM
+    export, a pasted list) by mapping them onto Nojoin's fields first.
+    Imports never touch voiceprints or remove existing data: only the
+    fields provided in an entry are written, and tags are added, not
+    replaced. Requires the mcp:write scope.
+
+    Args:
+        people: Entries to import (at most 200 per call). Only name is
+            required. tags is a list of People-tag names; missing tags are
+            created.
+        on_conflict: What to do when a person with the same name already
+            exists: "update" (default) writes the provided fields onto the
+            existing record, "skip" leaves it untouched.
+    """
+    from backend.core.db import async_session_maker
+
+    user = get_current_mcp_user()
+    _require_write_scope("People imports")
+    if not people:
+        raise ToolError("people must contain at least one entry.")
+    if len(people) > _IMPORT_BATCH_LIMIT:
+        raise ToolError(
+            f"At most {_IMPORT_BATCH_LIMIT} people can be imported per call; "
+            f"got {len(people)}. Split the import into smaller batches."
+        )
+
+    results: list[dict[str, Any]] = []
+    tag_cache: dict[str, int] = {}
+    async with async_session_maker() as db:
+        for entry in people:
+            try:
+                results.append(
+                    await _import_one_person(db, user.id, entry, on_conflict, tag_cache)
+                )
+            except Exception as exc:  # noqa: BLE001 -- boundary: one bad entry must not abort the rest of the batch
+                await db.rollback()
+                # Tags created inside the rolled-back transaction are gone;
+                # drop their cached ids so later entries re-create them.
+                tag_cache.clear()
+                logger.warning("MCP import_people entry %r failed: %s", entry.name, exc)
+                results.append(
+                    {"name": entry.name, "action": "error", "detail": str(exc)}
+                )
+
+    summary = {
+        action: sum(1 for r in results if r["action"] == action)
+        for action in ("created", "updated", "skipped", "error")
+    }
+    return {"summary": summary, "results": results}
+
+
+@mcp_tool()
+async def set_speaker_name(
+    recording_id: str, diarization_label: str, name: str
+) -> dict[str, Any]:
+    """Name a speaker in a recording and link them to a person.
+
+    Sets the display name for one diarised speaker (for example
+    "SPEAKER_00") in a meeting. If a person with that exact name already
+    exists in the People library, the speaker is linked to them (so the
+    person's meeting list and voiceprint stay in sync); otherwise the name
+    is applied to this recording only. To link to a new person, import them
+    first with import_people, then call this. Requires the mcp:write scope.
+
+    Args:
+        recording_id: The recording's string id from list_recordings.
+        diarization_label: The speaker's diarisation label from
+            get_speakers (e.g. "SPEAKER_00").
+        name: The name to apply, ideally matching a People-library entry.
+    """
+    from backend.api.v1.endpoints.speakers.helpers import SpeakerUpdate
+    from backend.api.v1.endpoints.speakers.routes_recording import (
+        update_recording_speaker,
+    )
+    from backend.core.db import async_session_maker
+
+    user = get_current_mcp_user()
+    _require_write_scope("speaker naming")
+
+    async with async_session_maker() as db:
+        speakers = await update_recording_speaker(
+            recording_id,
+            SpeakerUpdate(
+                diarization_label=diarization_label, global_speaker_name=name
+            ),
+            db=db,
+            current_user=user,
+        )
+
+    updated = next(
+        (s for s in speakers if s.diarization_label == diarization_label), None
+    )
+    linked_person = (
+        updated.global_speaker.name
+        if updated is not None and updated.global_speaker is not None
+        else None
+    )
+    return {
+        "recording_id": recording_id,
+        "diarization_label": diarization_label,
+        "name": name,
+        "linked_person": linked_person,
+    }
+
+
+@mcp_tool()
+async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
+    """Append text to a recording's user notes.
+
+    Adds to the user-authored notes only; the AI-generated meeting notes are
+    never modified. The text is appended after the existing user notes, so
+    earlier content is preserved. Requires the mcp:write scope.
+
+    Args:
+        recording_id: The recording's string id from list_recordings.
+        text: The note text to append.
+    """
+    from backend.api.v1.endpoints.transcripts.helpers import UserNotesUpdate
+    from backend.api.v1.endpoints.transcripts.routes_notes import (
+        get_user_notes,
+        update_user_notes,
+    )
+    from backend.core.db import async_session_maker
+
+    user = get_current_mcp_user()
+    _require_write_scope("note editing")
+    addition = text.strip()
+    if not addition:
+        raise ToolError("text must not be empty.")
+
+    async with async_session_maker() as db:
+        current = await get_user_notes(recording_id, db=db, current_user=user)
+        existing = (current.get("user_notes") or "").rstrip()
+        combined = f"{existing}\n\n{addition}" if existing else addition
+        saved = await update_user_notes(
+            recording_id,
+            UserNotesUpdate(user_notes=combined),
+            db=db,
+            current_user=user,
+        )
+    return {"recording_id": recording_id, "user_notes": saved.get("user_notes")}
 
 
 class NormaliseMcpMountPathMiddleware:
