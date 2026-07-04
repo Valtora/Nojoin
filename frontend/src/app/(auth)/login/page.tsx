@@ -4,7 +4,6 @@ import axios from "axios";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import Link from "next/link";
 import { login, getCurrentUser } from "@/lib/api";
 import { Lock, User } from "lucide-react";
 
@@ -169,10 +168,6 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign in"}
             </button>
           </div>
-
-          <p className="text-center text-sm text-gray-600 dark:text-gray-300">
-            Need first-run initialisation? <Link href="/setup" className="font-medium text-orange-600 hover:text-orange-500">Open setup</Link>
-          </p>
         </form>
       </div>
     </div>

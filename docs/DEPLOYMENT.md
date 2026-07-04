@@ -44,11 +44,18 @@ The repository does not ship a separate Docker Compose development override.
    docker compose up -d
    ```
 
-8. Open `https://localhost:14443`.
+8. Open `https://localhost:14443/setup` and unlock the first-run wizard with your `FIRST_RUN_PASSWORD`.
 9. Use Chrome on Windows, Linux, or macOS for shared-audio live recording, another Chromium-family browser on Windows or Linux, or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort. Other browsers can still review and administer Nojoin.
 
 Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
 If you add or change it, redeploy the stack before using the setup wizard.
+The sign-in page does not link to the setup wizard, and every anonymous setup
+denial returns the same generic response regardless of cause, so the service
+never discloses whether it has been initialised. The specific denial reason
+(wrong password, unset `FIRST_RUN_PASSWORD`, or already-initialised system)
+appears in the API logs, and the API startup log prints the `/setup` address
+while the system is uninitialised. Setup requests are rate limited per client
+address.
 If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD`, or the
 tracked PostgreSQL password placeholder are left at their example values,
 Nojoin now emits startup log warnings and an authenticated frontend warning
@@ -146,7 +153,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 
 ### Always Set
 
-- `FIRST_RUN_PASSWORD`: Required bootstrap password for the first successful Nojoin initialisation.
+- `FIRST_RUN_PASSWORD`: Required bootstrap password for the first successful Nojoin initialisation. It unlocks the setup wizard at `/setup` on an uninitialised system and is not used after initialisation.
 - `DATA_ENCRYPTION_KEY`: Stable installation-wide encryption seed used for calendar OAuth client secrets and user calendar tokens. Set this once and keep it unchanged for the lifetime of the deployment.
 - `POSTGRES_PASSWORD`: Replace the tracked example value before any deployment that persists data or is reachable by other users or hosts.
 - `REDIS_PASSWORD`: Replace the tracked example value before any deployment that persists data or is reachable by other users or hosts.

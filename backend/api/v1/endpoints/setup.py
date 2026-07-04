@@ -25,17 +25,19 @@ from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
 )
+from backend.utils.rate_limit import enforce_rate_limit
 
 logger = logging.getLogger(__name__)
 
 FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap"
 FIRST_RUN_PASSWORD_ENV_KEY = "FIRST_RUN_PASSWORD"
-FIRST_RUN_PASSWORD_REQUIRED_DETAIL = "Bootstrap password required for first-run setup."
-FIRST_RUN_PASSWORD_NOT_CONFIGURED_DETAIL = (
-    "First-run setup is disabled until FIRST_RUN_PASSWORD is set. "
-    "Set the env var and restart or redeploy Nojoin before initialising the system."
-)
+# Every setup denial uses this one detail so anonymous responses are identical
+# whether the system is initialised, the bootstrap password is wrong, or
+# FIRST_RUN_PASSWORD is not configured. The specific reason is server-log only.
 FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL = "First-run setup access denied."
+SETUP_RATE_LIMIT = 60
+SETUP_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+SETUP_RATE_LIMIT_DETAIL = "Too many setup requests. Please try again later."
 PUBLIC_LLM_VALIDATION_ERROR_DETAIL = "Unable to validate the AI provider configuration."
 PUBLIC_HF_VALIDATION_ERROR_DETAIL = "Unable to validate the Hugging Face token."
 PUBLIC_MODEL_LIST_ERROR_DETAIL = "Unable to list AI provider models."
@@ -111,9 +113,13 @@ def get_first_run_password(request: Request) -> Optional[str]:
 def require_first_run_password(request: Request) -> None:
     configured_password = os.getenv(FIRST_RUN_PASSWORD_ENV_KEY)
     if not configured_password:
+        logger.warning(
+            "First-run setup request denied: FIRST_RUN_PASSWORD is not set. "
+            "Set the env var and restart or redeploy Nojoin before initialising."
+        )
         raise HTTPException(
-            status_code=503,
-            detail=FIRST_RUN_PASSWORD_NOT_CONFIGURED_DETAIL,
+            status_code=403,
+            detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
         )
 
     provided_password = get_first_run_password(request)
@@ -121,10 +127,28 @@ def require_first_run_password(request: Request) -> None:
         provided_password,
         configured_password,
     ):
+        logger.warning(
+            "First-run setup request denied: missing or incorrect bootstrap password."
+        )
         raise HTTPException(
             status_code=403,
-            detail=FIRST_RUN_PASSWORD_REQUIRED_DETAIL,
+            detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
         )
+
+
+async def enforce_setup_rate_limit(request: Request) -> None:
+    """
+    Shared per-client limit for the setup surface. Applied uniformly before any
+    state-dependent work so throttling behaviour cannot disclose whether the
+    system is initialised.
+    """
+    await enforce_rate_limit(
+        request,
+        namespace="setup",
+        limit=SETUP_RATE_LIMIT,
+        window_seconds=SETUP_RATE_LIMIT_WINDOW_SECONDS,
+        detail=SETUP_RATE_LIMIT_DETAIL,
+    )
 
 
 async def check_setup_permission(db: AsyncSession, request: Request):
@@ -134,6 +158,8 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     1. System is NOT initialized (no users exist).
     2. OR User is authenticated as Admin/Owner (JWT token in header).
     """
+    await enforce_setup_rate_limit(request)
+
     is_initialized = await is_system_initialized(db)
 
     if not is_initialized:

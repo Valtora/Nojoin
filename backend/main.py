@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from urllib.parse import urlparse
@@ -121,6 +122,7 @@ from backend.services.recording_identity_service import (
     ensure_recording_public_ids,
 )
 from backend.utils.config_manager import (
+    get_configured_web_origin,
     get_cors_origin_list,
     get_trusted_host_list,
     get_trusted_web_origin,
@@ -159,6 +161,31 @@ async def ensure_owner_exists():
                 logger.warning("No users found to promote.")
 
 
+async def log_first_run_setup_pointer() -> None:
+    """
+    Point operators at the setup wizard while no users exist. The login page
+    deliberately never advertises /setup, so the server log is the discovery
+    channel for fresh deployments.
+    """
+    async with async_session_maker() as session:
+        query = select(User).limit(1)
+        result = await session.execute(query)
+        if result.scalar_one_or_none() is not None:
+            return
+
+    setup_url = f"{get_configured_web_origin()}/setup"
+    logger.info(
+        "Nojoin is not initialised yet. Open %s and unlock it with your "
+        "FIRST_RUN_PASSWORD to create the owner account.",
+        setup_url,
+    )
+    if not os.getenv("FIRST_RUN_PASSWORD"):
+        logger.warning(
+            "FIRST_RUN_PASSWORD is not set. First-run setup will refuse to "
+            "unlock until it is set and the stack is restarted or redeployed."
+        )
+
+
 async def ensure_recording_meeting_uids_on_startup() -> None:
     async with async_session_maker() as session:
         repaired_count = await ensure_recording_meeting_uids(session)
@@ -195,6 +222,7 @@ def run_migrations():
 async def lifespan(app: FastAPI):
     run_migrations()
     await ensure_owner_exists()
+    await log_first_run_setup_pointer()
     await ensure_recording_public_ids_on_startup()
     await ensure_recording_meeting_uids_on_startup()
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)

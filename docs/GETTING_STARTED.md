@@ -43,17 +43,21 @@ If you do not have an NVIDIA GPU, see [DEPLOYMENT.md](DEPLOYMENT.md) for CPU-onl
 
 `DATA_ENCRYPTION_KEY` prevents future decryptability issues if the app data directory and database do not move together during restores, host migrations, or partial replacements.
 
-## 2. Open the Web App
+## 2. Open the Setup Wizard
 
 Open:
 
 ```text
-https://localhost:14443
+https://localhost:14443/setup
 ```
 
 Nojoin uses a self-signed certificate by default, so your browser will show a certificate warning on first access.
 
+The sign-in page deliberately does not link to the setup wizard, and the server never reveals to visitors whether it has been initialised. On a fresh deployment, browse to `/setup` directly; the API startup log also prints this address until the system is initialised.
+
 ## 3. Complete the First-Run Wizard
+
+Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every unlock failure shows the same generic denial — if you are certain the password is correct, confirm `FIRST_RUN_PASSWORD` is set and the stack was restarted after setting it, and check the API logs for the specific reason.
 
 The first user becomes the Owner account.
 
@@ -62,6 +66,8 @@ During setup, the system automatically detects configured API keys and Hugging F
 - Detect active AI provider credentials and Hugging Face tokens.
 - Detect whether the bundled local Pyannote speaker models are already present.
 - Let you select the default model for your configured AI provider.
+- Let you choose the Whisper transcription model. Turbo (default) suits GPU servers; Small or Base is much faster on CPU-only deployments. You can change it later in Settings > AI.
+- Let you choose whether to include the "Welcome to Nojoin" sample meeting. You can remove or recreate it later in Settings > Help.
 - Warn you if no AI provider credentials are configured, explaining the loss of core intelligence features (Meeting Edge, Notes, and Speaker Inference), and allow you to proceed or reload the configuration.
 
 If you skip AI configuration, Nojoin still records, transcribes, and diarises meetings. The automatic AI enhancement step is simply skipped until you configure a provider later by setting environment variables in `.env` and restarting the server.

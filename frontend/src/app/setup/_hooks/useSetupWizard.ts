@@ -13,11 +13,19 @@ import {
 } from "@/lib/api";
 import { getErrorMessage, getErrorStatus } from "@/lib/errors";
 
+// Shown for every unlock failure. The backend deliberately returns one
+// generic denial whether the password is wrong, FIRST_RUN_PASSWORD is unset,
+// or the system is already initialised, so the client cannot say more.
+const SETUP_ACCESS_DENIED_MESSAGE =
+  "Setup access denied. Check the first-run password, or sign in normally if this system is already set up.";
+
 export function useSetupWizard() {
   const router = useRouter();
   const bootstrapPasswordRef = useRef("");
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState(0); // 0: Legal, 1: Account, 2: LLM, 3: HuggingFace, 4: Complete
+  // 0: Unlock, 1: Legal, 2: Account, 3: LLM, 4: Models, 5: Complete
+  const [step, setStep] = useState(0);
+  const [unlocking, setUnlocking] = useState(false);
   const [initialConfigLoaded, setInitialConfigLoaded] = useState(false);
   const [pyannoteModelsReady, setPyannoteModelsReady] = useState(false);
   const [bundledPyannoteModelsReady, setBundledPyannoteModelsReady] = useState(false);
@@ -34,7 +42,9 @@ export function useSetupWizard() {
     ollama_api_url: "http://host.docker.internal:11434",
     hf_token: "",
     selected_model: "",
+    whisper_model_size: "turbo",
   });
+  const [includeDemoRecording, setIncludeDemoRecording] = useState(true);
 
   // Validation State
   const [validatingLLM, setValidatingLLM] = useState(false);
@@ -75,23 +85,6 @@ export function useSetupWizard() {
           if (getErrorStatus(err) !== 401) {
             throw err;
           }
-        }
-
-                const ffmpegStatus = await checkFFmpeg().catch((err: unknown) => {
-          if (getErrorStatus(err) === 401 || getErrorStatus(err) === 403) {
-            return {
-              ffmpeg: true,
-              ffprobe: true,
-              ffmpeg_path: null,
-              ffprobe_path: null,
-            };
-          }
-
-          throw err;
-        });
-
-        if (!ffmpegStatus.ffmpeg || !ffmpegStatus.ffprobe) {
-          setFfmpegMissing(true);
         }
 
         setLoading(false);
@@ -135,11 +128,6 @@ export function useSetupWizard() {
     (formData.llm_provider === "anthropic" && !formData.anthropic_api_key) ||
     (formData.llm_provider === "ollama" && !formData.ollama_api_url);
 
-  // --- Step 0: Legal Disclaimer ---
-  const handleLegalSubmit = () => {
-    setStep(1);
-  };
-
   const getBootstrapPassword = () => bootstrapPasswordRef.current;
 
   const handleBootstrapPasswordChange = (
@@ -156,7 +144,7 @@ export function useSetupWizard() {
 
     const bootstrapPassword = getBootstrapPassword();
     if (!bootstrapPassword) {
-      setError("Bootstrap password required.");
+      setError("Enter the first-run setup password.");
       return false;
     }
 
@@ -188,19 +176,34 @@ export function useSetupWizard() {
 
         } catch (err: unknown) {
       if (getErrorStatus(err) === 403) {
-        setError(
-          "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
-        );
+        setError(SETUP_ACCESS_DENIED_MESSAGE);
         return false;
       }
       setError(
-        getErrorMessage(err, "Failed to unlock first-run setup. Check FIRST_RUN_PASSWORD."),
+        getErrorMessage(err, "Unable to unlock setup. Check the server logs and try again."),
       );
       return false;
     }
   };
 
-  // --- Step 1: Account ---
+  // --- Step 0: Unlock ---
+  const handleUnlockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setUnlocking(true);
+    const unlocked = await loadInitialConfig();
+    setUnlocking(false);
+    if (unlocked) {
+      setStep(1);
+    }
+  };
+
+  // --- Step 1: Legal Disclaimer ---
+  const handleLegalSubmit = () => {
+    setStep(2);
+  };
+
+  // --- Step 2: Account ---
   const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
@@ -212,16 +215,11 @@ export function useSetupWizard() {
       return;
     }
 
-    const initialConfigReady = await loadInitialConfig();
-    if (!initialConfigReady) {
-      return;
-    }
-
     setError("");
-    setStep(2);
+    setStep(3);
   };
 
-  // --- Step 2: LLM ---
+  // --- Step 3: LLM ---
   const validateAndFetchModels = useCallback(async () => {
     setValidatingLLM(true);
     setError("");
@@ -282,7 +280,7 @@ export function useSetupWizard() {
 
   const handleLLMSubmit = () => {
     if (llmSkipped) {
-      setStep(3);
+      setStep(4);
       return;
     }
 
@@ -297,7 +295,7 @@ export function useSetupWizard() {
     }
 
     setError("");
-    setStep(3);
+    setStep(4);
   };
 
   const handleSkipLLM = () => {
@@ -315,7 +313,7 @@ export function useSetupWizard() {
       anthropic_api_key: "",
       selected_model: "",
     }));
-    setStep(3);
+    setStep(4);
   };
 
   const handleReloadConfig = async () => {
@@ -332,7 +330,7 @@ export function useSetupWizard() {
   };
 
   useEffect(() => {
-    if (step === 2 && initialConfigLoaded) {
+    if (step === 3 && initialConfigLoaded) {
       if (!llmConfigMissing && !modelsFetched && !validatingLLM) {
         void validateAndFetchModels();
       }
@@ -351,7 +349,7 @@ export function useSetupWizard() {
     validatingLLM,
   ]);
 
-  // --- Step 3: HuggingFace ---
+  // --- Step 4: Transcription & Speaker Models ---
   const handleHFSubmit = async () => {
     await createAccountAndStartDownload();
   };
@@ -379,11 +377,13 @@ export function useSetupWizard() {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    throw new Error("Model preparation timed out. Check the worker logs and model cache status.");
+    throw new Error(
+      "Model preparation is taking longer than expected. It continues in the background on the server — you can open the dashboard now and check progress later in Settings.",
+    );
   };
 
   const createAccountAndStartDownload = async () => {
-    setStep(4);
+    setStep(5);
     setModelPreparationComplete(false);
     setModelPreparationProgress(0);
     setModelPreparationMessage("Preparing transcription and speaker models...");
@@ -396,26 +396,37 @@ export function useSetupWizard() {
         username: formData.username,
         password: formData.password,
         selected_model: formData.selected_model || undefined,
+        whisper_model_size: formData.whisper_model_size,
+        include_demo_recording: includeDemoRecording,
       }, getBootstrapPassword());
 
       // 2. Login
       await login(formData.username, formData.password);
       loggedIn = true;
 
+      // FFmpeg availability is admin-gated, so it can only be checked once
+      // the owner session exists.
+      try {
+        const ffmpegStatus = await checkFFmpeg();
+        if (!ffmpegStatus.ffmpeg || !ffmpegStatus.ffprobe) {
+          setFfmpegMissing(true);
+        }
+      } catch {
+        // Non-fatal: admin health surfaces FFmpeg problems after setup.
+      }
+
       await waitForModelPreparation();
 
         } catch (err: unknown) {
       console.error("Setup failed:", err);
       if (getErrorStatus(err) === 403) {
-        setError(
-          "First-run setup access denied. Check FIRST_RUN_PASSWORD or use the login page.",
-        );
+        setError(SETUP_ACCESS_DENIED_MESSAGE);
       } else {
         setError(getErrorMessage(err, "Setup failed. Please try again."));
       }
 
       if (!loggedIn) {
-        setStep(3); // Go back only if the account/login did not finish.
+        setStep(4); // Go back only if the account/login did not finish.
       }
     }
   };
@@ -429,6 +440,9 @@ export function useSetupWizard() {
     step,
     formData,
     error,
+    unlocking,
+    includeDemoRecording,
+    setIncludeDemoRecording,
     ffmpegMissing,
     showSkipLLMModal,
     setShowSkipLLMModal,
@@ -444,6 +458,7 @@ export function useSetupWizard() {
     modelPreparationComplete,
     handleInputChange,
     handleBootstrapPasswordChange,
+    handleUnlockSubmit,
     handleLegalSubmit,
     handleAccountSubmit,
     handleLLMSubmit,

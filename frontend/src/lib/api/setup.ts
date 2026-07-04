@@ -10,6 +10,8 @@ export const setupSystem = async (
     username: string;
     password: string;
     selected_model?: string;
+    whisper_model_size?: string;
+    include_demo_recording?: boolean;
   },
   bootstrapPassword?: string,
 ): Promise<{ initialized: boolean; model_preparation_task_id?: string | null }> => {

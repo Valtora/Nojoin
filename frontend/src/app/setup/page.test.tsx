@@ -41,12 +41,38 @@ function makeUnauthorised() {
   });
 }
 
-async function advanceToStep2(provider: Record<string, unknown> = {}) {
-  // Step 0 -> Step 1
-  fireEvent.click(screen.getByText("I Accept & Continue"));
+function makeForbidden() {
+  return Object.assign(new Error("forbidden"), {
+    response: {
+      status: 403,
+      data: { detail: "First-run setup access denied." },
+    },
+  });
+}
 
-  const bootstrap = await screen.findByLabelText("Bootstrap Password");
-  fireEvent.change(bootstrap, { target: { value: "first-run-pw" } });
+async function unlockWizard() {
+  const unlockInput = await screen.findByLabelText("First-run setup password");
+  fireEvent.change(unlockInput, { target: { value: "first-run-pw" } });
+  fireEvent.click(screen.getByText("Unlock Setup"));
+
+  await waitFor(() => {
+    expect(screen.getByText("Legal Disclaimer")).toBeInTheDocument();
+  });
+}
+
+async function advanceToAccountStep(provider: Record<string, unknown> = {}) {
+  getInitialConfig.mockResolvedValue({ llm_provider: "gemini", ...provider });
+
+  await unlockWizard();
+
+  // Legal -> Account
+  fireEvent.click(screen.getByText("I Accept & Continue"));
+  await screen.findByLabelText("Username");
+}
+
+async function advanceToLlmStep(provider: Record<string, unknown> = {}) {
+  await advanceToAccountStep(provider);
+
   fireEvent.change(screen.getByLabelText("Username"), {
     target: { value: "admin" },
   });
@@ -56,8 +82,6 @@ async function advanceToStep2(provider: Record<string, unknown> = {}) {
   fireEvent.change(screen.getByLabelText("Confirm Password"), {
     target: { value: "supersecret" },
   });
-
-  getInitialConfig.mockResolvedValue({ llm_provider: "gemini", ...provider });
 
   fireEvent.click(screen.getByText(/Next Step/));
 }
@@ -88,39 +112,56 @@ describe("SetupPage", () => {
     });
   });
 
-  it("shows the legal disclaimer first for an unauthenticated user", async () => {
+  it("shows the unlock gate first for an unauthenticated user", async () => {
     renderWithProviders(<SetupPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Legal Disclaimer")).toBeInTheDocument();
+      expect(screen.getByText("First-Run Setup")).toBeInTheDocument();
     });
+    expect(
+      screen.getByLabelText("First-run setup password"),
+    ).toBeInTheDocument();
+    // Nothing beyond the gate renders before a successful unlock.
+    expect(screen.queryByText("Legal Disclaimer")).not.toBeInTheDocument();
+    expect(getInitialConfig).not.toHaveBeenCalled();
   });
 
-  it("warns when FFmpeg is missing", async () => {
-    checkFFmpeg.mockResolvedValue({
-      ffmpeg: false,
-      ffprobe: false,
-      ffmpeg_path: null,
-      ffprobe_path: null,
-    });
+  it("shows a generic denial when the unlock password is rejected", async () => {
+    getInitialConfig.mockRejectedValue(makeForbidden());
 
     renderWithProviders(<SetupPage />);
 
+    const unlockInput = await screen.findByLabelText(
+      "First-run setup password",
+    );
+    fireEvent.change(unlockInput, { target: { value: "wrong-guess" } });
+    fireEvent.click(screen.getByText("Unlock Setup"));
+
     await waitFor(() => {
-      expect(screen.getByText("FFmpeg not detected")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Setup access denied. Check the first-run password, or sign in normally if this system is already set up.",
+        ),
+      ).toBeInTheDocument();
     });
+    expect(screen.queryByText("Legal Disclaimer")).not.toBeInTheDocument();
+  });
+
+  it("advances to the legal step after a successful unlock", async () => {
+    getInitialConfig.mockResolvedValue({ llm_provider: "gemini" });
+
+    renderWithProviders(<SetupPage />);
+
+    await unlockWizard();
+
+    expect(getInitialConfig).toHaveBeenCalledWith("first-run-pw");
   });
 
   it("blocks account submission when passwords do not match", async () => {
     renderWithProviders(<SetupPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Legal Disclaimer")).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByText("I Accept & Continue"));
+    await advanceToAccountStep();
 
-    const bootstrap = await screen.findByLabelText("Bootstrap Password");
-    fireEvent.change(bootstrap, { target: { value: "pw" } });
     fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "admin" },
     });
@@ -135,7 +176,7 @@ describe("SetupPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Passwords do not match")).toBeInTheDocument();
     });
-    expect(getInitialConfig).not.toHaveBeenCalled();
+    expect(setupSystem).not.toHaveBeenCalled();
   });
 
   it("validates the provider and lists models on reaching the LLM step", async () => {
@@ -144,10 +185,7 @@ describe("SetupPage", () => {
 
     renderWithProviders(<SetupPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Legal Disclaimer")).toBeInTheDocument();
-    });
-    await advanceToStep2({ gemini_api_key: "key-123" });
+    await advanceToLlmStep({ gemini_api_key: "key-123" });
 
     await waitFor(() => {
       expect(validateLLM).toHaveBeenCalled();
@@ -163,10 +201,7 @@ describe("SetupPage", () => {
   it("shows the missing-provider state when no key is configured", async () => {
     renderWithProviders(<SetupPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Legal Disclaimer")).toBeInTheDocument();
-    });
-    await advanceToStep2();
+    await advanceToLlmStep();
 
     await waitFor(() => {
       expect(
@@ -174,5 +209,68 @@ describe("SetupPage", () => {
       ).toBeInTheDocument();
     });
     expect(validateLLM).not.toHaveBeenCalled();
+  });
+
+  it("completes setup with the chosen transcription model and demo opt-out", async () => {
+    validateLLM.mockResolvedValue({ message: "Validation successful" });
+    listModels.mockResolvedValue({ models: ["gemini-pro-latest"] });
+    setupSystem.mockResolvedValue({ initialized: true });
+    login.mockResolvedValue({});
+    checkFFmpeg.mockResolvedValue({
+      ffmpeg: false,
+      ffprobe: false,
+      ffmpeg_path: null,
+      ffprobe_path: null,
+    });
+    getDownloadProgress.mockResolvedValue({
+      status: "complete",
+      progress: 100,
+      message: "Models ready",
+      stage: "complete",
+    });
+
+    renderWithProviders(<SetupPage />);
+
+    await advanceToAccountStep({ gemini_api_key: "key-123" });
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "supersecret" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: "supersecret" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    fireEvent.click(screen.getByText(/Next Step/));
+
+    await waitFor(() => {
+      expect(screen.getByText("Select Model")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/Next Step/));
+
+    const whisperSelect = await screen.findByLabelText("Transcription model");
+    fireEvent.change(whisperSelect, { target: { value: "small" } });
+    fireEvent.click(screen.getByText(/Finish Setup/));
+
+    await waitFor(() => {
+      expect(setupSystem).toHaveBeenCalledWith(
+        {
+          username: "admin",
+          password: "supersecret",
+          selected_model: "gemini-pro-latest",
+          whisper_model_size: "small",
+          include_demo_recording: false,
+        },
+        "first-run-pw",
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Setup Complete")).toBeInTheDocument();
+    });
+    expect(screen.getByText("FFmpeg not detected")).toBeInTheDocument();
   });
 });

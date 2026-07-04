@@ -17,6 +17,19 @@ BOOTSTRAP_PASSWORD = "bootstrap-secret"
 LEGACY_FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password"
 SECURE_TEST_BASE_URL = "https://test"
 
+# Captured before the autouse bypass fixture patches the module attribute so
+# the dedicated rate-limit test can restore the real implementation.
+_REAL_ENFORCE_SETUP_RATE_LIMIT = setup.enforce_setup_rate_limit
+
+
+@pytest.fixture(autouse=True)
+def _bypass_setup_rate_limit(monkeypatch):
+    async def _allow(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(setup, "enforce_setup_rate_limit", _allow)
+    monkeypatch.setattr(system, "enforce_setup_rate_limit", _allow)
+
 
 class _FakeResult:
     def __init__(self, initialized: bool):
@@ -374,7 +387,7 @@ async def test_first_run_setup_rejects_missing_bootstrap_password(monkeypatch) -
 
     assert response.status_code == 403
     assert response.json() == {
-        "detail": "Bootstrap password required for first-run setup.",
+        "detail": "First-run setup access denied.",
     }
 
 
@@ -395,7 +408,7 @@ async def test_first_run_setup_rejects_legacy_bootstrap_header(monkeypatch) -> N
 
     assert response.status_code == 403
     assert response.json() == {
-        "detail": "Bootstrap password required for first-run setup.",
+        "detail": "First-run setup access denied.",
     }
 
 
@@ -416,12 +429,11 @@ async def test_first_run_setup_rejects_when_server_password_is_unset(
             json={"username": "owner", "password": "password123"},
         )
 
-    assert response.status_code == 503
+    # Fails closed with the same generic denial used everywhere else so the
+    # unset-password state is not disclosed to anonymous clients.
+    assert response.status_code == 403
     assert response.json() == {
-        "detail": (
-            "First-run setup is disabled until FIRST_RUN_PASSWORD is set. "
-            "Set the env var and restart or redeploy Nojoin before initialising the system."
-        ),
+        "detail": "First-run setup access denied.",
     }
 
 
@@ -499,6 +511,100 @@ async def test_initialised_setup_post_does_not_disclose_state(monkeypatch) -> No
     assert response.json() == {
         "detail": "First-run setup access denied.",
     }
+
+
+@pytest.mark.anyio
+async def test_setup_denials_do_not_disclose_initialisation_state(
+    monkeypatch,
+) -> None:
+    """
+    Anonymous setup denials must be byte-identical across every state an
+    outside prober could try to distinguish: uninitialised with a wrong
+    bootstrap password, uninitialised with FIRST_RUN_PASSWORD unset, and
+    initialised without credentials.
+    """
+    responses: list[tuple[int, dict]] = []
+
+    scenarios = [
+        {"initialized": False, "env_password": BOOTSTRAP_PASSWORD},
+        {"initialized": False, "env_password": None},
+        {"initialized": True, "env_password": BOOTSTRAP_PASSWORD},
+    ]
+
+    for scenario in scenarios:
+        app, _ = _build_app(initialized=scenario["initialized"])
+        if scenario["env_password"] is None:
+            monkeypatch.delenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, raising=False)
+        else:
+            monkeypatch.setenv(
+                setup.FIRST_RUN_PASSWORD_ENV_KEY, scenario["env_password"]
+            )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+        ) as client:
+            get_response = await client.get(
+                "/api/v1/setup/initial-config",
+                headers=_bootstrap_auth_headers("wrong-guess"),
+            )
+            post_response = await client.post(
+                "/api/v1/system/setup",
+                headers=_bootstrap_auth_headers("wrong-guess"),
+                json={"username": "owner", "password": "password123"},
+            )
+
+        responses.append((get_response.status_code, get_response.json()))
+        responses.append((post_response.status_code, post_response.json()))
+
+    assert all(item == responses[0] for item in responses)
+    assert responses[0] == (403, {"detail": "First-run setup access denied."})
+
+
+@pytest.mark.anyio
+async def test_setup_requests_are_rate_limited(monkeypatch) -> None:
+    from backend.utils import rate_limit as rate_limit_utils
+
+    monkeypatch.setattr(
+        setup, "enforce_setup_rate_limit", _REAL_ENFORCE_SETUP_RATE_LIMIT
+    )
+    monkeypatch.setattr(
+        system, "enforce_setup_rate_limit", _REAL_ENFORCE_SETUP_RATE_LIMIT
+    )
+    monkeypatch.setattr(setup, "SETUP_RATE_LIMIT", 2)
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(rate_limit_utils, "_get_redis", _no_redis)
+    rate_limit_utils._fallback_windows.clear()
+
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        first = await client.get(
+            "/api/v1/setup/initial-config",
+            headers=_bootstrap_auth_headers("wrong-guess"),
+        )
+        second = await client.post(
+            "/api/v1/system/setup",
+            headers=_bootstrap_auth_headers("wrong-guess"),
+            json={"username": "owner", "password": "password123"},
+        )
+        third = await client.get(
+            "/api/v1/setup/initial-config",
+            headers=_bootstrap_auth_headers("wrong-guess"),
+        )
+
+    rate_limit_utils._fallback_windows.clear()
+
+    assert first.status_code == 403
+    assert second.status_code == 403
+    assert third.status_code == 429
+    assert third.json() == {"detail": setup.SETUP_RATE_LIMIT_DETAIL}
+    assert "retry-after" in {key.lower() for key in third.headers}
 
 
 @pytest.mark.anyio
