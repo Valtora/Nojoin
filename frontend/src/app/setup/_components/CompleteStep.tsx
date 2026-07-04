@@ -63,6 +63,12 @@ export default function CompleteStep({
             </div>
           </div>
 
+          <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+            Your owner account is already created. Model preparation continues
+            on the server even if you close this page — you can sign in at any
+            time while it finishes.
+          </p>
+
           {error && (
             <button
               onClick={onComplete}

@@ -7,19 +7,21 @@ interface AccountStepProps {
     confirmPassword: string;
   };
   error: string;
+  includeDemoRecording: boolean;
   onSubmit: (e: React.FormEvent) => void;
   onInputChange: (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => void;
-  onBootstrapPasswordChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onIncludeDemoRecordingChange: (include: boolean) => void;
 }
 
 export default function AccountStep({
   formData,
   error,
+  includeDemoRecording,
   onSubmit,
   onInputChange,
-  onBootstrapPasswordChange,
+  onIncludeDemoRecordingChange,
 }: AccountStepProps) {
   return (
     <form
@@ -36,30 +38,6 @@ export default function AccountStep({
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">
           Set up your administrator credentials
-        </p>
-      </div>
-
-      <div>
-        <label htmlFor="setup-bootstrap-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Bootstrap Password
-        </label>
-        <input
-          id="setup-bootstrap-password"
-          type="password"
-          name="setup-bootstrap-password"
-          autoComplete="off"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-describedby={error ? "setup-error" : undefined}
-          aria-invalid={Boolean(error)}
-          required
-          onChange={onBootstrapPasswordChange}
-          className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
-          placeholder="Enter first-run bootstrap password"
-        />
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Set FIRST_RUN_PASSWORD before the first deployment. This password is only used for initialisation.
         </p>
       </div>
 
@@ -127,6 +105,28 @@ export default function AccountStep({
           placeholder="••••••••"
         />
       </div>
+
+      <label
+        htmlFor="setup-include-demo-recording"
+        className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 cursor-pointer"
+      >
+        <input
+          id="setup-include-demo-recording"
+          type="checkbox"
+          name="setup-include-demo-recording"
+          checked={includeDemoRecording}
+          onChange={(e) => onIncludeDemoRecordingChange(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-orange-600 focus:ring-orange-500"
+        />
+        <span className="text-sm text-gray-700 dark:text-gray-300">
+          Include a sample meeting
+          <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Adds a short &quot;Welcome to Nojoin&quot; recording so you can
+            explore transcripts, notes, and speakers. You can remove or
+            recreate it later in Settings &gt; Help.
+          </span>
+        </span>
+      </label>
 
       <button
         type="submit"

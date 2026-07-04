@@ -13,6 +13,7 @@ import {
   deleteModel,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { WHISPER_MODELS } from "@/lib/whisperModels";
 
 interface WhisperModelModalProps {
   isOpen: boolean;
@@ -21,27 +22,6 @@ interface WhisperModelModalProps {
   isAdmin: boolean;
   onUpdate: (newSize: string) => void;
 }
-
-const WHISPER_MODELS = [
-  { id: "tiny", label: "Tiny", params: "39 M", vram: "~1 GB", speed: "~10x" },
-  { id: "base", label: "Base", params: "74 M", vram: "~1 GB", speed: "~7x" },
-  { id: "small", label: "Small", params: "244 M", vram: "~2 GB", speed: "~4x" },
-  {
-    id: "medium",
-    label: "Medium",
-    params: "769 M",
-    vram: "~5 GB",
-    speed: "~2x",
-  },
-  {
-    id: "large",
-    label: "Large",
-    params: "1550 M",
-    vram: "~10 GB",
-    speed: "1x",
-  },
-  { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
-];
 
 export default function WhisperModelModal({
   isOpen,

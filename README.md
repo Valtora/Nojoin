@@ -76,13 +76,13 @@ Nojoin is built for people who want the usefulness of meeting assistants without
    docker compose up -d
    ```
 
-5. Open the web app.
+5. Open the setup wizard.
 
    ```text
-   https://localhost:14443
+   https://localhost:14443/setup
    ```
 
-6. Complete the first-run wizard.
+6. Unlock the wizard with your `FIRST_RUN_PASSWORD` and complete the first-run setup. The sign-in page does not link to setup; the wizard is only reachable at `/setup`.
 
 7. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, in another Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only recording, then start a short test meeting. Other Chromium-family browsers on macOS are best-effort. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
 

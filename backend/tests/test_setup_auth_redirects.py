@@ -14,6 +14,15 @@ BOOTSTRAP_PASSWORD = "bootstrap-secret"
 SECURE_TEST_BASE_URL = "https://test"
 
 
+@pytest.fixture(autouse=True)
+def _bypass_setup_rate_limit(monkeypatch):
+    async def _allow(*args, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(setup, "enforce_setup_rate_limit", _allow)
+    monkeypatch.setattr(system, "enforce_setup_rate_limit", _allow)
+
+
 class _FakeResult:
     def __init__(self, initialized: bool):
         self._initialized = initialized

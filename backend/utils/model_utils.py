@@ -45,18 +45,20 @@ def is_whisper_model_downloaded(model_size: str) -> bool:
         return False
 
 
+# Approximate parameter size in millions based on Whisper documentation
+WHISPER_MODEL_SIZES_MB = {
+    "tiny": 39,
+    "base": 74,
+    "small": 244,
+    "medium": 769,
+    "large": 1550,
+    "turbo": 809,  # Whisper Turbo model size
+}
+
+
 def get_whisper_model_size_mb(model_size: str) -> Optional[float]:
     """Get the approximate size of a Whisper model in MB."""
-    # Approximate parameter size in millions based on Whisper documentation
-    model_sizes = {
-        "tiny": 39,
-        "base": 74,
-        "small": 244,
-        "medium": 769,
-        "large": 1550,
-        "turbo": 809,  # Whisper Turbo model size
-    }
-    return model_sizes.get(model_size)
+    return WHISPER_MODEL_SIZES_MB.get(model_size)
 
 
 def check_default_model_availability() -> tuple[bool, str]:

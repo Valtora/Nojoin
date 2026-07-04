@@ -9,6 +9,7 @@ import CompleteStep from "./_components/CompleteStep";
 import HuggingFaceStep from "./_components/HuggingFaceStep";
 import LegalStep from "./_components/LegalStep";
 import LlmStep from "./_components/LlmStep";
+import UnlockStep from "./_components/UnlockStep";
 import { useSetupWizard } from "./_hooks/useSetupWizard";
 
 export default function SetupPage() {
@@ -17,6 +18,9 @@ export default function SetupPage() {
     step,
     formData,
     error,
+    unlocking,
+    includeDemoRecording,
+    setIncludeDemoRecording,
     ffmpegMissing,
     showSkipLLMModal,
     setShowSkipLLMModal,
@@ -32,6 +36,7 @@ export default function SetupPage() {
     modelPreparationComplete,
     handleInputChange,
     handleBootstrapPasswordChange,
+    handleUnlockSubmit,
     handleLegalSubmit,
     handleAccountSubmit,
     handleLLMSubmit,
@@ -80,15 +85,17 @@ export default function SetupPage() {
           <p className="text-orange-100 mt-2">Initial System Setup</p>
         </div>
 
-        {/* Progress Steps */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
-          {[0, 1, 2, 3, 4].map((s) => (
-            <div
-              key={s}
-              className={`flex-1 h-1 ${s <= step ? "bg-blue-600" : "bg-gray-200 dark:bg-gray-700"}`}
-            />
-          ))}
-        </div>
+        {/* Progress Steps (hidden on the unlock gate) */}
+        {step > 0 && (
+          <div className="flex border-b border-gray-200 dark:border-gray-700">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <div
+                key={s}
+                className={`flex-1 h-1 ${s <= step ? "bg-orange-600" : "bg-gray-200 dark:bg-gray-700"}`}
+              />
+            ))}
+          </div>
+        )}
 
         <div className="p-8">
           {error && (
@@ -119,22 +126,33 @@ export default function SetupPage() {
             </div>
           )}
 
-          {/* Step 0: Legal Disclaimer */}
-          {step === 0 && <LegalStep onAccept={handleLegalSubmit} />}
-
-          {/* Step 1: Account */}
-          {step === 1 && (
-            <AccountStep
-              formData={formData}
+          {/* Step 0: Unlock Gate */}
+          {step === 0 && (
+            <UnlockStep
               error={error}
-              onSubmit={handleAccountSubmit}
-              onInputChange={handleInputChange}
+              unlocking={unlocking}
               onBootstrapPasswordChange={handleBootstrapPasswordChange}
+              onSubmit={handleUnlockSubmit}
             />
           )}
 
-          {/* Step 2: LLM Setup */}
+          {/* Step 1: Legal Disclaimer */}
+          {step === 1 && <LegalStep onAccept={handleLegalSubmit} />}
+
+          {/* Step 2: Account */}
           {step === 2 && (
+            <AccountStep
+              formData={formData}
+              error={error}
+              includeDemoRecording={includeDemoRecording}
+              onSubmit={handleAccountSubmit}
+              onInputChange={handleInputChange}
+              onIncludeDemoRecordingChange={setIncludeDemoRecording}
+            />
+          )}
+
+          {/* Step 3: LLM Setup */}
+          {step === 3 && (
             <LlmStep
               formData={formData}
               loading={loading}
@@ -150,20 +168,21 @@ export default function SetupPage() {
             />
           )}
 
-          {/* Step 3: HuggingFace */}
-          {step === 3 && (
+          {/* Step 4: Transcription & Speaker Models */}
+          {step === 4 && (
             <HuggingFaceStep
               formData={formData}
               loading={loading}
               pyannoteModelsReady={pyannoteModelsReady}
               bundledPyannoteModelsReady={bundledPyannoteModelsReady}
+              onInputChange={handleInputChange}
               onReloadConfig={handleReloadConfig}
               onSubmit={handleHFSubmit}
             />
           )}
 
-          {/* Step 4: Complete */}
-          {step === 4 && (
+          {/* Step 5: Complete */}
+          {step === 5 && (
             <CompleteStep
               modelPreparationComplete={modelPreparationComplete}
               modelPreparationMessage={modelPreparationMessage}

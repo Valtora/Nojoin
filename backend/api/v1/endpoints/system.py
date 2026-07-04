@@ -31,6 +31,7 @@ from backend.api.services.health_service import (
 )
 from backend.api.v1.endpoints.setup import (
     FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
+    enforce_setup_rate_limit,
     is_system_initialized,
     require_first_run_password,
 )
@@ -48,6 +49,7 @@ from backend.utils.download_progress import (
     get_download_progress,
     is_download_in_progress,
 )
+from backend.utils.model_utils import WHISPER_MODEL_SIZES_MB
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -310,11 +312,24 @@ class SetupRequest(BaseModel):
     password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
+    include_demo_recording: bool = True
 
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
         return validate_password_policy(value)
+
+    @field_validator("whisper_model_size")
+    @classmethod
+    def validate_whisper_model_size(cls, value: Optional[str]) -> str:
+        if value is None:
+            return "turbo"
+        if value not in WHISPER_MODEL_SIZES_MB:
+            raise ValueError(
+                "whisper_model_size must be one of: "
+                + ", ".join(sorted(WHISPER_MODEL_SIZES_MB))
+            )
+        return value
 
 
 @router.get("/health")
@@ -383,6 +398,8 @@ async def setup_system(
     Initialize the system with the first admin user and initial configuration.
     Only works if no users exist.
     """
+    await enforce_setup_rate_limit(request)
+
     if await is_system_initialized(db):
         raise HTTPException(
             status_code=403,
@@ -408,13 +425,18 @@ async def setup_system(
         force_password_change=False,  # First user sets their own password, so no need to force change
         role="owner",
         settings=settings,
+        # Opting out marks the demo as already seen so startup seeding also
+        # skips it; Settings > Help can still force-recreate it later.
+        has_seen_demo_recording=not setup_in.include_demo_recording,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
     # Seed demo data for the new admin user
-    if user.id is None:
+    if not setup_in.include_demo_recording:
+        logger.info("Skipping demo recording seed: opted out during first-run setup.")
+    elif user.id is None:
         logger.error(
             "Failed to seed demo data during setup: created user has no persisted ID."
         )
