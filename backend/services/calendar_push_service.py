@@ -17,7 +17,6 @@ token / Microsoft ``clientState``); the payload is treated only as a
 from __future__ import annotations
 
 import logging
-import os
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -30,6 +29,7 @@ from sqlmodel import select
 
 from backend.core.db import async_session_maker
 from backend.core.encryption import decrypt_secret, encrypt_secret
+from backend.core.redis import REDIS_URL
 from backend.models.calendar import (
     CalendarConnection,
     CalendarProvider,
@@ -68,8 +68,6 @@ SYNC_DEBOUNCE_COUNTDOWN = 3
 # batch. Real Graph batches are small; a larger one is untrusted input that would
 # otherwise fan out into that many sequential per-item database lookups.
 MICROSOFT_MAX_NOTIFICATIONS_PER_BATCH = 100
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 HTTP_NOT_FOUND = 404
 HTTP_GONE = 410

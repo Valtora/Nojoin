@@ -9,9 +9,10 @@ from typing import Optional
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, status
 
+from backend.core.redis import REDIS_URL
+
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 RATE_LIMIT_KEY_PREFIX = "nojoin:ratelimit"
 
 _redis_client: Optional[redis.Redis] = None

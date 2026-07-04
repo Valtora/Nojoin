@@ -1,5 +1,4 @@
 import logging
-import os
 import threading
 import time
 
@@ -7,13 +6,11 @@ import redis
 from celery import Celery, bootsteps
 from celery.signals import setup_logging, task_postrun, worker_ready
 
+from backend.core.redis import REDIS_URL
 from backend.utils.deployment_warnings import log_deployment_warnings
 from backend.utils.logging_config import setup_logging as configure_logging
 
 logger = logging.getLogger(__name__)
-
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
 @setup_logging.connect
