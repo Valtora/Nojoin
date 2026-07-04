@@ -6,7 +6,6 @@ a dependency leaf: it must not import from sibling submodules.
 
 from __future__ import annotations
 
-import os
 import re
 from urllib.parse import urlencode
 
@@ -28,7 +27,6 @@ MICROSOFT_COMMON_TENANT = "common"
 OAUTH_STATE_TTL_SECONDS = 10 * 60
 SYNC_WINDOW_MONTHS_BACK = 12
 SYNC_WINDOW_MONTHS_FORWARD = 12
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 PROVIDER_DISPLAY_NAMES = {
     CalendarProvider.GOOGLE.value: "Google",
