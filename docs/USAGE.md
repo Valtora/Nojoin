@@ -83,6 +83,7 @@ Use it to manage your shared speaker library:
 - Search and filter the library when you need to find a known speaker quickly.
 - Organise people with reusable people tags.
 - Open batch editing and cleanup flows for broader speaker-library maintenance.
+- Delete a person to remove them from the library. Deletion demotes rather than erases: the shared record, its voiceprint, and its contact details are removed, while each of their meetings keeps the speaker under the same name as a recording-local speaker.
 
 ## Live Recording
 

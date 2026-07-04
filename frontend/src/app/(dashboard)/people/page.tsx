@@ -22,6 +22,7 @@ import RecalibrateModal from "@/components/people/RecalibrateModal";
 import SplitPersonModal from "@/components/people/SplitPersonModal";
 import { Trash2, Edit2, CheckSquare } from "lucide-react";
 import { deleteGlobalSpeakerEmbedding } from "@/lib/api"; // Ensure this is imported for batch voiceprint delete
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 export default function PeoplePage() {
@@ -98,7 +99,10 @@ export default function PeoplePage() {
 
             } catch (error: unknown) {
         console.error("Failed to delete person:", error);
-        addNotification({ type: "error", message: "Failed to delete person." });
+        addNotification({
+          type: "error",
+          message: getErrorMessage(error, "Failed to delete person."),
+        });
       } finally {
         setPersonToDelete(null);
       }
@@ -199,7 +203,10 @@ export default function PeoplePage() {
 
         } catch (error: unknown) {
       console.error("Batch delete failed", error);
-      addNotification({ type: "error", message: "Failed to delete some people." });
+      addNotification({
+        type: "error",
+        message: getErrorMessage(error, "Failed to delete some people."),
+      });
     } finally {
       setIsBatchDeleting(false);
       setIsBatchDeleteConfirmOpen(false);

@@ -138,17 +138,24 @@ def run_startup_canonical_cutover() -> dict[str, int]:
         "retirement_notices": 0,
     }
 
-    with sync_engine.connect() as connection:
-        with _advisory_lock(connection):
-            with Session(bind=connection) as session:
+    # The advisory lock is held on a dedicated autocommit connection so no
+    # transaction ever opens on it. Sessions below must NOT bind to that
+    # connection: they would join its transaction via savepoints and every
+    # commit would be silently rolled back when the connection closes.
+    with sync_engine.connect().execution_options(
+        isolation_level="AUTOCOMMIT"
+    ) as lock_connection:
+        with _advisory_lock(lock_connection):
+            with Session(sync_engine) as session:
                 summary["retirement_notices"] = _ensure_companion_retirement_notice(
                     session
                 )
                 if summary["retirement_notices"]:
                     session.commit()
 
+            processed_ids: set[int] = set()
             while True:
-                with Session(bind=connection) as session:
+                with Session(sync_engine) as session:
                     recording_ids = list_pending_startup_cutover_recording_ids(
                         session,
                         batch_size=_batch_size(),
@@ -157,13 +164,23 @@ def run_startup_canonical_cutover() -> dict[str, int]:
                 if not recording_ids:
                     break
 
+                stalled_ids = processed_ids.intersection(recording_ids)
+                if stalled_ids:
+                    logger.warning(
+                        "Startup canonical cutover made no progress on recordings %s; "
+                        "stopping sweep to avoid looping at boot.",
+                        sorted(stalled_ids),
+                    )
+                    break
+
                 for recording_id in recording_ids:
-                    with Session(bind=connection) as session:
+                    with Session(sync_engine) as session:
                         outcome = process_startup_cutover_recording(
                             session,
                             recording_id=recording_id,
                         )
                         session.commit()
+                    processed_ids.add(recording_id)
                     summary[outcome] = summary.get(outcome, 0) + 1
 
     logger.info("Startup canonical cutover complete: %s", summary)

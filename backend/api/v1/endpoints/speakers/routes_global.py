@@ -391,19 +391,25 @@ async def delete_global_speaker(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Delete a person from the People library.
+
+    This demotes rather than erases: the global record and its voiceprint are
+    removed, while linked recording speakers keep the person's name as a
+    recording-local name. No transcript or speaker attribution data changes,
+    so the operation is safe for recordings of any pipeline generation.
+    """
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
 
     linked_result = await db.execute(
-        select(RecordingSpeaker.recording_id).where(
-            RecordingSpeaker.global_speaker_id == speaker_id
-        )
+        select(RecordingSpeaker).where(RecordingSpeaker.global_speaker_id == speaker_id)
     )
-    await _require_recordings_support_speaker_mutations(
-        db,
-        [recording_id for recording_id in linked_result.scalars().all()],
-    )
+    for recording_speaker in linked_result.scalars().all():
+        if not recording_speaker.local_name:
+            recording_speaker.local_name = speaker.name
+            db.add(recording_speaker)
 
     await db.delete(speaker)
     await db.commit()
