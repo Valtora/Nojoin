@@ -6,15 +6,15 @@ enabling the frontend to see accurate progress regardless of which mechanism is 
 
 import json
 import logging
-import os
 import time
 from typing import Optional
 
 import redis
 
+from backend.core.redis import REDIS_URL
+
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 PROGRESS_KEY = "nojoin:model_download_progress"
 PROGRESS_TTL = 3600  # 1 hour TTL to auto-cleanup stale progress
 

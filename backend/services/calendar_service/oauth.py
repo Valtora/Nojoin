@@ -21,6 +21,7 @@ import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.encryption import encrypt_secret
+from backend.core.redis import REDIS_URL
 from backend.models.calendar import CalendarConnection, CalendarProvider
 from backend.models.user import User
 
@@ -35,7 +36,6 @@ from .constants import (
     MICROSOFT_SCOPE,
     OAUTH_STATE_TTL_SECONDS,
     PROVIDER_DISPLAY_NAMES,
-    REDIS_URL,
 )
 from .models_dto import ProviderIdentity, ProviderRuntimeConfig, TokenBundle
 from .text_utils import _request_json, _utc_now

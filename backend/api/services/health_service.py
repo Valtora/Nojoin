@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import secrets
 import shutil
 import time
@@ -14,6 +13,7 @@ from sqlmodel import Session, text
 
 from backend.celery_app import celery_app
 from backend.core.db import sync_engine
+from backend.core.redis import get_redis_url
 from backend.preload_models import check_model_status
 from backend.utils.config_manager import async_get_system_api_keys, config_manager
 from backend.utils.deployment_warnings import get_deployment_warnings
@@ -46,10 +46,6 @@ def _build_component(
     return component
 
 
-def _get_redis_url() -> str:
-    return os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-
 async def _get_db_component() -> tuple[dict[str, Any], bool]:
     try:
         with Session(sync_engine) as session:
@@ -77,7 +73,7 @@ async def _get_db_component() -> tuple[dict[str, Any], bool]:
 async def _get_queue_component() -> tuple[dict[str, Any], bool]:
     client = None
     try:
-        client = redis.from_url(_get_redis_url())
+        client = redis.from_url(get_redis_url())
         await client.ping()
         return (
             _build_component(
@@ -107,7 +103,7 @@ async def _resolve_worker_status() -> str:
     heartbeat_client = None
 
     try:
-        heartbeat_client = redis.from_url(_get_redis_url())
+        heartbeat_client = redis.from_url(get_redis_url())
         if await heartbeat_client.get("nojoin:worker:heartbeat"):
             worker_status = "active"
     except Exception:  # noqa: BLE001
