@@ -7,7 +7,13 @@ Status: **Draft for approval — no code written.** Branch: `feat/cli-oauth-ai-m
 Add a third per-user AI "usage model" alongside the existing Ollama and BYOK/API-key
 providers: **CLI OAuth**, which routes inference through a user's Claude Pro/Max
 subscription via the Claude Code CLI, driven by the Claude Agent SDK, running as
-locked-down subprocesses inside the Worker container.
+locked-down subprocesses inside the **`worker-io`** container — the GPU-free
+network/LLM Celery lane (see §2a).
+
+> **Rebased onto the split-worker `main` (`62ff6d7`, #84).** The worker is now three
+> containers (`worker-gpu`, `worker-cpu`, `worker-io`) sharing one image. This plan
+> targets `worker-io` specifically; §2a records the baseline and the decisions the split
+> forces.
 
 First cut:
 
@@ -30,21 +36,48 @@ First cut:
 ## 2. Architecture at a glance
 
 ```
-Settings > AI (per-user)         Worker container
-  usage_model = cli_oauth          ├─ Celery task (generate_notes / meeting_edge / …)
+Settings > AI (per-user)         worker-io container (GPU-free LLM lane, -Q io)
+  usage_model = cli_oauth          ├─ Celery task (generate_notes / refresh_meeting_edge / infer_speakers)
         │                          │     └─ resolve_llm_config(purpose) ─┐
         ▼                          │                                      ▼
   device-code OAuth  ──►  encrypted DB row  ──►  CliConversationManager (new)
   (Nojoin UI)            (CliOAuthCredential)        ├─ per-user CLAUDE_CONFIG_DIR (materialised from DB)
                                                      ├─ locked-down subprocess (low-priv user, tools off)
                                                      ├─ Claude Agent SDK session(s)
-                                                     │     • persistent conversation per live meeting (Edge)
-                                                     │     • fresh conversation per async task
+                                                     │     • persistent per-meeting session via resumable session_id (Edge)
+                                                     │     • fresh session per async task
                                                      └─ async lane capped/queued; Edge lane always slotted
 ```
 
 `CliLLMBackend(LLMBackend)` is a thin adapter over `CliConversationManager`, slotted
 into the existing `get_llm_backend()` factory so the rest of the pipeline is untouched.
+
+## 2a. Split-worker architecture baseline (as of the rebase)
+
+`main` (`62ff6d7`, PR #84) splits the worker into three containers that **share one
+image** (`ghcr.io/valtora/nojoin-worker:latest` via the `x-worker-base` anchor in
+`docker-compose.example.yml`) and differ only by the Celery queue they consume:
+
+| Container | Queue (`-Q`) | Pool / concurrency | Role |
+| --- | --- | --- | --- |
+| `worker-gpu` | `gpu` | `solo` / 1 | Heavy ML: `process_recording_task`, embeddings, model downloads. **Only** GPU access. Leave untouched. |
+| `worker-cpu` | `cpu` | `prefork` / 3 | ffmpeg transcode, proxy generation, backups. |
+| `worker-io` | `io` | `prefork` / 4 | **LLM lane** + Celery Beat (`-B`): `refresh_meeting_edge_task`, `generate_notes_task`, `infer_speakers_task`, embeddings, calendar sync, cleanup. |
+
+Routing lives in `TASK_ROUTES` in [celery_app.py](../../backend/celery_app.py). This
+baseline changes three things versus the pre-split plan:
+
+1. **CLI OAuth belongs entirely in `worker-io`.** Every LLM task already routes there;
+   CLI inference is GPU-free and network-bound. Nothing CLI-related should reach
+   `worker-gpu` or `worker-cpu`.
+2. **`task_default_queue = GPU_QUEUE`.** Any *new* CLI Celery task (device-poll,
+   credential health-check) **must** be added to `TASK_ROUTES` → `IO_QUEUE`, or it will
+   silently run on the serialised single-GPU lane. This is a real footgun.
+3. **The warm per-meeting Edge session must outlive a Celery task.** `worker-io` is
+   `prefork`, so each `refresh_meeting_edge_task` runs in a forked child — a warm
+   in-process session cannot be shared across them. Use the Agent SDK's **resumable
+   `session_id`**: persist it (keyed by `recording_id`) and resume per invocation, rather
+   than holding a live subprocess in memory. Fresh async tasks need no persistence.
 
 ## 3. Compatibility tensions to resolve first
 
@@ -129,12 +162,17 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
   - **Sandboxing:** run as a dedicated low-privilege OS user; no network/file tools;
     per-process CPU/memory caps (e.g. `resource.setrlimit` / a wrapper); transcripts
     treated as untrusted input.
-  - **Concurrency:** process-per-conversation. Async lane is capped per user with a
-    backpressure queue; the live Edge lane always gets a slot. A soft cap prevents
-    spawning processes that only 429 against the one account.
-  - **Conversation strategy:** hybrid — one persistent conversation per live meeting for
-    Edge (carrying rolling context alongside the existing rolling-summary), fresh
-    conversation per async task.
+  - **Concurrency (within `worker-io`):** the lane is `prefork`/4, so up to four Celery
+    children can each be driving a CLI conversation. Process-per-conversation on top of
+    that; async spawns are capped per user with a backpressure queue; the live Edge lane
+    always gets a slot. A soft cap prevents spawning processes that only 429 against the
+    one account. The cap is enforced in the manager (e.g. a Redis-backed per-user
+    semaphore), since the four prefork children don't share memory.
+  - **Conversation strategy:** hybrid — Edge uses one **resumable Agent SDK session per
+    meeting**: persist `session_id` keyed by `recording_id` and resume it each
+    `refresh_meeting_edge_task` invocation (a forked child can't hold a live session in
+    memory), carrying rolling context alongside the existing rolling-summary. Async tasks
+    use a fresh session each call — no persistence needed.
   - **Prompt adaptation:** the bulk of the effort. Each existing prompt template is
     re-tuned for the conversation format and re-validated for strict JSON per feature.
 - **Model routing:** pass the per-task model (`cli_model` vs `cli_live_model`) to the SDK
@@ -184,19 +222,34 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
   ([llm_services.py:2450](../../backend/processing/llm_services.py)) only where the user
   has opted into automatic fallback; otherwise the pause/notify path takes over.
 
-### G. Worker image packaging
+### G. Worker image packaging (all three lanes share one image)
 
-- The Worker image is pure Python PyTorch, **no Node.js**
-  ([docker/Dockerfile.worker](../../docker/Dockerfile.worker)). CLI OAuth needs
-  Node.js + Claude Code CLI + the Claude Agent SDK Python package.
-- Add Node.js (pinned LTS) + `@anthropic-ai/claude-code` to the runtime stage; add
-  `claude-agent-sdk` to `requirements/worker.txt` (unpinned per repo LLM-SDK policy).
-  Create the low-privilege sandbox OS user in the image.
-- Guard the image-size/GPU-base impact; keep CLI tooling out of the API image.
+- **Key constraint:** `worker-gpu`, `worker-cpu`, and `worker-io` all run the **same**
+  image ([docker/Dockerfile.worker](../../docker/Dockerfile.worker), a Node-free
+  PyTorch/CUDA image). CLI OAuth needs Node.js + Claude Code CLI + the `claude-agent-sdk`
+  Python package — but only `worker-io` uses them. Adding them to the shared image bloats
+  the already-large GPU/CPU images for no benefit.
+- **Decision to make (flag for the next agent):**
+  - **(a) Shared image** — add Node LTS + `@anthropic-ai/claude-code` +
+    `claude-agent-sdk` to `Dockerfile.worker`. Simplest; one image; ~150–250 MB of Node
+    tooling rides along on `worker-gpu`/`worker-cpu` that never use it.
+  - **(b) io-specific layer (recommended)** — a small `Dockerfile.worker-io` (or a final
+    build stage) that `FROM`s the base worker image and adds the Node/CLI layer; publish
+    a second tag and point only `worker-io` at it in compose. Keeps GPU/CPU lean; adds a
+    build target and a compose image override.
+- Either way: add `claude-agent-sdk` to `requirements/worker.txt` (unpinned per repo
+  LLM-SDK policy — [[nojoin-llm-sdk-no-pin]]); create the low-privilege sandbox OS user in
+  whichever image carries the CLI; keep all CLI tooling out of the API image.
+- Compose: only `worker-io` needs the CLI. If (b), override its `image:`; the
+  `x-worker-base` anchor stays the base for GPU/CPU.
 
 ## 5. Dependency propagation
 
-- `requirements/worker.txt`: add `claude-agent-sdk` (+ transitively Node via Dockerfile).
+- `requirements/worker.txt`: add `claude-agent-sdk` (+ Node via the worker image, §G).
+- Any new CLI Celery task **must** be routed to `IO_QUEUE` in `TASK_ROUTES`
+  ([celery_app.py](../../backend/celery_app.py)) — `task_default_queue` is `GPU_QUEUE`,
+  so unrouted tasks land on the serialised GPU lane. Register the credential health-check
+  under Celery Beat, which `worker-io` already owns (`-B`).
 - New Alembic head; `backend.startup_migrations` runs it on boot — verify the cutover
   path ([entrypoint / startup_canonical_cutover]) is unaffected.
 - Shared TS types updated before wiring UI fields (repo rule: no `any`).
@@ -254,7 +307,10 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 - **Quota economics:** heavy-meeting weeks exhaust the plan limit and pause AI; "cheaper
   model" conserves quota, not money — set user expectations in the UI copy.
 - **Prompt adaptation** per feature is the largest single effort; budget for it.
-- **Worker image bloat** and a second runtime (Node) in a GPU Python image.
+- **Worker image bloat** — the three lanes share one image, so Node/CLI tooling added
+  naively rides along on `worker-gpu`/`worker-cpu`; prefer the io-specific layer (§G).
+- **GPU-lane footgun** — `task_default_queue = GPU_QUEUE`; forget to route a new CLI task
+  to `IO_QUEUE` and it serialises behind the ML pipeline on the one 8 GB card.
 
 ## 11. Not in this plan (explicitly deferred)
 
