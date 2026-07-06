@@ -21,6 +21,7 @@ import {
 import { listModels } from "@/lib/api";
 import Tooltip from "@/components/ui/Tooltip";
 import { Switch } from "@/components/ui/Switch";
+import CliOAuthPanel from "./CliOAuthPanel";
 import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
@@ -322,11 +323,13 @@ export default function AISettings({
                 </select>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <Info className="w-3 h-3" />
-                  CLI OAuth routes inference through your own Claude Pro/Max
-                  subscription. It is not yet available; connect support arrives
-                  in a later update.
+                  Route inference through your own Anthropic/OpenAI subscription.
+                  Connect it below; selecting CLI OAuth as your active mode is
+                  enabled in a later update.
                 </p>
               </div>
+
+              <CliOAuthPanel />
 
               {/* API URL Display for Ollama */}
               {settings.llm_provider === "ollama" && (

@@ -1,8 +1,8 @@
 # Implementation Plan: CLI OAuth AI Mode
 
-Status: **M1 (plumbing) implemented; M2–M6 pending.** Branch:
-`feat/cli-oauth-ai-mode-plan`. See §9 for the milestone tracker and the M1
-delivery note.
+Status: **M1–M2 implemented; M3–M6 pending.** Branch:
+`feat/cli-oauth-ai-mode-plan`. See §9 for the milestone tracker and the M1/M2
+delivery notes.
 
 ## 1. Goal and scope
 
@@ -182,6 +182,13 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 
 ### D. Auth flow (device-code OAuth)
 
+> **Superseded by the M2 delivery note (§9).** The M2 spike established there is
+> **no device-code flow** in Claude Code and server-initiated browser OAuth is
+> unsupported/fragile. M2 ships a **pasted long-lived `setup-token`** instead of
+> the device-code endpoints sketched below. The `POST /start` / `POST /poll`
+> shapes here are not built; the built endpoints are `GET /cli-oauth/status`,
+> `PUT /cli-oauth/token`, `DELETE /cli-oauth/token`.
+
 - Backend endpoints under `backend/api/v1/endpoints/` (new `cli_oauth.py`):
   - `POST /cli-oauth/start` → initiates the Claude Code device-code flow, returns the
     verification URL + user code, persists a pending record.
@@ -296,7 +303,9 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
    resolver short-circuit returning a *stub* CLI config; migration +
    `CliOAuthCredential`; encrypt/decrypt helpers. Ships behind the selector, does
    nothing yet. See the M1 delivery note below.
-2. **M2 — auth:** device-code endpoints + connect/disconnect UI + status.
+2. **M2 — auth: DELIVERED (paste-token, not device-code).** Connect/disconnect
+   UI + status. The spike found no device-code flow, so this is a pasted
+   long-lived `setup-token`. See the M2 delivery note below.
 3. **M3 — backend + manager:** Worker image (Node + SDK), `CliLLMBackend` +
    `CliConversationManager` for async tasks only (notes/title/speaker/chat).
 4. **M4 — Meeting Edge:** persistent-conversation lane + concurrency caps.
@@ -336,6 +345,46 @@ build-time choices from the handover:
 - **Deferred as planned:** live `alembic upgrade`/`downgrade` on Postgres (DDL
   verified Postgres-valid via dialect render: `id BIGSERIAL`, FK CASCADE,
   UNIQUE); the user-facing doc sweep (§8).
+
+### M2 delivery note (as built)
+
+Resolves open-decision §6.4 (device-code capture) — via a **spike** that changed
+the premise. Key spike findings (Claude Code 2.1.x, Agent SDK docs):
+
+- **No device-code flow exists.** OAuth is browser-only (`claude auth login` /
+  `claude setup-token`); server-initiated login is unsupported and the headless
+  code-paste fallback is fragile (undocumented stdout/stdin) with a documented
+  headless-refresh lockout on Linux servers
+  ([claude-code#47754](https://github.com/anthropics/claude-code/issues/47754)).
+- **Two token types:** `setup-token` prints a **~1-year, refresh-free** token
+  (CI-oriented); `auth login` stores a **~60-min access + refresh** pair (subject
+  to the lockout). The long-lived token is the safer one for a server.
+- **Credential store:** `~/.claude/.credentials.json` (0600), relocatable via
+  `CLAUDE_CONFIG_DIR`; the subscription block is
+  `claudeAiOauth.{accessToken, refreshToken, expiresAt(ms), subscriptionType}`
+  — maps 1:1 onto the M1 `CliOAuthCredential` columns.
+- **Precedence trap (for M3):** the SDK ranks `ANTHROPIC_API_KEY` (and cloud
+  vars) **above** the subscription credential. Nojoin's worker env may hold an
+  install-wide `ANTHROPIC_API_KEY`; the CLI subprocess **must** scrub
+  `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_*` or the
+  user's inference silently bills the install key, not their subscription.
+- **Usage limits:** generic 401/429, **no reset-time metadata** (M5 stays
+  best-effort, as hedged).
+
+Decision (owner): **paste a `setup-token`** — simplest and most robust; no
+server browser, no stateful auth subprocess, no refresh-lockout risk. As built:
+
+- **Endpoints** (`backend/api/v1/endpoints/cli_oauth.py`, registered under
+  `/cli-oauth`, all `Depends(get_current_user)`): `GET /status`,
+  `PUT /token` (validate → `upsert_credential`, `status=active`),
+  `DELETE /token`. Token is **write-only** — never logged, never returned.
+- **Frontend:** `lib/api/cliOauth.ts` + `CliOAuthStatus` type + a
+  `CliOAuthPanel` (status / paste-token connect / disconnect) in Settings > AI.
+  The usage-model **selector's CLI option stays disabled** — M2 is connect-only;
+  M3 turns on routing.
+- **Deferred to M3:** real token validation (needs the SDK to make a call);
+  materialising the token as `CLAUDE_CODE_OAUTH_TOKEN` into the scrubbed
+  subprocess env; enabling CLI as an active usage model.
 
 ## 10. Open risks carried forward (not blockers, but track)
 

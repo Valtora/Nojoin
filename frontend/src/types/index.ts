@@ -373,6 +373,14 @@ export interface Settings {
     [key: string]: unknown;
 }
 
+export interface CliOAuthStatus {
+  connected: boolean;
+  status: string;
+  provider: string;
+  token_expires_at?: string | null;
+  connected_at?: string | null;
+}
+
 export interface LanguageChoice {
   code: string;
   label: string;
