@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.processing.llm_services import (
+    OLLAMA_DEFAULT_NUM_CTX,
     AnthropicLLMBackend,
     GeminiLLMBackend,
     OllamaLLMBackend,
@@ -242,6 +243,20 @@ def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None
     assert "Validation error:" in repair_prompt
     assert "Previous Invalid Response" in repair_prompt
     assert "Return a corrected response" in repair_prompt
+
+
+def test_ollama_chat_options_pins_num_ctx_floor_when_unconfigured() -> None:
+    # Without num_ctx Ollama defaults to 2048 and silently truncates meeting-
+    # length prompts, so an unconfigured backend must still send the safe floor.
+    backend = object.__new__(OllamaLLMBackend)
+    backend.context_window = None
+    assert backend._chat_options(temperature=0.3)["num_ctx"] == OLLAMA_DEFAULT_NUM_CTX
+
+
+def test_ollama_chat_options_honours_configured_context_window() -> None:
+    backend = object.__new__(OllamaLLMBackend)
+    backend.context_window = 131072
+    assert backend._chat_options(temperature=0.3)["num_ctx"] == 131072
 
 
 def test_ollama_streaming_chat_raises_when_context_exhausted() -> None:

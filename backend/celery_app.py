@@ -23,17 +23,72 @@ def log_placeholder_secret_warnings_on_worker_start(**kwargs):
     log_deployment_warnings(startup_path="worker startup", logger_instance=logger)
 
 
+_LIVE_CAPTURE_CHECK_TTL_SECONDS = 2.0
+_live_capture_check_cache: tuple[float, bool] | None = None
+
+
+def _has_active_live_capture() -> bool:
+    """Return True while any recording is actively uploading live segments.
+
+    Reloading the live ASR model on every segment costs ~9s (observed in worker
+    logs), so while a capture is in flight the per-task cache release is skipped
+    to keep Whisper resident. The result is cached briefly so this does not issue
+    a DB query after every task on busy workers.
+    """
+    global _live_capture_check_cache
+
+    now = time.time()
+    cached = _live_capture_check_cache
+    if cached is not None and now - cached[0] < _LIVE_CAPTURE_CHECK_TTL_SECONDS:
+        return cached[1]
+
+    active = False
+    try:
+        from sqlmodel import select
+
+        from backend.core.db import get_sync_session
+        from backend.models.recording import Recording, RecordingStatus
+
+        with get_sync_session() as session:
+            row = session.exec(
+                select(Recording.id)
+                .where(Recording.status == RecordingStatus.UPLOADING)
+                .where(Recording.is_deleted == False)  # noqa: E712
+                .limit(1)
+            ).first()
+        active = row is not None
+    except Exception as exc:  # noqa: BLE001 -- boundary: a check failure must not block cleanup
+        logger.debug("Active-capture check failed; assuming idle: %s", exc)
+        active = False
+
+    _live_capture_check_cache = (now, active)
+    return active
+
+
+def _should_release_model_caches() -> bool:
+    """Whether the per-task model-cache release should run.
+
+    Skipped when the operator pinned models (``keep_models_loaded``) or while a
+    live capture is in flight (keep the live ASR model warm across segments).
+    """
+    from backend.utils.config_manager import config_manager
+
+    if config_manager.get("keep_models_loaded", False):
+        return False
+    if _has_active_live_capture():
+        return False
+    return True
+
+
 def release_worker_model_caches() -> None:
     try:
         import ctypes
         import sys
 
-        from backend.utils.config_manager import config_manager
-
-        if config_manager.get("keep_models_loaded", False):
+        if not _should_release_model_caches():
             return
 
-        logger.info("Releasing worker model caches (keep_models_loaded=False)...")
+        logger.info("Releasing worker model caches...")
 
         loaded_release_hooks = (
             ("backend.processing.transcribe", "release_model_cache"),
@@ -93,12 +148,56 @@ celery_app = Celery(
     ],
 )
 
+# --- Task routing: resource lanes -------------------------------------------
+# Split work so a long GPU job never blocks lightweight CPU/network tasks. Each
+# worker process consumes one lane (`-Q gpu|cpu|io`); see docker-compose.
+GPU_QUEUE = "gpu"
+CPU_QUEUE = "cpu"
+IO_QUEUE = "io"
+
+# Explicit per-task routing. Anything unrouted falls back to the GPU lane
+# (`task_default_queue`), the safe default: a mis-routed GPU task still finds
+# the card, whereas routing it to a GPU-less worker would fail. New tasks must
+# be added here when introduced.
+TASK_ROUTES = {
+    # GPU lane: heavy ML inference. Serialised — the host has one 8 GB card.
+    "backend.worker.tasks.process_recording_task": {"queue": GPU_QUEUE},
+    "backend.processing.live_transcribe.transcribe_segment_live_task": {
+        "queue": GPU_QUEUE
+    },
+    "backend.worker.tasks.extract_embedding_task": {"queue": GPU_QUEUE},
+    "backend.worker.tasks.update_speaker_embedding_task": {"queue": GPU_QUEUE},
+    "backend.worker.tasks.download_models_task": {"queue": GPU_QUEUE},
+    "backend.worker.tasks.get_worker_device_status": {"queue": GPU_QUEUE},
+    # CPU lane: ffmpeg transcode/proxy and local disk work.
+    "backend.processing.segment_transcode.transcode_segment_task": {"queue": CPU_QUEUE},
+    "backend.worker.tasks.generate_proxy_task": {"queue": CPU_QUEUE},
+    "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
+    # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.
+    "backend.worker.tasks.refresh_meeting_edge_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.infer_speakers_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.process_document_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.index_transcript_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.get_text_embedding_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.sync_calendar_connection_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.sync_calendar_connections_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.ensure_calendar_push_channels_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.renew_calendar_push_channels_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.cleanup_temp_recordings": {"queue": IO_QUEUE},
+}
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    task_routes=TASK_ROUTES,
+    task_default_queue=GPU_QUEUE,
+    # One reserved message per worker process so a slow task cannot hoard a batch
+    # queued behind it; keeps the CPU/IO lanes fair under load.
+    worker_prefetch_multiplier=1,
     beat_schedule={
         "cleanup-temp-recordings-every-24h": {
             "task": "backend.worker.tasks.cleanup_temp_recordings",

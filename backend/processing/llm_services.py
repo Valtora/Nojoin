@@ -1927,6 +1927,10 @@ class AnthropicLLMBackend(LLMBackend):
             raise ValueError(f"Anthropic API validation failed: {e}")
 
 
+# Ollama's num_ctx defaults to 2048, which silently truncates meeting-length prompts.
+OLLAMA_DEFAULT_NUM_CTX = 8192
+
+
 class OllamaLLMBackend(LLMBackend):
     def __init__(
         self,
@@ -1955,11 +1959,10 @@ class OllamaLLMBackend(LLMBackend):
         )
 
     def _chat_options(self, *, temperature: float) -> dict[str, object]:
-        options: dict[str, object] = {"temperature": temperature}
-        context_window = getattr(self, "context_window", None)
-        if context_window:
-            options["num_ctx"] = int(context_window)
-        return options
+        # num_ctx must always be sent; an unset one lets Ollama fall back to its
+        # 2048 default, which silently truncates meeting-length prompts.
+        ctx = getattr(self, "context_window", None) or OLLAMA_DEFAULT_NUM_CTX
+        return {"temperature": temperature, "num_ctx": int(ctx)}
 
     @staticmethod
     def _raise_if_truncated(response_metadata: dict | None) -> None:

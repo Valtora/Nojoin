@@ -27,6 +27,14 @@ The backend is responsible for:
 
 The processing-heavy work runs in Celery workers rather than inside API endpoints.
 
+Celery work is split across three resource lanes so a long recording finalise
+never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
+embeddings), a CPU lane (ffmpeg transcode, proxies, backups), and an IO/LLM lane
+(Meeting Edge, notes, chat, calendar sync) that also runs Celery Beat. Routing
+lives in `backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md)
+for pool sizing. To avoid reloading the live ASR model between segments, the GPU
+lane keeps it resident while a capture is uploading and releases it when idle.
+
 ### Web Client
 
 The web client is responsible for:

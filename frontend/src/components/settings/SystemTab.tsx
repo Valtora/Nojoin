@@ -190,7 +190,9 @@ export default function SystemTab() {
   const containers = [
     "all",
     "nojoin-api",
-    "nojoin-worker",
+    "nojoin-worker-gpu",
+    "nojoin-worker-cpu",
+    "nojoin-worker-io",
     "nojoin-frontend",
     "nojoin-nginx",
     "nojoin-redis",
