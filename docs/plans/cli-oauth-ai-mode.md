@@ -182,12 +182,13 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 
 ### D. Auth flow (device-code OAuth)
 
-> **Superseded by the M2 delivery note (§9).** The M2 spike established there is
-> **no device-code flow** in Claude Code and server-initiated browser OAuth is
-> unsupported/fragile. M2 ships a **pasted long-lived `setup-token`** instead of
-> the device-code endpoints sketched below. The `POST /start` / `POST /poll`
-> shapes here are not built; the built endpoints are `GET /cli-oauth/status`,
-> `PUT /cli-oauth/token`, `DELETE /cli-oauth/token`.
+> **Superseded — see the connect-flow redesign note (§9).** There is no
+> device-code flow in Claude Code and server-initiated browser OAuth is
+> unsupported, so the connect flow is a **Nojoin-driven PKCE OAuth** exchange (an
+> intermediate paste-token cut was replaced after it proved error-prone). The
+> `POST /start` / `POST /poll` shapes sketched below are not built; the built
+> endpoints are `POST /cli-oauth/start`, `POST /cli-oauth/complete`,
+> `GET /cli-oauth/status`, `DELETE /cli-oauth/token`.
 
 - Backend endpoints under `backend/api/v1/endpoints/` (new `cli_oauth.py`):
   - `POST /cli-oauth/start` → initiates the Claude Code device-code flow, returns the
@@ -385,6 +386,49 @@ server browser, no stateful auth subprocess, no refresh-lockout risk. As built:
 - **Deferred to M3:** real token validation (needs the SDK to make a call);
   materialising the token as `CLAUDE_CODE_OAUTH_TOKEN` into the scrubbed
   subprocess env; enabling CLI as an active usage model.
+
+### Connect-flow redesign — Nojoin-driven PKCE OAuth (supersedes the paste-token)
+
+The paste-token cut proved error-prone: `claude setup-token` is an interactive
+PKCE flow, and users naturally paste the short-lived *authorization code* (which
+401s) rather than the final token. The connect flow was redesigned to a
+**Nojoin-driven PKCE OAuth** exchange (owner's choice over piping to a held CLI
+subprocess). Spike-confirmed mechanics:
+
+- **Authorize:** `https://claude.com/cai/oauth/authorize`, public client_id
+  `9d1c250a-…` (baked into the CLI, not a secret), `redirect_uri`
+  `https://platform.claude.com/oauth/code/callback`, `scope=user:inference`,
+  `code_challenge_method=S256`, `code=true` (headless — Anthropic's page shows
+  the code to copy).
+- **Token exchange:** `POST https://platform.claude.com/v1/oauth/token`
+  (**not** `console.anthropic.com` → 404), **form-encoded** (JSON → 400), body
+  `grant_type=authorization_code, code` (strip any `#…`)`, redirect_uri,
+  client_id, code_verifier, state`. Public client, no secret. Slow → 120s
+  timeout.
+- **Lifecycle:** yields an **~8h `access_token` + rotating `refresh_token`** (not
+  the ~1y setup-token). Refresh: `grant_type=refresh_token` at the same endpoint;
+  each refresh rotates the refresh token (persist the new one). Headless refresh
+  has a documented 429/lockout mode → refresh on-demand, degrade to
+  `needs_reauth`, never block.
+
+As built (replaces the paste-token endpoints/panel):
+
+- `backend/services/cli_oauth/oauth.py`: PKCE gen, authorize-URL builder,
+  `exchange_code` / `refresh_tokens`, tolerant `parse_pasted_code` (bare /
+  `code#state` / full URL), and Redis pending-state helpers (verifier + state,
+  10-min TTL — **no schema change**; M1's `access/refresh/expires` columns fit).
+- Endpoints: `POST /cli-oauth/start` (PKCE + authorize URL, stash pending),
+  `POST /cli-oauth/complete` (validate state, exchange, store tokens encrypted);
+  `GET /status` and `DELETE /token` retained; the paste `PUT /token` removed.
+- Frontend `CliOAuthPanel`: Connect → skinned modal with a real "Grant access"
+  link (a plain `<a>` — avoids the popup-blocker that eats `window.open` after an
+  await) → paste code → complete.
+
+**Proven end-to-end (live smoke):** the io image + this flow authenticated a real
+`sk-ant-oat01-` token against the subscription and returned the expected
+completion, with the env-scrub (`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`/
+`CLAUDE_CODE_USE_*`) confirmed stripped from the subprocess env. The default
+model observed was `claude-sonnet-5`.
 
 ## 10. Open risks carried forward (not blockers, but track)
 

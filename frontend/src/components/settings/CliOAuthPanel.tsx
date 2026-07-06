@@ -1,28 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Loader2, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Loader2, Trash2, X } from "lucide-react";
 import type { CliOAuthStatus } from "@/types";
 import {
-  connectCliOAuth,
+  completeCliOAuth,
   disconnectCliOAuth,
   getCliOAuthStatus,
+  startCliOAuth,
 } from "@/lib/api/cliOauth";
 
-const MIN_TOKEN_LENGTH = 20;
-
 /**
- * Connect panel for routing AI through a user's own Claude Pro/Max subscription.
+ * Connect panel for routing AI through a user's own Claude subscription.
  *
- * The user pastes the long-lived token from `claude setup-token`; Nojoin stores
- * it encrypted. Selecting CLI OAuth as the active usage model is enabled in a
- * later milestone, so this panel is connect-only for now.
+ * Nojoin drives the PKCE OAuth: "Connect" opens Anthropic's authorize page in a
+ * new tab and a modal to paste back the code Anthropic shows. Nojoin exchanges
+ * the code server-side and stores the tokens encrypted. Selecting CLI OAuth as
+ * the active usage model is enabled in a later milestone.
  */
 export default function CliOAuthPanel() {
   const [status, setStatus] = useState<CliOAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -40,19 +42,41 @@ export default function CliOAuthPanel() {
     void refresh();
   }, [refresh]);
 
-  const handleConnect = async () => {
-    const trimmed = token.trim();
-    if (trimmed.length < MIN_TOKEN_LENGTH) {
-      setError("Paste the full token from `claude setup-token`.");
+  // Start (or restart) the flow: mint a fresh PKCE challenge and open the modal.
+  // The authorize URL is rendered as a real link (clicked directly by the user)
+  // rather than window.open'd after the await, which popup blockers would eat.
+  const beginFlow = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { authorize_url } = await startCliOAuth();
+      setAuthorizeUrl(authorize_url);
+      setCode("");
+      setModalOpen(true);
+    } catch {
+      setError("Could not start sign-in. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (!code.trim()) {
+      setError("Paste the code Anthropic showed you.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      setStatus(await connectCliOAuth(trimmed));
-      setToken("");
+      setStatus(await completeCliOAuth(code.trim()));
+      setModalOpen(false);
+      setCode("");
     } catch {
-      setError("Could not save the token. Please try again.");
+      // The code is single-use and expires quickly; the pending flow is spent,
+      // so recovery is to open the sign-in page again for a fresh code.
+      setError(
+        "Could not complete sign-in — the code may have expired. Open the sign-in page again for a fresh code.",
+      );
     } finally {
       setBusy(false);
     }
@@ -101,37 +125,19 @@ export default function CliOAuthPanel() {
       </div>
 
       {!connected && (
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <input
-              type="password"
-              autoComplete="off"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Paste the token from `claude setup-token`"
-              disabled={busy}
-              className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={handleConnect}
-              disabled={busy || token.trim().length === 0}
-              className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-1"
-            >
-              {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-              Connect
-            </button>
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Run{" "}
-            <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
-              claude setup-token
-            </code>{" "}
-            in a terminal where Claude Code is installed, approve in your
-            browser, and paste the token here. It is stored encrypted and never
-            shown again.
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={beginFlow}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <ExternalLink className="w-4 h-4" />
+          )}
+          Connect Claude subscription
+        </button>
       )}
 
       {connected && (
@@ -150,7 +156,97 @@ export default function CliOAuthPanel() {
         </button>
       )}
 
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && !modalOpen && (
+        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700 flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Connect your Claude subscription
+              </h2>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Grant Nojoin access to your Claude subscription, then paste back
+                the code Anthropic gives you.
+              </p>
+
+              {authorizeUrl && (
+                <a
+                  href={authorizeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold no-underline"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Grant access on Anthropic
+                </a>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                  Paste the code Anthropic shows you
+                </label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="Paste the code here"
+                  disabled={busy}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={beginFlow}
+                disabled={busy}
+                className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Need a fresh code? Restart sign-in
+              </button>
+
+              {error && (
+                <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 p-5 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                disabled={busy}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleComplete}
+                disabled={busy || code.trim().length === 0}
+                className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                Connect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
