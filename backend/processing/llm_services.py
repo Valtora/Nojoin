@@ -2446,6 +2446,13 @@ def get_llm_backend(
             context_window=context_window,
             allow_private_api_url=allow_private_api_url,
         )
+    elif provider == "cli":
+        # CLI OAuth (per-user Claude subscription). M1 stub raises a clear
+        # error from every method; SecondaryLLMBackend degrades to the user's
+        # fallback when one is configured.
+        from backend.processing.cli_backend import CliLLMBackend
+
+        return CliLLMBackend(model=model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 

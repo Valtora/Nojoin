@@ -332,6 +332,9 @@ export interface Settings {
   theme?: string;
   timezone?: string;
   llm_provider?: string;
+  usage_model?: string | null;
+  cli_model?: string | null;
+  cli_live_model?: string | null;
   gemini_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;

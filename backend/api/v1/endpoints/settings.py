@@ -43,6 +43,9 @@ INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset(INSTALL_WIDE_AI_SETTING_KEYS)
 
 class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
+    usage_model: Optional[str] = None
+    cli_model: Optional[str] = None
+    cli_live_model: Optional[str] = None
     enable_meeting_edge: Optional[bool] = None
     meeting_edge_context_level: Optional[int] = None
     whisper_model_size: Optional[str] = None
@@ -139,6 +142,15 @@ class SettingsUpdate(BaseModel):
         if value and value not in ["gemini", "openai", "anthropic", "ollama"]:
             raise ValueError(
                 "Invalid llm_provider. Must be one of ['gemini', 'openai', 'anthropic', 'ollama']"
+            )
+        return value
+
+    @field_validator("usage_model")
+    @classmethod
+    def validate_usage_model(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in ["ollama", "byok", "cli_oauth"]:
+            raise ValueError(
+                "Invalid usage_model. Must be one of ['ollama', 'byok', 'cli_oauth'] or empty"
             )
         return value
 

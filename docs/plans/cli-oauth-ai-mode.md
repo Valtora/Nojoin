@@ -1,6 +1,8 @@
 # Implementation Plan: CLI OAuth AI Mode
 
-Status: **Draft for approval — no code written.** Branch: `feat/cli-oauth-ai-mode-plan`.
+Status: **M1 (plumbing) implemented; M2–M6 pending.** Branch:
+`feat/cli-oauth-ai-mode-plan`. See §9 for the milestone tracker and the M1
+delivery note.
 
 ## 1. Goal and scope
 
@@ -290,15 +292,50 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 
 ## 9. Suggested sequencing (milestones)
 
-1. **M1 — plumbing, no CLI:** `usage_model` field + Settings surface + resolver
-   short-circuit returning a *stub* CLI config; migration + `CliOAuthCredential`;
-   encrypt/decrypt helpers. Ships behind the selector, does nothing yet.
+1. **M1 — plumbing, no CLI: DELIVERED.** `usage_model` field + Settings surface +
+   resolver short-circuit returning a *stub* CLI config; migration +
+   `CliOAuthCredential`; encrypt/decrypt helpers. Ships behind the selector, does
+   nothing yet. See the M1 delivery note below.
 2. **M2 — auth:** device-code endpoints + connect/disconnect UI + status.
 3. **M3 — backend + manager:** Worker image (Node + SDK), `CliLLMBackend` +
    `CliConversationManager` for async tasks only (notes/title/speaker/chat).
 4. **M4 — Meeting Edge:** persistent-conversation lane + concurrency caps.
 5. **M5 — limit handling:** foreground modal + background pause/notify + health check.
 6. **M6 — docs + hardening:** sandbox rlimits, revoke cleanup, ADR, doc sweep.
+
+### M1 delivery note (as built)
+
+Resolves open-decision §3.1 in favour of the **narrow** approach and the two
+build-time choices from the handover:
+
+- **`usage_model` is a standalone per-user field**, deliberately kept **out** of
+  `SYSTEM_LLM_FIELDS` / `INSTALL_WIDE_AI_SETTING_KEYS`, so it survives the user
+  settings merge untouched and never leaks from owner to user. `cli_model` /
+  `cli_live_model` are likewise plain per-user keys (CLI OAuth is inherently
+  per-user; there is no install-wide CLI). The install-wide `llm_provider` enum
+  is unchanged.
+- **Resolver** (`backend/utils/llm_config.py`): `_maybe_cli_config` /
+  `_to_cli_config` short-circuit both `resolve_llm_config` entry points when
+  `usage_model == cli_oauth`, returning `provider="cli"` with the per-task model
+  (`cli_live_model` for Meeting Edge, falling back to `cli_model`).
+- **Degrade cleanly (decision):** the CLI config carries the resolved secondary
+  through, so `SecondaryLLMBackend` falls back to the user's configured provider
+  when the stub raises; only users with no fallback see the error.
+- **Stub backend** (`backend/processing/cli_backend.py`): `CliLLMBackend` raises
+  `CliOAuthUnavailableError` from every method; wired via the `cli` branch in
+  `get_llm_backend`.
+- **Storage:** `CliOAuthCredential` (`backend/models/cli_oauth.py`) +
+  encrypted persistence (`backend/services/cli_oauth/persistence.py`,
+  `CliTokenBundle`). Migration `b30103edc480` chains from the real head
+  `d9e2f4a6c8b1` (the split-worker calendar-push migration) — **not**
+  `354c15ea791e`, which already has a child; a single-head guard test now
+  enforces this.
+- **Frontend (decision):** the "AI usage model" selector is visible in
+  Settings > AI with **CLI OAuth disabled** ("coming soon"); type fields added,
+  no auth panel yet.
+- **Deferred as planned:** live `alembic upgrade`/`downgrade` on Postgres (DDL
+  verified Postgres-valid via dialect render: `id BIGSERIAL`, FK CASCADE,
+  UNIQUE); the user-facing doc sweep (§8).
 
 ## 10. Open risks carried forward (not blockers, but track)
 

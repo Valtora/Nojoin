@@ -174,6 +174,10 @@ export default function AISettings({
     "live assistant",
     "api key",
     "model",
+    "usage model",
+    "cli oauth",
+    "subscription",
+    "claude subscription",
   ]);
   const showHF = fuzzyMatch(searchQuery, [
     "hugging face",
@@ -289,6 +293,39 @@ export default function AISettings({
                     </span>
                   )}
                 </div>
+              </div>
+
+              {/* Usage model (per-user). Only cli_oauth changes resolution;
+                  the other values follow the server-configured provider. CLI
+                  OAuth is disabled until connect support ships. */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  AI usage model
+                </label>
+                <select
+                  value={settings.usage_model || ""}
+                  onChange={(e) =>
+                    persistSettingsUpdate({
+                      ...settings,
+                      usage_model: e.target.value ? e.target.value : null,
+                    })
+                  }
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                >
+                  <option value="">Use server-configured provider</option>
+                  <option value="ollama">Ollama (local)</option>
+                  <option value="byok">BYOK (bring your own API key)</option>
+                  <option value="cli_oauth" disabled>
+                    CLI OAuth — route through your Claude subscription (coming
+                    soon)
+                  </option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <Info className="w-3 h-3" />
+                  CLI OAuth routes inference through your own Claude Pro/Max
+                  subscription. It is not yet available; connect support arrives
+                  in a later update.
+                </p>
               </div>
 
               {/* API URL Display for Ollama */}

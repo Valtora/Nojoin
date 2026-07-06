@@ -1,8 +1,20 @@
 from backend.utils.llm_config import (
+    CLI_PROVIDER,
     LLM_PURPOSE_DEFAULT,
     LLM_PURPOSE_MEETING_EDGE,
+    _maybe_cli_config,
     _merge_llm_config,
 )
+
+
+def _merged_with(user_settings, purpose=LLM_PURPOSE_DEFAULT, base_config=None):
+    return _merge_llm_config(
+        base_config=base_config or {"llm_provider": "gemini", "gemini_model": "g-pro"},
+        system_keys={},
+        owner_settings=None,
+        user_settings=user_settings,
+        purpose=purpose,
+    )
 
 
 def test_merge_llm_config_uses_main_model_by_default() -> None:
@@ -142,3 +154,87 @@ def test_merge_llm_config_prefers_config_backed_model_defaults_over_owner_settin
 
     assert resolved.provider == "openai"
     assert resolved.model == "gpt-4.1-mini"
+
+
+def test_cli_oauth_resolves_to_cli_provider_with_async_model() -> None:
+    merged = _merged_with(
+        {
+            "usage_model": "cli_oauth",
+            "cli_model": "claude-async",
+            "cli_live_model": "claude-live",
+        }
+    )
+    cli = _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT)
+
+    assert cli is not None
+    assert cli.provider == CLI_PROVIDER
+    assert cli.model == "claude-async"
+    # No env credential: the subprocess authenticates with the user's token.
+    assert cli.api_key is None
+    assert cli.api_url is None
+
+
+def test_cli_oauth_uses_live_model_for_meeting_edge() -> None:
+    merged = _merged_with(
+        {
+            "usage_model": "cli_oauth",
+            "cli_model": "claude-async",
+            "cli_live_model": "claude-live",
+        },
+        purpose=LLM_PURPOSE_MEETING_EDGE,
+    )
+    cli = _maybe_cli_config(merged, LLM_PURPOSE_MEETING_EDGE)
+
+    assert cli is not None
+    assert cli.model == "claude-live"
+
+
+def test_cli_oauth_meeting_edge_falls_back_to_async_model() -> None:
+    merged = _merged_with(
+        {"usage_model": "cli_oauth", "cli_model": "claude-async"},
+        purpose=LLM_PURPOSE_MEETING_EDGE,
+    )
+    cli = _maybe_cli_config(merged, LLM_PURPOSE_MEETING_EDGE)
+
+    assert cli is not None
+    assert cli.model == "claude-async"
+
+
+def test_cli_oauth_carries_secondary_for_fallback() -> None:
+    merged = _merge_llm_config(
+        base_config={
+            "secondary_llm_provider": "gemini",
+            "secondary_gemini_model": "g-secondary",
+        },
+        system_keys={"secondary_gemini_api_key": "sk-secondary"},
+        owner_settings=None,
+        user_settings={"usage_model": "cli_oauth", "cli_model": "claude-async"},
+        purpose=LLM_PURPOSE_DEFAULT,
+    )
+    cli = _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT)
+
+    assert cli is not None
+    assert cli.has_secondary
+    secondary = cli.secondary_config()
+    assert secondary is not None
+    assert secondary.provider == "gemini"
+    assert secondary.model == "g-secondary"
+
+
+def test_non_cli_usage_model_falls_through() -> None:
+    for usage_model in (None, "", "byok", "ollama"):
+        user_settings = None if usage_model is None else {"usage_model": usage_model}
+        merged = _merged_with(user_settings)
+        assert _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT) is None
+
+
+def test_owner_usage_model_does_not_leak_to_user() -> None:
+    # usage_model is per-user: an owner on cli_oauth must not force a user onto it.
+    merged = _merge_llm_config(
+        base_config={"llm_provider": "gemini", "gemini_model": "g-pro"},
+        system_keys={},
+        owner_settings={"usage_model": "cli_oauth"},
+        user_settings=None,
+        purpose=LLM_PURPOSE_DEFAULT,
+    )
+    assert _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT) is None
