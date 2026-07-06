@@ -1,0 +1,33 @@
+# --- io-specific worker image ---
+# The base worker image (docker/Dockerfile.worker) plus Node.js and the Claude
+# Code CLI, used ONLY by the worker-io lane for the CLI OAuth AI mode. Keeping
+# the Node/CLI tooling here (rather than in the shared worker image) leaves the
+# worker-gpu / worker-cpu images unchanged — no ~150-250 MB of Node tooling
+# rides along on the GPU-constrained host that never uses it.
+#
+# WORKER_BASE_IMAGE lets this layer stack on either the locally-built worker
+# image (nojoin-worker:local) or the published tag in the release pipeline.
+ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
+FROM ${WORKER_BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Node + the Claude Code CLI + the Python Agent SDK. Installed as root, then we
+# switch back to the base image's non-root appuser.
+# NOTE (M6 hardening): the NodeSource curl|bash install and unpinned npm/pip
+# packages are pragmatic for the first cut; before release, pin Node by digest
+# and add the io image to the Trivy scan gate (the CLI's bundled npm deps must
+# clear CRITICAL/HIGH like every other published image).
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && npm cache clean --force \
+    && pip install --no-cache-dir claude-agent-sdk \
+    && apt-get purge -y gnupg \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+
+USER appuser
