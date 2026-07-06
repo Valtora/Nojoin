@@ -30,6 +30,39 @@ x-shared-app-environment: &shared-app-environment
   MICROSOFT_OAUTH_CLIENT_SECRET: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
   MICROSOFT_OAUTH_TENANT_ID: ${MICROSOFT_OAUTH_TENANT_ID:-common}
 
+# Shared config for the three worker lanes (worker-gpu / worker-cpu / worker-io).
+# They run the same image and differ only in Celery queue, pool, and GPU access.
+x-worker-base: &worker-base
+  image: ghcr.io/valtora/nojoin-worker:latest
+  volumes:
+    - ./data:/app/data
+    - model_cache:/home/appuser/.cache
+    - /sys/class/drm:/sys/class/drm:ro
+    - backup_temp:/tmp
+  depends_on:
+    init-perms:
+      condition: service_completed_successfully
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  restart: unless-stopped
+  networks:
+    - nojoin_net
+  logging: *default-logging
+
+x-worker-environment: &worker-environment
+  <<: *shared-app-environment
+  XDG_CACHE_HOME: /home/appuser/.cache
+  HF_HOME: /home/appuser/.cache/huggingface
+  OMP_NUM_THREADS: 2
+  MKL_NUM_THREADS: 2
+  OPENBLAS_NUM_THREADS: 2
+  VECLIB_MAXIMUM_THREADS: 2
+  NUMEXPR_NUM_THREADS: 2
+
 services:
   db:
     container_name: nojoin-db
@@ -146,27 +179,23 @@ services:
       - nojoin_net
     logging: *default-logging
 
-  worker:
-    container_name: nojoin-worker
-    image: ghcr.io/valtora/nojoin-worker:latest
-    volumes:
-      - ./data:/app/data
-      - model_cache:/home/appuser/.cache
-      - /sys/class/drm:/sys/class/drm:ro
-      - backup_temp:/tmp
+  # Worker lanes: work is split by resource profile so a long GPU job never
+  # blocks lightweight CPU or network tasks. Each service drains one Celery
+  # queue (see backend/celery_app.py TASK_ROUTES). All three run the same image;
+  # only the queue, pool, and GPU access differ.
+  #
+  # GPU lane: finalize, live ASR, embeddings. Single-slot (--pool=solo
+  # --concurrency=1) so the one 8 GB card only ever runs one model pipeline at a
+  # time. This is the ONLY worker with GPU access.
+  worker-gpu:
+    <<: *worker-base
+    container_name: nojoin-worker-gpu
     environment:
-      <<: *shared-app-environment
+      <<: *worker-environment
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
-      XDG_CACHE_HOME: /home/appuser/.cache
-      HF_HOME: /home/appuser/.cache/huggingface
-      OMP_NUM_THREADS: 2
-      MKL_NUM_THREADS: 2
-      OPENBLAS_NUM_THREADS: 2
-      VECLIB_MAXIMUM_THREADS: 2
-      NUMEXPR_NUM_THREADS: 2
-    # Remove this block for CPU-only deployments.
+    # Remove this deploy block for CPU-only deployments.
     deploy:
       resources:
         reservations:
@@ -174,19 +203,36 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    depends_on:
-      init-perms:
-        condition: service_completed_successfully
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    restart: unless-stopped
-    networks:
-      - nojoin_net
-    logging: *default-logging
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "gpu", "--pool=solo", "--concurrency=1", "--loglevel=info",
+      ]
+
+  # CPU lane: ffmpeg segment transcode, proxy generation, backups. No GPU.
+  worker-cpu:
+    <<: *worker-base
+    container_name: nojoin-worker-cpu
+    environment: *worker-environment
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "cpu", "--pool=prefork", "--concurrency=3", "--loglevel=info",
+      ]
+
+  # IO/LLM lane: Meeting Edge, notes, chat embeddings, calendar sync, cleanup.
+  # Network-bound, so it runs a wider prefork pool. Owns Celery Beat (-B) so the
+  # periodic jobs fire exactly once across the stack (no double-scheduling).
+  worker-io:
+    <<: *worker-base
+    container_name: nojoin-worker-io
+    environment: *worker-environment
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "io", "-B", "-s", "/app/data/celerybeat-schedule",
+        "--pool=prefork", "--concurrency=4", "--loglevel=info",
+      ]
 
   frontend:
     container_name: nojoin-frontend

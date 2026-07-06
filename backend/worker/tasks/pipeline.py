@@ -1320,6 +1320,14 @@ def process_recording_task(
         logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
+    # A live capture on another recording may have left the live ASR model
+    # resident (see the keep-warm gate in backend.celery_app). Clear cached
+    # models before this finalize loads its diarisation/segmentation stack so the
+    # two never stack past the 8 GB VRAM budget. Models this task needs are
+    # reloaded on demand below; on a multi-minute finalize the reload is noise.
+    if not config_manager.get("keep_models_loaded", False):
+        _release_pipeline_vram()
+
     user_settings = {}
     if recording.user_id:
         user = session.get(User, recording.user_id)

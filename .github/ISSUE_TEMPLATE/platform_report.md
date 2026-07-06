@@ -45,7 +45,7 @@ A clear and concise description of what you expected to happen.
 **Logs**
 Please attach any relevant logs, with personal data redacted.
 - Browser: open DevTools and copy any relevant console or network errors.
-- Server: collect `docker compose logs api worker frontend`.
+- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io frontend`.
 
 **Additional context**
 Add any other context about the problem here, including whether the browser share picker exposed an audio toggle and whether a shared-audio track was granted.

@@ -109,21 +109,53 @@ the configured Whisper model, Pyannote diarisation, and voice embeddings. The
 worker validates those assets on CPU where possible, caches them on disk, and
 releases model objects and CUDA memory before returning to idle.
 
-The worker also runs an embedded Celery Beat scheduler (`celery worker -B`) that
-drives Nojoin's periodic jobs: calendar sync every 15 minutes, calendar
-push-channel renewal every 30 minutes, and temporary-recording cleanup daily.
-Because Nojoin runs a single worker, embedded beat cannot double-schedule, and
-the beat schedule state lives on the persistent data volume so the cadence
-survives restarts. Optional calendar live sync (push notifications) additionally
-requires the instance to be reachable from the public internet over HTTPS at
+One worker lane (`worker-io`) runs the embedded Celery Beat scheduler (`celery
+worker -B`) that drives Nojoin's periodic jobs: calendar sync every 15 minutes,
+calendar push-channel renewal every 30 minutes, and temporary-recording cleanup
+daily. Beat runs on that single lane only, so it cannot double-schedule, and the
+beat schedule state lives on the persistent data volume so the cadence survives
+restarts. Optional calendar live sync (push notifications) additionally requires
+the instance to be reachable from the public internet over HTTPS at
 `WEB_APP_URL`; see [CALENDAR.md](CALENDAR.md).
 
 If an administrator switches transcription to Parakeet or Canary, Nojoin queues
 preparation for the selected ONNX ASR model after the setting is saved. Live and
 final processing still load inference models only for active work. After each
 worker task, Nojoin releases model caches and clears CUDA memory when
-`keep_models_loaded` is unset or false. Set `keep_models_loaded=true` only if you
-deliberately prefer warmer repeated processing over idle VRAM.
+`keep_models_loaded` is unset or false — except while a recording is actively
+uploading (live capture), where the live ASR model is kept resident so
+consecutive segments are not forced to reload it (a reload costs several seconds
+per segment). When capture goes idle the caches are released as normal, and a
+recording finalise clears cached models before loading its heavier diarisation
+stack so the two never exceed VRAM. Set `keep_models_loaded=true` only if you
+deliberately prefer warmer repeated processing over idle VRAM across the board.
+
+### Worker Concurrency Lanes
+
+To stop a long recording finalise from blocking every other user's live
+transcription, notes, chat, and calendar sync, worker tasks are split across
+three Celery queues, each drained by its own container:
+
+- `worker-gpu` — GPU-bound inference (recording finalise, live ASR, speaker
+  embeddings). Single-slot (`--pool=solo --concurrency=1`): with one GPU, heavy
+  work is deliberately serialised to protect VRAM. This is the only worker
+  granted GPU access.
+- `worker-cpu` — ffmpeg segment transcode, proxy generation, and backups
+  (`--pool=prefork --concurrency=3`). No GPU.
+- `worker-io` — network-bound work: Meeting Edge, notes, chat embeddings,
+  calendar sync, and cleanup (`--pool=prefork --concurrency=4`). No GPU. Also
+  runs Celery Beat.
+
+Task-to-queue routing is defined in `backend/celery_app.py` (`TASK_ROUTES`);
+anything unrouted falls back to the GPU lane. Tune the `--concurrency` values in
+`docker-compose.yml` to your host: the CPU and IO lanes are cheap (no model
+memory), while the GPU lane should stay at `--concurrency=1` unless you have
+multiple GPUs, or a single card large enough to hold two concurrent pipelines.
+
+With three worker containers plus the API, several worker processes each keep a
+small database connection pool. The default PostgreSQL `max_connections` (100)
+comfortably covers the reference `3` / `4` lane sizing; if you scale the lanes
+much wider, raise `max_connections` to match.
 
 ### GPU Acceleration
 
@@ -138,10 +170,11 @@ The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. Some ONNX graph 
 If you do not have a compatible NVIDIA GPU:
 
 1. Open `docker-compose.yml`.
-2. Remove the `deploy` section under the `worker` service.
+2. Remove the `deploy` section under the `worker-gpu` service.
 3. Start the stack normally with `docker compose up -d`.
 
-Processing will be slower, but the application remains usable.
+Processing will be slower, but the application remains usable. All three worker
+lanes then run on CPU.
 
 ## Configure .env
 

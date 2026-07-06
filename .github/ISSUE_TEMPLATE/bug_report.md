@@ -37,7 +37,7 @@ If the issue depends on specific input (an audio file, a recording length, a cal
 **Logs**
 Attach relevant logs. **Redact secrets and personal data first** — remove `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, API keys, tokens, `Authorization` headers, cookies, and meeting content you do not want public.
 - Browser: open DevTools and copy any relevant console or network errors.
-- Server: collect `docker compose logs api worker frontend`.
+- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io frontend`.
 
 **Screenshots**
 If applicable, add screenshots to help explain the problem (with sensitive content redacted).

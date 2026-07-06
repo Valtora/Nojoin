@@ -189,14 +189,14 @@ Use the normal container rebuild loop when you are staying in the containerised 
 
 ```bash
 docker compose up -d --build api
-docker compose up -d --build worker
+docker compose up -d --build worker-gpu worker-cpu worker-io
 docker compose up -d --build frontend
 ```
 
 Practical use:
 
 - Run `docker compose up -d --build api` after API changes or shared backend changes.
-- Run `docker compose up -d --build worker` after worker code, dependency, or worker-image changes.
+- Run `docker compose up -d --build worker-gpu worker-cpu worker-io` after worker code, dependency, or worker-image changes. The three worker lanes share one image, so this rebuilds it once and recreates all three containers.
 - Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
 
 The compose files now gate `frontend` on a healthy `api`, and gate `nginx` (or `nginx-dev` in development) on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
@@ -219,7 +219,7 @@ If you need to discard cached layers or the application services drift out of sy
 
 ```bash
 docker compose down
-docker compose build --no-cache api worker frontend
+docker compose build --no-cache api worker-gpu worker-cpu worker-io frontend
 docker compose up -d --force-recreate
 ```
 
@@ -239,7 +239,7 @@ services:
       - backup_temp:/tmp
 
   worker:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu,cpu,io -B -s /app/data/celerybeat-schedule --loglevel=info --pool=solo
     volumes:
       - .:/app
       - ./data:/app/data
@@ -247,6 +247,8 @@ services:
       - /sys/class/drm:/sys/class/drm:ro
       - backup_temp:/tmp
 ```
+
+The development compose runs a single worker that drains all three resource lanes (`-Q gpu,cpu,io`) with embedded beat, which keeps the local loop simple. Production instead splits that work across dedicated `worker-gpu`, `worker-cpu`, and `worker-io` services; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes). The `-Q gpu,cpu,io` flag above is required — without it the worker would only consume the default (gpu) queue and CPU/IO tasks would never run.
 
 That patch is optional. It changes the backend feedback loop only. It does not change the frontend contract. If Nginx still proxies the `frontend` container, rebuilding `frontend` remains the way to update `https://localhost:14443`.
 
