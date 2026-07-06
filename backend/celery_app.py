@@ -170,9 +170,7 @@ TASK_ROUTES = {
     "backend.worker.tasks.download_models_task": {"queue": GPU_QUEUE},
     "backend.worker.tasks.get_worker_device_status": {"queue": GPU_QUEUE},
     # CPU lane: ffmpeg transcode/proxy and local disk work.
-    "backend.processing.segment_transcode.transcode_segment_task": {
-        "queue": CPU_QUEUE
-    },
+    "backend.processing.segment_transcode.transcode_segment_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.generate_proxy_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
     # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.

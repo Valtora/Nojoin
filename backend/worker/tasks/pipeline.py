@@ -1235,34 +1235,28 @@ def _release_pipeline_vram() -> None:
     try:
         logger.info("Releasing VRAM (keep_models_loaded=False)...")
 
-        # 1. Whisper
         from backend.processing.transcribe import release_model_cache
 
         release_model_cache()
 
-        # 2. Pyannote
         from backend.processing.diarize import release_pipeline_cache
 
         release_pipeline_cache()
 
-        # 3. Speaker Embeddings
         from backend.processing.embedding_core import release_embedding_model_cache
 
         release_embedding_model_cache()
 
-        # 4. Segmentation Refinement
         from backend.processing.segmentation_refinement import (
             release_segmentation_model_cache,
         )
 
         release_segmentation_model_cache()
 
-        # 5. Text Embeddings
         from backend.processing.text_embedding import release_embedding_model
 
         release_embedding_model()
 
-        # 6. Garbage Collection
         import gc
 
         gc.collect()
@@ -1320,11 +1314,8 @@ def process_recording_task(
         logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
-    # A live capture on another recording may have left the live ASR model
-    # resident (see the keep-warm gate in backend.celery_app). Clear cached
-    # models before this finalize loads its diarisation/segmentation stack so the
-    # two never stack past the 8 GB VRAM budget. Models this task needs are
-    # reloaded on demand below; on a multi-minute finalize the reload is noise.
+    # Clear any live ASR model left warm by another capture before this finalise
+    # loads its diarisation stack, so the two never exceed the 8 GB GPU budget.
     if not config_manager.get("keep_models_loaded", False):
         _release_pipeline_vram()
 
