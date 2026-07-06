@@ -1927,6 +1927,13 @@ class AnthropicLLMBackend(LLMBackend):
             raise ValueError(f"Anthropic API validation failed: {e}")
 
 
+# Ollama's server default context window is only 2048 tokens, which silently
+# truncates meeting-length prompts mid-output. When no ollama_context_window is
+# configured, Nojoin pins num_ctx to this floor instead. Operators with long
+# meetings should raise ollama_context_window in Settings.
+OLLAMA_DEFAULT_NUM_CTX = 8192
+
+
 class OllamaLLMBackend(LLMBackend):
     def __init__(
         self,
@@ -1957,8 +1964,13 @@ class OllamaLLMBackend(LLMBackend):
     def _chat_options(self, *, temperature: float) -> dict[str, object]:
         options: dict[str, object] = {"temperature": temperature}
         context_window = getattr(self, "context_window", None)
-        if context_window:
-            options["num_ctx"] = int(context_window)
+        # Always pin num_ctx. Without it Ollama uses its 2048 default, which
+        # silently truncates meeting-length prompts mid-output (the model reports
+        # done_reason="stop", so _raise_if_truncated cannot catch it). A
+        # configured ollama_context_window wins; otherwise use a safe floor.
+        options["num_ctx"] = (
+            int(context_window) if context_window else OLLAMA_DEFAULT_NUM_CTX
+        )
         return options
 
     @staticmethod
