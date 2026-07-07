@@ -332,6 +332,9 @@ export interface Settings {
   theme?: string;
   timezone?: string;
   llm_provider?: string;
+  usage_model?: string | null;
+  cli_model?: string | null;
+  cli_live_model?: string | null;
   gemini_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;
@@ -368,6 +371,15 @@ export interface Settings {
   spellcheck_language?: string;
 
     [key: string]: unknown;
+}
+
+export interface CliOAuthStatus {
+  connected: boolean;
+  status: string;
+  provider: string;
+  token_expires_at?: string | null;
+  connected_at?: string | null;
+  usage_limited_until?: string | null;
 }
 
 export interface LanguageChoice {

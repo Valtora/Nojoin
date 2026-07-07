@@ -24,7 +24,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.utils.llm_config import resolve_llm_config_async
+from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 
 from .helpers import ChatRequest, _build_speaker_map, _get_owned_recording
 from .router import router
@@ -222,12 +222,33 @@ async def chat_with_meeting(
 
     user_settings = current_user.settings or {}
 
-    llm_config = await resolve_llm_config_async(db, user_settings)
+    llm_config = await resolve_llm_config_async(
+        db, user_settings, user_id=current_user.id
+    )
 
-    if not llm_config.api_key and llm_config.provider != "ollama":
+    # ollama needs no key; cli authenticates with the user's subscription token
+    # (validated at call time in the worker), so neither requires an api_key here.
+    if not llm_config.api_key and llm_config.provider not in ("ollama", "cli"):
         raise HTTPException(
             status_code=400,
             detail=f"No API key configured for {llm_config.provider}. Please configure it in settings.",
+        )
+
+    # CLI OAuth chat runs in worker-io (the API image has no Agent SDK): dispatch
+    # to a Celery task on the io lane and relay its token stream back over the
+    # same SSE contract, so the browser client is unchanged. The worker persists
+    # the assistant turn (single writer); this path deliberately does not.
+    if llm_config.provider == CLI_PROVIDER:
+        from backend.models.task import register_task_ownership
+        from backend.services.chat_relay import relay_sse_frames
+
+        task = celery_app.send_task(
+            "backend.worker.tasks.meeting_chat_task",
+            args=[recording.id, augmented_message, formatted_history],
+        )
+        await register_task_ownership(db, task.id, current_user.id)
+        return StreamingResponse(
+            relay_sse_frames(task.id), media_type="text/event-stream"
         )
 
     try:

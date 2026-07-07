@@ -31,6 +31,15 @@ def test_get_head_revision_ids_uses_checked_in_graph(tmp_path: Path) -> None:
     assert startup_migrations.get_head_revision_ids(tmp_path) == ("c3",)
 
 
+def test_checked_in_migrations_have_single_head() -> None:
+    # A forked graph (two heads) makes `alembic upgrade head` abort on boot, so
+    # the real, checked-in migrations must always resolve to exactly one head.
+    versions_dir = Path(startup_migrations.__file__).parent / "alembic" / "versions"
+    heads = startup_migrations.get_head_revision_ids(versions_dir)
+
+    assert len(heads) == 1, f"Expected a single migration head, found: {heads}"
+
+
 def test_repair_orphaned_revision_state_raises_when_auto_repair_disabled() -> None:
     engine = create_engine("sqlite://")
 

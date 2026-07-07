@@ -58,6 +58,16 @@ Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access token
 - Users can list and revoke connector grants under Personal settings. Password changes, admin resets, and session revocation invalidate outstanding MCP access tokens through the shared `token_version` mechanism.
 - Operators can remove the entire connector surface with `MCP_ENABLED=false` (see [DEPLOYMENT.md](DEPLOYMENT.md)); every connector endpoint then responds `404`.
 
+## CLI OAuth Subscription Access
+
+Nojoin can route a user's AI inference through their own Claude Pro/Max subscription (the per-user **CLI OAuth** usage model, off by default). See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md) for the accepted-risk decision — this uses a consumer subscription contrary to Anthropic's terms.
+
+- The subscription OAuth token is stored **encrypted at rest** (`encrypt_secret`, one row per user), never in `User.settings`, never logged, and never returned by the API.
+- Inference runs as a **tools-off, single-turn** Claude Code subprocess in the `worker-io` lane, as the image's non-root user, under a wall-clock timeout. With tools disabled, an untrusted transcript can only produce text, not act — so no dedicated OS sandbox is used (see ADR-0002).
+- The subprocess environment is **scrubbed** so an install-wide `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_*`) cannot out-rank the user's subscription token; only `CLAUDE_CODE_OAUTH_TOKEN` is injected. This invariant is locked by a unit test.
+- CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades to the user's configured BYOK/Ollama secondary. Usage limits set a best-effort reset time surfaced in Settings.
+- Disconnecting (Settings > AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
+
 ## JWT Signing Key Rotation
 
 JWT signing material is stored as a small keyring rather than a single static value.

@@ -1,0 +1,40 @@
+# --- io-specific worker image ---
+# The base worker image (docker/Dockerfile.worker) plus Node.js + the Claude Code
+# CLI + the Agent SDK, used ONLY by the worker-io lane for the CLI OAuth AI mode.
+# Keeping the Node/CLI tooling here (rather than in the shared worker image)
+# leaves worker-gpu / worker-cpu unchanged — no ~150-250 MB of Node tooling rides
+# along on the GPU-constrained host that never uses it.
+
+# WORKER_BASE_IMAGE lets this layer stack on either the locally-built worker
+# image (nojoin-worker:local) or the published tag in the release pipeline.
+# Declared before any FROM (global scope) so the final-stage FROM can use it.
+ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
+
+# Node.js runtime, PINNED BY DIGEST (supply-chain hardening — replaces the
+# unpinned NodeSource curl|bash install). node:22-bookworm-slim is glibc 2.36,
+# which runs on the Ubuntu 24.04 base (glibc 2.39). Bump this digest to move Node
+# deliberately. The Anthropic CLI + Agent SDK are LLM SDKs and stay UNPINNED per
+# the repo policy (allow latest); only the Node runtime shipping them is pinned.
+FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS node
+
+FROM ${WORKER_BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+USER root
+
+# Bring in the pinned Node runtime + npm (dynamically linked against libc /
+# libstdc++ already present in the PyTorch base). npm is used only to install the
+# (unpinned) Claude Code CLI, then removed: the CLI runs directly on node, and
+# npm's bundled deps (picomatch, sigstore) would otherwise ride along at runtime
+# and trip the Trivy HIGH gate. The CLI is symlinked to /usr/bin/claude where the
+# manager expects it, regardless of npm's global prefix.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && npm install -g @anthropic-ai/claude-code \
+    && ln -sf "$(readlink -f "$(command -v claude)")" /usr/bin/claude \
+    && pip install --no-cache-dir claude-agent-sdk \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/lib/node_modules/npm \
+        /usr/local/bin/npm /usr/local/bin/npx /root/.npm
+
+USER appuser

@@ -41,7 +41,9 @@ def generate_notes_task(self, recording_id: int):
             if user and user.settings:
                 user_settings = user.settings
 
-        llm_config = resolve_llm_config(session, user_settings)
+        llm_config = resolve_llm_config(
+            session, user_settings, user_id=recording.user_id
+        )
         missing_llm_config = llm_config.missing_configuration_message()
         if missing_llm_config:
             logger.warning("Cannot generate notes: %s", missing_llm_config)
@@ -198,7 +200,9 @@ def infer_speakers_task(self, recording_id: int):
             user = session.get(User, recording.user_id)
             if user and user.settings:
                 user_settings = user.settings
-        llm_config = resolve_llm_config(session, user_settings)
+        llm_config = resolve_llm_config(
+            session, user_settings, user_id=recording.user_id
+        )
         missing_llm_config = llm_config.missing_configuration_message()
 
         suggestion_count = 0

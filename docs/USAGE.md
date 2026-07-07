@@ -234,6 +234,12 @@ Changing the transcription language affects new transcription work. Use **Reproc
 
 Language preferences are per-user. Per-meeting overrides, full interface translation, Meeting Edge/chat language controls, and speech translation are not part of this setting.
 
+### CLI OAuth (Claude subscription)
+
+As an alternative to Ollama or a BYOK API key, you can route your AI through your own Claude Pro/Max subscription. In **Settings > AI**, connect your subscription in the "Claude subscription (CLI OAuth)" panel (open the grant link, then paste back the code Anthropic shows you), then choose **CLI OAuth** as your usage model. Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge.
+
+Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to your secondary provider (if configured). Disconnecting removes your stored credential.
+
 ### Secondary LLM Provider
 
 Nojoin supports configuring a secondary LLM provider as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat.

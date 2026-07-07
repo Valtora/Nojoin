@@ -21,6 +21,7 @@ import {
 import { listModels } from "@/lib/api";
 import Tooltip from "@/components/ui/Tooltip";
 import { Switch } from "@/components/ui/Switch";
+import CliOAuthPanel from "./CliOAuthPanel";
 import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
@@ -61,6 +62,14 @@ const WHISPER_MODELS = [
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
 
+// Curated CLI OAuth models (a subscription exposes no models endpoint). Mirrors
+// the backend's CliLLMBackend list; most-capable first.
+const CLI_MODEL_OPTIONS = [
+  "claude-opus-4-8",
+  "claude-sonnet-5",
+  "claude-haiku-4-5-20251001",
+];
+
 interface AISettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
@@ -77,6 +86,9 @@ export default function AISettings({
   isAdmin = false,
 }: AISettingsProps) {
   const [showWhisperModal, setShowWhisperModal] = useState(false);
+  // Gates the "CLI OAuth" usage-model option on a live subscription credential;
+  // updated by CliOAuthPanel as its connection status changes.
+  const [cliConnected, setCliConnected] = useState(false);
 
   const {
     validating,
@@ -174,6 +186,10 @@ export default function AISettings({
     "live assistant",
     "api key",
     "model",
+    "usage model",
+    "cli oauth",
+    "subscription",
+    "claude subscription",
   ]);
   const showHF = fuzzyMatch(searchQuery, [
     "hugging face",
@@ -290,6 +306,96 @@ export default function AISettings({
                   )}
                 </div>
               </div>
+
+              {/* Usage model (per-user). Only cli_oauth changes resolution;
+                  the other values follow the server-configured provider. CLI
+                  OAuth is disabled until connect support ships. */}
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  AI usage model
+                </label>
+                <select
+                  value={settings.usage_model || ""}
+                  onChange={(e) =>
+                    persistSettingsUpdate({
+                      ...settings,
+                      usage_model: e.target.value ? e.target.value : null,
+                    })
+                  }
+                  className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                >
+                  <option value="">Use server-configured provider</option>
+                  <option value="ollama">Ollama (local)</option>
+                  <option value="byok">BYOK (bring your own API key)</option>
+                  <option value="cli_oauth" disabled={!cliConnected}>
+                    CLI OAuth — route through your Claude subscription
+                    {cliConnected ? "" : " (connect below first)"}
+                  </option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <Info className="w-3 h-3" />
+                  Route inference through your own Anthropic/OpenAI subscription.
+                  Connect it below, then pick CLI OAuth here.
+                </p>
+              </div>
+
+              <CliOAuthPanel onConnectedChange={setCliConnected} />
+
+              {settings.usage_model === "cli_oauth" && (
+                <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      CLI model
+                    </label>
+                    <select
+                      value={settings.cli_model || ""}
+                      onChange={(e) =>
+                        persistSettingsUpdate({
+                          ...settings,
+                          cli_model: e.target.value ? e.target.value : null,
+                        })
+                      }
+                      className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    >
+                      <option value="">Default (Claude Sonnet)</option>
+                      {CLI_MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Notes, titles, speaker inference, and chat.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      CLI live model (Meeting Edge)
+                    </label>
+                    <select
+                      value={settings.cli_live_model || ""}
+                      onChange={(e) =>
+                        persistSettingsUpdate({
+                          ...settings,
+                          cli_live_model: e.target.value ? e.target.value : null,
+                        })
+                      }
+                      className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    >
+                      <option value="">Same as CLI model</option>
+                      {CLI_MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Live Meeting Edge. A faster model keeps guidance responsive
+                      and conserves quota.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* API URL Display for Ollama */}
               {settings.llm_provider === "ollama" && (

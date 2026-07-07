@@ -47,6 +47,7 @@ def test_network_tasks_route_to_io_lane() -> None:
         "backend.worker.tasks.refresh_meeting_edge_task",
         "backend.worker.tasks.generate_notes_task",
         "backend.worker.tasks.infer_speakers_task",
+        "backend.worker.tasks.meeting_chat_task",
         "backend.worker.tasks.sync_calendar_connections_task",
     ):
         assert _queue(task) == IO_QUEUE

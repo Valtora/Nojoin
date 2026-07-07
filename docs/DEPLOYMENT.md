@@ -246,6 +246,10 @@ Nojoin splits configuration between:
 The first-run setup wizard can pre-fill many values from environment variables to speed up deployment.
 On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_PASSWORD`.
 
+## CLI OAuth (worker-io image)
+
+The per-user CLI OAuth AI mode (routing inference through a user's Claude subscription) needs Node.js + the Claude Code CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). Point the `worker-io` service at that image via the `image:`/`build:` override in `docker-compose.example.yml`; `worker-gpu` and `worker-cpu` stay on the base image. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md).
+
 ## Remote Access and Trusted Public Origin
 
 If you expose Nojoin beyond localhost:
