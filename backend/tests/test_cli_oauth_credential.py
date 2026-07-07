@@ -41,6 +41,10 @@ CREATE TABLE cli_oauth_credentials (
     oauth_client_id VARCHAR(512),
     last_refreshed_at TIMESTAMP,
     usage_limited_until TIMESTAMP,
+    last_utilization FLOAT,
+    last_rate_limit_status VARCHAR(32),
+    last_rate_limit_type VARCHAR(32),
+    last_rate_limit_at TIMESTAMP,
     CONSTRAINT uq_cli_oauth_credential_user_provider UNIQUE (user_id, provider)
 )
 """
