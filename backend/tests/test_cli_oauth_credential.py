@@ -188,3 +188,23 @@ def test_wipe_user_cli_dir_removes_it(tmp_path, monkeypatch):
     assert not target.exists()
     # Wiping an absent dir is a no-op, not an error.
     persistence.wipe_user_cli_dir(7)
+
+
+def test_user_cli_dir_rejects_non_int_id(tmp_path, monkeypatch):
+    # Defence-in-depth for the shutil.rmtree sink in wipe_user_cli_dir: a non-int
+    # id (e.g. a path-traversal string) must raise before it can build a path,
+    # never escape the base dir. The id is a DB primary key in practice, but the
+    # destructive sink must not trust an unenforced type hint.
+    from types import SimpleNamespace
+
+    from backend.services.cli_oauth import persistence
+
+    monkeypatch.setattr(
+        persistence, "path_manager", SimpleNamespace(user_data_directory=tmp_path)
+    )
+    with pytest.raises(ValueError):
+        persistence.user_cli_dir("../../../../etc")
+
+    # A legitimate integer id stays confined to the cli-oauth base dir.
+    resolved = persistence.user_cli_dir(7).resolve()
+    assert (tmp_path / "cli-oauth").resolve() in resolved.parents

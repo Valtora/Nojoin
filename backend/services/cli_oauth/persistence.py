@@ -32,8 +32,14 @@ DEFAULT_PROVIDER = CliOAuthProvider.CLAUDE_CODE.value
 def user_cli_dir(user_id: int) -> Path:
     """The per-user CLI working directory (transient session scratch for the CLI
     subprocess). Single source of truth for the path, shared by the manager
-    (which creates it) and revoke (which wipes it)."""
-    return Path(path_manager.user_data_directory) / "cli-oauth" / str(user_id)
+    (which creates it) and revoke (which wipes it).
+
+    ``user_id`` is coerced to ``int`` before it reaches the path segment so it can
+    never inject a separator or ``..`` — defence-in-depth for the destructive
+    ``shutil.rmtree`` in :func:`wipe_user_cli_dir`. The id is already an
+    authenticated DB primary key, but the delete sink must not rely on an
+    unenforced type hint (a non-int raises here, before any filesystem access)."""
+    return Path(path_manager.user_data_directory) / "cli-oauth" / str(int(user_id))
 
 
 def wipe_user_cli_dir(user_id: int) -> None:
