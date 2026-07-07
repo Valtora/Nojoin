@@ -226,6 +226,18 @@ services:
   worker-io:
     <<: *worker-base
     container_name: nojoin-worker-io
+    # CLI OAuth AI mode routes inference through a user's Claude subscription via
+    # the Claude Code CLI + claude-agent-sdk, which need Node.js. Those live only
+    # in this io-specific image (docker/Dockerfile.worker-io) layered on the
+    # shared worker image, keeping worker-gpu / worker-cpu lean. The tag is
+    # published by the release pipeline (M6); until then `docker compose build
+    # worker-io` builds it locally from the base image via the build stanza.
+    image: ghcr.io/valtora/nojoin-worker-io:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker-io
+      args:
+        WORKER_BASE_IMAGE: ghcr.io/valtora/nojoin-worker:latest
     environment: *worker-environment
     command:
       [

@@ -151,9 +151,18 @@ def test_complete_exchanges_and_stores_encrypted():
                 async with maker() as session:
                     cred = await get_credential(session, 1)
                     assert cred is not None
-                    assert cred.access_token_encrypted not in (None, "sk-ant-oat01-REALACCESS")
-                    assert decrypt_secret(cred.access_token_encrypted) == "sk-ant-oat01-REALACCESS"
-                    assert decrypt_secret(cred.refresh_token_encrypted) == "sk-ant-ort01-REALREFRESH"
+                    assert cred.access_token_encrypted not in (
+                        None,
+                        "sk-ant-oat01-REALACCESS",
+                    )
+                    assert (
+                        decrypt_secret(cred.access_token_encrypted)
+                        == "sk-ant-oat01-REALACCESS"
+                    )
+                    assert (
+                        decrypt_secret(cred.refresh_token_encrypted)
+                        == "sk-ant-ort01-REALREFRESH"
+                    )
                     assert cred.token_expires_at is not None
         finally:
             await engine.dispose()

@@ -62,6 +62,14 @@ const WHISPER_MODELS = [
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
 
+// Curated CLI OAuth models (a subscription exposes no models endpoint). Mirrors
+// the backend's CliLLMBackend list; most-capable first.
+const CLI_MODEL_OPTIONS = [
+  "claude-opus-4-8",
+  "claude-sonnet-5",
+  "claude-haiku-4-5-20251001",
+];
+
 interface AISettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
@@ -78,6 +86,9 @@ export default function AISettings({
   isAdmin = false,
 }: AISettingsProps) {
   const [showWhisperModal, setShowWhisperModal] = useState(false);
+  // Gates the "CLI OAuth" usage-model option on a live subscription credential;
+  // updated by CliOAuthPanel as its connection status changes.
+  const [cliConnected, setCliConnected] = useState(false);
 
   const {
     validating,
@@ -316,20 +327,49 @@ export default function AISettings({
                   <option value="">Use server-configured provider</option>
                   <option value="ollama">Ollama (local)</option>
                   <option value="byok">BYOK (bring your own API key)</option>
-                  <option value="cli_oauth" disabled>
-                    CLI OAuth — route through your Claude subscription (coming
-                    soon)
+                  <option value="cli_oauth" disabled={!cliConnected}>
+                    CLI OAuth — route through your Claude subscription
+                    {cliConnected ? "" : " (connect below first)"}
                   </option>
                 </select>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                   <Info className="w-3 h-3" />
                   Route inference through your own Anthropic/OpenAI subscription.
-                  Connect it below; selecting CLI OAuth as your active mode is
-                  enabled in a later update.
+                  Connect it below, then pick CLI OAuth here.
                 </p>
               </div>
 
-              <CliOAuthPanel />
+              <CliOAuthPanel onConnectedChange={setCliConnected} />
+
+              {settings.usage_model === "cli_oauth" && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    CLI model
+                  </label>
+                  <select
+                    value={settings.cli_model || ""}
+                    onChange={(e) =>
+                      persistSettingsUpdate({
+                        ...settings,
+                        cli_model: e.target.value ? e.target.value : null,
+                      })
+                    }
+                    className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  >
+                    <option value="">Default (Claude Sonnet)</option>
+                    {CLI_MODEL_OPTIONS.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Used for notes, titles, speaker inference, and chat. A cheaper
+                    model conserves your subscription quota, not cost. Live Meeting
+                    Edge under CLI OAuth arrives in a later update.
+                  </p>
+                </div>
+              )}
 
               {/* API URL Display for Ollama */}
               {settings.llm_provider === "ollama" && (

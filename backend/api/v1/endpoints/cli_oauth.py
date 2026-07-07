@@ -114,23 +114,25 @@ async def complete_cli_oauth(
     if not code:
         raise HTTPException(status_code=400, detail="No authorization code found.")
     if pasted_state and pasted_state != pending["state"]:
-        raise HTTPException(status_code=400, detail="Sign-in state mismatch. Start again.")
+        raise HTTPException(
+            status_code=400, detail="Sign-in state mismatch. Start again."
+        )
 
     try:
         tokens = await oauth.exchange_code(code, pending["verifier"], pending["state"])
     except oauth.CliOAuthExchangeError as exc:
         # The code is single-use and expires within ~60s; the usual cause is a
         # stale/rejected code. Keep the client message generic.
-        logger.warning("CLI OAuth exchange failed for user %s: %s", current_user.id, exc)
+        logger.warning(
+            "CLI OAuth exchange failed for user %s: %s", current_user.id, exc
+        )
         raise HTTPException(
             status_code=400,
             detail="Could not complete sign-in. The code may have expired — start again.",
         )
 
     expires_at = (
-        utc_now() + timedelta(seconds=tokens.expires_in)
-        if tokens.expires_in
-        else None
+        utc_now() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
     )
     credential = await upsert_credential(
         db,

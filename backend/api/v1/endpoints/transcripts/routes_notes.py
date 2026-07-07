@@ -191,7 +191,9 @@ async def generate_notes(
             status_code=409, detail="Meeting notes are already generating."
         )
 
-    llm_config = await resolve_llm_config_async(db, current_user.settings or {})
+    llm_config = await resolve_llm_config_async(
+        db, current_user.settings or {}, user_id=current_user.id
+    )
     missing_llm_config = llm_config.missing_configuration_message()
     if missing_llm_config:
         transcript.notes_status = "error"

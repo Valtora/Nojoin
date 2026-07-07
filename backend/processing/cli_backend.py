@@ -1,72 +1,235 @@
-"""M1 stub backend for CLI OAuth AI mode.
+"""CLI OAuth backend — routes inference through a user's Claude subscription.
 
-Selecting ``usage_model=cli_oauth`` resolves to ``provider="cli"`` (see
-``backend.utils.llm_config``). Until the Claude Agent SDK subprocess lands
-(later milestones), this backend raises a clear error from every
-``LLMBackend`` method. When the user has a fallback provider configured,
-``SecondaryLLMBackend`` catches the error and degrades to it; otherwise the
-error surfaces to the caller so the unfinished state is unmistakable.
+A thin ``LLMBackend`` adapter over :class:`CliConversationManager`. Because
+Claude is the same model family as the BYOK Anthropic backend, every method
+reuses the inherited prompt builders and tolerant parsers on ``LLMBackend`` and
+only swaps the provider API call for a single-turn Claude Agent SDK query
+authenticated by the user's subscription token. Runs inside ``worker-io`` (the
+manager imports the SDK lazily); selected per-user via ``usage_model=cli_oauth``.
+
+Any failure raises :class:`CliOAuthUnavailableError`, which ``SecondaryLLMBackend``
+catches to degrade to the user's configured BYOK/Ollama fallback when one exists.
 """
 
 from __future__ import annotations
 
-from typing import Generator
+import logging
+from typing import Dict, Generator, List, Optional, Sequence
 
+from backend.processing.cli.manager import (
+    CliConversationManager,
+    CliOAuthUnavailableError,
+)
 from backend.processing.llm_services import LLMBackend
+from backend.utils.languages import build_output_language_prompt_section
+from backend.utils.meeting_edge import MeetingEdgeRequest, MeetingEdgeResult
+from backend.utils.meeting_intelligence import (
+    AutomaticMeetingIntelligenceRequest,
+    AutomaticMeetingIntelligenceResult,
+)
+from backend.utils.meeting_notes import MeetingEventContext
+from backend.utils.speaker_name_suggestions import SpeakerInferenceResult
 
-_UNAVAILABLE_MESSAGE = (
-    "CLI OAuth AI mode is not yet available. Choose Ollama or BYOK as your usage "
-    "model in Settings > AI, or configure a fallback provider."
+logger = logging.getLogger(__name__)
+
+__all__ = ["CliLLMBackend", "CliOAuthUnavailableError"]
+
+# Curated model list — a subscription exposes no models endpoint, so the picker
+# uses this static set. Kept provider-neutral in ordering (most→least capable).
+_CLI_MODELS = ("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001")
+
+_MEETING_EDGE_UNAVAILABLE = (
+    "Live Meeting Edge is not yet available under CLI OAuth (it arrives in a "
+    "later update). Configure a fallback provider for live meetings."
 )
 
 
-class CliOAuthUnavailableError(RuntimeError):
-    """Raised when CLI OAuth inference is selected but not yet operational."""
-
-
 class CliLLMBackend(LLMBackend):
-    """Placeholder for the CLI OAuth backend.
+    """LLMBackend that delegates every call to the Claude Agent SDK manager."""
 
-    Real inference via the Claude Agent SDK subprocess arrives in a later
-    milestone; every contract method here raises ``CliOAuthUnavailableError``.
-    Signatures accept ``*args``/``**kwargs`` so the raise fires cleanly whether
-    called positionally or by keyword (e.g. through ``SecondaryLLMBackend``).
-    """
-
-    def __init__(self, model: str | None = None):
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        user_id: Optional[int] = None,
+        provider: str = "claude_code",
+    ) -> None:
+        # user_id is threaded by the resolver for cli configs. If it is missing,
+        # construction still succeeds and the first inference raises
+        # CliOAuthUnavailableError (so SecondaryLLMBackend degrades cleanly)
+        # rather than hard-failing at build time.
         self.model = model
+        self.user_id = user_id
+        self._manager = CliConversationManager(provider=provider)
 
-    def _unavailable(self) -> None:
-        raise CliOAuthUnavailableError(_UNAVAILABLE_MESSAGE)
+    # --- async inference tasks (notes / speakers / title / intelligence) ---
 
-    def infer_speaker_suggestions(self, *args, **kwargs):
-        self._unavailable()
+    def infer_speaker_suggestions(  # noqa: PLR0913 - matches the LLMBackend contract
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        eligible_labels: Optional[Sequence[str]] = None,
+    ) -> SpeakerInferenceResult:
+        if prompt_template is None:
+            prompt_template = self.get_speaker_suggestion_prompt_template()
+        prompt = self.build_speaker_suggestion_prompt(
+            prompt_template, transcript, eligible_labels, user_notes, meeting_context
+        )
+        text = self._run(prompt)
+        return self.parse_speaker_inference_result(text, eligible_labels)
 
-    def generate_meeting_notes(self, *args, **kwargs):
-        self._unavailable()
+    def generate_meeting_notes(  # noqa: PLR0913 - matches the LLMBackend contract
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        prompt_template: str = None,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
+        if prompt_template is None:
+            prompt_template = self.get_notes_prompt_template()
+        prompt = self.build_notes_prompt(
+            prompt_template,
+            transcript,
+            speaker_mapping,
+            user_notes,
+            meeting_context,
+            output_language_instruction,
+        )
+        text = self._run(prompt)
+        return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
 
-    def generate_meeting_intelligence(self, *args, **kwargs):
-        self._unavailable()
+    def generate_meeting_intelligence(
+        self,
+        request: AutomaticMeetingIntelligenceRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> AutomaticMeetingIntelligenceResult:
+        prompt = self.build_automatic_meeting_intelligence_prompt(
+            request, prompt_template
+        )
+        text = self._run(prompt)
+        return self.parse_automatic_meeting_intelligence_result(text, request)
 
-    def generate_meeting_edge(self, *args, **kwargs):
-        self._unavailable()
+    def generate_meeting_edge(
+        self,
+        request: MeetingEdgeRequest,
+        prompt_template: str = None,
+        timeout: int = 60,
+    ) -> MeetingEdgeResult:
+        # Live Meeting Edge needs the resumable-session lane (M4); degrade for now.
+        raise CliOAuthUnavailableError(_MEETING_EDGE_UNAVAILABLE)
 
-    def infer_meeting_title(self, *args, **kwargs):
-        self._unavailable()
+    def infer_meeting_title(
+        self,
+        transcript: str,
+        prompt_template: str = None,
+        timeout: int = 60,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
+        if prompt_template is None:
+            prompt_template = self.get_title_prompt_template()
+        prompt = prompt_template.format(
+            transcript=transcript,
+            output_language_section=build_output_language_prompt_section(
+                output_language_instruction
+            ),
+        )
+        return self.parse_title(self._run(prompt))
 
-    def ask_question_about_meeting(self, *args, **kwargs):
-        self._unavailable()
+    # --- chat ---
 
-    def ask_question_streaming(self, *args, **kwargs) -> Generator[str, None, None]:
-        # A generator function: calling it returns a generator; the raise fires
-        # on first iteration, which SecondaryLLMBackend handles like any other
-        # primary failure before the first yield.
-        self._unavailable()
-        yield  # pragma: no cover - unreachable; keeps this a generator
+    def ask_question_about_meeting(  # noqa: PLR0913 - matches the LLMBackend contract
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ):
+        prompt = self._chat_prompt(
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            conversation_history,
+            recording_id,
+        )
+        return self._run(prompt)
 
-    def list_models(self, *args, **kwargs):
-        self._unavailable()
+    def ask_question_streaming(  # noqa: PLR0913 - matches the LLMBackend contract
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list = None,
+        timeout: int = 60,
+        recording_id: str = None,
+    ) -> Generator[str, None, None]:
+        prompt = self._chat_prompt(
+            user_question,
+            meeting_notes,
+            diarized_transcript,
+            conversation_history,
+            recording_id,
+        )
+        yield from self._manager.stream_single_turn(
+            self.user_id, prompt, model=self.model
+        )
 
-    def validate_api_key(self, *args, **kwargs) -> bool:
-        self._unavailable()
-        return False
+    # --- misc contract methods ---
+
+    def list_models(self) -> List[str]:
+        # No live models endpoint under a subscription; return the curated set.
+        return list(_CLI_MODELS)
+
+    def validate_api_key(self) -> bool:
+        # A minimal single-turn round-trip proves the subscription token works.
+        self._run("Reply with exactly: OK")
+        return True
+
+    # --- helpers ---
+
+    def _run(self, prompt: str) -> str:
+        return self._manager.run_single_turn(self.user_id, prompt, model=self.model)
+
+    def _chat_prompt(
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str,
+        conversation_history: list,
+        recording_id: Optional[str],
+    ) -> str:
+        # Mirror the other backends: prefer the DB-mapped transcript when a
+        # recording id is supplied (resolves diarization labels to names).
+        if recording_id is not None:
+            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        base = self._build_chat_prompt(
+            user_question, meeting_notes, diarized_transcript
+        )
+        history = self._render_history(conversation_history)
+        return f"{history}\n\n{base}" if history else base
+
+    @staticmethod
+    def _render_history(conversation_history: list) -> str:
+        # The SDK query takes a single prompt string, so prior turns are folded
+        # into the prompt (Gemini-style 'model' role → 'Assistant').
+        if not conversation_history:
+            return ""
+        lines: List[str] = []
+        for msg in conversation_history:
+            if not (isinstance(msg, dict) and msg.get("role") and msg.get("parts")):
+                continue
+            speaker = "Assistant" if msg["role"] == "model" else "User"
+            for part in msg["parts"]:
+                text = part.get("text") if isinstance(part, dict) else None
+                if text:
+                    lines.append(f"{speaker}: {text}")
+        if not lines:
+            return ""
+        return "# Prior conversation in this chat\n" + "\n".join(lines)

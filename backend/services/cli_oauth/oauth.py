@@ -164,6 +164,7 @@ async def refresh_tokens(refresh_token: str) -> OAuthTokens:
 
 # --- ephemeral PKCE pending state (Redis, short TTL) ---
 
+
 def _pending_key(user_id: int) -> str:
     return f"nojoin:cli_oauth:pkce:{user_id}"
 

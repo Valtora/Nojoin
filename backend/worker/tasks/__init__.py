@@ -1,4 +1,5 @@
 from .calendar import *
+from .chat import *
 from .constants import *
 from .embeddings import *
 from .intelligence import *

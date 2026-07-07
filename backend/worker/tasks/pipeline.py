@@ -91,6 +91,7 @@ def refresh_meeting_edge_task(self, recording_id: int):
             session,
             user_settings,
             purpose=LLM_PURPOSE_MEETING_EDGE,
+            user_id=recording.user_id,
         )
         config_signature = ":".join(
             [
@@ -1328,7 +1329,7 @@ def process_recording_task(
                 f"Loaded settings for user {user.username}: {list(user_settings.keys())}"
             )
 
-    llm_config = resolve_llm_config(session, user_settings)
+    llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
     merged_config = llm_config.merged_config
     live_segments_for_reuse = []
     if engine_override is None:

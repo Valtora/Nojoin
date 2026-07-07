@@ -89,9 +89,18 @@ class ResolvedLLMConfig:
     secondary_api_url: str | None = None
     secondary_context_window: int | None = None
     secondary_live_model: str | None = None
+    # Per-user id carried only on cli configs, so the CLI backend can load the
+    # user's encrypted subscription credential (which is not in merged_config).
+    cli_user_id: int | None = None
 
     def missing_configuration_message(self) -> str | None:
         if self.has_secondary:
+            return None
+
+        if self.provider == CLI_PROVIDER:
+            # CLI OAuth authenticates with the user's subscription token (no
+            # api_key) and defaults the model when unset; the credential and
+            # connectivity are validated at call time, degrading to the secondary.
             return None
 
         if self.provider != "ollama" and not self.api_key:
@@ -341,14 +350,17 @@ def _apply_owner_provider_override(
     )
 
 
-def _to_cli_config(config: ResolvedLLMConfig, purpose: str) -> ResolvedLLMConfig:
+def _to_cli_config(
+    config: ResolvedLLMConfig, purpose: str, user_id: int | None = None
+) -> ResolvedLLMConfig:
     """Build a CLI-OAuth ResolvedLLMConfig from an already-merged config.
 
     Swaps the primary to ``provider="cli"`` with the per-task CLI model and
     carries the resolved secondary through unchanged, so the pipeline degrades
     cleanly to the user's BYOK/Ollama fallback (via ``SecondaryLLMBackend``)
     when the CLI path is unavailable. No ``api_key``/``api_url``: the subprocess
-    authenticates with the user's Claude credential, not an env key.
+    authenticates with the user's Claude credential, not an env key. ``user_id``
+    rides along on ``cli_user_id`` so the backend can load that credential.
     """
     merged = config.merged_config
     if purpose == LLM_PURPOSE_MEETING_EDGE:
@@ -369,11 +381,12 @@ def _to_cli_config(config: ResolvedLLMConfig, purpose: str) -> ResolvedLLMConfig
         secondary_api_url=config.secondary_api_url,
         secondary_context_window=config.secondary_context_window,
         secondary_live_model=config.secondary_live_model,
+        cli_user_id=user_id,
     )
 
 
 def _maybe_cli_config(
-    config: ResolvedLLMConfig, purpose: str
+    config: ResolvedLLMConfig, purpose: str, user_id: int | None = None
 ) -> ResolvedLLMConfig | None:
     """Return a CLI config when the user's ``usage_model`` is ``cli_oauth``.
 
@@ -382,7 +395,7 @@ def _maybe_cli_config(
     existing install-wide provider resolution untouched.
     """
     if str(config.merged_config.get("usage_model") or "") == USAGE_MODEL_CLI_OAUTH:
-        return _to_cli_config(config, purpose)
+        return _to_cli_config(config, purpose, user_id)
     return None
 
 
@@ -390,6 +403,7 @@ def resolve_llm_config(
     session: Session,
     user_settings: Mapping[str, Any] | None = None,
     purpose: str = LLM_PURPOSE_DEFAULT,
+    user_id: int | None = None,
 ) -> ResolvedLLMConfig:
     system_keys = get_system_api_keys(session)
     owner = session.exec(select(User).where(User.role == "owner")).first()
@@ -402,7 +416,7 @@ def resolve_llm_config(
         user_settings=user_settings,
         purpose=purpose,
     )
-    cli_config = _maybe_cli_config(merged, purpose)
+    cli_config = _maybe_cli_config(merged, purpose, user_id)
     if cli_config is not None:
         return cli_config
     return _apply_owner_provider_override(merged, owner_settings, purpose)
@@ -412,6 +426,7 @@ async def resolve_llm_config_async(
     db: AsyncSession,
     user_settings: Mapping[str, Any] | None = None,
     purpose: str = LLM_PURPOSE_DEFAULT,
+    user_id: int | None = None,
 ) -> ResolvedLLMConfig:
     system_keys = await async_get_system_api_keys(db)
     result = await db.execute(select(User).where(User.role == "owner"))
@@ -425,7 +440,7 @@ async def resolve_llm_config_async(
         user_settings=user_settings,
         purpose=purpose,
     )
-    cli_config = _maybe_cli_config(merged, purpose)
+    cli_config = _maybe_cli_config(merged, purpose, user_id)
     if cli_config is not None:
         return cli_config
     return _apply_owner_provider_override(merged, owner_settings, purpose)

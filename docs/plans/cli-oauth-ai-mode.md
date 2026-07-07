@@ -307,8 +307,10 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 2. **M2 — auth: DELIVERED (paste-token, not device-code).** Connect/disconnect
    UI + status. The spike found no device-code flow, so this is a pasted
    long-lived `setup-token`. See the M2 delivery note below.
-3. **M3 — backend + manager:** Worker image (Node + SDK), `CliLLMBackend` +
-   `CliConversationManager` for async tasks only (notes/title/speaker/chat).
+3. **M3b — backend + manager + chat: DELIVERED.** Real `CliLLMBackend` +
+   `CliConversationManager` for async tasks (notes/title/speaker) and chat
+   (dispatched to `worker-io`, streamed back over SSE). See the M3b delivery
+   note below.
 4. **M4 — Meeting Edge:** persistent-conversation lane + concurrency caps.
 5. **M5 — limit handling:** foreground modal + background pause/notify + health check.
 6. **M6 — docs + hardening:** sandbox rlimits, revoke cleanup, ADR, doc sweep.
@@ -429,6 +431,56 @@ As built (replaces the paste-token endpoints/panel):
 completion, with the env-scrub (`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`/
 `CLAUDE_CODE_USE_*`) confirmed stripped from the subprocess env. The default
 model observed was `claude-sonnet-5`.
+
+### M3b delivery note (as built)
+
+Real inference, chat, and frontend enablement. **Proven live** end-to-end against
+the subscription (auth, refresh, non-streaming, and token-streaming), with the
+env-scrub validated against a *present bogus* `ANTHROPIC_API_KEY`.
+
+- **Manager** (`backend/processing/cli/`): `CliConversationManager` +
+  `env_scrub.py`. Token I/O is **sync** (`get_sync_session`); the httpx refresh
+  and the SDK query are each wrapped in their own `asyncio.run`, so no shared
+  async DB engine is used across `asyncio.run` loops (avoids the asyncpg
+  cross-event-loop pool hazard). On-demand refresh rotates + persists the token;
+  a failed refresh sets `needs_reauth` and raises → degrades. Streaming bridges
+  the SDK's async generator to a sync generator via a background thread + queue.
+- **Env-scrub CORRECTION (security-critical).** The SDK **merges** the worker's
+  `os.environ` *under* `options.env` (`_internal/transport/subprocess_cli.py`:
+  `{**inherited_env, **options.env}`), so `options.env` can only override keys,
+  never remove them. A "scrubbed full env" passed as `options.env` would leave a
+  worker `ANTHROPIC_API_KEY` intact and silently bill the install key. The scrub
+  is therefore a `scrubbed_environ()` **context manager** that pops the five
+  key-auth vars from `os.environ` for the duration of the query and injects only
+  `CLAUDE_CODE_OAUTH_TOKEN` via `options.env`. Locked by a unit test that replays
+  the SDK merge; re-confirmed live with a bogus key present.
+- **SDK facts (spike, v0.2.110):** `query()` is an async generator;
+  `ClaudeAgentOptions` has `env`, `cli_path` (`/usr/bin/claude`), `max_turns`,
+  `allowed_tools`, `setting_sources`, `system_prompt` (plain string = full
+  replace of the ~23k preset), `model`, `cwd`, `include_partial_messages` (token
+  deltas via `StreamEvent`), and `resume`/`session_id`/`fork_session` (M4). Drain
+  the generator to `ResultMessage` (do **not** `break`) for clean subprocess
+  teardown.
+- **Backend** (`cli_backend.py`): thin `LLMBackend` adapter — each method reuses
+  the inherited `build_*`/`parse_*` helpers and calls the manager. `generate_meeting_edge`
+  raises (M4). `list_models` returns a curated static set. Constructed
+  `CliLLMBackend(model, user_id)`.
+- **Resolver:** `ResolvedLLMConfig.cli_user_id` threads the per-user id
+  (resolve → factory → backend); `missing_configuration_message()` and the chat
+  endpoint's api-key guard now treat `cli` like `ollama` (no key needed).
+- **Chat over worker-io:** new `meeting_chat_task` (IO_QUEUE) runs the CLI
+  streaming inference and publishes token envelopes to a Redis list keyed by the
+  task id (`backend/services/chat_relay.py`); the chat endpoint's `provider=="cli"`
+  branch dispatches it and relays byte-identical SSE frames, so the frontend is
+  unchanged. The worker is the single writer of the assistant `ChatMessage`.
+- **Frontend:** the `cli_oauth` usage-model option is enabled (gated on connected
+  status surfaced by `CliOAuthPanel`), with a `cli_model` picker.
+- **io image → compose:** `docker-compose.example.yml` `worker-io` gets an
+  `image:` override + `build:` stanza for `Dockerfile.worker-io` (publish in M6).
+- **Deferred to M4:** live Meeting Edge under CLI, per-user concurrency cap,
+  `.credentials.json` auto-refresh. **M6:** release-pipeline publish of the io
+  image + Trivy + Node pin; sandbox rlimits; splitting the now-2693-line
+  `llm_services.py`.
 
 ## 10. Open risks carried forward (not blockers, but track)
 

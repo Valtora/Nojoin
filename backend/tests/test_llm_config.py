@@ -221,6 +221,27 @@ def test_cli_oauth_carries_secondary_for_fallback() -> None:
     assert secondary.model == "g-secondary"
 
 
+def test_cli_oauth_carries_user_id_for_credential_lookup() -> None:
+    merged = _merged_with({"usage_model": "cli_oauth", "cli_model": "claude-async"})
+    cli = _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT, user_id=42)
+
+    assert cli is not None
+    assert cli.cli_user_id == 42
+
+
+def test_cli_config_never_blocks_missing_configuration() -> None:
+    # A cli user with no secondary and no explicit model must not be blocked: the
+    # subscription token replaces the api_key and the model defaults at call time.
+    merged = _merged_with({"usage_model": "cli_oauth"})
+    cli = _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT)
+
+    assert cli is not None
+    assert cli.provider == CLI_PROVIDER
+    assert cli.api_key is None
+    assert cli.model is None
+    assert cli.missing_configuration_message() is None
+
+
 def test_non_cli_usage_model_falls_through() -> None:
     for usage_model in (None, "", "byok", "ollama"):
         user_settings = None if usage_model is None else {"usage_model": usage_model}

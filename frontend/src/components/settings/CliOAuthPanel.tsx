@@ -18,7 +18,11 @@ import {
  * the code server-side and stores the tokens encrypted. Selecting CLI OAuth as
  * the active usage model is enabled in a later milestone.
  */
-export default function CliOAuthPanel() {
+export default function CliOAuthPanel({
+  onConnectedChange,
+}: {
+  onConnectedChange?: (connected: boolean) => void;
+} = {}) {
   const [status, setStatus] = useState<CliOAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -96,6 +100,12 @@ export default function CliOAuthPanel() {
 
   const connected = Boolean(status?.connected);
 
+  // Surface connection state to the parent so the usage-model selector can gate
+  // the "CLI OAuth" option on a live credential.
+  useEffect(() => {
+    onConnectedChange?.(connected);
+  }, [connected, onConnectedChange]);
+
   return (
     <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -104,9 +114,8 @@ export default function CliOAuthPanel() {
             Claude subscription (CLI OAuth)
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Route AI through your own Claude Pro/Max subscription. You can
-            connect now; selecting CLI OAuth as your usage model is enabled in
-            an upcoming update.
+            Route AI through your own Claude Pro/Max subscription. Once
+            connected, choose &ldquo;CLI OAuth&rdquo; as your usage model above.
           </p>
         </div>
         <div className="shrink-0">
