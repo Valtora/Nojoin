@@ -62,12 +62,14 @@ const WHISPER_MODELS = [
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
 
-// Curated CLI OAuth models (a subscription exposes no models endpoint). Mirrors
-// the backend's CliLLMBackend list; most-capable first.
-const CLI_MODEL_OPTIONS = [
-  "claude-opus-4-8",
-  "claude-sonnet-5",
-  "claude-haiku-4-5-20251001",
+// Curated CLI OAuth models (a subscription exposes no models endpoint). Ids
+// mirror the backend's _CLI_MODELS (most-capable first); `label` is the full,
+// unambiguous model name shown in the picker — never a bare "Claude Sonnet".
+const CLI_MODEL_OPTIONS: { id: string; label: string }[] = [
+  { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+  { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
 ];
 
 interface AISettingsProps {
@@ -357,10 +359,10 @@ export default function AISettings({
                       }
                       className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     >
-                      <option value="">Default (Claude Sonnet)</option>
+                      <option value="">Default (Claude Code default model)</option>
                       {CLI_MODEL_OPTIONS.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
+                        <option key={model.id} value={model.id}>
+                          {model.label}
                         </option>
                       ))}
                     </select>
@@ -384,8 +386,8 @@ export default function AISettings({
                     >
                       <option value="">Same as CLI model</option>
                       {CLI_MODEL_OPTIONS.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
+                        <option key={model.id} value={model.id}>
+                          {model.label}
                         </option>
                       ))}
                     </select>

@@ -35,8 +35,14 @@ logger = logging.getLogger(__name__)
 __all__ = ["CliLLMBackend", "CliOAuthUnavailableError"]
 
 # Curated model list — a subscription exposes no models endpoint, so the picker
-# uses this static set. Kept provider-neutral in ordering (most→least capable).
-_CLI_MODELS = ("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001")
+# uses this static set. Ordered most→least capable. Full, unambiguous ids (no
+# bare "Claude Sonnet"): both Sonnet 5 and Sonnet 4.6 are offered.
+_CLI_MODELS = (
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+)
 
 
 class CliLLMBackend(LLMBackend):
