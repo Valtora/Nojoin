@@ -342,32 +342,58 @@ export default function AISettings({
               <CliOAuthPanel onConnectedChange={setCliConnected} />
 
               {settings.usage_model === "cli_oauth" && (
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    CLI model
-                  </label>
-                  <select
-                    value={settings.cli_model || ""}
-                    onChange={(e) =>
-                      persistSettingsUpdate({
-                        ...settings,
-                        cli_model: e.target.value ? e.target.value : null,
-                      })
-                    }
-                    className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-                  >
-                    <option value="">Default (Claude Sonnet)</option>
-                    {CLI_MODEL_OPTIONS.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Used for notes, titles, speaker inference, and chat. A cheaper
-                    model conserves your subscription quota, not cost. Live Meeting
-                    Edge under CLI OAuth arrives in a later update.
-                  </p>
+                <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      CLI model
+                    </label>
+                    <select
+                      value={settings.cli_model || ""}
+                      onChange={(e) =>
+                        persistSettingsUpdate({
+                          ...settings,
+                          cli_model: e.target.value ? e.target.value : null,
+                        })
+                      }
+                      className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    >
+                      <option value="">Default (Claude Sonnet)</option>
+                      {CLI_MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Notes, titles, speaker inference, and chat.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      CLI live model (Meeting Edge)
+                    </label>
+                    <select
+                      value={settings.cli_live_model || ""}
+                      onChange={(e) =>
+                        persistSettingsUpdate({
+                          ...settings,
+                          cli_live_model: e.target.value ? e.target.value : null,
+                        })
+                      }
+                      className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    >
+                      <option value="">Same as CLI model</option>
+                      {CLI_MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Live Meeting Edge. A faster model keeps guidance responsive
+                      and conserves quota.
+                    </p>
+                  </div>
                 </div>
               )}
 

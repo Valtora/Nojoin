@@ -38,11 +38,6 @@ __all__ = ["CliLLMBackend", "CliOAuthUnavailableError"]
 # uses this static set. Kept provider-neutral in ordering (most→least capable).
 _CLI_MODELS = ("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5-20251001")
 
-_MEETING_EDGE_UNAVAILABLE = (
-    "Live Meeting Edge is not yet available under CLI OAuth (it arrives in a "
-    "later update). Configure a fallback provider for live meetings."
-)
-
 
 class CliLLMBackend(LLMBackend):
     """LLMBackend that delegates every call to the Claude Agent SDK manager."""
@@ -121,8 +116,15 @@ class CliLLMBackend(LLMBackend):
         prompt_template: str = None,
         timeout: int = 60,
     ) -> MeetingEdgeResult:
-        # Live Meeting Edge needs the resumable-session lane (M4); degrade for now.
-        raise CliOAuthUnavailableError(_MEETING_EDGE_UNAVAILABLE)
+        # Stateless single-turn, like the other backends: the bounded rolling
+        # summary carried in the request provides cross-refresh context, so no
+        # resumable session is needed (which would replay unbounded history).
+        # self.model is already cli_live_model for the meeting_edge purpose.
+        prompt = self.build_meeting_edge_prompt(request, prompt_template)
+        text = self._manager.run_single_turn(
+            self.user_id, prompt, model=self.model, timeout=timeout
+        )
+        return self.parse_meeting_edge_result(text, request)
 
     def infer_meeting_title(
         self,

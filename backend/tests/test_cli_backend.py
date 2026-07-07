@@ -7,13 +7,8 @@ The manager is faked, so no Claude Agent SDK / io image is needed.
 
 from __future__ import annotations
 
-import pytest
-
-from backend.processing.cli_backend import (
-    _CLI_MODELS,
-    CliLLMBackend,
-    CliOAuthUnavailableError,
-)
+from backend.processing.cli_backend import _CLI_MODELS, CliLLMBackend
+from backend.utils.meeting_edge import MeetingEdgeRequest
 
 
 class _FakeManager:
@@ -94,9 +89,27 @@ def test_ask_question_streaming_yields_chunks():
     assert chunks == ["Hel", "lo"]
 
 
-def test_meeting_edge_degrades():
-    with pytest.raises(CliOAuthUnavailableError):
-        _backend().generate_meeting_edge(request=None)
+def test_generate_meeting_edge_builds_and_parses():
+    backend = _backend(
+        response=(
+            '{"summary": "Launch timing is the active thread.", '
+            '"rolling_summary": "The team is reviewing launch readiness.", '
+            '"questions": ["Who owns final launch approval?"], '
+            '"points": [], "concepts": []}'
+        )
+    )
+    result = backend.generate_meeting_edge(
+        MeetingEdgeRequest(
+            recent_transcript="Alex: the Q3 launch is slipping because payments isn't done."
+        ),
+        timeout=90,
+    )
+    assert result.summary == "Launch timing is the active thread."
+    assert result.questions == ("Who owns final launch approval?",)
+    call = backend._manager.calls[0]
+    # self.model is cli_live_model for the meeting_edge purpose (resolved upstream).
+    assert call["model"] == "claude-sonnet-5"
+    assert "Q3 launch" in call["prompt"]
 
 
 def test_list_models_is_static_curated_set():

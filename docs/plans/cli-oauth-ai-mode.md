@@ -311,7 +311,9 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
    `CliConversationManager` for async tasks (notes/title/speaker) and chat
    (dispatched to `worker-io`, streamed back over SSE). See the M3b delivery
    note below.
-4. **M4 — Meeting Edge:** persistent-conversation lane + concurrency caps.
+4. **M4 — Meeting Edge: DELIVERED (stateless, not resumable-session).** CLI
+   `generate_meeting_edge` as a single-turn call reusing the bounded rolling
+   summary; concurrency cap deferred to M5. See the M4 delivery note below.
 5. **M5 — limit handling:** foreground modal + background pause/notify + health check.
 6. **M6 — docs + hardening:** sandbox rlimits, revoke cleanup, ADR, doc sweep.
 
@@ -481,6 +483,36 @@ env-scrub validated against a *present bogus* `ANTHROPIC_API_KEY`.
   `.credentials.json` auto-refresh. **M6:** release-pipeline publish of the io
   image + Trivy + Node pin; sandbox rlimits; splitting the now-2693-line
   `llm_services.py`.
+
+### M4 delivery note (as built) — overrides the resumable-session design
+
+**Owner decision (overrides §4.C):** live Meeting Edge under CLI is a **stateless
+single-turn** call, NOT a resumable Agent SDK session. Rationale confirmed by a
+spike: `resume=session_id` *works* (proven live with the env-var token + a
+persistent `cwd`, so `.credentials.json` is NOT needed for resume), but resuming
+**replays the entire session history each call** → unbounded context growth over
+a long meeting (or unpredictable auto-compaction), burning *more* subscription
+quota, not less. Meeting Edge already carries context via a **bounded
+`rolling_summary`** (~150–300 words) threaded into each `MeetingEdgeRequest`, so a
+session adds cost + lifecycle complexity for no benefit. The resumable-session
+capability is proven and documented should a *future* feature ever need true
+cross-call memory.
+
+As built (small milestone — no migration, no session store, no cwd lifecycle):
+- **`CliLLMBackend.generate_meeting_edge`** (`cli_backend.py`): `build_meeting_edge_prompt`
+  → `manager.run_single_turn(model=self.model, timeout=90)` → `parse_meeting_edge_result`,
+  mirroring the Ollama/Gemini single-prompt backends. `self.model` is already
+  `cli_live_model` (resolver sets it for `purpose=meeting_edge`; no prompt-parts
+  cache_control — the subscription CLI has no exposed cache surface).
+- **Frontend:** added the `cli_live_model` picker beside `cli_model` in AISettings
+  (both shown when `usage_model==="cli_oauth"`).
+- **Concurrency cap deferred to M5** (owner decision): Edge is throttled to ~1
+  refresh/60s per meeting, so per-user CLI concurrency stays low; a per-user Redis
+  semaphore + Edge-slot reservation fits naturally with M5's 429/limit handling.
+- **Verified live:** the production `resolve(purpose=meeting_edge)` →
+  `cli_live_model` → `generate_meeting_edge` path produced a real `MeetingEdgeResult`
+  (summary/questions/points/concepts) via the subscription, with the rolling
+  summary carrying prior context.
 
 ## 10. Open risks carried forward (not blockers, but track)
 
