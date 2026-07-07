@@ -134,7 +134,7 @@ That live lane now works in the background to support Meeting Edge and to speed 
 
 Meeting Edge uses the recent live transcript window, an internally maintained rolling summary of the meeting so far (decisions, open threads, and action items), its own previous suggestions (so guidance stays fresh instead of repeating), your optional focus text, your manual notes, and linked calendar context when available.
 
-It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > AI**, you can optionally choose a separate Meeting Edge model for the current provider and tune the **Meeting Edge Technical Context** slider to make concept explanations stricter or more detailed. If the model field is empty, Nojoin reuses your main AI model.
+It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > AI > Meeting Edge**, everyone can tune the per-user **Technical context** slider to make concept explanations stricter or more detailed; administrators can additionally enable or disable Meeting Edge install-wide and choose a separate Meeting Edge model (if left empty, Nojoin reuses the main model).
 
 ## Importing Recordings
 
@@ -215,11 +215,11 @@ Settings are grouped by task.
 
 - **Profile**: account details and password changes.
 - **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
-- **AI**: provider configuration, model choices, automatic meeting intelligence, Meeting Edge model selection, and secondary LLM provider fallback.
+- **AI**: per-user AI routing (the server's configured provider, or your own Claude subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
 - **Transcription**: transcription backend and model choices.
 - **Calendar**: user calendar connections and timezone behaviour.
 - **Help**: tours and support surfaces.
-- **Admin**: user, system, provider, release, and maintenance settings for administrators.
+- **Admin**: user, invitations, CLI usage, system, provider, release, and maintenance settings for administrators.
 
 ### Language Preferences
 
@@ -236,9 +236,13 @@ Language preferences are per-user. Per-meeting overrides, full interface transla
 
 ### CLI OAuth (Claude subscription)
 
-As an alternative to Ollama or a BYOK API key, you can route your AI through your own Claude Pro/Max subscription. In **Settings > AI**, connect your subscription in the "Claude subscription (CLI OAuth)" panel (open the grant link, then paste back the code Anthropic shows you), then choose **CLI OAuth** as your usage model. Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge.
+Instead of using the server's configured provider, you can route your own AI through your Claude Pro/Max subscription. In **Settings > AI > AI routing**, connect your subscription in the "Claude subscription (CLI OAuth)" panel (open the grant link, then paste back the code Anthropic shows you), then set routing to **My Claude subscription**. Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. Once you start using it, the panel shows your recent token usage.
 
-Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to your secondary provider (if configured). Disconnecting removes your stored credential.
+Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to the server's secondary provider (if the administrator has configured one). Disconnecting removes your stored credential.
+
+### CLI usage and quota (admin)
+
+Administrators can review per-user Claude-subscription usage under **Settings > Administration > CLI usage & quota**: a searchable table of each user's token usage over the last 7 days, last 30 days, and lifetime, alongside their rate-limit status. Tokens count what Nojoin sent through each user's own subscription. A subscription exposes no live "remaining quota" figure, so the status column reflects the rate-limit signal (OK, approaching a limit, or limited until a reset time) rather than a balance. Usage is shown in tokens, never money — a subscription is flat-rate, so a per-turn currency figure would be misleading.
 
 ### Secondary LLM Provider
 

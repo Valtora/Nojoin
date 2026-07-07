@@ -60,12 +60,13 @@ Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access token
 
 ## CLI OAuth Subscription Access
 
-Nojoin can route a user's AI inference through their own Claude Pro/Max subscription (the per-user **CLI OAuth** usage model, off by default). See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md) for the accepted-risk decision — this uses a consumer subscription contrary to Anthropic's terms.
+Nojoin can route a user's AI inference through their own Claude Pro/Max subscription (the per-user **CLI OAuth** AI-routing option, off by default). See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md) for the accepted-risk decision — this uses a consumer subscription contrary to Anthropic's terms.
 
 - The subscription OAuth token is stored **encrypted at rest** (`encrypt_secret`, one row per user), never in `User.settings`, never logged, and never returned by the API.
 - Inference runs as a **tools-off, single-turn** Claude Code subprocess in the `worker-io` lane, as the image's non-root user, under a wall-clock timeout. With tools disabled, an untrusted transcript can only produce text, not act — so no dedicated OS sandbox is used (see ADR-0002).
 - The subprocess environment is **scrubbed** so an install-wide `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_*`) cannot out-rank the user's subscription token; only `CLAUDE_CODE_OAUTH_TOKEN` is injected. This invariant is locked by a unit test.
 - CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades to the user's configured BYOK/Ollama secondary. Usage limits set a best-effort reset time surfaced in Settings.
+- Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
 - Disconnecting (Settings > AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
 
 ## JWT Signing Key Rotation

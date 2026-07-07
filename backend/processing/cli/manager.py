@@ -20,8 +20,9 @@ import logging
 import os
 import queue
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from sqlmodel import Session, select
 
@@ -31,6 +32,7 @@ from backend.models.cli_oauth import (
     CliOAuthCredential,
     CliOAuthCredentialStatus,
     CliOAuthProvider,
+    CliUsageDaily,
 )
 from backend.processing.cli.env_scrub import scrubbed_environ, subscription_env_payload
 from backend.services.cli_oauth import oauth
@@ -53,6 +55,34 @@ _SYSTEM_PROMPT = (
     "output — no preamble, no commentary, no questions. When the instructions "
     "ask for JSON, return only valid JSON."
 )
+
+
+@dataclass
+class _RateLimitReading:
+    """Latest-known rate-limit status from a ``RateLimitEvent`` (any status).
+
+    ``utilization`` is the fraction (0.0-1.0) of the current window consumed; the
+    CLI emits the event only on status transitions, so this is opportunistic.
+    """
+
+    status: Optional[str]
+    rate_limit_type: Optional[str]
+    utilization: Optional[float]
+
+
+@dataclass
+class _TurnUsage:
+    """Token usage from a turn's terminal ``ResultMessage`` plus any rate-limit
+    reading seen while draining the query. Threaded out of the async drivers so
+    the sync entry points persist it (the drivers keep no DB work of their own)."""
+
+    usage: Optional[dict[str, Any]] = None
+    total_cost_usd: Optional[float] = None
+    reading: Optional[_RateLimitReading] = None
+
+    @property
+    def has_data(self) -> bool:
+        return self.usage is not None or self.reading is not None
 
 
 class CliOAuthUnavailableError(RuntimeError):
@@ -103,12 +133,14 @@ class CliConversationManager:
         """Resolve a fresh token, run one non-streaming turn, return the text."""
         access_token = self._resolve_access_token(user_id)
         try:
-            return asyncio.run(
+            text, usage = asyncio.run(
                 self._arun_single_turn(user_id, prompt, access_token, model, timeout)
             )
         except CliUsageLimitError as exc:
             self._persist_usage_limited(user_id, exc.resets_at)
             raise
+        self._record_usage(user_id, usage)
+        return text
 
     def stream_single_turn(
         self,
@@ -126,12 +158,15 @@ class CliConversationManager:
         """
         access_token = self._resolve_access_token(user_id)
         chunk_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
+        # Populated by the driver thread with the turn's usage on a clean drain;
+        # persisted below on this (sync) thread once the stream completes.
+        usage_sink: list[_TurnUsage] = []
 
         def _drive() -> None:
             async def _run() -> None:
                 try:
                     async for chunk in self._astream_single_turn(
-                        user_id, prompt, access_token, model, timeout
+                        user_id, prompt, access_token, model, timeout, usage_sink
                     ):
                         chunk_queue.put(("chunk", chunk))
                 except Exception as exc:  # noqa: BLE001 - relayed to the consumer
@@ -156,6 +191,10 @@ class CliConversationManager:
                     break
         finally:
             thread.join(timeout=5)
+            # Record the turn's usage on this (sync) thread, mirroring the
+            # _persist_usage_limited call above. Empty on an errored turn.
+            if usage_sink:
+                self._record_usage(user_id, usage_sink[0])
 
     # ---- token lifecycle (sync DB; async only for the httpx refresh) ----
 
@@ -276,6 +315,73 @@ class CliConversationManager:
                 resets_at,
             )
 
+    def _record_usage(self, user_id: int, turn: _TurnUsage) -> None:
+        """Persist a completed turn's token usage (daily rollup) and latest
+        rate-limit reading. Best-effort: usage accounting must never break
+        inference, so any failure is logged and swallowed."""
+        if not turn.has_data:
+            return
+        try:
+            with get_sync_session() as session:
+                if turn.usage is not None:
+                    self._increment_daily_usage(
+                        session, user_id, turn.usage, turn.total_cost_usd
+                    )
+                if turn.reading is not None:
+                    self._store_rate_limit_reading(session, user_id, turn.reading)
+                session.commit()
+        except Exception:  # noqa: BLE001 - accounting must not break inference
+            logger.exception("Failed to record CLI usage for user %s", user_id)
+
+    def _increment_daily_usage(
+        self,
+        session: Session,
+        user_id: int,
+        usage: dict[str, Any],
+        cost: Optional[float],
+    ) -> None:
+        # Read-modify-write on today's (user, provider, date) rollup row. A rare
+        # race between two concurrent turns can lose one increment; acceptable
+        # for an advisory usage panel, and it matches _persist_usage_limited.
+        today = utc_now().date()
+        row = session.exec(
+            select(CliUsageDaily).where(
+                CliUsageDaily.user_id == user_id,
+                CliUsageDaily.provider == self._provider,
+                CliUsageDaily.usage_date == today,
+            )
+        ).first()
+        if row is None:
+            row = CliUsageDaily(
+                user_id=user_id, provider=self._provider, usage_date=today
+            )
+        row.input_tokens += _as_int(usage.get("input_tokens"))
+        row.output_tokens += _as_int(usage.get("output_tokens"))
+        row.cache_read_input_tokens += _as_int(usage.get("cache_read_input_tokens"))
+        row.cache_creation_input_tokens += _as_int(
+            usage.get("cache_creation_input_tokens")
+        )
+        row.request_count += 1
+        row.total_cost_usd += float(cost or 0.0)
+        session.add(row)
+
+    def _store_rate_limit_reading(
+        self, session: Session, user_id: int, reading: _RateLimitReading
+    ) -> None:
+        credential = session.exec(
+            select(CliOAuthCredential).where(
+                CliOAuthCredential.user_id == user_id,
+                CliOAuthCredential.provider == self._provider,
+            )
+        ).first()
+        if credential is None:
+            return
+        credential.last_utilization = reading.utilization
+        credential.last_rate_limit_status = reading.status
+        credential.last_rate_limit_type = reading.rate_limit_type
+        credential.last_rate_limit_at = utc_now()
+        session.add(credential)
+
     # ---- async SDK drivers (wrapped by the sync entry points) ----
 
     def _build_options(
@@ -307,7 +413,7 @@ class CliConversationManager:
         access_token: str,
         model: Optional[str],
         timeout: int,
-    ) -> str:
+    ) -> tuple[str, _TurnUsage]:
         from claude_agent_sdk import (  # lazy: SDK only in worker-io
             AssistantMessage,
             ClaudeSDKError,
@@ -321,6 +427,7 @@ class CliConversationManager:
         parts: list[str] = []
         result_error: str | None = None
         rate_limit: tuple[Optional[datetime], Optional[str]] | None = None
+        turn_usage = _TurnUsage()
         with scrubbed_environ():
             try:
                 async with asyncio.timeout(timeout):
@@ -332,23 +439,28 @@ class CliConversationManager:
                             parts.extend(_assistant_text(message, TextBlock))
                         elif isinstance(message, RateLimitEvent):
                             rate_limit = _rate_limit_rejection(message) or rate_limit
+                            turn_usage.reading = (
+                                _rate_limit_reading(message) or turn_usage.reading
+                            )
                         elif isinstance(message, ResultMessage):
                             result_error = _result_error(message)
+                            _apply_result_usage(turn_usage, message)
             except (TimeoutError, ClaudeSDKError) as exc:
                 raise _query_exception(exc, timeout) from exc
         _raise_if_terminal(rate_limit, result_error)
         text = "".join(parts).strip()
         if not text:
             raise CliOAuthUnavailableError("CLI inference returned no text.")
-        return text
+        return text, turn_usage
 
-    async def _astream_single_turn(
+    async def _astream_single_turn(  # noqa: PLR0913 - cohesive SDK driver params
         self,
         user_id: int,
         prompt: str,
         access_token: str,
         model: Optional[str],
         timeout: int,
+        usage_sink: list[_TurnUsage],
     ):
         from claude_agent_sdk import (  # lazy: SDK only in worker-io
             AssistantMessage,
@@ -366,6 +478,7 @@ class CliConversationManager:
         streamed_any = False
         result_error: str | None = None
         rate_limit: tuple[Optional[datetime], Optional[str]] | None = None
+        turn_usage = _TurnUsage()
         with scrubbed_environ():
             try:
                 async with asyncio.timeout(timeout):
@@ -383,11 +496,18 @@ class CliConversationManager:
                                     yield block_text
                         elif isinstance(message, RateLimitEvent):
                             rate_limit = _rate_limit_rejection(message) or rate_limit
+                            turn_usage.reading = (
+                                _rate_limit_reading(message) or turn_usage.reading
+                            )
                         elif isinstance(message, ResultMessage):
                             result_error = _result_error(message)
+                            _apply_result_usage(turn_usage, message)
             except (TimeoutError, ClaudeSDKError) as exc:
                 raise _query_exception(exc, timeout) from exc
         _raise_if_terminal(rate_limit, result_error)
+        # Reached only on a clean drain (no terminal error); hand the turn's
+        # usage to the sync caller to persist.
+        usage_sink.append(turn_usage)
 
     @staticmethod
     def _user_cwd(user_id: int) -> str:
@@ -451,6 +571,51 @@ def _rate_limit_rejection(message):
         else None
     )
     return dt, getattr(info, "rate_limit_type", None)
+
+
+def _rate_limit_reading(message) -> Optional[_RateLimitReading]:
+    """Latest rate-limit reading from a RateLimitEvent (any status), or None.
+
+    Unlike ``_rate_limit_rejection`` this keeps non-rejection events too, so the
+    ``utilization`` fraction from ``allowed``/``allowed_warning`` events — the
+    only place a not-yet-exhausted reading arrives — is captured, not dropped.
+    """
+    info = getattr(message, "rate_limit_info", None)
+    if info is None:
+        return None
+    status = getattr(info, "status", None)
+    if status is None:
+        return None
+    utilization = getattr(info, "utilization", None)
+    return _RateLimitReading(
+        status=str(status),
+        rate_limit_type=getattr(info, "rate_limit_type", None),
+        utilization=(
+            float(utilization) if isinstance(utilization, (int, float)) else None
+        ),
+    )
+
+
+def _apply_result_usage(turn: _TurnUsage, message) -> None:
+    """Copy token usage + notional cost from a ResultMessage into ``turn``.
+
+    ``usage`` is the Anthropic-shaped dict (input/output/cache tokens);
+    ``total_cost_usd`` is a notional API-equivalent figure for a flat-rate
+    subscription (stored, never surfaced as real money)."""
+    usage = getattr(message, "usage", None)
+    if isinstance(usage, dict):
+        turn.usage = usage
+    cost = getattr(message, "total_cost_usd", None)
+    if isinstance(cost, (int, float)):
+        turn.total_cost_usd = float(cost)
+
+
+def _as_int(value: Any) -> int:
+    """Coerce a possibly-missing usage field to a non-negative int."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _usage_limit_message(

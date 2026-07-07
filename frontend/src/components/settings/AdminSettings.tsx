@@ -1,5 +1,6 @@
 import { fuzzyMatch } from "@/lib/searchUtils";
 import UsersTab from "./UsersTab";
+import CliUsageTab from "./CliUsageTab";
 import InvitesTab from "./InvitesTab";
 import BackupRestore from "./BackupRestore";
 import SystemTab from "./SystemTab";
@@ -26,6 +27,16 @@ export default function AdminSettings({
     "permissions",
     "access",
     "superuser",
+  ]);
+  const showUsage = !searchQuery || fuzzyMatch(searchQuery, [
+    "cli usage",
+    "usage",
+    "tokens",
+    "quota",
+    "subscription",
+    "claude subscription",
+    "consumption",
+    "rate limit",
   ]);
   const showInvites = !searchQuery || fuzzyMatch(searchQuery, [
     "invite",
@@ -64,6 +75,7 @@ export default function AdminSettings({
 
   if (
     !showUsers &&
+    !showUsage &&
     !showInvites &&
     !showCalendar &&
     !showSystem &&
@@ -88,6 +100,17 @@ export default function AdminSettings({
           width="full"
         >
           <UsersTab />
+        </SettingsSection>
+      )}
+
+      {showUsage && (
+        <SettingsSection
+          eyebrow="Administration"
+          title="CLI usage & quota"
+          description="Per-user Claude subscription (CLI OAuth) token usage and rate-limit status."
+          width="full"
+        >
+          <CliUsageTab />
         </SettingsSection>
       )}
 

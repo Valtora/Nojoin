@@ -1,8 +1,20 @@
-import type { CliOAuthStatus } from "@/types";
+import type { CliOAuthStatus, CliUsageOverview } from "@/types";
 import api from "./client";
 
 export const getCliOAuthStatus = async (): Promise<CliOAuthStatus> => {
   const response = await api.get<CliOAuthStatus>("/cli-oauth/status");
+  return response.data;
+};
+
+/** Admin-only: per-user CLI token usage + rate-limit status (paginated). */
+export const getCliUsageOverview = async (
+  skip = 0,
+  limit = 25,
+  search = "",
+): Promise<CliUsageOverview> => {
+  const response = await api.get<CliUsageOverview>("/cli-oauth/admin/usage", {
+    params: { skip, limit, search },
+  });
   return response.data;
 };
 
