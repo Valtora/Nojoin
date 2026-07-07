@@ -219,3 +219,14 @@ def test_friendly_chat_error_categories():
         "internal error"
         in chat_relay.friendly_chat_error(Exception("something weird")).lower()
     )
+
+
+def test_friendly_chat_error_passes_through_usage_limit():
+    from backend.processing.cli.manager import CliUsageLimitError
+
+    exc = CliUsageLimitError(
+        "Your Claude subscription usage limit is reached; it resets around 15:30 UTC.",
+        resets_at=None,
+    )
+    # A usage-limit error already carries a precise reset-aware message.
+    assert chat_relay.friendly_chat_error(exc) == str(exc)

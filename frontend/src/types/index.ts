@@ -379,6 +379,7 @@ export interface CliOAuthStatus {
   provider: string;
   token_expires_at?: string | null;
   connected_at?: string | null;
+  usage_limited_until?: string | null;
 }
 
 export interface LanguageChoice {

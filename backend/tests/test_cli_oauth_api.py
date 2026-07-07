@@ -259,3 +259,26 @@ def test_status_and_disconnect():
             _restore(originals)
 
     asyncio.run(_run())
+
+
+def test_status_reports_and_hides_usage_limit():
+    from datetime import timedelta
+
+    from backend.api.v1.endpoints.cli_oauth import _status_from_credential
+    from backend.models.cli_oauth import CliOAuthCredential
+    from backend.utils.time import utc_now
+
+    future = utc_now() + timedelta(hours=1)
+    limited = CliOAuthCredential(
+        user_id=1, provider="claude_code", status="active", usage_limited_until=future
+    )
+    assert _status_from_credential(limited).usage_limited_until == future
+
+    stale = CliOAuthCredential(
+        user_id=1,
+        provider="claude_code",
+        status="active",
+        usage_limited_until=utc_now() - timedelta(minutes=1),
+    )
+    # Past its reset -> not surfaced, so the UI clears itself.
+    assert _status_from_credential(stale).usage_limited_until is None

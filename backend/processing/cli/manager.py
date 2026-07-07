@@ -20,7 +20,7 @@ import logging
 import os
 import queue
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -62,11 +62,30 @@ class CliOAuthUnavailableError(RuntimeError):
     configured fallback when one exists; otherwise it surfaces to the caller."""
 
 
+class CliUsageLimitError(CliOAuthUnavailableError):
+    """The subscription hit a usage/rate limit. Carries the best-effort reset time
+    (from the SDK's ``RateLimitEvent``) so callers can tell the user when it lifts.
+    Subclasses ``CliOAuthUnavailableError`` so ``SecondaryLLMBackend`` still
+    degrades to the user's configured fallback."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        resets_at: Optional[datetime] = None,
+        rate_limit_type: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.resets_at = resets_at
+        self.rate_limit_type = rate_limit_type
+
+
 class CliConversationManager:
     """Drives single-turn Claude Agent SDK queries for one subscription provider.
 
-    Stateless across calls (a fresh session per call) for M3b async tasks and
-    chat; the resumable-session lane for live Meeting Edge lands in M4.
+    Stateless across calls (a fresh session per call): async tasks, chat, and live
+    Meeting Edge all use a fresh single-turn query (Edge carries context via its
+    bounded rolling summary, not a resumable session).
     """
 
     def __init__(self, provider: str = CliOAuthProvider.CLAUDE_CODE.value) -> None:
@@ -84,9 +103,13 @@ class CliConversationManager:
     ) -> str:
         """Resolve a fresh token, run one non-streaming turn, return the text."""
         access_token = self._resolve_access_token(user_id)
-        return asyncio.run(
-            self._arun_single_turn(user_id, prompt, access_token, model, timeout)
-        )
+        try:
+            return asyncio.run(
+                self._arun_single_turn(user_id, prompt, access_token, model, timeout)
+            )
+        except CliUsageLimitError as exc:
+            self._persist_usage_limited(user_id, exc.resets_at)
+            raise
 
     def stream_single_turn(
         self,
@@ -127,6 +150,8 @@ class CliConversationManager:
                 if kind == "chunk":
                     yield payload  # type: ignore[misc]
                 elif kind == "error":
+                    if isinstance(payload, CliUsageLimitError):
+                        self._persist_usage_limited(user_id, payload.resets_at)
                     raise payload  # type: ignore[misc]
                 else:
                     break
@@ -150,6 +175,10 @@ class CliConversationManager:
                     "No active CLI OAuth credential. Connect your Claude "
                     "subscription in Settings > AI."
                 )
+            # Skip-when-limited: don't spawn a doomed subprocess while a known usage
+            # limit is still in effect; raise now so the caller degrades to the
+            # secondary or surfaces the reset time.
+            self._raise_if_usage_limited(credential)
             if not self._needs_refresh(credential):
                 access_token = decrypt_secret(credential.access_token_encrypted)
                 if not access_token:
@@ -215,6 +244,39 @@ class CliConversationManager:
             return True
         return utc_now() >= (expires_at - timedelta(seconds=_REFRESH_SKEW_SECONDS))
 
+    @staticmethod
+    def _raise_if_usage_limited(credential: CliOAuthCredential) -> None:
+        limited_until = credential.usage_limited_until
+        if limited_until is not None and limited_until > utc_now():
+            raise CliUsageLimitError(
+                _usage_limit_message(limited_until, None), resets_at=limited_until
+            )
+
+    def _persist_usage_limited(
+        self, user_id: int, resets_at: Optional[datetime]
+    ) -> None:
+        # Only record a limit whose reset time we actually know (from a
+        # RateLimitEvent), so skip-when-limited has a real horizon to check.
+        if resets_at is None:
+            return
+        with get_sync_session() as session:
+            credential = session.exec(
+                select(CliOAuthCredential).where(
+                    CliOAuthCredential.user_id == user_id,
+                    CliOAuthCredential.provider == self._provider,
+                )
+            ).first()
+            if credential is None:
+                return
+            credential.usage_limited_until = resets_at
+            session.add(credential)
+            session.commit()
+            logger.warning(
+                "CLI OAuth usage limit recorded for user %s until %s",
+                user_id,
+                resets_at,
+            )
+
     # ---- async SDK drivers (wrapped by the sync entry points) ----
 
     def _build_options(
@@ -249,6 +311,8 @@ class CliConversationManager:
     ) -> str:
         from claude_agent_sdk import (  # lazy: SDK only in worker-io
             AssistantMessage,
+            ClaudeSDKError,
+            RateLimitEvent,
             ResultMessage,
             TextBlock,
             query,
@@ -257,6 +321,7 @@ class CliConversationManager:
         options = self._build_options(access_token, model, user_id)
         parts: list[str] = []
         result_error: str | None = None
+        rate_limit: tuple[Optional[datetime], Optional[str]] | None = None
         with scrubbed_environ():
             try:
                 async with asyncio.timeout(timeout):
@@ -266,14 +331,13 @@ class CliConversationManager:
                     async for message in query(prompt=prompt, options=options):
                         if isinstance(message, AssistantMessage):
                             parts.extend(_assistant_text(message, TextBlock))
+                        elif isinstance(message, RateLimitEvent):
+                            rate_limit = _rate_limit_rejection(message) or rate_limit
                         elif isinstance(message, ResultMessage):
                             result_error = _result_error(message)
-            except TimeoutError as exc:
-                raise CliOAuthUnavailableError(
-                    f"CLI inference timed out after {timeout}s."
-                ) from exc
-        if result_error:
-            raise CliOAuthUnavailableError(result_error)
+            except (TimeoutError, ClaudeSDKError) as exc:
+                raise _query_exception(exc, timeout) from exc
+        _raise_if_terminal(rate_limit, result_error)
         text = "".join(parts).strip()
         if not text:
             raise CliOAuthUnavailableError("CLI inference returned no text.")
@@ -289,6 +353,8 @@ class CliConversationManager:
     ):
         from claude_agent_sdk import (  # lazy: SDK only in worker-io
             AssistantMessage,
+            ClaudeSDKError,
+            RateLimitEvent,
             ResultMessage,
             StreamEvent,
             TextBlock,
@@ -300,6 +366,7 @@ class CliConversationManager:
         )
         streamed_any = False
         result_error: str | None = None
+        rate_limit: tuple[Optional[datetime], Optional[str]] | None = None
         with scrubbed_environ():
             try:
                 async with asyncio.timeout(timeout):
@@ -315,14 +382,13 @@ class CliConversationManager:
                             if not streamed_any:
                                 for block_text in _assistant_text(message, TextBlock):
                                     yield block_text
+                        elif isinstance(message, RateLimitEvent):
+                            rate_limit = _rate_limit_rejection(message) or rate_limit
                         elif isinstance(message, ResultMessage):
                             result_error = _result_error(message)
-            except TimeoutError as exc:
-                raise CliOAuthUnavailableError(
-                    f"CLI inference timed out after {timeout}s."
-                ) from exc
-        if result_error:
-            raise CliOAuthUnavailableError(result_error)
+            except (TimeoutError, ClaudeSDKError) as exc:
+                raise _query_exception(exc, timeout) from exc
+        _raise_if_terminal(rate_limit, result_error)
 
     @staticmethod
     def _user_cwd(user_id: int) -> str:
@@ -367,3 +433,81 @@ def _text_delta_from_stream_event(message) -> str:
     if isinstance(delta, dict) and delta.get("type") == "text_delta":
         return delta.get("text") or ""
     return ""
+
+
+def _rate_limit_rejection(message):
+    """``(resets_at, rate_limit_type)`` if a RateLimitEvent is a rejection, else None.
+
+    The SDK's ``RateLimitInfo.status`` is one of allowed/allowed_warning/rejected;
+    only ``rejected`` means the call cannot proceed. ``resets_at`` is an epoch int
+    (converted to naive UTC to match ``utc_now``); it may be absent.
+    """
+    info = getattr(message, "rate_limit_info", None)
+    if info is None or getattr(info, "status", None) != "rejected":
+        return None
+    resets_at = getattr(info, "resets_at", None)
+    dt = (
+        datetime.fromtimestamp(resets_at, tz=timezone.utc).replace(tzinfo=None)
+        if isinstance(resets_at, (int, float))
+        else None
+    )
+    return dt, getattr(info, "rate_limit_type", None)
+
+
+def _usage_limit_message(
+    resets_at: Optional[datetime], rate_limit_type: Optional[str]
+) -> str:
+    window = f" ({rate_limit_type} window)" if rate_limit_type else ""
+    if resets_at is not None:
+        return (
+            f"Your Claude subscription usage limit is reached{window}; it resets "
+            f"around {resets_at:%H:%M UTC on %b %d}. Configure a fallback provider "
+            f"in Settings > AI, or try again after that."
+        )
+    return (
+        f"Your Claude subscription usage limit is reached{window}. Configure a "
+        f"fallback provider in Settings > AI, or try again later."
+    )
+
+
+def _usage_limit_error(
+    resets_at: Optional[datetime], rate_limit_type: Optional[str]
+) -> CliUsageLimitError:
+    return CliUsageLimitError(
+        _usage_limit_message(resets_at, rate_limit_type),
+        resets_at=resets_at,
+        rate_limit_type=rate_limit_type,
+    )
+
+
+def _classify_sdk_error(exc) -> CliOAuthUnavailableError:
+    """Map a raised ClaudeSDKError to a usage-limit or generic unavailable error.
+
+    A hard rate limit can surface as a non-zero CLI exit rather than a
+    RateLimitEvent, so classify by the error text (no reset time available then).
+    """
+    msg = str(exc).lower()
+    if any(
+        token in msg
+        for token in ("429", "rate limit", "rate_limit", "usage limit", "quota")
+    ):
+        return _usage_limit_error(None, None)
+    return CliOAuthUnavailableError(f"CLI inference failed: {exc}")
+
+
+def _query_exception(exc, timeout: int) -> CliOAuthUnavailableError:
+    """Translate a terminal query exception (timeout or SDK error) to our type."""
+    if isinstance(exc, TimeoutError):
+        return CliOAuthUnavailableError(f"CLI inference timed out after {timeout}s.")
+    return _classify_sdk_error(exc)
+
+
+def _raise_if_terminal(
+    rate_limit: tuple[Optional[datetime], Optional[str]] | None,
+    result_error: Optional[str],
+) -> None:
+    """Raise the terminal error recorded while draining the query, if any."""
+    if rate_limit is not None:
+        raise _usage_limit_error(*rate_limit)
+    if result_error:
+        raise CliOAuthUnavailableError(result_error)

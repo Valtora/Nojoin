@@ -139,6 +139,12 @@ def friendly_chat_error(exc: Exception) -> str:
     Shared by the worker (CLI chat) and the API's inline generator so both speak
     the same copy. Mirrors the categories from the original inline handler.
     """
+    # A CLI usage-limit error already carries a precise, reset-time-aware message.
+    from backend.processing.cli.manager import CliUsageLimitError
+
+    if isinstance(exc, CliUsageLimitError):
+        return str(exc)
+
     error_msg = str(exc).lower()
     if "503" in error_msg or "unavailable" in error_msg or "overloaded" in error_msg:
         return (

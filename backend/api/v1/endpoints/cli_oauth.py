@@ -57,6 +57,9 @@ class CliOAuthStatusRead(BaseModel):
     provider: str
     token_expires_at: Optional[datetime] = None
     connected_at: Optional[datetime] = None
+    # Set while a subscription usage limit is still in effect (best-effort reset
+    # time from the SDK's RateLimitEvent); None once past, so the UI clears itself.
+    usage_limited_until: Optional[datetime] = None
 
 
 def _status_from_credential(
@@ -68,12 +71,16 @@ def _status_from_credential(
             status=_STATUS_NOT_CONNECTED,
             provider=CliOAuthProvider.CLAUDE_CODE.value,
         )
+    limited_until = credential.usage_limited_until
     return CliOAuthStatusRead(
         connected=credential.status == CliOAuthCredentialStatus.ACTIVE.value,
         status=credential.status,
         provider=credential.provider,
         token_expires_at=credential.token_expires_at,
         connected_at=credential.last_refreshed_at,
+        usage_limited_until=(
+            limited_until if limited_until and limited_until > utc_now() else None
+        ),
     )
 
 

@@ -314,7 +314,10 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 4. **M4 — Meeting Edge: DELIVERED (stateless, not resumable-session).** CLI
    `generate_meeting_edge` as a single-turn call reusing the bounded rolling
    summary; concurrency cap deferred to M5. See the M4 delivery note below.
-5. **M5 — limit handling:** foreground modal + background pause/notify + health check.
+5. **M5 — limit handling: DELIVERED (tight core).** Structured `RateLimitEvent`
+   detection → accurate `usage_limited_until`, skip-when-limited, an amber status
+   badge, and reset-time messaging. Heavier UX (interactive modal / health-check
+   Beat / concurrency cap) deferred. See the M5 delivery note below.
 6. **M6 — docs + hardening:** sandbox rlimits, revoke cleanup, ADR, doc sweep.
 
 ### M1 delivery note (as built)
@@ -513,6 +516,39 @@ As built (small milestone — no migration, no session store, no cwd lifecycle):
   `cli_live_model` → `generate_meeting_edge` path produced a real `MeetingEdgeResult`
   (summary/questions/points/concepts) via the subscription, with the rolling
   summary carrying prior context.
+
+### M5 delivery note (as built) — tight core, right-sized from §4.F
+
+**SDK finding (supersedes the M2 "generic 429, no reset-time" note):** `query()`
+emits a **`RateLimitEvent`** carrying `RateLimitInfo{status, resets_at,
+rate_limit_type, utilization}`. So limits are detected structurally, and
+`usage_limited_until` (the column M1 added) can be set to the *accurate* reset
+time rather than a best-effort guess.
+
+**Scope (owner decision): tight core only.** The plan's heavier pieces lost their
+justification once M3b's `SecondaryLLMBackend` auto-fallback was in place — a
+configured secondary already degrades silently on any limit, so the interactive
+"fall back or pause" modal is redundant; the existing `notes_status`/`error_message`
+surface + manual regenerate covers background notify; lazy stale-clearing removes
+the health-check Beat; and **skip-when-limited** conserves more quota than the
+proposed per-user concurrency cap. Those are deferred (revisit under real
+multi-user load).
+
+As built:
+- **Manager** (`cli/manager.py`): `CliUsageLimitError(CliOAuthUnavailableError)`
+  carrying `resets_at`/`rate_limit_type` (subclass → still degrades via the
+  secondary). Both query loops capture a `RateLimitEvent` rejection; a hard limit
+  surfacing as a `ClaudeSDKError` is classified by text (`_classify_sdk_error`).
+  **Skip-when-limited:** `_resolve_access_token` raises immediately when
+  `usage_limited_until > now`, so no doomed subprocess is spawned. On a detected
+  limit with a known reset, `_persist_usage_limited` records it.
+- **Messaging:** `chat_relay.friendly_chat_error` passes a `CliUsageLimitError`'s
+  reset-aware message straight through.
+- **Status surface:** `CliOAuthStatusRead.usage_limited_until` (reported only
+  while still in the future — lazy stale filter); frontend `CliOAuthStatus` type +
+  an amber "Usage limited (resets ~X)" badge in `CliOAuthPanel` (UTC-safe parse).
+- **Verified live:** skip-when-limited on the deployed manager raised immediately
+  with the exact seeded reset time; the credential was restored afterward.
 
 ## 10. Open risks carried forward (not blockers, but track)
 

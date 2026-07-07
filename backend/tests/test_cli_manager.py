@@ -10,7 +10,8 @@ image — the SDK is imported lazily inside the manager's inference methods only
 from __future__ import annotations
 
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -32,6 +33,10 @@ from backend.processing.cli.env_scrub import (
 from backend.processing.cli.manager import (
     CliConversationManager,
     CliOAuthUnavailableError,
+    CliUsageLimitError,
+    _classify_sdk_error,
+    _rate_limit_rejection,
+    _usage_limit_message,
 )
 from backend.services.cli_oauth import oauth
 from backend.services.cli_oauth.oauth import OAuthTokens
@@ -67,8 +72,14 @@ def _sqlite_engine():
     return engine
 
 
-def _seed(
-    engine, *, expires_at, access="access-1", refresh="refresh-1", status="active"
+def _seed(  # noqa: PLR0913 - test fixture builder; keyword-only knobs
+    engine,
+    *,
+    expires_at,
+    access="access-1",
+    refresh="refresh-1",
+    status="active",
+    usage_limited_until=None,
 ):
     with Session(engine) as session:
         session.add(
@@ -79,6 +90,7 @@ def _seed(
                 access_token_encrypted=encrypt_secret(access) if access else None,
                 refresh_token_encrypted=encrypt_secret(refresh) if refresh else None,
                 token_expires_at=expires_at,
+                usage_limited_until=usage_limited_until,
             )
         )
         session.commit()
@@ -227,3 +239,98 @@ def test_revoked_credential_raises(monkeypatch):
     )
     with pytest.raises(CliOAuthUnavailableError):
         CliConversationManager()._resolve_access_token(1)
+
+
+# --- usage-limit handling (M5) ---
+
+
+def test_skip_when_usage_limited_raises_with_reset(monkeypatch):
+    engine = _sqlite_engine()
+    reset = utc_now() + timedelta(hours=1)
+    _seed(
+        engine,
+        expires_at=utc_now() + timedelta(hours=2),
+        usage_limited_until=reset,
+    )
+    monkeypatch.setattr(
+        "backend.processing.cli.manager.get_sync_session", lambda: Session(engine)
+    )
+    with pytest.raises(CliUsageLimitError) as exc_info:
+        CliConversationManager()._resolve_access_token(1)
+    assert exc_info.value.resets_at == reset
+
+
+def test_stale_usage_limit_is_ignored(monkeypatch):
+    engine = _sqlite_engine()
+    _seed(
+        engine,
+        expires_at=utc_now() + timedelta(hours=2),
+        usage_limited_until=utc_now() - timedelta(minutes=1),
+    )
+    monkeypatch.setattr(
+        "backend.processing.cli.manager.get_sync_session", lambda: Session(engine)
+    )
+    # Past its reset -> not limited; resolves the token normally.
+    assert CliConversationManager()._resolve_access_token(1) == "access-1"
+
+
+def test_persist_usage_limited_sets_column(monkeypatch):
+    engine = _sqlite_engine()
+    _seed(engine, expires_at=utc_now() + timedelta(hours=2))
+    monkeypatch.setattr(
+        "backend.processing.cli.manager.get_sync_session", lambda: Session(engine)
+    )
+    reset = utc_now() + timedelta(hours=3)
+    CliConversationManager()._persist_usage_limited(1, reset)
+    assert _read(engine).usage_limited_until == reset
+
+
+def test_persist_usage_limited_noop_without_reset(monkeypatch):
+    engine = _sqlite_engine()
+    _seed(engine, expires_at=utc_now() + timedelta(hours=2))
+    monkeypatch.setattr(
+        "backend.processing.cli.manager.get_sync_session", lambda: Session(engine)
+    )
+    CliConversationManager()._persist_usage_limited(1, None)
+    assert _read(engine).usage_limited_until is None
+
+
+def test_rate_limit_rejection_parses_reset():
+    epoch = 1_900_000_000
+    message = SimpleNamespace(
+        rate_limit_info=SimpleNamespace(
+            status="rejected", resets_at=epoch, rate_limit_type="five_hour"
+        )
+    )
+    dt, rl_type = _rate_limit_rejection(message)
+    assert rl_type == "five_hour"
+    assert dt == datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
+
+
+def test_rate_limit_non_rejection_returns_none():
+    warning = SimpleNamespace(
+        rate_limit_info=SimpleNamespace(
+            status="allowed_warning", resets_at=1, rate_limit_type="five_hour"
+        )
+    )
+    assert _rate_limit_rejection(warning) is None
+    assert _rate_limit_rejection(SimpleNamespace()) is None  # not a RateLimitEvent
+
+
+def test_classify_sdk_error_maps_limits():
+    assert isinstance(
+        _classify_sdk_error(Exception("HTTP 429 rate limit")), CliUsageLimitError
+    )
+    assert isinstance(
+        _classify_sdk_error(Exception("quota exceeded")), CliUsageLimitError
+    )
+    generic = _classify_sdk_error(Exception("connection reset by peer"))
+    assert isinstance(generic, CliOAuthUnavailableError)
+    assert not isinstance(generic, CliUsageLimitError)
+
+
+def test_usage_limit_message_includes_reset_and_window():
+    message = _usage_limit_message(datetime(2026, 7, 7, 15, 30), "five_hour")
+    assert "usage limit" in message.lower()
+    assert "five_hour" in message
+    assert "15:30" in message

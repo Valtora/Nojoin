@@ -9,6 +9,11 @@ inside the call methods so the API and gpu/cpu worker images never load it.
 from backend.processing.cli.manager import (
     CliConversationManager,
     CliOAuthUnavailableError,
+    CliUsageLimitError,
 )
 
-__all__ = ["CliConversationManager", "CliOAuthUnavailableError"]
+__all__ = [
+    "CliConversationManager",
+    "CliOAuthUnavailableError",
+    "CliUsageLimitError",
+]

@@ -10,6 +10,14 @@ import {
   startCliOAuth,
 } from "@/lib/api/cliOauth";
 
+// Backend datetimes are naive UTC (no offset); ensure Date parses them as UTC.
+function parseUtcDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /**
  * Connect panel for routing AI through a user's own Claude subscription.
  *
@@ -99,6 +107,9 @@ export default function CliOAuthPanel({
   };
 
   const connected = Boolean(status?.connected);
+  const usageLimitedUntil = parseUtcDate(status?.usage_limited_until);
+  const usageLimited =
+    usageLimitedUntil !== null && usageLimitedUntil.getTime() > Date.now();
 
   // Surface connection state to the parent so the usage-model selector can gate
   // the "CLI OAuth" option on a live credential.
@@ -121,6 +132,10 @@ export default function CliOAuthPanel({
         <div className="shrink-0">
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+          ) : usageLimited ? (
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+              Usage limited
+            </span>
           ) : connected ? (
             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
               <Check className="w-3 h-3" /> Connected
@@ -132,6 +147,14 @@ export default function CliOAuthPanel({
           )}
         </div>
       </div>
+
+      {usageLimited && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Claude subscription limit reached; it resets around{" "}
+          {usageLimitedUntil!.toLocaleString()}. Your fallback provider (if
+          configured) is used until then.
+        </p>
+      )}
 
       {!connected && (
         <button
