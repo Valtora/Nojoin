@@ -23,7 +23,7 @@ from backend.core.encryption import decrypt_secret, encrypt_secret
 # Register every ORM model so SQLAlchemy can configure the mapper reached via the
 # credential's user_id FK.
 from backend.models import registry  # noqa: F401
-from backend.models.cli_oauth import CliOAuthCredential
+from backend.models.cli_oauth import CliOAuthCredential, CliUsageDaily
 from backend.processing.cli.env_scrub import (
     OAUTH_TOKEN_ENV_VAR,
     SCRUBBED_ENV_VARS,
@@ -34,8 +34,13 @@ from backend.processing.cli.manager import (
     CliConversationManager,
     CliOAuthUnavailableError,
     CliUsageLimitError,
+    _apply_result_usage,
+    _as_int,
     _classify_sdk_error,
+    _rate_limit_reading,
     _rate_limit_rejection,
+    _RateLimitReading,
+    _TurnUsage,
     _usage_limit_message,
 )
 from backend.services.cli_oauth import oauth
@@ -56,7 +61,29 @@ CREATE TABLE cli_oauth_credentials (
     oauth_client_id VARCHAR(512),
     last_refreshed_at TIMESTAMP,
     usage_limited_until TIMESTAMP,
+    last_utilization FLOAT,
+    last_rate_limit_status VARCHAR(32),
+    last_rate_limit_type VARCHAR(32),
+    last_rate_limit_at TIMESTAMP,
     CONSTRAINT uq_cli_oauth_credential_user_provider UNIQUE (user_id, provider)
+)
+"""
+
+_CREATE_CLI_USAGE_DAILY = """
+CREATE TABLE cli_usage_daily (
+    id INTEGER PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    user_id BIGINT NOT NULL,
+    provider VARCHAR(32) NOT NULL,
+    usage_date DATE NOT NULL,
+    input_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    cache_read_input_tokens BIGINT NOT NULL DEFAULT 0,
+    cache_creation_input_tokens BIGINT NOT NULL DEFAULT 0,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    total_cost_usd FLOAT NOT NULL DEFAULT 0,
+    CONSTRAINT uq_cli_usage_daily_user_provider_date UNIQUE (user_id, provider, usage_date)
 )
 """
 
@@ -69,6 +96,7 @@ def _sqlite_engine():
     )
     with engine.begin() as conn:
         conn.execute(text(_CREATE_CLI_OAUTH_CREDENTIALS))
+        conn.execute(text(_CREATE_CLI_USAGE_DAILY))
     return engine
 
 
@@ -334,3 +362,114 @@ def test_usage_limit_message_includes_reset_and_window():
     assert "usage limit" in message.lower()
     assert "five_hour" in message
     assert "15:30" in message
+
+
+# --- token-usage accounting ---
+
+
+def _read_usage(engine) -> list[CliUsageDaily]:
+    with Session(engine) as session:
+        return session.exec(
+            select(CliUsageDaily).where(CliUsageDaily.user_id == 1)
+        ).all()
+
+
+def test_apply_result_usage_reads_tokens_and_cost():
+    turn = _TurnUsage()
+    message = SimpleNamespace(
+        usage={
+            "input_tokens": 120,
+            "output_tokens": 45,
+            "cache_read_input_tokens": 10,
+            "cache_creation_input_tokens": 5,
+        },
+        total_cost_usd=0.0123,
+    )
+    _apply_result_usage(turn, message)
+    assert turn.usage is not None and turn.usage["input_tokens"] == 120
+    assert turn.total_cost_usd == 0.0123
+    assert turn.has_data
+
+
+def test_apply_result_usage_ignores_missing_fields():
+    turn = _TurnUsage()
+    _apply_result_usage(turn, SimpleNamespace(usage=None, total_cost_usd=None))
+    assert turn.usage is None
+    assert turn.total_cost_usd is None
+    assert not turn.has_data
+
+
+def test_rate_limit_reading_captures_any_status():
+    warning = SimpleNamespace(
+        rate_limit_info=SimpleNamespace(
+            status="allowed_warning", utilization=0.83, rate_limit_type="five_hour"
+        )
+    )
+    reading = _rate_limit_reading(warning)
+    assert reading is not None
+    assert reading.status == "allowed_warning"
+    assert reading.utilization == 0.83
+    assert reading.rate_limit_type == "five_hour"
+    # Not a RateLimitEvent -> None (unlike _rate_limit_rejection, this keeps
+    # non-rejection events, but still returns None when there is no info).
+    assert _rate_limit_reading(SimpleNamespace()) is None
+
+
+def test_as_int_coerces_defensively():
+    assert _as_int(7) == 7
+    assert _as_int(None) == 0
+    assert _as_int("nope") == 0
+    assert _as_int(-4) == 0
+
+
+def test_record_usage_increments_daily_rollup(monkeypatch):
+    engine = _sqlite_engine()
+    _seed(engine, expires_at=utc_now() + timedelta(hours=2))
+    monkeypatch.setattr(
+        "backend.processing.cli.manager.get_sync_session", lambda: Session(engine)
+    )
+    manager = CliConversationManager()
+    usage = {
+        "input_tokens": 100,
+        "output_tokens": 40,
+        "cache_read_input_tokens": 8,
+        "cache_creation_input_tokens": 2,
+    }
+    manager._record_usage(
+        1,
+        _TurnUsage(
+            usage=usage,
+            total_cost_usd=0.01,
+            reading=_RateLimitReading("allowed_warning", "five_hour", 0.5),
+        ),
+    )
+    # A second turn the same day accumulates into the same (user, provider, date)
+    # row rather than creating a duplicate.
+    manager._record_usage(1, _TurnUsage(usage=usage, total_cost_usd=0.01))
+
+    rows = _read_usage(engine)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.input_tokens == 200
+    assert row.output_tokens == 80
+    assert row.cache_read_input_tokens == 16
+    assert row.cache_creation_input_tokens == 4
+    assert row.request_count == 2
+    assert row.total_cost_usd == pytest.approx(0.02)
+
+    # The latest rate-limit reading landed on the credential row.
+    cred = _read(engine)
+    assert cred.last_utilization == 0.5
+    assert cred.last_rate_limit_status == "allowed_warning"
+    assert cred.last_rate_limit_type == "five_hour"
+    assert cred.last_rate_limit_at is not None
+
+
+def test_record_usage_without_data_is_noop(monkeypatch):
+    engine = _sqlite_engine()
+    _seed(engine, expires_at=utc_now() + timedelta(hours=2))
+    monkeypatch.setattr(
+        "backend.processing.cli.manager.get_sync_session", lambda: Session(engine)
+    )
+    CliConversationManager()._record_usage(1, _TurnUsage())
+    assert _read_usage(engine) == []
