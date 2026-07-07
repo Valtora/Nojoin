@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -12,13 +13,16 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.endpoints import cli_oauth
+from backend.api.v1.endpoints.cli_oauth import _usage_by_user, _usage_row
 from backend.core.encryption import decrypt_secret
 
 # Register every ORM model so the User mapper (reached via the credential FK)
 # configures cleanly when the endpoint queries the credential table.
 from backend.models import registry  # noqa: F401
+from backend.models.cli_oauth import CliOAuthCredential, CliUsageDaily
 from backend.services.cli_oauth import oauth
 from backend.services.cli_oauth.persistence import get_credential
+from backend.utils.time import utc_now
 
 # SQLite-friendly DDL (INTEGER PRIMARY KEY autoincrements; the model's BigInteger
 # PK is sequence-backed only on Postgres).
@@ -36,12 +40,36 @@ CREATE TABLE cli_oauth_credentials (
     oauth_client_id VARCHAR(512),
     last_refreshed_at TIMESTAMP,
     usage_limited_until TIMESTAMP,
+    last_utilization FLOAT,
+    last_rate_limit_status VARCHAR(32),
+    last_rate_limit_type VARCHAR(32),
+    last_rate_limit_at TIMESTAMP,
     CONSTRAINT uq_cli_oauth_credential_user_provider UNIQUE (user_id, provider)
 )
 """
 
+_CREATE_CLI_USAGE_DAILY = """
+CREATE TABLE cli_usage_daily (
+    id INTEGER PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    user_id BIGINT NOT NULL,
+    provider VARCHAR(32) NOT NULL,
+    usage_date DATE NOT NULL,
+    input_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    cache_read_input_tokens BIGINT NOT NULL DEFAULT 0,
+    cache_creation_input_tokens BIGINT NOT NULL DEFAULT 0,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    total_cost_usd FLOAT NOT NULL DEFAULT 0,
+    CONSTRAINT uq_cli_usage_daily_user_provider_date UNIQUE (user_id, provider, usage_date)
+)
+"""
 
-async def _build_app(user_id: int = 1):
+
+async def _build_app(
+    user_id: int = 1, *, role: str = "owner", is_superuser: bool = True
+):
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -49,6 +77,7 @@ async def _build_app(user_id: int = 1):
     )
     async with engine.begin() as conn:
         await conn.execute(text(_CREATE_CLI_OAUTH_CREDENTIALS))
+        await conn.execute(text(_CREATE_CLI_USAGE_DAILY))
     maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     app = FastAPI()
@@ -60,9 +89,24 @@ async def _build_app(user_id: int = 1):
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id=user_id, username="alice"
+        id=user_id, username="alice", role=role, is_superuser=is_superuser
     )
     return engine, maker, app
+
+
+async def _seed_usage(maker, *, user_id, usage_date, input_tokens, output_tokens):
+    async with maker() as session:
+        session.add(
+            CliUsageDaily(
+                user_id=user_id,
+                provider="claude_code",
+                usage_date=usage_date,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                request_count=1,
+            )
+        )
+        await session.commit()
 
 
 class _FakeOAuth:
@@ -282,3 +326,115 @@ def test_status_reports_and_hides_usage_limit():
     )
     # Past its reset -> not surfaced, so the UI clears itself.
     assert _status_from_credential(stale).usage_limited_until is None
+
+
+# --- usage accounting (self-view + admin overview) ---
+
+
+def test_usage_by_user_windows_sum_input_plus_output():
+    async def _run():
+        engine, maker, _app = await _build_app()
+        try:
+            today = utc_now().date()
+            await _seed_usage(
+                maker, user_id=1, usage_date=today, input_tokens=100, output_tokens=40
+            )
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=today - timedelta(days=10),
+                input_tokens=10,
+                output_tokens=5,
+            )
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=today - timedelta(days=40),
+                input_tokens=1,
+                output_tokens=1,
+            )
+            async with maker() as db:
+                agg = (await _usage_by_user(db))[1]
+            assert agg["tokens_total"] == 157  # 140 + 15 + 2 (all windows)
+            assert agg["tokens_7d"] == 140  # today only
+            assert agg["tokens_30d"] == 155  # today + 10 days ago
+            assert agg["requests_total"] == 3
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_usage_row_maps_credential_and_quota_fields():
+    future = utc_now() + timedelta(hours=1)
+    credential = CliOAuthCredential(
+        user_id=1,
+        provider="claude_code",
+        status="active",
+        usage_limited_until=future,
+        last_utilization=0.72,
+        last_rate_limit_status="allowed_warning",
+        last_rate_limit_type="five_hour",
+    )
+    row = _usage_row(
+        SimpleNamespace(id=1, username="alice"),
+        {
+            "tokens_total": 500,
+            "tokens_7d": 120,
+            "tokens_30d": 300,
+            "requests_total": 4,
+        },
+        credential,
+    )
+    assert row.connected is True
+    assert row.tokens_total == 500 and row.tokens_7d == 120
+    assert row.utilization == 0.72
+    assert row.rate_limit_status == "allowed_warning"
+    assert row.usage_limited_until == future
+
+    # No credential -> not connected and quota fields empty.
+    bare = _usage_row(SimpleNamespace(id=2, username="bob"), None, None)
+    assert bare.connected is False
+    assert bare.tokens_total == 0
+    assert bare.utilization is None
+    assert bare.usage_limited_until is None
+
+
+def test_status_includes_self_usage():
+    async def _run():
+        engine, maker, app = await _build_app()
+        try:
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=utc_now().date(),
+                input_tokens=90,
+                output_tokens=10,
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                body = (await ac.get("/cli-oauth/status")).json()
+                assert body["tokens_7d"] == 100
+                assert body["tokens_total"] == 100
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_admin_usage_forbidden_for_non_admin():
+    async def _run():
+        engine, _maker, app = await _build_app(role="user", is_superuser=False)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                r = await ac.get("/cli-oauth/admin/usage")
+                assert r.status_code == 403
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())

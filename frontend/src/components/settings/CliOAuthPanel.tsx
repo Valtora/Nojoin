@@ -18,6 +18,13 @@ function parseUtcDate(value?: string | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/** Compact token count, e.g. 1.2M / 340K / 512. */
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+}
+
 /**
  * Connect panel for routing AI through a user's own Claude subscription.
  *
@@ -156,6 +163,19 @@ export default function CliOAuthPanel({
           configured) is used until then.
         </p>
       )}
+
+      {connected &&
+        typeof status?.tokens_7d === "number" &&
+        status.tokens_7d > 0 && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            You&apos;ve used {formatTokens(status.tokens_7d)} tokens in the last
+            7 days
+            {typeof status?.tokens_total === "number"
+              ? ` (${formatTokens(status.tokens_total)} all time)`
+              : ""}
+            .
+          </p>
+        )}
 
       {!connected && (
         <button

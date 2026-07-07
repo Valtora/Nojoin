@@ -383,6 +383,30 @@ export interface CliOAuthStatus {
   token_expires_at?: string | null;
   connected_at?: string | null;
   usage_limited_until?: string | null;
+  // This user's own recorded CLI token usage (input + output).
+  tokens_7d?: number | null;
+  tokens_total?: number | null;
+}
+
+/** One user's CLI usage + quota status for the admin overview table. */
+export interface CliUsageRow {
+  user_id: number;
+  username: string;
+  connected: boolean;
+  tokens_total: number;
+  tokens_7d: number;
+  tokens_30d: number;
+  requests_total: number;
+  last_used_on?: string | null;
+  rate_limit_status?: string | null;
+  rate_limit_type?: string | null;
+  utilization?: number | null;
+  usage_limited_until?: string | null;
+}
+
+export interface CliUsageOverview {
+  items: CliUsageRow[];
+  total: number;
 }
 
 export interface LanguageChoice {
