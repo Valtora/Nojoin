@@ -23,8 +23,9 @@ function parseUtcDate(value?: string | null): Date | null {
  *
  * Nojoin drives the PKCE OAuth: "Connect" opens Anthropic's authorize page in a
  * new tab and a modal to paste back the code Anthropic shows. Nojoin exchanges
- * the code server-side and stores the tokens encrypted. Selecting CLI OAuth as
- * the active usage model is enabled in a later milestone.
+ * the code server-side and stores the tokens encrypted. Once connected, the
+ * user selects "My Claude subscription" in the AI routing section to route
+ * inference through it.
  */
 export default function CliOAuthPanel({
   onConnectedChange,

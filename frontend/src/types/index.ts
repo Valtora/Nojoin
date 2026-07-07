@@ -332,7 +332,10 @@ export interface Settings {
   theme?: string;
   timezone?: string;
   llm_provider?: string;
-  usage_model?: string | null;
+  // Per-user AI routing. "cli_oauth" routes through the user's Claude
+  // subscription; the legacy "ollama"/"byok" values are no-ops kept only for
+  // back-compat (they resolve via the install-wide llm_provider unchanged).
+  usage_model?: "ollama" | "byok" | "cli_oauth" | null;
   cli_model?: string | null;
   cli_live_model?: string | null;
   gemini_api_key?: string;
