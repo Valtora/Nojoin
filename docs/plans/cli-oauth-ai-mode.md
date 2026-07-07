@@ -318,7 +318,10 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
    detection → accurate `usage_limited_until`, skip-when-limited, an amber status
    badge, and reset-time messaging. Heavier UX (interactive modal / health-check
    Beat / concurrency cap) deferred. See the M5 delivery note below.
-6. **M6 — docs + hardening:** sandbox rlimits, revoke cleanup, ADR, doc sweep.
+6. **M6 — hardening + release: DELIVERED.** Pinned-Node io image (zero CVE delta
+   over base) published via the release pipeline; revoke cwd cleanup; ADR-0002;
+   doc sweep. Heavy OS sandbox rejected (tools-off/non-root already suffices).
+   See the M6 delivery note below.
 
 ### M1 delivery note (as built)
 
@@ -549,6 +552,45 @@ As built:
   an amber "Usage limited (resets ~X)" badge in `CliOAuthPanel` (UTC-safe parse).
 - **Verified live:** skip-when-limited on the deployed manager raised immediately
   with the exact seeded reset time; the credential was restored afterward.
+
+### M6 delivery note (as built) — hardening + release
+
+Supply chain, revoke hygiene, and the accepted-risk record. **Owner decisions:**
+publish the io image in the release pipeline; defer the `llm_services.py` split.
+
+- **Node pinned by digest** (`docker/Dockerfile.worker-io`): a multi-stage COPY
+  from `node:22-bookworm-slim@sha256:…` (glibc 2.36, runs on the Ubuntu 24.04
+  base's glibc 2.39) replaces the unpinned NodeSource `curl|bash`. **npm is
+  dropped after installing the CLI** (the CLI runs directly on node), removing
+  npm's bundled `picomatch`/`sigstore` HIGH CVEs. Result: **zero CVE delta over
+  the shared worker base** (verified: both Total 39, all `linux-libc-dev`
+  kernel-header CVEs from the PyTorch base, handled by the existing `.trivyignore`
+  release process). Anthropic CLI/SDK stay unpinned per [[nojoin-llm-sdk-no-pin]].
+  Inference re-verified live on the pinned image.
+  - **ARG gotcha (fixed):** `ARG WORKER_BASE_IMAGE` must be declared *before* the
+    first `FROM` (global scope) or the final-stage `FROM ${WORKER_BASE_IMAGE}`
+    resolves blank; cached builds hid this until a `--no-cache` build.
+- **Release pipeline** (`.github/workflows/release.yml`): a dedicated
+  `worker-io-release` job (NOT a matrix row — the io image build-depends on the
+  worker) that `needs: server-release` and builds FROM the just-published
+  immutable `…-worker:${version}` tag, with the same Trivy + cosign + SBOM gates;
+  `-worker-io` added to the rolling-tag promotion. Local Trivy loop in
+  `docs/DEVELOPMENT.md` updated to build+scan the io image too. (CI is untestable
+  locally — verify at the next release cut.)
+- **Revoke cleanup:** `DELETE /cli-oauth/token` now wipes the per-user CLI working
+  dir via `wipe_user_cli_dir` (path centralised in `cli_oauth/persistence.py`,
+  shared with the manager). Low sensitivity in practice (single-turn queries
+  don't persist to the cwd; CLI session files are ephemeral in the container
+  layer), but fulfils the persistence docstring.
+- **Sandbox — deliberately NOT added.** tools-off + single-turn + timeout +
+  non-root `appuser` already neutralise the threat (a prompt-injected transcript
+  can only produce text, not act); the SDK's native sandbox targets tool use
+  (off) and would break the inference network path / not engage non-root.
+  Recorded in ADR-0002 + SECURITY.md.
+- **ADR + docs:** `docs/adr/0002-cli-oauth-subscription-mode.md`; CLI OAuth
+  sections added to SECURITY / ARCHITECTURE / USAGE / DEPLOYMENT.
+- **Deferred:** the `llm_services.py` split (2693 lines; 18 import sites + 6
+  test-patch locations — grandfathered debt, tracked).
 
 ## 10. Open risks carried forward (not blockers, but track)
 

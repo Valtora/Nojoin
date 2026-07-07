@@ -130,9 +130,9 @@ JSON
 
 This step is maintainer-action-pending: it is documented here but not enforced from the repository tree.
 
-**Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
+**Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `worker-io-release`/`Build, scan & sign worker-io image`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
 
-The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release` and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow (see [adr/0001-gated-signed-release-model.md](adr/0001-gated-signed-release-model.md)).
+The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release`, `worker-io-release`, and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow (see [adr/0001-gated-signed-release-model.md](adr/0001-gated-signed-release-model.md)).
 
 ## Verification By Change Scope
 
@@ -531,14 +531,17 @@ Install Trivy (the maintainer host keeps it at `~/.local/bin/trivy`, installed w
 curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
 ```
 
-Build each image exactly as the release workflow does, then run the same gate against all three:
+Build each image exactly as the release workflow does, then run the same gate against all four:
 
 ```bash
 docker build -f docker/Dockerfile.api --build-arg NOJOIN_SERVER_VERSION=<version> -t nojoin-api:scan .
 docker build -f docker/Dockerfile.worker -t nojoin-worker:scan .
 docker build -f frontend/Dockerfile --build-arg NEXT_PUBLIC_API_URL=/api -t nojoin-frontend:scan frontend
+# worker-io (CLI OAuth AI mode) layers the Claude Code CLI onto the worker;
+# build it FROM the local worker:scan, mirroring the release job's dependency.
+docker build -f docker/Dockerfile.worker-io --build-arg WORKER_BASE_IMAGE=nojoin-worker:scan -t nojoin-worker-io:scan .
 
-for img in nojoin-api:scan nojoin-worker:scan nojoin-frontend:scan; do
+for img in nojoin-api:scan nojoin-worker:scan nojoin-worker-io:scan nojoin-frontend:scan; do
   trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .trivyignore --exit-code 1 "$img"
 done
 ```

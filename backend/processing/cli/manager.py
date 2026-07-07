@@ -21,7 +21,6 @@ import os
 import queue
 import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Iterator, Optional
 
 from sqlmodel import Session, select
@@ -35,7 +34,7 @@ from backend.models.cli_oauth import (
 )
 from backend.processing.cli.env_scrub import scrubbed_environ, subscription_env_payload
 from backend.services.cli_oauth import oauth
-from backend.utils.path_manager import path_manager
+from backend.services.cli_oauth.persistence import user_cli_dir
 from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -392,7 +391,7 @@ class CliConversationManager:
 
     @staticmethod
     def _user_cwd(user_id: int) -> str:
-        base = Path(path_manager.user_data_directory) / "cli-oauth" / str(user_id)
+        base = user_cli_dir(user_id)
         base.mkdir(parents=True, exist_ok=True)
         try:
             os.chmod(base, 0o700)

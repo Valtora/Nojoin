@@ -8,8 +8,10 @@ via ``decrypt_credential_tokens``. Never store these tokens in
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,9 +23,22 @@ from backend.models.cli_oauth import (
     CliOAuthCredentialStatus,
     CliOAuthProvider,
 )
+from backend.utils.path_manager import path_manager
 from backend.utils.time import utc_now
 
 DEFAULT_PROVIDER = CliOAuthProvider.CLAUDE_CODE.value
+
+
+def user_cli_dir(user_id: int) -> Path:
+    """The per-user CLI working directory (transient session scratch for the CLI
+    subprocess). Single source of truth for the path, shared by the manager
+    (which creates it) and revoke (which wipes it)."""
+    return Path(path_manager.user_data_directory) / "cli-oauth" / str(user_id)
+
+
+def wipe_user_cli_dir(user_id: int) -> None:
+    """Remove the per-user CLI working dir on revoke (best-effort)."""
+    shutil.rmtree(user_cli_dir(user_id), ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -91,8 +106,8 @@ async def delete_credential(
 ) -> bool:
     """Delete the user's credential row. Returns True if a row was removed.
 
-    Wiping the per-user ``CLAUDE_CONFIG_DIR`` on revoke is handled by the auth
-    endpoint (M2); this only removes the encrypted DB row.
+    Wiping the per-user CLI working dir on revoke is done by the disconnect
+    endpoint via ``wipe_user_cli_dir``; this only removes the encrypted DB row.
     """
     credential = await get_credential(db, user_id, provider)
     if credential is None:

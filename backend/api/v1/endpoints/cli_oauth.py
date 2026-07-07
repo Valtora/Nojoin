@@ -34,6 +34,7 @@ from backend.services.cli_oauth.persistence import (
     delete_credential,
     get_credential,
     upsert_credential,
+    wipe_user_cli_dir,
 )
 from backend.utils.time import utc_now
 
@@ -161,5 +162,7 @@ async def disconnect_cli_oauth(
     db: AsyncSession = Depends(get_db),
 ) -> CliOAuthStatusRead:
     await delete_credential(db, current_user.id)
+    # Wipe the per-user CLI working dir so no subprocess scratch survives revoke.
+    wipe_user_cli_dir(current_user.id)
     logger.info("Disconnected CLI OAuth for user %s.", current_user.id)
     return _status_from_credential(None)

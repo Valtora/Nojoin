@@ -27,6 +27,8 @@ The backend is responsible for:
 
 The processing-heavy work runs in Celery workers rather than inside API endpoints.
 
+Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's Claude subscription via the Claude Code CLI running in the `worker-io` lane (see [ADR-0002](adr/0002-cli-oauth-subscription-mode.md)). CLI OAuth degrades cleanly to the user's secondary provider and is never load-bearing.
+
 Celery work is split across three resource lanes so a long recording finalise
 never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
 embeddings), a CPU lane (ffmpeg transcode, proxies, backups), and an IO/LLM lane

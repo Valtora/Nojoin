@@ -169,3 +169,22 @@ def test_delete_credential_removes_row():
             await engine.dispose()
 
     asyncio.run(_run())
+
+
+def test_wipe_user_cli_dir_removes_it(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.services.cli_oauth import persistence
+
+    monkeypatch.setattr(
+        persistence, "path_manager", SimpleNamespace(user_data_directory=tmp_path)
+    )
+    target = persistence.user_cli_dir(7)
+    target.mkdir(parents=True)
+    (target / "session.jsonl").write_text("transcript remnant")
+    assert target.exists()
+
+    persistence.wipe_user_cli_dir(7)
+    assert not target.exists()
+    # Wiping an absent dir is a no-op, not an error.
+    persistence.wipe_user_cli_dir(7)
