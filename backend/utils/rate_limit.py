@@ -184,7 +184,7 @@ def log_trusted_proxy_warnings(
         "that proxy shares one rate-limit bucket. Update NOJOIN_TRUSTED_PROXIES "
         "and restart or redeploy Nojoin.",
         startup_path,
-        ", ".join(sorted(unresolvable)),
+        ", ".join(_mask_hostname(host) for host in sorted(unresolvable)),
     )
     return unresolvable
 
