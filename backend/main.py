@@ -129,6 +129,7 @@ from backend.utils.config_manager import (
     is_mcp_enabled,
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
+from backend.utils.rate_limit import log_trusted_proxy_warnings
 
 
 async def ensure_owner_exists():
@@ -226,6 +227,7 @@ async def lifespan(app: FastAPI):
     await ensure_recording_public_ids_on_startup()
     await ensure_recording_meeting_uids_on_startup()
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)
+    log_trusted_proxy_warnings(startup_path="API startup", logger_instance=logger)
     # Seed demo data for the initial user if needed
     try:
         await seed_demo_data()

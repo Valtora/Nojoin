@@ -194,7 +194,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 ### Change for Remote or Reverse-Proxy Deployments
 
 - `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, other public URLs, and the backend CORS allowlist.
-- `NOJOIN_TRUSTED_PROXIES`: Comma-separated list of trusted proxy IP addresses, CIDR blocks, or hostnames. Defaults to `127.0.0.1,::1,nginx` to cover local loopback access and the default Docker Nginx proxy container name. If deploying behind an external load balancer or edge proxy (e.g. Cloudflare, AWS ALB), add its IP/CIDR to ensure that rate-limiting resolves client IPs correctly and safely.
+- `NOJOIN_TRUSTED_PROXIES`: Comma-separated list of trusted proxy IP addresses, CIDR blocks, or hostnames. Defaults to `127.0.0.1,::1,nginx` to cover local loopback access and the default Docker Nginx proxy container name. If deploying behind an external load balancer or edge proxy (e.g. Cloudflare, AWS ALB), add its IP/CIDR to ensure that rate-limiting resolves client IPs correctly and safely. A hostname entry only works if the API container can resolve it: a Docker container name resolves only on networks the API is itself attached to, so an edge proxy running on a **separate** Docker network must be trusted by its **IP or subnet CIDR, not its container name**. See [Trusted Proxy IPs for Rate Limiting (DEP-002)](#trusted-proxy-ips-for-rate-limiting-dep-002).
 
 ### Common Optional Values
 
@@ -313,6 +313,18 @@ location / {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
 ```
+
+### Trusted Proxy IPs for Rate Limiting (DEP-002)
+
+Nojoin derives each client's IP from the `X-Forwarded-For` chain by walking back through the proxies listed in `NOJOIN_TRUSTED_PROXIES` (see [Change for Remote or Reverse-Proxy Deployments](#change-for-remote-or-reverse-proxy-deployments)). Only the bundled Nginx proxy is trusted by default (`127.0.0.1,::1,nginx`).
+
+When your edge proxy runs as a **container on a different Docker network** than `nojoin-api`, the API cannot resolve it by container name - Docker DNS only resolves names on networks the API container is itself attached to. Trust such a proxy by its **IP or subnet CIDR** instead. For example, if Caddy sits on a shared `proxy_net` in the `172.18.0.0/16` range:
+
+```dotenv
+NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.18.0.0/16
+```
+
+Using the bare container name (`...,nginx,caddy`) instead silently collapses every remote client into a single shared rate-limit bucket: `caddy` does not resolve from the API's network, so that hop is treated as untrusted and the walk stops on the proxy's own IP. Per-IP throttles (login, invitation, `/setup`, MCP registration) then key on one address for all external users. Nojoin logs a warning at API startup naming any configured trusted-proxy hostname it cannot resolve.
 
 ## Image Trust and Supply Chain
 
