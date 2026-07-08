@@ -228,11 +228,12 @@ def test_log_trusted_proxy_warnings_names_unresolvable_hostname(caplog):
                 flagged = log_trusted_proxy_warnings(startup_path="API startup")
 
     assert set(flagged) == {"nginx", "caddy"}
-    # Hostnames are masked in the log (matches _resolve_hostname), so the raw
-    # NOJOIN_TRUSTED_PROXIES value is never written in clear text.
-    assert "c***y" in caplog.text
-    assert "caddy" not in caplog.text
+    # The warning logs a count and remediation only - never the raw or masked
+    # NOJOIN_TRUSTED_PROXIES entries - so nothing sensitive is written in clear text.
+    assert "could not be resolved" in caplog.text
     assert "IP or CIDR" in caplog.text
+    assert "caddy" not in caplog.text
+    assert "c***y" not in caplog.text
 
 
 def test_log_trusted_proxy_warnings_silent_when_all_resolvable(caplog):

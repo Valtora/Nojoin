@@ -175,16 +175,25 @@ def log_trusted_proxy_warnings(
     if not unresolvable:
         return unresolvable
 
+    # Log only a count, never the entries themselves: NOJOIN_TRUSTED_PROXIES is
+    # treated as sensitive by static analysis, and even a masked hostname stays
+    # tainted, so we keep the value out of logs entirely and point operators at
+    # the config to inspect.
+    count = len(unresolvable)
+    noun = "entry" if count == 1 else "entries"
+    verb = "is" if count == 1 else "are"
     active_logger = logger_instance or logger
     active_logger.warning(
-        "Nojoin %s cannot resolve trusted proxy hostname(s) in "
-        "NOJOIN_TRUSTED_PROXIES: %s. A reverse proxy on a separate Docker network "
-        "is not resolvable by name from this container; trust it by IP or CIDR "
-        "(for example its Docker subnet) instead. Until then, every client behind "
-        "that proxy shares one rate-limit bucket. Update NOJOIN_TRUSTED_PROXIES "
-        "and restart or redeploy Nojoin.",
+        "Nojoin %s: %d NOJOIN_TRUSTED_PROXIES %s could not be resolved to an IP and %s "
+        "ignored when identifying client IPs for rate limiting. A reverse proxy on a "
+        "separate Docker network is not resolvable by name from this container; trust it "
+        "by IP or CIDR (for example its Docker subnet) instead. Until then, every client "
+        "behind that proxy shares one rate-limit bucket. Review NOJOIN_TRUSTED_PROXIES and "
+        "restart or redeploy Nojoin.",
         startup_path,
-        ", ".join(_mask_hostname(host) for host in sorted(unresolvable)),
+        count,
+        noun,
+        verb,
     )
     return unresolvable
 
