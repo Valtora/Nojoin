@@ -135,6 +135,69 @@ def get_client_address(request: Request) -> str:
     return direct_peer
 
 
+def get_unresolvable_trusted_proxies(
+    trusted_proxies_env: Optional[str] = None,
+) -> list[str]:
+    """Return NOJOIN_TRUSTED_PROXIES hostname entries that do not currently resolve.
+
+    IP and CIDR entries never need DNS, so only bare hostnames can fail - usually
+    because the reverse proxy runs on a different Docker network than this
+    container and is therefore not resolvable by name. An unresolvable proxy
+    hostname is dropped from the trusted set in ``get_client_address``, which
+    stops the X-Forwarded-For walk one hop early and collapses every client
+    behind that proxy into a single rate-limit bucket. Surfacing it lets
+    operators switch that entry to an IP/CIDR.
+    """
+    if trusted_proxies_env is None:
+        trusted_proxies_env = os.getenv("NOJOIN_TRUSTED_PROXIES", "127.0.0.1,::1,nginx")
+
+    unresolvable: list[str] = []
+    for entry in _parse_trusted_proxies(trusted_proxies_env):
+        if not isinstance(entry, str):
+            # Already parsed to an IPv4/IPv6 address or network; no DNS needed.
+            continue
+        try:
+            socket.getaddrinfo(entry, None)
+        except socket.gaierror:
+            unresolvable.append(entry)
+    return unresolvable
+
+
+def log_trusted_proxy_warnings(
+    *, startup_path: str, logger_instance: Optional[logging.Logger] = None
+) -> list[str]:
+    """Warn once at startup when a configured trusted proxy hostname will not resolve.
+
+    Called from API startup so the misconfiguration is visible at deploy time
+    rather than silently degrading per-request rate limiting under load.
+    """
+    unresolvable = get_unresolvable_trusted_proxies()
+    if not unresolvable:
+        return unresolvable
+
+    # Log only a count, never the entries themselves: NOJOIN_TRUSTED_PROXIES is
+    # treated as sensitive by static analysis, and even a masked hostname stays
+    # tainted, so we keep the value out of logs entirely and point operators at
+    # the config to inspect.
+    count = len(unresolvable)
+    noun = "entry" if count == 1 else "entries"
+    verb = "is" if count == 1 else "are"
+    active_logger = logger_instance or logger
+    active_logger.warning(
+        "Nojoin %s: %d NOJOIN_TRUSTED_PROXIES %s could not be resolved to an IP and %s "
+        "ignored when identifying client IPs for rate limiting. A reverse proxy on a "
+        "separate Docker network is not resolvable by name from this container; trust it "
+        "by IP or CIDR (for example its Docker subnet) instead. Until then, every client "
+        "behind that proxy shares one rate-limit bucket. Review NOJOIN_TRUSTED_PROXIES and "
+        "restart or redeploy Nojoin.",
+        startup_path,
+        count,
+        noun,
+        verb,
+    )
+    return unresolvable
+
+
 def _build_rate_limit_key(
     namespace: str,
     client_address: str,
