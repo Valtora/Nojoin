@@ -25,8 +25,10 @@ from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models import registry  # noqa: F401
 from backend.models.cli_oauth import CliOAuthCredential, CliUsageDaily
 from backend.processing.cli.env_scrub import (
+    CODEX_SCRUBBED_ENV_VARS,
     OAUTH_TOKEN_ENV_VAR,
     SCRUBBED_ENV_VARS,
+    codex_child_env,
     scrubbed_environ,
     subscription_env_payload,
 )
@@ -170,6 +172,25 @@ def test_scrub_leaves_absent_vars_absent(monkeypatch):
             assert var not in os.environ
     for var in SCRUBBED_ENV_VARS:
         assert var not in os.environ
+
+
+def test_codex_child_env_excludes_openai_keys_and_sets_home(monkeypatch):
+    """The Codex scrub: OPENAI_API_KEY / CODEX_API_KEY must never reach the
+    subprocess (they would bill the API instead of the subscription), CODEX_HOME
+    is injected, and unrelated vars pass through."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-install-openai")
+    monkeypatch.setenv("CODEX_API_KEY", "sk-codex")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://proxy.internal")
+    monkeypatch.setenv("HARMLESS_SENTINEL", "keep-me")
+
+    env = codex_child_env("/data/cli-oauth/1/codex")
+
+    for var in CODEX_SCRUBBED_ENV_VARS:
+        assert var not in env, f"{var} leaked into the Codex subprocess env"
+    assert env["CODEX_HOME"] == "/data/cli-oauth/1/codex"
+    assert env["HARMLESS_SENTINEL"] == "keep-me"
+    # os.environ itself is untouched (nothing removed in place).
+    assert os.environ["OPENAI_API_KEY"] == "sk-install-openai"
 
 
 # --- token refresh lifecycle ---
@@ -473,3 +494,42 @@ def test_record_usage_without_data_is_noop(monkeypatch):
     )
     CliConversationManager()._record_usage(1, _TurnUsage())
     assert _read_usage(engine) == []
+
+
+def test_codex_login_parses_verification_url_and_code():
+    """The pty-output parsing is the fragile bit — lock it to real codex output."""
+    from backend.processing.cli import codex_login
+
+    # Captured verbatim from `codex login --device-auth` under a pty (ANSI-coded).
+    sample = (
+        "\x1b[90mOpenAI's command-line coding agent\x1b[0m\n"
+        "1. Open this link in your browser and sign in\n"
+        "   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n"
+        "2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\n"
+        "\x1b[94mXES2-55YBM\x1b[0m\n"
+    )
+    stripped = codex_login._strip_ansi(sample)
+    assert (
+        codex_login._URL.search(stripped).group(0)
+        == "https://auth.openai.com/codex/device"
+    )
+    assert codex_login._CODE.search(stripped).group(1) == "XES2-55YBM"
+
+
+def test_codex_model_catalog_parse_filters_and_sorts():
+    """The model picker's live catalogue: keep visibility=list, order by priority."""
+    from backend.processing.cli.codex_models import _parse_catalog
+
+    raw = (
+        '{"models":['
+        '{"slug":"gpt-5.4","display_name":"GPT-5.4","visibility":"list","priority":16},'
+        '{"slug":"hidden","display_name":"H","visibility":"hide","priority":2},'
+        '{"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","visibility":"list","priority":1}'
+        "]}"
+    )
+    assert _parse_catalog(raw) == [
+        {"id": "gpt-5.6-sol", "label": "GPT-5.6-Sol"},
+        {"id": "gpt-5.4", "label": "GPT-5.4"},
+    ]
+    # Unparseable output -> empty (the API then serves the curated fallback).
+    assert _parse_catalog("not json at all") == []

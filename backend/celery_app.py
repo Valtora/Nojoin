@@ -178,6 +178,8 @@ TASK_ROUTES = {
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.infer_speakers_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.meeting_chat_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.codex_device_login_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.refresh_codex_models_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.process_document_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.index_transcript_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.get_text_embedding_task": {"queue": IO_QUEUE},

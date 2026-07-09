@@ -35,7 +35,7 @@ from backend.models.cli_oauth import (
     CliUsageDaily,
 )
 from backend.processing.cli.env_scrub import scrubbed_environ, subscription_env_payload
-from backend.services.cli_oauth import oauth
+from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import user_cli_dir
 from backend.utils.time import utc_now
 
@@ -110,15 +110,75 @@ class CliUsageLimitError(CliOAuthUnavailableError):
 
 
 class CliConversationManager:
-    """Drives single-turn Claude Agent SDK queries for one subscription provider.
+    """Drives single-turn subscription-CLI inference for one provider.
 
-    Stateless across calls (a fresh session per call): async tasks, chat, and live
-    Meeting Edge all use a fresh single-turn query (Edge carries context via its
-    bounded rolling summary, not a resumable session).
+    Owns the provider-neutral token lifecycle (resolve/refresh) and usage
+    persistence, and dispatches the actual inference to the matching driver: the
+    inline Claude Agent SDK path (below) or the Codex-exec driver. Stateless
+    across calls (a fresh session per call): async tasks, chat, and live Meeting
+    Edge all use a fresh single-turn query (Edge carries context via its bounded
+    rolling summary, not a resumable session).
     """
 
     def __init__(self, provider: str = CliOAuthProvider.CLAUDE_CODE.value) -> None:
         self._provider = provider
+        # Built lazily on first use (only for Codex) so the Claude path never
+        # imports the codex-exec subprocess plumbing.
+        self._codex_driver = None
+
+    def _is_codex(self) -> bool:
+        return self._provider == CliOAuthProvider.CODEX.value
+
+    def _codex(self):
+        if self._codex_driver is None:
+            from backend.processing.cli.codex_driver import CodexExecDriver
+
+            self._codex_driver = CodexExecDriver(self._provider)
+        return self._codex_driver
+
+    def _astream_for(  # noqa: PLR0913 - cohesive driver params
+        self,
+        user_id: int,
+        prompt: str,
+        access_token: str,
+        model: Optional[str],
+        timeout: int,
+        usage_sink: list[_TurnUsage],
+    ):
+        """Pick the provider's streaming driver (Codex vs the inline Claude path)."""
+        if self._is_codex():
+            return self._codex().astream_single_turn(
+                user_id, prompt, access_token, model, timeout, usage_sink
+            )
+        return self._astream_single_turn(
+            user_id, prompt, access_token, model, timeout, usage_sink
+        )
+
+    def _finalize_codex_auth(self, user_id: int, injected_blob: str) -> None:
+        """After a codex exec: persist the (possibly CLI-refreshed) auth.json and
+        wipe the plaintext, so the token stays encrypted at rest and any rotation
+        survives. No-op for non-codex providers. Best-effort — never breaks
+        inference."""
+        if not self._is_codex():
+            return
+        from backend.processing.cli.codex_login import codex_home_for
+        from backend.services.cli_oauth.persistence import store_codex_auth_blob_sync
+
+        auth_path = codex_home_for(user_id) / "auth.json"
+        try:
+            current = auth_path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        try:
+            if current and current != injected_blob:
+                store_codex_auth_blob_sync(user_id, current)
+        except Exception:  # noqa: BLE001 - persistence must not break inference
+            logger.exception("Failed to persist refreshed Codex auth for %s", user_id)
+        finally:
+            try:
+                auth_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     # ---- public sync entry points (called from the sync worker) ----
 
@@ -133,12 +193,23 @@ class CliConversationManager:
         """Resolve a fresh token, run one non-streaming turn, return the text."""
         access_token = self._resolve_access_token(user_id)
         try:
-            text, usage = asyncio.run(
-                self._arun_single_turn(user_id, prompt, access_token, model, timeout)
-            )
+            if self._is_codex():
+                text, usage = asyncio.run(
+                    self._codex().arun_single_turn(
+                        user_id, prompt, access_token, model=model, timeout=timeout
+                    )
+                )
+            else:
+                text, usage = asyncio.run(
+                    self._arun_single_turn(
+                        user_id, prompt, access_token, model, timeout
+                    )
+                )
         except CliUsageLimitError as exc:
             self._persist_usage_limited(user_id, exc.resets_at)
             raise
+        finally:
+            self._finalize_codex_auth(user_id, access_token)
         self._record_usage(user_id, usage)
         return text
 
@@ -165,7 +236,7 @@ class CliConversationManager:
         def _drive() -> None:
             async def _run() -> None:
                 try:
-                    async for chunk in self._astream_single_turn(
+                    async for chunk in self._astream_for(
                         user_id, prompt, access_token, model, timeout, usage_sink
                     ):
                         chunk_queue.put(("chunk", chunk))
@@ -195,6 +266,7 @@ class CliConversationManager:
             # _persist_usage_limited call above. Empty on an errored turn.
             if usage_sink:
                 self._record_usage(user_id, usage_sink[0])
+            self._finalize_codex_auth(user_id, access_token)
 
     # ---- token lifecycle (sync DB; async only for the httpx refresh) ----
 
@@ -210,13 +282,23 @@ class CliConversationManager:
                 credential.status == CliOAuthCredentialStatus.REVOKED.value
             ):
                 raise CliOAuthUnavailableError(
-                    "No active CLI OAuth credential. Connect your Claude "
-                    "subscription in Settings > AI."
+                    "No active CLI OAuth credential. Connect your subscription "
+                    "in Settings > AI."
                 )
             # Skip-when-limited: don't spawn a doomed subprocess while a known usage
             # limit is still in effect; raise now so the caller degrades to the
             # secondary or surfaces the reset time.
             self._raise_if_usage_limited(credential)
+            if self._is_codex():
+                # Codex stores the full auth.json blob; the CLI refreshes it in
+                # place during inference (re-persisted afterwards — see
+                # _finalize_codex_auth), so no httpx refresh here.
+                blob = decrypt_secret(credential.access_token_encrypted)
+                if not blob:
+                    raise CliOAuthUnavailableError(
+                        "ChatGPT credential is missing; reconnect in Settings > AI."
+                    )
+                return blob
             if not self._needs_refresh(credential):
                 access_token = decrypt_secret(credential.access_token_encrypted)
                 if not access_token:
@@ -240,7 +322,10 @@ class CliConversationManager:
                 "Reconnect your subscription in Settings > AI."
             )
         try:
-            tokens = asyncio.run(oauth.refresh_tokens(refresh_token))
+            # Both providers expose refresh_tokens and raise CliOAuthExchangeError
+            # (codex_oauth reuses the class), so only the call target differs.
+            refresh_module = codex_oauth if self._is_codex() else oauth
+            tokens = asyncio.run(refresh_module.refresh_tokens(refresh_token))
         except oauth.CliOAuthExchangeError as exc:
             logger.warning("CLI OAuth refresh failed for user %s: %s", user_id, exc)
             self._flip_status(
@@ -624,12 +709,12 @@ def _usage_limit_message(
     window = f" ({rate_limit_type} window)" if rate_limit_type else ""
     if resets_at is not None:
         return (
-            f"Your Claude subscription usage limit is reached{window}; it resets "
+            f"Your subscription usage limit is reached{window}; it resets "
             f"around {resets_at:%H:%M UTC on %b %d}. Configure a fallback provider "
             f"in Settings > AI, or try again after that."
         )
     return (
-        f"Your Claude subscription usage limit is reached{window}. Configure a "
+        f"Your subscription usage limit is reached{window}. Configure a "
         f"fallback provider in Settings > AI, or try again later."
     )
 

@@ -63,3 +63,36 @@ def subscription_env_payload(access_token: str) -> dict[str, str]:
     process environment; we deliberately add nothing else.
     """
     return {OAUTH_TOKEN_ENV_VAR: access_token}
+
+
+# --- Codex (ChatGPT subscription) ---
+
+# OpenAI key-auth vars that would make ``codex exec`` bill the API instead of the
+# user's ChatGPT subscription. This is the Codex equivalent of the Claude scrub:
+# CODEX_API_KEY / OPENAI_API_KEY select API billing, so they must never reach the
+# subprocess. OPENAI_BASE_URL is dropped too so an install-wide proxy can't
+# redirect the subscription call.
+CODEX_SCRUBBED_ENV_VARS: tuple[str, ...] = (
+    "OPENAI_API_KEY",
+    "CODEX_API_KEY",
+    "OPENAI_BASE_URL",
+)
+
+
+def codex_child_env(codex_home: str) -> dict[str, str]:
+    """Build the Codex subprocess environment.
+
+    The worker's environment minus the OpenAI key-auth vars, plus ``CODEX_HOME``
+    (where the injected subscription ``auth.json`` lives). Unlike the Claude scrub
+    — which must mutate ``os.environ`` because the Agent SDK merges it *under*
+    ``options.env`` — the Codex driver spawns a raw subprocess and passes this
+    dict as ``env`` explicitly, so excluding the keys here keeps them out of the
+    child by construction (nothing is removed from ``os.environ`` in place).
+    """
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in CODEX_SCRUBBED_ENV_VARS
+    }
+    env["CODEX_HOME"] = codex_home
+    return env

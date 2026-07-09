@@ -50,6 +50,16 @@ LLM_PURPOSE_MEETING_EDGE = "meeting_edge"
 USAGE_MODEL_CLI_OAUTH = "cli_oauth"
 CLI_PROVIDER = "cli"
 
+# Which subscription the CLI path routes through, and the per-provider model
+# setting fields. Unset resolves to claude_code so existing cli_oauth users keep
+# working. Mirrors CliOAuthProvider values (kept as literals to avoid importing
+# the ORM model into this hot-path resolver).
+CLI_SUBSCRIPTION_PROVIDER_DEFAULT = "claude_code"
+CLI_MODEL_FIELDS_BY_PROVIDER = {
+    "claude_code": ("cli_model", "cli_live_model"),
+    "codex": ("codex_model", "codex_live_model"),
+}
+
 LIVE_MODEL_FIELDS_BY_PROVIDER = {
     "gemini": "gemini_live_model",
     "openai": "openai_live_model",
@@ -92,6 +102,8 @@ class ResolvedLLMConfig:
     # Per-user id carried only on cli configs, so the CLI backend can load the
     # user's encrypted subscription credential (which is not in merged_config).
     cli_user_id: int | None = None
+    # Which subscription a cli config routes through ("claude_code" | "codex").
+    cli_provider: str | None = None
 
     def missing_configuration_message(self) -> str | None:
         if self.has_secondary:
@@ -359,14 +371,20 @@ def _to_cli_config(
     carries the resolved secondary through unchanged, so the pipeline degrades
     cleanly to the user's BYOK/Ollama fallback (via ``SecondaryLLMBackend``)
     when the CLI path is unavailable. No ``api_key``/``api_url``: the subprocess
-    authenticates with the user's Claude credential, not an env key. ``user_id``
-    rides along on ``cli_user_id`` so the backend can load that credential.
+    authenticates with the user's subscription credential, not an env key.
+    ``user_id`` rides along on ``cli_user_id`` so the backend can load that
+    credential, and ``cli_provider`` selects which subscription (Claude vs Codex)
+    plus the matching per-provider model fields.
     """
     merged = config.merged_config
+    cli_provider = str(merged.get("cli_provider") or CLI_SUBSCRIPTION_PROVIDER_DEFAULT)
+    main_field, live_field = CLI_MODEL_FIELDS_BY_PROVIDER.get(
+        cli_provider, CLI_MODEL_FIELDS_BY_PROVIDER[CLI_SUBSCRIPTION_PROVIDER_DEFAULT]
+    )
     if purpose == LLM_PURPOSE_MEETING_EDGE:
-        cli_model = merged.get("cli_live_model") or merged.get("cli_model")
+        cli_model = merged.get(live_field) or merged.get(main_field)
     else:
-        cli_model = merged.get("cli_model")
+        cli_model = merged.get(main_field)
 
     return ResolvedLLMConfig(
         provider=CLI_PROVIDER,
@@ -382,6 +400,7 @@ def _to_cli_config(
         secondary_context_window=config.secondary_context_window,
         secondary_live_model=config.secondary_live_model,
         cli_user_id=user_id,
+        cli_provider=cli_provider,
     )
 
 

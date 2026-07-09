@@ -7,7 +7,11 @@ The manager is faked, so no Claude Agent SDK / io image is needed.
 
 from __future__ import annotations
 
-from backend.processing.cli_backend import _CLI_MODELS, CliLLMBackend
+from backend.processing.cli_backend import (
+    _CLAUDE_CLI_MODELS,
+    _CODEX_CLI_MODELS,
+    CliLLMBackend,
+)
 from backend.utils.meeting_edge import MeetingEdgeRequest
 
 
@@ -113,7 +117,11 @@ def test_generate_meeting_edge_builds_and_parses():
 
 
 def test_list_models_is_static_curated_set():
-    assert _backend().list_models() == list(_CLI_MODELS)
+    assert _backend().list_models() == list(_CLAUDE_CLI_MODELS)
+
+
+def test_list_models_is_provider_specific():
+    assert CliLLMBackend(provider="codex").list_models() == list(_CODEX_CLI_MODELS)
 
 
 def test_validate_api_key_roundtrips():

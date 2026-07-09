@@ -2405,6 +2405,7 @@ def get_llm_backend(
     context_window: int | None = None,
     allow_private_api_url: bool = False,
     cli_user_id: int | None = None,
+    cli_provider: str | None = None,
 ):
     """
     Factory function to instantiate the appropriate LLM backend.
@@ -2448,11 +2449,10 @@ def get_llm_backend(
             allow_private_api_url=allow_private_api_url,
         )
     elif provider == "cli":
-        # CLI OAuth: loads the user's encrypted credential via cli_user_id and
-        # drives the Claude Agent SDK (failures degrade via SecondaryLLMBackend).
         from backend.processing.cli_backend import CliLLMBackend
 
-        return CliLLMBackend(model=model, user_id=cli_user_id)
+        cli = cli_provider or "claude_code"  # subscription CLI: Claude or Codex
+        return CliLLMBackend(model=model, user_id=cli_user_id, provider=cli)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 
@@ -2668,6 +2668,7 @@ def get_llm_backend_with_secondary(
         api_url=primary_config.api_url,
         context_window=primary_config.context_window,
         cli_user_id=primary_config.cli_user_id,
+        cli_provider=primary_config.cli_provider,
     )
 
     secondary_cfg = primary_config.secondary_config()

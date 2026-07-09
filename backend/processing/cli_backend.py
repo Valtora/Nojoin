@@ -34,19 +34,34 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["CliLLMBackend", "CliOAuthUnavailableError"]
 
-# Curated model list — a subscription exposes no models endpoint, so the picker
-# uses this static set. Ordered most→least capable. Full, unambiguous ids (no
-# bare "Claude Sonnet"): both Sonnet 5 and Sonnet 4.6 are offered.
-_CLI_MODELS = (
+# Curated model lists — a subscription exposes no models endpoint, so the picker
+# uses these static sets, ordered most→least capable with full, unambiguous ids.
+# Keep in sync with the frontend cliModels.ts. Codex ids are curated (VERIFY
+# against the live Codex model set before release).
+_CLAUDE_CLI_MODELS = (
     "claude-opus-4-8",
     "claude-sonnet-5",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
 )
+_CODEX_CLI_MODELS = (
+    "gpt-5.6-sol",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+)
+_MODELS_BY_PROVIDER = {
+    "claude_code": _CLAUDE_CLI_MODELS,
+    "codex": _CODEX_CLI_MODELS,
+}
 
 
 class CliLLMBackend(LLMBackend):
-    """LLMBackend that delegates every call to the Claude Agent SDK manager."""
+    """LLMBackend that delegates every call to the subscription-CLI manager.
+
+    Reuses the inherited prompt builders and tolerant parsers; the manager routes
+    the single provider API call to the selected subscription (Claude Agent SDK
+    or Codex CLI)."""
 
     def __init__(
         self,
@@ -60,6 +75,7 @@ class CliLLMBackend(LLMBackend):
         # rather than hard-failing at build time.
         self.model = model
         self.user_id = user_id
+        self.provider = provider
         self._manager = CliConversationManager(provider=provider)
 
     # --- async inference tasks (notes / speakers / title / intelligence) ---
@@ -192,8 +208,9 @@ class CliLLMBackend(LLMBackend):
     # --- misc contract methods ---
 
     def list_models(self) -> List[str]:
-        # No live models endpoint under a subscription; return the curated set.
-        return list(_CLI_MODELS)
+        # No live models endpoint under a subscription; return the curated set
+        # for the active provider.
+        return list(_MODELS_BY_PROVIDER.get(self.provider, _CLAUDE_CLI_MODELS))
 
     def validate_api_key(self) -> bool:
         # A minimal single-turn round-trip proves the subscription token works.

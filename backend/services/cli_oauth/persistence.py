@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from backend.core.db import get_sync_session
 from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.cli_oauth import (
     CliOAuthCredential,
@@ -131,3 +132,30 @@ def decrypt_credential_tokens(
         decrypt_secret(credential.access_token_encrypted),
         decrypt_secret(credential.refresh_token_encrypted),
     )
+
+
+def store_codex_auth_blob_sync(user_id: int, auth_blob: str) -> None:
+    """Sync upsert of a Codex credential whose stored "access token" IS the full
+    ``auth.json`` blob (encrypted at rest).
+
+    Used by the worker (the login task, and the inference-refresh persist) — which
+    has no async session. Storing the blob verbatim means the Codex driver can
+    write it back as ``auth.json`` without Nojoin having to reproduce OpenAI's
+    ``auth.json`` schema. The CLI refreshes the blob in place during inference;
+    the driver re-persists it here so the rotated token survives (and no plaintext
+    credential is left on disk, per the encrypted-at-rest posture)."""
+    provider = CliOAuthProvider.CODEX.value
+    with get_sync_session() as session:
+        credential = session.exec(
+            select(CliOAuthCredential).where(
+                CliOAuthCredential.user_id == user_id,
+                CliOAuthCredential.provider == provider,
+            )
+        ).first()
+        if credential is None:
+            credential = CliOAuthCredential(user_id=user_id, provider=provider)
+        credential.access_token_encrypted = encrypt_secret(auth_blob)
+        credential.status = CliOAuthCredentialStatus.ACTIVE.value
+        credential.last_refreshed_at = utc_now()
+        session.add(credential)
+        session.commit()

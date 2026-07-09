@@ -332,12 +332,16 @@ export interface Settings {
   theme?: string;
   timezone?: string;
   llm_provider?: string;
-  // Per-user AI routing. "cli_oauth" routes through the user's Claude
-  // subscription; the legacy "ollama"/"byok" values are no-ops kept only for
-  // back-compat (they resolve via the install-wide llm_provider unchanged).
+  // Per-user AI routing. "cli_oauth" routes through the user's own subscription
+  // (Claude or ChatGPT, selected by cli_provider); the legacy "ollama"/"byok"
+  // values are no-ops kept only for back-compat (they resolve via the
+  // install-wide llm_provider unchanged).
   usage_model?: "ollama" | "byok" | "cli_oauth" | null;
-  cli_model?: string | null;
-  cli_live_model?: string | null;
+  cli_provider?: CliProvider | null;
+  cli_model?: string | null; // Claude CLI model (async tasks)
+  cli_live_model?: string | null; // Claude CLI Meeting Edge model
+  codex_model?: string | null; // Codex CLI model (async tasks)
+  codex_live_model?: string | null; // Codex CLI Meeting Edge model
   gemini_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;
@@ -376,16 +380,49 @@ export interface Settings {
     [key: string]: unknown;
 }
 
-export interface CliOAuthStatus {
+/** Subscription-CLI providers a user can route inference through. */
+export type CliProvider = "claude_code" | "codex";
+
+export interface CliOAuthProviderStatus {
+  provider: CliProvider;
   connected: boolean;
   status: string;
-  provider: string;
   token_expires_at?: string | null;
   connected_at?: string | null;
   usage_limited_until?: string | null;
-  // This user's own recorded CLI token usage (input + output).
+  // This user's recorded token usage for THIS provider (input + output).
   tokens_7d?: number | null;
   tokens_total?: number | null;
+}
+
+export interface CliOAuthStatus {
+  // One entry per supported provider (connected or not), in display order.
+  providers: CliOAuthProviderStatus[];
+  // This user's own recorded CLI token usage across providers (input + output).
+  tokens_7d?: number | null;
+  tokens_total?: number | null;
+}
+
+/** Result of POST /cli-oauth/start — either a paste-code URL (Claude) or a
+ * device grant (Codex). Which fields are set depends on `kind`. */
+export interface CliOAuthStart {
+  provider: CliProvider;
+  kind: "paste_code" | "device";
+  authorize_url?: string | null;
+  verification_uri?: string | null;
+  verification_uri_complete?: string | null;
+  user_code?: string | null;
+  interval?: number | null;
+  expires_in?: number | null;
+}
+
+/** Result of POST /cli-oauth/poll — the device-flow progress signal (Codex). The
+ * URL + code arrive here (not from /start) once the worker has them. */
+export interface CliOAuthPoll {
+  provider: CliProvider;
+  status: "pending" | "connected" | "expired";
+  verification_uri?: string | null;
+  user_code?: string | null;
 }
 
 /** One user's CLI usage + quota status for the admin overview table. */

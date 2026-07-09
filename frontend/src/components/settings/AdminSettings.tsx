@@ -107,7 +107,7 @@ export default function AdminSettings({
         <SettingsSection
           eyebrow="Administration"
           title="CLI usage & quota"
-          description="Per-user Claude subscription (CLI OAuth) token usage and rate-limit status."
+          description="Per-user subscription (CLI OAuth) token usage and rate-limit status, across Claude and ChatGPT."
           width="full"
         >
           <CliUsageTab />

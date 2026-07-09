@@ -20,7 +20,7 @@ from backend.core.encryption import decrypt_secret
 # configures cleanly when the endpoint queries the credential table.
 from backend.models import registry  # noqa: F401
 from backend.models.cli_oauth import CliOAuthCredential, CliUsageDaily
-from backend.services.cli_oauth import oauth
+from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import get_credential
 from backend.utils.time import utc_now
 
@@ -94,12 +94,14 @@ async def _build_app(
     return engine, maker, app
 
 
-async def _seed_usage(maker, *, user_id, usage_date, input_tokens, output_tokens):
+async def _seed_usage(  # noqa: PLR0913 - test seed helper
+    maker, *, user_id, usage_date, input_tokens, output_tokens, provider="claude_code"
+):
     async with maker() as session:
         session.add(
             CliUsageDaily(
                 user_id=user_id,
-                provider="claude_code",
+                provider=provider,
                 usage_date=usage_date,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -150,6 +152,56 @@ def _restore(originals):
         setattr(oauth, name, fn)
 
 
+def _provider_entry(body: dict, provider: str = "claude_code") -> dict:
+    """The per-provider status dict from a /status, /complete or /token body."""
+    return next(p for p in body["providers"] if p["provider"] == provider)
+
+
+class _FakeCodexLogin:
+    """In-memory Codex device login: a Redis login-state stand-in + no-op dispatch.
+
+    The real flow runs `codex login --device-auth` in a worker-io task that
+    publishes state to Redis; the endpoints only dispatch it and read that state.
+    """
+
+    def __init__(self):
+        self.state: dict | None = None  # what read_login_state returns
+        self.dispatched: list = []
+        # /start clears state then dispatches the worker task, which publishes the
+        # awaiting state; send_task stands in for that publish.
+        self.on_dispatch_state: dict | None = None
+
+    def send_task(self, name, args=None, **kwargs):
+        self.dispatched.append((name, list(args or [])))
+        if self.on_dispatch_state is not None:
+            self.state = self.on_dispatch_state
+        return SimpleNamespace(id="task-1")
+
+    async def read_login_state(self, user_id):
+        return self.state
+
+    async def clear_login_state(self, user_id):
+        self.state = None
+
+
+def _patch_codex(fake: _FakeCodexLogin):
+    originals = {
+        "read_login_state": codex_oauth.read_login_state,
+        "clear_login_state": codex_oauth.clear_login_state,
+        "send_task": cli_oauth.celery_app.send_task,
+    }
+    codex_oauth.read_login_state = fake.read_login_state
+    codex_oauth.clear_login_state = fake.clear_login_state
+    cli_oauth.celery_app.send_task = fake.send_task
+    return originals
+
+
+def _restore_codex(originals):
+    codex_oauth.read_login_state = originals["read_login_state"]
+    codex_oauth.clear_login_state = originals["clear_login_state"]
+    cli_oauth.celery_app.send_task = originals["send_task"]
+
+
 def test_start_returns_authorize_url_and_stashes_pending():
     async def _run():
         fake = _FakeOAuth()
@@ -186,10 +238,10 @@ def test_complete_exchanges_and_stores_encrypted():
                 await ac.post("/cli-oauth/start")
                 r = await ac.post("/cli-oauth/complete", json={"code": "authcode123"})
                 assert r.status_code == 200, r.text
-                body = r.json()
-                assert body["connected"] is True and body["status"] == "active"
-                # Token never echoed.
-                assert "access_token" not in body and "token" not in body
+                claude = _provider_entry(r.json())
+                assert claude["connected"] is True and claude["status"] == "active"
+                # Token never echoed anywhere in the response.
+                assert "REALACCESS" not in r.text and "access_token" not in r.text
 
                 # Stored encrypted, decrypts to the exchanged access token.
                 async with maker() as session:
@@ -278,6 +330,197 @@ def test_complete_exchange_failure_is_400():
     asyncio.run(_run())
 
 
+def test_complete_rejects_codex_provider():
+    async def _run():
+        engine, _maker, app = await _build_app()
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                # Codex uses device sign-in, so /complete must reject it.
+                r = await ac.post(
+                    "/cli-oauth/complete", json={"code": "x", "provider": "codex"}
+                )
+                assert r.status_code == 400
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_start_codex_dispatches_login():
+    async def _run():
+        fake = _FakeCodexLogin()
+        originals = _patch_codex(fake)
+        engine, _maker, app = await _build_app()
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                r = await ac.post("/cli-oauth/start", json={"provider": "codex"})
+                assert r.status_code == 200, r.text
+                body = r.json()
+                assert body["provider"] == "codex" and body["kind"] == "device"
+                # No code on /start — it arrives via /poll (non-blocking start).
+                assert body.get("user_code") is None
+                # The worker-io login task was dispatched with the user id.
+                assert fake.dispatched
+                assert (
+                    fake.dispatched[0][0]
+                    == "backend.worker.tasks.codex_device_login_task"
+                )
+                assert fake.dispatched[0][1] == [1]
+        finally:
+            await engine.dispose()
+            _restore_codex(originals)
+
+    asyncio.run(_run())
+
+
+def test_poll_codex_maps_login_state():
+    async def _run():
+        fake = _FakeCodexLogin()
+        originals = _patch_codex(fake)
+        engine, _maker, app = await _build_app()
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                # Task still starting (no state) -> pending, keep polling.
+                fake.state = None
+                r0 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r0.json()["status"] == "pending"
+
+                # Code ready, awaiting approval -> pending + the code.
+                fake.state = {
+                    "status": "awaiting",
+                    "verification_uri": "https://auth.openai.com/codex/device",
+                    "user_code": "XES2-55YBM",
+                }
+                r1 = (
+                    await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                ).json()
+                assert r1["status"] == "pending"
+                assert r1["user_code"] == "XES2-55YBM"
+                assert r1["verification_uri"].startswith("https://")
+
+                # Failure -> expired.
+                fake.state = {"status": "failed"}
+                r2 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r2.json()["status"] == "expired"
+
+                # Worker stored the credential -> connected.
+                fake.state = {"status": "connected"}
+                r3 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r3.json()["status"] == "connected"
+        finally:
+            await engine.dispose()
+            _restore_codex(originals)
+
+    asyncio.run(_run())
+
+
+def test_start_rejects_second_provider_while_one_connected():
+    async def _run():
+        engine, maker, app = await _build_app()
+        try:
+            # Claude already connected — only one subscription may be active.
+            async with maker() as session:
+                session.add(
+                    CliOAuthCredential(
+                        user_id=1, provider="claude_code", status="active"
+                    )
+                )
+                await session.commit()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                r = await ac.post("/cli-oauth/start", json={"provider": "codex"})
+                assert r.status_code == 409, r.text
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_status_reports_usage_per_provider():
+    async def _run():
+        engine, maker, app = await _build_app()
+        try:
+            today = utc_now().date()
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=today,
+                input_tokens=90,
+                output_tokens=10,
+                provider="claude_code",
+            )
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=today,
+                input_tokens=40,
+                output_tokens=10,
+                provider="codex",
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                body = (await ac.get("/cli-oauth/status")).json()
+                claude = _provider_entry(body, "claude_code")
+                codex = _provider_entry(body, "codex")
+                assert claude["tokens_7d"] == 100 and claude["tokens_total"] == 100
+                assert codex["tokens_7d"] == 50 and codex["tokens_total"] == 50
+                assert body["tokens_7d"] == 150  # top-level sum across providers
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_codex_models_live_and_fallback():
+    async def _run():
+        engine, _maker, app = await _build_app()
+        original_read = codex_oauth.read_model_catalog
+        original_send = cli_oauth.celery_app.send_task
+        dispatched: list = []
+        cli_oauth.celery_app.send_task = lambda name, **kwargs: dispatched.append(name)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                # Cache miss -> curated fallback + a refresh dispatch.
+                async def _empty():
+                    return None
+
+                codex_oauth.read_model_catalog = lambda: _empty()
+                r = (await ac.get("/cli-oauth/codex/models")).json()
+                assert r["source"] == "fallback" and len(r["models"]) > 0
+                assert "backend.worker.tasks.refresh_codex_models_task" in dispatched
+
+                # Cache hit -> the live catalogue.
+                async def _cached():
+                    return [{"id": "gpt-5.6-sol", "label": "GPT-5.6-Sol"}]
+
+                codex_oauth.read_model_catalog = lambda: _cached()
+                r2 = (await ac.get("/cli-oauth/codex/models")).json()
+                assert r2["source"] == "live"
+                assert r2["models"][0]["id"] == "gpt-5.6-sol"
+        finally:
+            await engine.dispose()
+            codex_oauth.read_model_catalog = original_read
+            cli_oauth.celery_app.send_task = original_send
+
+    asyncio.run(_run())
+
+
 def test_status_and_disconnect():
     async def _run():
         fake = _FakeOAuth()
@@ -289,15 +532,18 @@ def test_status_and_disconnect():
                 transport=transport, base_url="http://testserver"
             ) as ac:
                 r = await ac.get("/cli-oauth/status")
-                assert r.json()["connected"] is False
+                assert _provider_entry(r.json())["connected"] is False
 
                 await ac.post("/cli-oauth/start")
                 await ac.post("/cli-oauth/complete", json={"code": "c"})
-                assert (await ac.get("/cli-oauth/status")).json()["connected"] is True
+                connected = await ac.get("/cli-oauth/status")
+                assert _provider_entry(connected.json())["connected"] is True
 
                 r = await ac.delete("/cli-oauth/token")
-                assert r.status_code == 200 and r.json()["connected"] is False
-                assert (await ac.get("/cli-oauth/status")).json()["connected"] is False
+                assert r.status_code == 200
+                assert _provider_entry(r.json())["connected"] is False
+                after = await ac.get("/cli-oauth/status")
+                assert _provider_entry(after.json())["connected"] is False
         finally:
             await engine.dispose()
             _restore(originals)
@@ -308,7 +554,7 @@ def test_status_and_disconnect():
 def test_status_reports_and_hides_usage_limit():
     from datetime import timedelta
 
-    from backend.api.v1.endpoints.cli_oauth import _status_from_credential
+    from backend.api.v1.endpoints.cli_oauth import _provider_status
     from backend.models.cli_oauth import CliOAuthCredential
     from backend.utils.time import utc_now
 
@@ -316,7 +562,7 @@ def test_status_reports_and_hides_usage_limit():
     limited = CliOAuthCredential(
         user_id=1, provider="claude_code", status="active", usage_limited_until=future
     )
-    assert _status_from_credential(limited).usage_limited_until == future
+    assert _provider_status("claude_code", limited).usage_limited_until == future
 
     stale = CliOAuthCredential(
         user_id=1,
@@ -325,7 +571,7 @@ def test_status_reports_and_hides_usage_limit():
         usage_limited_until=utc_now() - timedelta(minutes=1),
     )
     # Past its reset -> not surfaced, so the UI clears itself.
-    assert _status_from_credential(stale).usage_limited_until is None
+    assert _provider_status("claude_code", stale).usage_limited_until is None
 
 
 # --- usage accounting (self-view + admin overview) ---

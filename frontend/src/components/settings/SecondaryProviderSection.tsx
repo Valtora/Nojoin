@@ -99,7 +99,7 @@ export default function SecondaryProviderSection({
       eyebrow="AI"
       title="Fallback provider"
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
-      description="Used automatically when the primary provider — or a user's own Claude subscription — is unavailable."
+      description="Used automatically when the primary provider — or a user's own Claude or ChatGPT subscription — is unavailable."
       width="wide"
     >
       <div className="mx-auto max-w-3xl space-y-4">

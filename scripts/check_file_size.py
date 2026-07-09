@@ -38,8 +38,9 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 GRANDFATHERED: dict[str, int] = {
     "backend/worker/tasks/pipeline.py": 2867,
     # Grew past 2686 while adding the CLI OAuth provider branch + per-user id
-    # threading; overdue for a split (extract the per-provider backends).
-    "backend/processing/llm_services.py": 2693,
+    # threading, then +1 for the second subscription provider (Codex/ChatGPT);
+    # overdue for a split (extract the per-provider backends).
+    "backend/processing/llm_services.py": 2694,
     "backend/utils/canonical_pipeline/diarization.py": 2485,
     "backend/utils/canonical_pipeline/core.py": 2192,
     "backend/core/backup_manager.py": 2147,

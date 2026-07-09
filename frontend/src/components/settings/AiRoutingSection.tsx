@@ -1,55 +1,152 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Cloud, Info, Server } from "lucide-react";
 
-import { Settings } from "@/types";
+import { CliOAuthStatus, CliProvider, Settings } from "@/types";
 import { cn } from "@/lib/cn";
 import CliOAuthPanel from "./CliOAuthPanel";
 import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { getCodexModels } from "@/lib/api/cliOauth";
 import { checkLlmConfigured } from "./aiSettingsModels";
-import { CLI_MODEL_OPTIONS } from "./cliModels";
+import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
   "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all";
+
+const PROVIDER_LABEL: Record<CliProvider, string> = {
+  claude_code: "Claude",
+  codex: "ChatGPT",
+};
+
+const DEFAULT_MODEL_HINT: Record<CliProvider, string> = {
+  claude_code: "Claude's default (a Sonnet)",
+  codex: "Codex's default",
+};
+
+// Per-provider settings fields the model pickers read/write.
+const MODEL_FIELDS: Record<
+  CliProvider,
+  { main: keyof Settings; live: keyof Settings }
+> = {
+  claude_code: { main: "cli_model", live: "cli_live_model" },
+  codex: { main: "codex_model", live: "codex_live_model" },
+};
 
 interface AiRoutingSectionProps {
   settings: Settings;
   /** Apply and save immediately (discrete controls). */
   onPersist: (newSettings: Settings) => void;
   isAdmin: boolean;
-  cliConnected: boolean;
-  onCliConnectedChange: (connected: boolean) => void;
 }
 
 /**
  * Per-user "AI routing" section. The user picks between the server-configured
- * provider and routing inference through their own Claude subscription (CLI
- * OAuth). Only the controls relevant to the active choice are shown. The two
- * former no-op options (Ollama/BYOK) were removed — they never changed
- * resolution (they fell through to the server provider).
+ * provider and routing inference through their own subscription (Claude or
+ * ChatGPT, via CLI OAuth). Only the controls relevant to the active choice are
+ * shown. The two former no-op options (Ollama/BYOK) were removed — they never
+ * changed resolution (they fell through to the server provider).
  */
 export default function AiRoutingSection({
   settings,
   onPersist,
   isAdmin,
-  cliConnected,
-  onCliConnectedChange,
 }: AiRoutingSectionProps) {
+  // The connect panel owns the status fetch and reports it up here, so the
+  // routing controls can gate on (and select between) live subscriptions.
+  const [cliStatus, setCliStatus] = useState<CliOAuthStatus | null>(null);
+  // Live Codex model catalogue (from `codex debug models`); null until loaded.
+  const [codexModels, setCodexModels] = useState<CliModelOption[] | null>(null);
+
   const isCli = settings.usage_model === "cli_oauth";
   const providerConfigured = checkLlmConfigured(settings);
-  const activeProvider = settings.llm_provider || "none";
+  const activeServerProvider = settings.llm_provider || "none";
   const secondaryProvider = settings.secondary_llm_provider;
+
+  // Only one subscription can be connected at a time; the active provider is
+  // simply whichever one is connected.
+  const connectedProvider: CliProvider | undefined = (cliStatus?.providers ?? [])
+    .find((entry) => entry.connected)
+    ?.provider;
+  const anyConnected = connectedProvider !== undefined;
+  const activeProvider: CliProvider =
+    connectedProvider || settings.cli_provider || "claude_code";
+  const activeProviderConnected = connectedProvider === activeProvider;
+
+  // Keep cli_provider in sync with the connected subscription, so routing
+  // resolves to the one the user actually connected (not a stale choice).
+  useEffect(() => {
+    if (isCli && connectedProvider && connectedProvider !== settings.cli_provider) {
+      onPersist({ ...settings, cli_provider: connectedProvider });
+    }
+  }, [isCli, connectedProvider, settings, onPersist]);
+
+  // Scroll target for the "not connected yet" call-to-action (see chooseCli).
+  const connectPanelRef = useRef<HTMLDivElement>(null);
 
   const chooseServer = () => {
     if (!isCli) return;
     onPersist({ ...settings, usage_model: null });
   };
   const chooseCli = () => {
-    if (isCli || !cliConnected) return;
-    onPersist({ ...settings, usage_model: "cli_oauth" });
+    if (isCli) return;
+    if (!anyConnected) {
+      // Nothing connected yet — guide the user to the connect panel below
+      // instead of dead-ending on a disabled control.
+      connectPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      return;
+    }
+    onPersist({
+      ...settings,
+      usage_model: "cli_oauth",
+      cli_provider: activeProvider,
+    });
   };
+
+  const setModel = (kind: "main" | "live", value: string) => {
+    const field = MODEL_FIELDS[activeProvider][kind];
+    onPersist({ ...settings, [field]: value ? value : null });
+  };
+
+  const mainModel =
+    (settings[MODEL_FIELDS[activeProvider].main] as string | null | undefined) ||
+    "";
+  const liveModel =
+    (settings[MODEL_FIELDS[activeProvider].live] as string | null | undefined) ||
+    "";
+  // Codex's model list is fetched live (the catalogue changes per codex version);
+  // the curated cliModelOptions is only a fallback until it loads.
+  useEffect(() => {
+    if (!isCli || activeProvider !== "codex") return;
+    let cancelled = false;
+    let refetch: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      try {
+        const result = await getCodexModels();
+        if (cancelled) return;
+        if (result.models?.length) setCodexModels(result.models);
+        // First call returns the curated fallback while the worker fetches the
+        // live catalogue — refetch shortly for the real list.
+        if (result.source === "fallback") refetch = setTimeout(load, 3000);
+      } catch {
+        // Keep the curated fallback.
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      clearTimeout(refetch);
+    };
+  }, [isCli, activeProvider]);
+
+  const modelOptions =
+    activeProvider === "codex" && codexModels
+      ? codexModels
+      : cliModelOptions(activeProvider);
 
   return (
     <SettingsSection
@@ -73,47 +170,50 @@ export default function AiRoutingSection({
           />
           <RoutingCard
             selected={isCli}
-            disabled={!cliConnected && !isCli}
             onSelect={chooseCli}
             icon={<Cloud className="h-4 w-4" />}
-            title="My Claude subscription"
+            title="My own AI subscription"
             description={
-              cliConnected || isCli
-                ? "Route AI through your own Claude Pro/Max subscription."
-                : "Connect your subscription below to enable this option."
+              anyConnected || isCli
+                ? "Route AI through your own Claude or ChatGPT plan — usually faster, and you can pick a stronger model."
+                : "Not connected yet — click to set it up below. Usually faster than the shared server default."
             }
           />
         </div>
 
-        <CliOAuthPanel onConnectedChange={onCliConnectedChange} />
+        <p className="text-xs contrast-helper">
+          You choose how AI runs for your account: the server default is managed
+          by your administrator with nothing for you to set up, or connect your
+          own Claude or ChatGPT subscription to run on your personal plan —
+          usually faster and often higher quality.
+        </p>
+
+        <div ref={connectPanelRef}>
+          <CliOAuthPanel onStatusChange={setCliStatus} />
+        </div>
 
         {isCli ? (
           <div className="space-y-4">
-            {!cliConnected && (
+            {!activeProviderConnected && (
               <SettingsCallout tone="warning">
-                Your Claude subscription is not connected right now. Reconnect it
-                above, or switch to the server default, so AI keeps working.
+                Your {PROVIDER_LABEL[activeProvider]} subscription is not
+                connected right now. Reconnect it above, or use the server
+                default, so AI keeps working.
               </SettingsCallout>
             )}
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Model for your subscription
                 </label>
                 <select
-                  value={settings.cli_model || ""}
-                  onChange={(e) =>
-                    onPersist({
-                      ...settings,
-                      cli_model: e.target.value ? e.target.value : null,
-                    })
-                  }
+                  value={mainModel}
+                  onChange={(event) => setModel("main", event.target.value)}
                   className={SELECT_CLASS}
                 >
-                  <option value="">
-                    Claude&apos;s default (currently a Sonnet)
-                  </option>
-                  {CLI_MODEL_OPTIONS.map((model) => (
+                  <option value="">{DEFAULT_MODEL_HINT[activeProvider]}</option>
+                  {modelOptions.map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.label}
                     </option>
@@ -128,17 +228,12 @@ export default function AiRoutingSection({
                   Meeting Edge model for your subscription
                 </label>
                 <select
-                  value={settings.cli_live_model || ""}
-                  onChange={(e) =>
-                    onPersist({
-                      ...settings,
-                      cli_live_model: e.target.value ? e.target.value : null,
-                    })
-                  }
+                  value={liveModel}
+                  onChange={(event) => setModel("live", event.target.value)}
                   className={SELECT_CLASS}
                 >
                   <option value="">Same as the model above</option>
-                  {CLI_MODEL_OPTIONS.map((model) => (
+                  {modelOptions.map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.label}
                     </option>
@@ -179,7 +274,7 @@ export default function AiRoutingSection({
               <div className="text-sm font-semibold text-gray-900 dark:text-white">
                 Server provider:{" "}
                 <span className="capitalize text-orange-600 dark:text-orange-400">
-                  {activeProvider}
+                  {activeServerProvider}
                 </span>
               </div>
               <p className="mt-1 text-xs contrast-helper">
@@ -202,14 +297,12 @@ export default function AiRoutingSection({
 
 function RoutingCard({
   selected,
-  disabled = false,
   onSelect,
   icon,
   title,
   description,
 }: {
   selected: boolean;
-  disabled?: boolean;
   onSelect: () => void;
   icon: ReactNode;
   title: string;
@@ -220,15 +313,12 @@ function RoutingCard({
       type="button"
       role="radio"
       aria-checked={selected}
-      disabled={disabled}
       onClick={onSelect}
       className={cn(
         "flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all",
         selected
           ? "border-orange-500 bg-orange-50/60 shadow-sm dark:border-orange-500/50 dark:bg-orange-500/10"
           : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm dark:border-gray-700 dark:bg-gray-950/60 dark:hover:border-gray-600",
-        disabled &&
-          "cursor-not-allowed opacity-60 hover:border-gray-200 hover:shadow-none dark:hover:border-gray-700",
       )}
     >
       <div className="flex items-center justify-between">
