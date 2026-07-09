@@ -134,7 +134,8 @@ export default function CliOAuthPanel({
           </div>
           <p className="text-xs text-gray-500 mt-1">
             Route AI through your own Claude Pro/Max subscription. Once
-            connected, choose &ldquo;CLI OAuth&rdquo; as your usage model above.
+            connected, choose &ldquo;My Claude subscription&rdquo; above to use
+            it.
           </p>
         </div>
         <div className="shrink-0">

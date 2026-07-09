@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Check, Cloud, Info, Server } from "lucide-react";
 
 import { Settings } from "@/types";
@@ -42,12 +42,24 @@ export default function AiRoutingSection({
   const activeProvider = settings.llm_provider || "none";
   const secondaryProvider = settings.secondary_llm_provider;
 
+  // When a user without a live subscription picks "My subscription", scroll them
+  // to the connect panel below instead of dead-ending on a disabled control
+  // (which showed the OS "not-allowed" cursor and no path forward).
+  const connectPanelRef = useRef<HTMLDivElement>(null);
+
   const chooseServer = () => {
     if (!isCli) return;
     onPersist({ ...settings, usage_model: null });
   };
   const chooseCli = () => {
-    if (isCli || !cliConnected) return;
+    if (isCli) return;
+    if (!cliConnected) {
+      connectPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      return;
+    }
     onPersist({ ...settings, usage_model: "cli_oauth" });
   };
 
@@ -73,19 +85,27 @@ export default function AiRoutingSection({
           />
           <RoutingCard
             selected={isCli}
-            disabled={!cliConnected && !isCli}
             onSelect={chooseCli}
             icon={<Cloud className="h-4 w-4" />}
             title="My Claude subscription"
             description={
               cliConnected || isCli
-                ? "Route AI through your own Claude Pro/Max subscription."
-                : "Connect your subscription below to enable this option."
+                ? "Route AI through your own Claude subscription — usually faster, and you can pick a stronger model."
+                : "Not connected yet — click to set it up below. Usually faster than the shared server default."
             }
           />
         </div>
 
-        <CliOAuthPanel onConnectedChange={onCliConnectedChange} />
+        <p className="text-xs contrast-helper">
+          You choose how AI runs for your account: the server default is managed
+          by your administrator with nothing for you to set up, or connect your
+          own subscription to run on your personal plan — usually faster and
+          often higher quality.
+        </p>
+
+        <div ref={connectPanelRef}>
+          <CliOAuthPanel onConnectedChange={onCliConnectedChange} />
+        </div>
 
         {isCli ? (
           <div className="space-y-4">
@@ -202,14 +222,12 @@ export default function AiRoutingSection({
 
 function RoutingCard({
   selected,
-  disabled = false,
   onSelect,
   icon,
   title,
   description,
 }: {
   selected: boolean;
-  disabled?: boolean;
   onSelect: () => void;
   icon: ReactNode;
   title: string;
@@ -220,15 +238,12 @@ function RoutingCard({
       type="button"
       role="radio"
       aria-checked={selected}
-      disabled={disabled}
       onClick={onSelect}
       className={cn(
         "flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all",
         selected
           ? "border-orange-500 bg-orange-50/60 shadow-sm dark:border-orange-500/50 dark:bg-orange-500/10"
           : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm dark:border-gray-700 dark:bg-gray-950/60 dark:hover:border-gray-600",
-        disabled &&
-          "cursor-not-allowed opacity-60 hover:border-gray-200 hover:shadow-none dark:hover:border-gray-700",
       )}
     >
       <div className="flex items-center justify-between">
