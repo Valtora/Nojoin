@@ -157,59 +157,49 @@ def _provider_entry(body: dict, provider: str = "claude_code") -> dict:
     return next(p for p in body["providers"] if p["provider"] == provider)
 
 
-class _FakeCodexOAuth:
-    """In-memory replacement for the Codex device flow + Redis pending store."""
+class _FakeCodexLogin:
+    """In-memory Codex device login: a Redis login-state stand-in + no-op dispatch.
+
+    The real flow runs `codex login --device-auth` in a worker-io task that
+    publishes state to Redis; the endpoints only dispatch it and read that state.
+    """
 
     def __init__(self):
-        self.pending: dict[int, dict] = {}
-        # Each poll pops one entry: an Exception to raise, or OAuthTokens.
-        self.poll_results: list = []
+        self.state: dict | None = None  # what read_login_state returns
+        self.dispatched: list = []
+        # /start clears state then dispatches the worker task, which publishes the
+        # awaiting state; send_task stands in for that publish.
+        self.on_dispatch_state: dict | None = None
 
-    async def request_device_code(self):
-        return codex_oauth.DeviceCodeGrant(
-            device_code="dev-123",
-            user_code="ABCD-1234",
-            verification_uri="https://auth.openai.com/device",
-            verification_uri_complete="https://auth.openai.com/device?code=ABCD-1234",
-            expires_in=900,
-            interval=5,
-        )
+    def send_task(self, name, args=None, **kwargs):
+        self.dispatched.append((name, list(args or [])))
+        if self.on_dispatch_state is not None:
+            self.state = self.on_dispatch_state
+        return SimpleNamespace(id="task-1")
 
-    async def store_pending_device(self, user_id, grant):
-        self.pending[user_id] = {"device_code": grant.device_code}
+    async def read_login_state(self, user_id):
+        return self.state
 
-    async def get_pending_device(self, user_id):
-        return self.pending.get(user_id)
-
-    async def clear_pending_device(self, user_id):
-        self.pending.pop(user_id, None)
-
-    async def poll_device_token(self, device_code):
-        result = self.poll_results.pop(0)
-        if isinstance(result, Exception):
-            raise result
-        return result
+    async def clear_login_state(self, user_id):
+        self.state = None
 
 
-_CODEX_PATCH_NAMES = (
-    "request_device_code",
-    "store_pending_device",
-    "get_pending_device",
-    "clear_pending_device",
-    "poll_device_token",
-)
-
-
-def _patch_codex(fake: _FakeCodexOAuth):
-    originals = {name: getattr(codex_oauth, name) for name in _CODEX_PATCH_NAMES}
-    for name in _CODEX_PATCH_NAMES:
-        setattr(codex_oauth, name, getattr(fake, name))
+def _patch_codex(fake: _FakeCodexLogin):
+    originals = {
+        "read_login_state": codex_oauth.read_login_state,
+        "clear_login_state": codex_oauth.clear_login_state,
+        "send_task": cli_oauth.celery_app.send_task,
+    }
+    codex_oauth.read_login_state = fake.read_login_state
+    codex_oauth.clear_login_state = fake.clear_login_state
+    cli_oauth.celery_app.send_task = fake.send_task
     return originals
 
 
 def _restore_codex(originals):
-    for name, fn in originals.items():
-        setattr(codex_oauth, name, fn)
+    codex_oauth.read_login_state = originals["read_login_state"]
+    codex_oauth.clear_login_state = originals["clear_login_state"]
+    cli_oauth.celery_app.send_task = originals["send_task"]
 
 
 def test_start_returns_authorize_url_and_stashes_pending():
@@ -359,9 +349,15 @@ def test_complete_rejects_codex_provider():
     asyncio.run(_run())
 
 
-def test_start_codex_returns_device_grant():
+def test_start_codex_dispatches_login_and_returns_code():
     async def _run():
-        fake = _FakeCodexOAuth()
+        fake = _FakeCodexLogin()
+        # Dispatching the worker task publishes the verification URL + code.
+        fake.on_dispatch_state = {
+            "status": "awaiting",
+            "verification_uri": "https://auth.openai.com/codex/device",
+            "user_code": "XES2-55YBM",
+        }
         originals = _patch_codex(fake)
         engine, _maker, app = await _build_app()
         try:
@@ -373,9 +369,15 @@ def test_start_codex_returns_device_grant():
                 assert r.status_code == 200, r.text
                 body = r.json()
                 assert body["provider"] == "codex" and body["kind"] == "device"
-                assert body["user_code"] == "ABCD-1234"
+                assert body["user_code"] == "XES2-55YBM"
                 assert body["verification_uri"].startswith("https://")
-                assert fake.pending.get(1) == {"device_code": "dev-123"}
+                # The worker-io login task was dispatched.
+                assert fake.dispatched
+                assert (
+                    fake.dispatched[0][0]
+                    == "backend.worker.tasks.codex_device_login_task"
+                )
+                assert fake.dispatched[0][1] == [1]
         finally:
             await engine.dispose()
             _restore_codex(originals)
@@ -383,47 +385,30 @@ def test_start_codex_returns_device_grant():
     asyncio.run(_run())
 
 
-def test_poll_codex_pending_then_connects_and_stores():
+def test_poll_codex_maps_login_state():
     async def _run():
-        fake = _FakeCodexOAuth()
-        fake.poll_results = [
-            codex_oauth.CliOAuthAuthorizationPending("authorization_pending"),
-            oauth.OAuthTokens(
-                access_token="oai-access-REAL",
-                refresh_token="oai-refresh-REAL",
-                expires_in=3600,
-                scope="openid",
-            ),
-        ]
+        fake = _FakeCodexLogin()
         originals = _patch_codex(fake)
-        engine, maker, app = await _build_app()
+        engine, _maker, app = await _build_app()
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(
                 transport=transport, base_url="http://testserver"
             ) as ac:
-                await ac.post("/cli-oauth/start", json={"provider": "codex"})
+                # No state yet -> expired.
+                fake.state = None
+                r0 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r0.json()["status"] == "expired"
 
-                first = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
-                assert first.json()["status"] == "pending"
+                # Awaiting approval -> pending.
+                fake.state = {"status": "awaiting", "user_code": "XES2-55YBM"}
+                r1 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r1.json()["status"] == "pending"
 
-                second = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
-                assert second.json()["status"] == "connected"
-
-                # Stored encrypted under the codex provider, token never echoed.
-                assert "oai-access-REAL" not in second.text
-                async with maker() as session:
-                    cred = await get_credential(session, 1, "codex")
-                    assert cred is not None
-                    assert (
-                        decrypt_secret(cred.access_token_encrypted) == "oai-access-REAL"
-                    )
-                    assert (
-                        decrypt_secret(cred.refresh_token_encrypted)
-                        == "oai-refresh-REAL"
-                    )
-                # Pending device state cleared after a successful connect.
-                assert fake.pending.get(1) is None
+                # Worker stored the credential -> connected.
+                fake.state = {"status": "connected"}
+                r2 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r2.json()["status"] == "connected"
         finally:
             await engine.dispose()
             _restore_codex(originals)

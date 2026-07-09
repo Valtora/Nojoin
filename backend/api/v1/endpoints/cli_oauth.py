@@ -13,6 +13,7 @@ Tokens are stored encrypted in ``CliOAuthCredential`` (one row per
 ``(user, provider)``), never in ``User.settings`` and never echoed back.
 """
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -23,6 +24,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
+from backend.celery_app import celery_app
 from backend.models.cli_oauth import (
     CliOAuthCredential,
     CliOAuthCredentialStatus,
@@ -77,6 +79,25 @@ async def _other_connected_provider(
         )
     )
     return result.scalars().first()
+
+
+async def _await_codex_code(
+    user_id: int, timeout: float = 15.0, interval: float = 0.7
+) -> Optional[dict]:
+    """Wait briefly for the worker login task to publish the verification URL +
+    code to Redis. Returns the ``awaiting`` state, or None on failure/timeout."""
+    waited = 0.0
+    while waited < timeout:
+        state = await codex_oauth.read_login_state(user_id)
+        if state:
+            status = state.get("status")
+            if status == codex_oauth.STATUS_AWAITING and state.get("user_code"):
+                return state
+            if status == codex_oauth.STATUS_FAILED:
+                return None
+        await asyncio.sleep(interval)
+        waited += interval
+    return None
 
 
 # --- request/response models ---
@@ -377,31 +398,29 @@ async def start_cli_oauth(
         )
 
     if provider == CliOAuthProvider.CODEX.value:
-        try:
-            grant = await codex_oauth.request_device_code()
-        except codex_oauth.CliOAuthExchangeError as exc:
+        # Codex connect is driven by the codex CLI in worker-io (OpenAI's device
+        # flow is an undocumented, header-gated protocol — see ADR-0002). Dispatch
+        # the login task, then wait briefly for it to publish the URL + code.
+        await codex_oauth.clear_login_state(current_user.id)
+        celery_app.send_task(
+            "backend.worker.tasks.codex_device_login_task",
+            args=[current_user.id],
+        )
+        grant = await _await_codex_code(current_user.id)
+        if grant is None:
             logger.warning(
-                "Codex device authorization failed for user %s: %s",
-                current_user.id,
-                exc,
+                "Codex device login produced no code for user %s.", current_user.id
             )
             raise HTTPException(
                 status_code=502,
-                detail=(
-                    "ChatGPT sign-in isn't available yet — the OpenAI device flow "
-                    "is still being finalised. Claude works today."
-                ),
+                detail="Could not start ChatGPT sign-in. Please try again.",
             )
-        await codex_oauth.store_pending_device(current_user.id, grant)
-        logger.info("Started Codex device flow for user %s.", current_user.id)
+        logger.info("Started Codex device login for user %s.", current_user.id)
         return CliOAuthStartRead(
             provider=provider,
             kind="device",
-            verification_uri=grant.verification_uri,
-            verification_uri_complete=grant.verification_uri_complete,
-            user_code=grant.user_code,
-            interval=grant.interval,
-            expires_in=grant.expires_in,
+            verification_uri=grant.get("verification_uri"),
+            user_code=grant.get("user_code"),
         )
 
     # claude_code: Nojoin-driven PKCE (paste-code)
@@ -479,9 +498,12 @@ async def complete_cli_oauth(
 async def poll_cli_oauth(
     payload: CliOAuthPollRequest = CliOAuthPollRequest(),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ) -> CliOAuthPollRead:
-    """Poll a device-code flow (Codex). Returns pending/connected/expired."""
+    """Poll the Codex device login. Returns pending/connected/expired.
+
+    Reads the state the worker login task publishes to Redis. On ``connected``
+    the task has already stored the credential; the browser then refetches
+    ``/status`` (which reflects it)."""
     provider = _validate_provider(payload.provider)
     if provider != CliOAuthProvider.CODEX.value:
         raise HTTPException(
@@ -489,36 +511,18 @@ async def poll_cli_oauth(
             detail="This provider uses paste-code sign-in; complete it instead.",
         )
 
-    pending = await codex_oauth.get_pending_device(current_user.id)
-    if not pending:
+    state = await codex_oauth.read_login_state(current_user.id)
+    if not state:
         return CliOAuthPollRead(provider=provider, status="expired")
-
-    try:
-        tokens = await codex_oauth.poll_device_token(pending["device_code"])
-    except codex_oauth.CliOAuthAuthorizationPending:
-        return CliOAuthPollRead(provider=provider, status="pending")
-    except codex_oauth.CliOAuthExchangeError as exc:
-        logger.warning("Codex device poll failed for user %s: %s", current_user.id, exc)
-        await codex_oauth.clear_pending_device(current_user.id)
+    status = state.get("status")
+    if status == codex_oauth.STATUS_CONNECTED:
+        await codex_oauth.clear_login_state(current_user.id)
+        logger.info("Codex device connect completed for user %s.", current_user.id)
+        return CliOAuthPollRead(provider=provider, status="connected")
+    if status == codex_oauth.STATUS_FAILED:
+        await codex_oauth.clear_login_state(current_user.id)
         return CliOAuthPollRead(provider=provider, status="expired")
-
-    expires_at = (
-        utc_now() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
-    )
-    await upsert_credential(
-        db,
-        user_id=current_user.id,
-        tokens=CliTokenBundle(
-            access_token=tokens.access_token,
-            refresh_token=tokens.refresh_token,
-            token_expires_at=expires_at,
-        ),
-        provider=provider,
-        status=CliOAuthCredentialStatus.ACTIVE.value,
-    )
-    await codex_oauth.clear_pending_device(current_user.id)
-    logger.info("Completed Codex device connect for user %s.", current_user.id)
-    return CliOAuthPollRead(provider=provider, status="connected")
+    return CliOAuthPollRead(provider=provider, status="pending")
 
 
 @router.delete("/token", response_model=CliOAuthStatusRead)

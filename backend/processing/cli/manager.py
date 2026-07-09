@@ -154,6 +154,32 @@ class CliConversationManager:
             user_id, prompt, access_token, model, timeout, usage_sink
         )
 
+    def _finalize_codex_auth(self, user_id: int, injected_blob: str) -> None:
+        """After a codex exec: persist the (possibly CLI-refreshed) auth.json and
+        wipe the plaintext, so the token stays encrypted at rest and any rotation
+        survives. No-op for non-codex providers. Best-effort — never breaks
+        inference."""
+        if not self._is_codex():
+            return
+        from backend.processing.cli.codex_login import codex_home_for
+        from backend.services.cli_oauth.persistence import store_codex_auth_blob_sync
+
+        auth_path = codex_home_for(user_id) / "auth.json"
+        try:
+            current = auth_path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        try:
+            if current and current != injected_blob:
+                store_codex_auth_blob_sync(user_id, current)
+        except Exception:  # noqa: BLE001 - persistence must not break inference
+            logger.exception("Failed to persist refreshed Codex auth for %s", user_id)
+        finally:
+            try:
+                auth_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     # ---- public sync entry points (called from the sync worker) ----
 
     def run_single_turn(
@@ -182,6 +208,8 @@ class CliConversationManager:
         except CliUsageLimitError as exc:
             self._persist_usage_limited(user_id, exc.resets_at)
             raise
+        finally:
+            self._finalize_codex_auth(user_id, access_token)
         self._record_usage(user_id, usage)
         return text
 
@@ -238,6 +266,7 @@ class CliConversationManager:
             # _persist_usage_limited call above. Empty on an errored turn.
             if usage_sink:
                 self._record_usage(user_id, usage_sink[0])
+            self._finalize_codex_auth(user_id, access_token)
 
     # ---- token lifecycle (sync DB; async only for the httpx refresh) ----
 
@@ -260,6 +289,16 @@ class CliConversationManager:
             # limit is still in effect; raise now so the caller degrades to the
             # secondary or surfaces the reset time.
             self._raise_if_usage_limited(credential)
+            if self._is_codex():
+                # Codex stores the full auth.json blob; the CLI refreshes it in
+                # place during inference (re-persisted afterwards — see
+                # _finalize_codex_auth), so no httpx refresh here.
+                blob = decrypt_secret(credential.access_token_encrypted)
+                if not blob:
+                    raise CliOAuthUnavailableError(
+                        "ChatGPT credential is missing; reconnect in Settings > AI."
+                    )
+                return blob
             if not self._needs_refresh(credential):
                 access_token = decrypt_secret(credential.access_token_encrypted)
                 if not access_token:

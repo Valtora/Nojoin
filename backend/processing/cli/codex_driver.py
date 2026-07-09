@@ -48,7 +48,6 @@ logger = logging.getLogger(__name__)
 # Absolute path to the codex binary in the worker-io image (CX-6 installs it).
 CODEX_PATH = os.environ.get("NOJOIN_CODEX_PATH", "/usr/local/bin/codex")
 DEFAULT_TIMEOUT_SECONDS = 300
-_INJECT_TIMEOUT_SECONDS = 30
 
 _RATE_LIMIT_TOKENS = (
     "429",
@@ -83,7 +82,7 @@ class CodexExecDriver:
     ) -> tuple[str, _TurnUsage]:
         codex_home = self._prepare_dir(user_id, "codex")
         workdir = self._prepare_dir(user_id, "codex-work")
-        await self._inject_token(codex_home, access_token, timeout)
+        self._inject_auth(codex_home, access_token)
 
         last_message = workdir / "last_message.txt"
         # Clear any prior turn's output so a failed write can't read as success.
@@ -148,19 +147,20 @@ class CodexExecDriver:
         args += ["-"]  # read the prompt from stdin
         return args
 
-    async def _inject_token(
-        self, codex_home: Path, access_token: str, timeout: int
-    ) -> None:
-        """Write a valid auth.json into CODEX_HOME via the CLI's own login path."""
-        args = [CODEX_PATH, "login", "--with-access-token"]
-        env = codex_child_env(str(codex_home))
-        return_code, _stdout, stderr = await self._run(
-            args, access_token, env, min(timeout, _INJECT_TIMEOUT_SECONDS)
-        )
-        if return_code != 0:
-            raise CliOAuthUnavailableError(
-                f"Codex token injection failed: {stderr.strip()[:200]}"
-            )
+    def _inject_auth(self, codex_home: Path, auth_blob: str) -> None:
+        """Materialise the stored ``auth.json`` into CODEX_HOME.
+
+        For Codex the manager passes the full ``auth.json`` blob (captured at
+        connect via ``codex login --device-auth``) as the credential, so writing
+        it verbatim reproduces exactly what the CLI expects. The manager
+        re-persists any CLI-refreshed copy and wipes this plaintext after the
+        turn (encrypted-at-rest)."""
+        auth_path = codex_home / "auth.json"
+        auth_path.write_text(auth_blob, encoding="utf-8")
+        try:
+            os.chmod(auth_path, 0o600)
+        except OSError:  # best-effort; exotic filesystems may reject chmod
+            pass
 
     async def _run(
         self, args: list[str], stdin_text: str, env: dict[str, str], timeout: int

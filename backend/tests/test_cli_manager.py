@@ -494,3 +494,23 @@ def test_record_usage_without_data_is_noop(monkeypatch):
     )
     CliConversationManager()._record_usage(1, _TurnUsage())
     assert _read_usage(engine) == []
+
+
+def test_codex_login_parses_verification_url_and_code():
+    """The pty-output parsing is the fragile bit — lock it to real codex output."""
+    from backend.processing.cli import codex_login
+
+    # Captured verbatim from `codex login --device-auth` under a pty (ANSI-coded).
+    sample = (
+        "\x1b[90mOpenAI's command-line coding agent\x1b[0m\n"
+        "1. Open this link in your browser and sign in\n"
+        "   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n"
+        "2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\n"
+        "\x1b[94mXES2-55YBM\x1b[0m\n"
+    )
+    stripped = codex_login._strip_ansi(sample)
+    assert (
+        codex_login._URL.search(stripped).group(0)
+        == "https://auth.openai.com/codex/device"
+    )
+    assert codex_login._CODE.search(stripped).group(1) == "XES2-55YBM"
