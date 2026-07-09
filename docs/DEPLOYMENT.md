@@ -425,6 +425,16 @@ docker compose up -d
 
 Use this only if your local `docker-compose.yml` includes custom build directives.
 
+`worker-io` is built `FROM` the shared worker image, so the base must be built
+before `worker-io`; otherwise Compose builds them in parallel and `worker-io` can
+ship stale code layered on the previous base. The compose files wire this ordering
+explicitly: `worker-io`'s build declares the base as a named `additional_contexts`
+entry (`worker_base`), so Compose builds the base first and rebuilds `worker-io`
+whenever it changes. `docker-compose.example.yml` pins that context to the published
+image (`docker-image://…/nojoin-worker:latest`); a full source build points it at the
+base service instead (`service:worker-gpu`, which also needs a `build:` stanza on the
+worker services). No manual build ordering is required.
+
 Nojoin also exposes installed and latest published version information in **Settings > Updates**. The installed version is read from build metadata embedded into the API image, with local source builds falling back to `docs/VERSION`.
 
 ## Release Model
