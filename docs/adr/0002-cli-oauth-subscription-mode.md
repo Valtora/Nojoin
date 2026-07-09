@@ -84,3 +84,42 @@ Security posture (the trust boundary):
 - **Heavy OS sandbox (low-priv user, rlimits, network isolation).** Rejected —
   low value given tools-off + non-root, and partly infeasible in a non-root
   container (see Decision).
+
+## Update (2026-07-09): Codex (ChatGPT subscription) as a second provider
+
+The mode is now genuinely provider-neutral: alongside Claude, a user can route
+inference through their own **ChatGPT** subscription via the **OpenAI Codex CLI**
+(`CliOAuthProvider.CODEX`). The data model already anticipated this (one
+`CliOAuthCredential` row per `(user, provider)`), so this was additive — no
+migration of existing Claude rows.
+
+- **OAuth:** Codex supports the RFC 8628 **device grant** natively (`codex login
+  --device-auth`), which Claude Code did not — so for Codex, Nojoin uses the
+  device flow (show a verification URL + user code, poll until approved) instead
+  of the paste-back-code workaround. Runs server-side in the API (httpx),
+  mirroring the Claude connect flow.
+- **Driver:** no first-party Python SDK for the subscription path, so the Codex
+  driver runs `codex exec --json --ephemeral --skip-git-repo-check
+  --ignore-user-config -s read-only` as a single-turn subprocess and reads the
+  final text from `-o <file>` (usage parsed tolerantly from the JSONL). The token
+  is injected per call via `codex login --with-access-token`, which writes a valid
+  `auth.json` into a per-user `CODEX_HOME` (so Nojoin never reproduces that
+  schema). It loses Claude's structured `RateLimitEvent`/`resets_at` — limit
+  detection falls back to exit-code/text matching, with no reset time.
+- **Env scrub (the Codex non-negotiable):** `CODEX_API_KEY`/`OPENAI_API_KEY` are
+  excluded from the child env, or Codex would bill the API instead of the
+  subscription. Cleaner than the Claude scrub — the driver spawns a raw subprocess
+  and passes `env` explicitly, so nothing is mutated in `os.environ`.
+- **Supply-chain trade-off (new).** Unlike the Claude CLI (JS on the pinned Node,
+  tiny scannable footprint), the Codex payload is a **~285 MB (package ~336 MB)
+  stripped static-musl binary** that Trivy **cannot introspect** — the zero-CVE-
+  delta gate stays green but *vacuously* (it passes because nothing is scannable,
+  not because it is verified). Accepted: the CLI is unpinned per the repo LLM-SDK
+  policy and trusted via npm version + integrity; we also inherit a full coding
+  agent (MCP/sandbox/plugins/git/ripgrep) to use only single-turn text inference.
+- **ToS:** the same accepted-risk posture extends to OpenAI's consumer terms.
+- **VERIFY before release:** the Codex OAuth device endpoints and the `codex exec`
+  JSON/token shapes were established by desk research (CX-0 spike), not yet an
+  end-to-end run with a live ChatGPT subscription. Parsing is deliberately
+  tolerant and falls back to the reliable `-o` last-message file. Prove it live
+  the way the Claude path was proven, before cutting a release.

@@ -20,7 +20,7 @@ from backend.core.encryption import decrypt_secret
 # configures cleanly when the endpoint queries the credential table.
 from backend.models import registry  # noqa: F401
 from backend.models.cli_oauth import CliOAuthCredential, CliUsageDaily
-from backend.services.cli_oauth import oauth
+from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import get_credential
 from backend.utils.time import utc_now
 
@@ -150,6 +150,66 @@ def _restore(originals):
         setattr(oauth, name, fn)
 
 
+def _provider_entry(body: dict, provider: str = "claude_code") -> dict:
+    """The per-provider status dict from a /status, /complete or /token body."""
+    return next(p for p in body["providers"] if p["provider"] == provider)
+
+
+class _FakeCodexOAuth:
+    """In-memory replacement for the Codex device flow + Redis pending store."""
+
+    def __init__(self):
+        self.pending: dict[int, dict] = {}
+        # Each poll pops one entry: an Exception to raise, or OAuthTokens.
+        self.poll_results: list = []
+
+    async def request_device_code(self):
+        return codex_oauth.DeviceCodeGrant(
+            device_code="dev-123",
+            user_code="ABCD-1234",
+            verification_uri="https://auth.openai.com/device",
+            verification_uri_complete="https://auth.openai.com/device?code=ABCD-1234",
+            expires_in=900,
+            interval=5,
+        )
+
+    async def store_pending_device(self, user_id, grant):
+        self.pending[user_id] = {"device_code": grant.device_code}
+
+    async def get_pending_device(self, user_id):
+        return self.pending.get(user_id)
+
+    async def clear_pending_device(self, user_id):
+        self.pending.pop(user_id, None)
+
+    async def poll_device_token(self, device_code):
+        result = self.poll_results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+_CODEX_PATCH_NAMES = (
+    "request_device_code",
+    "store_pending_device",
+    "get_pending_device",
+    "clear_pending_device",
+    "poll_device_token",
+)
+
+
+def _patch_codex(fake: _FakeCodexOAuth):
+    originals = {name: getattr(codex_oauth, name) for name in _CODEX_PATCH_NAMES}
+    for name in _CODEX_PATCH_NAMES:
+        setattr(codex_oauth, name, getattr(fake, name))
+    return originals
+
+
+def _restore_codex(originals):
+    for name, fn in originals.items():
+        setattr(codex_oauth, name, fn)
+
+
 def test_start_returns_authorize_url_and_stashes_pending():
     async def _run():
         fake = _FakeOAuth()
@@ -186,10 +246,10 @@ def test_complete_exchanges_and_stores_encrypted():
                 await ac.post("/cli-oauth/start")
                 r = await ac.post("/cli-oauth/complete", json={"code": "authcode123"})
                 assert r.status_code == 200, r.text
-                body = r.json()
-                assert body["connected"] is True and body["status"] == "active"
-                # Token never echoed.
-                assert "access_token" not in body and "token" not in body
+                claude = _provider_entry(r.json())
+                assert claude["connected"] is True and claude["status"] == "active"
+                # Token never echoed anywhere in the response.
+                assert "REALACCESS" not in r.text and "access_token" not in r.text
 
                 # Stored encrypted, decrypts to the exchanged access token.
                 async with maker() as session:
@@ -278,6 +338,94 @@ def test_complete_exchange_failure_is_400():
     asyncio.run(_run())
 
 
+def test_complete_rejects_codex_provider():
+    async def _run():
+        engine, _maker, app = await _build_app()
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                # Codex uses device sign-in, so /complete must reject it.
+                r = await ac.post(
+                    "/cli-oauth/complete", json={"code": "x", "provider": "codex"}
+                )
+                assert r.status_code == 400
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_start_codex_returns_device_grant():
+    async def _run():
+        fake = _FakeCodexOAuth()
+        originals = _patch_codex(fake)
+        engine, _maker, app = await _build_app()
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                r = await ac.post("/cli-oauth/start", json={"provider": "codex"})
+                assert r.status_code == 200, r.text
+                body = r.json()
+                assert body["provider"] == "codex" and body["kind"] == "device"
+                assert body["user_code"] == "ABCD-1234"
+                assert body["verification_uri"].startswith("https://")
+                assert fake.pending.get(1) == {"device_code": "dev-123"}
+        finally:
+            await engine.dispose()
+            _restore_codex(originals)
+
+    asyncio.run(_run())
+
+
+def test_poll_codex_pending_then_connects_and_stores():
+    async def _run():
+        fake = _FakeCodexOAuth()
+        fake.poll_results = [
+            codex_oauth.CliOAuthAuthorizationPending("authorization_pending"),
+            oauth.OAuthTokens(
+                access_token="oai-access-REAL",
+                refresh_token="oai-refresh-REAL",
+                expires_in=3600,
+                scope="openid",
+            ),
+        ]
+        originals = _patch_codex(fake)
+        engine, maker, app = await _build_app()
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                await ac.post("/cli-oauth/start", json={"provider": "codex"})
+
+                first = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert first.json()["status"] == "pending"
+
+                second = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert second.json()["status"] == "connected"
+
+                # Stored encrypted under the codex provider, token never echoed.
+                assert "oai-access-REAL" not in second.text
+                async with maker() as session:
+                    cred = await get_credential(session, 1, "codex")
+                    assert cred is not None
+                    assert decrypt_secret(cred.access_token_encrypted) == "oai-access-REAL"
+                    assert (
+                        decrypt_secret(cred.refresh_token_encrypted) == "oai-refresh-REAL"
+                    )
+                # Pending device state cleared after a successful connect.
+                assert fake.pending.get(1) is None
+        finally:
+            await engine.dispose()
+            _restore_codex(originals)
+
+    asyncio.run(_run())
+
+
 def test_status_and_disconnect():
     async def _run():
         fake = _FakeOAuth()
@@ -289,15 +437,18 @@ def test_status_and_disconnect():
                 transport=transport, base_url="http://testserver"
             ) as ac:
                 r = await ac.get("/cli-oauth/status")
-                assert r.json()["connected"] is False
+                assert _provider_entry(r.json())["connected"] is False
 
                 await ac.post("/cli-oauth/start")
                 await ac.post("/cli-oauth/complete", json={"code": "c"})
-                assert (await ac.get("/cli-oauth/status")).json()["connected"] is True
+                connected = await ac.get("/cli-oauth/status")
+                assert _provider_entry(connected.json())["connected"] is True
 
                 r = await ac.delete("/cli-oauth/token")
-                assert r.status_code == 200 and r.json()["connected"] is False
-                assert (await ac.get("/cli-oauth/status")).json()["connected"] is False
+                assert r.status_code == 200
+                assert _provider_entry(r.json())["connected"] is False
+                after = await ac.get("/cli-oauth/status")
+                assert _provider_entry(after.json())["connected"] is False
         finally:
             await engine.dispose()
             _restore(originals)
@@ -308,7 +459,7 @@ def test_status_and_disconnect():
 def test_status_reports_and_hides_usage_limit():
     from datetime import timedelta
 
-    from backend.api.v1.endpoints.cli_oauth import _status_from_credential
+    from backend.api.v1.endpoints.cli_oauth import _provider_status
     from backend.models.cli_oauth import CliOAuthCredential
     from backend.utils.time import utc_now
 
@@ -316,7 +467,7 @@ def test_status_reports_and_hides_usage_limit():
     limited = CliOAuthCredential(
         user_id=1, provider="claude_code", status="active", usage_limited_until=future
     )
-    assert _status_from_credential(limited).usage_limited_until == future
+    assert _provider_status("claude_code", limited).usage_limited_until == future
 
     stale = CliOAuthCredential(
         user_id=1,
@@ -325,7 +476,7 @@ def test_status_reports_and_hides_usage_limit():
         usage_limited_until=utc_now() - timedelta(minutes=1),
     )
     # Past its reset -> not surfaced, so the UI clears itself.
-    assert _status_from_credential(stale).usage_limited_until is None
+    assert _provider_status("claude_code", stale).usage_limited_until is None
 
 
 # --- usage accounting (self-view + admin overview) ---

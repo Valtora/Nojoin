@@ -25,8 +25,10 @@ from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models import registry  # noqa: F401
 from backend.models.cli_oauth import CliOAuthCredential, CliUsageDaily
 from backend.processing.cli.env_scrub import (
+    CODEX_SCRUBBED_ENV_VARS,
     OAUTH_TOKEN_ENV_VAR,
     SCRUBBED_ENV_VARS,
+    codex_child_env,
     scrubbed_environ,
     subscription_env_payload,
 )
@@ -170,6 +172,25 @@ def test_scrub_leaves_absent_vars_absent(monkeypatch):
             assert var not in os.environ
     for var in SCRUBBED_ENV_VARS:
         assert var not in os.environ
+
+
+def test_codex_child_env_excludes_openai_keys_and_sets_home(monkeypatch):
+    """The Codex scrub: OPENAI_API_KEY / CODEX_API_KEY must never reach the
+    subprocess (they would bill the API instead of the subscription), CODEX_HOME
+    is injected, and unrelated vars pass through."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-install-openai")
+    monkeypatch.setenv("CODEX_API_KEY", "sk-codex")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://proxy.internal")
+    monkeypatch.setenv("HARMLESS_SENTINEL", "keep-me")
+
+    env = codex_child_env("/data/cli-oauth/1/codex")
+
+    for var in CODEX_SCRUBBED_ENV_VARS:
+        assert var not in env, f"{var} leaked into the Codex subprocess env"
+    assert env["CODEX_HOME"] == "/data/cli-oauth/1/codex"
+    assert env["HARMLESS_SENTINEL"] == "keep-me"
+    # os.environ itself is untouched (nothing removed in place).
+    assert os.environ["OPENAI_API_KEY"] == "sk-install-openai"
 
 
 # --- token refresh lifecycle ---

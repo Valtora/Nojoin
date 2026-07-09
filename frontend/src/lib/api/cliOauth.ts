@@ -1,4 +1,10 @@
-import type { CliOAuthStatus, CliUsageOverview } from "@/types";
+import type {
+  CliOAuthPoll,
+  CliOAuthStart,
+  CliOAuthStatus,
+  CliProvider,
+  CliUsageOverview,
+} from "@/types";
 import api from "./client";
 
 export const getCliOAuthStatus = async (): Promise<CliOAuthStatus> => {
@@ -18,21 +24,41 @@ export const getCliUsageOverview = async (
   return response.data;
 };
 
-export const startCliOAuth = async (): Promise<{ authorize_url: string }> => {
-  const response = await api.post<{ authorize_url: string }>("/cli-oauth/start");
-  return response.data;
-};
-
-export const completeCliOAuth = async (
-  code: string,
-): Promise<CliOAuthStatus> => {
-  const response = await api.post<CliOAuthStatus>("/cli-oauth/complete", {
-    code,
+/** Begin a connect flow for a provider (Claude paste-code or Codex device). */
+export const startCliOAuth = async (
+  provider: CliProvider,
+): Promise<CliOAuthStart> => {
+  const response = await api.post<CliOAuthStart>("/cli-oauth/start", {
+    provider,
   });
   return response.data;
 };
 
-export const disconnectCliOAuth = async (): Promise<CliOAuthStatus> => {
-  const response = await api.delete<CliOAuthStatus>("/cli-oauth/token");
+/** Finish a paste-code flow (Claude): exchange the pasted authorization code. */
+export const completeCliOAuth = async (
+  code: string,
+  provider: CliProvider = "claude_code",
+): Promise<CliOAuthStatus> => {
+  const response = await api.post<CliOAuthStatus>("/cli-oauth/complete", {
+    code,
+    provider,
+  });
+  return response.data;
+};
+
+/** Poll a device flow (Codex): pending until the user approves in a browser. */
+export const pollCliOAuth = async (
+  provider: CliProvider,
+): Promise<CliOAuthPoll> => {
+  const response = await api.post<CliOAuthPoll>("/cli-oauth/poll", { provider });
+  return response.data;
+};
+
+export const disconnectCliOAuth = async (
+  provider: CliProvider,
+): Promise<CliOAuthStatus> => {
+  const response = await api.delete<CliOAuthStatus>("/cli-oauth/token", {
+    params: { provider },
+  });
   return response.data;
 };

@@ -215,7 +215,7 @@ Settings are grouped by task.
 
 - **Profile**: account details and password changes.
 - **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
-- **AI**: per-user AI routing (the server's configured provider, or your own Claude subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
+- **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
 - **Transcription**: transcription backend and model choices.
 - **Calendar**: user calendar connections and timezone behaviour.
 - **Help**: tours and support surfaces.
@@ -234,9 +234,14 @@ Changing the transcription language affects new transcription work. Use **Reproc
 
 Language preferences are per-user. Per-meeting overrides, full interface translation, Meeting Edge/chat language controls, and speech translation are not part of this setting.
 
-### CLI OAuth (Claude subscription)
+### Your own subscription (CLI OAuth)
 
-Instead of using the server's configured provider, you can route your own AI through your Claude Pro/Max subscription. In **Settings > AI > AI routing**, connect your subscription in the "Claude subscription (CLI OAuth)" panel (open the grant link, then paste back the code Anthropic shows you), then set routing to **My Claude subscription**. Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. Once you start using it, the panel shows your recent token usage.
+Instead of using the server's configured provider, you can route your own AI through your own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription — usually faster, and you can pick a stronger model. In **Settings > AI > AI routing**, connect a subscription in the "Your AI subscription" panel, then set routing to **My own AI subscription**:
+
+- **Claude** — open the grant link and paste back the code Anthropic shows you.
+- **ChatGPT** — open the sign-in page, enter the code shown, and approve access; the panel finishes automatically once you approve.
+
+Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. If you connect both, choose which one is active. When your subscription is unavailable or usage-limited, Nojoin falls back to the server's secondary provider (if the administrator configured one). Once you start using it, the panel shows your recent token usage.
 
 Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to the server's secondary provider (if the administrator has configured one). Disconnecting removes your stored credential.
 

@@ -1,16 +1,16 @@
-"""Per-user CLI OAuth (Claude subscription) connect endpoints.
+"""Per-user CLI OAuth (subscription) connect endpoints — Claude and Codex.
 
-Nojoin-driven PKCE OAuth (see docs/plans/cli-oauth-ai-mode.md): ``/start``
-generates the PKCE verifier + CSRF state (stashed in Redis with a short TTL) and
-returns the Anthropic authorize URL; the user grants access, copies the code
-from Anthropic's callback page, and pastes it into a modal; ``/complete``
-exchanges the code + verifier for tokens and stores them encrypted in
-``CliOAuthCredential`` (never in ``User.settings``, never echoed back).
+Two providers, two connect UXes behind one provider-aware API:
 
-There is no device-code flow in Claude Code and server-initiated browser OAuth
-is unsupported, so Nojoin performs the PKCE exchange itself against the public
-Claude Code OAuth client. The exchange yields an ~8h access token + rotating
-refresh token; on first use the manager refreshes on demand.
+- **claude_code** — Nojoin-driven PKCE (Claude Code has no device-code flow):
+  ``/start`` returns the Anthropic authorize URL, the user pastes back the code
+  Anthropic shows, and ``/complete`` exchanges it.
+- **codex** — RFC 8628 device grant (the Codex CLI supports it natively):
+  ``/start`` returns a verification URL + user code, the user approves in a
+  browser, and ``/poll`` exchanges once the approval lands.
+
+Tokens are stored encrypted in ``CliOAuthCredential`` (one row per
+``(user, provider)``), never in ``User.settings`` and never echoed back.
 """
 
 import logging
@@ -30,11 +30,10 @@ from backend.models.cli_oauth import (
     CliUsageDaily,
 )
 from backend.models.user import User
-from backend.services.cli_oauth import oauth
+from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import (
     CliTokenBundle,
     delete_credential,
-    get_credential,
     upsert_credential,
     wipe_user_cli_dir,
 )
@@ -45,26 +44,70 @@ logger = logging.getLogger(__name__)
 
 _STATUS_NOT_CONNECTED = "not_connected"
 
+# Providers a user can connect, in display order (Claude first — the original).
+SUPPORTED_CLI_PROVIDERS = (
+    CliOAuthProvider.CLAUDE_CODE.value,
+    CliOAuthProvider.CODEX.value,
+)
+
+
+def _validate_provider(provider: str) -> str:
+    if provider not in SUPPORTED_CLI_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
+    return provider
+
+
+# --- request/response models ---
+
+
+class CliOAuthStartRequest(BaseModel):
+    provider: str = CliOAuthProvider.CLAUDE_CODE.value
+
 
 class CliOAuthStartRead(BaseModel):
-    authorize_url: str
+    provider: str
+    # "paste_code" (Claude authorize URL) or "device" (Codex device grant).
+    kind: str
+    # paste_code (Claude)
+    authorize_url: Optional[str] = None
+    # device (Codex)
+    verification_uri: Optional[str] = None
+    verification_uri_complete: Optional[str] = None
+    user_code: Optional[str] = None
+    interval: Optional[int] = None
+    expires_in: Optional[int] = None
 
 
 class CliOAuthCompleteRequest(BaseModel):
     code: str
+    provider: str = CliOAuthProvider.CLAUDE_CODE.value
 
 
-class CliOAuthStatusRead(BaseModel):
+class CliOAuthPollRequest(BaseModel):
+    provider: str = CliOAuthProvider.CODEX.value
+
+
+class CliOAuthPollRead(BaseModel):
+    provider: str
+    # "pending" (keep polling), "connected" (done), or "expired" (restart).
+    status: str
+
+
+class CliOAuthProviderStatus(BaseModel):
+    provider: str
     connected: bool
     status: str
-    provider: str
     token_expires_at: Optional[datetime] = None
     connected_at: Optional[datetime] = None
     # Set while a subscription usage limit is still in effect (best-effort reset
-    # time from the SDK's RateLimitEvent); None once past, so the UI clears itself.
+    # time); None once past, so the UI clears itself.
     usage_limited_until: Optional[datetime] = None
-    # This user's own recorded CLI token usage (input + output), for a self-view
-    # in the AI settings panel. None until the first turn is recorded.
+
+
+class CliOAuthStatusRead(BaseModel):
+    providers: list[CliOAuthProviderStatus]
+    # This user's own recorded CLI token usage across providers (input + output),
+    # for a self-view in the AI settings panel. None until the first turn.
     tokens_7d: Optional[int] = None
     tokens_total: Optional[int] = None
 
@@ -93,26 +136,53 @@ class CliUsageOverviewRead(BaseModel):
     total: int
 
 
-def _status_from_credential(
-    credential: Optional[CliOAuthCredential],
-) -> CliOAuthStatusRead:
+def _provider_status(
+    provider: str, credential: Optional[CliOAuthCredential]
+) -> CliOAuthProviderStatus:
     if credential is None:
-        return CliOAuthStatusRead(
+        return CliOAuthProviderStatus(
+            provider=provider,
             connected=False,
             status=_STATUS_NOT_CONNECTED,
-            provider=CliOAuthProvider.CLAUDE_CODE.value,
         )
     limited_until = credential.usage_limited_until
-    return CliOAuthStatusRead(
+    return CliOAuthProviderStatus(
+        provider=provider,
         connected=credential.status == CliOAuthCredentialStatus.ACTIVE.value,
         status=credential.status,
-        provider=credential.provider,
         token_expires_at=credential.token_expires_at,
         connected_at=credential.last_refreshed_at,
         usage_limited_until=(
             limited_until if limited_until and limited_until > utc_now() else None
         ),
     )
+
+
+async def _full_status(db: AsyncSession, user_id: int) -> CliOAuthStatusRead:
+    """Per-provider connection status + this user's usage aggregate."""
+    credentials = (
+        (
+            await db.execute(
+                select(CliOAuthCredential).where(
+                    CliOAuthCredential.user_id == user_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cred_by_provider = {credential.provider: credential for credential in credentials}
+    status = CliOAuthStatusRead(
+        providers=[
+            _provider_status(provider, cred_by_provider.get(provider))
+            for provider in SUPPORTED_CLI_PROVIDERS
+        ]
+    )
+    agg = (await _usage_by_user(db, [user_id])).get(user_id)
+    if agg is not None:
+        status.tokens_7d = agg["tokens_7d"]
+        status.tokens_total = agg["tokens_total"]
+    return status
 
 
 async def _usage_by_user(
@@ -186,13 +256,7 @@ async def get_cli_oauth_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CliOAuthStatusRead:
-    credential = await get_credential(db, current_user.id)
-    status = _status_from_credential(credential)
-    agg = (await _usage_by_user(db, [current_user.id])).get(current_user.id)
-    if agg is not None:
-        status.tokens_7d = agg["tokens_7d"]
-        status.tokens_total = agg["tokens_total"]
-    return status
+    return await _full_status(db, current_user.id)
 
 
 @router.get("/admin/usage", response_model=CliUsageOverviewRead)
@@ -207,7 +271,9 @@ async def get_cli_usage_overview(
 
     Lists users who have a CLI OAuth credential or any recorded usage. Token sums
     are aggregated in the DB; a self-hosted install has few such users, so the
-    candidate list is sorted and paginated in Python."""
+    candidate list is sorted and paginated in Python. A user with both providers
+    connected shows a single row (usage is summed across providers; the displayed
+    rate-limit reading is whichever credential row is iterated last)."""
     limit = max(1, min(limit, 100))
     skip = max(0, skip)
 
@@ -240,13 +306,46 @@ async def get_cli_usage_overview(
 
 @router.post("/start", response_model=CliOAuthStartRead)
 async def start_cli_oauth(
+    payload: CliOAuthStartRequest = CliOAuthStartRequest(),
     current_user: User = Depends(get_current_user),
 ) -> CliOAuthStartRead:
+    provider = _validate_provider(payload.provider)
+
+    if provider == CliOAuthProvider.CODEX.value:
+        try:
+            grant = await codex_oauth.request_device_code()
+        except codex_oauth.CliOAuthExchangeError as exc:
+            logger.warning(
+                "Codex device authorization failed for user %s: %s",
+                current_user.id,
+                exc,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Could not start ChatGPT sign-in. Please try again.",
+            )
+        await codex_oauth.store_pending_device(current_user.id, grant)
+        logger.info("Started Codex device flow for user %s.", current_user.id)
+        return CliOAuthStartRead(
+            provider=provider,
+            kind="device",
+            verification_uri=grant.verification_uri,
+            verification_uri_complete=grant.verification_uri_complete,
+            user_code=grant.user_code,
+            interval=grant.interval,
+            expires_in=grant.expires_in,
+        )
+
+    # claude_code: Nojoin-driven PKCE (paste-code)
     verifier, challenge = oauth.generate_pkce()
     state = oauth.generate_state()
     await oauth.store_pending_pkce(current_user.id, verifier, state)
     logger.info("Started CLI OAuth PKCE flow for user %s.", current_user.id)
-    return CliOAuthStartRead(authorize_url=oauth.build_authorize_url(challenge, state))
+    return CliOAuthStartRead(
+        provider=provider,
+        kind="paste_code",
+        authorize_url=oauth.build_authorize_url(challenge, state),
+    )
 
 
 @router.post("/complete", response_model=CliOAuthStatusRead)
@@ -255,6 +354,13 @@ async def complete_cli_oauth(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CliOAuthStatusRead:
+    provider = _validate_provider(payload.provider)
+    if provider != CliOAuthProvider.CLAUDE_CODE.value:
+        raise HTTPException(
+            status_code=400,
+            detail="This provider uses device sign-in; poll to complete it.",
+        )
+
     pending = await oauth.pop_pending_pkce(current_user.id)
     if not pending:
         raise HTTPException(
@@ -286,7 +392,7 @@ async def complete_cli_oauth(
     expires_at = (
         utc_now() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
     )
-    credential = await upsert_credential(
+    await upsert_credential(
         db,
         user_id=current_user.id,
         tokens=CliTokenBundle(
@@ -294,19 +400,72 @@ async def complete_cli_oauth(
             refresh_token=tokens.refresh_token,
             token_expires_at=expires_at,
         ),
+        provider=provider,
         status=CliOAuthCredentialStatus.ACTIVE.value,
     )
     logger.info("Completed CLI OAuth connect for user %s.", current_user.id)
-    return _status_from_credential(credential)
+    return await _full_status(db, current_user.id)
+
+
+@router.post("/poll", response_model=CliOAuthPollRead)
+async def poll_cli_oauth(
+    payload: CliOAuthPollRequest = CliOAuthPollRequest(),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CliOAuthPollRead:
+    """Poll a device-code flow (Codex). Returns pending/connected/expired."""
+    provider = _validate_provider(payload.provider)
+    if provider != CliOAuthProvider.CODEX.value:
+        raise HTTPException(
+            status_code=400,
+            detail="This provider uses paste-code sign-in; complete it instead.",
+        )
+
+    pending = await codex_oauth.get_pending_device(current_user.id)
+    if not pending:
+        return CliOAuthPollRead(provider=provider, status="expired")
+
+    try:
+        tokens = await codex_oauth.poll_device_token(pending["device_code"])
+    except codex_oauth.CliOAuthAuthorizationPending:
+        return CliOAuthPollRead(provider=provider, status="pending")
+    except codex_oauth.CliOAuthExchangeError as exc:
+        logger.warning("Codex device poll failed for user %s: %s", current_user.id, exc)
+        await codex_oauth.clear_pending_device(current_user.id)
+        return CliOAuthPollRead(provider=provider, status="expired")
+
+    expires_at = (
+        utc_now() + timedelta(seconds=tokens.expires_in) if tokens.expires_in else None
+    )
+    await upsert_credential(
+        db,
+        user_id=current_user.id,
+        tokens=CliTokenBundle(
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+            token_expires_at=expires_at,
+        ),
+        provider=provider,
+        status=CliOAuthCredentialStatus.ACTIVE.value,
+    )
+    await codex_oauth.clear_pending_device(current_user.id)
+    logger.info("Completed Codex device connect for user %s.", current_user.id)
+    return CliOAuthPollRead(provider=provider, status="connected")
 
 
 @router.delete("/token", response_model=CliOAuthStatusRead)
 async def disconnect_cli_oauth(
+    provider: str = CliOAuthProvider.CLAUDE_CODE.value,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CliOAuthStatusRead:
-    await delete_credential(db, current_user.id)
+    provider = _validate_provider(provider)
+    await delete_credential(db, current_user.id, provider)
     # Wipe the per-user CLI working dir so no subprocess scratch survives revoke.
+    # Scratch (and any injected auth) is re-materialised per inference, so wiping
+    # it while another provider stays connected is harmless.
     wipe_user_cli_dir(current_user.id)
-    logger.info("Disconnected CLI OAuth for user %s.", current_user.id)
-    return _status_from_credential(None)
+    logger.info(
+        "Disconnected CLI OAuth (%s) for user %s.", provider, current_user.id
+    )
+    return await _full_status(db, current_user.id)

@@ -44,8 +44,12 @@ INSTALL_WIDE_ONLY_USER_SETTING_KEYS = frozenset(INSTALL_WIDE_AI_SETTING_KEYS)
 class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
     usage_model: Optional[str] = None
-    cli_model: Optional[str] = None
-    cli_live_model: Optional[str] = None
+    # Which connected subscription cli_oauth resolves to ("claude_code" | "codex").
+    cli_provider: Optional[str] = None
+    cli_model: Optional[str] = None  # Claude CLI model (async tasks)
+    cli_live_model: Optional[str] = None  # Claude CLI Meeting Edge model
+    codex_model: Optional[str] = None  # Codex CLI model (async tasks)
+    codex_live_model: Optional[str] = None  # Codex CLI Meeting Edge model
     enable_meeting_edge: Optional[bool] = None
     meeting_edge_context_level: Optional[int] = None
     whisper_model_size: Optional[str] = None
@@ -151,6 +155,15 @@ class SettingsUpdate(BaseModel):
         if value and value not in ["ollama", "byok", "cli_oauth"]:
             raise ValueError(
                 "Invalid usage_model. Must be one of ['ollama', 'byok', 'cli_oauth'] or empty"
+            )
+        return value
+
+    @field_validator("cli_provider")
+    @classmethod
+    def validate_cli_provider(cls, value: Optional[str]) -> Optional[str]:
+        if value and value not in ["claude_code", "codex"]:
+            raise ValueError(
+                "Invalid cli_provider. Must be one of ['claude_code', 'codex'] or empty"
             )
         return value
 

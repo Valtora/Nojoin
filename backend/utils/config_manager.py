@@ -165,11 +165,17 @@ DEFAULT_USER_SETTINGS = {
     "llm_provider": "gemini",  # LLM provider selection
     # Per-user AI usage model. Unset (or ollama/byok) resolves via the
     # install-wide llm_provider path unchanged; cli_oauth routes inference
-    # through the user's own Claude subscription (CLI OAuth). Kept out of
+    # through the user's own subscription (CLI OAuth). Kept out of
     # INSTALL_WIDE_AI_SETTING_KEYS so it is genuinely per-user.
     "usage_model": None,
-    "cli_model": None,  # CLI OAuth model for async tasks (notes/title/speaker/chat)
-    "cli_live_model": None,  # Optional lower-latency Meeting Edge model for CLI OAuth
+    # Which connected subscription cli_oauth uses: "claude_code" (default) or
+    # "codex". Unset resolves to claude_code so existing cli_oauth users are
+    # unaffected.
+    "cli_provider": None,
+    "cli_model": None,  # Claude CLI model for async tasks (notes/title/speaker/chat)
+    "cli_live_model": None,  # Optional lower-latency Claude CLI Meeting Edge model
+    "codex_model": None,  # Codex CLI model for async tasks
+    "codex_live_model": None,  # Optional lower-latency Codex CLI Meeting Edge model
     "enable_meeting_edge": True,  # Enable the Meeting Edge live advisory card and model calls
     "meeting_edge_context_level": MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,  # Controls how readily Meeting Edge explains technical terms
     "gemini_api_key": None,  # Google Gemini API key

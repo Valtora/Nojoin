@@ -2,11 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Check, ExternalLink, Loader2, Trash2, X } from "lucide-react";
-import type { CliOAuthStatus } from "@/types";
+import type {
+  CliOAuthProviderStatus,
+  CliOAuthStatus,
+  CliProvider,
+} from "@/types";
 import {
   completeCliOAuth,
   disconnectCliOAuth,
   getCliOAuthStatus,
+  pollCliOAuth,
   startCliOAuth,
 } from "@/lib/api/cliOauth";
 
@@ -25,52 +30,151 @@ function formatTokens(value: number): string {
   return String(value);
 }
 
+const PROVIDER_ORDER: CliProvider[] = ["claude_code", "codex"];
+
+const PROVIDER_META: Record<
+  CliProvider,
+  { title: string; plan: string; connectLabel: string; vendor: string }
+> = {
+  claude_code: {
+    title: "Claude subscription",
+    plan: "Claude Pro/Max",
+    connectLabel: "Connect Claude",
+    vendor: "Anthropic",
+  },
+  codex: {
+    title: "ChatGPT subscription",
+    plan: "ChatGPT Plus/Pro",
+    connectLabel: "Connect ChatGPT",
+    vendor: "OpenAI",
+  },
+};
+
 /**
- * Connect panel for routing AI through a user's own Claude subscription.
- *
- * Nojoin drives the PKCE OAuth: "Connect" opens Anthropic's authorize page in a
- * new tab and a modal to paste back the code Anthropic shows. Nojoin exchanges
- * the code server-side and stores the tokens encrypted. Once connected, the
- * user selects "My Claude subscription" in the AI routing section to route
- * inference through it.
+ * Connect panel for routing AI through a user's own subscription — Claude or
+ * ChatGPT. One row per provider, each driving its own connect flow: Claude uses
+ * a Nojoin-driven PKCE paste-code exchange; ChatGPT (Codex) uses a device-code
+ * flow (approve in a browser, Nojoin polls until it lands). Tokens are exchanged
+ * and stored server-side, encrypted; nothing is echoed back here.
  */
 export default function CliOAuthPanel({
-  onConnectedChange,
+  onStatusChange,
 }: {
-  onConnectedChange?: (connected: boolean) => void;
+  onStatusChange?: (status: CliOAuthStatus | null) => void;
 } = {}) {
   const [status, setStatus] = useState<CliOAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      setStatus(await getCliOAuthStatus());
+      const next = await getCliOAuthStatus();
+      setStatus(next);
+      onStatusChange?.(next);
     } catch {
       setStatus(null);
+      onStatusChange?.(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onStatusChange]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // Start (or restart) the flow: mint a fresh PKCE challenge and open the modal.
-  // The authorize URL is rendered as a real link (clicked directly by the user)
-  // rather than window.open'd after the await, which popup blockers would eat.
+  const byProvider = (provider: CliProvider): CliOAuthProviderStatus | undefined =>
+    status?.providers?.find((entry) => entry.provider === provider);
+
+  const tokens7d = status?.tokens_7d;
+  const tokensTotal = status?.tokens_total;
+
+  return (
+    <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
+      <div>
+        <div className="text-sm font-semibold text-gray-900 dark:text-white">
+          Your AI subscription
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Connect Claude or ChatGPT to route AI through your own plan, then choose
+          &ldquo;My own AI subscription&rdquo; above.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <Loader2 className="w-4 h-4 animate-spin" /> Checking connections…
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {PROVIDER_ORDER.map((provider) => (
+            <ProviderConnectRow
+              key={provider}
+              provider={provider}
+              status={byProvider(provider)}
+              onChanged={refresh}
+            />
+          ))}
+        </div>
+      )}
+
+      {typeof tokens7d === "number" && tokens7d > 0 && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          You&apos;ve used {formatTokens(tokens7d)} tokens in the last 7 days
+          {typeof tokensTotal === "number"
+            ? ` (${formatTokens(tokensTotal)} all time)`
+            : ""}
+          .
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ProviderConnectRow({
+  provider,
+  status,
+  onChanged,
+}: {
+  provider: CliProvider;
+  status: CliOAuthProviderStatus | undefined;
+  onChanged: () => void;
+}) {
+  const meta = PROVIDER_META[provider];
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  // Paste-code flow (Claude)
+  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  // Device flow (Codex)
+  const [device, setDevice] = useState<{
+    verificationUri: string;
+    verificationUriComplete?: string | null;
+    userCode: string;
+  } | null>(null);
+
+  const connected = Boolean(status?.connected);
+  const usageLimitedUntil = parseUtcDate(status?.usage_limited_until);
+  const usageLimited =
+    usageLimitedUntil !== null && usageLimitedUntil.getTime() > Date.now();
+
   const beginFlow = async () => {
     setBusy(true);
     setError(null);
     try {
-      const { authorize_url } = await startCliOAuth();
-      setAuthorizeUrl(authorize_url);
+      const start = await startCliOAuth(provider);
+      if (start.kind === "device") {
+        setDevice({
+          verificationUri: start.verification_uri ?? "",
+          verificationUriComplete: start.verification_uri_complete,
+          userCode: start.user_code ?? "",
+        });
+        setAuthorizeUrl(null);
+      } else {
+        setAuthorizeUrl(start.authorize_url ?? null);
+        setDevice(null);
+      }
       setCode("");
       setModalOpen(true);
     } catch {
@@ -80,20 +184,53 @@ export default function CliOAuthPanel({
     }
   };
 
+  // Device flow: once the modal is open with a device grant, poll until the user
+  // approves in a browser (connected), the code lapses (expired), or the modal
+  // closes. The interval is fixed rather than server-driven to keep it simple.
+  useEffect(() => {
+    if (!modalOpen || !device) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const result = await pollCliOAuth(provider);
+        if (cancelled) return;
+        if (result.status === "connected") {
+          setModalOpen(false);
+          setDevice(null);
+          onChanged();
+          return;
+        }
+        if (result.status === "expired") {
+          setError("Sign-in expired. Start again for a fresh code.");
+          setDevice(null);
+          return;
+        }
+      } catch {
+        // Transient poll error — keep trying until the code expires.
+      }
+      if (!cancelled) timer = setTimeout(tick, 4000);
+    };
+    timer = setTimeout(tick, 4000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [modalOpen, device, provider, onChanged]);
+
   const handleComplete = async () => {
     if (!code.trim()) {
-      setError("Paste the code Anthropic showed you.");
+      setError(`Paste the code ${meta.vendor} showed you.`);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      setStatus(await completeCliOAuth(code.trim()));
+      await completeCliOAuth(code.trim(), provider);
       setModalOpen(false);
       setCode("");
+      onChanged();
     } catch {
-      // The code is single-use and expires quickly; the pending flow is spent,
-      // so recovery is to open the sign-in page again for a fresh code.
       setError(
         "Could not complete sign-in — the code may have expired. Open the sign-in page again for a fresh code.",
       );
@@ -106,7 +243,8 @@ export default function CliOAuthPanel({
     setBusy(true);
     setError(null);
     try {
-      setStatus(await disconnectCliOAuth());
+      await disconnectCliOAuth(provider);
+      onChanged();
     } catch {
       setError("Could not disconnect. Please try again.");
     } finally {
@@ -114,33 +252,19 @@ export default function CliOAuthPanel({
     }
   };
 
-  const connected = Boolean(status?.connected);
-  const usageLimitedUntil = parseUtcDate(status?.usage_limited_until);
-  const usageLimited =
-    usageLimitedUntil !== null && usageLimitedUntil.getTime() > Date.now();
-
-  // Surface connection state to the parent so the usage-model selector can gate
-  // the "CLI OAuth" option on a live credential.
-  useEffect(() => {
-    onConnectedChange?.(connected);
-  }, [connected, onConnectedChange]);
-
   return (
-    <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
+    <div className="p-3 bg-white dark:bg-gray-950/40 border border-gray-200 dark:border-gray-700 rounded-lg space-y-2">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-gray-900 dark:text-white">
-            Claude subscription (CLI OAuth)
+            {meta.title}
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            Route AI through your own Claude Pro/Max subscription. Once
-            connected, choose &ldquo;CLI OAuth&rdquo; as your usage model above.
+          <p className="text-xs text-gray-500 mt-0.5">
+            Route AI through your own {meta.plan} plan.
           </p>
         </div>
         <div className="shrink-0">
-          {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-          ) : usageLimited ? (
+          {usageLimited ? (
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
               Usage limited
             </span>
@@ -158,26 +282,13 @@ export default function CliOAuthPanel({
 
       {usageLimited && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          Claude subscription limit reached; it resets around{" "}
+          Subscription limit reached; it resets around{" "}
           {usageLimitedUntil!.toLocaleString()}. Your fallback provider (if
           configured) is used until then.
         </p>
       )}
 
-      {connected &&
-        typeof status?.tokens_7d === "number" &&
-        status.tokens_7d > 0 && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            You&apos;ve used {formatTokens(status.tokens_7d)} tokens in the last
-            7 days
-            {typeof status?.tokens_total === "number"
-              ? ` (${formatTokens(status.tokens_total)} all time)`
-              : ""}
-            .
-          </p>
-        )}
-
-      {!connected && (
+      {!connected ? (
         <button
           type="button"
           onClick={beginFlow}
@@ -189,11 +300,9 @@ export default function CliOAuthPanel({
           ) : (
             <ExternalLink className="w-4 h-4" />
           )}
-          Connect Claude subscription
+          {meta.connectLabel}
         </button>
-      )}
-
-      {connected && (
+      ) : (
         <button
           type="button"
           onClick={handleDisconnect}
@@ -218,11 +327,14 @@ export default function CliOAuthPanel({
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Connect your Claude subscription
+                Connect your {meta.title.replace(" subscription", "")} subscription
               </h2>
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setDevice(null);
+                }}
                 className="text-gray-400 hover:text-gray-900 dark:hover:text-white"
                 aria-label="Close"
               >
@@ -231,47 +343,74 @@ export default function CliOAuthPanel({
             </div>
 
             <div className="p-5 space-y-4">
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                Grant Nojoin access to your Claude subscription, then paste back
-                the code Anthropic gives you.
-              </p>
-
-              {authorizeUrl && (
-                <a
-                  href={authorizeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold no-underline"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Grant access on Anthropic
-                </a>
+              {device ? (
+                <>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Open the sign-in page, enter the code below, and approve
+                    access. This page updates automatically once you approve.
+                  </p>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-4 py-3 text-center">
+                    <div className="text-xs text-gray-500 mb-1">Your code</div>
+                    <div className="text-2xl font-mono font-semibold tracking-widest text-gray-900 dark:text-white">
+                      {device.userCode}
+                    </div>
+                  </div>
+                  <a
+                    href={device.verificationUriComplete || device.verificationUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold no-underline"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open the {meta.vendor} sign-in page
+                  </a>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Waiting for approval…
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Grant Nojoin access to your subscription, then paste back the
+                    code {meta.vendor} gives you.
+                  </p>
+                  {authorizeUrl && (
+                    <a
+                      href={authorizeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold no-underline"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Grant access on {meta.vendor}
+                    </a>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                      Paste the code {meta.vendor} shows you
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={code}
+                      onChange={(event) => setCode(event.target.value)}
+                      placeholder="Paste the code here"
+                      disabled={busy}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={beginFlow}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Need a fresh code? Restart sign-in
+                  </button>
+                </>
               )}
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
-                  Paste the code Anthropic shows you
-                </label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="Paste the code here"
-                  disabled={busy}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={beginFlow}
-                disabled={busy}
-                className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
-              >
-                <ExternalLink className="w-3 h-3" />
-                Need a fresh code? Restart sign-in
-              </button>
 
               {error && (
                 <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
@@ -281,21 +420,26 @@ export default function CliOAuthPanel({
             <div className="flex justify-end gap-2 p-5 border-t border-gray-200 dark:border-gray-700">
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setDevice(null);
+                }}
                 disabled={busy}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
               >
-                Cancel
+                {device ? "Close" : "Cancel"}
               </button>
-              <button
-                type="button"
-                onClick={handleComplete}
-                disabled={busy || code.trim().length === 0}
-                className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
-              >
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                Connect
-              </button>
+              {!device && (
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  disabled={busy || code.trim().length === 0}
+                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Connect
+                </button>
+              )}
             </div>
           </div>
         </div>

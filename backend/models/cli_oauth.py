@@ -22,10 +22,14 @@ from backend.models.base import BaseDBModel
 class CliOAuthProvider(str, Enum):
     """Subscription-CLI providers Nojoin can route inference through.
 
-    Only Claude Code is supported in the first cut; Codex/OpenAI is deferred.
+    ``claude_code`` routes through a Claude Pro/Max subscription (driven by the
+    Claude Agent SDK); ``codex`` routes through a ChatGPT subscription (driven by
+    the OpenAI Codex CLI). Stored in the ``provider`` string column, so adding a
+    member is not a schema change.
     """
 
     CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
 
 
 class CliOAuthCredentialStatus(str, Enum):

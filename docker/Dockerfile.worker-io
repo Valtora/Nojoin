@@ -1,9 +1,11 @@
 # --- io-specific worker image ---
-# The base worker image (docker/Dockerfile.worker) plus Node.js + the Claude Code
-# CLI + the Agent SDK, used ONLY by the worker-io lane for the CLI OAuth AI mode.
-# Keeping the Node/CLI tooling here (rather than in the shared worker image)
-# leaves worker-gpu / worker-cpu unchanged — no ~150-250 MB of Node tooling rides
-# along on the GPU-constrained host that never uses it.
+# The base worker image (docker/Dockerfile.worker) plus Node.js, the Claude Code
+# CLI + Agent SDK, and the OpenAI Codex CLI — used ONLY by the worker-io lane for
+# the CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT
+# subscription). Keeping the Node/CLI tooling here (rather than in the shared
+# worker image) leaves worker-gpu / worker-cpu unchanged — no Node tooling (nor
+# the ~336 MB Codex payload) rides along on the GPU-constrained host that never
+# uses it.
 
 # WORKER_BASE_IMAGE lets this layer stack on either the locally-built worker
 # image (nojoin-worker:local) or the published tag in the release pipeline.
@@ -23,15 +25,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 USER root
 
 # Bring in the pinned Node runtime + npm (dynamically linked against libc /
-# libstdc++ already present in the PyTorch base). npm is used only to install the
-# (unpinned) Claude Code CLI, then removed: the CLI runs directly on node, and
-# npm's bundled deps (picomatch, sigstore) would otherwise ride along at runtime
-# and trip the Trivy HIGH gate. The CLI is symlinked to /usr/bin/claude where the
-# manager expects it, regardless of npm's global prefix.
+# libstdc++ already present in the PyTorch base). npm installs two subscription
+# CLIs, then is removed: the Claude Code CLI (JS, runs directly on node) and the
+# OpenAI Codex CLI (@openai/codex, a self-contained native binary). npm's bundled
+# deps (picomatch, sigstore) would otherwise ride along at runtime and trip the
+# Trivy HIGH gate. Both are LLM tooling and stay UNPINNED per the repo policy
+# (allow latest). The Codex payload is a large (~285 MB) stripped static binary
+# that Trivy cannot introspect (ADR-0002): it adds no scannable CVEs but is an
+# unaudited vendor artifact — an accepted trade-off recorded in the ADR. claude is
+# symlinked to /usr/bin/claude (historical path); codex lands at
+# /usr/local/bin/codex (npm's global bin, where NOJOIN_CODEX_PATH defaults).
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && npm install -g @anthropic-ai/claude-code \
+    && npm install -g @anthropic-ai/claude-code @openai/codex \
     && ln -sf "$(readlink -f "$(command -v claude)")" /usr/bin/claude \
     && pip install --no-cache-dir claude-agent-sdk \
     && rm -rf /usr/local/lib/node_modules/npm /usr/lib/node_modules/npm \

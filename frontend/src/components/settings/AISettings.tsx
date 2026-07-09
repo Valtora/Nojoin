@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 import { Settings } from "@/types";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import SettingsCallout from "./SettingsCallout";
@@ -40,10 +38,6 @@ export default function AISettings({
   searchQuery = "",
   isAdmin = false,
 }: AISettingsProps) {
-  // Gates the CLI OAuth routing option on a live subscription credential;
-  // updated by CliOAuthPanel as its connection status changes.
-  const [cliConnected, setCliConnected] = useState(false);
-
   const models = useAISettingsModels({ settings, onPersist });
 
   // Apply a change and save it immediately, for discrete controls (selects,
@@ -84,6 +78,9 @@ export default function AISettings({
     "cli oauth",
     "subscription",
     "claude subscription",
+    "chatgpt subscription",
+    "chatgpt",
+    "codex",
   ]);
   const showHF = fuzzyMatch(searchQuery, [
     "hugging face",
@@ -153,8 +150,6 @@ export default function AISettings({
           settings={settings}
           onPersist={persistNow}
           isAdmin={isAdmin}
-          cliConnected={cliConnected}
-          onCliConnectedChange={setCliConnected}
         />
       )}
 
