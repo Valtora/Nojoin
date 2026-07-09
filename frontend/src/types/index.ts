@@ -416,10 +416,13 @@ export interface CliOAuthStart {
   expires_in?: number | null;
 }
 
-/** Result of POST /cli-oauth/poll — the device-flow progress signal (Codex). */
+/** Result of POST /cli-oauth/poll — the device-flow progress signal (Codex). The
+ * URL + code arrive here (not from /start) once the worker has them. */
 export interface CliOAuthPoll {
   provider: CliProvider;
   status: "pending" | "connected" | "expired";
+  verification_uri?: string | null;
+  user_code?: string | null;
 }
 
 /** One user's CLI usage + quota status for the admin overview table. */

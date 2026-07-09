@@ -13,7 +13,6 @@ Tokens are stored encrypted in ``CliOAuthCredential`` (one row per
 ``(user, provider)``), never in ``User.settings`` and never echoed back.
 """
 
-import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -81,25 +80,6 @@ async def _other_connected_provider(
     return result.scalars().first()
 
 
-async def _await_codex_code(
-    user_id: int, timeout: float = 15.0, interval: float = 0.7
-) -> Optional[dict]:
-    """Wait briefly for the worker login task to publish the verification URL +
-    code to Redis. Returns the ``awaiting`` state, or None on failure/timeout."""
-    waited = 0.0
-    while waited < timeout:
-        state = await codex_oauth.read_login_state(user_id)
-        if state:
-            status = state.get("status")
-            if status == codex_oauth.STATUS_AWAITING and state.get("user_code"):
-                return state
-            if status == codex_oauth.STATUS_FAILED:
-                return None
-        await asyncio.sleep(interval)
-        waited += interval
-    return None
-
-
 # --- request/response models ---
 
 
@@ -134,6 +114,10 @@ class CliOAuthPollRead(BaseModel):
     provider: str
     # "pending" (keep polling), "connected" (done), or "expired" (restart).
     status: str
+    # Populated for the Codex device flow once the worker has the code (the
+    # browser shows these while status is still "pending"/awaiting approval).
+    verification_uri: Optional[str] = None
+    user_code: Optional[str] = None
 
 
 class CliOAuthProviderStatus(BaseModel):
@@ -400,28 +384,16 @@ async def start_cli_oauth(
     if provider == CliOAuthProvider.CODEX.value:
         # Codex connect is driven by the codex CLI in worker-io (OpenAI's device
         # flow is an undocumented, header-gated protocol — see ADR-0002). Dispatch
-        # the login task, then wait briefly for it to publish the URL + code.
+        # the login task and return immediately; the browser polls /poll for the
+        # verification URL + code. Never block the request — a slow login would
+        # otherwise trip a proxy timeout (Cloudflare 520).
         await codex_oauth.clear_login_state(current_user.id)
         celery_app.send_task(
             "backend.worker.tasks.codex_device_login_task",
             args=[current_user.id],
         )
-        grant = await _await_codex_code(current_user.id)
-        if grant is None:
-            logger.warning(
-                "Codex device login produced no code for user %s.", current_user.id
-            )
-            raise HTTPException(
-                status_code=502,
-                detail="Could not start ChatGPT sign-in. Please try again.",
-            )
-        logger.info("Started Codex device login for user %s.", current_user.id)
-        return CliOAuthStartRead(
-            provider=provider,
-            kind="device",
-            verification_uri=grant.get("verification_uri"),
-            user_code=grant.get("user_code"),
-        )
+        logger.info("Dispatched Codex device login for user %s.", current_user.id)
+        return CliOAuthStartRead(provider=provider, kind="device")
 
     # claude_code: Nojoin-driven PKCE (paste-code)
     verifier, challenge = oauth.generate_pkce()
@@ -512,9 +484,7 @@ async def poll_cli_oauth(
         )
 
     state = await codex_oauth.read_login_state(current_user.id)
-    if not state:
-        return CliOAuthPollRead(provider=provider, status="expired")
-    status = state.get("status")
+    status = state.get("status") if state else None
     if status == codex_oauth.STATUS_CONNECTED:
         await codex_oauth.clear_login_state(current_user.id)
         logger.info("Codex device connect completed for user %s.", current_user.id)
@@ -522,6 +492,15 @@ async def poll_cli_oauth(
     if status == codex_oauth.STATUS_FAILED:
         await codex_oauth.clear_login_state(current_user.id)
         return CliOAuthPollRead(provider=provider, status="expired")
+    if status == codex_oauth.STATUS_AWAITING:
+        # The code is ready; the browser shows it while the user approves.
+        return CliOAuthPollRead(
+            provider=provider,
+            status="pending",
+            verification_uri=state.get("verification_uri"),
+            user_code=state.get("user_code"),
+        )
+    # None (the task is still starting) or unknown -> keep polling.
     return CliOAuthPollRead(provider=provider, status="pending")
 
 

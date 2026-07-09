@@ -155,7 +155,9 @@ function ProviderConnectRow({
   // Paste-code flow (Claude)
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const [code, setCode] = useState("");
-  // Device flow (Codex)
+  // Device flow (Codex). `flowKind` distinguishes the modal's mode; `device` is
+  // null until the worker publishes the code (a "generating code" state).
+  const [flowKind, setFlowKind] = useState<"device" | "paste_code" | null>(null);
   const [device, setDevice] = useState<{
     verificationUri: string;
     verificationUriComplete?: string | null;
@@ -178,17 +180,13 @@ function ProviderConnectRow({
     setBusy(true);
     try {
       const start = await startCliOAuth(provider);
-      if (start.kind === "device") {
-        setDevice({
-          verificationUri: start.verification_uri ?? "",
-          verificationUriComplete: start.verification_uri_complete,
-          userCode: start.user_code ?? "",
-        });
-        setAuthorizeUrl(null);
-      } else {
-        setAuthorizeUrl(start.authorize_url ?? null);
-        setDevice(null);
-      }
+      setFlowKind(start.kind);
+      // Device flow: the code arrives via /poll (kept off /start so a slow login
+      // can't block the request); start in a "generating code" state.
+      setDevice(null);
+      setAuthorizeUrl(
+        start.kind === "paste_code" ? (start.authorize_url ?? null) : null,
+      );
       setCode("");
       setModalOpen(true);
     } catch (err) {
@@ -201,47 +199,57 @@ function ProviderConnectRow({
     }
   };
 
-  // Device flow: once the modal is open with a device grant, poll until the user
-  // approves in a browser (connected), the code lapses (expired), or the modal
-  // closes. The interval is fixed rather than server-driven to keep it simple.
+  // Device flow: while the modal is open, poll until the worker publishes the
+  // code (shown to the user), the user approves (connected), or it lapses/times
+  // out. The code + connection both arrive via /poll.
   useEffect(() => {
-    if (!modalOpen || !device) return;
+    if (!modalOpen || flowKind !== "device") return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const maxAttempts = 60; // ~2.5 min at 2.5s
+    const finish = (type: "error" | "success", message: string) => {
+      setModalOpen(false);
+      setDevice(null);
+      setFlowKind(null);
+      addNotification({ type, message });
+    };
     const tick = async () => {
+      attempts += 1;
       try {
         const result = await pollCliOAuth(provider);
         if (cancelled) return;
         if (result.status === "connected") {
-          setModalOpen(false);
-          setDevice(null);
-          addNotification({
-            type: "success",
-            message: `${meta.label} subscription connected.`,
-          });
+          finish("success", `${meta.label} subscription connected.`);
           onChanged();
           return;
         }
         if (result.status === "expired") {
-          setModalOpen(false);
-          setDevice(null);
-          addNotification({
-            type: "error",
-            message: "Sign-in expired. Start again for a fresh code.",
-          });
+          finish("error", "Sign-in expired. Start again for a fresh code.");
           return;
         }
+        if (result.user_code) {
+          setDevice({
+            verificationUri: result.verification_uri ?? "",
+            userCode: result.user_code,
+          });
+        }
       } catch {
-        // Transient poll error — keep trying until the code expires.
+        // Transient poll error — keep trying.
       }
-      if (!cancelled) timer = setTimeout(tick, 4000);
+      if (cancelled) return;
+      if (attempts >= maxAttempts) {
+        finish("error", "ChatGPT sign-in took too long. Please try again.");
+        return;
+      }
+      timer = setTimeout(tick, 2500);
     };
-    timer = setTimeout(tick, 4000);
+    timer = setTimeout(tick, 1500);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [modalOpen, device, provider, onChanged, addNotification, meta.label]);
+  }, [modalOpen, flowKind, provider, onChanged, addNotification, meta.label]);
 
   const handleComplete = async () => {
     if (!code.trim()) {
@@ -386,6 +394,7 @@ function ProviderConnectRow({
                 onClick={() => {
                   setModalOpen(false);
                   setDevice(null);
+                  setFlowKind(null);
                 }}
                 className="text-gray-400 hover:text-gray-900 dark:hover:text-white"
                 aria-label="Close"
@@ -395,7 +404,8 @@ function ProviderConnectRow({
             </div>
 
             <div className="p-5 space-y-4">
-              {device ? (
+              {flowKind === "device" ? (
+                device ? (
                 <>
                   <p className="text-sm text-gray-700 dark:text-gray-300">
                     Open the sign-in page, enter the code below, and approve
@@ -421,6 +431,12 @@ function ProviderConnectRow({
                     Waiting for approval…
                   </div>
                 </>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating your code…
+                  </div>
+                )
               ) : (
                 <>
                   <p className="text-sm text-gray-700 dark:text-gray-300">
@@ -471,13 +487,14 @@ function ProviderConnectRow({
                 onClick={() => {
                   setModalOpen(false);
                   setDevice(null);
+                  setFlowKind(null);
                 }}
                 disabled={busy}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
               >
-                {device ? "Close" : "Cancel"}
+                {flowKind === "device" ? "Close" : "Cancel"}
               </button>
-              {!device && (
+              {flowKind === "paste_code" && (
                 <button
                   type="button"
                   onClick={handleComplete}

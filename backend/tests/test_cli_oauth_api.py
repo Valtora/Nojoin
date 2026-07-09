@@ -349,15 +349,9 @@ def test_complete_rejects_codex_provider():
     asyncio.run(_run())
 
 
-def test_start_codex_dispatches_login_and_returns_code():
+def test_start_codex_dispatches_login():
     async def _run():
         fake = _FakeCodexLogin()
-        # Dispatching the worker task publishes the verification URL + code.
-        fake.on_dispatch_state = {
-            "status": "awaiting",
-            "verification_uri": "https://auth.openai.com/codex/device",
-            "user_code": "XES2-55YBM",
-        }
         originals = _patch_codex(fake)
         engine, _maker, app = await _build_app()
         try:
@@ -369,9 +363,9 @@ def test_start_codex_dispatches_login_and_returns_code():
                 assert r.status_code == 200, r.text
                 body = r.json()
                 assert body["provider"] == "codex" and body["kind"] == "device"
-                assert body["user_code"] == "XES2-55YBM"
-                assert body["verification_uri"].startswith("https://")
-                # The worker-io login task was dispatched.
+                # No code on /start — it arrives via /poll (non-blocking start).
+                assert body.get("user_code") is None
+                # The worker-io login task was dispatched with the user id.
                 assert fake.dispatched
                 assert (
                     fake.dispatched[0][0]
@@ -395,20 +389,33 @@ def test_poll_codex_maps_login_state():
             async with AsyncClient(
                 transport=transport, base_url="http://testserver"
             ) as ac:
-                # No state yet -> expired.
+                # Task still starting (no state) -> pending, keep polling.
                 fake.state = None
                 r0 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
-                assert r0.json()["status"] == "expired"
+                assert r0.json()["status"] == "pending"
 
-                # Awaiting approval -> pending.
-                fake.state = {"status": "awaiting", "user_code": "XES2-55YBM"}
-                r1 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
-                assert r1.json()["status"] == "pending"
+                # Code ready, awaiting approval -> pending + the code.
+                fake.state = {
+                    "status": "awaiting",
+                    "verification_uri": "https://auth.openai.com/codex/device",
+                    "user_code": "XES2-55YBM",
+                }
+                r1 = (
+                    await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                ).json()
+                assert r1["status"] == "pending"
+                assert r1["user_code"] == "XES2-55YBM"
+                assert r1["verification_uri"].startswith("https://")
+
+                # Failure -> expired.
+                fake.state = {"status": "failed"}
+                r2 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r2.json()["status"] == "expired"
 
                 # Worker stored the credential -> connected.
                 fake.state = {"status": "connected"}
-                r2 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
-                assert r2.json()["status"] == "connected"
+                r3 = await ac.post("/cli-oauth/poll", json={"provider": "codex"})
+                assert r3.json()["status"] == "connected"
         finally:
             await engine.dispose()
             _restore_codex(originals)
