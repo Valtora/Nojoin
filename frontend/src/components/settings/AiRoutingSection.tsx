@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Cloud, Info, Server } from "lucide-react";
 
 import { CliOAuthStatus, CliProvider, Settings } from "@/types";
@@ -13,8 +13,6 @@ import { cliModelOptions } from "./cliModels";
 
 const SELECT_CLASS =
   "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all";
-
-const PROVIDER_ORDER: CliProvider[] = ["claude_code", "codex"];
 
 const PROVIDER_LABEL: Record<CliProvider, string> = {
   claude_code: "Claude",
@@ -63,13 +61,23 @@ export default function AiRoutingSection({
   const activeServerProvider = settings.llm_provider || "none";
   const secondaryProvider = settings.secondary_llm_provider;
 
-  const connectedProviders: CliProvider[] = (cliStatus?.providers ?? [])
-    .filter((entry) => entry.connected)
-    .map((entry) => entry.provider);
-  const anyConnected = connectedProviders.length > 0;
+  // Only one subscription can be connected at a time; the active provider is
+  // simply whichever one is connected.
+  const connectedProvider: CliProvider | undefined = (cliStatus?.providers ?? [])
+    .find((entry) => entry.connected)
+    ?.provider;
+  const anyConnected = connectedProvider !== undefined;
   const activeProvider: CliProvider =
-    settings.cli_provider || connectedProviders[0] || "claude_code";
-  const activeProviderConnected = connectedProviders.includes(activeProvider);
+    connectedProvider || settings.cli_provider || "claude_code";
+  const activeProviderConnected = connectedProvider === activeProvider;
+
+  // Keep cli_provider in sync with the connected subscription, so routing
+  // resolves to the one the user actually connected (not a stale choice).
+  useEffect(() => {
+    if (isCli && connectedProvider && connectedProvider !== settings.cli_provider) {
+      onPersist({ ...settings, cli_provider: connectedProvider });
+    }
+  }, [isCli, connectedProvider, settings, onPersist]);
 
   // Scroll target for the "not connected yet" call-to-action (see chooseCli).
   const connectPanelRef = useRef<HTMLDivElement>(null);
@@ -94,11 +102,6 @@ export default function AiRoutingSection({
       usage_model: "cli_oauth",
       cli_provider: activeProvider,
     });
-  };
-
-  const selectProvider = (provider: CliProvider) => {
-    if (provider === activeProvider) return;
-    onPersist({ ...settings, cli_provider: provider });
   };
 
   const setModel = (kind: "main" | "live", value: string) => {
@@ -163,36 +166,9 @@ export default function AiRoutingSection({
             {!activeProviderConnected && (
               <SettingsCallout tone="warning">
                 Your {PROVIDER_LABEL[activeProvider]} subscription is not
-                connected right now. Reconnect it above, switch provider, or use
-                the server default, so AI keeps working.
+                connected right now. Reconnect it above, or use the server
+                default, so AI keeps working.
               </SettingsCallout>
-            )}
-
-            {connectedProviders.length > 1 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Which subscription to use
-                </label>
-                <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
-                  {PROVIDER_ORDER.filter((provider) =>
-                    connectedProviders.includes(provider),
-                  ).map((provider) => (
-                    <button
-                      key={provider}
-                      type="button"
-                      onClick={() => selectProvider(provider)}
-                      className={cn(
-                        "px-4 py-2 text-sm font-medium transition-colors",
-                        provider === activeProvider
-                          ? "bg-orange-500 text-white"
-                          : "bg-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
-                      )}
-                    >
-                      {PROVIDER_LABEL[provider]}
-                    </button>
-                  ))}
-                </div>
-              </div>
             )}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

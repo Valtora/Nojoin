@@ -390,6 +390,9 @@ export interface CliOAuthProviderStatus {
   token_expires_at?: string | null;
   connected_at?: string | null;
   usage_limited_until?: string | null;
+  // This user's recorded token usage for THIS provider (input + output).
+  tokens_7d?: number | null;
+  tokens_total?: number | null;
 }
 
 export interface CliOAuthStatus {

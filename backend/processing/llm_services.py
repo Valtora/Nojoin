@@ -2449,17 +2449,10 @@ def get_llm_backend(
             allow_private_api_url=allow_private_api_url,
         )
     elif provider == "cli":
-        # CLI OAuth: loads the user's encrypted credential via cli_user_id and
-        # drives the selected subscription CLI — Claude Agent SDK or Codex
-        # (failures degrade via SecondaryLLMBackend).
-        from backend.models.cli_oauth import CliOAuthProvider
         from backend.processing.cli_backend import CliLLMBackend
 
-        return CliLLMBackend(
-            model=model,
-            user_id=cli_user_id,
-            provider=cli_provider or CliOAuthProvider.CLAUDE_CODE.value,
-        )
+        cli = cli_provider or "claude_code"  # subscription CLI: Claude or Codex
+        return CliLLMBackend(model=model, user_id=cli_user_id, provider=cli)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 

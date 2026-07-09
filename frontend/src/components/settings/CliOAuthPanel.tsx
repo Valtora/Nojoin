@@ -14,6 +14,7 @@ import {
   pollCliOAuth,
   startCliOAuth,
 } from "@/lib/api/cliOauth";
+import { useNotificationStore } from "@/lib/notificationStore";
 
 // Backend datetimes are naive UTC (no offset); ensure Date parses them as UTC.
 function parseUtcDate(value?: string | null): Date | null {
@@ -30,20 +31,35 @@ function formatTokens(value: number): string {
   return String(value);
 }
 
+/** Human message from an axios-style error, falling back to a default. */
+function apiErrorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
+  return typeof detail === "string" && detail.trim() ? detail : fallback;
+}
+
 const PROVIDER_ORDER: CliProvider[] = ["claude_code", "codex"];
 
 const PROVIDER_META: Record<
   CliProvider,
-  { title: string; plan: string; connectLabel: string; vendor: string }
+  {
+    title: string;
+    label: string;
+    plan: string;
+    connectLabel: string;
+    vendor: string;
+  }
 > = {
   claude_code: {
     title: "Claude subscription",
+    label: "Claude",
     plan: "Claude Pro/Max",
     connectLabel: "Connect Claude",
     vendor: "Anthropic",
   },
   codex: {
     title: "ChatGPT subscription",
+    label: "ChatGPT",
     plan: "ChatGPT Plus/Pro",
     connectLabel: "Connect ChatGPT",
     vendor: "OpenAI",
@@ -52,10 +68,10 @@ const PROVIDER_META: Record<
 
 /**
  * Connect panel for routing AI through a user's own subscription — Claude or
- * ChatGPT. One row per provider, each driving its own connect flow: Claude uses
- * a Nojoin-driven PKCE paste-code exchange; ChatGPT (Codex) uses a device-code
- * flow (approve in a browser, Nojoin polls until it lands). Tokens are exchanged
- * and stored server-side, encrypted; nothing is echoed back here.
+ * ChatGPT, ONE at a time. One row per provider, each driving its own connect
+ * flow: Claude uses a Nojoin-driven PKCE paste-code exchange; ChatGPT (Codex)
+ * uses a device-code flow. Tokens are exchanged and stored server-side,
+ * encrypted; nothing is echoed back here. All errors surface as toasts.
  */
 export default function CliOAuthPanel({
   onStatusChange,
@@ -85,9 +101,8 @@ export default function CliOAuthPanel({
 
   const byProvider = (provider: CliProvider): CliOAuthProviderStatus | undefined =>
     status?.providers?.find((entry) => entry.provider === provider);
-
-  const tokens7d = status?.tokens_7d;
-  const tokensTotal = status?.tokens_total;
+  // Only one subscription may be connected at a time.
+  const connectedProvider = status?.providers?.find((p) => p.connected)?.provider;
 
   return (
     <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
@@ -96,8 +111,8 @@ export default function CliOAuthPanel({
           Your AI subscription
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          Connect Claude or ChatGPT to route AI through your own plan, then choose
-          &ldquo;My own AI subscription&rdquo; above.
+          Connect Claude or ChatGPT (one at a time) to route AI through your own
+          plan, then choose &ldquo;My own AI subscription&rdquo; above.
         </p>
       </div>
 
@@ -112,20 +127,11 @@ export default function CliOAuthPanel({
               key={provider}
               provider={provider}
               status={byProvider(provider)}
+              connectedProvider={connectedProvider}
               onChanged={refresh}
             />
           ))}
         </div>
-      )}
-
-      {typeof tokens7d === "number" && tokens7d > 0 && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          You&apos;ve used {formatTokens(tokens7d)} tokens in the last 7 days
-          {typeof tokensTotal === "number"
-            ? ` (${formatTokens(tokensTotal)} all time)`
-            : ""}
-          .
-        </p>
       )}
     </div>
   );
@@ -134,15 +140,17 @@ export default function CliOAuthPanel({
 function ProviderConnectRow({
   provider,
   status,
+  connectedProvider,
   onChanged,
 }: {
   provider: CliProvider;
   status: CliOAuthProviderStatus | undefined;
+  connectedProvider: CliProvider | undefined;
   onChanged: () => void;
 }) {
   const meta = PROVIDER_META[provider];
+  const addNotification = useNotificationStore((state) => state.addNotification);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   // Paste-code flow (Claude)
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
@@ -158,10 +166,16 @@ function ProviderConnectRow({
   const usageLimitedUntil = parseUtcDate(status?.usage_limited_until);
   const usageLimited =
     usageLimitedUntil !== null && usageLimitedUntil.getTime() > Date.now();
+  const tokens7d = status?.tokens_7d;
+  const tokensTotal = status?.tokens_total;
+  // Another provider is connected — this one is blocked until it disconnects.
+  const blockedBy =
+    !connected && connectedProvider && connectedProvider !== provider
+      ? PROVIDER_META[connectedProvider].label
+      : null;
 
   const beginFlow = async () => {
     setBusy(true);
-    setError(null);
     try {
       const start = await startCliOAuth(provider);
       if (start.kind === "device") {
@@ -177,8 +191,11 @@ function ProviderConnectRow({
       }
       setCode("");
       setModalOpen(true);
-    } catch {
-      setError("Could not start sign-in. Please try again.");
+    } catch (err) {
+      addNotification({
+        type: "error",
+        message: apiErrorMessage(err, "Could not start sign-in. Please try again."),
+      });
     } finally {
       setBusy(false);
     }
@@ -198,12 +215,20 @@ function ProviderConnectRow({
         if (result.status === "connected") {
           setModalOpen(false);
           setDevice(null);
+          addNotification({
+            type: "success",
+            message: `${meta.label} subscription connected.`,
+          });
           onChanged();
           return;
         }
         if (result.status === "expired") {
-          setError("Sign-in expired. Start again for a fresh code.");
+          setModalOpen(false);
           setDevice(null);
+          addNotification({
+            type: "error",
+            message: "Sign-in expired. Start again for a fresh code.",
+          });
           return;
         }
       } catch {
@@ -216,24 +241,34 @@ function ProviderConnectRow({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [modalOpen, device, provider, onChanged]);
+  }, [modalOpen, device, provider, onChanged, addNotification, meta.label]);
 
   const handleComplete = async () => {
     if (!code.trim()) {
-      setError(`Paste the code ${meta.vendor} showed you.`);
+      addNotification({
+        type: "error",
+        message: `Paste the code ${meta.vendor} showed you.`,
+      });
       return;
     }
     setBusy(true);
-    setError(null);
     try {
       await completeCliOAuth(code.trim(), provider);
       setModalOpen(false);
       setCode("");
+      addNotification({
+        type: "success",
+        message: `${meta.label} subscription connected.`,
+      });
       onChanged();
-    } catch {
-      setError(
-        "Could not complete sign-in — the code may have expired. Open the sign-in page again for a fresh code.",
-      );
+    } catch (err) {
+      addNotification({
+        type: "error",
+        message: apiErrorMessage(
+          err,
+          "Could not complete sign-in — the code may have expired. Open the sign-in page again for a fresh code.",
+        ),
+      });
     } finally {
       setBusy(false);
     }
@@ -241,12 +276,18 @@ function ProviderConnectRow({
 
   const handleDisconnect = async () => {
     setBusy(true);
-    setError(null);
     try {
       await disconnectCliOAuth(provider);
+      addNotification({
+        type: "success",
+        message: `${meta.label} subscription disconnected.`,
+      });
       onChanged();
-    } catch {
-      setError("Could not disconnect. Please try again.");
+    } catch (err) {
+      addNotification({
+        type: "error",
+        message: apiErrorMessage(err, "Could not disconnect. Please try again."),
+      });
     } finally {
       setBusy(false);
     }
@@ -288,21 +329,17 @@ function ProviderConnectRow({
         </p>
       )}
 
-      {!connected ? (
-        <button
-          type="button"
-          onClick={beginFlow}
-          disabled={busy}
-          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
-        >
-          {busy ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <ExternalLink className="w-4 h-4" />
-          )}
-          {meta.connectLabel}
-        </button>
-      ) : (
+      {connected && typeof tokens7d === "number" && tokens7d > 0 && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {formatTokens(tokens7d)} tokens in the last 7 days
+          {typeof tokensTotal === "number"
+            ? ` (${formatTokens(tokensTotal)} all time)`
+            : ""}
+          .
+        </p>
+      )}
+
+      {connected ? (
         <button
           type="button"
           onClick={handleDisconnect}
@@ -316,10 +353,25 @@ function ProviderConnectRow({
           )}
           Disconnect
         </button>
-      )}
-
-      {error && !modalOpen && (
-        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+      ) : blockedBy ? (
+        <p className="text-xs contrast-helper">
+          Disconnect your {blockedBy} subscription above to switch to {meta.label}{" "}
+          — only one can be connected at a time.
+        </p>
+      ) : (
+        <button
+          type="button"
+          onClick={beginFlow}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <ExternalLink className="w-4 h-4" />
+          )}
+          {meta.connectLabel}
+        </button>
       )}
 
       {modalOpen && (
@@ -327,7 +379,7 @@ function ProviderConnectRow({
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700 flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Connect your {meta.title.replace(" subscription", "")} subscription
+                Connect your {meta.label} subscription
               </h2>
               <button
                 type="button"
@@ -410,10 +462,6 @@ function ProviderConnectRow({
                     Need a fresh code? Restart sign-in
                   </button>
                 </>
-              )}
-
-              {error && (
-                <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
               )}
             </div>
 

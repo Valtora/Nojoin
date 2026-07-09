@@ -94,12 +94,14 @@ async def _build_app(
     return engine, maker, app
 
 
-async def _seed_usage(maker, *, user_id, usage_date, input_tokens, output_tokens):
+async def _seed_usage(  # noqa: PLR0913 - test seed helper
+    maker, *, user_id, usage_date, input_tokens, output_tokens, provider="claude_code"
+):
     async with maker() as session:
         session.add(
             CliUsageDaily(
                 user_id=user_id,
-                provider="claude_code",
+                provider=provider,
                 usage_date=usage_date,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -413,15 +415,79 @@ def test_poll_codex_pending_then_connects_and_stores():
                 async with maker() as session:
                     cred = await get_credential(session, 1, "codex")
                     assert cred is not None
-                    assert decrypt_secret(cred.access_token_encrypted) == "oai-access-REAL"
                     assert (
-                        decrypt_secret(cred.refresh_token_encrypted) == "oai-refresh-REAL"
+                        decrypt_secret(cred.access_token_encrypted) == "oai-access-REAL"
+                    )
+                    assert (
+                        decrypt_secret(cred.refresh_token_encrypted)
+                        == "oai-refresh-REAL"
                     )
                 # Pending device state cleared after a successful connect.
                 assert fake.pending.get(1) is None
         finally:
             await engine.dispose()
             _restore_codex(originals)
+
+    asyncio.run(_run())
+
+
+def test_start_rejects_second_provider_while_one_connected():
+    async def _run():
+        engine, maker, app = await _build_app()
+        try:
+            # Claude already connected — only one subscription may be active.
+            async with maker() as session:
+                session.add(
+                    CliOAuthCredential(
+                        user_id=1, provider="claude_code", status="active"
+                    )
+                )
+                await session.commit()
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                r = await ac.post("/cli-oauth/start", json={"provider": "codex"})
+                assert r.status_code == 409, r.text
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def test_status_reports_usage_per_provider():
+    async def _run():
+        engine, maker, app = await _build_app()
+        try:
+            today = utc_now().date()
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=today,
+                input_tokens=90,
+                output_tokens=10,
+                provider="claude_code",
+            )
+            await _seed_usage(
+                maker,
+                user_id=1,
+                usage_date=today,
+                input_tokens=40,
+                output_tokens=10,
+                provider="codex",
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                body = (await ac.get("/cli-oauth/status")).json()
+                claude = _provider_entry(body, "claude_code")
+                codex = _provider_entry(body, "codex")
+                assert claude["tokens_7d"] == 100 and claude["tokens_total"] == 100
+                assert codex["tokens_7d"] == 50 and codex["tokens_total"] == 50
+                assert body["tokens_7d"] == 150  # top-level sum across providers
+        finally:
+            await engine.dispose()
 
     asyncio.run(_run())
 

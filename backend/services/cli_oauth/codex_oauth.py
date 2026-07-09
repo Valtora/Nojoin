@@ -29,10 +29,25 @@ from backend.services.cli_oauth.oauth import CliOAuthExchangeError, OAuthTokens
 
 # Public Codex CLI OAuth client (constant baked into the CLI; not a secret).
 OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-DEVICE_AUTH_URL = "https://auth.openai.com/oauth/device/code"  # VERIFY
-TOKEN_URL = "https://auth.openai.com/oauth/token"  # VERIFY
+# Endpoints extracted from the codex binary. OpenAI's device flow is a CUSTOM
+# protocol under /deviceauth/* (NOT RFC 8628), gated by the CLI's originator /
+# User-Agent headers. NOT YET WORKING end-to-end: a bare POST to
+# /deviceauth/usercode returns 405, so the exact start method/params are still
+# unconfirmed. Completing this most likely means driving `codex login
+# --device-auth` in worker-io (letting the CLI own the protocol) rather than
+# reimplementing it here. See the connector notes.
+DEVICE_AUTH_URL = "https://auth.openai.com/deviceauth/usercode"  # VERIFY (405 on POST)
+DEVICE_TOKEN_URL = "https://auth.openai.com/deviceauth/token"  # VERIFY
+TOKEN_URL = "https://auth.openai.com/oauth/token"  # refresh (confirmed in binary)
 SCOPE = "openid profile email offline_access"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
+
+# The device endpoints reject requests without the CLI's identity headers (the
+# original bare request 403'd). Best-effort match of the codex CLI.
+_CLI_HEADERS = {
+    "User-Agent": "codex_cli_rs",
+    "originator": "codex_cli_rs",
+}
 
 _PENDING_TTL_SECONDS = 900  # device codes typically live ~15 minutes
 _REQUEST_TIMEOUT_SECONDS = 30.0
@@ -84,7 +99,10 @@ async def request_device_code() -> DeviceCodeGrant:
             response = await client.post(
                 DEVICE_AUTH_URL,
                 data=data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    **_CLI_HEADERS,
+                },
             )
     except httpx.HTTPError as exc:
         raise CliOAuthExchangeError(
@@ -112,13 +130,16 @@ async def request_device_code() -> DeviceCodeGrant:
     )
 
 
-async def _post_token(data: dict[str, str]) -> OAuthTokens:
+async def _post_token(data: dict[str, str], url: str) -> OAuthTokens:
     try:
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.post(
-                TOKEN_URL,
+                url,
                 data=data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    **_CLI_HEADERS,
+                },
             )
     except httpx.HTTPError as exc:
         raise CliOAuthExchangeError(f"Token endpoint request failed: {exc}") from exc
@@ -147,7 +168,8 @@ async def poll_device_token(device_code: str) -> OAuthTokens:
             "grant_type": DEVICE_GRANT_TYPE,
             "device_code": device_code,
             "client_id": OPENAI_CLIENT_ID,
-        }
+        },
+        DEVICE_TOKEN_URL,
     )
 
 
@@ -158,7 +180,8 @@ async def refresh_tokens(refresh_token: str) -> OAuthTokens:
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": OPENAI_CLIENT_ID,
-        }
+        },
+        TOKEN_URL,
     )
 
 

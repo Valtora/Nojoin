@@ -101,7 +101,7 @@ class CodexExecDriver:
             raise CliOAuthUnavailableError("Codex inference returned no text.")
         return text, _TurnUsage(usage=_usage_from_jsonl(stdout))
 
-    async def astream_single_turn(
+    async def astream_single_turn(  # noqa: PLR0913 - cohesive driver params
         self,
         user_id: int,
         prompt: str,

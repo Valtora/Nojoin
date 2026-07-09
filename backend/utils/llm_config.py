@@ -377,9 +377,7 @@ def _to_cli_config(
     plus the matching per-provider model fields.
     """
     merged = config.merged_config
-    cli_provider = str(
-        merged.get("cli_provider") or CLI_SUBSCRIPTION_PROVIDER_DEFAULT
-    )
+    cli_provider = str(merged.get("cli_provider") or CLI_SUBSCRIPTION_PROVIDER_DEFAULT)
     main_field, live_field = CLI_MODEL_FIELDS_BY_PROVIDER.get(
         cli_provider, CLI_MODEL_FIELDS_BY_PROVIDER[CLI_SUBSCRIPTION_PROVIDER_DEFAULT]
     )

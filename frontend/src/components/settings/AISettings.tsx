@@ -2,6 +2,7 @@
 
 import { Settings } from "@/types";
 import { fuzzyMatch } from "@/lib/searchUtils";
+import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsCallout from "./SettingsCallout";
 import AiRoutingSection from "./AiRoutingSection";
 import ServerProviderSection from "./ServerProviderSection";
@@ -38,6 +39,7 @@ export default function AISettings({
   searchQuery = "",
   isAdmin = false,
 }: AISettingsProps) {
+  const addNotification = useNotificationStore((state) => state.addNotification);
   const models = useAISettingsModels({ settings, onPersist });
 
   // Apply a change and save it immediately, for discrete controls (selects,
@@ -49,6 +51,10 @@ export default function AISettings({
     }
     void onPersist(updates).catch((error) => {
       console.error("Failed to persist AI settings update", error);
+      addNotification({
+        type: "error",
+        message: "Could not save your AI settings. Please try again.",
+      });
     });
   };
 

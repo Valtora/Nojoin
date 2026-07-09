@@ -57,6 +57,28 @@ def _validate_provider(provider: str) -> str:
     return provider
 
 
+# Friendly names for user-facing messages.
+_PROVIDER_LABEL = {
+    CliOAuthProvider.CLAUDE_CODE.value: "Claude",
+    CliOAuthProvider.CODEX.value: "ChatGPT",
+}
+
+
+async def _other_connected_provider(
+    db: AsyncSession, user_id: int, provider: str
+) -> Optional[str]:
+    """A DIFFERENT provider that is already connected (active), else None — used
+    to enforce a single connected subscription at a time."""
+    result = await db.execute(
+        select(CliOAuthCredential.provider).where(
+            CliOAuthCredential.user_id == user_id,
+            CliOAuthCredential.provider != provider,
+            CliOAuthCredential.status == CliOAuthCredentialStatus.ACTIVE.value,
+        )
+    )
+    return result.scalars().first()
+
+
 # --- request/response models ---
 
 
@@ -102,12 +124,15 @@ class CliOAuthProviderStatus(BaseModel):
     # Set while a subscription usage limit is still in effect (best-effort reset
     # time); None once past, so the UI clears itself.
     usage_limited_until: Optional[datetime] = None
+    # This user's recorded token usage for THIS provider (input + output).
+    tokens_7d: Optional[int] = None
+    tokens_total: Optional[int] = None
 
 
 class CliOAuthStatusRead(BaseModel):
     providers: list[CliOAuthProviderStatus]
-    # This user's own recorded CLI token usage across providers (input + output),
-    # for a self-view in the AI settings panel. None until the first turn.
+    # Sum across providers (kept for back-compat); the UI shows per-provider usage
+    # from each entry above. None until the first turn.
     tokens_7d: Optional[int] = None
     tokens_total: Optional[int] = None
 
@@ -158,30 +183,57 @@ def _provider_status(
     )
 
 
+async def _provider_usage(db: AsyncSession, user_id: int) -> dict[str, dict]:
+    """This user's token usage (input + output) per provider, over the 7-day and
+    all-time windows, keyed by provider value."""
+    today = utc_now().date()
+    seven = today - timedelta(days=6)
+    tokens = CliUsageDaily.input_tokens + CliUsageDaily.output_tokens
+    stmt = (
+        select(
+            CliUsageDaily.provider,
+            func.coalesce(func.sum(tokens), 0),
+            func.coalesce(
+                func.sum(case((CliUsageDaily.usage_date >= seven, tokens), else_=0)), 0
+            ),
+        )
+        .where(CliUsageDaily.user_id == user_id)
+        .group_by(CliUsageDaily.provider)
+    )
+    result = await db.execute(stmt)
+    return {
+        provider: {"tokens_total": int(total or 0), "tokens_7d": int(t7 or 0)}
+        for provider, total, t7 in result.all()
+    }
+
+
 async def _full_status(db: AsyncSession, user_id: int) -> CliOAuthStatusRead:
-    """Per-provider connection status + this user's usage aggregate."""
+    """Per-provider connection status + per-provider token usage."""
     credentials = (
         (
             await db.execute(
-                select(CliOAuthCredential).where(
-                    CliOAuthCredential.user_id == user_id
-                )
+                select(CliOAuthCredential).where(CliOAuthCredential.user_id == user_id)
             )
         )
         .scalars()
         .all()
     )
     cred_by_provider = {credential.provider: credential for credential in credentials}
-    status = CliOAuthStatusRead(
-        providers=[
-            _provider_status(provider, cred_by_provider.get(provider))
-            for provider in SUPPORTED_CLI_PROVIDERS
-        ]
-    )
-    agg = (await _usage_by_user(db, [user_id])).get(user_id)
-    if agg is not None:
-        status.tokens_7d = agg["tokens_7d"]
-        status.tokens_total = agg["tokens_total"]
+    usage = await _provider_usage(db, user_id)
+
+    providers: list[CliOAuthProviderStatus] = []
+    for provider in SUPPORTED_CLI_PROVIDERS:
+        entry = _provider_status(provider, cred_by_provider.get(provider))
+        provider_usage = usage.get(provider)
+        if provider_usage is not None:
+            entry.tokens_7d = provider_usage["tokens_7d"]
+            entry.tokens_total = provider_usage["tokens_total"]
+        providers.append(entry)
+
+    status = CliOAuthStatusRead(providers=providers)
+    if usage:
+        status.tokens_7d = sum(u["tokens_7d"] for u in usage.values())
+        status.tokens_total = sum(u["tokens_total"] for u in usage.values())
     return status
 
 
@@ -308,8 +360,21 @@ async def get_cli_usage_overview(
 async def start_cli_oauth(
     payload: CliOAuthStartRequest = CliOAuthStartRequest(),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> CliOAuthStartRead:
     provider = _validate_provider(payload.provider)
+
+    # One subscription at a time: refuse to start a second provider's sign-in
+    # while another is connected, so the user disconnects the first.
+    other = await _other_connected_provider(db, current_user.id, provider)
+    if other is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Disconnect your {_PROVIDER_LABEL.get(other, other)} subscription "
+                "first — only one can be connected at a time."
+            ),
+        )
 
     if provider == CliOAuthProvider.CODEX.value:
         try:
@@ -322,7 +387,10 @@ async def start_cli_oauth(
             )
             raise HTTPException(
                 status_code=502,
-                detail="Could not start ChatGPT sign-in. Please try again.",
+                detail=(
+                    "ChatGPT sign-in isn't available yet — the OpenAI device flow "
+                    "is still being finalised. Claude works today."
+                ),
             )
         await codex_oauth.store_pending_device(current_user.id, grant)
         logger.info("Started Codex device flow for user %s.", current_user.id)
@@ -465,7 +533,5 @@ async def disconnect_cli_oauth(
     # Scratch (and any injected auth) is re-materialised per inference, so wiping
     # it while another provider stays connected is harmless.
     wipe_user_cli_dir(current_user.id)
-    logger.info(
-        "Disconnected CLI OAuth (%s) for user %s.", provider, current_user.id
-    )
+    logger.info("Disconnected CLI OAuth (%s) for user %s.", provider, current_user.id)
     return await _full_status(db, current_user.id)

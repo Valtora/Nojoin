@@ -136,6 +136,24 @@ class CliConversationManager:
             self._codex_driver = CodexExecDriver(self._provider)
         return self._codex_driver
 
+    def _astream_for(  # noqa: PLR0913 - cohesive driver params
+        self,
+        user_id: int,
+        prompt: str,
+        access_token: str,
+        model: Optional[str],
+        timeout: int,
+        usage_sink: list[_TurnUsage],
+    ):
+        """Pick the provider's streaming driver (Codex vs the inline Claude path)."""
+        if self._is_codex():
+            return self._codex().astream_single_turn(
+                user_id, prompt, access_token, model, timeout, usage_sink
+            )
+        return self._astream_single_turn(
+            user_id, prompt, access_token, model, timeout, usage_sink
+        )
+
     # ---- public sync entry points (called from the sync worker) ----
 
     def run_single_turn(
@@ -190,15 +208,9 @@ class CliConversationManager:
         def _drive() -> None:
             async def _run() -> None:
                 try:
-                    if self._is_codex():
-                        stream = self._codex().astream_single_turn(
-                            user_id, prompt, access_token, model, timeout, usage_sink
-                        )
-                    else:
-                        stream = self._astream_single_turn(
-                            user_id, prompt, access_token, model, timeout, usage_sink
-                        )
-                    async for chunk in stream:
+                    async for chunk in self._astream_for(
+                        user_id, prompt, access_token, model, timeout, usage_sink
+                    ):
                         chunk_queue.put(("chunk", chunk))
                 except Exception as exc:  # noqa: BLE001 - relayed to the consumer
                     chunk_queue.put(("error", exc))
