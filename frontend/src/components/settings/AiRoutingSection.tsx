@@ -8,8 +8,9 @@ import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { getCodexModels } from "@/lib/api/cliOauth";
 import { checkLlmConfigured } from "./aiSettingsModels";
-import { cliModelOptions } from "./cliModels";
+import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
   "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all";
@@ -55,6 +56,8 @@ export default function AiRoutingSection({
   // The connect panel owns the status fetch and reports it up here, so the
   // routing controls can gate on (and select between) live subscriptions.
   const [cliStatus, setCliStatus] = useState<CliOAuthStatus | null>(null);
+  // Live Codex model catalogue (from `codex debug models`); null until loaded.
+  const [codexModels, setCodexModels] = useState<CliModelOption[] | null>(null);
 
   const isCli = settings.usage_model === "cli_oauth";
   const providerConfigured = checkLlmConfigured(settings);
@@ -115,7 +118,35 @@ export default function AiRoutingSection({
   const liveModel =
     (settings[MODEL_FIELDS[activeProvider].live] as string | null | undefined) ||
     "";
-  const modelOptions = cliModelOptions(activeProvider);
+  // Codex's model list is fetched live (the catalogue changes per codex version);
+  // the curated cliModelOptions is only a fallback until it loads.
+  useEffect(() => {
+    if (!isCli || activeProvider !== "codex") return;
+    let cancelled = false;
+    let refetch: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      try {
+        const result = await getCodexModels();
+        if (cancelled) return;
+        if (result.models?.length) setCodexModels(result.models);
+        // First call returns the curated fallback while the worker fetches the
+        // live catalogue — refetch shortly for the real list.
+        if (result.source === "fallback") refetch = setTimeout(load, 3000);
+      } catch {
+        // Keep the curated fallback.
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      clearTimeout(refetch);
+    };
+  }, [isCli, activeProvider]);
+
+  const modelOptions =
+    activeProvider === "codex" && codexModels
+      ? codexModels
+      : cliModelOptions(activeProvider);
 
   return (
     <SettingsSection

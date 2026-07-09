@@ -62,3 +62,15 @@ export const disconnectCliOAuth = async (
   });
   return response.data;
 };
+
+export interface CodexModelsResponse {
+  models: { id: string; label: string }[];
+  // "live" (from the codex binary) or "fallback" (curated; cache warming).
+  source: string;
+}
+
+/** The live Codex model catalogue for the picker (worker-io `codex debug models`). */
+export const getCodexModels = async (): Promise<CodexModelsResponse> => {
+  const response = await api.get<CodexModelsResponse>("/cli-oauth/codex/models");
+  return response.data;
+};

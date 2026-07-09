@@ -484,6 +484,43 @@ def test_status_reports_usage_per_provider():
     asyncio.run(_run())
 
 
+def test_codex_models_live_and_fallback():
+    async def _run():
+        engine, _maker, app = await _build_app()
+        original_read = codex_oauth.read_model_catalog
+        original_send = cli_oauth.celery_app.send_task
+        dispatched: list = []
+        cli_oauth.celery_app.send_task = lambda name, **kwargs: dispatched.append(name)
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(
+                transport=transport, base_url="http://testserver"
+            ) as ac:
+                # Cache miss -> curated fallback + a refresh dispatch.
+                async def _empty():
+                    return None
+
+                codex_oauth.read_model_catalog = lambda: _empty()
+                r = (await ac.get("/cli-oauth/codex/models")).json()
+                assert r["source"] == "fallback" and len(r["models"]) > 0
+                assert "backend.worker.tasks.refresh_codex_models_task" in dispatched
+
+                # Cache hit -> the live catalogue.
+                async def _cached():
+                    return [{"id": "gpt-5.6-sol", "label": "GPT-5.6-Sol"}]
+
+                codex_oauth.read_model_catalog = lambda: _cached()
+                r2 = (await ac.get("/cli-oauth/codex/models")).json()
+                assert r2["source"] == "live"
+                assert r2["models"][0]["id"] == "gpt-5.6-sol"
+        finally:
+            await engine.dispose()
+            codex_oauth.read_model_catalog = original_read
+            cli_oauth.celery_app.send_task = original_send
+
+    asyncio.run(_run())
+
+
 def test_status_and_disconnect():
     async def _run():
         fake = _FakeOAuth()

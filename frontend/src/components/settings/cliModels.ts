@@ -16,11 +16,14 @@ export const CLAUDE_CLI_MODEL_OPTIONS: CliModelOption[] = [
   { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
 ];
 
+// Fallback only — the live catalogue comes from `codex debug models` via
+// GET /cli-oauth/codex/models (getCodexModels). Kept roughly current so the
+// picker is sensible before the live list loads.
 export const CODEX_CLI_MODEL_OPTIONS: CliModelOption[] = [
-  { id: "gpt-5-codex", label: "GPT-5 Codex" },
-  { id: "gpt-5", label: "GPT-5" },
-  { id: "gpt-5-mini", label: "GPT-5 mini" },
-  { id: "o4-mini", label: "o4-mini" },
+  { id: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+  { id: "gpt-5.5", label: "GPT-5.5" },
+  { id: "gpt-5.4", label: "GPT-5.4" },
+  { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
 ];
 
 /** Back-compat alias (Claude was the only provider originally). */

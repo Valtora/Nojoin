@@ -514,3 +514,22 @@ def test_codex_login_parses_verification_url_and_code():
         == "https://auth.openai.com/codex/device"
     )
     assert codex_login._CODE.search(stripped).group(1) == "XES2-55YBM"
+
+
+def test_codex_model_catalog_parse_filters_and_sorts():
+    """The model picker's live catalogue: keep visibility=list, order by priority."""
+    from backend.processing.cli.codex_models import _parse_catalog
+
+    raw = (
+        '{"models":['
+        '{"slug":"gpt-5.4","display_name":"GPT-5.4","visibility":"list","priority":16},'
+        '{"slug":"hidden","display_name":"H","visibility":"hide","priority":2},'
+        '{"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","visibility":"list","priority":1}'
+        "]}"
+    )
+    assert _parse_catalog(raw) == [
+        {"id": "gpt-5.6-sol", "label": "GPT-5.6-Sol"},
+        {"id": "gpt-5.4", "label": "GPT-5.4"},
+    ]
+    # Unparseable output -> empty (the API then serves the curated fallback).
+    assert _parse_catalog("not json at all") == []

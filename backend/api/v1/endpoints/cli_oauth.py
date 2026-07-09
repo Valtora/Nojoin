@@ -166,6 +166,27 @@ class CliUsageOverviewRead(BaseModel):
     total: int
 
 
+class CliCodexModel(BaseModel):
+    id: str
+    label: str
+
+
+class CliCodexModelsRead(BaseModel):
+    models: list[CliCodexModel]
+    # "live" (from the codex binary) or "fallback" (curated; cache warming).
+    source: str
+
+
+# Curated fallback shown only until the live catalogue is cached (or if codex
+# can't be queried). The live list from `codex debug models` is authoritative.
+_CODEX_FALLBACK_MODELS = [
+    CliCodexModel(id="gpt-5.6-sol", label="GPT-5.6-Sol"),
+    CliCodexModel(id="gpt-5.5", label="GPT-5.5"),
+    CliCodexModel(id="gpt-5.4", label="GPT-5.4"),
+    CliCodexModel(id="gpt-5.4-mini", label="GPT-5.4-Mini"),
+]
+
+
 def _provider_status(
     provider: str, credential: Optional[CliOAuthCredential]
 ) -> CliOAuthProviderStatus:
@@ -314,6 +335,23 @@ async def get_cli_oauth_status(
     db: AsyncSession = Depends(get_db),
 ) -> CliOAuthStatusRead:
     return await _full_status(db, current_user.id)
+
+
+@router.get("/codex/models", response_model=CliCodexModelsRead)
+async def get_codex_models(
+    current_user: User = Depends(get_current_user),
+) -> CliCodexModelsRead:
+    """The Codex model catalogue for the picker — live from the codex binary
+    (``codex debug models``, cached in Redis), with a curated fallback while the
+    cache warms or if codex can't be queried."""
+    cached = await codex_oauth.read_model_catalog()
+    if cached:
+        return CliCodexModelsRead(
+            models=[CliCodexModel(**model) for model in cached], source="live"
+        )
+    # Warm the cache for next time (runs in worker-io); serve the fallback now.
+    celery_app.send_task("backend.worker.tasks.refresh_codex_models_task")
+    return CliCodexModelsRead(models=_CODEX_FALLBACK_MODELS, source="fallback")
 
 
 @router.get("/admin/usage", response_model=CliUsageOverviewRead)

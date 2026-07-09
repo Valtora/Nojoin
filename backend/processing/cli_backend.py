@@ -45,10 +45,10 @@ _CLAUDE_CLI_MODELS = (
     "claude-haiku-4-5-20251001",
 )
 _CODEX_CLI_MODELS = (
-    "gpt-5-codex",
-    "gpt-5",
-    "gpt-5-mini",
-    "o4-mini",
+    "gpt-5.6-sol",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
 )
 _MODELS_BY_PROVIDER = {
     "claude_code": _CLAUDE_CLI_MODELS,

@@ -112,3 +112,35 @@ async def clear_login_state(user_id: int) -> None:
         await client.delete(_login_key(user_id))
     finally:
         await client.aclose()
+
+
+# --- Codex model catalogue cache (Redis) ---
+# `codex debug models` (run in worker-io) is cached here; the API serves it to
+# the model picker. Refreshed on a cache miss + a long TTL, since the catalogue
+# only changes when the codex binary is updated.
+
+_CATALOG_KEY = "nojoin:cli_oauth:codex:models"
+_CATALOG_TTL_SECONDS = 21600  # 6 hours
+
+
+def publish_model_catalog(models: list) -> None:
+    """Worker side (sync): cache the fetched model catalogue."""
+    import redis as sync_redis
+
+    client = sync_redis.from_url(get_redis_url(), decode_responses=True)
+    try:
+        client.set(_CATALOG_KEY, json.dumps(models), ex=_CATALOG_TTL_SECONDS)
+    finally:
+        client.close()
+
+
+async def read_model_catalog() -> Optional[list]:
+    """API side (async): the cached model catalogue, or None."""
+    import redis.asyncio as redis
+
+    client = redis.from_url(get_redis_url(), decode_responses=True)
+    try:
+        raw = await client.get(_CATALOG_KEY)
+    finally:
+        await client.aclose()
+    return json.loads(raw) if raw else None

@@ -70,3 +70,21 @@ def _wipe_auth_json(user_id: int) -> None:
         (codex_home_for(user_id) / "auth.json").unlink(missing_ok=True)
     except OSError:
         pass
+
+
+@celery_app.task(  # noqa: F405
+    name="backend.worker.tasks.refresh_codex_models_task",
+    bind=True,  # noqa: F405
+)
+def refresh_codex_models_task(self) -> None:
+    """Fetch the codex model catalogue and cache it for the model picker."""
+    from backend.processing.cli.codex_models import fetch_model_catalog
+
+    models = fetch_model_catalog()
+    if models:
+        codex_oauth.publish_model_catalog(models)
+        logger.info(  # noqa: F405
+            "Refreshed Codex model catalogue (%d models).", len(models)
+        )
+    else:
+        logger.warning("Codex model catalogue refresh returned no models.")  # noqa: F405
