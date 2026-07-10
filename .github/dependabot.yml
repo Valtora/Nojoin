@@ -68,6 +68,12 @@ updates:
       # react-resizable-panels 4 is an API redesign (Group/Separator).
       - dependency-name: "react-resizable-panels"
         versions: [">=4.0.0"]
+      # typescript 7 is the native (Go) compiler port; typescript-eslint (via
+      # eslint-config-next) and the Next.js build layer do not support it yet
+      # (typescript-estree crashes reading a removed compiler enum). Hold at 6.x
+      # until the lint and build toolchain supports TS 7.
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
 
   # --- Container base images ---
   - package-ecosystem: docker
