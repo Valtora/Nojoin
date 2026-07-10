@@ -162,15 +162,6 @@ Sensitive scopes carry an additional review obligation that the maintainer (or, 
 - **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and keep `RecordingCard.tsx` and `Sidebar.tsx` context menus in sync.
 - **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
 
-### Automated Review
-
-Pull requests receive an automated first-pass review alongside the required `CI gate` and the maintainer review. These automated reviews are advisory: they post inline comments and a short summary, but they are not required status checks and never gate a merge.
-
-- **Claude reviewer** (`.github/workflows/claude-review.yml`): reviews same-repository pull requests. It is tuned for materiality rather than volume — it scores each candidate finding for confidence and impact and posts only high-signal correctness, security, and data-integrity issues, deliberately skipping style, naming, convention-following duplication, and anything the CI quality jobs already enforce. If the diff is clean it posts a one-line summary and no inline comments. It reviews once when a pull request is opened, reopened, or marked ready for review — not on every push. To request a re-review after pushing fixes, add the `claude-review` label (remove and re-add it to trigger each subsequent pass).
-- **Codex reviewer** (a GitHub App): covers pull requests opened from forks, which the Claude workflow skips because GitHub withholds repository secrets — and therefore the reviewer's credentials — from fork `pull_request` runs.
-
-Treat both as a first pass that surfaces issues early, not as a substitute for the maintainer review and the required checks above.
-
 ### Branch Protection (maintainer-action-pending)
 
 Branch protection and required-reviewer enforcement cannot be applied from the repository tree; they are GitHub repository settings. The settings to apply on `main` are designed so the sole maintainer can always merge their own green pull request and are never an irreversible lockout:

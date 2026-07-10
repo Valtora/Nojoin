@@ -236,8 +236,16 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker-io
+      # worker-io is FROM the shared worker image. Pin that base as a named build
+      # context so a local `docker compose build worker-io` can never layer it on
+      # a stale or half-built base. Operators who pull the published images ignore
+      # this. To build the WHOLE stack from source, give the worker services a
+      # build: stanza and change this to "service:worker-gpu" -- Compose then
+      # builds the base image first, then worker-io on top of it.
+      additional_contexts:
+        worker_base: "docker-image://ghcr.io/valtora/nojoin-worker:latest"
       args:
-        WORKER_BASE_IMAGE: ghcr.io/valtora/nojoin-worker:latest
+        WORKER_BASE_IMAGE: worker_base
     environment: *worker-environment
     command:
       [
