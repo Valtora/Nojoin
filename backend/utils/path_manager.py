@@ -433,11 +433,20 @@ class PathManager:
         """
         Get the temporary directory for a specific multipart upload.
         """
-        # Sanitize upload_id to prevent path traversal
+        # Sanitize upload_id to prevent path traversal: allow only alphanumerics,
+        # hyphen and underscore, which strips any separators or dot segments.
         safe_id = "".join([c for c in upload_id if c.isalnum() or c in "-_"])
         if not safe_id:
             safe_id = "default_upload"
-        path = self._user_data_directory / "temp_uploads" / safe_id
+
+        base = self._user_data_directory / "temp_uploads"
+        path = base / safe_id
+
+        # Defence in depth: confirm the path stays within the uploads root before
+        # any filesystem access, so no crafted upload_id can escape the base.
+        if not path.is_relative_to(base):
+            raise ValueError(f"Invalid upload_id: {upload_id!r}")
+
         path.mkdir(parents=True, exist_ok=True)
         return path
 
