@@ -73,3 +73,52 @@ CVE-2026-46135
 CVE-2026-46185
 CVE-2026-46195
 CVE-2026-46259
+
+# linux-libc-dev kernel-header CVEs newly disclosed since v1.4.0, from the pinned
+# PyTorch/CUDA worker base (also inherited by the worker-io image, which adds no
+# CVEs of its own). Same rationale as the batches above: these flag the kernel
+# *header* package version, not the running kernel — a container shares the host's
+# kernel, so the in-image linux-libc-dev version is not a runtime exposure for the
+# worker. This batch includes two CRITICALs (CVE-2025-71068 svcrdma, CVE-2026-23216
+# scsi/iscsi use-after-free); the rest are HIGH. Accepted until a newer PyTorch
+# base ships patched headers.
+#   Owner: maintainers. Review by: 2026-10-10.
+CVE-2025-37926
+CVE-2025-40149
+CVE-2025-68817
+CVE-2025-71068
+CVE-2025-71082
+CVE-2025-71089
+CVE-2025-71123
+CVE-2025-71162
+CVE-2026-23001
+CVE-2026-23025
+CVE-2026-23074
+CVE-2026-23105
+CVE-2026-23169
+CVE-2026-23191
+CVE-2026-23209
+CVE-2026-23216
+CVE-2026-23222
+CVE-2026-23273
+CVE-2026-23351
+CVE-2026-23392
+CVE-2026-31419
+CVE-2026-31504
+CVE-2026-31693
+CVE-2026-43033
+CVE-2026-43078
+CVE-2026-43128
+CVE-2026-43153
+CVE-2026-43206
+CVE-2026-43214
+CVE-2026-43215
+CVE-2026-43222
+CVE-2026-43236
+CVE-2026-43278
+CVE-2026-43494
+CVE-2026-43503
+CVE-2026-45852
+CVE-2026-45864
+CVE-2026-45878
+CVE-2026-45891
