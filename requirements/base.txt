@@ -16,4 +16,4 @@ httpx==0.28.1
 urllib3==2.7.0
 pillow==12.3.0
 alembic==1.18.5
-pgvector==0.4.2
+pgvector==0.5.0
