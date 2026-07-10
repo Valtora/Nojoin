@@ -439,12 +439,12 @@ class PathManager:
         if not safe_id:
             safe_id = "default_upload"
 
-        base = (self._user_data_directory / "temp_uploads").resolve()
-        path = (base / safe_id).resolve()
+        base = self._user_data_directory / "temp_uploads"
+        path = base / safe_id
 
-        # Defence in depth: confirm the resolved path stays within the uploads
-        # root before it is used, so no crafted upload_id can escape the base.
-        if path != base and not path.is_relative_to(base):
+        # Defence in depth: confirm the path stays within the uploads root before
+        # any filesystem access, so no crafted upload_id can escape the base.
+        if not path.is_relative_to(base):
             raise ValueError(f"Invalid upload_id: {upload_id!r}")
 
         path.mkdir(parents=True, exist_ok=True)

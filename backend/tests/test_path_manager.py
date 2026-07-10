@@ -15,7 +15,7 @@ def _manager_rooted_at(tmp_path) -> PathManager:
 
 def test_get_upload_temp_dir_sanitizes_and_contains_upload_id(tmp_path):
     manager = _manager_rooted_at(tmp_path)
-    base = (tmp_path / "temp_uploads").resolve()
+    base = tmp_path / "temp_uploads"
 
     # Legitimate id round-trips unchanged and lands inside the uploads root.
     good = manager.get_upload_temp_dir("upload-123_abc")
@@ -32,7 +32,7 @@ def test_get_upload_temp_dir_sanitizes_and_contains_upload_id(tmp_path):
 
 def test_get_upload_temp_dir_falls_back_when_id_is_empty(tmp_path):
     manager = _manager_rooted_at(tmp_path)
-    base = (tmp_path / "temp_uploads").resolve()
+    base = tmp_path / "temp_uploads"
 
     # An id that sanitizes to nothing must not resolve to the base itself.
     result = manager.get_upload_temp_dir("../..")
