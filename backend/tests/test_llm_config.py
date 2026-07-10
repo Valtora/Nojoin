@@ -200,13 +200,20 @@ def test_cli_oauth_meeting_edge_falls_back_to_async_model() -> None:
     assert cli.model == "claude-async"
 
 
-def test_cli_oauth_carries_secondary_for_fallback() -> None:
+def test_cli_oauth_falls_back_to_server_default_chain() -> None:
+    # A cli_oauth user degrades to the ENTIRE server-default chain, not straight
+    # to the secondary: user sub -> server primary -> server secondary.
     merged = _merge_llm_config(
         base_config={
+            "llm_provider": "openai",
+            "openai_model": "gpt-primary",
             "secondary_llm_provider": "gemini",
             "secondary_gemini_model": "g-secondary",
         },
-        system_keys={"secondary_gemini_api_key": "sk-secondary"},
+        system_keys={
+            "openai_api_key": "sk-primary",
+            "secondary_gemini_api_key": "sk-secondary",
+        },
         owner_settings=None,
         user_settings={"usage_model": "cli_oauth", "cli_model": "claude-async"},
         purpose=LLM_PURPOSE_DEFAULT,
@@ -214,11 +221,20 @@ def test_cli_oauth_carries_secondary_for_fallback() -> None:
     cli = _maybe_cli_config(merged, LLM_PURPOSE_DEFAULT)
 
     assert cli is not None
-    assert cli.has_secondary
-    secondary = cli.secondary_config()
-    assert secondary is not None
-    assert secondary.provider == "gemini"
-    assert secondary.model == "g-secondary"
+    assert cli.provider == CLI_PROVIDER
+    assert cli.model == "claude-async"
+    # The CLI config no longer carries a flat secondary of its own.
+    assert not cli.has_secondary
+    # Tier 2 is the server primary.
+    chain = cli.secondary_chain
+    assert chain is not None
+    assert chain.provider == "openai"
+    assert chain.model == "gpt-primary"
+    # Tier 3 is the server secondary, hanging off the server primary.
+    server_secondary = chain.secondary_config()
+    assert server_secondary is not None
+    assert server_secondary.provider == "gemini"
+    assert server_secondary.model == "g-secondary"
 
 
 def test_cli_oauth_carries_user_id_for_credential_lookup() -> None:

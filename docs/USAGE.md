@@ -241,9 +241,9 @@ Instead of using the server's configured provider, you can route your own AI thr
 - **Claude** — open the grant link and paste back the code Anthropic shows you.
 - **ChatGPT** — open the sign-in page, enter the code shown, and approve access; the panel finishes automatically once you approve.
 
-Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. If you connect both, choose which one is active. When your subscription is unavailable or usage-limited, Nojoin falls back to the server's secondary provider (if the administrator configured one). Once you start using it, the panel shows your recent token usage.
+Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. If you connect both, choose which one is active. When your subscription is unavailable or usage-limited, Nojoin falls back to the server's default provider chain — its primary provider first, then its secondary if that also fails. Once you start using it, the panel shows your recent token usage.
 
-Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to the server's secondary provider (if the administrator has configured one). Disconnecting removes your stored credential.
+Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to the server's default provider chain — its primary provider first, then its secondary if that also fails. Disconnecting removes your stored credential.
 
 ### CLI usage and quota (admin)
 

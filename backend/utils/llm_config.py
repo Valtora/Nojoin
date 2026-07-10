@@ -104,6 +104,12 @@ class ResolvedLLMConfig:
     cli_user_id: int | None = None
     # Which subscription a cli config routes through ("claude_code" | "codex").
     cli_provider: str | None = None
+    # A fully-resolved next-in-chain config used to build a 3-tier fallback.
+    # Set only on cli configs: it holds the *entire* server-default chain (its
+    # own primary + secondary), so a subscription failure degrades to the server
+    # primary first and the server secondary only after that. When set, it takes
+    # precedence over the flat secondary_* fields in get_llm_backend_with_secondary.
+    secondary_chain: "ResolvedLLMConfig | None" = None
 
     def missing_configuration_message(self) -> str | None:
         if self.has_secondary:
@@ -134,6 +140,11 @@ class ResolvedLLMConfig:
         return True
 
     def secondary_config(self) -> "ResolvedLLMConfig | None":
+        # A cli config's fallback is the entire server-default chain (its own
+        # primary + secondary), carried here so get_llm_backend_with_secondary
+        # nests it into a 3-tier chain: user sub -> server primary -> secondary.
+        if self.secondary_chain is not None:
+            return self.secondary_chain
         if not self.has_secondary:
             return None
         return ResolvedLLMConfig(
@@ -363,18 +374,25 @@ def _apply_owner_provider_override(
 
 
 def _to_cli_config(
-    config: ResolvedLLMConfig, purpose: str, user_id: int | None = None
+    config: ResolvedLLMConfig,
+    purpose: str,
+    user_id: int | None = None,
+    server_fallback: ResolvedLLMConfig | None = None,
 ) -> ResolvedLLMConfig:
     """Build a CLI-OAuth ResolvedLLMConfig from an already-merged config.
 
-    Swaps the primary to ``provider="cli"`` with the per-task CLI model and
-    carries the resolved secondary through unchanged, so the pipeline degrades
-    cleanly to the user's BYOK/Ollama fallback (via ``SecondaryLLMBackend``)
-    when the CLI path is unavailable. No ``api_key``/``api_url``: the subprocess
-    authenticates with the user's subscription credential, not an env key.
-    ``user_id`` rides along on ``cli_user_id`` so the backend can load that
-    credential, and ``cli_provider`` selects which subscription (Claude vs Codex)
-    plus the matching per-provider model fields.
+    Swaps the primary to ``provider="cli"`` with the per-task CLI model and hangs
+    the *entire* server-default chain off it as ``secondary_chain``, so a
+    subscription failure degrades to the server primary first and the server
+    secondary only after that (a 3-tier chain: user sub -> server primary ->
+    server secondary, built by ``SecondaryLLMBackend`` nesting). No
+    ``api_key``/``api_url``: the subprocess authenticates with the user's
+    subscription credential, not an env key. ``user_id`` rides along on
+    ``cli_user_id`` so the backend can load that credential, and ``cli_provider``
+    selects which subscription (Claude vs Codex) plus the matching per-provider
+    model fields. ``server_fallback`` is the config a "server default" user would
+    resolve to; when omitted we fall back to the pre-override merged config so the
+    CLI path never loses its server-default fallback.
     """
     merged = config.merged_config
     cli_provider = str(merged.get("cli_provider") or CLI_SUBSCRIPTION_PROVIDER_DEFAULT)
@@ -393,28 +411,28 @@ def _to_cli_config(
         api_url=None,
         context_window=None,
         merged_config=merged,
-        secondary_provider=config.secondary_provider,
-        secondary_api_key=config.secondary_api_key,
-        secondary_model=config.secondary_model,
-        secondary_api_url=config.secondary_api_url,
-        secondary_context_window=config.secondary_context_window,
-        secondary_live_model=config.secondary_live_model,
         cli_user_id=user_id,
         cli_provider=cli_provider,
+        secondary_chain=server_fallback if server_fallback is not None else config,
     )
 
 
 def _maybe_cli_config(
-    config: ResolvedLLMConfig, purpose: str, user_id: int | None = None
+    config: ResolvedLLMConfig,
+    purpose: str,
+    user_id: int | None = None,
+    server_fallback: ResolvedLLMConfig | None = None,
 ) -> ResolvedLLMConfig | None:
     """Return a CLI config when the user's ``usage_model`` is ``cli_oauth``.
 
     Reads ``usage_model`` from the merged config (owner settings never seed it,
     so it stays per-user). Returns ``None`` for every other value, leaving the
-    existing install-wide provider resolution untouched.
+    existing install-wide provider resolution untouched. ``server_fallback`` is
+    the server-default config (post owner-override) attached as the CLI config's
+    3-tier fallback chain.
     """
     if str(config.merged_config.get("usage_model") or "") == USAGE_MODEL_CLI_OAUTH:
-        return _to_cli_config(config, purpose, user_id)
+        return _to_cli_config(config, purpose, user_id, server_fallback)
     return None
 
 
@@ -435,10 +453,11 @@ def resolve_llm_config(
         user_settings=user_settings,
         purpose=purpose,
     )
-    cli_config = _maybe_cli_config(merged, purpose, user_id)
+    server_default = _apply_owner_provider_override(merged, owner_settings, purpose)
+    cli_config = _maybe_cli_config(merged, purpose, user_id, server_default)
     if cli_config is not None:
         return cli_config
-    return _apply_owner_provider_override(merged, owner_settings, purpose)
+    return server_default
 
 
 async def resolve_llm_config_async(
@@ -459,7 +478,8 @@ async def resolve_llm_config_async(
         user_settings=user_settings,
         purpose=purpose,
     )
-    cli_config = _maybe_cli_config(merged, purpose, user_id)
+    server_default = _apply_owner_provider_override(merged, owner_settings, purpose)
+    cli_config = _maybe_cli_config(merged, purpose, user_id, server_default)
     if cli_config is not None:
         return cli_config
-    return _apply_owner_provider_override(merged, owner_settings, purpose)
+    return server_default

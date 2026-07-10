@@ -250,15 +250,26 @@ export default function AiRoutingSection({
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
                   When your subscription is unavailable or usage-limited, Nojoin
-                  falls back to the server&apos;s secondary provider
-                  {secondaryProvider ? (
+                  falls back to the server&apos;s default provider chain: its
+                  primary provider
+                  {settings.llm_provider ? (
                     <>
                       {" "}
                       (
-                      <span className="capitalize">{secondaryProvider}</span>)
+                      <span className="capitalize">
+                        {settings.llm_provider}
+                      </span>
+                      )
+                    </>
+                  ) : null}
+                  {secondaryProvider ? (
+                    <>
+                      {", then its secondary provider ("}
+                      <span className="capitalize">{secondaryProvider}</span>
+                      {") if the primary also fails"}
                     </>
                   ) : (
-                    " (if the administrator has configured one)"
+                    " (a secondary is used after that if the administrator has configured one)"
                   )}
                   .
                 </span>

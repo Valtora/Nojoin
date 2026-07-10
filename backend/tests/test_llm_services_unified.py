@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import backend.processing.llm_services as llm_services
 from backend.processing.llm_services import (
     OLLAMA_DEFAULT_NUM_CTX,
     AnthropicLLMBackend,
@@ -10,7 +11,9 @@ from backend.processing.llm_services import (
     OllamaLLMBackend,
     OpenAILLMBackend,
     SecondaryLLMBackend,
+    get_llm_backend_with_secondary,
 )
+from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.meeting_edge import MeetingEdgeRequest
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
@@ -446,6 +449,45 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
         "English (British)"
         in calls[-1]["secondary_request"].output_language_instruction
     )
+
+
+def test_cli_oauth_builds_three_tier_nested_chain(monkeypatch) -> None:
+    # usage_model=cli_oauth must build user sub -> server primary -> server
+    # secondary as nested SecondaryLLMBackends, not user sub -> server secondary.
+    def fake_get_llm_backend(*, provider, **_kwargs):
+        return SimpleNamespace(provider=provider, model=provider)
+
+    monkeypatch.setattr(llm_services, "get_llm_backend", fake_get_llm_backend)
+
+    server_default = ResolvedLLMConfig(
+        provider="openai",
+        api_key="sk-primary",
+        model="gpt-primary",
+        api_url=None,
+        merged_config={},
+        secondary_provider="gemini",
+        secondary_api_key="sk-secondary",
+        secondary_model="g-secondary",
+    )
+    cli = ResolvedLLMConfig(
+        provider="cli",
+        api_key=None,
+        model="claude-async",
+        api_url=None,
+        merged_config={},
+        cli_user_id=1,
+        cli_provider="claude_code",
+        secondary_chain=server_default,
+    )
+
+    backend = get_llm_backend_with_secondary(cli)
+
+    assert isinstance(backend, SecondaryLLMBackend)
+    assert backend._primary.provider == "cli"  # tier 1: user subscription
+    inner = backend._secondary
+    assert isinstance(inner, SecondaryLLMBackend)
+    assert inner._primary.provider == "openai"  # tier 2: server primary
+    assert inner._secondary.provider == "gemini"  # tier 3: server secondary
 
 
 def test_ollama_chat_maps_model_history_role_to_assistant() -> None:
