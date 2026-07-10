@@ -26,6 +26,13 @@ selectable in Settings > AI only after the user connects their subscription. It
 is a **swappable** mode that degrades cleanly to the user's BYOK/Ollama secondary
 via `SecondaryLLMBackend` and is **never load-bearing**.
 
+> **Amendment (2026-07-10):** the fallback was widened from the server *secondary*
+> to the *full* server-default chain. A subscription failure now degrades to the
+> server primary first and the secondary only after that, built by nesting
+> `SecondaryLLMBackend` (user sub → server primary → server secondary). Still
+> swappable and never load-bearing; on installs with no secondary configured the
+> subscription now degrades to the server primary instead of surfacing raw.
+
 Security posture (the trust boundary):
 
 - **Credential at rest:** the subscription OAuth token is stored encrypted

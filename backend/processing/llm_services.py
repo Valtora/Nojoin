@@ -2676,13 +2676,12 @@ def get_llm_backend_with_secondary(
         return primary
 
     try:
-        secondary = get_llm_backend(
-            provider=secondary_cfg.provider,
-            api_key=secondary_cfg.api_key,
-            model=secondary_cfg.model,
-            api_url=secondary_cfg.api_url,
-            context_window=secondary_cfg.context_window,
-        )
+        # Build the secondary recursively so it can carry its own fallback: a CLI
+        # OAuth config returns the whole server-default chain here, yielding a
+        # nested SecondaryLLMBackend(sub, SecondaryLLMBackend(primary, secondary))
+        # (user sub -> server primary -> server secondary). The ordinary 2-tier
+        # case bottoms out immediately, so its behaviour is unchanged.
+        secondary = get_llm_backend_with_secondary(secondary_cfg, purpose)
         return SecondaryLLMBackend(primary=primary, secondary=secondary)
     except Exception as exc:  # noqa: BLE001 -- boundary: continue with primary only if secondary init fails
         logger.warning(
