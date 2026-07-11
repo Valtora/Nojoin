@@ -381,6 +381,15 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   }, [isMobile]);
 
+  // The "Speakers" panel is a mobile-only tab (desktop shows the speaker panel
+  // in the side column). Leaving mobile while it is active would blank the main
+  // content, so fall back to the transcript.
+  useEffect(() => {
+    if (!isMobile && activePanel === "speakers") {
+      setActivePanel("transcript");
+    }
+  }, [isMobile, activePanel, setActivePanel]);
+
   useEffect(() => {
     if (!recording) return;
 

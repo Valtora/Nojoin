@@ -98,6 +98,18 @@ export default function RecordingPage({ params }: PageProps) {
     return null;
   }
 
+  // Renaming a speaker propagates into the generated notes (shared by the
+  // desktop side panel and the mobile Speakers tab).
+  const handleSpeakerRenamed = async (oldName: string, newName: string) => {
+    if (recording?.transcript?.notes) {
+      await handleGlobalFindAndReplace(
+        oldName,
+        getAutoSpeakerReplacementName(newName),
+        { caseSensitive: true },
+      );
+    }
+  };
+
   const mainContent = (
     <RecordingMainContent
       recording={recording}
@@ -129,6 +141,9 @@ export default function RecordingPage({ params }: PageProps) {
       onPause={handlePause}
       onResume={handleResume}
       onRenameSpeaker={handleRenameSpeaker}
+      onColorChange={handleColorChange}
+      onRefresh={refreshRecordingView}
+      onSpeakerRenamed={handleSpeakerRenamed}
       onUpdateSegmentSpeaker={handleUpdateSegmentSpeaker}
       onUpdateSegmentText={handleUpdateSegmentText}
       onFindAndReplace={handleGlobalFindAndReplace}
@@ -137,8 +152,7 @@ export default function RecordingPage({ params }: PageProps) {
       onActiveEditUtteranceChange={setActiveTranscriptEditId}
       onExport={() => setShowExportModal(true)}
       isGeneratingNotes={
-        isGeneratingNotes ||
-        recording.transcript?.notes_status === "generating"
+        isGeneratingNotes || recording.transcript?.notes_status === "generating"
       }
       notesCanUndo={notesHistory.length > 0}
       notesCanRedo={notesFuture.length > 0}
@@ -159,7 +173,9 @@ export default function RecordingPage({ params }: PageProps) {
               onSaveProcessingNotes={handleProcessingNotesChange}
               onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
               meetingEdgeContextLevel={meetingEdgeContextLevel}
-              onSaveMeetingEdgeContextLevel={handleMeetingEdgeContextLevelChange}
+              onSaveMeetingEdgeContextLevel={
+                handleMeetingEdgeContextLevelChange
+              }
               showMeetingEdge={meetingEdgeEnabled}
               onBack={navigateToRecordings}
               onDiscarded={navigateToRecordings}
@@ -168,9 +184,7 @@ export default function RecordingPage({ params }: PageProps) {
           </div>
         ) : isMobile ? (
           <div className="flex h-full flex-1 min-w-0 flex-col bg-white dark:bg-gray-900">
-            <div className="min-h-0 flex-1">
-              {mainContent}
-            </div>
+            <div className="min-h-0 flex-1">{mainContent}</div>
 
             {!isMobileChatOpen && (
               <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-40">
@@ -193,12 +207,12 @@ export default function RecordingPage({ params }: PageProps) {
                     <MessageSquare className="w-5 h-5 text-orange-500" />
                     Meeting Chat
                   </h2>
-                <button
-                  onClick={() => setIsMobileChatOpen(false)}
-                  className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-                  title="Back to meeting"
-                  aria-label="Back to meeting"
-                >
+                  <button
+                    onClick={() => setIsMobileChatOpen(false)}
+                    className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                    title="Back to meeting"
+                    aria-label="Back to meeting"
+                  >
                     <ArrowLeft className="h-5 w-5" />
                     <span>Back</span>
                   </button>
@@ -250,15 +264,7 @@ export default function RecordingPage({ params }: PageProps) {
                     onResume={handleResume}
                     onRefresh={refreshRecordingView}
                     globalSpeakers={globalSpeakers}
-                    onSpeakerRenamed={async (oldName, newName) => {
-                      if (recording?.transcript?.notes) {
-                          await handleGlobalFindAndReplace(
-                            oldName,
-                            getAutoSpeakerReplacementName(newName),
-                            { caseSensitive: true },
-                          );
-                      }
-                    }}
+                    onSpeakerRenamed={handleSpeakerRenamed}
                   />
                 </Panel>
 
@@ -285,8 +291,6 @@ export default function RecordingPage({ params }: PageProps) {
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
       />
-
-
     </div>
   );
 }
