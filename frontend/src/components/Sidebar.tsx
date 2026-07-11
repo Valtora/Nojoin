@@ -633,7 +633,7 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-100dvh relative transition-opacity ${
+      className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-full relative transition-opacity ${
         isRecordingView ? "hidden lg:flex" : "w-full lg:flex"
       }`}
       style={mounted && isDesktopLayout ? { width: `${resolvedSidebarWidth}px` } : {}}
