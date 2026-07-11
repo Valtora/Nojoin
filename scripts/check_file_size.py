@@ -37,9 +37,9 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 # not add new entries; shrink and remove them over time.
 GRANDFATHERED: dict[str, int] = {
     # Being decomposed per-stage (mirroring the llm_services split): the
-    # meeting-intelligence stage moved to meeting_intelligence_stage.py. Shrinking
-    # as further stages (meeting-edge, catch-up diarization) are extracted.
-    "backend/worker/tasks/pipeline.py": 2638,
+    # meeting-intelligence and meeting-edge stages moved to their own modules.
+    # Shrinking further as the catch-up diarization stage is extracted.
+    "backend/worker/tasks/pipeline.py": 2230,
     "backend/utils/canonical_pipeline/diarization.py": 2485,
     "backend/utils/canonical_pipeline/core.py": 2192,
     "backend/core/backup_manager.py": 2147,
