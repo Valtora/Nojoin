@@ -1209,6 +1209,28 @@ def _finalize_transcript_and_notes(
         unresolved_speakers,
     )
 
+    if transcript_text.strip() and _meeting_intelligence_runs_on_io(llm_config):
+        # Non-local provider (cloud API or CLI OAuth subscription): the LLM call
+        # is network-bound and needs no GPU, and the CLI OAuth SDK only lives in
+        # the IO image. Free the GPU lane by generating notes on the IO worker.
+        # The recording is otherwise finished; only notes remain pending, exactly
+        # as in manual regeneration, so the GPU task still marks it Completed.
+        transcript.notes_status = "generating"
+        transcript.error_message = None
+        session.add(transcript)
+        session.commit()
+        celery_app.send_task(
+            "backend.worker.tasks.generate_meeting_intelligence_task",
+            args=[recording.id],
+        )
+        logger.info(
+            "Deferred meeting intelligence for recording %s to the IO lane "
+            "(provider=%s)",
+            recording.id,
+            llm_config.provider,
+        )
+        return
+
     _run_automatic_meeting_intelligence_stage(
         session=session,
         task=ctx.task,
@@ -2552,6 +2574,30 @@ def _run_catch_up_diarization_windows_impl(
     return completed_window_ids, failed_window_ids
 
 
+# Providers that run on the user's own hardware. Their meeting-intelligence
+# generation stays inline on the GPU worker. Every other provider (cloud APIs,
+# CLI OAuth subscriptions) is network-bound, needs no GPU, and — for CLI OAuth —
+# relies on the SDK that only ships in the IO image, so its generation is
+# deferred to the IO lane.
+_LOCAL_LLM_PROVIDERS = frozenset({"ollama"})
+
+
+def _meeting_intelligence_runs_on_io(llm_config: ResolvedLLMConfig) -> bool:
+    """True when the resolved primary provider should generate notes on the IO
+    lane rather than inline on the GPU pipeline.
+
+    Only a real, usable non-local LLM call is worth deferring: a missing/blank
+    provider or one with incomplete configuration is left to run inline, where
+    the stage cheaply falls back to rule-based speaker suggestions without a
+    network call. This also keeps the deferred IO task on its happy path, so it
+    always drives notes_status to a terminal state.
+    """
+    provider = (llm_config.provider or "").strip().lower()
+    if not provider or provider in _LOCAL_LLM_PROVIDERS:
+        return False
+    return not llm_config.missing_configuration_message()
+
+
 def _build_automatic_meeting_intelligence_transcript_impl(
     segments: Sequence[dict],
     speaker_map: dict[str, str],
@@ -2728,7 +2774,11 @@ def _run_automatic_meeting_intelligence_stage_impl(
     prefer_short_titles: bool,
     device_suffix: str,
     detected_transcription_language: str | None = None,
+    update_processing_status: bool = True,
 ) -> AutomaticMeetingIntelligenceResult | None:
+    # update_processing_status is False when this runs as a deferred IO task: the
+    # recording has already been marked Completed by the GPU pipeline, so we must
+    # not reset its processing_step/progress back to the "Generating Notes" stage.
     cleaned_transcript = transcript_text.strip()
     meeting_context = _resolve_meeting_event_context(session, recording)
     deterministic_result = detect_rule_based_speaker_suggestions(
@@ -2816,20 +2866,23 @@ def _run_automatic_meeting_intelligence_stage_impl(
         output_language_instruction=language_preferences.notes_language_instruction,
     )
 
-    if task is not None:
-        task.update_state(
-            state="PROCESSING",
-            meta={
-                "progress": AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS,
-                "stage": AUTOMATIC_MEETING_INTELLIGENCE_STAGE,
-            },
+    if update_processing_status:
+        if task is not None:
+            task.update_state(
+                state="PROCESSING",
+                meta={
+                    "progress": AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS,
+                    "stage": AUTOMATIC_MEETING_INTELLIGENCE_STAGE,
+                },
+            )
+        recording.processing_step = (
+            f"{AUTOMATIC_MEETING_INTELLIGENCE_STEP}{device_suffix}"
         )
+        recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
+        session.add(recording)
 
-    recording.processing_step = f"{AUTOMATIC_MEETING_INTELLIGENCE_STEP}{device_suffix}"
-    recording.processing_progress = AUTOMATIC_MEETING_INTELLIGENCE_PROGRESS
     transcript.notes_status = "generating"
     transcript.error_message = None
-    session.add(recording)
     session.add(transcript)
     session.commit()
     update_recording_status(session, recording.id)

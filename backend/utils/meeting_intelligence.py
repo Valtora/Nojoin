@@ -268,14 +268,44 @@ def build_automatic_meeting_intelligence_prompt(
     )
 
 
+def apply_speaker_mapping_to_notes(
+    notes_markdown: str, speaker_mapping: Mapping[str, str]
+) -> str:
+    """Replace any residual diarization labels left in the notes with their
+    mapped names.
+
+    The prompt asks the model to write the inferred name inline in
+    ``notes_markdown`` for every label it also returns in ``speaker_mapping``.
+    Weaker models (notably the local Ollama fallback) sometimes return a correct
+    mapping but still leave the raw ``SPEAKER_XX`` label in the prose. This makes
+    the notes robust to that: for every mapped label we substitute the raw label
+    token with its name. Labels absent from the mapping (the model was not
+    confident) are intentionally left untouched, matching the prompt contract.
+    """
+    if not notes_markdown or not speaker_mapping:
+        return notes_markdown
+
+    # Single left-to-right pass over a whole-word alternation so a replacement
+    # is never re-scanned (avoids cascading when a name contains a label-like
+    # token). Longest labels first so e.g. SPEAKER_10 wins over SPEAKER_1.
+    labels = sorted(speaker_mapping, key=len, reverse=True)
+    pattern = re.compile(
+        r"\b(" + "|".join(re.escape(label) for label in labels) + r")\b"
+    )
+    return pattern.sub(lambda match: speaker_mapping[match.group(1)], notes_markdown)
+
+
 def finalise_automatic_meeting_intelligence_result(
     result: AutomaticMeetingIntelligenceResult,
     user_notes: str | None,
 ) -> AutomaticMeetingIntelligenceResult:
+    notes_markdown = apply_speaker_mapping_to_notes(
+        result.notes_markdown, result.speaker_mapping
+    )
     return AutomaticMeetingIntelligenceResult(
         speaker_mapping=result.speaker_mapping,
         title=result.title,
-        notes_markdown=append_user_notes_section(result.notes_markdown, user_notes),
+        notes_markdown=append_user_notes_section(notes_markdown, user_notes),
     )
 
 

@@ -685,3 +685,82 @@ def test_unidentified_speakers_get_sequential_names(monkeypatch):
 
     assert result == {"status": "success", "recording_id": 707}
     assert created_names == ["Speaker 1", "Speaker 2"]
+
+
+# --- meeting-intelligence lane routing -------------------------------------
+
+
+def _arm_intelligence_routing_probes(monkeypatch):
+    """Give the pipeline a non-empty transcript and capture whether the stage
+    ran inline (GPU) or was dispatched to the IO lane."""
+    monkeypatch.setattr(
+        tasks_module,
+        "_build_automatic_meeting_intelligence_transcript",
+        lambda *a, **k: "[00:00 - 00:01] SPEAKER_00: hi",
+    )
+    inline_calls: list = []
+    monkeypatch.setattr(
+        tasks_module,
+        "_run_automatic_meeting_intelligence_stage",
+        lambda *a, **k: inline_calls.append(k),
+    )
+    dispatched: list = []
+    monkeypatch.setattr(
+        tasks_module.celery_app,
+        "send_task",
+        lambda name, *a, **k: dispatched.append((name, k.get("args"))),
+    )
+    return inline_calls, dispatched
+
+
+def test_non_local_provider_defers_intelligence_to_io_lane(monkeypatch):
+    """A cloud/CLI provider must not run the LLM call on the GPU worker: the
+    pipeline dispatches generate_meeting_intelligence_task to the IO lane and the
+    recording still completes (notes finish out-of-band)."""
+    recording = _FakeRecording(710)
+    transcript = _FakeTranscript(710)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(
+        monkeypatch,
+        segments=[{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00", "text": "hi"}],
+    )
+    inline_calls, dispatched = _arm_intelligence_routing_probes(monkeypatch)
+
+    # Default _FakeLlmConfig uses provider="openai" (non-local, configured).
+    result = _run_task(monkeypatch, session, recording_id=710)
+
+    assert result == {"status": "success", "recording_id": 710}
+    assert inline_calls == []  # never ran inline on the GPU worker
+    assert dispatched == [
+        ("backend.worker.tasks.generate_meeting_intelligence_task", [710])
+    ]
+    assert transcript.notes_status == "generating"
+    assert recording.processing_step == "Completed"
+    assert recording.processing_progress == 100
+
+
+def test_local_provider_runs_intelligence_inline(monkeypatch):
+    """Local Ollama stays inline on the GPU worker (no IO dispatch)."""
+    recording = _FakeRecording(711)
+    transcript = _FakeTranscript(711)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(
+        monkeypatch,
+        segments=[{"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00", "text": "hi"}],
+    )
+    inline_calls, dispatched = _arm_intelligence_routing_probes(monkeypatch)
+
+    class _OllamaConfig:
+        merged_config = {"prefer_short_titles": True}
+        provider = "ollama"
+
+        def missing_configuration_message(self):
+            return None
+
+    result = _run_task(
+        monkeypatch, session, recording_id=711, llm_config=_OllamaConfig()
+    )
+
+    assert result == {"status": "success", "recording_id": 711}
+    assert dispatched == []  # not deferred
+    assert len(inline_calls) == 1  # ran inline on the GPU worker

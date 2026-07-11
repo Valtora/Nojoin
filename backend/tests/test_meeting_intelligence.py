@@ -258,6 +258,60 @@ def test_finalise_automatic_meeting_intelligence_result_appends_user_notes() -> 
     assert "- [User] Confirm the rollout date" in finalised.notes_markdown
 
 
+def test_finalise_substitutes_residual_labels_left_in_notes_by_the_model() -> None:
+    # The model returned a correct mapping but (as weaker models do) left the raw
+    # SPEAKER_XX labels in the prose. finalise must repair the notes body.
+    result = AutomaticMeetingIntelligenceResult(
+        speaker_mapping={"SPEAKER_00": "Gary", "SPEAKER_01": "Interviewer"},
+        title="Wealth Tax Debate",
+        notes_markdown=(
+            "# Wealth Tax Debate\n\n## Detailed Notes\n"
+            "- **SPEAKER_00** argues for an exit tax.\n"
+            "- **SPEAKER_01** challenges the numbers, and SPEAKER_00 responds."
+        ),
+    )
+
+    finalised = finalise_automatic_meeting_intelligence_result(result, None)
+
+    assert "SPEAKER_00" not in finalised.notes_markdown
+    assert "SPEAKER_01" not in finalised.notes_markdown
+    assert "**Gary** argues for an exit tax." in finalised.notes_markdown
+    assert "**Interviewer** challenges the numbers, and Gary responds." in (
+        finalised.notes_markdown
+    )
+
+
+def test_finalise_leaves_unmapped_labels_untouched() -> None:
+    # A label the model was not confident about is omitted from the mapping; the
+    # generic label must remain in the notes (prompt contract), not be blanked.
+    result = AutomaticMeetingIntelligenceResult(
+        speaker_mapping={"SPEAKER_00": "Gary"},
+        title="Partial Attribution",
+        notes_markdown=(
+            "# Partial Attribution\n\n## Notes\n"
+            "- SPEAKER_00 spoke first; SPEAKER_01 remained unidentified."
+        ),
+    )
+
+    finalised = finalise_automatic_meeting_intelligence_result(result, None)
+
+    assert "Gary spoke first" in finalised.notes_markdown
+    assert "SPEAKER_01 remained unidentified" in finalised.notes_markdown
+
+
+def test_finalise_label_substitution_avoids_partial_prefix_collisions() -> None:
+    # SPEAKER_1 must not clobber SPEAKER_10; whole-word, longest-first matching.
+    result = AutomaticMeetingIntelligenceResult(
+        speaker_mapping={"SPEAKER_1": "Ana", "SPEAKER_10": "Bruno"},
+        title="Collision Guard",
+        notes_markdown="# Collision Guard\n\n## Notes\nSPEAKER_10 and SPEAKER_1 spoke.",
+    )
+
+    finalised = finalise_automatic_meeting_intelligence_result(result, None)
+
+    assert "Bruno and Ana spoke." in finalised.notes_markdown
+
+
 def test_resolve_recording_speaker_name_prefers_local_then_global_then_name() -> None:
     speaker = SimpleNamespace(
         diarization_label="SPEAKER_00",
