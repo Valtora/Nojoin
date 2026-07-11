@@ -36,10 +36,10 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 # file is allowed up to its recorded count and FAILS if it grows beyond it. Do
 # not add new entries; shrink and remove them over time.
 GRANDFATHERED: dict[str, int] = {
-    # Grew while routing non-local meeting-intelligence generation off the GPU
-    # lane to the IO worker (deferral branch + provider-locality helper). Overdue
-    # for the same per-stage split llm_services just received.
-    "backend/worker/tasks/pipeline.py": 2920,
+    # Being decomposed per-stage (mirroring the llm_services split): the
+    # meeting-intelligence stage moved to meeting_intelligence_stage.py. Shrinking
+    # as further stages (meeting-edge, catch-up diarization) are extracted.
+    "backend/worker/tasks/pipeline.py": 2638,
     "backend/utils/canonical_pipeline/diarization.py": 2485,
     "backend/utils/canonical_pipeline/core.py": 2192,
     "backend/core/backup_manager.py": 2147,
