@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import {
+  DESKTOP_BREAKPOINT,
   resolveViewportDensity,
   type ViewportDensity,
 } from "@/lib/viewportDensity";
@@ -17,6 +18,10 @@ import {
 interface ViewportDensityContextValue {
   density: ViewportDensity;
   isCompact: boolean;
+  /** True below the desktop breakpoint (1024px) — the app-wide mobile boundary. */
+  isMobile: boolean;
+  /** True at or above the desktop breakpoint (1024px). */
+  isDesktop: boolean;
   viewportHeight: number;
   viewportWidth: number;
 }
@@ -71,15 +76,18 @@ export function ViewportDensityProvider({
     };
   }, [density]);
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    const isDesktop = width >= DESKTOP_BREAKPOINT;
+
+    return {
       density,
       isCompact: density === "compact",
+      isMobile: !isDesktop,
+      isDesktop,
       viewportHeight: height,
       viewportWidth: width,
-    }),
-    [density, height, width],
-  );
+    };
+  }, [density, height, width]);
 
   return (
     <ViewportDensityContext.Provider value={value}>

@@ -51,7 +51,7 @@ export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { pausedRecording, runtimeActive } = useCapture();
-  const { isCompact } = useViewportDensity();
+  const { isCompact, isDesktop } = useViewportDensity();
   const {
     currentView,
     setCurrentView,
@@ -105,7 +105,6 @@ export default function MainNav() {
   } = useMainNavTags();
 
   const [mounted, setMounted] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
 
   // Modal states
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -118,17 +117,6 @@ export default function MainNav() {
 
   useEffect(() => {
     setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const syncViewport = () => {
-      setIsDesktop(window.innerWidth >= DESKTOP_BREAKPOINT);
-    };
-
-    syncViewport();
-    window.addEventListener("resize", syncViewport);
-
-    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   // Handle resize

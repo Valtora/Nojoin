@@ -109,7 +109,7 @@ export default function Sidebar() {
   const router = useRouter();
   const { addNotification } = useNotificationStore();
   const actions = useRecordingActions();
-  const { isCompact } = useViewportDensity();
+  const { isCompact, isDesktop: isDesktopLayout } = useViewportDensity();
   const {
     currentView,
     selectedTagIds,
@@ -125,8 +125,8 @@ export default function Sidebar() {
   } = useNavigationStore();
 
   const [mounted, setMounted] = useState(false);
+  // `isDesktopLayout` now comes from the shared viewport provider (aliased above).
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
     null,
   );
@@ -346,17 +346,6 @@ export default function Sidebar() {
   useEffect(() => {
     setMounted(true);
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    const syncViewport = () => {
-      setIsDesktopLayout(window.innerWidth >= 1024);
-    };
-
-    syncViewport();
-    window.addEventListener("resize", syncViewport);
-
-    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   // Listen for recording-updated events

@@ -34,8 +34,8 @@ export default function SettingsNav({
 
   return (
     // The right-edge fade (mobile only) signals the strip scrolls horizontally.
-    <div className="relative md:contents">
-      <nav className="hide-scrollbar flex gap-2 overflow-x-auto p-2 pr-6 md:flex-col md:gap-0 md:space-y-1 md:overflow-y-auto md:p-4 md:pr-4">
+    <div className="relative lg:contents">
+      <nav className="hide-scrollbar flex gap-2 overflow-x-auto p-2 pr-6 lg:flex-col lg:gap-0 lg:space-y-1 lg:overflow-y-auto lg:p-4 lg:pr-4">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = activeItemId === item.id;
@@ -49,7 +49,7 @@ export default function SettingsNav({
               type="button"
               onClick={() => onSelect(item.id)}
               className={cn(
-                "flex shrink-0 items-center justify-between rounded-lg border px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors md:mb-0",
+                "flex shrink-0 items-center justify-between rounded-lg border px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors lg:mb-0",
                 isActive
                   ? "settings-tab-active shadow-sm"
                   : "border-transparent settings-tab-inactive",
@@ -70,7 +70,7 @@ export default function SettingsNav({
           );
         })}
       </nav>
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--background)] to-transparent md:hidden" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--background)] to-transparent lg:hidden" />
     </div>
   );
 }
