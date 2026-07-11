@@ -164,6 +164,12 @@ max-complexity = 10
 "backend/utils/speaker_name_suggestions.py" = ["PLR0913"]
 "backend/utils/transcript_utils.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/worker/tasks/constants.py" = ["PLR0913"]
+"backend/worker/tasks/catch_up_diarization.py" = [
+    "C901",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+]
 "backend/worker/tasks/intelligence.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/worker/tasks/meeting_edge_stage.py" = [
     "C901",

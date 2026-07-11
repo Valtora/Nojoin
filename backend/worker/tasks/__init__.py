@@ -1,4 +1,5 @@
 from .calendar import *
+from .catch_up_diarization import *
 from .chat import *
 from .cli_login import *
 from .constants import *
