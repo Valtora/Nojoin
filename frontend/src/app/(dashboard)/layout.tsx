@@ -33,19 +33,26 @@ export default function DashboardLayout({
   return (
     <CaptureProvider>
       <CaptureShell>
-        <div className="flex h-screen w-full overflow-hidden">
+        {/* App shell: a column so the mobile top bar reserves the top row, with
+            the nav <-> main row filling the rest. `h-dvh` (dynamic viewport)
+            keeps the shell inside the visible area so the browser toolbar never
+            clips the bottom of scroll views. On desktop TopBar is hidden, so the
+            column collapses to the original single-row layout. */}
+        <div className="flex flex-col h-dvh w-full overflow-hidden">
           <TourGuide />
-          <MainNav />
-          {!isSettingsPage && !isPeoplePage && showSidebar && <Sidebar />}
+          <TopBar />
+          <div className="flex flex-1 min-h-0 w-full overflow-hidden">
+            <MainNav />
+            {!isSettingsPage && !isPeoplePage && showSidebar && <Sidebar />}
 
-          <main
-            ref={mainRef}
-            className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full"
-          >
-            <TopBar />
-            {children}
-            <ServiceStatusAlerts />
-          </main>
+            <main
+              ref={mainRef}
+              className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full"
+            >
+              {children}
+              <ServiceStatusAlerts />
+            </main>
+          </div>
         </div>
         <RecordingFloatingBadge />
       </CaptureShell>

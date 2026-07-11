@@ -32,13 +32,23 @@ interface PeopleTagSidebarProps {
   onToggleTag: (tagId: number) => void;
   onClearFilters: () => void;
   onTagsUpdated?: (tags: PeopleTag[]) => void;
+  /** Mobile drawer state. On desktop the pane is always inline. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
+
+// Inline pane on desktop; off-canvas drawer on mobile so the People table gets
+// the full width of a phone screen.
+const SIDEBAR_SHELL =
+  "fixed inset-y-0 left-0 z-50 flex h-full w-[min(20rem,85vw)] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900 lg:static lg:z-auto lg:w-64 lg:translate-x-0 lg:shadow-none";
 
 export function PeopleTagSidebar({
   selectedTagIds,
   onToggleTag,
   onClearFilters,
   onTagsUpdated,
+  mobileOpen = false,
+  onMobileClose,
 }: PeopleTagSidebarProps) {
   const [tags, setTags] = useState<PeopleTag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -175,16 +185,35 @@ export function PeopleTagSidebar({
     return filter(tagTree);
   }, [tagTree, searchQuery]);
 
+  const mobileTransform = mobileOpen
+    ? "translate-x-0 shadow-2xl lg:shadow-none"
+    : "-translate-x-full";
+
   if (isLoading) {
     return (
-      <div className="w-64 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-      </div>
+      <>
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            onClick={onMobileClose}
+          />
+        )}
+        <div className={`${SIDEBAR_SHELL} ${mobileTransform} items-center justify-center`}>
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="w-64 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col h-full overflow-hidden">
+    <>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+      <div className={`${SIDEBAR_SHELL} ${mobileTransform}`}>
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2">
@@ -192,6 +221,14 @@ export function PeopleTagSidebar({
             People Tags
           </h2>
           <div className="flex items-center gap-1">
+            <button
+              onClick={onMobileClose}
+              className="lg:hidden p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              title="Close"
+              aria-label="Close tag filters"
+            >
+              <X className="w-4 h-4" />
+            </button>
             <button
               onClick={() => {
                 const allIds = tags.map((t) => t.id);
@@ -307,7 +344,8 @@ export function PeopleTagSidebar({
         message={`Are you sure you want to delete "${confirmDelete?.name}"? This will remove it from all people.`}
         isDangerous
       />
-    </div>
+      </div>
+    </>
   );
 }
 
