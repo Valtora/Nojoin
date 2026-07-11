@@ -147,11 +147,9 @@ export default function BackupRestore() {
       setTimeout(() => {
         window.location.reload();
       }, 2000);
-
-        } catch (error: unknown) {
+    } catch (error: unknown) {
       console.error("Import failed:", error);
-      const errorMsg =
-        getErrorMessage(error, "Failed to restore backup.");
+      const errorMsg = getErrorMessage(error, "Failed to restore backup.");
       setMessage({ type: "error", text: errorMsg });
     } finally {
       setImporting(false);
@@ -162,52 +160,53 @@ export default function BackupRestore() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[28px] border border-gray-200/80 bg-white/95 p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950/60 space-y-6">
-          {/* Export Section */}
-          <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
-              Export Backup
-            </h4>
-            <p className="text-sm contrast-helper mb-4">
-              Download a zip file containing your database, recordings, and
-              settings, tasks from the Task List, people voiceprints, and
-              calendar data.
-              <br />
-              <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
-                AI and Hugging Face keys stay redacted. Calendar provider
-                credentials and connected calendar tokens are included so
-                calendar integrations restore correctly. Treat backup files as
-                sensitive.
-              </span>
-            </p>
-            <button
-              onClick={handleExportClick}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download Backup
-            </button>
-          </div>
+      {/* Card chrome is supplied by the enclosing SettingsSection in
+          AdminSettings; this wrapper only groups the export/restore content. */}
+      <div className="space-y-6">
+        {/* Export Section */}
+        <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+            Export Backup
+          </h4>
+          <p className="text-sm contrast-helper mb-4">
+            Download a zip file containing your database, recordings, and
+            settings, tasks from the Task List, people voiceprints, and calendar
+            data.
+            <br />
+            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
+              AI and Hugging Face keys stay redacted. Calendar provider
+              credentials and connected calendar tokens are included so calendar
+              integrations restore correctly. Treat backup files as sensitive.
+            </span>
+          </p>
+          <button
+            onClick={handleExportClick}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Download Backup
+          </button>
+        </div>
 
-          {/* Import Section */}
-          <div>
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
-              Import Backup
-            </h4>
-            <p className="text-sm contrast-helper mb-4">
-              Restore data from a previously exported backup file.
-            </p>
+        {/* Import Section */}
+        <div>
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+            Import Backup
+          </h4>
+          <p className="text-sm contrast-helper mb-4">
+            Restore data from a previously exported backup file.
+          </p>
 
-            <div className="space-y-4">
-              {/* Drag & Drop Zone */}
-              <div
-                ref={dropZoneRef}
-                onClick={() => !importing && fileInputRef.current?.click()}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                className={`
+          <div className="space-y-4">
+            {/* Drag & Drop Zone */}
+            <div
+              ref={dropZoneRef}
+              onClick={() => !importing && fileInputRef.current?.click()}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              className={`
                   relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
                   ${
                     isDragging
@@ -218,115 +217,115 @@ export default function BackupRestore() {
                   }
                   ${importing ? "pointer-events-none opacity-75" : ""}
                 `}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".zip"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleFileSelect(f);
-                  }}
-                  className="hidden"
-                />
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFileSelect(f);
+                }}
+                className="hidden"
+              />
 
-                {selectedFile ? (
-                  <div className="space-y-2">
-                    <FileArchive className="w-12 h-12 mx-auto text-green-500" />
-                    <p className="font-medium text-gray-900 dark:text-white truncate max-w-xs mx-auto">
-                      {selectedFile.name}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {formatFileSize(selectedFile.size)}
-                    </p>
-                    {!importing && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveFile();
-                        }}
-                        className="text-sm text-red-500 hover:text-red-600 underline flex items-center justify-center gap-1 mx-auto"
-                      >
-                        <Trash2 className="w-3 h-3" /> Remove
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Upload className="w-12 h-12 mx-auto text-gray-500 dark:text-gray-400" />
-                    <p className="text-gray-700 dark:text-gray-300">
-                      <span className="font-medium text-orange-500">
-                        Click to browse
-                      </span>{" "}
-                      or drag and drop
-                    </p>
-                    <p className="text-xs contrast-helper">ZIP files only</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Upload Progress */}
-              {importing && (
+              {selectedFile ? (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {uploadProgress < 100
-                        ? "Uploading..."
-                        : "Processing on server (Do not close)..."}
-                    </span>
-                    <span className="text-gray-900 dark:text-white font-medium">
-                      {uploadProgress}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? "bg-green-500 animate-pulse" : "bg-orange-500"}`}
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                  {processingStatus && (
-                    <p className="mt-1 text-center text-xs italic contrast-helper">
-                      {processingStatus}
-                    </p>
+                  <FileArchive className="w-12 h-12 mx-auto text-green-500" />
+                  <p className="font-medium text-gray-900 dark:text-white truncate max-w-xs mx-auto">
+                    {selectedFile.name}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {formatFileSize(selectedFile.size)}
+                  </p>
+                  {!importing && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveFile();
+                      }}
+                      className="text-sm text-red-500 hover:text-red-600 underline flex items-center justify-center gap-1 mx-auto"
+                    >
+                      <Trash2 className="w-3 h-3" /> Remove
+                    </button>
                   )}
                 </div>
+              ) : (
+                <div className="space-y-2">
+                  <Upload className="w-12 h-12 mx-auto text-gray-500 dark:text-gray-400" />
+                  <p className="text-gray-700 dark:text-gray-300">
+                    <span className="font-medium text-orange-500">
+                      Click to browse
+                    </span>{" "}
+                    or drag and drop
+                  </p>
+                  <p className="text-xs contrast-helper">ZIP files only</p>
+                </div>
               )}
+            </div>
 
-              <button
-                onClick={handleRestoreClick}
-                disabled={!isValidZip || importing}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
-              >
-                {importing ? (
-                  <>
-                    <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                    Restoring...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="-ml-1 mr-2 h-4 w-4" />
-                    Restore Backup
-                  </>
+            {/* Upload Progress */}
+            {importing && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {uploadProgress < 100
+                      ? "Uploading..."
+                      : "Processing on server (Do not close)..."}
+                  </span>
+                  <span className="text-gray-900 dark:text-white font-medium">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? "bg-green-500 animate-pulse" : "bg-orange-500"}`}
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                {processingStatus && (
+                  <p className="mt-1 text-center text-xs italic contrast-helper">
+                    {processingStatus}
+                  </p>
                 )}
-              </button>
+              </div>
+            )}
+
+            <button
+              onClick={handleRestoreClick}
+              disabled={!isValidZip || importing}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
+            >
+              {importing ? (
+                <>
+                  <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                  Restoring...
+                </>
+              ) : (
+                <>
+                  <Upload className="-ml-1 mr-2 h-4 w-4" />
+                  Restore Backup
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {message && (
+          <div
+            className={`p-4 rounded-md ${message.type === "success" ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300" : "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300"}`}
+          >
+            <div className="flex">
+              {message.type === "success" ? (
+                <CheckCircle className="h-5 w-5 mr-2" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 mr-2" />
+              )}
+              <p className="text-sm font-medium">{message.text}</p>
             </div>
           </div>
-
-          {message && (
-            <div
-              className={`p-4 rounded-md ${message.type === "success" ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300" : "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300"}`}
-            >
-              <div className="flex">
-                {message.type === "success" ? (
-                  <CheckCircle className="h-5 w-5 mr-2" />
-                ) : (
-                  <AlertTriangle className="h-5 w-5 mr-2" />
-                )}
-                <p className="text-sm font-medium">{message.text}</p>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
+      </div>
       <RestoreOptionsModal
         isOpen={showRestoreOptions}
         onClose={() => setShowRestoreOptions(false)}

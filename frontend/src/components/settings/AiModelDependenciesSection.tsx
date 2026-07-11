@@ -3,6 +3,7 @@ import { Check, Loader2, Trash2, X } from "lucide-react";
 import { SystemModelStatus } from "@/types";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
+import SettingsStatusBadge from "./SettingsStatusBadge";
 
 interface AiModelDependenciesSectionProps {
   modelStatus: SystemModelStatus | null;
@@ -75,13 +76,13 @@ export default function AiModelDependenciesSection({
                 <div className="flex items-center gap-3">
                   {modelStatus?.[model.id]?.downloaded ? (
                     <>
-                      <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
+                      <SettingsStatusBadge tone="success" className="gap-1">
                         <Check className="w-3 h-3" /> Ready
-                      </span>
+                      </SettingsStatusBadge>
                       {modelStatus?.[model.id]?.source === "bundled" && (
-                        <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 px-2.5 py-1 rounded-full font-medium">
+                        <SettingsStatusBadge tone="info">
                           Bundled
-                        </span>
+                        </SettingsStatusBadge>
                       )}
                       <button
                         onClick={() => handleDeleteModel(model.id)}
@@ -106,9 +107,9 @@ export default function AiModelDependenciesSection({
                     </>
                   ) : (
                     <div className="flex flex-col items-end">
-                      <span className="text-xs bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
+                      <SettingsStatusBadge tone="error" className="gap-1">
                         <X className="w-3 h-3" /> Missing
-                      </span>
+                      </SettingsStatusBadge>
                       {modelStatus?.[model.id]?.checked_paths &&
                         modelStatus[model.id].checked_paths.length > 0 && (
                           <span

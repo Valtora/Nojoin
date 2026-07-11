@@ -105,8 +105,7 @@ export default function UsersTab() {
       setIsCreating(false);
       setNewUser({ ...EMPTY_NEW_USER });
       await fetchUsers();
-
-        } catch (err: unknown) {
+    } catch (err: unknown) {
       addNotification({
         message: getErrorMessage(err, "Failed to create user"),
         type: "error",
@@ -128,15 +127,17 @@ export default function UsersTab() {
         type: "success",
       });
       const nextTotal = Math.max(0, total - 1);
-      const nextPage = Math.min(page, Math.max(1, Math.ceil(nextTotal / limit)));
+      const nextPage = Math.min(
+        page,
+        Math.max(1, Math.ceil(nextTotal / limit)),
+      );
 
       if (nextPage !== page) {
         setPage(nextPage);
       } else {
         await fetchUsers();
       }
-
-        } catch (err: unknown) {
+    } catch (err: unknown) {
       addNotification({
         message: getErrorMessage(err, "Failed to delete user"),
         type: "error",
@@ -177,8 +178,7 @@ export default function UsersTab() {
       setEditModalOpen(false);
       setEditingUser(null);
       await fetchUsers();
-
-        } catch (err: unknown) {
+    } catch (err: unknown) {
       addNotification({
         message: getErrorMessage(err, "Failed to update user"),
         type: "error",
@@ -190,16 +190,16 @@ export default function UsersTab() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Search users..."
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search users..."
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          />
         </div>
         <button
           onClick={toggleCreateForm}
@@ -285,76 +285,85 @@ export default function UsersTab() {
       <SettingsPanel className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
-          <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
-            <tr>
-              <th className="px-4 py-3">ID</th>
-              <th className="px-4 py-3">Username</th>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-300 dark:divide-gray-600">
-            {loading ? (
+            <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
               <tr>
-                <td colSpan={5} className="p-4 text-center">
-                  <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                </td>
+                <th className="px-4 py-3">ID</th>
+                <th className="px-4 py-3">Username</th>
+                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
-            ) : (
-              users.map((user) => (
-                <tr
-                  key={user.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700/40"
-                >
-                  <td className="px-4 py-3">{user.id}</td>
-
-                  {/* Username */}
-                  <td className="px-4 py-3">{user.username}</td>
-
-                  {/* Role */}
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs ${
-                        user.role === "owner"
-                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300"
-                          : user.role === "admin"
-                            ? "bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300"
-                            : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                      }`}
-                    >
-                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                    </span>
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs ${user.is_active ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300" : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"}`}
-                    >
-                      {user.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-3 text-right flex justify-end gap-2">
-                    <button
-                      onClick={() => startEdit(user)}
-                      className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteUser(user.id)}
-                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+            </thead>
+            <tbody className="divide-y divide-gray-300 dark:divide-gray-600">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="p-4 text-center">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
+              ) : users.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="p-8 text-center text-sm text-gray-500 dark:text-gray-400"
+                  >
+                    No users found.
+                  </td>
+                </tr>
+              ) : (
+                users.map((user) => (
+                  <tr
+                    key={user.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                  >
+                    <td className="px-4 py-3">{user.id}</td>
+
+                    {/* Username */}
+                    <td className="px-4 py-3">{user.username}</td>
+
+                    {/* Role */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          user.role === "owner"
+                            ? "bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300"
+                            : user.role === "admin"
+                              ? "bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300"
+                              : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                      </span>
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${user.is_active ? "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300" : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"}`}
+                      >
+                        {user.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3 text-right flex justify-end gap-2">
+                      <button
+                        onClick={() => startEdit(user)}
+                        className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
           </table>
         </div>
         <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -416,7 +425,10 @@ export default function UsersTab() {
                   type="password"
                   value={editForm.password || ""}
                   onChange={(e) =>
-                    setEditForm((prev) => ({ ...prev, password: e.target.value }))
+                    setEditForm((prev) => ({
+                      ...prev,
+                      password: e.target.value,
+                    }))
                   }
                   placeholder="Enter new password"
                   autoComplete="new-password"
@@ -432,7 +444,10 @@ export default function UsersTab() {
                 <select
                   value={editForm.role || "user"}
                   onChange={(e) =>
-                    setEditForm({ ...editForm, role: e.target.value as UserRole })
+                    setEditForm({
+                      ...editForm,
+                      role: e.target.value as UserRole,
+                    })
                   }
                   className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
@@ -450,7 +465,7 @@ export default function UsersTab() {
                   onChange={(e) =>
                     setEditForm({ ...editForm, is_active: e.target.checked })
                   }
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                 />
                 <label
                   htmlFor="is_active"
