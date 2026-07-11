@@ -36,6 +36,9 @@ embeddings), a CPU lane (ffmpeg transcode, proxies, backups), and an IO/LLM lane
 lives in `backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md)
 for pool sizing. To avoid reloading the live ASR model between segments, the GPU
 lane keeps it resident while a capture is uploading and releases it when idle.
+During finalise the meeting-intelligence step (notes, title, speaker suggestions)
+is handed to the IO lane for non-local providers, so a network-bound LLM call
+never occupies the GPU worker; local Ollama runs it inline.
 
 ### Web Client
 
