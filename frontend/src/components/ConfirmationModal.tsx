@@ -35,8 +35,8 @@ export default function ConfirmationModal({
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md border border-gray-300 dark:border-gray-800 p-6 relative animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto border border-gray-300 dark:border-gray-800 p-6 relative animate-in fade-in zoom-in-95 duration-200">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white">
             {title}
