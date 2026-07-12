@@ -114,5 +114,17 @@ from .helpers import (
 from .router import router
 from .routes_batch_init import BatchRecordingIds
 
+# Route-matching order guard. Starlette matches routes in registration order and
+# does NOT prefer a literal path segment over a path parameter. The route
+# submodules above register on one shared ``router`` in import order, and Ruff's
+# isort keeps that import list alphabetical, so ``routes_actions`` registers
+# ``/{recording_id}/soft-delete`` before ``routes_batch_init`` registers
+# ``/batch/soft-delete``. Without this sort, ``POST /batch/soft-delete`` (and
+# ``/batch/archive`` and ``/batch/restore``) match the single-recording handler
+# with ``recording_id="batch"`` and 404. Stable-sort so literal-path routes
+# precede parameterised ones; this runs before ``api.py`` copies the routes via
+# ``include_router``, and the stable sort preserves order within each group.
+router.routes.sort(key=lambda route: "{" in getattr(route, "path", ""))
+
 # Dynamically construct __all__ to include all names from this package's namespace
 __all__ = [name for name in globals() if not name.startswith("__")]

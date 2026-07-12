@@ -903,19 +903,23 @@ export default function Sidebar() {
                     }
                     onClick={(e) => handleRecordingClick(e, recording, index)}
                     onContextMenu={(e) => handleContextMenu(e, recording)}
-                    className={`block p-3 rounded-lg border transition-all shadow-sm ${
+                    className={`block p-3 rounded-lg border transition-all ${
                       isActive && !selectionMode
                         ? "bg-orange-100 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500"
                         : isSelected
-                          ? "bg-orange-100 dark:bg-orange-900/10 border-orange-400 dark:border-orange-600"
+                          ? "bg-orange-50 dark:bg-orange-950/40 border-orange-400 dark:border-orange-500"
                           : "bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-100 dark:hover:border-orange-700 dark:hover:bg-gray-800"
+                    } ${
+                      isSelected
+                        ? "ring-2 ring-orange-500 ring-offset-2 ring-offset-[#fff7ed] dark:ring-offset-[#0b1220] shadow-md"
+                        : "shadow-sm"
                     }`}
                   >
                     <div className="flex justify-between items-start mb-1">
                       <div className="flex items-center gap-2 min-w-0">
-                        {selectionMode && (
+                        {(selectionMode || isSelected) && (
                           <div
-                            className={`shrink-0 ${isSelected ? "text-orange-600" : "text-gray-300"}`}
+                            className={`shrink-0 ${isSelected ? "text-orange-600 dark:text-orange-400" : "text-gray-300 dark:text-gray-600"}`}
                           >
                             {isSelected ? (
                               <CheckSquare className="w-4 h-4" />
@@ -940,7 +944,7 @@ export default function Sidebar() {
                     </div>
 
                     <div
-                      className={`flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2 ${selectionMode ? "pl-6" : ""}`}
+                      className={`flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2 ${selectionMode || isSelected ? "pl-6" : ""}`}
                     >
                       <span>{formatDate(recording.created_at)}</span>
                       <span className="text-gray-300 dark:text-gray-700">
