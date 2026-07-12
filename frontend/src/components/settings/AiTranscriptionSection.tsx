@@ -116,18 +116,25 @@ export default function AiTranscriptionSection({
           <div>
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
               Whisper Model Size
-              <div className="group relative">
+              <button
+                type="button"
+                className="group relative inline-flex"
+                aria-label="Show available Whisper models"
+              >
                 <HelpCircle className="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" />
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-80 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none">
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden max-w-[calc(100vw-2rem)] w-80 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none group-hover:block group-focus:block">
                   <div className="font-bold mb-2 text-sm">Available Models</div>
-                  <div className="grid grid-cols-5 gap-2 border-b border-gray-700 pb-2 mb-2 font-semibold">
-                    <div className="col-span-1">Size</div>
-                    <div className="col-span-1">Params</div>
-                    <div className="col-span-1">VRAM</div>
-                    <div className="col-span-1">Speed</div>
+                  <div className="grid grid-cols-4 gap-2 border-b border-gray-700 pb-2 mb-2 font-semibold text-left">
+                    <div>Size</div>
+                    <div>Params</div>
+                    <div>VRAM</div>
+                    <div>Speed</div>
                   </div>
                   {WHISPER_MODELS.map((m) => (
-                    <div key={m.id} className="grid grid-cols-5 gap-2 mb-1">
+                    <div
+                      key={m.id}
+                      className="grid grid-cols-4 gap-2 mb-1 text-left"
+                    >
                       <div className="col-span-1 font-medium text-orange-400">
                         {m.label}
                       </div>
@@ -141,7 +148,7 @@ export default function AiTranscriptionSection({
                     and accuracy.
                   </div>
                 </div>
-              </div>
+              </button>
             </label>
 
             <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
@@ -156,7 +163,8 @@ export default function AiTranscriptionSection({
                     (
                     {
                       WHISPER_MODELS.find(
-                        (m) => m.id === (settings.whisper_model_size || "turbo"),
+                        (m) =>
+                          m.id === (settings.whisper_model_size || "turbo"),
                       )?.vram
                     }{" "}
                     VRAM)

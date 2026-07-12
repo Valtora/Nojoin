@@ -21,7 +21,7 @@ export default function SettingsLayout({
 }: SettingsLayoutProps) {
   return (
     <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-900">
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-4 pl-14 md:px-6 md:py-5 dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-4 md:px-6 md:py-5 dark:border-gray-700 dark:bg-gray-800">
         <div>
           <h1 className="density-heading-section text-2xl font-bold text-gray-900 dark:text-white">
             {title}
@@ -31,8 +31,8 @@ export default function SettingsLayout({
         {headerAccessory}
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-        <aside className="flex w-full shrink-0 flex-col border-b border-r-0 bg-gray-100 md:w-[15rem] lg:w-64 md:border-r md:border-b-0 dark:bg-gray-900/80 contrast-border">
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <aside className="flex w-full shrink-0 flex-col border-b border-r-0 bg-gray-100 lg:w-64 lg:border-r lg:border-b-0 dark:bg-gray-900/80 contrast-border">
           {sidebarHeader && <div className="border-b p-4 contrast-border">{sidebarHeader}</div>}
           {navigation}
           {sidebarFooter && <div className="border-t p-4 contrast-border">{sidebarFooter}</div>}

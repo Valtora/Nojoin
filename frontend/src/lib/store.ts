@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import type { RecordingId } from "@/types";
 
 export type ViewType = "recordings" | "archived" | "deleted";
-export type ActivePanel = "transcript" | "notes" | "documents";
+export type ActivePanel = "transcript" | "notes" | "documents" | "speakers";
 
 interface NavigationState {
   // View State

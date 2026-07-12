@@ -13,7 +13,7 @@ import { checkLlmConfigured } from "./aiSettingsModels";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all";
+  "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50";
 
 const PROVIDER_LABEL: Record<CliProvider, string> = {
   claude_code: "Claude",

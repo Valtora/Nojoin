@@ -69,10 +69,11 @@ export default function MultiSelect({
                             {option.label}
                             <button
                                 type="button"
-                                className="ml-1 rounded-full hover:bg-white/20"
+                                aria-label={`Remove ${option.label}`}
+                                className="ml-0.5 rounded-full p-0.5 hover:bg-white/20"
                                 onClick={(e) => removeSelect(e, option.value)}
                             >
-                                <X className="h-3 w-3" />
+                                <X className="h-3.5 w-3.5" />
                             </button>
                         </span>
                     ))

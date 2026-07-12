@@ -149,7 +149,7 @@ export default function TaskRow(props: TaskRowProps) {
     const timeRemainingState = getTimeRemainingState(task, now);
 
     return (
-      <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 border border-gray-200 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg dark:border-gray-700/70 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10">
+      <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border border-gray-200 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 dark:border-gray-700/70 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10">
         <button
           type="button"
           onClick={() => void handleToggleTask(task)}
@@ -225,14 +225,14 @@ export default function TaskRow(props: TaskRowProps) {
           isBusy={isBusy}
           handleArchiveTask={handleArchiveTask}
           handleDeleteTask={handleDeleteTask}
-          wrapperClassName="density-surface-panel flex shrink-0 self-center border border-transparent bg-white/80 dark:bg-white/5"
+          wrapperClassName="density-surface-panel col-span-2 justify-self-end flex shrink-0 self-center border border-transparent bg-white/80 sm:col-span-1 dark:bg-white/5"
         />
       </div>
     );
   }
 
   return (
-    <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 border border-gray-200 bg-white/80 px-4 py-4 dark:border-gray-700 dark:bg-gray-900/60">
+    <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border border-gray-200 bg-white/80 px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 dark:border-gray-700 dark:bg-gray-900/60">
       <button
         type="button"
         onClick={() => void handleToggleTask(task)}
@@ -297,7 +297,7 @@ export default function TaskRow(props: TaskRowProps) {
         isBusy={isBusy}
         handleArchiveTask={handleArchiveTask}
         handleDeleteTask={handleDeleteTask}
-        wrapperClassName="flex shrink-0 self-center rounded-2xl border border-transparent bg-white/80 dark:bg-white/5"
+        wrapperClassName="col-span-2 justify-self-end flex shrink-0 self-center rounded-2xl border border-transparent bg-white/80 sm:col-span-1 dark:bg-white/5"
       />
     </div>
   );

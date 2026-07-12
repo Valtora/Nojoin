@@ -90,8 +90,8 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg flex flex-col border border-gray-300 dark:border-gray-800 max-h-[80vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg flex flex-col border border-gray-300 dark:border-gray-800 max-h-[calc(100dvh-2rem)]">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">

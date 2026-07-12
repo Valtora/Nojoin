@@ -448,7 +448,7 @@ export default function CalendarConnectionsSettings() {
                               : "border-gray-200 bg-white/80 hover:border-orange-200 hover:bg-orange-50/70 dark:border-gray-700 dark:bg-gray-800/80 dark:hover:border-orange-500/20 dark:hover:bg-gray-800"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 text-gray-900 dark:text-white">
                                 <span className="truncate text-sm font-semibold">
@@ -468,7 +468,7 @@ export default function CalendarConnectionsSettings() {
                               )}
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                               {busyKey === `colour:${calendar.id}` ? (
                                 <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

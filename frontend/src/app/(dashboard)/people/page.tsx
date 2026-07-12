@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Plus, Users } from "lucide-react";
+import { Plus, Users, Tag as TagIcon } from "lucide-react";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import {
   getGlobalSpeakers,
@@ -33,6 +33,9 @@ export default function PeoplePage() {
 
   // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Mobile tag-filter drawer (inline pane on desktop)
+  const [isTagDrawerOpen, setIsTagDrawerOpen] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<GlobalSpeaker | null>(
@@ -281,6 +284,8 @@ export default function PeoplePage() {
         selectedTagIds={selectedTagIds}
         onToggleTag={handleToggleTag}
         onClearFilters={() => setSelectedTagIds([])}
+        mobileOpen={isTagDrawerOpen}
+        onMobileClose={() => setIsTagDrawerOpen(false)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -297,13 +302,27 @@ export default function PeoplePage() {
                   Manage your contacts, speakers, and their associated details.
                 </p>
               </div>
-              <button
-                onClick={handleAddNew}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm font-medium"
-              >
-                <Plus className="w-5 h-5" />
-                Add Person
-              </button>
+              <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                <button
+                  onClick={() => setIsTagDrawerOpen(true)}
+                  className="lg:hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-orange-300 transition-colors shadow-sm font-medium"
+                >
+                  <TagIcon className="w-5 h-5" />
+                  Tags
+                  {selectedTagIds.length > 0 && (
+                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-white bg-orange-600 rounded-full">
+                      {selectedTagIds.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={handleAddNew}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm font-medium"
+                >
+                  <Plus className="w-5 h-5" />
+                  Add Person
+                </button>
+              </div>
             </div>
 
             {/* Filters */}

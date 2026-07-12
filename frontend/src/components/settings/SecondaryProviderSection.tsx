@@ -104,7 +104,7 @@ export default function SecondaryProviderSection({
     >
       <div className="mx-auto max-w-3xl space-y-4">
         <SettingsPanel className="space-y-6">
-          <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-between gap-3">
+          <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                 Secondary AI provider:{" "}
