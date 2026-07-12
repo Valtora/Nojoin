@@ -62,7 +62,9 @@ export default function NotesView({
   const displayNotes = notes
     ? notes.replace(/^#+\s*Meeting Notes\s*/i, "").trim()
     : null;
-  const generateNotesLabel = displayNotes ? "Regenerate Notes" : "Generate Notes";
+  const generateNotesLabel = displayNotes
+    ? "Regenerate Notes"
+    : "Generate Notes";
 
   // Editing State
   const [localNotes, setLocalNotes] = useState(displayNotes || "");
@@ -131,7 +133,9 @@ export default function NotesView({
         const locale = settings.spellcheck_language || "en-GB";
         spellCheckService.initialise(locale);
       })
-      .catch((err) => console.error("[NotesView] Failed to load spell check settings:", err));
+      .catch((err) =>
+        console.error("[NotesView] Failed to load spell check settings:", err),
+      );
   }, []);
 
   // Handle right-click on misspelt words
@@ -162,7 +166,8 @@ export default function NotesView({
 
     const editorDom = editor.view.dom;
     editorDom.addEventListener("contextmenu", handleContextMenu);
-    return () => editorDom.removeEventListener("contextmenu", handleContextMenu);
+    return () =>
+      editorDom.removeEventListener("contextmenu", handleContextMenu);
   }, [editor]);
 
   // Calculate matches when findText or editor content changes
@@ -382,9 +387,9 @@ export default function NotesView({
       {/* Toolbar */}
       <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 shadow-md z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
-        <div className="px-6 py-3 flex items-center justify-between gap-2">
+        <div className="px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
           {/* Formatting Toolbar */}
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {editor && (
               <>
                 <button
@@ -448,7 +453,7 @@ export default function NotesView({
             )}
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             <button
               onClick={onGenerateNotes}
               disabled={isGenerating}
@@ -518,8 +523,8 @@ export default function NotesView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="px-6 pb-3 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
-            <div className="relative flex-1 min-w-0">
+          <div className="px-3 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
+            <div className="relative min-w-40 flex-[1_1_11rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 placeholder="Find..."
@@ -555,7 +560,7 @@ export default function NotesView({
               )}
             </div>
             {showReplace && (
-              <div className="relative flex-1 min-w-0">
+              <div className="relative min-w-40 flex-[1_1_11rem]">
                 <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   placeholder="Replace..."
@@ -566,7 +571,7 @@ export default function NotesView({
               </div>
             )}
             {showReplace && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* Settings Toggle */}
                 <div className="relative">
                   <button

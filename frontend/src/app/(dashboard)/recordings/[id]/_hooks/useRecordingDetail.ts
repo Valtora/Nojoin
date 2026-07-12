@@ -127,12 +127,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [showExportModal, setShowExportModal] = useState(false);
 
 
-  // Mobile State
-  const [isMobile, setIsMobile] = useState(false);
+  // Mobile State. `isMobile` comes from the shared viewport provider (single
+  // source of truth for the 1024px boundary) rather than a local resize listener.
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [isMobileHeaderActionsOpen, setIsMobileHeaderActionsOpen] = useState(false);
   const [isPanelResizing, setIsPanelResizing] = useState(false);
-  const { isCompact } = useViewportDensity();
+  const { isCompact, isMobile } = useViewportDensity();
   useDragSelectionLock(isPanelResizing);
 
   // Notes History (separate from transcript history, can include null values)
@@ -376,18 +376,19 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   }, [recording?.id, isInFlightRecording]);
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
-    // Initial check
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, [setActivePanel]);
-
-  useEffect(() => {
     if (!isMobile) {
       setIsMobileHeaderActionsOpen(false);
     }
   }, [isMobile]);
+
+  // The "Speakers" panel is a mobile-only tab (desktop shows the speaker panel
+  // in the side column). Leaving mobile while it is active would blank the main
+  // content, so fall back to the transcript.
+  useEffect(() => {
+    if (!isMobile && activePanel === "speakers") {
+      setActivePanel("transcript");
+    }
+  }, [isMobile, activePanel, setActivePanel]);
 
   useEffect(() => {
     if (!recording) return;

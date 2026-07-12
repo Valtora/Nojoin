@@ -51,9 +51,9 @@ export default function BackupOptionsModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div
-        className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg border border-gray-300 dark:border-gray-800 p-6 relative animate-in fade-in zoom-in-95 duration-200"
+        className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto border border-gray-300 dark:border-gray-800 p-6 relative animate-in fade-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
@@ -66,8 +66,8 @@ export default function BackupOptionsModal({
         </button>
 
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-            <Download className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+            <Download className="w-6 h-6 text-orange-600 dark:text-orange-400" />
           </div>
           <div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -103,7 +103,7 @@ export default function BackupOptionsModal({
                     checked={includeAudio}
                     onChange={(e) => setIncludeAudio(e.target.checked)}
                   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
                 </div>
               </div>
               <p className="text-sm contrast-helper">
@@ -143,7 +143,7 @@ export default function BackupOptionsModal({
             <button
               onClick={handleExport}
               disabled={isProcessing}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isProcessing ? (
                 <>

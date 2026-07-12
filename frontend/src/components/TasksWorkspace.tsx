@@ -743,7 +743,7 @@ export default function TasksWorkspace() {
                         type="button"
                         onClick={() => beginEdit(task)}
                         disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-orange-200 hover:text-orange-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-orange-200 hover:text-orange-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
                       >
                         <Pencil className="h-4 w-4" />
                         Edit
@@ -761,7 +761,7 @@ export default function TasksWorkspace() {
                             )
                           }
                           disabled={isBusy}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-emerald-200 hover:text-emerald-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-emerald-500/30 dark:hover:text-emerald-300"
+                          className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-emerald-200 hover:text-emerald-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-emerald-500/30 dark:hover:text-emerald-300"
                         >
                           {task.completed_at ? (
                             <RotateCcw className="h-4 w-4" />
@@ -783,7 +783,7 @@ export default function TasksWorkspace() {
                           )
                         }
                         disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-amber-200 hover:text-amber-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-amber-500/30 dark:hover:text-amber-300"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-amber-200 hover:text-amber-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-amber-500/30 dark:hover:text-amber-300"
                       >
                         {task.archived_at ? (
                           <ArchiveRestore className="h-4 w-4" />
@@ -796,7 +796,7 @@ export default function TasksWorkspace() {
                         type="button"
                         onClick={() => void handleDeleteTask(task)}
                         disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:border-rose-200 hover:text-rose-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-500/30 dark:hover:text-rose-300"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-rose-200 hover:text-rose-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-500/30 dark:hover:text-rose-300"
                       >
                         {isBusy ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

@@ -182,7 +182,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                   >
                     {doc.status}
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
                     <button
                       onClick={() => setDocumentToDelete(doc)}
                       className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"

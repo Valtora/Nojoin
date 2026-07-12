@@ -51,7 +51,7 @@ export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { pausedRecording, runtimeActive } = useCapture();
-  const { isCompact } = useViewportDensity();
+  const { isCompact, isDesktop } = useViewportDensity();
   const {
     currentView,
     setCurrentView,
@@ -105,7 +105,6 @@ export default function MainNav() {
   } = useMainNavTags();
 
   const [mounted, setMounted] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
 
   // Modal states
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -118,17 +117,6 @@ export default function MainNav() {
 
   useEffect(() => {
     setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const syncViewport = () => {
-      setIsDesktop(window.innerWidth >= DESKTOP_BREAKPOINT);
-    };
-
-    syncViewport();
-    window.addEventListener("resize", syncViewport);
-
-    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   // Handle resize
@@ -402,7 +390,7 @@ export default function MainNav() {
         >
           <div
             ref={setRootNodeRef}
-            className={`flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? "border-orange-300 bg-orange-50/50 dark:border-orange-700 dark:bg-orange-900/10" : ""}`}
+            className={`min-h-0 flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? "border-orange-300 bg-orange-50/50 dark:border-orange-700 dark:bg-orange-900/10" : ""}`}
           >
             {!collapsed && (
               <div className="flex items-center justify-between px-3 py-2">

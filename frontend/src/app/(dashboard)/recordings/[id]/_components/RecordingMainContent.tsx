@@ -11,6 +11,8 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 
+import SpeakerPanel from "@/components/SpeakerPanel";
+
 import RecordingHeader from "./RecordingHeader";
 import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
@@ -50,6 +52,9 @@ interface RecordingMainContentProps {
   onPause: () => void;
   onResume: () => void;
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  onColorChange: (speakerLabel: string, colorKey: string) => void;
+  onRefresh: () => void;
+  onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
@@ -114,6 +119,9 @@ export default function RecordingMainContent({
   onPause,
   onResume,
   onRenameSpeaker,
+  onColorChange,
+  onRefresh,
+  onSpeakerRenamed,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -146,8 +154,16 @@ export default function RecordingMainContent({
           <button
             onClick={() => setIsMobileHeaderActionsOpen((current) => !current)}
             className={`pointer-events-auto inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-lg shadow-black/10 backdrop-blur-sm transition-colors dark:shadow-black/30 ${isMobileHeaderActionsOpen ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300" : "border-gray-200 bg-white/90 text-gray-700 hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"}`}
-            title={isMobileHeaderActionsOpen ? "Hide meeting actions" : "Show meeting actions"}
-            aria-label={isMobileHeaderActionsOpen ? "Hide meeting actions" : "Show meeting actions"}
+            title={
+              isMobileHeaderActionsOpen
+                ? "Hide meeting actions"
+                : "Show meeting actions"
+            }
+            aria-label={
+              isMobileHeaderActionsOpen
+                ? "Hide meeting actions"
+                : "Show meeting actions"
+            }
           >
             <MoreHorizontal className="h-5 w-5" />
           </button>
@@ -172,9 +188,12 @@ export default function RecordingMainContent({
         onPause={() => setIsPlaying(false)}
       />
 
-      {/* Panel Tabs */}
+      {/* Panel Tabs. The Speakers tab is mobile-only; on desktop the speaker
+          panel lives in the side column. */}
       <div className="shrink-0 bg-gray-50 dark:bg-gray-900">
-        <div className="grid grid-cols-3 border-b-2 border-gray-200 dark:border-gray-700">
+        <div
+          className={`grid ${isMobile ? "grid-cols-4" : "grid-cols-3"} border-b-2 border-gray-200 dark:border-gray-700`}
+        >
           <button
             id="tab-transcript"
             onClick={() => setActivePanel("transcript")}
@@ -196,6 +215,15 @@ export default function RecordingMainContent({
           >
             <span className="truncate">Documents</span>
           </button>
+          {isMobile && (
+            <button
+              id="tab-speakers"
+              onClick={() => setActivePanel("speakers")}
+              className={tabClassName(activePanel === "speakers")}
+            >
+              <span className="truncate">Speakers</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -244,6 +272,28 @@ export default function RecordingMainContent({
           active={activePanel === "documents"}
           recordingId={recording.id}
         />
+
+        {isMobile && (
+          <div
+            className={`absolute inset-0 flex flex-col ${activePanel === "speakers" ? "z-10 visible" : "z-0 invisible"}`}
+          >
+            <SpeakerPanel
+              speakers={recording.speakers || []}
+              segments={transcriptSegments}
+              onPlaySegment={onPlaySegment}
+              recordingId={recording.id}
+              speakerColors={speakerColors}
+              onColorChange={onColorChange}
+              currentTime={currentTime}
+              isPlaying={isPlaying}
+              onPause={onPause}
+              onResume={onResume}
+              onRefresh={onRefresh}
+              globalSpeakers={globalSpeakers}
+              onSpeakerRenamed={onSpeakerRenamed}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
