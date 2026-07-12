@@ -133,7 +133,7 @@ max-complexity = 10
 "backend/processing/engines/onnx_asr_engine.py" = ["C901", "PLR0912"]
 "backend/processing/engines/whisper_engine.py" = ["C901", "PLR0912"]
 "backend/processing/live_transcribe.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
-"backend/processing/llm_services.py" = ["C901", "PLR0912", "PLR0913"]
+"backend/processing/llm_backends/*.py" = ["C901", "PLR0912", "PLR0913"]
 "backend/processing/phantom_filter.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/processing/pipeline_metrics.py" = ["PLR0913"]
 "backend/processing/speaker_merge.py" = ["C901", "PLR0912"]
@@ -164,7 +164,25 @@ max-complexity = 10
 "backend/utils/speaker_name_suggestions.py" = ["PLR0913"]
 "backend/utils/transcript_utils.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/worker/tasks/constants.py" = ["PLR0913"]
+"backend/worker/tasks/catch_up_diarization.py" = [
+    "C901",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+]
 "backend/worker/tasks/intelligence.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/worker/tasks/meeting_edge_stage.py" = [
+    "C901",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+]
+"backend/worker/tasks/meeting_intelligence_stage.py" = [
+    "C901",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+]
 "backend/worker/tasks/pipeline.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/worker/tasks/system.py" = ["PLR0913"]
 # Tests are exempt from PLR0913/PLR0915 (fixtures and parametrised cases legitimately

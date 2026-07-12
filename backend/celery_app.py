@@ -176,6 +176,7 @@ TASK_ROUTES = {
     # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.
     "backend.worker.tasks.refresh_meeting_edge_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.generate_meeting_intelligence_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.infer_speakers_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.meeting_chat_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.codex_device_login_task": {"queue": IO_QUEUE},

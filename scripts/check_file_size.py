@@ -36,11 +36,10 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 # file is allowed up to its recorded count and FAILS if it grows beyond it. Do
 # not add new entries; shrink and remove them over time.
 GRANDFATHERED: dict[str, int] = {
-    "backend/worker/tasks/pipeline.py": 2867,
-    # Grew past 2686 while adding the CLI OAuth provider branch + per-user id
-    # threading, then +1 for the second subscription provider (Codex/ChatGPT);
-    # overdue for a split (extract the per-provider backends).
-    "backend/processing/llm_services.py": 2694,
+    # Being decomposed per-stage (mirroring the llm_services split): the
+    # meeting-intelligence, meeting-edge, and catch-up diarization stages moved to
+    # their own modules. What remains is the core final-recording pipeline.
+    "backend/worker/tasks/pipeline.py": 1579,
     "backend/utils/canonical_pipeline/diarization.py": 2485,
     "backend/utils/canonical_pipeline/core.py": 2192,
     "backend/core/backup_manager.py": 2147,

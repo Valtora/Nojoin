@@ -266,7 +266,7 @@ def test_generate_notes_task_completes_with_saved_provider_config(
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(
-        "backend.processing.llm_services.get_llm_backend", fake_get_llm_backend
+        "backend.processing.llm_backends.factory.get_llm_backend", fake_get_llm_backend
     )
 
     verification_engine = create_engine(str(engine.url), future=True)
@@ -316,7 +316,7 @@ def test_generate_notes_task_marks_missing_model_as_error(
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(
-        "backend.processing.llm_services.get_llm_backend", fail_if_called
+        "backend.processing.llm_backends.factory.get_llm_backend", fail_if_called
     )
 
     verification_engine = create_engine(str(engine.url), future=True)
@@ -384,7 +384,7 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
         lambda *args, **kwargs: [dict(segment) for segment in canonical_segments],
     )
     monkeypatch.setattr(
-        "backend.processing.llm_services.get_llm_backend",
+        "backend.processing.llm_backends.factory.get_llm_backend",
         lambda *args, **kwargs: FakeLLM(),
     )
 

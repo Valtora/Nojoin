@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import backend.processing.llm_services as llm_services
 from backend.processing.llm_services import (
     OLLAMA_DEFAULT_NUM_CTX,
     AnthropicLLMBackend,
@@ -457,7 +456,10 @@ def test_cli_oauth_builds_three_tier_nested_chain(monkeypatch) -> None:
     def fake_get_llm_backend(*, provider, **_kwargs):
         return SimpleNamespace(provider=provider, model=provider)
 
-    monkeypatch.setattr(llm_services, "get_llm_backend", fake_get_llm_backend)
+    monkeypatch.setattr(
+        "backend.processing.llm_backends.factory.get_llm_backend",
+        fake_get_llm_backend,
+    )
 
     server_default = ResolvedLLMConfig(
         provider="openai",

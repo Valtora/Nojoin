@@ -823,4 +823,97 @@ def _supersede_pending_speaker_name_suggestions_for_labels_impl(
     return len(superseded)
 
 
+@celery_app.task(
+    name="backend.worker.tasks.generate_meeting_intelligence_task",
+    base=DatabaseTask,
+    bind=True,
+)
+def generate_meeting_intelligence_task(self, recording_id: int):
+    """Generate unified meeting intelligence (notes, title, speaker suggestions)
+    on the IO lane.
+
+    Dispatched by the GPU pipeline for non-local providers so a network-bound LLM
+    call never occupies the GPU worker (and so CLI OAuth, whose SDK ships only in
+    the IO image, can run at all). It rebuilds the same inputs the inline stage
+    constructs, then runs the shared stage with update_processing_status disabled:
+    the recording is already marked Completed, so only notes_status is driven here.
+    """
+    config_manager.reload()
+    session = self.session
+    recording = None
+    transcript = None
+    try:
+        recording = session.get(Recording, recording_id)
+        if not recording:
+            logger.error("Recording %s not found.", recording_id)
+            return
+        transcript = session.exec(
+            select(Transcript).where(Transcript.recording_id == recording_id)
+        ).first()
+        if not transcript:
+            logger.error("Transcript for recording %s not found.", recording_id)
+            return
+
+        user_settings = {}
+        if recording.user_id:
+            user = session.get(User, recording.user_id)
+            if user and user.settings:
+                user_settings = user.settings
+        llm_config = resolve_llm_config(
+            session, user_settings, user_id=recording.user_id
+        )
+
+        speakers = session.exec(
+            select(RecordingSpeaker).where(
+                RecordingSpeaker.recording_id == recording_id
+            )
+        ).all()
+        unresolved_speakers = get_speakers_eligible_for_llm_renaming(speakers)
+        speaker_map = build_recording_speaker_map(speakers)
+        segments = build_transcript_segments_for_read(
+            session,
+            recording_id,
+            transcript=transcript,
+        )
+        transcript_text = _build_automatic_meeting_intelligence_transcript(
+            segments,
+            speaker_map,
+            unresolved_speakers,
+        )
+
+        _run_automatic_meeting_intelligence_stage(
+            session=session,
+            task=self,
+            recording=recording,
+            transcript=transcript,
+            speakers=speakers,
+            transcript_text=transcript_text,
+            unresolved_speakers=unresolved_speakers,
+            llm_config=llm_config,
+            prefer_short_titles=llm_config.merged_config.get(
+                "prefer_short_titles", True
+            ),
+            device_suffix="",
+            detected_transcription_language=None,
+            update_processing_status=False,
+        )
+        logger.info(
+            "Generated meeting intelligence on the IO lane for recording %s",
+            recording_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Failed to generate meeting intelligence on the IO lane for recording %s: %s",
+            recording_id,
+            exc,
+            exc_info=True,
+        )
+        session.rollback()
+        if transcript is None:
+            transcript = session.exec(
+                select(Transcript).where(Transcript.recording_id == recording_id)
+            ).first()
+        _mark_notes_generation_error(session, recording, transcript, exc)
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]
