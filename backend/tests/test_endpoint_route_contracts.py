@@ -6,7 +6,9 @@ the affected routers as ``(path, methods, name, response_model_name)`` so that
 any change to a path, HTTP method, handler name, or response model is caught.
 """
 
-from backend.api.v1.endpoints import speakers, transcripts
+from starlette.routing import Match
+
+from backend.api.v1.endpoints import recordings, speakers, transcripts
 
 
 def _route_contract(router):
@@ -171,3 +173,33 @@ def test_transcripts_router_is_reexported_from_package():
     # ``backend/api/v1/api.py`` can mount ``transcripts.router`` unchanged.
     assert hasattr(transcripts, "router")
     assert hasattr(speakers, "router")
+
+
+def _first_matching_route(router, method, path):
+    """Return the route Starlette would dispatch to (registration order wins)."""
+    scope = {"type": "http", "method": method, "path": path}
+    for route in router.routes:
+        match, _ = route.matches(scope)
+        if match == Match.FULL:
+            return route
+    return None
+
+
+def test_batch_recording_routes_are_not_shadowed_by_id_routes():
+    """Regression (recordings package split): batch routes must win over id routes.
+
+    The recordings package registers ``/batch/<action>`` (routes_batch_init) and
+    ``/{recording_id}/<action>`` (routes_actions) on one shared router. Starlette
+    matches in registration order and does not prefer a literal segment over a
+    path parameter, so ``POST /batch/soft-delete`` must be registered before
+    ``POST /{recording_id}/soft-delete``; otherwise it matches the single-record
+    handler with ``recording_id="batch"`` and 404s (the "Failed to delete
+    recordings" bug). Batch archive/restore/soft-delete share this hazard.
+    """
+    for action in ("archive", "restore", "soft-delete"):
+        route = _first_matching_route(recordings.router, "POST", f"/batch/{action}")
+        assert route is not None, f"POST /batch/{action} matched no route"
+        assert route.path == f"/batch/{action}", (
+            f"POST /batch/{action} is shadowed by {route.path} "
+            f"(handler {route.name}); a parameterised route matched first"
+        )
