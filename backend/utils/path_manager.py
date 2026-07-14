@@ -432,18 +432,29 @@ class PathManager:
     def get_upload_temp_dir(self, upload_id: str) -> Path:
         """
         Get the temporary directory for a specific multipart upload.
+
+        Upload ids are always server-minted UUID4 strings (see the backup
+        upload endpoints, which issue them via ``uuid.uuid4()``). The id is
+        therefore validated by round-tripping it through :class:`uuid.UUID`:
+        this rejects anything that is not a canonical UUID and, crucially,
+        rebuilds ``safe_id`` from the parsed value rather than the raw request
+        string. No attacker-controlled separator or ``..`` segment can survive
+        the round-trip, so nothing derived from the request reaches the
+        filesystem sinks below.
         """
-        # Sanitize upload_id to prevent path traversal: allow only alphanumerics,
-        # hyphen and underscore, which strips any separators or dot segments.
-        safe_id = "".join([c for c in upload_id if c.isalnum() or c in "-_"])
-        if not safe_id:
-            safe_id = "default_upload"
+        import uuid
+
+        try:
+            safe_id = str(uuid.UUID(str(upload_id)))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ValueError(f"Invalid upload_id: {upload_id!r}") from exc
 
         base = self._user_data_directory / "temp_uploads"
         path = base / safe_id
 
-        # Defence in depth: confirm the path stays within the uploads root before
-        # any filesystem access, so no crafted upload_id can escape the base.
+        # Defence in depth: confirm the path stays within the uploads root
+        # before any filesystem access. A canonical UUID cannot escape, but the
+        # guard keeps the invariant explicit and local to the sink.
         if not path.is_relative_to(base):
             raise ValueError(f"Invalid upload_id: {upload_id!r}")
 
