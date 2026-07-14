@@ -1,3 +1,7 @@
+import uuid
+
+import pytest
+
 from backend.core.security import _migrate_legacy_secret_file
 from backend.utils.path_manager import PathManager
 
@@ -13,31 +17,42 @@ def _manager_rooted_at(tmp_path) -> PathManager:
     return manager
 
 
-def test_get_upload_temp_dir_sanitizes_and_contains_upload_id(tmp_path):
+def test_get_upload_temp_dir_accepts_valid_uuid_and_contains_it(tmp_path):
     manager = _manager_rooted_at(tmp_path)
     base = tmp_path / "temp_uploads"
 
-    # Legitimate id round-trips unchanged and lands inside the uploads root.
-    good = manager.get_upload_temp_dir("upload-123_abc")
-    assert good == base / "upload-123_abc"
+    # A canonical server-minted UUID round-trips to a directory inside the root.
+    upload_id = str(uuid.uuid4())
+    good = manager.get_upload_temp_dir(upload_id)
+    assert good == base / upload_id
     assert good.is_relative_to(base)
 
-    # Traversal payloads are stripped to safe segments that stay contained.
-    for hostile in ["../../etc/passwd", "a/../../b", "..%2f..", "....//x"]:
-        result = manager.get_upload_temp_dir(hostile)
-        assert result.is_relative_to(base)
+    # The id is normalized through uuid.UUID, so casing/formatting variants map
+    # to the same canonical directory rather than the raw request string.
+    canonical = str(uuid.UUID(upload_id))
+    assert manager.get_upload_temp_dir(upload_id.upper()) == base / canonical
 
     _reset_path_manager_singleton()
 
 
-def test_get_upload_temp_dir_falls_back_when_id_is_empty(tmp_path):
+def test_get_upload_temp_dir_rejects_non_uuid_and_traversal_ids(tmp_path):
     manager = _manager_rooted_at(tmp_path)
-    base = tmp_path / "temp_uploads"
 
-    # An id that sanitizes to nothing must not resolve to the base itself.
-    result = manager.get_upload_temp_dir("../..")
-    assert result == base / "default_upload"
-    assert result.is_relative_to(base)
+    # Anything that is not a canonical UUID is refused outright: there is no
+    # silent fallback bucket that two malformed uploads could collide inside,
+    # and no request-derived string ever reaches the filesystem.
+    hostile = [
+        "../../etc/passwd",
+        "a/../../b",
+        "..%2f..",
+        "....//x",
+        "upload-123_abc",
+        "../..",
+        "",
+    ]
+    for bad in hostile:
+        with pytest.raises(ValueError):
+            manager.get_upload_temp_dir(bad)
 
     _reset_path_manager_singleton()
 

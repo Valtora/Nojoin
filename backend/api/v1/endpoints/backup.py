@@ -274,7 +274,10 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
     Upload a single chunk.
     """
     path_manager = PathManager()
-    upload_dir = path_manager.get_upload_temp_dir(upload_id)
+    try:
+        upload_dir = path_manager.get_upload_temp_dir(upload_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid upload_id.")
     chunk_path = upload_dir / f"{chunk_index}.part"
 
     try:
@@ -315,8 +318,14 @@ async def complete_upload(
     final_path = restore_temp_dir / f"{job_id}_restored.zip"
 
     try:
-        # Assemble file
-        path_manager.assemble_upload(upload_id, final_path)
+        # Assemble file. A malformed upload_id (rejected by get_upload_temp_dir)
+        # or a batch with no uploaded parts is a client error, not a 500.
+        try:
+            path_manager.assemble_upload(upload_id, final_path)
+        except ValueError:
+            if final_path.exists():
+                os.remove(final_path)
+            raise HTTPException(status_code=400, detail="Invalid or empty upload.")
 
         # Initialize job
         BackupManager.restore_jobs[job_id] = {
@@ -338,6 +347,10 @@ async def complete_upload(
             status_code=202, content={"job_id": job_id, "message": "Restore started"}
         )
 
+    except HTTPException:
+        # A deliberate client-error response (e.g. 400) must not be re-wrapped
+        # into a generic 500 by the catch-all below.
+        raise
     except Exception as e:  # noqa: BLE001
         if final_path.exists():
             os.remove(final_path)
