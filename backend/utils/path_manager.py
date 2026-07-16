@@ -461,6 +461,37 @@ class PathManager:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def get_chunk_path(self, upload_id: str, chunk_index: int) -> Path:
+        """
+        Resolve the on-disk path for a single multipart-upload chunk.
+
+        Both request-derived components are neutralised before they reach a
+        filesystem sink. ``upload_id`` is validated and canonicalised by
+        :meth:`get_upload_temp_dir`; ``chunk_index`` is re-coerced through
+        :class:`int`, which is a path-injection barrier because the result can
+        only ever be digits (optionally a leading ``-``) and therefore cannot
+        carry a separator or ``..`` segment. Negative ordinals are rejected as
+        they have no valid meaning as a chunk index.
+        """
+        upload_dir = self.get_upload_temp_dir(upload_id)
+
+        try:
+            safe_index = int(chunk_index)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid chunk_index: {chunk_index!r}") from exc
+        if safe_index < 0:
+            raise ValueError(f"Invalid chunk_index: {chunk_index!r}")
+
+        chunk_path = upload_dir / f"{safe_index}.part"
+
+        # Defence in depth: confirm the path stays within the upload dir before
+        # any filesystem access, keeping the containment invariant explicit and
+        # local to the sink (mirrors get_upload_temp_dir).
+        if not chunk_path.resolve().is_relative_to(upload_dir.resolve()):
+            raise ValueError(f"Invalid chunk_index: {chunk_index!r}")
+
+        return chunk_path
+
     def assemble_upload(self, upload_id: str, dest_path: Path) -> bool:
         """
         Assemble chunks from temp directory into final file.

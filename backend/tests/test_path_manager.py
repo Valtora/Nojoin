@@ -57,6 +57,30 @@ def test_get_upload_temp_dir_rejects_non_uuid_and_traversal_ids(tmp_path):
     _reset_path_manager_singleton()
 
 
+def test_get_chunk_path_contains_chunk_and_rejects_bad_index(tmp_path):
+    manager = _manager_rooted_at(tmp_path)
+    upload_id = str(uuid.uuid4())
+    upload_dir = tmp_path / "temp_uploads" / upload_id
+
+    # A valid index resolves to a .part file inside the upload dir.
+    chunk_path = manager.get_chunk_path(upload_id, 0)
+    assert chunk_path == upload_dir / "0.part"
+    assert chunk_path.resolve().is_relative_to(upload_dir.resolve())
+
+    # int coercion is the taint barrier: string-like ints are accepted and
+    # normalised, non-numeric and negative values are refused outright.
+    assert manager.get_chunk_path(upload_id, "12") == upload_dir / "12.part"
+    for bad in (-1, "..", "0/../../etc/passwd", "1.part", "x"):
+        with pytest.raises(ValueError):
+            manager.get_chunk_path(upload_id, bad)
+
+    # A hostile upload_id is still rejected via get_upload_temp_dir.
+    with pytest.raises(ValueError):
+        manager.get_chunk_path("../../etc/passwd", 0)
+
+    _reset_path_manager_singleton()
+
+
 def test_containerized_runtime_uses_persisted_project_data_dir(monkeypatch, tmp_path):
     project_root = tmp_path / "project"
     (project_root / "data").mkdir(parents=True)
