@@ -274,11 +274,13 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
     Upload a single chunk.
     """
     path_manager = PathManager()
+    # get_chunk_path validates both request-derived components (upload_id via
+    # UUID round-trip, chunk_index via int coercion) before returning a path
+    # that is guaranteed to sit inside the upload dir.
     try:
-        upload_dir = path_manager.get_upload_temp_dir(upload_id)
+        chunk_path = path_manager.get_chunk_path(upload_id, chunk_index)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid upload_id.")
-    chunk_path = upload_dir / f"{chunk_index}.part"
+        raise HTTPException(status_code=400, detail="Invalid upload_id or chunk_index.")
 
     try:
         with open(chunk_path, "wb") as f:
