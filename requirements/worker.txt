@@ -17,7 +17,7 @@ PyMuPDF==1.28.0
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks==0.4.0
 einops==0.8.2
-huggingface_hub==1.23.0
+huggingface_hub==1.24.0
 lightning==2.6.5
 opentelemetry-api==1.44.0
 opentelemetry-sdk==1.44.0
