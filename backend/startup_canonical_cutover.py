@@ -65,32 +65,29 @@ def _batch_size() -> int:
 
 
 def _ensure_companion_retirement_notice(session: Session) -> int:
-    existing_user_ids = set(
-        session.exec(
-            select(UserTask.user_id).where(
-                UserTask.title == COMPANION_RETIREMENT_NOTICE_TITLE
-            )
-        ).all()
-    )
+    # Delivery is tracked on the user, not by looking for the notice task. The task
+    # is the message, not the receipt: dismissing it deletes the row outright, so
+    # keying off its presence re-delivered the notice on every subsequent boot.
     admin_users = session.exec(
         select(User).where(
             or_(
                 User.role.in_(["owner", "admin"]),
                 User.is_superuser == True,
-            )
+            ),
+            User.has_seen_companion_retirement_notice == False,
         )
     ).all()
 
     created = 0
     for admin_user in admin_users:
-        if admin_user.id in existing_user_ids:
-            continue
         session.add(
             UserTask(
                 title=COMPANION_RETIREMENT_NOTICE_TITLE,
                 user_id=admin_user.id,
             )
         )
+        admin_user.has_seen_companion_retirement_notice = True
+        session.add(admin_user)
         created += 1
 
     return created

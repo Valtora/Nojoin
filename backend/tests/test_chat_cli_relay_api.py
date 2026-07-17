@@ -31,6 +31,7 @@ CREATE TABLE users (
     username VARCHAR NOT NULL, hashed_password VARCHAR NOT NULL, is_active BOOLEAN NOT NULL,
     is_superuser BOOLEAN NOT NULL, force_password_change BOOLEAN NOT NULL, role VARCHAR NOT NULL,
     token_version INTEGER NOT NULL, settings JSON, has_seen_demo_recording BOOLEAN NOT NULL,
+    has_seen_companion_retirement_notice BOOLEAN NOT NULL DEFAULT 0,
     invitation_id INTEGER
 );
 CREATE TABLE recordings (
