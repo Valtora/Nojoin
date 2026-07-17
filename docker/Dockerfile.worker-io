@@ -17,7 +17,7 @@ ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
 # which runs on the Ubuntu 24.04 base (glibc 2.39). Bump this digest to move Node
 # deliberately. The Anthropic CLI + Agent SDK are LLM SDKs and stay UNPINNED per
 # the repo policy (allow latest); only the Node runtime shipping them is pinned.
-FROM node:26-bookworm-slim@sha256:e999d087492c7227c85adc70574cf9d3cce774c3e6d7b8dfe473ee6b142c8f2c AS node
+FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS node
 
 FROM ${WORKER_BASE_IMAGE}
 
