@@ -122,3 +122,13 @@ CVE-2026-45852
 CVE-2026-45864
 CVE-2026-45878
 CVE-2026-45891
+
+# linux-libc-dev kernel-header CVE newly disclosed since v1.5.0, from the pinned
+# PyTorch/CUDA worker base (and inherited by worker-io). Same rationale as the
+# batches above: a header package finding, not the running kernel, so it is not a
+# runtime exposure for the worker. CRITICAL, and fixed upstream in 6.8.0-134.134,
+# but the base pins 6.8.0-106.106 and the pytorch bump to 2.12 is held in
+# .github/dependabot.yml until torchaudio ships a matching 2.12.x release.
+# Accepted until a newer PyTorch base ships patched headers.
+#   Owner: maintainers. Review by: 2026-10-17.
+CVE-2026-43185
