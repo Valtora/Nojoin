@@ -37,6 +37,7 @@ SCHEMA_STATEMENTS = [
         token_version INTEGER NOT NULL DEFAULT 0,
         settings JSON,
         has_seen_demo_recording BOOLEAN NOT NULL DEFAULT 0,
+        has_seen_companion_retirement_notice BOOLEAN NOT NULL DEFAULT 0,
         invitation_id INTEGER
     )
     """,

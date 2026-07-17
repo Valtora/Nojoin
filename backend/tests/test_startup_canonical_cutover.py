@@ -200,3 +200,75 @@ def test_cutover_second_run_is_a_noop(tmp_path, monkeypatch) -> None:
         ).scalar_one()
 
     assert notices == 1
+
+
+def _count_notices(engine: Engine) -> int:
+    with engine.connect() as connection:
+        return connection.execute(
+            text(
+                "SELECT COUNT(*) FROM user_tasks "
+                "WHERE title LIKE 'Companion app retired%'"
+            )
+        ).scalar_one()
+
+
+def test_dismissed_retirement_notice_is_not_redelivered(tmp_path, monkeypatch) -> None:
+    # Dismissing a task hard-deletes the row, so the notice's own presence cannot
+    # be the record that it was delivered -- the boot after a dismissal used to
+    # recreate it, and it came back on every rebuild thereafter.
+    engine = _build_engine(tmp_path)
+    _seed_admin_and_legacy_recording(engine)
+    _patch_driver(monkeypatch, engine)
+
+    assert cutover.run_startup_canonical_cutover()["retirement_notices"] == 1
+    assert _count_notices(engine) == 1
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM user_tasks WHERE title LIKE 'Companion app retired%'")
+        )
+
+    summary = cutover.run_startup_canonical_cutover()
+
+    assert summary["retirement_notices"] == 0
+    assert _count_notices(engine) == 0
+
+
+def test_retirement_notice_delivery_is_recorded_on_the_user(
+    tmp_path, monkeypatch
+) -> None:
+    engine = _build_engine(tmp_path)
+    _seed_admin_and_legacy_recording(engine)
+    _patch_driver(monkeypatch, engine)
+
+    cutover.run_startup_canonical_cutover()
+
+    with engine.connect() as connection:
+        seen = connection.execute(
+            text("SELECT has_seen_companion_retirement_notice FROM users WHERE id = 1")
+        ).scalar_one()
+
+    assert seen
+
+
+def test_completed_retirement_notice_is_not_duplicated(tmp_path, monkeypatch) -> None:
+    # Completing rather than deleting leaves the row in place; the notice must not
+    # be delivered a second time alongside the completed one.
+    engine = _build_engine(tmp_path)
+    _seed_admin_and_legacy_recording(engine)
+    _patch_driver(monkeypatch, engine)
+
+    cutover.run_startup_canonical_cutover()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE user_tasks SET completed_at = :now "
+                "WHERE title LIKE 'Companion app retired%'"
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+
+    summary = cutover.run_startup_canonical_cutover()
+
+    assert summary["retirement_notices"] == 0
+    assert _count_notices(engine) == 1
