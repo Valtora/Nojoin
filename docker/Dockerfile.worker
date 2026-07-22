@@ -77,11 +77,12 @@ RUN apt-get update && \
 # /usr/local/lib/.../dist-packages. The venv (system-site-packages) shadows them
 # at import time with the patched versions from requirements, but the old files
 # remain on disk and are flagged by the image scan. Upgrade the system copies in
-# place (as root, before the USER switch) to the same patched versions:
-# pillow CVE-2026-40192/42311, urllib3 CVE-2026-44431/44432. Keep these versions
-# in step with the pins in requirements/base.txt.
+# place (as root, before the USER switch) to the same patched versions. Keep these
+# pins in step with requirements/base.txt: pillow==12.3.0 closes the batch of
+# HIGH pillow CVEs disclosed after v1.5.0 (CVE-2026-54058/54059/54060, 55379/55380,
+# 59197/59199/59200/59204/59205); urllib3==2.7.0 closes CVE-2026-44431/44432.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==12.2.0 urllib3==2.7.0
+    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.7.0
 
 COPY --from=builder /opt/venv /opt/venv
 
