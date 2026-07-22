@@ -1,7 +1,9 @@
 import json
 from types import SimpleNamespace
 
+from backend.processing.llm_backends.base import LLMBackend
 from backend.utils.meeting_intelligence import (
+    DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE,
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
     MeetingIntelligenceContractError,
@@ -12,6 +14,7 @@ from backend.utils.meeting_intelligence import (
     parse_automatic_meeting_intelligence_response,
 )
 from backend.utils.meeting_notes import (
+    NOTES_BODY_SPEC,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
 )
@@ -30,7 +33,9 @@ def test_parse_automatic_meeting_intelligence_response_from_json() -> None:
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
     assert result.title == "Launch Readiness Review"
-    assert result.notes_markdown.startswith("# Meeting Notes")
+    # A redundant title heading is stripped; notes begin at the Summary section.
+    assert result.notes_markdown.startswith("## Summary")
+    assert "# Meeting Notes" not in result.notes_markdown
 
 
 def test_parse_automatic_meeting_intelligence_response_from_fenced_json() -> None:
@@ -115,19 +120,64 @@ def test_automatic_meeting_intelligence_request_rejects_duplicate_labels() -> No
         raise AssertionError("Expected MeetingIntelligenceContractError")
 
 
-def test_automatic_meeting_intelligence_result_requires_top_level_markdown_heading() -> (
-    None
-):
+def test_automatic_meeting_intelligence_result_requires_a_section_heading() -> None:
     try:
         AutomaticMeetingIntelligenceResult(
             speaker_mapping={"SPEAKER_00": "Alex"},
             title="Launch Readiness Review",
-            notes_markdown="## Summary\nAll teams are ready.",
+            notes_markdown="All teams are ready.",
         )
     except MeetingIntelligenceContractError as exc:
-        assert "top-level Markdown heading" in str(exc)
+        assert "section heading" in str(exc)
     else:
         raise AssertionError("Expected MeetingIntelligenceContractError")
+
+
+def test_automatic_meeting_intelligence_result_accepts_summary_first_notes() -> None:
+    result = AutomaticMeetingIntelligenceResult(
+        speaker_mapping={"SPEAKER_00": "Alex"},
+        title="Launch Readiness Review",
+        notes_markdown="## Summary\nAll teams are ready.",
+    )
+
+    assert result.notes_markdown.startswith("## Summary")
+
+
+def test_both_notes_prompts_embed_the_shared_notes_body_spec() -> None:
+    # Drift guard: the unified meeting-intelligence prompt and the standalone
+    # regeneration prompt must both embed NOTES_BODY_SPEC verbatim so their note
+    # structure and fidelity rules can never diverge again.
+    assert NOTES_BODY_SPEC in DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE
+    assert NOTES_BODY_SPEC in LLMBackend.get_default_notes_prompt_template()
+
+
+def test_notes_body_spec_uses_the_best_practice_section_order() -> None:
+    # Structure follows the approved best-practice layout: summary first, then
+    # decisions and action items surfaced ahead of the per-topic detail.
+    positions = [
+        NOTES_BODY_SPEC.index(marker)
+        for marker in (
+            "## Summary",
+            "## Key Decisions",
+            "## Action Items / Tasks",
+            "## Detailed Notes",
+            "## Miscellaneous",
+        )
+    ]
+    assert positions == sorted(positions)
+    assert "Never invent facts" in NOTES_BODY_SPEC
+    # Notes must begin at Summary; the app shows the meeting title separately.
+    assert "do not add a title heading" in NOTES_BODY_SPEC.lower()
+
+
+def test_rendered_unified_prompt_carries_the_new_structure() -> None:
+    request = AutomaticMeetingIntelligenceRequest(
+        resolved_transcript="[00:00 - 00:05] Alex: We will ship on Friday.",
+        unresolved_speakers=(),
+    )
+    prompt = build_automatic_meeting_intelligence_prompt(request)
+    assert "## Key Decisions" in prompt
+    assert "## Summary" in prompt
 
 
 def test_build_automatic_meeting_intelligence_prompt_includes_shared_sections() -> None:
@@ -153,14 +203,16 @@ def test_build_automatic_meeting_intelligence_prompt_includes_shared_sections() 
     assert "Keep any JSON keys exactly as specified" in prompt
 
 
-def test_automatic_meeting_intelligence_accepts_localized_top_level_heading() -> None:
+def test_automatic_meeting_intelligence_strips_localized_title_heading() -> None:
     result = AutomaticMeetingIntelligenceResult(
         speaker_mapping={},
         title="Préparation du lancement",
         notes_markdown="# Notes de réunion\n\n## Résumé\nToutes les équipes sont prêtes.",
     )
 
-    assert result.notes_markdown.startswith("# Notes de réunion")
+    # The localized title heading is stripped; notes begin at the localized Summary.
+    assert result.notes_markdown.startswith("## Résumé")
+    assert "Notes de réunion" not in result.notes_markdown
 
 
 def test_get_speakers_eligible_for_llm_renaming_excludes_trusted_speakers() -> None:

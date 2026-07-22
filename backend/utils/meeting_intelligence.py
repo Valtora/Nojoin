@@ -8,17 +8,20 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_notes import (
+    NOTES_BODY_SPEC,
     MeetingEventContext,
     append_user_notes_section,
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
+    strip_leading_title_heading,
 )
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
-DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE = """You are an expert meeting intelligence assistant.
+DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE = (
+    """You are an expert meeting-notes assistant.
 
 Your task is to produce one valid JSON object that combines:
 1. speaker suggestions for unresolved diarization labels only
@@ -54,24 +57,18 @@ Your task is to produce one valid JSON object that combines:
         "SPEAKER_00": "Person name or role"
     }},
     "title": "Meeting title",
-    "notes_markdown": "# Localized meeting-notes heading\\n\\n## Localized section heading\\n..."
+    "notes_markdown": "## Localized summary heading\\n\\n...\\n\\n## Localized section heading\\n..."
 }}
 
 # Notes Markdown Requirements
-- Use Markdown.
-- Start with exactly one top-level Markdown heading (`# ...`) in the requested output language.
-- Use localized equivalents of this section order:
-    1. Topics Discussed
-    2. Summary
-    3. Detailed Notes
-    4. Action Items / Tasks
-    5. Miscellaneous
-- Incorporate relevant user-authored notes into the body where they materially improve accuracy.
-- Do not add a separate appendix for user notes.
+"""
+    + NOTES_BODY_SPEC
+    + """
 
 # Transcript
 {transcript}
 """
+)
 
 
 class MeetingIntelligenceContractError(ValueError):
@@ -158,7 +155,11 @@ class AutomaticMeetingIntelligenceResult:
             if str(label).strip() and str(name).strip()
         }
         title = re.sub(r"\s+", " ", self.title.strip())
-        notes_markdown = self.notes_markdown.replace("\r\n", "\n").strip()
+        # Notes must begin at the Summary section; the application shows the meeting
+        # title separately. Strip a redundant title heading if the model emits one.
+        notes_markdown = strip_leading_title_heading(
+            self.notes_markdown.replace("\r\n", "\n").strip()
+        )
 
         if not title:
             raise MeetingIntelligenceContractError("title must be a non-empty string")
@@ -168,9 +169,9 @@ class AutomaticMeetingIntelligenceResult:
                 "notes_markdown must be a non-empty string"
             )
 
-        if not re.match(r"^#\s+\S", notes_markdown):
+        if not re.match(r"^##\s+\S", notes_markdown):
             raise MeetingIntelligenceContractError(
-                "notes_markdown must start with a top-level Markdown heading"
+                "notes_markdown must start with a section heading (## ...)"
             )
 
         object.__setattr__(self, "speaker_mapping", normalized_mapping)

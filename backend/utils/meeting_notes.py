@@ -7,6 +7,64 @@ PLACEHOLDER_SPEAKER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Single source of truth for the meeting-notes body: the section structure and
+# fidelity rules the model must follow. Both note-generation paths embed this
+# verbatim -- the unified meeting-intelligence prompt (inside its JSON
+# ``notes_markdown`` field) and the standalone regeneration prompt (as raw
+# Markdown) -- so the two can never drift in structure or quality again. A test
+# asserts both templates contain it.
+#
+# The layout follows external best practice: lead with a scannable summary,
+# surface decisions and action items where they drive follow-through, then the
+# per-topic detail. Keep this string free of ``{``/``}`` so it survives the
+# ``str.format`` call each embedding template still runs.
+NOTES_BODY_SPEC = """Structure the notes for fast follow-through, not verbatim transcription. Write Markdown and begin directly with the Summary section below. Do not add a title heading of your own; the application already displays the meeting title above the notes. Translate every heading below into the requested output language, keeping this order and structure.
+
+## Summary
+Two to four sentences the reader can scan first: why the meeting happened and what came out of it. Lead with outcomes, not chronology.
+
+## Key Decisions
+Each decision the meeting actually reached, one per line, paired with the reasoning behind it so it is not re-litigated later:
+- The decision - the reasoning or trade-off behind it.
+Omit this entire section if no decisions were reached. Never record a decision that was not made.
+
+## Action Items / Tasks
+Every task, commitment, or follow-up that was actually raised, one per line:
+- [ ] Task description - Owner: single named person, or Unassigned - Due: a date, or TBD
+Give each item exactly one owner; never assign a task to the team as a whole. If none were raised, write a single line stating that no action items were identified.
+
+## Detailed Notes
+One ### subsection per major topic, in the order discussed, with the subheading naming the topic. Under each, include only what applies:
+- Key Points: the substantive information, arguments, or figures, attributed to the participant who raised them where that matters.
+- Discussion: what was debated, including differing perspectives, summarised rather than transcribed.
+- Open Questions: anything left unresolved or needing follow-up.
+
+## Miscellaneous
+Anything material that fits nowhere above: announcements, FYIs, or references to external documents and prior meetings. If nothing applies, write a single line saying so.
+
+Apply these fidelity rules throughout:
+- Be comprehensive about what was said, but favour signal over volume: capture every decision, commitment, and material point, and leave out greetings, small talk, and filler.
+- Never invent facts, decisions, action items, figures, or attributions. If it was not said, do not record it.
+- Attribute claims and commitments to the participant who made them, using their mapped name or role rather than a generic label.
+- Weave any user-authored notes into the relevant sections where they improve accuracy. The application preserves the raw user notes separately, so do not add your own appendix for them and do not label content as AI-generated or user-generated."""
+
+
+_LEADING_TITLE_HEADING_PATTERN = re.compile(r"^\s*#\s+[^\n]*(?:\n+|\Z)")
+
+
+def strip_leading_title_heading(notes_markdown: str) -> str:
+    """Remove a single leading level-1 (``# ...``) title line from notes.
+
+    Generated notes must begin at the Summary section: the application renders the
+    meeting title separately, so a title heading inside the notes is redundant and
+    can even contradict it. The prompt instructs the model accordingly; this
+    defensively strips a title heading if a model still emits one. Level-2+
+    headings (``## ...``) are left untouched.
+    """
+    if not notes_markdown:
+        return notes_markdown
+    return _LEADING_TITLE_HEADING_PATTERN.sub("", notes_markdown, count=1).strip()
+
 
 def resolve_recording_speaker_name(speaker: Any) -> Optional[str]:
     resolved_name = (
