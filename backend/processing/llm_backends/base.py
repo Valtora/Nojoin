@@ -25,6 +25,7 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
     MeetingIntelligenceContractError,
+    build_title_preference_instruction,
     get_default_automatic_meeting_intelligence_prompt_template,
 )
 from backend.utils.meeting_intelligence import (
@@ -37,10 +38,12 @@ from backend.utils.meeting_intelligence import (
     parse_automatic_meeting_intelligence_response as parse_automatic_meeting_intelligence_payload,
 )
 from backend.utils.meeting_notes import (
+    NOTES_BODY_SPEC,
     MeetingEventContext,
     append_user_notes_section,
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
+    strip_leading_title_heading,
 )
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -238,11 +241,6 @@ class LLMBackend:
         return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
 
     @staticmethod
-    def get_default_speaker_prompt_template():
-        return """
-You are an expert meeting assistant. Analyze the diarized meeting transcript below, where speakers are labeled generically (e.g., 'Speaker 1', 'SPEAKER_00').\n\nFirst, infer the most likely real names or roles for each speaker, based on context, introductions, or references in the transcript. Use the user-authored notes as supplemental context when they mention attendee names, roles, or who said what. If a real name is not clear, suggest a likely role (e.g., 'Project Manager', 'Client', 'Engineer') or keep the generic label. Be conservative: only use a real name or role if it is clearly stated or strongly implied. If the user notes conflict with the transcript, prefer the transcript.\n\nOutput a Markdown table mapping each diarization label to the inferred name or role. Only output the table and nothing else.\n\n# User Notes Context\n{user_notes_section}\n\n# Meeting Context\n{meeting_context_section}\n\nBelow is the diarized transcript:\n\n{transcript}\n"""
-
-    @staticmethod
     def get_default_speaker_suggestion_prompt_template():
         return """
 You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels.
@@ -292,17 +290,12 @@ You are an expert meeting assistant. Analyze the diarized meeting transcript bel
 
     @staticmethod
     def get_default_notes_prompt_template():
-        return """You are an expert meeting intelligence assistant. Your task is to generate comprehensive, high-quality meeting notes from the provided transcript. Use the speaker mapping to refer to participants by their inferred names/roles instead of generic labels.
-
-# CRITICAL FORMATTING REQUIREMENTS
-You MUST follow these formatting rules EXACTLY. Do not deviate:
-1. Use ONLY the section structure specified below, with headings translated into the requested output language
-2. Use Markdown formatting throughout
-3. Be thorough and detailed - notes may be as lengthy as required to capture all important content
-4. Do NOT add any introductory text, concluding remarks, or sections not specified below
-5. Start your response with one top-level Markdown heading (`# ...`) in the requested output language - nothing before it
-6. Incorporate relevant user-authored notes into the appropriate sections when they add useful context or action items
-7. Do NOT add a separate appendix or label LLM-generated content as such; the application will surface the user-authored notes separately
+        # Body structure and fidelity rules live in the shared NOTES_BODY_SPEC so
+        # this standalone (regeneration) prompt and the unified meeting-intelligence
+        # prompt cannot drift. Only the delivery wrapper (raw Markdown, speaker
+        # mapping, transcript) is specific to this path.
+        return (
+            """You are an expert meeting-notes assistant. Generate meeting notes from the transcript below. Use the speaker mapping to refer to participants by their inferred names or roles instead of generic labels.
 
 # Speaker Mapping
 {mapping_table}
@@ -315,74 +308,29 @@ You MUST follow these formatting rules EXACTLY. Do not deviate:
 
 {output_language_section}
 
-# OUTPUT FORMAT - Follow this EXACT structure:
+# Notes Format
+"""
+            + NOTES_BODY_SPEC
+            + """
 
-# [Localized meeting-notes heading]
-
-## [Localized Topics Discussed heading]
-List each major topic or theme discussed in the meeting as a bullet point. Be specific and descriptive.
-- Topic 1: Brief description
-- Topic 2: Brief description
-(continue for all topics)
-
-## [Localized Summary heading]
-Provide a comprehensive summary of the meeting covering:
-- The main purpose and context of the meeting
-- Key points raised by participants
-- Important information shared
-- Overall conclusions or outcomes reached
-
-## [Localized Detailed Notes heading]
-
-### [Topic Name 1]
-Provide detailed notes on this topic including:
-- **Key Points**: Main arguments, information, or ideas presented
-- **Discussion**: What was debated or discussed, including different perspectives
-- **Decisions**: Any decisions made regarding this topic (if applicable)
-- **Rationale**: The reasoning behind decisions or recommendations (if discussed)
-- **Open Questions**: Any unresolved questions or points requiring follow-up
-
-### [Topic Name 2]
-(Follow the same structure for each major topic)
-
-(Continue for all topics discussed)
-
-## [Localized Action Items / Tasks heading]
-List all tasks, action items, or follow-ups mentioned, formatted as:
-- [ ] Task description - Assigned to: [Person] - Due: [Date if mentioned, otherwise "TBD"]
-(If no tasks were discussed, write: "No specific action items were identified in this meeting.")
-
-## [Localized Miscellaneous heading]
-Capture any additional important information that doesn't fit the above categories:
-- Side discussions or tangential points of interest
-- Announcements or FYIs mentioned
-- References to external documents, resources, or prior meetings
-- Any other noteworthy content
-(If nothing applicable, write: "No additional items.")
-
----
-
-# Transcript to Analyze:
-
+# Transcript to Analyze
 {transcript}
 
----
-
-Now generate the meeting notes following the exact structure specified above, replacing bracketed heading descriptions with headings in the requested output language. Be comprehensive and capture all important details."""
-
-    @staticmethod
-    def get_default_title_prompt_template():
-        return (
-            "You are an expert meeting assistant. Given the full meeting transcript below, "
-            "provide a concise, descriptive title that summarises the main topic or purpose of the meeting. "
-            "Limit the title to at most 12 words. Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
-            "{output_language_section}\n\n"
-            "# Transcript\n\n{transcript}\n"
+Return only the meeting notes described above, starting directly with the Summary section and with no preamble or closing commentary."""
         )
 
     @staticmethod
-    def get_speaker_prompt_template() -> str:
-        return LLMBackend.get_default_speaker_prompt_template()
+    def get_default_title_prompt_template():
+        # Reuse the shared title-style instruction (short titles by default) so the
+        # standalone title path matches the unified meeting-intelligence path.
+        return (
+            "You are an expert meeting-notes assistant. Given the full meeting transcript below, "
+            "provide a title that summarises the main topic or purpose of the meeting. "
+            + build_title_preference_instruction(True)
+            + " Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
+            "{output_language_section}\n\n"
+            "# Transcript\n\n{transcript}\n"
+        )
 
     @staticmethod
     def get_notes_prompt_template() -> str:
@@ -403,25 +351,6 @@ Now generate the meeting notes following the exact structure specified above, re
     @staticmethod
     def get_meeting_edge_prompt_template() -> str:
         return get_default_meeting_edge_prompt_template()
-
-    @staticmethod
-    def parse_mapping_table(response_text: str) -> Dict[str, str]:
-        lines = [line.strip() for line in response_text.splitlines() if line.strip()]
-        mapping = {}
-        in_table = False
-        for line in lines:
-            if line.startswith("|") and "|" in line[1:]:
-                in_table = True
-                parts = [p.strip() for p in line.strip("|").split("|")]
-                if (
-                    len(parts) == 2
-                    and parts[0] != "Diarization Label"
-                    and not parts[0].startswith("-")
-                ):
-                    mapping[parts[0]] = parts[1]
-            elif in_table and (not line.startswith("|")):
-                break
-        return mapping
 
     @staticmethod
     def parse_notes(response_text: str) -> str:
@@ -485,21 +414,6 @@ Now generate the meeting notes following the exact structure specified above, re
         )
 
     @staticmethod
-    def build_speaker_prompt(
-        prompt_template: str,
-        transcript: str,
-        user_notes: Optional[str] = None,
-        meeting_context: Optional[MeetingEventContext] = None,
-    ) -> str:
-        return prompt_template.format(
-            transcript=transcript,
-            user_notes_section=build_user_notes_prompt_section(user_notes),
-            meeting_context_section=build_meeting_context_prompt_section(
-                meeting_context
-            ),
-        )
-
-    @staticmethod
     def build_speaker_suggestion_prompt(
         prompt_template: str,
         transcript: str,
@@ -544,7 +458,7 @@ Now generate the meeting notes following the exact structure specified above, re
 
     @staticmethod
     def finalise_meeting_notes(notes: str, user_notes: Optional[str] = None) -> str:
-        return append_user_notes_section(notes, user_notes)
+        return append_user_notes_section(strip_leading_title_heading(notes), user_notes)
 
     @staticmethod
     def parse_automatic_meeting_intelligence_result(

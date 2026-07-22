@@ -364,7 +364,7 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert transcript.error_message is None
         assert (
             transcript.notes
-            == "# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date"
+            == "## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date"
         )
         assert captured["request"].unresolved_speakers == ("SPEAKER_00",)
         assert captured["request"].user_notes == "Confirm the rollout date"
@@ -512,7 +512,7 @@ def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
             return AutomaticMeetingIntelligenceResult(
                 speaker_mapping={"SPEAKER_00": "Dana"},
                 title="Launch Readiness Review",
-                notes_markdown="# Meeting Notes\n\nGenerated notes.",
+                notes_markdown="## Summary\nGenerated notes.",
             )
 
     monkeypatch.setattr(

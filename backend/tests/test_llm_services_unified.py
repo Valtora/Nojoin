@@ -166,7 +166,7 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert "## User Notes" in result.notes_markdown
     assert capture["max_tokens"] == 4096
     assert capture["messages"][0]["content"].startswith(
-        "You are an expert meeting intelligence assistant."
+        "You are an expert meeting-notes assistant."
     )
 
 

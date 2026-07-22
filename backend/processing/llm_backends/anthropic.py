@@ -151,9 +151,11 @@ class AnthropicLLMBackend(LLMBackend):
                 "No Anthropic model configured. Please select a model in Settings."
             )
         try:
+            # Match the unified meeting-intelligence path's ceiling so the shared
+            # "be comprehensive" notes spec is not silently truncated on long meetings.
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=2048,
+                max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
             )
