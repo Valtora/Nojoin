@@ -77,6 +77,22 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     backendFailCount: 0,
 
     checkBackend: async () => {
+      // A hidden/backgrounded tab has its timers throttled and network
+      // requests deprioritised by the browser, so the health probe can time
+      // out even while the backend is perfectly healthy (active recording
+      // uploads keep succeeding throughout). Skip probing while hidden so we
+      // never accrue failures — and never raise a false "Server Unreachable"
+      // alert — during a call the user is watching in another window. The
+      // visibilitychange handler in ServiceStatusAlerts re-checks immediately
+      // on return to the foreground.
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden"
+      ) {
+        scheduleNextBackend();
+        return;
+      }
+
       const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(
         /\/$/,
         "",
