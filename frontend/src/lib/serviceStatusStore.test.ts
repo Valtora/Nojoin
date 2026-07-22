@@ -82,6 +82,36 @@ describe("serviceStatusStore backend health", () => {
     });
   });
 
+  it("does not probe or accrue failures while the tab is hidden", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+
+    try {
+      const { useServiceStatusStore } = await import("./serviceStatusStore");
+
+      await useServiceStatusStore.getState().checkBackend();
+
+      // A backgrounded tab is throttled by the browser, so a timed-out probe
+      // would be a false negative. We must not fetch, and must leave the
+      // previously-known-good status untouched.
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(useServiceStatusStore.getState()).toMatchObject({
+        backend: true,
+        backendFailCount: 0,
+      });
+    } finally {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "visible",
+      });
+    }
+  });
+
   it("preserves deployment warnings when falling back to the public health probe", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
