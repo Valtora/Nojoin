@@ -28,7 +28,7 @@
     "driver.js": "^1.7.0",
     "fuse.js": "^7.5.0",
     "lucide-react": "^1.25.0",
-    "next": "16.2.10",
+    "next": "16.2.11",
     "nspell": "^2.1.5",
     "react": "19.2.7",
     "react-datepicker": "^9.1.0",
