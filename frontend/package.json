@@ -58,7 +58,7 @@
   },
   "overrides": {
     "eslint-plugin-react-hooks": "7.0.1",
-    "brace-expansion@<1.1.13": "1.1.13",
+    "brace-expansion@1": "^1.1.16",
     "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
     "follow-redirects": "1.16.0",
     "picomatch": "4.0.4",
