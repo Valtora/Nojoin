@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { DeploymentWarning } from "@/types";
+import { recordRequestOutcome } from "@/lib/connectivity/monitor";
 
 interface DetailedHealthStatus {
   status: string;
@@ -11,85 +12,63 @@ interface DetailedHealthStatus {
   };
 }
 
+/**
+ * Health *content* only: the subsystem status the backend reports about itself
+ * (db, worker, version, deployment warnings). Backend *reachability* is a
+ * separate concern owned by the connectivity monitor — a failure to load this
+ * content must never assert "unreachable", it only means the content is stale.
+ */
 interface ServiceStatusState {
-  backend: boolean;
   db: boolean;
   worker: boolean;
   backendVersion: string | null;
   deploymentWarnings: DeploymentWarning[];
   isPolling: boolean;
-  backendFailCount: number;
-  checkBackend: () => Promise<void>;
+  refreshHealth: () => Promise<void>;
   startPolling: () => void;
   stopPolling: () => void;
 }
 
-const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 60000];
-const NORMAL_INTERVAL = 10000;
-const BACKEND_REQUEST_TIMEOUT_MS = 5000;
+const HEALTH_POLL_INTERVAL_MS = 15_000;
+const HEALTH_REQUEST_TIMEOUT_MS = 8_000;
 
 export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
-  let backendTimer: ReturnType<typeof setTimeout> | null = null;
+  let healthTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const clearBackendTimer = () => {
-    if (!backendTimer) {
-      return;
+  const clearHealthTimer = () => {
+    if (healthTimer) {
+      clearTimeout(healthTimer);
+      healthTimer = null;
     }
-
-    clearTimeout(backendTimer);
-    backendTimer = null;
   };
 
-  const scheduleNextBackend = () => {
+  const scheduleNext = () => {
     if (!get().isPolling) {
       return;
     }
-
-    const failCount = get().backendFailCount;
-    const delay =
-      failCount === 0
-        ? NORMAL_INTERVAL
-        : BACKOFF_DELAYS[Math.min(failCount - 1, BACKOFF_DELAYS.length - 1)];
-
-    clearBackendTimer();
-    backendTimer = setTimeout(() => {
-      void get().checkBackend();
-    }, delay);
-  };
-
-  const markBackendUnavailable = () => {
-    set((state) => ({
-      backend: false,
-      db: false,
-      worker: false,
-      deploymentWarnings: [],
-      backendFailCount: state.backendFailCount + 1,
-    }));
+    clearHealthTimer();
+    healthTimer = setTimeout(
+      () => void get().refreshHealth(),
+      HEALTH_POLL_INTERVAL_MS,
+    );
   };
 
   return {
-    backend: true,
     db: true,
     worker: true,
     backendVersion: null,
     deploymentWarnings: [],
     isPolling: false,
-    backendFailCount: 0,
 
-    checkBackend: async () => {
-      // A hidden/backgrounded tab has its timers throttled and network
-      // requests deprioritised by the browser, so the health probe can time
-      // out even while the backend is perfectly healthy (active recording
-      // uploads keep succeeding throughout). Skip probing while hidden so we
-      // never accrue failures — and never raise a false "Server Unreachable"
-      // alert — during a call the user is watching in another window. The
-      // visibilitychange handler in ServiceStatusAlerts re-checks immediately
-      // on return to the foreground.
+    refreshHealth: async () => {
+      // A hidden tab throttles timers and deprioritises fetches, so a probe can
+      // falsely fail; stale content for a backgrounded tab is harmless. Skip
+      // while hidden — the connectivity monitor owns reachability separately.
       if (
         typeof document !== "undefined" &&
         document.visibilityState === "hidden"
       ) {
-        scheduleNextBackend();
+        scheduleNext();
         return;
       }
 
@@ -102,7 +81,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(
           () => controller.abort(),
-          BACKEND_REQUEST_TIMEOUT_MS,
+          HEALTH_REQUEST_TIMEOUT_MS,
         );
 
         const response = await fetch(`${apiBaseUrl}/v1/system/health`, {
@@ -113,53 +92,26 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
 
         clearTimeout(timeoutId);
 
+        // Any HTTP answer — even 401/500 — proves the backend is reachable,
+        // independent of whether the payload was usable.
+        recordRequestOutcome({ reachedServer: true });
+
         if (response.ok) {
           const data: DetailedHealthStatus = await response.json();
           set({
-            backend: true,
             db: data.components.db === "connected",
             worker: data.components.worker === "active",
             backendVersion: data.version,
             deploymentWarnings: data.deployment_warnings,
-            backendFailCount: 0,
           });
-          scheduleNextBackend();
-          return;
         }
       } catch {
-        // Fall back to the unauthenticated probe to distinguish backend
-        // outages from failures in the richer health endpoint.
+        // Transport failure: hand it to the connectivity monitor, which will
+        // confirm with a dedicated probe. Keep the last-known content as-is.
+        recordRequestOutcome({ reachedServer: false });
       }
 
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(
-          () => controller.abort(),
-          BACKEND_REQUEST_TIMEOUT_MS,
-        );
-
-        const response = await fetch(`${apiBaseUrl}/health`, {
-          signal: controller.signal,
-          method: "GET",
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          set({
-            backend: true,
-            db: true,
-            worker: true,
-            backendFailCount: 0,
-          });
-        } else {
-          markBackendUnavailable();
-        }
-      } catch {
-        markBackendUnavailable();
-      }
-
-      scheduleNextBackend();
+      scheduleNext();
     },
 
     startPolling: () => {
@@ -168,12 +120,12 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
       }
 
       set({ isPolling: true });
-      void get().checkBackend();
+      void get().refreshHealth();
     },
 
     stopPolling: () => {
       set({ isPolling: false });
-      clearBackendTimer();
+      clearHealthTimer();
     },
   };
 });

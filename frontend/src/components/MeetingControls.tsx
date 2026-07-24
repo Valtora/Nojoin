@@ -2,7 +2,8 @@
 
 import { Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useServiceStatusStore } from "@/lib/serviceStatusStore";
+import { useConnectivityStore } from "@/lib/connectivity/monitor";
+import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 
@@ -27,7 +28,7 @@ export default function MeetingControls({
   onMeetingEnd,
   variant = "sidebar",
 }: MeetingControlsProps) {
-  const { backend } = useServiceStatusStore();
+  const backend = useConnectivityStore((state) => isReachable(state.status));
   const {
     controller,
     finalizeRetry,
