@@ -33,10 +33,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 # ffmpeg is needed for audio duration checks and basic processing
 # libpq5 is needed for psycopg2 (PostgreSQL)
 # libsndfile1 is needed for audio processing
+# gosu drops the entrypoint from root to appuser after the ./data bind-mount
+# ownership repair. Sourced from the distro (Trivy OS-scanner coverage + distro
+# security auto-patch) rather than a hand-copied binary.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libpq5 \
     libsndfile1 \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
@@ -61,13 +65,14 @@ RUN set -eu; \
 
 RUN chmod +x /app/backend/entrypoint.sh
 
-# Create a non-root user and the mounted-volume directories it must own.
+# Create the non-root appuser and the mounted-volume directories it must own.
+# The image intentionally does NOT `USER appuser`: the entrypoint enters as root
+# only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
+# the long-running process runs as uid 1000 (asserted by the release smoke test).
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app/recordings && \
     mkdir -p /shared_model_cache && \
     chown -R appuser:appuser /app /shared_model_cache
-
-USER appuser
 
 EXPOSE 8000
 
