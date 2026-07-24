@@ -535,28 +535,42 @@ jobs:
           VERSION: ${{ needs.validate-release-ref.outputs.version }}
         run: |
           set -euo pipefail
-          # api and frontend are running: check the live runtime uid.
-          for c in nojoin-api nojoin-frontend; do
-            uid="$(docker exec "${c}" id -u)"
-            echo "${c} runtime uid: ${uid}"
-            if [[ "${uid}" -eq 0 ]]; then
-              echo "${c} is running as root" >&2
-              exit 1
-            fi
-          done
-          # The worker needs a GPU and models to boot, so assert its non-root
-          # USER from the published image config without pulling the large layers.
-          # The published artifact is an OCI index (provenance + SBOM
-          # attestations), so `{{json .Image}}` is a platform-keyed map; the jq
-          # also handles a single-image config object so a shape change cannot
-          # turn this into a template error that aborts the release.
-          worker_image="$(docker buildx imagetools inspect \
-            "${IMAGE_BASE}-worker:${VERSION}" --format '{{json .Image}}')"
-          worker_user="$(printf '%s' "${worker_image}" | jq -r \
-            '(if has("config") then .config.User else (first(to_entries[] | select(.key|startswith("linux/")) | .value.config.User)) end) // empty')"
-          echo "worker image USER: ${worker_user:-<empty>}"
-          if [[ -z "${worker_user}" || "${worker_user}" == "root" || "${worker_user}" == "0" ]]; then
-            echo "worker image does not declare a non-root USER" >&2
+          # The api and worker images intentionally default to root USER: their
+          # entrypoint enters as root only to repair ./data bind-mount ownership,
+          # then drops to appuser (uid 1000) via gosu. So we assert the DROPPED
+          # RUNTIME uid, never the image-config USER (which is now root).
+
+          # frontend is unchanged and still declares a non-root USER, so a plain
+          # exec reflects its runtime uid directly.
+          fe_uid="$(docker exec nojoin-frontend id -u)"
+          echo "nojoin-frontend runtime uid: ${fe_uid}"
+          if [[ "${fe_uid}" -eq 0 ]]; then
+            echo "nojoin-frontend is running as root" >&2
+            exit 1
+          fi
+
+          # api defaults to root USER, so `docker exec ... id -u` would report the
+          # image USER (root), NOT the running process. Read PID 1's real uid from
+          # /proc instead -- that is the gosu-dropped app process (uvicorn).
+          api_uid="$(docker exec nojoin-api cat /proc/1/status \
+            | awk '/^Uid:/{print $2; exit}')"
+          echo "nojoin-api PID 1 uid: ${api_uid}"
+          if [[ -z "${api_uid}" || "${api_uid}" -eq 0 ]]; then
+            echo "nojoin-api PID 1 is running as root" >&2
+            exit 1
+          fi
+
+          # The worker also defaults to root USER and drops via its entrypoint. It
+          # needs no GPU or models to run a trivial command, so exercise the real
+          # drop path end-to-end: the entrypoint repairs ownership (a no-op here --
+          # /app/data is appuser-owned in the image) then execs `id -u` as appuser.
+          # This pulls the worker image (multi-GB) but is the only honest proof
+          # that the runtime actually drops to non-root.
+          worker_uid="$(docker run --rm --pull=always \
+            "${IMAGE_BASE}-worker:${VERSION}" id -u)"
+          echo "nojoin-worker dropped runtime uid: ${worker_uid}"
+          if [[ -z "${worker_uid}" || "${worker_uid}" -eq 0 ]]; then
+            echo "worker image does not drop to a non-root user" >&2
             exit 1
           fi
 

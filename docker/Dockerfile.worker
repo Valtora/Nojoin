@@ -66,6 +66,7 @@ RUN apt-get update && \
     libsndfile1 \
     libpq5 \
     libjemalloc2 \
+    gosu \
     && \
     # The worker runs Celery and never invokes uv; remove the base image's uv
     # binaries so their bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) is absent
@@ -90,7 +91,7 @@ WORKDIR /app
 
 COPY . .
 
-# Create a non-root user and switch to it.
+# Create the non-root appuser that the entrypoint drops to at runtime.
 # The Ubuntu 24.04-based PyTorch image ships a default user at UID 1000; remove
 # whatever occupies 1000 first so appuser keeps UID 1000 for mounted-volume
 # ownership. Create directories for volumes to ensure they are owned by appuser.
@@ -102,9 +103,11 @@ RUN if getent passwd 1000 >/dev/null 2>&1; then \
     mkdir -p /app/data && \
     chown -R appuser:appuser /app /home/appuser
 
-USER appuser
+RUN chmod +x backend/worker_entrypoint.sh
 
-# Entrypoint preloads ML models, then hands off to the CMD
+# The image intentionally does NOT `USER appuser`: the entrypoint enters as root
+# only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
+# the worker process runs as uid 1000 (asserted at runtime by the release smoke).
 ENTRYPOINT ["backend/worker_entrypoint.sh"]
 
 # Default command: a single worker draining all resource lanes (gpu, cpu, io)
