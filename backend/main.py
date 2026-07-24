@@ -62,7 +62,16 @@ def _is_private_client_address(host: str | None) -> bool:
 
 
 class EnforceCanonicalHttpsMiddleware(BaseHTTPMiddleware):
+    # Liveness endpoints must answer over plain HTTP: container/orchestrator
+    # health checks and internal uptime monitors call them directly, without the
+    # X-Forwarded-Proto headers that browser traffic carries. Redirecting them
+    # breaks those checks and, for the frontend probe, defeats the fallback.
+    _HEALTH_PATHS = frozenset({"/health", "/api/health"})
+
     async def dispatch(self, request: Request, call_next):
+        if request.url.path in self._HEALTH_PATHS:
+            return await call_next(request)
+
         if self._is_request_https(request):
             return await call_next(request)
 

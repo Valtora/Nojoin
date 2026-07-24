@@ -1,5 +1,7 @@
 import axios from "axios";
 
+import { recordRequestOutcome } from "@/lib/connectivity/monitor";
+
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
@@ -71,8 +73,23 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Passive health: every real response is authoritative proof the backend
+    // is reachable, so the connectivity monitor never needs to guess.
+    recordRequestOutcome({ reachedServer: true });
+    return response;
+  },
   (error) => {
+    // Classify the failure mode rather than collapsing everything into "down".
+    // A 4xx/5xx still means the server answered; only a missing response or a
+    // 502/503/504 gateway error indicates the backend itself is unreachable.
+    const status = error.response?.status;
+    const gateway = status === 502 || status === 503 || status === 504;
+    recordRequestOutcome({
+      reachedServer: Boolean(error.response) && !gateway,
+      gateway,
+    });
+
     if (
       error.response?.data &&
       typeof error.response.data === "object" &&

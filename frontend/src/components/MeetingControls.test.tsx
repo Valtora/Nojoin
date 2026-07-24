@@ -27,10 +27,9 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-vi.mock("@/lib/serviceStatusStore", () => ({
-  useServiceStatusStore: () => ({
-    backend: true,
-  }),
+vi.mock("@/lib/connectivity/monitor", () => ({
+  useConnectivityStore: (selector: (state: { status: string }) => unknown) =>
+    selector({ status: "online" }),
 }));
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({

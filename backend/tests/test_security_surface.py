@@ -929,11 +929,14 @@ async def test_safe_http_requests_redirect_to_canonical_https_origin(
         transport=ASGITransport(app=app),
         base_url="http://nojoin.example.com",
     ) as client:
-        response = await client.get("/api/health?probe=1")
+        # Health paths are exempt from HTTPS enforcement, so use a guarded path
+        # to prove plain-HTTP safe requests still redirect to canonical HTTPS.
+        response = await client.get("/api/v1/system/health?probe=1")
 
     assert response.status_code == 307
     assert (
-        response.headers["location"] == "https://nojoin.example.com/api/health?probe=1"
+        response.headers["location"]
+        == "https://nojoin.example.com/api/v1/system/health?probe=1"
     )
 
 
@@ -946,7 +949,8 @@ async def test_unsafe_http_requests_are_rejected(monkeypatch) -> None:
         transport=ASGITransport(app=app),
         base_url="http://nojoin.example.com",
     ) as client:
-        response = await client.post("/api/health")
+        # A guarded path (health is exempt) proves unsafe plain-HTTP is rejected.
+        response = await client.post("/api/v1/system/health")
 
     assert response.status_code == 400
     assert response.json() == {
@@ -963,16 +967,18 @@ async def test_forwarded_https_proxy_requests_are_accepted(monkeypatch) -> None:
         transport=ASGITransport(app=app),
         base_url="http://nojoin.example.com",
     ) as client:
+        # Health paths bypass HTTPS enforcement, so exercise the proxy-scheme
+        # gate with a guarded endpoint: a forwarded-https request is accepted
+        # (reaches auth and 401s) rather than being redirected to canonical HTTPS.
         response = await client.get(
-            "/api/health",
+            "/api/v1/system/health",
             headers={
                 "X-Forwarded-Proto": "https",
                 "X-Forwarded-Host": "nojoin.example.com",
             },
         )
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.status_code == 401
 
 
 @pytest.mark.anyio
@@ -986,16 +992,33 @@ async def test_forwarded_https_proxy_requests_accept_host_headers_with_ports(
         transport=ASGITransport(app=app),
         base_url="http://localhost:14443",
     ) as client:
+        # Health paths bypass HTTPS enforcement; use a guarded endpoint to prove
+        # the host-with-port normalisation still accepts the forwarded request.
         response = await client.get(
-            "/api/health",
+            "/api/v1/system/health",
             headers={
                 "X-Forwarded-Proto": "https",
                 "X-Forwarded-Host": "localhost:14443",
             },
         )
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_liveness_endpoints_bypass_https_enforcement() -> None:
+    # Container/orchestrator probes and internal uptime monitors call the
+    # liveness endpoints directly over plain HTTP, without forwarded-proto
+    # headers. They must answer 200 rather than being redirected to HTTPS.
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        for path in ("/health", "/api/health"):
+            response = await client.get(path)
+            assert response.status_code == 200, path
+            assert response.json() == {"status": "ok"}
 
 
 @pytest.mark.anyio
