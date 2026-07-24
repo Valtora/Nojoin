@@ -60,6 +60,10 @@ files = [
 
 [tool.ruff]
 target-version = "py312"
+# Vendored third-party model cards (e.g. pyannote) ship Markdown with embedded
+# Python snippets. Ruff 0.16+ formats code blocks inside Markdown, so exclude the
+# vendored tree to avoid reformatting upstream content we do not own.
+extend-exclude = ["bundled_models"]
 
 [tool.ruff.lint]
 select = [
