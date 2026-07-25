@@ -40,27 +40,32 @@ def update_speaker_embedding_task(
         )
 
         if new_embedding:
-            # Merge into RecordingSpeaker
-            current_emb = (
-                target_recording_speaker.embedding
-                if target_recording_speaker.embedding is not None
-                else []
-            )
+            from backend.processing.embedding import embedding_version_of
+            from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
 
-            target_recording_speaker.embedding = merge_embeddings(
-                current_emb, new_embedding, alpha=0.5
-            )
-            session.add(target_recording_speaker)
+            def _blend(row, incoming):
+                """Merge in the new vector, or replace a stale-version one.
 
-            # Merge into GlobalSpeaker
+                Blending across extraction versions would average two unrelated
+                regions of the vector space and produce a voiceprint that
+                matches neither, so a version mismatch replaces outright.
+                """
+                current = row.embedding if row.embedding is not None else []
+                if current and embedding_version_of(row) != EMBEDDING_METHOD_VERSION:
+                    row.embedding = incoming
+                else:
+                    row.embedding = merge_embeddings(current, incoming, alpha=0.5)
+                row.embedding_version = EMBEDDING_METHOD_VERSION
+                session.add(row)
+
+            _blend(target_recording_speaker, new_embedding)
+
             if target_recording_speaker.global_speaker_id:
                 gs = session.get(
                     GlobalSpeaker, target_recording_speaker.global_speaker_id
                 )
                 if gs:
-                    gs_emb = gs.embedding if gs.embedding is not None else []
-                    gs.embedding = merge_embeddings(gs_emb, new_embedding, alpha=0.5)
-                    session.add(gs)
+                    _blend(gs, new_embedding)
 
             session.commit()
             logger.info(

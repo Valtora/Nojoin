@@ -9,6 +9,7 @@ import torch
 from pyannote.audio import Pipeline
 from pyannote.core import Annotation
 
+from backend.processing.speaker_cap import normalize_speaker_cap
 from backend.utils.config_manager import config_manager
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
@@ -129,12 +130,33 @@ def load_diarization_pipeline(device_str: str, hf_token: str = None):
         ) from e
 
 
-def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
+def _resolve_speaker_cap(max_speakers: int | None, audio_path: str) -> int | None:
+    """Validate a requested speaker cap, degrading a bad value to auto-detect.
+
+    A capture has already happened by the time this runs, so an unusable cap
+    must not fail the recording.
+    """
+    speaker_cap = normalize_speaker_cap(max_speakers)
+    if max_speakers is not None and speaker_cap is None:
+        logger.warning(
+            "Ignoring out-of-range max_speakers=%r for %s; falling back to auto-detect.",
+            max_speakers,
+            audio_path,
+        )
+    return speaker_cap
+
+
+def diarize_audio(
+    audio_path: str, config: dict = None, max_speakers: int | None = None
+) -> Annotation | None:
     """Performs speaker diarization on the given audio file using pyannote.audio.
 
     Args:
         audio_path: Path to the audio file (e.g., MP3).
         config: Optional configuration dictionary to override defaults.
+        max_speakers: Optional upper bound on the number of speakers. ``None``
+            (the default) leaves the pipeline free to determine the count
+            itself, which is the unmodified auto-detect path.
 
     Returns:
         A pyannote.core.Annotation object containing speaker segments, or None on failure.
@@ -157,8 +179,11 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
 
     hf_token = get_config("hf_token")
 
+    speaker_cap = _resolve_speaker_cap(max_speakers, audio_path)
+
     logger.info(
-        f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, device: {device_str}"
+        f"Starting diarization for {audio_path} using pipeline: {DEFAULT_PIPELINE}, "
+        f"device: {device_str}, max_speakers: {speaker_cap or 'auto'}"
     )
     try:
         # Check cache first
@@ -180,9 +205,11 @@ def diarize_audio(audio_path: str, config: dict = None) -> Annotation | None:
         except Exception as e:  # noqa: BLE001
             logger.warning("Could not read audio file info for logging: %s", e)
 
-        # Run diarization
+        # Run diarization. The auto-detect path passes no speaker kwargs at all,
+        # so it reaches pyannote exactly as it did before the cap existed.
         logger.info("Running diarization inference...")
-        diarization_result = pipeline(audio_path)
+        pipeline_kwargs = {"max_speakers": speaker_cap} if speaker_cap else {}
+        diarization_result = pipeline(audio_path, **pipeline_kwargs)
 
         # Handle different return types (Annotation vs DiarizeOutput dataclass)
         if hasattr(diarization_result, "speaker_diarization"):

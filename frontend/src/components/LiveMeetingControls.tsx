@@ -1,7 +1,10 @@
 "use client";
 
 import { Pause, Play, Square, Trash2 } from "lucide-react";
+import { useState } from "react";
 
+import SpeakerCapField from "@/components/SpeakerCapField";
+import { updateRecordingMaxSpeakers } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 
@@ -34,6 +37,7 @@ export default function LiveMeetingControls({
     controller,
     elapsedSeconds,
     pause,
+    recordingId,
     resume,
     runtimeActive,
     status,
@@ -43,6 +47,41 @@ export default function LiveMeetingControls({
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
   const disabled = !runtimeActive || status === "finalizing";
+
+  // Diarization runs at stop time, so the cap stays editable for the whole
+  // recording: whatever is set when capture ends is what gets applied.
+  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
+
+  const handleMaxSpeakersCommit = async (next: number | null) => {
+    const previous = maxSpeakers;
+    setMaxSpeakers(next);
+    if (!recordingId) {
+      return;
+    }
+    try {
+      await updateRecordingMaxSpeakers(recordingId, next);
+    } catch (err: unknown) {
+      setMaxSpeakers(previous);
+      addNotification({
+        type: "error",
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : "Failed to update the speaker limit.",
+      });
+    }
+  };
+
+  const speakerCapField = (
+    <SpeakerCapField
+      value={maxSpeakers}
+      onCommit={handleMaxSpeakersCommit}
+      disabled={disabled || !recordingId}
+      size={size}
+      liveHint
+      idPrefix={`live-speaker-cap-${size}`}
+    />
+  );
 
   const handleDiscard = async () => {
     if (!window.confirm(DISCARD_CONFIRM_MESSAGE)) {
@@ -164,6 +203,7 @@ export default function LiveMeetingControls({
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
+        {speakerCapField}
       </div>
     );
   }
@@ -231,6 +271,8 @@ export default function LiveMeetingControls({
           Discard
         </button>
       </div>
+
+      {speakerCapField}
     </div>
   );
 }

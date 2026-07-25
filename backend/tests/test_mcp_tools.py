@@ -65,6 +65,7 @@ SCHEMA_STATEMENTS = [
     """,
     """
     CREATE TABLE global_speakers (
+        embedding_version INTEGER,
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
@@ -103,6 +104,7 @@ SCHEMA_STATEMENTS = [
     """,
     """
     CREATE TABLE recordings (
+        max_speakers INTEGER,
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
@@ -131,6 +133,7 @@ SCHEMA_STATEMENTS = [
     """,
     """
     CREATE TABLE recording_speakers (
+        embedding_version INTEGER,
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,

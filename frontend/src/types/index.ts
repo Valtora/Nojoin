@@ -290,6 +290,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   processing_eta_seconds?: number | null;
   processing_eta_learning?: boolean;
   processing_eta_sample_size?: number;
+  /** Optional upper bound on diarized speakers. null means auto-detect. */
+  max_speakers?: number | null;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;
@@ -818,6 +820,11 @@ export interface ReprocessRequest {
   whisper_model_size?: string;
   parakeet_model?: string;
   canary_model?: string;
+  /**
+   * Omit to keep the recording's existing cap; null clears it back to
+   * auto-detect; a number sets it.
+   */
+  max_speakers?: number | null;
 }
 
 export interface AudioFileMetadata {

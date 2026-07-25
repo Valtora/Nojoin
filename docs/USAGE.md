@@ -189,6 +189,22 @@ Common workflows include linking an unknown in-recording speaker to an existing 
 
 Inferred speaker names from final processing and manual retry flows are applied automatically to speakers that do not already have a trusted name. Manual speaker edits are authoritative: renaming, merging, promoting, or deleting a speaker always overrides inferred names, and speakers you have already named are never renamed by inference.
 
+### Limiting The Number Of Speakers
+
+Speaker detection is automatic, and that is the default. Occasionally a long meeting comes back split into more speakers than there were people in the room, usually when someone's audio changes partway through.
+
+The optional **Maximum speakers** field sets an upper bound for a single recording. Leave it empty for auto-detect.
+
+- **Live recording.** The field sits with the recording controls and stays editable for the whole meeting. Speaker detection runs when you stop, so the value present at that moment is the one applied. If someone joins unannounced, raise it before stopping.
+- **Import.** Set it in the import dialog alongside the meeting name and date.
+- **Reprocess.** Reprocessing accepts a new value, so an already-processed meeting can be corrected without re-recording it. Note that reprocess rebuilds the transcript too, and clears speaker names you set by hand on that recording.
+
+It is an upper bound, not an exact count. Setting 4 for a meeting with 3 speakers still returns 3. This is deliberate: forcing an exact count would split one person into two whenever the number is too high, which is the problem the field exists to solve. Setting the value **lower** than the real number of participants will merge people together, so when in doubt, guess high or leave it empty.
+
+### When Voiceprints Need Rebuilding
+
+Voiceprints are only comparable with others made the same way. When an upgrade improves how they are extracted, previously saved ones stop contributing to automatic identification until they are rebuilt from the original audio. Settings reports how many are affected and can queue the rebuild, which runs on the worker and can take a while on a large library. People whose recordings no longer have audio cannot be rebuilt and must be linked by hand.
+
 ## Notes, Chat, Documents, And Search
 
 Processed recordings can include Markdown notes, AI-generated meeting notes, meeting chat, uploaded documents, and transcript/document search.

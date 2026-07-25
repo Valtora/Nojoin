@@ -27,3 +27,4 @@ A routine bug fix, refactor, dependency bump, or documentation edit does **not**
 - [0002-cli-oauth-subscription-mode.md](0002-cli-oauth-subscription-mode.md) — CLI OAuth subscription AI mode (Accepted).
 - [0003-rebuild-canonical-pipeline-state-on-restore.md](0003-rebuild-canonical-pipeline-state-on-restore.md) — Rebuild canonical pipeline state on restore rather than archiving it (Accepted).
 - [0004-anonymous-opt-out-telemetry.md](0004-anonymous-opt-out-telemetry.md) — Anonymous, opt-out telemetry with a public collector and a consent-gated rollout (Accepted).
+- [0005-versioned-voiceprint-extraction.md](0005-versioned-voiceprint-extraction.md) — Versioned voiceprint extraction, never compared across versions, plus an optional per-recording speaker cap (Accepted).

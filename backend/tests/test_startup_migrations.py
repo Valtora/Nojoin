@@ -89,3 +89,38 @@ def test_repair_orphaned_revision_state_restamps_current_heads_when_enabled() ->
 
     assert repaired == ("deadbeef",)
     assert current_revision_ids == ["feedface"]
+
+
+def test_migrations_do_not_call_jsonb_array_length_in_a_predicate() -> None:
+    """Guard a footgun that no other check can catch.
+
+    Postgres does not guarantee that ``AND`` conditions are evaluated left to
+    right, so a predicate like::
+
+        WHERE jsonb_typeof(col) = 'array' AND jsonb_array_length(col) > 0
+
+    can still run ``jsonb_array_length`` against a row holding JSON ``null``
+    and abort the whole migration with "cannot get array length of a scalar".
+    Several voiceprint columns hold JSON ``null`` rather than SQL ``NULL`` for
+    cleared values, so this is reachable in practice -- it broke a real
+    deployment.
+
+    Use a plain comparison such as ``col <> '[]'::jsonb`` instead, which is
+    safe whatever the stored value's type.
+
+    Migrations are never executed against Postgres in CI (only the revision
+    graph is validated), so a static check is the only gate available here.
+    """
+    versions_dir = Path(startup_migrations.__file__).parent / "alembic" / "versions"
+
+    offenders = [
+        path.name
+        for path in sorted(versions_dir.glob("*.py"))
+        if "jsonb_array_length" in path.read_text(encoding="utf-8")
+    ]
+
+    assert not offenders, (
+        "These migrations call jsonb_array_length, which aborts on rows holding "
+        f"JSON null regardless of any type guard: {offenders}. "
+        "Use `col <> '[]'::jsonb` instead."
+    )

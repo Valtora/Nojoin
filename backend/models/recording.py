@@ -92,6 +92,14 @@ class Recording(BaseDBModel, table=True):
         default=RecordingPipelineGeneration.UNIFIED.value,
         sa_column=Column(String(32), nullable=True, index=True),
     )
+    max_speakers: Optional[int] = Field(
+        default=None,
+        description=(
+            "Optional upper bound on the number of speakers for this recording. "
+            "NULL means auto-detect, which is the default and leaves diarization "
+            "unconstrained. Applied as pyannote's max_speakers, never num_speakers."
+        ),
+    )
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     last_activity_at: Optional[datetime] = Field(default=None)

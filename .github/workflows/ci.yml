@@ -23,6 +23,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       scripts: ${{ steps.filter.outputs.scripts }}
       deployment: ${{ steps.filter.outputs.deployment }}
+      migrations: ${{ steps.filter.outputs.migrations }}
       telemetry: ${{ steps.filter.outputs.telemetry }}
 
     steps:
@@ -62,6 +63,10 @@ jobs:
               - 'docker-compose*.yml'
               - 'nginx/**'
               - '.github/workflows/ci.yml'
+            migrations:
+              - 'backend/alembic/**'
+              - 'backend/models/**'
+              - 'scripts/check_migrations.py'
             telemetry:
               - 'telemetry/**'
 
@@ -89,6 +94,53 @@ jobs:
 
       - name: Run backend tests
         run: pytest
+
+  migration-tests:
+    name: Migrations (Postgres)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.migrations == 'true' || needs.detect-changes.outputs.deployment == 'true'
+    runs-on: ubuntu-latest
+
+    # A migration can be well-formed, pass `validate_alembic.py`, and still abort
+    # on real data -- Postgres does not guarantee AND short-circuits, so a type
+    # guard does not stop a function running on a row it cannot handle. The only
+    # way to catch that is to run the chain against a real Postgres.
+    services:
+      postgres:
+        # Matches the production image so extension and type behaviour agree.
+        image: pgvector/pgvector:pg18-trixie
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nojoin_migration_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/backend.txt
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/backend.txt
+
+      - name: Run migration chain against Postgres
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nojoin_migration_check
+        run: python scripts/check_migrations.py
 
   python-quality:
     name: Python quality
@@ -319,6 +371,7 @@ jobs:
     needs:
       - detect-changes
       - backend-tests
+      - migration-tests
       - python-quality
       - frontend-lint
       - frontend-unit-tests

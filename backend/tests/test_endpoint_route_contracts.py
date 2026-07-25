@@ -145,6 +145,8 @@ SPEAKERS_ROUTE_CONTRACT = [
         "extract_all_voiceprints",
         None,
     ),
+    ("/voiceprints/method-status", ("GET",), "voiceprint_method_status", None),
+    ("/voiceprints/rebuild", ("POST",), "rebuild_voiceprints", None),
     ("/{speaker_id}", ("DELETE",), "delete_global_speaker", None),
     ("/{speaker_id}", ("PUT",), "update_global_speaker", "GlobalSpeaker"),
     (

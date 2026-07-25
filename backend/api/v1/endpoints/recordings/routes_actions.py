@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -10,6 +10,11 @@ from backend.models.calendar import CalendarEvent
 from backend.models.recording import RecordingStatus, RecordingUpdate
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
+from backend.processing.speaker_cap import (
+    MAX_SPEAKER_CAP,
+    MIN_SPEAKER_CAP,
+    normalize_speaker_cap,
+)
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -113,6 +118,13 @@ class ReprocessRequest(BaseModel):
     whisper_model_size: str | None = None
     parakeet_model: str | None = None
     canary_model: str | None = None
+    # Three states, distinguished via model_fields_set: absent leaves the
+    # recording's existing cap alone, null clears it back to auto-detect, and an
+    # integer sets it. Omitting the field must not silently wipe a cap the user
+    # set when the recording was created.
+    max_speakers: int | None = Field(
+        default=None, ge=MIN_SPEAKER_CAP, le=MAX_SPEAKER_CAP
+    )
 
 
 @router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
@@ -155,6 +167,10 @@ async def reprocess_recording(
         engine_override["parakeet_model"] = body.parakeet_model
     if body.canary_model is not None:
         engine_override["canary_model"] = body.canary_model
+
+    if "max_speakers" in body.model_fields_set:
+        recording.max_speakers = normalize_speaker_cap(body.max_speakers)
+        db.add(recording)
 
     queued_step = f"Queued for reprocessing with {body.transcription_backend}..."
     await _requeue_for_processing(

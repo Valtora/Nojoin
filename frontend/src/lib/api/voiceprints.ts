@@ -56,3 +56,35 @@ export const extractAllVoiceprints = async (
   );
   return response.data;
 };
+
+export interface VoiceprintMethodStatus {
+  current_method_version: number;
+  stale_people: number;
+  total_people_with_voiceprint: number;
+  stale_recording_speakers: number;
+  rebuild_required: boolean;
+}
+
+/**
+ * How many stored voiceprints predate the current extraction method.
+ *
+ * A voiceprint made by an older method cannot be compared with a new one, so it
+ * stops contributing to automatic identification until it is rebuilt.
+ */
+export const getVoiceprintMethodStatus =
+  async (): Promise<VoiceprintMethodStatus> => {
+    const response = await api.get<VoiceprintMethodStatus>(
+      "/speakers/voiceprints/method-status",
+    );
+    return response.data;
+  };
+
+export const rebuildVoiceprints = async (): Promise<{
+  task_id: string;
+  status: string;
+}> => {
+  const response = await api.post<{ task_id: string; status: string }>(
+    "/speakers/voiceprints/rebuild",
+  );
+  return response.data;
+};

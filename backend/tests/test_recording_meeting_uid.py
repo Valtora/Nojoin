@@ -18,6 +18,7 @@ from backend.services.recording_identity_service import ensure_recording_meeting
 TEST_TIMESTAMP = datetime(2026, 4, 12, 12, 0, 0)
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

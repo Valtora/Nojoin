@@ -32,6 +32,25 @@ export const resumeRecordingCapture = async (
   return response.data;
 };
 
+/**
+ * Set or clear the speaker cap on an in-progress recording.
+ *
+ * Diarization does not run until capture stops, so this stays editable for the
+ * whole recording and the value present at stop time is the one applied. Pass
+ * null for auto-detect, which is the default.
+ */
+export const updateRecordingMaxSpeakers = async (
+  recordingId: RecordingId,
+  maxSpeakers: number | null,
+): Promise<Recording> => {
+  const query =
+    maxSpeakers == null ? "" : `?max_speakers=${encodeURIComponent(maxSpeakers)}`;
+  const response = await api.put<Recording>(
+    `/recordings/${recordingId}/max_speakers${query}`,
+  );
+  return response.data;
+};
+
 export const finalizeRecordingCapture = async (
   recordingId: RecordingId,
 ): Promise<Recording> => {

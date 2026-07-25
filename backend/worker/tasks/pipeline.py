@@ -1,4 +1,5 @@
 from .constants import *
+from .speaker_assignment import assign_and_identify_speakers
 
 # ---------------------------------------------------------------------------
 # process_recording_task orchestration stages (BE-004)
@@ -372,7 +373,9 @@ def _run_final_diarization_stage(
     produced no result. The phantom filter is wrapped so a failure there never
     crashes finalize -- the unfiltered diarization is used instead.
     """
+    from backend.processing.diarization_stats import summarize_diarization_speakers
     from backend.processing.diarize import diarize_audio
+    from backend.processing.speaker_cap import normalize_speaker_cap
 
     session = ctx.session
     merged_config = ctx.merged_config
@@ -380,6 +383,8 @@ def _run_final_diarization_stage(
 
     enable_diarization = merged_config.get("enable_diarization", True)
     diarization_result = None
+    # Per-recording upper bound. None keeps the unconstrained auto-detect path.
+    speaker_cap = normalize_speaker_cap(getattr(recording, "max_speakers", None))
 
     if enable_diarization:
         ctx.task.update_state(
@@ -397,11 +402,14 @@ def _run_final_diarization_stage(
             payload={
                 "input_path": processed_audio_path,
                 "enabled": True,
+                "max_speakers": speaker_cap,
             },
             log=logger,
         ) as metric:
             diarization_result = diarize_audio(
-                processed_audio_path, config=merged_config
+                processed_audio_path,
+                config=merged_config,
+                max_speakers=speaker_cap,
             )
             metric["payload"]["result_available"] = diarization_result is not None
 
@@ -423,6 +431,21 @@ def _run_final_diarization_stage(
                 logger.warning(
                     f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
                 )
+
+            # How much speech each cluster actually holds. This is what shows
+            # whether an unexpected extra speaker is a negligible fragment or a
+            # substantial one the phantom filter was never going to catch.
+            try:
+                record_pipeline_metric(
+                    stage="final_diarization_speaker_stats",
+                    recording_id=recording_id,
+                    payload=summarize_diarization_speakers(
+                        diarization_result, max_speakers=speaker_cap
+                    ),
+                    log=logger,
+                )
+            except Exception as e:  # noqa: BLE001 -- boundary: metrics are best-effort
+                logger.warning("Could not record diarization speaker stats: %s", e)
     else:
         logger.info("Diarization disabled, skipping speaker separation.")
 
@@ -547,323 +570,6 @@ def _persist_final_transcript(
 
     session.commit()
     return transcript
-
-
-def _assign_and_identify_speakers(
-    ctx: _PipelineRunContext,
-    recording: Recording,
-    final_segments: list[dict],
-    diarization_result,
-) -> None:
-    """Resolve diarization labels to speakers, persisting RecordingSpeaker rows.
-
-    Preserves two load-bearing invariants:
-
-    * Manual-edit authority -- a speaker carrying a ``local_name`` (or a merge
-      target) is treated as identified and is never re-matched against global
-      voiceprints.
-    * Stable-id alignment -- when a resolved name was already assigned to an
-      earlier label, this label is auto-merged into the first one and the
-      in-memory ``final_segments`` (and any ``overlapping_speakers``) are
-      rewritten to the canonical target label so the transcript stays coherent.
-
-    Heavy embedding imports stay local to this stage.
-    """
-    from backend.processing.embedding import (
-        AUTO_UPDATE_THRESHOLD,
-        find_matching_global_speaker,
-        merge_embeddings,
-    )
-    from backend.processing.embedding_core import extract_embeddings
-
-    session = ctx.session
-    merged_config = ctx.merged_config
-
-    # Save Speakers & Embeddings
-    # Processes speakers in order of appearance to assign "Speaker 1", "Speaker 2", etc.
-    ordered_speakers = _collect_ordered_final_speaker_labels(final_segments)
-
-    logger.info(
-        f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
-    )
-
-    # Extract embeddings for all speakers in the diarization result (if enabled)
-    # Voiceprint extraction can be disabled to speed up processing
-    enable_auto_voiceprints = merged_config.get("enable_auto_voiceprints", True)
-    speaker_embeddings = {}
-
-    # label_map_from_final_to_live is reserved for live-reuse alignment; it stays
-    # empty in the canonical finalize path but its remap is preserved verbatim.
-    label_map_from_final_to_live: dict = {}
-
-    if enable_auto_voiceprints and diarization_result:
-        ctx.task.update_state(
-            state="PROCESSING", meta={"progress": 90, "stage": "Voiceprints"}
-        )
-        recording.processing_step = f"Learning voiceprints...{ctx.device_suffix}"
-        recording.processing_progress = 90
-        session.add(recording)
-        session.commit()
-        logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
-        speaker_embeddings = extract_embeddings(
-            ctx.processed_audio_path,
-            diarization_result,
-            device_str=merged_config.get("processing_device", "cpu"),
-            config=merged_config,
-        )
-        if label_map_from_final_to_live:
-            speaker_embeddings = {
-                label_map_from_final_to_live.get(label, label): embedding
-                for label, embedding in speaker_embeddings.items()
-            }
-    elif not enable_auto_voiceprints:
-        logger.info("Skipping voiceprint extraction (enable_auto_voiceprints=False)")
-
-    # Map local labels (SPEAKER_00) to resolved names (John Doe or Speaker 1)
-    label_map = {}
-    speaker_counter = 1
-
-    # Track which names have been assigned to which speaker ID/Label to detect duplicates
-    # Format: name -> {'id': recording_speaker_id, 'label': diarization_label}
-    resolved_names_map = {}
-
-    for label in ordered_speakers:
-        # Check if speaker already exists for this recording (idempotency)
-        existing_speaker = session.exec(
-            select(RecordingSpeaker)
-            .where(RecordingSpeaker.recording_id == recording.id)
-            .where(RecordingSpeaker.diarization_label == label)
-        ).first()
-
-        embedding = speaker_embeddings.get(label)
-        resolved_name = label  # Default fallback
-        global_speaker_id = None
-        is_identified = False
-
-        # --- LOGIC UPDATE: Check for Manual Names & Merges ---
-        if existing_speaker:
-            # 1. Check if this speaker was merged into another
-            if existing_speaker.merged_into_id:
-                logger.info("Speaker %s is merged. Resolving target...", label)
-                current_spk = existing_speaker
-                visited_ids = {current_spk.id}
-
-                # Follow the merge chain (prevent infinite loops)
-                while current_spk.merged_into_id:
-                    next_spk = session.get(RecordingSpeaker, current_spk.merged_into_id)
-                    if not next_spk:
-                        logger.warning(
-                            f"Merge chain broken for speaker {label} at ID {current_spk.merged_into_id}"
-                        )
-                        break
-                    if next_spk.id in visited_ids:
-                        logger.warning(f"Circular merge detected for speaker {label}")
-                        break
-                    visited_ids.add(next_spk.id)
-                    current_spk = next_spk
-
-                # Use the target speaker's name
-                resolved_name = (
-                    current_spk.name
-                    or current_spk.local_name
-                    or current_spk.diarization_label
-                )
-                logger.info("Resolved %s (Merged) -> %s", label, resolved_name)
-                if current_spk.global_speaker_id:
-                    global_speaker_id = current_spk.global_speaker_id
-                    is_identified = True  # Don't re-identify
-                else:
-                    # It's a local merge, so we trust the local name
-                    is_identified = True
-
-            # 2. Check for manual rename (if not merged)
-            elif existing_speaker.local_name:
-                resolved_name = existing_speaker.local_name
-                logger.info(
-                    f"Preserving manual name for {label}: {existing_speaker.local_name}"
-                )
-                is_identified = True  # Skip inference
-
-                if existing_speaker.global_speaker_id:
-                    global_speaker_id = existing_speaker.global_speaker_id
-
-        # Try to identify speaker using embedding (ONLY if not manually named/merged)
-        if not is_identified and embedding:
-            # Fetch all global speakers with embeddings belonging to this user
-            # Filter out any potential placeholder names from the global list to prevent bad linking
-            all_global_speakers = session.exec(
-                select(GlobalSpeaker)
-                .where(GlobalSpeaker.embedding != None)
-                .where(GlobalSpeaker.user_id == recording.user_id)
-            ).all()
-
-            import re
-
-            placeholder_pattern = re.compile(
-                r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
-            )
-
-            global_speakers = [
-                gs
-                for gs in all_global_speakers
-                if not placeholder_pattern.match(gs.name)
-                and gs.embedding
-                and len(gs.embedding) > 0
-                and not any(x is None for x in gs.embedding)
-            ]
-
-            # Use centralized matching logic with 0.75 threshold and margin of victory
-            best_match, best_score = find_matching_global_speaker(
-                embedding, global_speakers, threshold=0.75, margin=0.05
-            )
-
-            if best_match:
-                logger.info(
-                    f"Identified {label} as {best_match.name} (Score: {best_score:.2f})"
-                )
-                resolved_name = best_match.name
-                global_speaker_id = best_match.id
-                is_identified = True
-
-                # Active Learning: only update the global embedding when the
-                # match confidence is high enough to avoid polluting it with
-                # borderline or false-positive identifications.
-                if (
-                    not best_match.is_voiceprint_locked
-                    and best_score >= AUTO_UPDATE_THRESHOLD
-                ):
-                    try:
-                        new_emb = merge_embeddings(best_match.embedding, embedding)
-                        best_match.embedding = new_emb
-                        session.add(best_match)
-                    except Exception as e:  # noqa: BLE001 -- boundary: embedding update is best-effort
-                        logger.warning(
-                            f"Failed to update embedding for {best_match.name}: {e}"
-                        )
-                elif not best_match.is_voiceprint_locked:
-                    logger.info(
-                        f"Skipping auto-update for {best_match.name} "
-                        f"(score {best_score:.2f} < auto-update threshold {AUTO_UPDATE_THRESHOLD})"
-                    )
-            else:
-                logger.info(
-                    f"No match found for {label} (Best score: {best_score:.2f})."
-                )
-
-        # If not identified as a global speaker, assign a friendly sequential name
-        if not is_identified:
-            resolved_name = f"Speaker {speaker_counter}"
-            speaker_counter += 1
-
-        # Auto-promotion logic removed. Speakers must be manually promoted.
-
-        # Auto-merge duplicate name detection: if this resolved name was already
-        # assigned to a previous speaker in this loop, merge into the existing one.
-        if resolved_name and resolved_name in resolved_names_map:
-            target_info = resolved_names_map[resolved_name]
-            target_label = target_info["label"]
-            target_id = target_info["id"]
-
-            if target_label != label:
-                logger.info(
-                    f"Auto-Merge: '{resolved_name}' already assigned to {target_label}. Merging {label} into {target_label}."
-                )
-
-                if existing_speaker:
-                    existing_speaker.merged_into_id = target_id
-                    existing_speaker.name = resolved_name  # Keep consistent name
-                    existing_speaker.local_name = None
-                    session.add(existing_speaker)
-                    session.flush()  # Ensure it's saved
-                else:
-                    # Create the record but immediately merge it
-                    rec_speaker = RecordingSpeaker(
-                        recording_id=recording.id,
-                        diarization_label=label,
-                        name=resolved_name,
-                        embedding=embedding,
-                        global_speaker_id=global_speaker_id,
-                        merged_into_id=target_id,
-                    )
-                    session.add(rec_speaker)
-                    session.flush()
-
-                # rewrite segments in memory to point to the target label
-                # This ensures the transcript assumes they are the same speaker
-                for seg in final_segments:
-                    if seg["speaker"] == label:
-                        seg["speaker"] = target_label
-
-                    if "overlapping_speakers" in seg:
-                        for idx, ov_spk in enumerate(seg["overlapping_speakers"]):
-                            if ov_spk == label:
-                                seg["overlapping_speakers"][idx] = target_label
-
-                # No addition to resolved_names_map needed; the canonical entry already exists.
-                label_map[label] = resolved_name
-                continue
-
-        label_map[label] = resolved_name
-        logger.info("Mapped %s -> %s", label, resolved_name)
-
-        current_speaker_id = None
-        if existing_speaker:
-            if embedding is not None:
-                existing_speaker.embedding = embedding
-            elif existing_speaker.embedding:
-                logger.info(
-                    "Preserving existing voiceprint for %s because final diarization produced no embedding.",
-                    label,
-                )
-            existing_speaker.name = resolved_name
-            if (
-                global_speaker_id is not None
-                or existing_speaker.global_speaker_id is None
-            ):
-                existing_speaker.global_speaker_id = global_speaker_id
-            session.add(existing_speaker)
-            session.flush()
-            current_speaker_id = existing_speaker.id
-        else:
-            rec_speaker = RecordingSpeaker(
-                recording_id=recording.id,
-                diarization_label=label,
-                name=resolved_name,
-                embedding=embedding,
-                global_speaker_id=global_speaker_id,
-            )
-            session.add(rec_speaker)
-            session.flush()
-            current_speaker_id = rec_speaker.id
-
-        # Register this name as taken
-        if resolved_name and current_speaker_id:
-            resolved_names_map[resolved_name] = {
-                "id": current_speaker_id,
-                "label": label,
-            }
-
-    # --- Embedding-based speaker merge pass ---
-    # Catches over-clustered speakers that the name-based auto-merge
-    # above cannot detect (e.g. two clusters both named "Speaker N"
-    # before global identification, or same global speaker split into
-    # two RecordingSpeaker rows).
-    try:
-        from backend.processing.speaker_merge import merge_duplicate_speakers
-
-        merge_pairs = merge_duplicate_speakers(
-            session,
-            recording_id=recording.id,
-            segments=final_segments,
-        )
-        if merge_pairs:
-            logger.info(
-                "[SpeakerMerge] Merged %d duplicate speaker(s) in recording %d",
-                len(merge_pairs),
-                ctx.recording_id,
-            )
-    except Exception as e:  # noqa: BLE001 -- boundary: merge pass is best-effort
-        logger.warning("[SpeakerMerge] Merge pass failed, continuing: %s", e)
 
 
 def _finalize_transcript_and_notes(
@@ -1234,9 +940,7 @@ def process_recording_task(
         # update_recording_status(session, recording.id) # Removed to prevent premature status update (flash)
 
         # --- Stage: speaker assignment / identification ---
-        _assign_and_identify_speakers(
-            ctx, recording, final_segments, diarization_result
-        )
+        assign_and_identify_speakers(ctx, recording, final_segments, diarization_result)
 
         # --- Stage: finalize transcript + notes/title ---
         _finalize_transcript_and_notes(

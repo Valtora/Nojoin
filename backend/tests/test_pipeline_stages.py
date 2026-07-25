@@ -159,6 +159,7 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
         monkeypatch,
         "backend.processing.embedding_core",
         extract_embeddings=lambda *a, **k: {},
+        EMBEDDING_METHOD_VERSION=2,
         release_embedding_model_cache=lambda: None,
     )
     _install(
@@ -167,6 +168,7 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
         cosine_similarity=lambda *a, **k: 0.0,
         merge_embeddings=lambda *a, **k: None,
         find_matching_global_speaker=lambda *a, **k: (None, 0.0),
+        embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
     )
     _install(
@@ -498,6 +500,7 @@ def test_manual_name_is_preserved_and_not_reidentified(monkeypatch):
         cosine_similarity=lambda *a, **k: 0.0,
         merge_embeddings=lambda *a, **k: None,
         find_matching_global_speaker=_must_not_match,
+        embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
     )
 
@@ -572,6 +575,7 @@ def test_duplicate_resolved_name_auto_merges_and_rewrites_segments(monkeypatch):
         cosine_similarity=lambda *a, **k: 0.0,
         merge_embeddings=lambda *a, **k: None,
         find_matching_global_speaker=lambda *a, **k: (matched, 0.99),
+        embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
     )
     _install(
@@ -581,6 +585,7 @@ def test_duplicate_resolved_name_auto_merges_and_rewrites_segments(monkeypatch):
             "SPEAKER_00": [0.1, 0.2],
             "SPEAKER_01": [0.3, 0.4],
         },
+        EMBEDDING_METHOD_VERSION=2,
         release_embedding_model_cache=lambda: None,
     )
 
@@ -637,6 +642,7 @@ def test_unidentified_speakers_get_sequential_names(monkeypatch):
         cosine_similarity=lambda *a, **k: 0.0,
         merge_embeddings=lambda *a, **k: None,
         find_matching_global_speaker=lambda *a, **k: (None, 0.0),
+        embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
     )
 
@@ -671,6 +677,7 @@ def test_unidentified_speakers_get_sequential_names(monkeypatch):
             "SPEAKER_00": [0.1],
             "SPEAKER_01": [0.2],
         },
+        EMBEDDING_METHOD_VERSION=2,
         release_embedding_model_cache=lambda: None,
     )
 
