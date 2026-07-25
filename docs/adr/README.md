@@ -24,3 +24,5 @@ A routine bug fix, refactor, dependency bump, or documentation edit does **not**
 ## Index
 
 - [0001-gated-signed-release-model.md](0001-gated-signed-release-model.md) — Gated, signed, reproducible container release pipeline (Accepted).
+- [0002-cli-oauth-subscription-mode.md](0002-cli-oauth-subscription-mode.md) — CLI OAuth subscription AI mode (Accepted).
+- [0003-rebuild-canonical-pipeline-state-on-restore.md](0003-rebuild-canonical-pipeline-state-on-restore.md) — Rebuild canonical pipeline state on restore rather than archiving it (Accepted).

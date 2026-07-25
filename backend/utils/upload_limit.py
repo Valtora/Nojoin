@@ -13,7 +13,11 @@ UPLOAD_LIMIT_LEGACY_RECORDING = int(
     os.getenv("UPLOAD_LIMIT_LEGACY_RECORDING", 250 * 1024 * 1024)
 )
 UPLOAD_LIMIT_DOCUMENT = int(os.getenv("UPLOAD_LIMIT_DOCUMENT", 20 * 1024 * 1024))
-UPLOAD_LIMIT_BACKUP = int(os.getenv("UPLOAD_LIMIT_BACKUP", 300 * 1024 * 1024))
+# Generous by design: an Original-quality archive stores audio without re-encoding, so a
+# backup this server produces itself can be far larger than a compressed one. A cap below
+# that would make our own exports non-restorable through our own UI. The pre-flight
+# free-disk check is the real second line of defence.
+UPLOAD_LIMIT_BACKUP = int(os.getenv("UPLOAD_LIMIT_BACKUP", 25 * 1024 * 1024 * 1024))
 
 
 async def stream_and_validate_upload(

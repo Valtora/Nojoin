@@ -1,43 +1,98 @@
 import { getErrorStatus } from "@/lib/errors";
-import api from "./client";
+import api, { API_BASE_URL } from "./client";
+
+export type ArchiveQuality = "compressed" | "original";
+
+/** table name -> reason -> count of rows the restore could not bring across. */
+export type RestoreSkipSummary = Record<string, Record<string, number>>;
+
+export interface RestoreResult {
+  /** Present when the restore finished but did not bring everything across. */
+  skipped?: RestoreSkipSummary;
+}
+
+const POLL_INTERVAL_MS = 2000;
+
+/**
+ * Poll a restore job to completion.
+ *
+ * Resolves for both "completed" and "completed_with_warnings", carrying the skip report
+ * so the caller can decide whether the restore is worth reporting as clean.
+ */
+const pollRestoreJob = (
+  jobId: string,
+  onStatus?: (status: string) => void,
+): Promise<RestoreResult> =>
+  new Promise<RestoreResult>((resolve, reject) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusRes = await api.get(`/backup/import/${jobId}`);
+        const { status, progress, error, warnings } = statusRes.data;
+
+        if (onStatus && progress) {
+          onStatus(progress);
+        }
+
+        if (status === "completed" || status === "completed_with_warnings") {
+          clearInterval(pollInterval);
+          resolve({ skipped: warnings?.skipped });
+        } else if (status === "failed") {
+          clearInterval(pollInterval);
+          reject(new Error(error || "Restore failed during processing"));
+        }
+        // "pending" and "processing" keep polling.
+      } catch (err: unknown) {
+        // Retries on transient network errors; aborts on 404 (lost job).
+        if (getErrorStatus(err) === 404) {
+          clearInterval(pollInterval);
+          reject(new Error("Restore job lost on server"));
+        }
+      }
+    }, POLL_INTERVAL_MS);
+  });
 
 export const exportBackupAsync = async (
   includeAudio: boolean = true,
+  archiveQuality: ArchiveQuality = "compressed",
 ): Promise<{ task_id: string }> => {
   const response = await api.post<{ task_id: string }>(
-    `/backup/export?include_audio=${includeAudio}`,
+    `/backup/export?include_audio=${includeAudio}&archive_quality=${archiveQuality}`,
   );
   return response.data;
 };
 
+export interface BackupStatus {
+  state: string;
+  status: string;
+  /** Coarse phase name, e.g. "Compressing audio". */
+  stage?: string | null;
+  /** Items completed and expected within the current stage, when countable. */
+  current?: number | null;
+  total?: number | null;
+  result?: unknown;
+}
+
 export const getBackupStatus = async (
   taskId: string,
-): Promise<{ state: string; status: string; result?: unknown }> => {
-  const response = await api.get<{
-    state: string;
-    status: string;
-    result?: unknown;
-  }>(`/backup/export/${taskId}`);
+): Promise<BackupStatus> => {
+  const response = await api.get<BackupStatus>(`/backup/export/${taskId}`);
   return response.data;
 };
 
 export const downloadBackupFile = async (taskId: string): Promise<void> => {
-  const response = await api.get(`/backup/export/${taskId}/download`, {
-    responseType: "blob",
-  });
-
-  const blob = new Blob([response.data], { type: "application/zip" });
-  const url = window.URL.createObjectURL(blob);
+  // Navigate to the endpoint rather than fetching it into a Blob. A backup that
+  // includes audio can be many gigabytes, and buffering that in a Blob exhausts the
+  // tab's memory before a single byte reaches disk. The browser streams it straight to
+  // the filesystem instead, with native progress, pause and resume, authenticating with
+  // the access_token cookie the API already accepts.
   const a = document.createElement("a");
-  a.href = url;
-
-  // Create filename with timestamp
-  const filename = `nojoin_backup_${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
-  a.download = filename;
+  a.href = `${API_BASE_URL}/backup/export/${taskId}/download`;
+  // The server sets the filename via Content-Disposition; this is only the fallback.
+  a.download = "";
+  a.rel = "noopener";
 
   document.body.appendChild(a);
   a.click();
-  window.URL.revokeObjectURL(url);
   document.body.removeChild(a);
 };
 
@@ -47,7 +102,7 @@ export const importBackup = async (
   overwriteExisting: boolean,
   onProgress?: (progress: number) => void,
   onStatus?: (status: string) => void,
-): Promise<void> => {
+): Promise<RestoreResult> => {
   const formData = new FormData();
   formData.append("file", file);
 
@@ -80,41 +135,12 @@ export const importBackup = async (
     if (jobId) {
       if (onProgress) onProgress(100);
       if (onStatus) onStatus("Processing on server...");
-
-      // Poll for status
-      return new Promise<void>((resolve, reject) => {
-        const pollInterval = setInterval(async () => {
-          try {
-            const statusRes = await api.get(`/backup/import/${jobId}`);
-            const { status, progress, error } = statusRes.data;
-
-            if (onStatus && progress) {
-              onStatus(progress);
-            }
-
-            if (status === "completed") {
-              clearInterval(pollInterval);
-              resolve();
-            } else if (status === "failed") {
-              clearInterval(pollInterval);
-              reject(new Error(error || "Restore failed during processing"));
-            }
-            // If 'pending' or 'processing', continue polling
-
-                    } catch (err: unknown) {
-            // Retries on transient network errors; aborts on 404 (lost job).
-            if (getErrorStatus(err) === 404) {
-              clearInterval(pollInterval);
-              reject(new Error("Restore job lost on server"));
-            }
-          }
-        }, 2000); // Poll every 2 seconds
-      });
+      return pollRestoreJob(jobId, onStatus);
     }
 
     // No job_id: the import completed synchronously, so report done.
     if (onProgress) onProgress(100);
-    return;
+    return {};
 
     } catch (error: unknown) {
     throw error;
@@ -131,7 +157,7 @@ export const uploadBackupChunked = async (
   overwriteExisting: boolean,
   onProgress: (percent: number) => void,
   onStatus: (status: string) => void,
-): Promise<void> => {
+): Promise<RestoreResult> => {
   // 10MB chunks to stay well under Cloudflare 100MB limit
   const CHUNK_SIZE = 10 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -186,43 +212,16 @@ export const uploadBackupChunked = async (
       },
     );
 
-    // 4. Poll Status (Reusing logic pattern from importBackup)
+    // 4. Poll Status
     const jobId = completeRes.data.job_id;
     if (jobId) {
       if (onProgress) onProgress(100);
       if (onStatus) onStatus("Processing on server...");
-
-      return new Promise<void>((resolve, reject) => {
-        const pollInterval = setInterval(async () => {
-          try {
-            const statusRes = await api.get(`/backup/import/${jobId}`);
-            const { status, progress, error } = statusRes.data;
-
-            if (onStatus && progress) {
-              onStatus(progress);
-            }
-
-            if (status === "completed") {
-              clearInterval(pollInterval);
-              resolve();
-            } else if (status === "failed") {
-              clearInterval(pollInterval);
-              reject(new Error(error || "Restore failed during processing"));
-            }
-
-                    } catch (err: unknown) {
-            console.warn("Polling status failed", err);
-            // If 404, job lost?
-            if (getErrorStatus(err) === 404) {
-              clearInterval(pollInterval);
-              reject(new Error("Restore job lost on server"));
-            }
-          }
-        }, 2000);
-      });
+      return pollRestoreJob(jobId, onStatus);
     }
 
-    } catch (error: unknown) {
+    return {};
+  } catch (error: unknown) {
     throw error;
   }
 };

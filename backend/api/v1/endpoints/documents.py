@@ -15,6 +15,7 @@ from backend.models.recording import Recording
 from backend.models.recording_public import DocumentPublicRead, serialize_document
 from backend.models.user import User
 from backend.services.recording_identity_service import get_recording_by_public_id
+from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import UPLOAD_LIMIT_DOCUMENT, stream_and_validate_upload
 
@@ -33,8 +34,9 @@ async def _get_owned_recording(
     return recording
 
 
-# Configuration for documents storage
-DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "data/documents")
+# Configuration for documents storage. Resolved through PathManager so it tracks
+# NOJOIN_DATA_DIR rather than the process working directory.
+DOCUMENTS_DIR = str(PathManager().documents_directory)
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 
