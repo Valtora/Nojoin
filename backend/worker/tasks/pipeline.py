@@ -423,10 +423,55 @@ def _run_final_diarization_stage(
                 logger.warning(
                     f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
                 )
+
+            _record_diarization_speaker_stats(recording_id, diarization_result)
     else:
         logger.info("Diarization disabled, skipping speaker separation.")
 
     return diarization_result
+
+
+def _diarization_speaker_stats(diarization_result) -> list[dict]:
+    """Per-label total speech duration and segment count, longest first."""
+    stats: dict[str, dict] = {}
+    for segment, _, label in diarization_result.itertracks(yield_label=True):
+        entry = stats.setdefault(
+            str(label),
+            {"speaker": str(label), "total_speech_s": 0.0, "segment_count": 0},
+        )
+        entry["total_speech_s"] += float(segment.duration)
+        entry["segment_count"] += 1
+
+    for entry in stats.values():
+        entry["total_speech_s"] = round(entry["total_speech_s"], 3)
+
+    return sorted(
+        stats.values(), key=lambda entry: entry["total_speech_s"], reverse=True
+    )
+
+
+def _record_diarization_speaker_stats(recording_id: int, diarization_result) -> None:
+    """Emit per-speaker speech totals for the post-phantom-filter diarization.
+
+    This is what separates genuine over-clustering (several clusters each
+    holding substantial speech) from clusters the phantom filter nearly caught,
+    and it is the input the merge pass then works from. Diarization labels only,
+    so the metric carries no participant identity. Best-effort: a failure here
+    must never abort finalize.
+    """
+    try:
+        speaker_stats = _diarization_speaker_stats(diarization_result)
+        record_pipeline_metric(
+            stage="final_diarization_speaker_stats",
+            recording_id=recording_id,
+            payload={
+                "speaker_count": len(speaker_stats),
+                "speakers": speaker_stats,
+            },
+            log=logger,
+        )
+    except Exception as e:  # noqa: BLE001 -- boundary: diagnostic metric is best-effort
+        logger.warning("Failed to record diarization speaker stats: %s", e)
 
 
 def _combine_and_consolidate_segments(
