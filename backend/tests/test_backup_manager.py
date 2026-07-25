@@ -9,7 +9,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pytest
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Text, create_engine
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Text,
+    create_engine,
+    event,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Field, Session, SQLModel, select
@@ -41,6 +50,12 @@ class TestBase(SQLModel):
     )
 
 
+class TestInvitation(TestBase, table=True):
+    __tablename__ = "backup_test_invitations"
+
+    code: str
+
+
 class TestUser(TestBase, table=True):
     __tablename__ = "backup_test_users"
 
@@ -52,6 +67,9 @@ class TestUser(TestBase, table=True):
     role: str = "user"
     settings: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON, nullable=False)
+    )
+    invitation_id: Optional[int] = Field(
+        default=None, foreign_key="backup_test_invitations.id"
     )
 
 
@@ -75,7 +93,7 @@ class TestUserTask(TestBase, table=True):
     due_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
-    user_id: int
+    user_id: int = Field(foreign_key="backup_test_users.id")
 
 
 class TestPeopleTag(TestBase, table=True):
@@ -83,8 +101,8 @@ class TestPeopleTag(TestBase, table=True):
 
     name: str
     color: Optional[str] = None
-    user_id: Optional[int] = None
-    parent_id: Optional[int] = None
+    user_id: Optional[int] = Field(default=None, foreign_key="backup_test_users.id")
+    parent_id: Optional[int] = Field(default=None, foreign_key="backup_test_p_tags.id")
 
 
 class TestGlobalSpeaker(TestBase, table=True):
@@ -101,14 +119,14 @@ class TestGlobalSpeaker(TestBase, table=True):
     email: Optional[str] = None
     phone_number: Optional[str] = None
     notes: Optional[str] = None
-    user_id: Optional[int] = None
+    user_id: Optional[int] = Field(default=None, foreign_key="backup_test_users.id")
 
 
 class TestPeopleTagLink(TestBase, table=True):
     __tablename__ = "backup_test_people_tags"
 
-    global_speaker_id: int
-    tag_id: int
+    global_speaker_id: int = Field(foreign_key="backup_test_global_speakers.id")
+    tag_id: int = Field(foreign_key="backup_test_p_tags.id")
 
 
 class TestTag(TestBase, table=True):
@@ -116,22 +134,22 @@ class TestTag(TestBase, table=True):
 
     name: str
     color: Optional[str] = None
-    user_id: Optional[int] = None
-    parent_id: Optional[int] = None
+    user_id: Optional[int] = Field(default=None, foreign_key="backup_test_users.id")
+    parent_id: Optional[int] = Field(default=None, foreign_key="backup_test_tags.id")
 
 
 class TestUserTaskTag(TestBase, table=True):
     __tablename__ = "backup_test_user_task_tags"
 
-    task_id: int
-    tag_id: int
+    task_id: int = Field(foreign_key="backup_test_user_tasks.id")
+    tag_id: int = Field(foreign_key="backup_test_tags.id")
 
 
 class TestUserTaskRecording(TestBase, table=True):
     __tablename__ = "backup_test_user_task_recordings"
 
-    task_id: int
-    recording_id: int
+    task_id: int = Field(foreign_key="backup_test_user_tasks.id")
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
 
 
 class TestRecording(TestBase, table=True):
@@ -159,13 +177,16 @@ class TestRecording(TestBase, table=True):
     pipeline_generation: Optional[str] = Field(
         default="unified", sa_column=Column(Text, nullable=True)
     )
-    user_id: Optional[int] = None
+    user_id: Optional[int] = Field(default=None, foreign_key="backup_test_users.id")
+    calendar_event_id: Optional[int] = Field(
+        default=None, foreign_key="backup_test_calendar_events.id"
+    )
 
 
 class TestCalendarConnection(TestBase, table=True):
     __tablename__ = "backup_test_calendar_connections"
 
-    user_id: int
+    user_id: int = Field(foreign_key="backup_test_users.id")
     provider: str
     provider_account_id: str
     email: Optional[str] = None
@@ -190,7 +211,7 @@ class TestCalendarConnection(TestBase, table=True):
 class TestCalendarSource(TestBase, table=True):
     __tablename__ = "backup_test_calendar_sources"
 
-    connection_id: int
+    connection_id: int = Field(foreign_key="backup_test_calendar_connections.id")
     provider_calendar_id: str
     name: str
     description: Optional[str] = None
@@ -211,7 +232,7 @@ class TestCalendarSource(TestBase, table=True):
 class TestCalendarEvent(TestBase, table=True):
     __tablename__ = "backup_test_calendar_events"
 
-    calendar_id: int
+    calendar_id: int = Field(foreign_key="backup_test_calendar_sources.id")
     provider_event_id: str
     title: str
     status: str = "confirmed"
@@ -235,8 +256,10 @@ class TestCalendarEvent(TestBase, table=True):
 class TestRecordingSpeaker(TestBase, table=True):
     __tablename__ = "backup_test_recording_speakers"
 
-    recording_id: int
-    global_speaker_id: Optional[int] = None
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
+    global_speaker_id: Optional[int] = Field(
+        default=None, foreign_key="backup_test_global_speakers.id"
+    )
     diarization_label: str
     local_name: Optional[str] = None
     name: Optional[str] = None
@@ -247,28 +270,30 @@ class TestRecordingSpeaker(TestBase, table=True):
         default=None, sa_column=Column(JSON, nullable=True)
     )
     color: Optional[str] = None
-    merged_into_id: Optional[int] = None
+    merged_into_id: Optional[int] = Field(
+        default=None, foreign_key="backup_test_recording_speakers.id"
+    )
 
 
 class TestRecordingTag(TestBase, table=True):
     __tablename__ = "backup_test_recording_tags"
 
-    recording_id: int
-    tag_id: int
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
+    tag_id: int = Field(foreign_key="backup_test_tags.id")
 
 
 class TestTranscript(TestBase, table=True):
     __tablename__ = "backup_test_transcripts"
 
-    recording_id: int
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
     text: Optional[str] = None
 
 
 class TestChatMessage(TestBase, table=True):
     __tablename__ = "backup_test_chat_messages"
 
-    recording_id: int
-    user_id: Optional[int] = None
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
+    user_id: Optional[int] = Field(default=None, foreign_key="backup_test_users.id")
     role: str = "user"
     content: str = ""
 
@@ -276,7 +301,7 @@ class TestChatMessage(TestBase, table=True):
 class TestDocument(TestBase, table=True):
     __tablename__ = "backup_test_documents"
 
-    recording_id: int
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
     title: str
     file_path: str = Field(sa_column=Column(Text, unique=True, nullable=False))
     file_type: str = "text/plain"
@@ -355,15 +380,33 @@ class TestContext:
     async_engine: Any
 
 
+def _enforce_sqlite_foreign_keys(engine) -> None:
+    """Turn on SQLite foreign-key enforcement for every connection this engine opens.
+
+    SQLite ignores foreign keys by default. Leaving it off is what allowed the surrogate
+    models to declare relationships that were never checked, so restore bugs that violate
+    a constraint in production passed cleanly here.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _set_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 def build_test_context(root: Path) -> TestContext:
     root.mkdir(parents=True, exist_ok=True)
     db_path = root / "backup-test.sqlite"
     sync_engine = create_engine(f"sqlite:///{db_path}", future=True)
     async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", future=True)
+    _enforce_sqlite_foreign_keys(sync_engine)
+    _enforce_sqlite_foreign_keys(async_engine.sync_engine)
     async_session_maker = sessionmaker(
         async_engine, class_=AsyncSession, expire_on_commit=False
     )
 
+    TestInvitation.__table__.create(sync_engine)
     for _, model_cls in TEST_MODELS:
         model_cls.__table__.create(sync_engine)
 
@@ -428,7 +471,13 @@ async def seed_source_data(
     recording_proxy_path: Optional[str] = "data/recordings/quarterly-planning.mp3",
 ) -> None:
     async with session_maker() as session:
-        session.add(
+        # Flush each row as it is added: SQLite foreign keys are enforced in
+        # these tests, so a parent must exist before its child is inserted.
+        async def _add(row):
+            session.add(row)
+            await session.flush()
+
+        await _add(
             TestUser(
                 id=1,
                 username="alice",
@@ -437,7 +486,7 @@ async def seed_source_data(
                 settings={"gemini_api_key": "user-secret", "theme": "light"},
             )
         )
-        session.add(
+        await _add(
             TestCalendarProviderConfig(
                 id=10,
                 provider="microsoft",
@@ -447,7 +496,7 @@ async def seed_source_data(
                 enabled=True,
             )
         )
-        session.add(
+        await _add(
             TestUserTask(
                 id=20,
                 title="Follow up with supplier",
@@ -456,7 +505,7 @@ async def seed_source_data(
                 user_id=1,
             )
         )
-        session.add(
+        await _add(
             TestTag(
                 id=25,
                 name="Follow-up",
@@ -464,14 +513,14 @@ async def seed_source_data(
                 user_id=1,
             )
         )
-        session.add(
+        await _add(
             TestUserTaskTag(
                 id=26,
                 task_id=20,
                 tag_id=25,
             )
         )
-        session.add(
+        await _add(
             TestGlobalSpeaker(
                 id=30,
                 name="Dana Mercer",
@@ -482,7 +531,7 @@ async def seed_source_data(
                 user_id=1,
             )
         )
-        session.add(
+        await _add(
             TestRecording(
                 id=40,
                 name="Quarterly planning",
@@ -495,14 +544,14 @@ async def seed_source_data(
                 user_id=1,
             )
         )
-        session.add(
+        await _add(
             TestUserTaskRecording(
                 id=27,
                 task_id=20,
                 recording_id=40,
             )
         )
-        session.add(
+        await _add(
             TestCalendarConnection(
                 id=50,
                 user_id=1,
@@ -523,7 +572,7 @@ async def seed_source_data(
                 last_synced_at=datetime(2026, 4, 12, 10, 0),
             )
         )
-        session.add(
+        await _add(
             TestCalendarSource(
                 id=60,
                 connection_id=50,
@@ -542,7 +591,7 @@ async def seed_source_data(
                 sync_window_end=datetime(2026, 5, 1, 0, 0),
             )
         )
-        session.add(
+        await _add(
             TestCalendarEvent(
                 id=70,
                 calendar_id=60,
@@ -558,7 +607,7 @@ async def seed_source_data(
                 external_updated_at=datetime(2026, 4, 12, 9, 45),
             )
         )
-        session.add(
+        await _add(
             TestRecordingSpeaker(
                 id=80,
                 recording_id=40,
@@ -568,7 +617,7 @@ async def seed_source_data(
                 embedding=[0.11, 0.22, 0.33],
             )
         )
-        session.add(
+        await _add(
             TestRecordingSpeaker(
                 id=81,
                 recording_id=40,
@@ -592,7 +641,13 @@ async def seed_existing_target_recording(
     name: str = "Existing quarterly planning",
 ) -> None:
     async with session_maker() as session:
-        session.add(
+        # Flush each row as it is added: SQLite foreign keys are enforced in
+        # these tests, so a parent must exist before its child is inserted.
+        async def _add(row):
+            session.add(row)
+            await session.flush()
+
+        await _add(
             TestUser(
                 id=101,
                 username="alice",
@@ -601,7 +656,7 @@ async def seed_existing_target_recording(
                 settings={"theme": "dark"},
             )
         )
-        session.add(
+        await _add(
             TestRecording(
                 id=102,
                 name=name,
@@ -794,6 +849,7 @@ def test_create_backup_blocking_uses_sync_path_without_async_loop(
                 settings={"theme": "light"},
             )
         )
+        session.flush()  # Foreign keys are enforced; the owner must exist first.
         session.add(
             TestRecording(
                 id=40,
@@ -1312,7 +1368,13 @@ async def seed_unrelated_target_user(
     username: str,
 ) -> None:
     async with session_maker() as session:
-        session.add(
+        # Flush each row as it is added: SQLite foreign keys are enforced in
+        # these tests, so a parent must exist before its child is inserted.
+        async def _add(row):
+            session.add(row)
+            await session.flush()
+
+        await _add(
             TestUser(
                 id=user_id,
                 username=username,
@@ -1998,4 +2060,187 @@ async def test_restore_marks_in_flight_recording_without_transcript_as_errored(
     assert restored.status == "ERROR"
 
     await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_recording_linked_to_a_calendar_event_survives_a_cross_system_restore(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The headline regression. Recording.calendar_event_id was carried across verbatim
+    # and never remapped, and recordings were restored before calendar_events, so on any
+    # fresh target the insert violated the constraint. The savepoint swallowed it, the
+    # recording vanished, and its transcript, speakers and tags went with it.
+    #
+    # Foreign keys are enforced in these tests, so this fails loudly without the fix.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-calendar-linked",
+        recording_audio_path="data/recordings/calendar-linked.wav",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        recording = await session.get(TestRecording, 40)
+        recording.calendar_event_id = 70
+        session.add(recording)
+        session.add(TestTranscript(id=90, recording_id=40, text="Full transcript"))
+        await session.commit()
+
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    # Force every id to be reassigned, so a carried-over calendar_event_id could not
+    # accidentally land on the right row.
+    await seed_unrelated_target_user(
+        target_context.async_session_maker, user_id=1, username="local-bob"
+    )
+
+    job_id = "calendar-linked-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        restored = session.exec(select(TestRecording)).one()
+        restored_event = session.exec(select(TestCalendarEvent)).one()
+        # The children came across too, which is what the old behaviour lost.
+        assert session.exec(select(TestTranscript)).all()
+        assert session.exec(select(TestRecordingSpeaker)).all()
+
+    # The link is preserved and points at the event's new id, not the source system's.
+    assert restored.calendar_event_id == restored_event.id
+    assert restored_event.id != 70 or restored.calendar_event_id == restored_event.id
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_user_created_from_an_invitation_survives_a_restore(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # invitations are never archived, so User.invitation_id could never resolve. Carried
+    # across verbatim it violated the constraint, dropping the user, and every recording,
+    # tag and person they owned was then skipped for having an unresolvable owner.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    async with source_context.async_session_maker() as session:
+        session.add(TestInvitation(id=900, code="INVITE-900"))
+        await session.flush()
+        await session.commit()
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-invited",
+        recording_audio_path="data/recordings/invited.wav",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        user = await session.get(TestUser, 1)
+        user.invitation_id = 900
+        session.add(user)
+        await session.commit()
+
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    job_id = "invited-user-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        restored_user = session.exec(select(TestUser)).one()
+        restored_recording = session.exec(select(TestRecording)).one()
+
+    assert restored_user.username == "alice"
+    # Provenance only, and unresolvable by design, so it is dropped rather than the user.
+    assert restored_user.invitation_id is None
+    assert restored_recording.user_id == restored_user.id
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+LEGACY_ARCHIVE = Path(__file__).parent / "fixtures" / "legacy_backup_v1.zip"
+
+
+@pytest.mark.anyio
+async def test_legacy_format_archive_still_restores_completely(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A committed archive in the pre-format_version layout: no format_version field, audio
+    # stored as .opus because that was the only option, no documents.json, and no
+    # pipeline_generation column. Backwards compatibility is the promise most likely to
+    # break silently as the archive format evolves, so it is pinned to a real file rather
+    # than to a builder that would drift alongside the writer it is meant to check.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    job_id = "legacy-archive-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, str(LEGACY_ARCHIVE))
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    assert BackupManager.restore_jobs[job_id]["warnings"] == {"skipped": {}}
+
+    with Session(target_context.sync_engine) as session:
+        user = session.exec(select(TestUser)).one()
+        recording = session.exec(select(TestRecording)).one()
+        transcript = session.exec(select(TestTranscript)).one()
+        speaker = session.exec(select(TestRecordingSpeaker)).one()
+        tag_link = session.exec(select(TestRecordingTag)).one()
+
+    assert user.username == "legacy-alice"
+    assert recording.meeting_uid == "legacy-meeting-uid"
+    # The durable identifier is preserved, so recording URLs and later backups from the
+    # same source keep lining up.
+    assert recording.public_id == "legacy-public-id"
+    assert recording.user_id == user.id
+    assert transcript.recording_id == recording.id
+    assert speaker.recording_id == recording.id
+    assert tag_link.recording_id == recording.id
+
+    # The .opus audio was extracted under the target's recordings directory and survived
+    # the orphan sweep.
+    assert recording.audio_path.endswith("legacy-meeting.opus")
+    assert Path(recording.audio_path).read_bytes() == b"LEGACY-OPUS-AUDIO"
+    # Recomputed from what actually landed on disk.
+    assert recording.file_size_bytes == len(b"LEGACY-OPUS-AUDIO")
+    # Restored un-classified so the cutover machinery backfills it like any legacy row.
+    assert recording.pipeline_generation is None
+
     await target_context.async_engine.dispose()

@@ -161,12 +161,58 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
     "recording_speakers": (
         _own("recording_id", "recordings"),
         _enrich("global_speaker_id", "global_speakers"),
+        # Back-references into canonical pipeline tables that are rebuilt rather than
+        # archived. Their targets never exist on the restore side, so they are nulled;
+        # carrying the source system's ids would fail the constraint and take the whole
+        # speaker row, and therefore the speaker's name, down with it.
+        _enrich("processing_run_id", "processing_runs"),
+        _enrich("last_speaker_correction_event_id", "speaker_correction_events"),
+        _enrich("last_diarization_window_result_id", "diarization_window_results"),
     ),
     "recording_tags": (_own("recording_id", "recordings"), _own("tag_id", "tags")),
     "transcripts": (_own("recording_id", "recordings"),),
     "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
     "documents": (_own("recording_id", "recordings"),),
 }
+
+# Tables deliberately left out of the archive, each with the reason. ``test_backup_model_parity``
+# fails if a table exists that is neither archived nor listed here, so a new model cannot be
+# forgotten: someone has to decide, in writing, whether it belongs in a backup.
+UNARCHIVED_TABLES: Dict[str, str] = {
+    "async_task_ownerships": "Ephemeral ownership records for in-flight Celery tasks.",
+    "calendar_push_channels": (
+        "Provider webhook subscriptions bound to this installation's public URL; they "
+        "would point at the wrong host after a restore."
+    ),
+    "cli_oauth_credentials": "Machine-bound CLI OAuth credentials; re-authenticate on the target.",
+    "cli_usage_daily": "Per-installation CLI usage counters.",
+    "context_chunks": (
+        "RAG embeddings, regenerated from the restored transcript and documents by "
+        "finalize_restored_recording_task."
+    ),
+    "invitations": (
+        "Not archived by design; User.invitation_id is provenance only and is nulled on "
+        "restore. See RESTORE_FOREIGN_KEYS."
+    ),
+    "oauth_clients": "This installation's OAuth server registrations.",
+    "oauth_authorization_codes": "Short-lived OAuth codes.",
+    "oauth_refresh_tokens": "Tokens issued against this installation's signing key.",
+    "revoked_jwts": "Revocation list for this installation's signing key.",
+    # Canonical pipeline state, rebuilt from the transcript projection on restore.
+    # transcript.segments carries the manual edit flags, so hand corrections survive the
+    # round trip; what is lost is audit history. See docs/adr/0003.
+    "processing_runs": "Canonical pipeline state; rebuilt from the transcript projection.",
+    "recording_asr_window_results": "Canonical pipeline state; rebuilt.",
+    "recording_audio_chunks": "Live capture scratch data for in-flight recordings.",
+    "recording_audio_window_manifests": "Live capture scratch data for in-flight recordings.",
+    "recording_speaker_aliases": "Canonical pipeline state; rebuilt.",
+    "speaker_correction_events": "Canonical pipeline audit history; not rebuilt.",
+    "diarization_window_results": "Canonical pipeline state; rebuilt.",
+    "diarization_window_turns": "Canonical pipeline state; rebuilt.",
+    "transcript_utterances": "Canonical pipeline state; rebuilt from transcript.segments.",
+    "transcript_utterance_events": "Canonical pipeline audit history; not rebuilt.",
+}
+
 
 # Self-referential columns that cannot be resolved in a single forward pass because the
 # target row may not be inserted yet. These are nulled on insert and reattached by a
@@ -1849,7 +1895,11 @@ class BackupManager:
                             # enter as un-classified and are backfilled exactly like
                             # legacy rows. The status is settled in the finalisation
                             # pass, once the transcript rows exist.
-                            if "pipeline_generation" in item_data:
+                            # Set unconditionally, not only when the archive carried the
+                            # column: a legacy archive omits it entirely, and leaving it
+                            # absent lets the model default reapply, marking the recording
+                            # canonical when it has no canonical rows at all.
+                            if hasattr(model_cls, "pipeline_generation"):
                                 item_data["pipeline_generation"] = None
 
                             runtime_audio_path = (
