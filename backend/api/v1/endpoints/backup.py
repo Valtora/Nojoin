@@ -20,7 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_active_superuser, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.celery_app import celery_app
-from backend.core.backup_manager import BackupManager
+from backend.core.backup_manager import (
+    ARCHIVE_QUALITIES,
+    ARCHIVE_QUALITY_COMPRESSED,
+    BackupManager,
+)
 from backend.models.user import User
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
@@ -34,6 +38,13 @@ router = APIRouter()
 @router.post("/export")
 async def export_backup(
     include_audio: bool = Query(True, description="Include audio files in backup"),
+    archive_quality: str = Query(
+        ARCHIVE_QUALITY_COMPRESSED,
+        description=(
+            "'compressed' re-encodes audio to Opus for size; 'original' stores it "
+            "byte-for-byte so restored recordings can be reprocessed without loss."
+        ),
+    ),
     current_user: User = Depends(get_current_active_superuser),
     db: AsyncSession = Depends(get_db),
 ):
@@ -41,12 +52,21 @@ async def export_backup(
     Trigger background backup creation.
     Returns: {"task_id": str}
     """
+    if archive_quality not in ARCHIVE_QUALITIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"archive_quality must be one of {', '.join(ARCHIVE_QUALITIES)}.",
+        )
+
     try:
         # Trigger Celery task
         # Uses send_task to avoid importing the task function directly (bypasses heavy imports).
         task = celery_app.send_task(
             "backend.worker.tasks.create_backup_task",
-            kwargs={"include_audio": include_audio},
+            kwargs={
+                "include_audio": include_audio,
+                "archive_quality": archive_quality,
+            },
         )
         from backend.models.task import register_task_ownership
 

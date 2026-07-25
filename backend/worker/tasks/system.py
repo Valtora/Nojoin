@@ -84,7 +84,9 @@ def get_worker_device_status(self):
 
 
 @celery_app.task(name="backend.worker.tasks.create_backup_task", bind=True)
-def create_backup_task(self, include_audio: bool = True):
+def create_backup_task(
+    self, include_audio: bool = True, archive_quality: str = "compressed"
+):
     """
     Background task to create a backup zip file.
     Returns the path to the backup file.
@@ -92,13 +94,19 @@ def create_backup_task(self, include_audio: bool = True):
     from backend.core.backup_manager import BackupManager
 
     try:
-        logger.info(f"Starting backup task (include_audio={include_audio})")
+        logger.info(
+            "Starting backup task (include_audio=%s, archive_quality=%s)",
+            include_audio,
+            archive_quality,
+        )
         self.update_state(state="PROCESSING", meta={"status": "Creating backup..."})
 
-        zip_path = BackupManager.create_backup_blocking(include_audio=include_audio)
+        zip_path, warnings = BackupManager.create_backup_blocking(
+            include_audio=include_audio, archive_quality=archive_quality
+        )
 
         logger.info(f"Backup created successfully at {zip_path}")
-        return {"status": "success", "zip_path": zip_path}
+        return {"status": "success", "zip_path": zip_path, "warnings": warnings}
 
     except Exception as e:
         logger.error(f"Backup creation failed: {e}", exc_info=True)

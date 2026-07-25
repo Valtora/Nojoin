@@ -35,6 +35,30 @@ from backend.utils.version import get_installed_version
 
 logger = logging.getLogger(__name__)
 
+# Archive layout version, independent of the application version. Bump it only when the
+# archive's structure changes in a way an older restore could not read correctly. A
+# restore accepts anything at or below its own version and refuses anything above, so a
+# newer archive fails at the door rather than deep inside the insert loop.
+#
+#   1: implicit; archives written before this field existed. Audio always re-encoded to
+#      Opus, so every recordings/ member carries a .opus extension.
+#   2: format_version recorded. Audio may be stored unmodified, so the archived
+#      extension varies and is carried by the recording row's audio_path.
+BACKUP_FORMAT_VERSION = 2
+LEGACY_BACKUP_FORMAT_VERSION = 1
+
+# Archive quality. Compressed re-encodes to Opus for size; original stores the file
+# byte-for-byte so a restored recording can be reprocessed without transcode loss.
+ARCHIVE_QUALITY_COMPRESSED = "compressed"
+ARCHIVE_QUALITY_ORIGINAL = "original"
+ARCHIVE_QUALITIES = (ARCHIVE_QUALITY_COMPRESSED, ARCHIVE_QUALITY_ORIGINAL)
+
+# Extensions the backup knows how to carry. Anything else is left out of the archive and
+# counted as missing audio rather than copied blindly.
+ARCHIVABLE_AUDIO_EXTENSIONS = frozenset(
+    {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".opus"}
+)
+
 MICROSOFT_COMMON_TENANT = "common"
 CALENDAR_PROVIDER_ENV_KEYS: Dict[str, Dict[str, str | None]] = {
     CalendarProvider.GOOGLE.value: {
@@ -154,6 +178,32 @@ DEFERRED_FOREIGN_KEYS: Dict[str, Tuple[str, ...]] = {
 SKIP_REASON_UNRESOLVED_OWNER = "unresolved_owner"
 SKIP_REASON_NO_IDENTITY = "no_identity"
 SKIP_REASON_INSERT_FAILED = "insert_failed"
+
+
+@dataclass
+class _AudioPlanEntry:
+    """One recording's audio, resolved on disk and assigned an archive member path."""
+
+    source_path: str
+    arcname: str
+    compress: bool
+
+
+@dataclass
+class _AudioPlan:
+    """What audio the archive will carry, derived from the recording rows themselves.
+
+    Selecting by ``Recording.audio_path`` rather than walking the recordings directory is
+    what makes proxy shadowing impossible. A recording and its playback proxy share a
+    filename stem (``<uuid>.wav`` and ``<uuid>.mp3``), so a stem-keyed directory walk had
+    to guess between them and could archive the mono, lossy proxy as the master audio.
+    """
+
+    entries: List[_AudioPlanEntry] = field(default_factory=list)
+    # Recording.audio_path as stored on the row -> archive member path.
+    arcname_by_audio_path: Dict[str, str] = field(default_factory=dict)
+    # Recordings whose row survives but whose audio file could not be found on disk.
+    missing_audio: int = 0
 
 
 @dataclass
@@ -301,6 +351,7 @@ class BackupManager:
     def _serialise_backup_table_rows(
         table_name: str,
         items: List[SQLModel],
+        audio_plan: _AudioPlan | None = None,
     ) -> List[Dict[str, Any]]:
         if table_name == "calendar_provider_configs":
             data = BackupManager._serialise_calendar_provider_configs(items)
@@ -310,13 +361,22 @@ class BackupManager:
             data = [item.model_dump(mode="json") for item in items]
 
         if table_name == "recordings":
+            arcnames = audio_plan.arcname_by_audio_path if audio_plan else {}
             for item in data:
-                if "audio_path" in item and item["audio_path"]:
-                    item["audio_path"] = (
-                        BackupManager._build_backup_recording_audio_path(
-                            item["audio_path"]
-                        )
+                original_audio_path = item.get("audio_path")
+                if original_audio_path:
+                    # The archived member path is the row's audio_path inside the backup,
+                    # which is what lets a variable archive extension round-trip without a
+                    # separate manifest. A recording whose audio could not be found still
+                    # gets a plausible path so the row itself survives the restore.
+                    item["audio_path"] = arcnames.get(
+                        original_audio_path
+                    ) or BackupManager._build_backup_recording_audio_path(
+                        original_audio_path,
+                        os.path.splitext(original_audio_path)[1].lower() or ".opus",
                     )
+                    # Recomputed from the extracted file on restore, since a re-encoded
+                    # archive makes the source system's byte count wrong.
                     item["file_size_bytes"] = None
 
                 # Proxy files are not backed up directly; they are regenerated after restore.
@@ -587,26 +647,121 @@ class BackupManager:
         return None
 
     @staticmethod
-    def _build_backup_recording_audio_path(audio_path: str | None) -> str | None:
-        subpath = BackupManager._get_recording_subpath(audio_path)
-        if not subpath:
-            return None
-
-        stem, _ = os.path.splitext(subpath)
-        return os.path.join("recordings", stem + ".opus")
-
-    @staticmethod
-    def _build_runtime_recording_audio_path(
-        audio_path: str | None,
-        recordings_dir: str | os.PathLike[str],
+    def _build_backup_recording_audio_path(
+        audio_path: str | None, extension: str = ".opus"
     ) -> str | None:
         subpath = BackupManager._get_recording_subpath(audio_path)
         if not subpath:
             return None
 
         stem, _ = os.path.splitext(subpath)
+        return os.path.join("recordings", stem + extension)
+
+    @staticmethod
+    def _resolve_source_audio_path(
+        audio_path: str | None,
+        recordings_dir: str | os.PathLike[str],
+    ) -> str | None:
+        """Find a recording's audio on disk, or ``None`` if it is not there.
+
+        ``Recording.audio_path`` is stored relative to the process working directory,
+        which is ``/app`` in every container. The recordings directory is tried as a
+        fallback so a library moved via ``NOJOIN_DATA_DIR`` still resolves.
+        """
+        if not audio_path:
+            return None
+
+        candidates = [os.path.abspath(audio_path)]
+
+        subpath = BackupManager._get_recording_subpath(audio_path)
+        if subpath:
+            candidates.append(
+                os.path.abspath(os.path.join(os.fspath(recordings_dir), subpath))
+            )
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+
+        return None
+
+    @staticmethod
+    def _build_audio_plan(
+        recording_rows: List[Any],
+        recordings_dir: str | os.PathLike[str],
+        archive_quality: str,
+    ) -> _AudioPlan:
+        """Resolve every recording row's audio and decide how it enters the archive."""
+        plan = _AudioPlan()
+        claimed_arcnames: Set[str] = set()
+
+        for row in recording_rows:
+            audio_path = getattr(row, "audio_path", None)
+            if not audio_path:
+                continue
+
+            source_path = BackupManager._resolve_source_audio_path(
+                audio_path, recordings_dir
+            )
+            if source_path is None:
+                logger.warning(
+                    "Recording audio not found on disk; archiving metadata only: %s",
+                    audio_path,
+                )
+                plan.missing_audio += 1
+                continue
+
+            extension = os.path.splitext(source_path)[1].lower()
+            if extension not in ARCHIVABLE_AUDIO_EXTENSIONS:
+                logger.warning(
+                    "Recording audio has an unsupported extension %r; "
+                    "archiving metadata only: %s",
+                    extension,
+                    audio_path,
+                )
+                plan.missing_audio += 1
+                continue
+
+            # Already-Opus audio is copied verbatim under either quality: re-encoding it
+            # would be a pointless generation loss.
+            compress = (
+                archive_quality == ARCHIVE_QUALITY_COMPRESSED and extension != ".opus"
+            )
+            arc_extension = ".opus" if compress else extension
+
+            arcname = BackupManager._build_backup_recording_audio_path(
+                audio_path, arc_extension
+            )
+            if not arcname or arcname in claimed_arcnames:
+                continue
+
+            claimed_arcnames.add(arcname)
+            plan.entries.append(
+                _AudioPlanEntry(
+                    source_path=source_path, arcname=arcname, compress=compress
+                )
+            )
+            plan.arcname_by_audio_path[audio_path] = arcname
+
+        return plan
+
+    @staticmethod
+    def _build_runtime_recording_audio_path(
+        audio_path: str | None,
+        recordings_dir: str | os.PathLike[str],
+    ) -> str | None:
+        """Map an archived member path back onto a runtime path under the recordings dir.
+
+        The archived extension is preserved rather than forced to ``.opus``, so an
+        Original-quality archive restores as the format it was taken in. Legacy archives
+        already carry ``.opus`` and are therefore unaffected.
+        """
+        subpath = BackupManager._get_recording_subpath(audio_path)
+        if not subpath:
+            return None
+
         target_abs = os.path.abspath(
-            os.path.join(os.fspath(recordings_dir), stem + ".opus")
+            os.path.join(os.fspath(recordings_dir), subpath)
         )
         cwd = os.path.abspath(os.getcwd())
 
@@ -656,14 +811,21 @@ class BackupManager:
         config_path: PathManager,
         db_dump: Dict[str, str],
         include_audio: bool,
-    ) -> str:
+        audio_plan: _AudioPlan | None = None,
+        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+    ) -> Tuple[str, Dict[str, Any]]:
         """
         Synchronous method to handle heavy file compression and zipping.
         Runs in a thread to prevent blocking the main event loop.
+
+        Returns the temporary zip path and a warnings summary for the operator.
         """
         # Creates a temporary file for the zip explicitly in /tmp (mounted as volume).
         temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir="/tmp")
         temp_zip.close()
+
+        audio_plan = audio_plan or _AudioPlan()
+        failed_audio = 0
 
         try:
             with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -671,69 +833,35 @@ class BackupManager:
                 for filename, content in db_dump.items():
                     zipf.writestr(filename, content)
 
-                # 2. Add Recordings (Smart Deduplication & Audio Toggle)
-                if include_audio and recordings_dir.exists():
-                    # Strategies:
-                    # 1. Prefer .opus (already compressed)
-                    # 2. Fallback to .wav/.mp3 etc (requires compression)
-
-                    file_map: Dict[str, str] = {}
-
-                    for root, dirs, files in os.walk(recordings_dir):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            ext = os.path.splitext(file)[1].lower()
-                            base_name = os.path.splitext(file)[0]  # Usually the UUID
-
-                            # Include only specific audio formats.
-                            if ext not in [
-                                ".wav",
-                                ".mp3",
-                                ".m4a",
-                                ".ogg",
-                                ".flac",
-                                ".opus",
-                            ]:
-                                pass
-
-                            if ext == ".opus":
-                                file_map[base_name] = file_path  # Overrides others
-                            elif base_name not in file_map:
-                                file_map[base_name] = file_path  # Candidate
-
-                    # Now process the map
-                    added_paths = set()
-
-                    for base_name, file_path in file_map.items():
-                        ext = os.path.splitext(file_path)[1].lower()
-
-                        # Calculate arcname (always .opus for audio)
-                        rel_path_base = os.path.relpath(
-                            os.path.dirname(file_path), recordings_dir
-                        )
-                        if rel_path_base == ".":
-                            arcname = os.path.join("recordings", base_name + ".opus")
-                        else:
-                            arcname = os.path.join(
-                                "recordings", rel_path_base, base_name + ".opus"
-                            )
-
-                        if arcname in added_paths:
-                            continue  # Skip duplicate
-
+                # 2. Add audio, one member per recording row.
+                if include_audio:
+                    for entry in audio_plan.entries:
+                        opus_path: str | None = None
                         try:
-                            if ext == ".opus":
-                                zipf.write(file_path, arcname)
-                            elif ext in [".wav", ".mp3", ".m4a", ".ogg", ".flac"]:
-                                # Compress
-                                opus_path = BackupManager._compress_to_opus(file_path)
-                                zipf.write(opus_path, arcname)
-                                os.remove(opus_path)
-
-                            added_paths.add(arcname)
+                            if entry.compress:
+                                opus_path = BackupManager._compress_to_opus(
+                                    entry.source_path
+                                )
+                                zipf.write(opus_path, entry.arcname)
+                            else:
+                                zipf.write(entry.source_path, entry.arcname)
                         except Exception as e:  # noqa: BLE001
-                            logger.error(f"Failed to process audio {file_path}: {e}")
+                            logger.error(
+                                f"Failed to process audio {entry.source_path}: {e}"
+                            )
+                            failed_audio += 1
                             # Continue with other files
+                        finally:
+                            # Removed in a finally block so a failed zipf.write does not
+                            # strand the intermediate file in the shared /tmp volume.
+                            if opus_path and os.path.exists(opus_path):
+                                try:
+                                    os.remove(opus_path)
+                                except OSError:
+                                    logger.warning(
+                                        "Failed to remove temporary Opus file %s",
+                                        opus_path,
+                                    )
 
                 # 3. Add Config
                 if config_path.exists():
@@ -746,15 +874,24 @@ class BackupManager:
                         logger.error(f"Failed to back up config: {e}")
 
                 # 4. Add Backup Info
+                warnings = {
+                    "recordings_without_audio": audio_plan.missing_audio
+                    if include_audio
+                    else 0,
+                    "recordings_audio_failed": failed_audio,
+                }
                 backup_info = {
+                    "format_version": BACKUP_FORMAT_VERSION,
                     "version": BackupManager._get_app_version(),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "include_audio": include_audio,
+                    "archive_quality": archive_quality,
                     "contains_restorable_calendar_credentials": True,
+                    "warnings": warnings,
                 }
                 zipf.writestr("backup_info.json", json.dumps(backup_info, indent=2))
 
-            return temp_zip.name
+            return temp_zip.name, warnings
 
         except Exception as e:
             # Cleanup temp zip if failed
@@ -813,31 +950,59 @@ class BackupManager:
         return sorted_items
 
     @staticmethod
-    async def create_backup(include_audio: bool = True) -> str:
+    def _normalise_archive_quality(archive_quality: str | None) -> str:
+        quality = (archive_quality or ARCHIVE_QUALITY_COMPRESSED).strip().lower()
+        if quality not in ARCHIVE_QUALITIES:
+            logger.warning(
+                "Unknown archive quality %r; falling back to %s.",
+                archive_quality,
+                ARCHIVE_QUALITY_COMPRESSED,
+            )
+            return ARCHIVE_QUALITY_COMPRESSED
+        return quality
+
+    @staticmethod
+    def _table_dump_statement(table_name: str, model_cls: Type[SQLModel]):
+        statement = select(model_cls)
+        if table_name in ["tags", "p_tags"]:
+            # Order parents before children (parent_id NULLS FIRST, then id) so the dump
+            # lists a parent ahead of any child referencing it. Deeper nesting is
+            # reordered by the topological sort on restore.
+            statement = statement.order_by(
+                model_cls.parent_id.nullsfirst(), model_cls.id
+            )
+        return statement
+
+    @staticmethod
+    async def create_backup(
+        include_audio: bool = True,
+        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+    ) -> Tuple[str, Dict[str, Any]]:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
         config_path = path_manager.config_path
+        archive_quality = BackupManager._normalise_archive_quality(archive_quality)
 
         import asyncio
 
         # 1. Dump Database (Async)
         db_dump = {}
+        audio_plan = _AudioPlan()
         async with async_session_maker() as session:
             for table_name, model_cls in MODELS:
-                statement = select(model_cls)
-
-                if table_name in ["tags", "p_tags"]:
-                    # Order parents before children (parent_id NULLS FIRST, then id)
-                    # so the dump lists a parent ahead of any child referencing it.
-                    # Deeper nesting is reordered by _sort_items_by_hierarchy on restore.
-                    statement = statement.order_by(
-                        model_cls.parent_id.nullsfirst(), model_cls.id
-                    )
-
-                results = await session.execute(statement)
+                results = await session.execute(
+                    BackupManager._table_dump_statement(table_name, model_cls)
+                )
                 items = results.scalars().all()
 
-                data = BackupManager._serialise_backup_table_rows(table_name, items)
+                if table_name == "recordings" and include_audio:
+                    audio_plan = BackupManager._build_audio_plan(
+                        list(items), recordings_dir, archive_quality
+                    )
+
+                data = BackupManager._serialise_backup_table_rows(
+                    table_name, items, audio_plan
+                )
 
                 db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
 
@@ -848,26 +1013,36 @@ class BackupManager:
             config_path,
             db_dump,
             include_audio,
+            audio_plan,
+            archive_quality,
         )
 
     @staticmethod
-    def create_backup_blocking(include_audio: bool = True) -> str:
+    def create_backup_blocking(
+        include_audio: bool = True,
+        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+    ) -> Tuple[str, Dict[str, Any]]:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
         config_path = path_manager.config_path
+        archive_quality = BackupManager._normalise_archive_quality(archive_quality)
 
         db_dump: Dict[str, str] = {}
+        audio_plan = _AudioPlan()
         with Session(sync_engine) as session:
             for table_name, model_cls in MODELS:
-                statement = select(model_cls)
+                items = session.exec(
+                    BackupManager._table_dump_statement(table_name, model_cls)
+                ).all()
 
-                if table_name in ["tags", "p_tags"]:
-                    statement = statement.order_by(
-                        model_cls.parent_id.nullsfirst(), model_cls.id
+                if table_name == "recordings" and include_audio:
+                    audio_plan = BackupManager._build_audio_plan(
+                        list(items), recordings_dir, archive_quality
                     )
 
-                items = session.exec(statement).all()
-                data = BackupManager._serialise_backup_table_rows(table_name, items)
+                data = BackupManager._serialise_backup_table_rows(
+                    table_name, items, audio_plan
+                )
                 db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
 
         return BackupManager._create_backup_sync(
@@ -875,28 +1050,74 @@ class BackupManager:
             config_path,
             db_dump,
             include_audio,
+            audio_plan,
+            archive_quality,
         )
 
     @staticmethod
-    def _restore_check_version(zipf: zipfile.ZipFile) -> None:
-        """Validation stage: log version compatibility between the backup and runtime."""
-        # Check version compatibility
-        if "backup_info.json" in zipf.namelist():
-            try:
-                info = json.loads(zipf.read("backup_info.json"))
-                backup_version = info.get("version", "0.0.0")
-                current_version = BackupManager._get_app_version()
+    def _parse_version(value: Any) -> Tuple[int, ...]:
+        """Parse a dotted version into comparable integers, ignoring any suffix.
 
-                if backup_version != current_version:
-                    logger.info(
-                        f"Restoring backup from version {backup_version} to {current_version}"
-                    )
-                    if backup_version > current_version:
-                        logger.warning(
-                            f"WARNING: Restoring backup from NEWER version ({backup_version}) to OLDER version ({current_version}). This may cause issues."
-                        )
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to read backup info: {e}")
+        String comparison is wrong here: ``"0.10.0" > "0.9.0"`` is False lexicographically,
+        so the newer-backup warning misfired on most real version bumps.
+        """
+        parts: List[int] = []
+        for chunk in str(value or "").strip().split("."):
+            digits = ""
+            for char in chunk:
+                if not char.isdigit():
+                    break
+                digits += char
+            if not digits:
+                break
+            parts.append(int(digits))
+        return tuple(parts)
+
+    @staticmethod
+    def _restore_check_version(zipf: zipfile.ZipFile) -> None:
+        """Validation stage: refuse archives this build cannot read, log the rest.
+
+        A newer archive format is rejected here, at the door, rather than failing
+        somewhere deep in the insert loop with an error nobody can act on.
+        """
+        if "backup_info.json" not in zipf.namelist():
+            # Archives predating backup_info.json are format version 1 by definition.
+            return
+
+        try:
+            info = json.loads(zipf.read("backup_info.json"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to read backup info: {e}")
+            return
+
+        format_version = info.get("format_version", LEGACY_BACKUP_FORMAT_VERSION)
+        try:
+            format_version = int(format_version)
+        except (TypeError, ValueError):
+            format_version = LEGACY_BACKUP_FORMAT_VERSION
+
+        if format_version > BACKUP_FORMAT_VERSION:
+            raise ValueError(
+                f"This backup uses archive format version {format_version}, but this "
+                f"installation only understands up to version {BACKUP_FORMAT_VERSION}. "
+                "Upgrade Nojoin on this server before restoring it."
+            )
+
+        backup_version = info.get("version", "0.0.0")
+        current_version = BackupManager._get_app_version()
+
+        if backup_version != current_version:
+            logger.info(
+                f"Restoring backup from version {backup_version} to {current_version}"
+            )
+            if BackupManager._parse_version(backup_version) > BackupManager._parse_version(
+                current_version
+            ):
+                logger.warning(
+                    f"Restoring a backup from a NEWER application version "
+                    f"({backup_version}) onto an OLDER one ({current_version}). "
+                    "This may cause issues."
+                )
 
     @staticmethod
     def _restore_clear_existing_data(state: "_RestoreState") -> None:
@@ -2016,6 +2237,19 @@ class BackupManager:
                                 existing_recordings_by_identity[instance_key] = instance
                             if os.path.exists(instance.audio_path):
                                 recordings_requiring_proxy.add(instance.id)
+                                # Report the size of what actually landed on disk. The
+                                # archive's own figure would be wrong whenever the audio
+                                # was re-encoded on the way in.
+                                try:
+                                    instance.file_size_bytes = os.path.getsize(
+                                        instance.audio_path
+                                    )
+                                    session.add(instance)
+                                except OSError:
+                                    logger.warning(
+                                        "Could not size restored audio %s",
+                                        instance.audio_path,
+                                    )
 
                         count += 1
 

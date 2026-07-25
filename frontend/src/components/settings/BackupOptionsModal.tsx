@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X, Download, AlertTriangle, FileAudio } from "lucide-react";
 import { createPortal } from "react-dom";
-import { exportBackupAsync } from "@/lib/api";
+import { exportBackupAsync, type ArchiveQuality } from "@/lib/api";
 import { useBackupStore } from "@/lib/backupStore";
 import { useNotificationStore } from "@/lib/notificationStore";
 
@@ -15,6 +15,8 @@ export default function BackupOptionsModal({
   onClose,
 }: BackupOptionsModalProps) {
   const [includeAudio, setIncludeAudio] = useState(true);
+  const [archiveQuality, setArchiveQuality] =
+    useState<ArchiveQuality>("compressed");
   const [isProcessing, setIsProcessing] = useState(false);
   const { setTaskId } = useBackupStore();
   const { addNotification } = useNotificationStore();
@@ -24,7 +26,7 @@ export default function BackupOptionsModal({
   const handleExport = async () => {
     try {
       setIsProcessing(true);
-      const { task_id } = await exportBackupAsync(includeAudio);
+      const { task_id } = await exportBackupAsync(includeAudio, archiveQuality);
 
       // Set task ID to trigger global poller
       setTaskId(task_id);
@@ -111,6 +113,66 @@ export default function BackupOptionsModal({
               </p>
             </div>
           </div>
+
+          {includeAudio && (
+            <div className="rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                Audio Quality
+              </h3>
+              <div className="space-y-3">
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    archiveQuality === "compressed"
+                      ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
+                      : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="archive_quality"
+                    className="mt-1"
+                    checked={archiveQuality === "compressed"}
+                    onChange={() => setArchiveQuality("compressed")}
+                  />
+                  <div>
+                    <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
+                      Compressed
+                    </span>
+                    <span className="block mt-1 text-xs contrast-helper">
+                      Re-encodes audio to Opus for a much smaller archive. Ideal
+                      for routine backups you only need to listen to.
+                    </span>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    archiveQuality === "original"
+                      ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
+                      : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="archive_quality"
+                    className="mt-1"
+                    checked={archiveQuality === "original"}
+                    onChange={() => setArchiveQuality("original")}
+                  />
+                  <div>
+                    <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
+                      Original
+                    </span>
+                    <span className="block mt-1 text-xs contrast-helper">
+                      Stores audio exactly as recorded. A much larger archive,
+                      but restored meetings can be reprocessed without any
+                      quality loss.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
 
           {!includeAudio && (
             <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded-lg text-sm">

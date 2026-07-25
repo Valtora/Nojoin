@@ -1,11 +1,14 @@
 import { getErrorStatus } from "@/lib/errors";
 import api from "./client";
 
+export type ArchiveQuality = "compressed" | "original";
+
 export const exportBackupAsync = async (
   includeAudio: boolean = true,
+  archiveQuality: ArchiveQuality = "compressed",
 ): Promise<{ task_id: string }> => {
   const response = await api.post<{ task_id: string }>(
-    `/backup/export?include_audio=${includeAudio}`,
+    `/backup/export?include_audio=${includeAudio}&archive_quality=${archiveQuality}`,
   );
   return response.data;
 };

@@ -601,7 +601,7 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         recording_meeting_uid="meeting-uid-round-trip",
     )
 
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     with zipfile.ZipFile(zip_path, "r") as archive:
         backup_info = json.loads(archive.read("backup_info.json"))
@@ -628,7 +628,9 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
     assert microsoft_provider["client_secret"] == "microsoft-client-secret"
 
     assert recordings[0]["meeting_uid"] == "meeting-uid-round-trip"
-    assert recordings[0]["audio_path"] == "recordings/quarterly-planning.opus"
+    # A metadata-only archive keeps the source extension: the row then points at where
+    # the audio actually lives, rather than at a .opus file that was never written.
+    assert recordings[0]["audio_path"] == "recordings/quarterly-planning.wav"
     assert recordings[0]["proxy_path"] is None
     assert calendar_connections[0]["access_token"] == "google-access-token"
     assert calendar_connections[0]["refresh_token"] == "google-refresh-token"
@@ -709,7 +711,7 @@ async def test_backup_restore_round_trip_includes_calendar_dashboard_and_voicepr
         == "google-refresh-token"
     )
     assert restored_recording.meeting_uid == "meeting-uid-round-trip"
-    assert restored_recording.audio_path.endswith("quarterly-planning.opus")
+    assert restored_recording.audio_path.endswith("quarterly-planning.wav")
     assert restored_source.user_colour == "emerald"
     assert restored_source.is_selected is True
     assert restored_source.sync_cursor == "cursor-123"
@@ -769,14 +771,14 @@ def test_create_backup_blocking_uses_sync_path_without_async_loop(
         )
         session.commit()
 
-    zip_path = BackupManager.create_backup_blocking(include_audio=False)
+    zip_path, _ = BackupManager.create_backup_blocking(include_audio=False)
 
     with zipfile.ZipFile(zip_path, "r") as archive:
         recordings = json.loads(archive.read("recordings.json"))
 
     assert recordings[0]["meeting_uid"] == "blocking-backup-uid"
     assert recordings[0]["proxy_path"] is None
-    assert recordings[0]["audio_path"] == "recordings/blocking-backup.opus"
+    assert recordings[0]["audio_path"] == "recordings/blocking-backup.wav"
 
     source_context.sync_engine.dispose()
 
@@ -797,7 +799,7 @@ async def test_safe_merge_skips_existing_recordings_matched_by_recording_identit
     monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
 
     await seed_source_data(source_context.async_session_maker)
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -860,7 +862,7 @@ async def test_safe_merge_skips_existing_recordings_matched_by_meeting_uid_when_
         recording_meeting_uid="meeting-uid-shared",
         recording_audio_path="data/recordings/source-quarterly.wav",
     )
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -922,7 +924,7 @@ async def test_overwrite_replaces_existing_recordings_matched_by_recording_ident
     monkeypatch.delenv("MICROSOFT_OAUTH_TENANT_ID", raising=False)
 
     await seed_source_data(source_context.async_session_maker)
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -985,7 +987,7 @@ async def test_overwrite_replaces_existing_recordings_matched_by_meeting_uid_whe
         recording_meeting_uid="meeting-uid-shared",
         recording_audio_path="data/recordings/source-quarterly.wav",
     )
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -1024,7 +1026,7 @@ async def test_overwrite_replaces_existing_recordings_matched_by_meeting_uid_whe
     assert len(restored_recordings) == 1
     assert restored_recordings[0].name == "Quarterly planning"
     assert restored_recordings[0].meeting_uid == "meeting-uid-shared"
-    assert restored_recordings[0].audio_path.endswith("source-quarterly.opus")
+    assert restored_recordings[0].audio_path.endswith("source-quarterly.wav")
     assert len(restored_recording_speakers) == 2
 
     await source_context.async_engine.dispose()
@@ -1139,7 +1141,7 @@ async def test_safe_merge_skips_existing_recording_matched_by_public_id_when_mee
         recording_public_id="public-shared",
         recording_audio_path="data/recordings/source-quarterly.wav",
     )
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -1205,7 +1207,7 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
         recording_public_id="public-incoming",
         recording_audio_path="data/recordings/shared-name.wav",
     )
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -1220,7 +1222,7 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
     # Target holds a recording whose meeting_uid and public_id differ but whose audio file
     # would collide with the runtime path derived from the incoming backup.
     target_runtime_path = str(
-        target_context.path_manager.recordings_directory / "shared-name.opus"
+        target_context.path_manager.recordings_directory / "shared-name.wav"
     )
     await seed_existing_target_recording(
         target_context.async_session_maker,
@@ -1255,7 +1257,7 @@ async def test_restore_renames_audio_path_on_collision_with_unrelated_recording(
     # Suffixed with the incoming meeting_uid to dodge the unique-constraint.
     assert inserted.audio_path != target_runtime_path
     assert "meeting-uid-incoming" in inserted.audio_path
-    assert inserted.audio_path.endswith(".opus")
+    assert inserted.audio_path.endswith(".wav")
 
     await source_context.async_engine.dispose()
     await target_context.async_engine.dispose()
@@ -1303,7 +1305,7 @@ async def test_clear_existing_wipes_non_user_data_but_preserves_existing_users(
         recording_meeting_uid="meeting-uid-clear",
         recording_audio_path="data/recordings/quarterly-planning.wav",
     )
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -1422,7 +1424,7 @@ async def test_identity_remap_assigns_new_ids_and_remaps_child_foreign_keys(
         recording_meeting_uid="meeting-uid-remap",
         recording_audio_path="data/recordings/quarterly-planning.wav",
     )
-    zip_path = await BackupManager.create_backup(include_audio=False)
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
 
     target_context = build_test_context(tmp_path / "target")
     patch_backup_manager(monkeypatch, target_context)
@@ -1562,3 +1564,195 @@ def test_models_are_ordered_so_foreign_key_targets_are_restored_first() -> None:
                 f"{table_name}.{spec.column} references {spec.target_table}, "
                 "which must be restored first"
             )
+
+
+@pytest.mark.anyio
+async def test_backup_archives_the_master_audio_not_the_playback_proxy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression guard for the proxy-shadowing bug. Every processed recording has a
+    # master <uuid>.wav and a playback proxy <uuid>.mp3 sitting next to it, sharing a
+    # filename stem. The old stem-keyed directory walk had to guess between them and
+    # frequently archived the proxy, which is mono and doubly lossy, as the master.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    recordings_dir = context.path_manager.recordings_directory
+    master = recordings_dir / "quarterly-planning.wav"
+    proxy = recordings_dir / "quarterly-planning.mp3"
+    master.write_bytes(b"MASTER-AUDIO")
+    proxy.write_bytes(b"PROXY-AUDIO")
+
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-proxy",
+        recording_audio_path=str(master),
+        recording_proxy_path=str(proxy),
+    )
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True,
+        archive_quality=backup_manager_module.ARCHIVE_QUALITY_ORIGINAL,
+    )
+
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        members = [name for name in archive.namelist() if name.startswith("recordings/")]
+        assert members == ["recordings/quarterly-planning.wav"]
+        assert archive.read("recordings/quarterly-planning.wav") == b"MASTER-AUDIO"
+
+    assert warnings["recordings_without_audio"] == 0
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    master = context.path_manager.recordings_directory / "quarterly-planning.wav"
+    master.write_bytes(b"MASTER-AUDIO")
+
+    encoded = tmp_path / "encoded.opus"
+    encoded.write_bytes(b"OPUS-AUDIO")
+    monkeypatch.setattr(
+        BackupManager,
+        "_compress_to_opus",
+        staticmethod(lambda source: str(encoded)),
+    )
+
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-quality",
+        recording_audio_path=str(master),
+        recording_proxy_path=None,
+    )
+
+    compressed_zip, _ = await BackupManager.create_backup(
+        include_audio=True,
+        archive_quality=backup_manager_module.ARCHIVE_QUALITY_COMPRESSED,
+    )
+
+    with zipfile.ZipFile(compressed_zip, "r") as archive:
+        # The member carries the re-encoded extension, and the recording row's
+        # audio_path agrees with it so the restore can find the file again.
+        assert archive.read("recordings/quarterly-planning.opus") == b"OPUS-AUDIO"
+        rows = json.loads(archive.read("recordings.json"))
+        assert rows[0]["audio_path"] == "recordings/quarterly-planning.opus"
+        info = json.loads(archive.read("backup_info.json"))
+        assert info["archive_quality"] == "compressed"
+        assert info["format_version"] == backup_manager_module.BACKUP_FORMAT_VERSION
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_backup_counts_recordings_whose_audio_is_missing_from_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The metadata is still worth preserving, but the operator has to be told that the
+    # archive will not restore playable audio for these recordings.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-missing",
+        recording_audio_path="data/recordings/never-written.wav",
+        recording_proxy_path=None,
+    )
+
+    zip_path, warnings = await BackupManager.create_backup(include_audio=True)
+
+    assert warnings["recordings_without_audio"] == 1
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        assert not [n for n in archive.namelist() if n.startswith("recordings/")]
+        # The row survives regardless.
+        assert len(json.loads(archive.read("recordings.json"))) == 1
+        assert json.loads(archive.read("backup_info.json"))["warnings"][
+            "recordings_without_audio"
+        ] == 1
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_refuses_an_archive_from_a_newer_format_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Failing at the door beats failing deep in the insert loop with a confusing error.
+    context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, context)
+
+    backup_zip = tmp_path / "future.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        archive.writestr(
+            "backup_info.json",
+            json.dumps(
+                {
+                    "format_version": backup_manager_module.BACKUP_FORMAT_VERSION + 1,
+                    "version": "99.0.0",
+                }
+            ),
+        )
+
+    job_id = "future-format-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, str(backup_zip))
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "failed"
+    assert "archive format version" in BackupManager.restore_jobs[job_id]["error"]
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_accepts_a_legacy_archive_without_a_format_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Archives written before format_version existed must keep restoring.
+    context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, context)
+
+    backup_zip = tmp_path / "legacy.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        archive.writestr("backup_info.json", json.dumps({"version": "0.5.0"}))
+        archive.writestr("users.json", json.dumps([]))
+
+    job_id = "legacy-format-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, str(backup_zip))
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("older", "newer"),
+    [("0.9.0", "0.10.0"), ("1.2.3", "1.10.0"), ("0.6.0", "1.0.0")],
+)
+def test_version_parsing_orders_releases_numerically(older: str, newer: str) -> None:
+    # String comparison put 0.10.0 below 0.9.0, so the newer-backup warning misfired on
+    # most real version bumps.
+    assert BackupManager._parse_version(older) < BackupManager._parse_version(newer)
