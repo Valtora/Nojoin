@@ -107,4 +107,4 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 - Read [CALENDAR.md](CALENDAR.md) if you want Google or Outlook calendar integration.
 - Read [ADMIN.md](ADMIN.md) if you will manage users, invitations, or system settings.
 - Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) before relying on backups in production.
-- Read [DEPLOYMENT.md](DEPLOYMENT.md) before exposing Nojoin over a LAN, VPN, or public domain.
+- Read [Remote Access and Trusted Public Origin](DEPLOYMENT.md#remote-access-and-trusted-public-origin) before reaching Nojoin from another device over a LAN, VPN, tailnet, or public domain. Live capture needs an HTTPS origin, so a remote address requires a reverse proxy rather than only a port change.
