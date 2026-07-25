@@ -1468,3 +1468,97 @@ async def test_identity_remap_assigns_new_ids_and_remaps_child_foreign_keys(
 
     await source_context.async_engine.dispose()
     await target_context.async_engine.dispose()
+
+
+def test_apply_foreign_keys_remaps_resolvable_links() -> None:
+    # A link whose target was restored is rewritten to the target database's id.
+    id_map = {"users": {7: 42}, "calendar_events": {3: 99}}
+    item = {"user_id": 7, "calendar_event_id": 3}
+
+    assert (
+        BackupManager._apply_foreign_keys("recordings", item, id_map) is None
+    )
+    assert item == {"user_id": 42, "calendar_event_id": 99}
+
+
+def test_apply_foreign_keys_nulls_unresolvable_enrichment_link() -> None:
+    # calendar_event_id is enrichment: losing the calendar link must not lose the meeting.
+    # This is the finding-1 regression guard. Before the fix the source system's id was
+    # carried through verbatim and the insert failed the foreign-key constraint, silently
+    # dropping the recording and every transcript, speaker and tag hanging off it.
+    id_map = {"users": {7: 42}, "calendar_events": {}}
+    item = {"user_id": 7, "calendar_event_id": 3}
+
+    assert BackupManager._apply_foreign_keys("recordings", item, id_map) is None
+    assert item == {"user_id": 42, "calendar_event_id": None}
+
+
+def test_apply_foreign_keys_nulls_invitation_id_because_invitations_are_not_archived() -> (
+    None
+):
+    # Users reference an invitation that no backup ever carries, so the link can never
+    # resolve. Nulling it keeps the user; the old behaviour lost the user and, with them,
+    # everything they owned.
+    item = {"username": "alice", "invitation_id": 11}
+
+    assert BackupManager._apply_foreign_keys("users", item, {}) is None
+    assert item["invitation_id"] is None
+
+
+@pytest.mark.parametrize(
+    ("table_name", "item"),
+    [
+        ("p_tags", {"user_id": 7, "name": "Colleagues"}),
+        ("chat_messages", {"recording_id": 1, "user_id": 7}),
+        ("recordings", {"user_id": 7}),
+        ("tags", {"user_id": 7, "name": "Weekly"}),
+    ],
+)
+def test_apply_foreign_keys_skips_row_with_unresolvable_owner(
+    table_name: str, item: dict[str, Any]
+) -> None:
+    # Ownership links are skipped rather than nulled. These columns are nullable in the
+    # database, but every read path filters by user_id, so a null owner yields a row that
+    # no user can ever see. p_tags and chat_messages previously fell through with the
+    # source system's raw id, attaching the row to whichever unrelated user held that id.
+    id_map = {"users": {}, "recordings": {1: 1}}
+
+    assert (
+        BackupManager._apply_foreign_keys(table_name, item, id_map)
+        == backup_manager_module.SKIP_REASON_UNRESOLVED_OWNER
+    )
+
+
+def test_apply_foreign_keys_skips_row_whose_owner_was_never_set() -> None:
+    # A backup row that never had an owner cannot gain one during restore.
+    assert (
+        BackupManager._apply_foreign_keys("recordings", {"user_id": None}, {"users": {}})
+        == backup_manager_module.SKIP_REASON_UNRESOLVED_OWNER
+    )
+
+
+def test_models_are_ordered_so_foreign_key_targets_are_restored_first() -> None:
+    # The restore resolves foreign keys in a single forward pass, so every table must be
+    # listed after the tables it references. This is what makes Recording.calendar_event_id
+    # resolvable at all; deferred self-references are exempt by definition.
+    position = {
+        name: index for index, (name, _) in enumerate(backup_manager_module.MODELS)
+    }
+
+    for table_name, specs in backup_manager_module.RESTORE_FOREIGN_KEYS.items():
+        for spec in specs:
+            if spec.target_table not in position:
+                # Targets outside MODELS (e.g. invitations) never resolve by design.
+                assert not spec.ownership, (
+                    f"{table_name}.{spec.column} is an ownership link to "
+                    f"{spec.target_table}, which is not restored at all"
+                )
+                continue
+
+            if spec.target_table == table_name:
+                continue  # Self-reference, ordered by the topological sort.
+
+            assert position[spec.target_table] < position[table_name], (
+                f"{table_name}.{spec.column} references {spec.target_table}, "
+                "which must be restored first"
+            )

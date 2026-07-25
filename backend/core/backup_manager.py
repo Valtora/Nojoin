@@ -49,10 +49,20 @@ CALENDAR_PROVIDER_ENV_KEYS: Dict[str, Dict[str, str | None]] = {
     },
 }
 
-# Order matters for restoration
+# Order matters for restoration: a table may only reference tables listed above it, so
+# that ``id_map`` already holds the remapped target ids by the time the row is inserted.
+#
+# The calendar tables sit ahead of ``recordings`` because ``Recording.calendar_event_id``
+# points at ``calendar_events``. No calendar model references a recording, so this
+# ordering is acyclic. The reverse of this list drives the ``clear_existing`` wipe;
+# deleting recordings before calendar events is safe because that foreign key is
+# ON DELETE SET NULL.
 MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("users", User),
     ("calendar_provider_configs", CalendarProviderConfig),
+    ("calendar_connections", CalendarConnection),
+    ("calendar_sources", CalendarSource),
+    ("calendar_events", CalendarEvent),
     ("user_tasks", UserTask),
     ("p_tags", PeopleTag),
     ("global_speakers", GlobalSpeaker),
@@ -61,14 +71,89 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("user_task_tags", UserTaskTag),
     ("recordings", Recording),
     ("user_task_recordings", UserTaskRecording),
-    ("calendar_connections", CalendarConnection),
-    ("calendar_sources", CalendarSource),
-    ("calendar_events", CalendarEvent),
     ("recording_speakers", RecordingSpeaker),
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
     ("chat_messages", ChatMessage),
 ]
+
+
+@dataclass(frozen=True)
+class _ForeignKeySpec:
+    """One restorable foreign-key column and how the restore should treat it."""
+
+    column: str
+    # Key into ``id_map``. A table absent from ``MODELS`` (e.g. "invitations") never
+    # populates its map, so every reference to it resolves as unmappable.
+    target_table: str
+    # Ownership links decide whether the row means anything at all: if the target
+    # cannot be resolved the row is skipped. Nullability is deliberately NOT the test
+    # here. Several ownership columns (Recording.user_id, Tag.user_id, PeopleTag.user_id,
+    # GlobalSpeaker.user_id) are nullable in the database, yet every read path is scoped
+    # by user_id, so a null owner produces a row that no user can ever see.
+    #
+    # Enrichment links only decorate the row: if the target cannot be resolved the
+    # column is nulled and the row is still restored, because losing an optional link is
+    # always better than losing the data the row carries.
+    ownership: bool
+
+
+def _own(column: str, target_table: str) -> _ForeignKeySpec:
+    return _ForeignKeySpec(column=column, target_table=target_table, ownership=True)
+
+
+def _enrich(column: str, target_table: str) -> _ForeignKeySpec:
+    return _ForeignKeySpec(column=column, target_table=target_table, ownership=False)
+
+
+# Every foreign-key column carried by a backed-up table, classified. This is the single
+# source of truth for restore remapping; ``test_backup_model_parity`` reflects over the
+# real models and fails if a foreign key exists that is not listed here or exempted.
+RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
+    "users": (_enrich("invitation_id", "invitations"),),
+    "calendar_provider_configs": (),
+    "calendar_connections": (_own("user_id", "users"),),
+    "calendar_sources": (_own("connection_id", "calendar_connections"),),
+    "calendar_events": (_own("calendar_id", "calendar_sources"),),
+    "user_tasks": (_own("user_id", "users"),),
+    "p_tags": (_own("user_id", "users"), _enrich("parent_id", "p_tags")),
+    "global_speakers": (_own("user_id", "users"),),
+    "people_tag_links": (
+        _own("global_speaker_id", "global_speakers"),
+        _own("tag_id", "p_tags"),
+    ),
+    "tags": (_own("user_id", "users"), _enrich("parent_id", "tags")),
+    "user_task_tags": (_own("task_id", "user_tasks"), _own("tag_id", "tags")),
+    "recordings": (
+        _own("user_id", "users"),
+        _enrich("calendar_event_id", "calendar_events"),
+    ),
+    "user_task_recordings": (
+        _own("task_id", "user_tasks"),
+        _own("recording_id", "recordings"),
+    ),
+    "recording_speakers": (
+        _own("recording_id", "recordings"),
+        _enrich("global_speaker_id", "global_speakers"),
+    ),
+    "recording_tags": (_own("recording_id", "recordings"), _own("tag_id", "tags")),
+    "transcripts": (_own("recording_id", "recordings"),),
+    "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
+}
+
+# Self-referential columns that cannot be resolved in a single forward pass because the
+# target row may not be inserted yet. These are nulled on insert and reattached by a
+# dedicated second pass once every row in the table exists.
+DEFERRED_FOREIGN_KEYS: Dict[str, Tuple[str, ...]] = {
+    "recording_speakers": ("merged_into_id",),
+}
+
+
+# Skip reasons reported back to the operator. Kept coarse on purpose: enough to tell a
+# missing owner from a constraint clash without echoing row identifiers to the client.
+SKIP_REASON_UNRESOLVED_OWNER = "unresolved_owner"
+SKIP_REASON_NO_IDENTITY = "no_identity"
+SKIP_REASON_INSERT_FAILED = "insert_failed"
 
 
 @dataclass
@@ -104,6 +189,19 @@ class _RestoreState:
     recordings_requiring_proxy: Set[int] = field(default_factory=set)
     # Archive members extracted under recordings/, used for orphan cleanup.
     extracted_files: Set[str] = field(default_factory=set)
+    # table_name -> reason -> count, surfaced to the operator when the restore finishes.
+    skipped: Dict[str, Dict[str, int]] = field(default_factory=dict)
+
+    def record_skip(self, table_name: str, reason: str) -> None:
+        """Count one row the restore could not bring across, by table and reason."""
+        self.skipped.setdefault(table_name, {})
+        self.skipped[table_name][reason] = self.skipped[table_name].get(reason, 0) + 1
+
+    def skip_summary(self) -> Dict[str, Dict[str, int]]:
+        """The skip tally, with empty tables omitted so a clean restore reports ``{}``."""
+        return {
+            table: dict(reasons) for table, reasons in self.skipped.items() if reasons
+        }
 
 
 class BackupManager:
@@ -164,6 +262,40 @@ class BackupManager:
 
         # Filters data to only include fields that exist in the current model.
         return {k: v for k, v in data.items() if k in current_fields}
+
+    @staticmethod
+    def _apply_foreign_keys(
+        table_name: str,
+        item_data: Dict[str, Any],
+        id_map: Dict[str, Dict[int, int]],
+    ) -> str | None:
+        """Rewrite this row's foreign keys in place to point at the restored rows.
+
+        Returns a skip reason when an ownership link cannot be resolved, or ``None`` when
+        the row is ready to insert. Enrichment links that cannot be resolved are nulled.
+        See :class:`_ForeignKeySpec` for why ownership, not nullability, is the test.
+        """
+        for spec in RESTORE_FOREIGN_KEYS.get(table_name, ()):
+            old_value = item_data.get(spec.column)
+
+            if old_value is None:
+                # A backup row that never had an owner cannot gain one here, and an
+                # ownerless row would be invisible to every user.
+                if spec.ownership:
+                    return SKIP_REASON_UNRESOLVED_OWNER
+                continue
+
+            new_value = id_map.get(spec.target_table, {}).get(old_value)
+            if new_value is not None:
+                item_data[spec.column] = new_value
+                continue
+
+            if spec.ownership:
+                return SKIP_REASON_UNRESOLVED_OWNER
+
+            item_data[spec.column] = None
+
+        return None
 
     @staticmethod
     def _serialise_backup_table_rows(
@@ -1067,6 +1199,28 @@ class BackupManager:
 
                         old_id = item_data.get("id")
 
+                        # Under the safe-merge strategy a conflicting recording is kept as
+                        # it already exists in the target, and its children are not merged
+                        # in. This has to be checked against the backup's own recording id,
+                        # so it runs before the remap below rewrites it.
+                        if (
+                            item_data.get("recording_id") in skipped_recording_ids
+                            and table_name != "recordings"
+                        ):
+                            continue
+
+                        # Rewrite foreign keys up front, before any conflict check, so
+                        # every branch below compares against target-database ids rather
+                        # than the source system's. A row whose owner cannot be resolved
+                        # is dropped here and never reaches the identity matching, so it
+                        # cannot adopt an existing row's id and pull its children along.
+                        skip_reason = BackupManager._apply_foreign_keys(
+                            table_name, item_data, id_map
+                        )
+                        if skip_reason is not None:
+                            state.record_skip(table_name, skip_reason)
+                            continue
+
                         # Handle Conflict / Additive Logic
 
                         # Special handling for Users: Resolve by username
@@ -1116,6 +1270,9 @@ class BackupManager:
                                 logger.warning(
                                     "Skipping recording restore because no usable identity "
                                     "(meeting_uid, public_id, or audio_path) was found."
+                                )
+                                state.record_skip(
+                                    table_name, SKIP_REASON_NO_IDENTITY
                                 )
                                 continue
 
@@ -1282,26 +1439,13 @@ class BackupManager:
                                     item_data["audio_path"] = new_path
 
                         else:
-                            # Child Records: Skip if parent recording was skipped
-                            if "recording_id" in item_data:
-                                old_rec_id = item_data["recording_id"]
-                                if old_rec_id in skipped_recording_ids:
-                                    # Parent was skipped, so the child is skipped to avoid duplication/errors.
-                                    continue
-
-                            # Tags: name + user_id is unique?
+                            # Tag names are unique per owner. user_id is already the
+                            # target-database id at this point.
                             if table_name == "tags":
-                                tag_name = item_data.get("name")
-                                # Fix possible FK resolution before check
-                                user_id = item_data.get("user_id")
-                                if user_id in id_map["users"]:
-                                    user_id = id_map["users"][user_id]
-
-                                # Check existence
                                 existing_tag = session.exec(
                                     select(Tag)
-                                    .where(Tag.name == tag_name)
-                                    .where(Tag.user_id == user_id)
+                                    .where(Tag.name == item_data.get("name"))
+                                    .where(Tag.user_id == item_data.get("user_id"))
                                 ).first()
 
                                 if existing_tag:
@@ -1310,18 +1454,10 @@ class BackupManager:
                                     continue
 
                             elif table_name == "p_tags":
-                                tag_name = item_data.get("name")
-                                user_id_val = item_data.get("user_id")
-
-                                # Remap user_id before checking existence
-                                if user_id_val in id_map["users"]:
-                                    user_id_val = id_map["users"][user_id_val]
-
-                                # Check existence
                                 existing_p_tag = session.exec(
                                     select(PeopleTag)
-                                    .where(PeopleTag.name == tag_name)
-                                    .where(PeopleTag.user_id == user_id_val)
+                                    .where(PeopleTag.name == item_data.get("name"))
+                                    .where(PeopleTag.user_id == item_data.get("user_id"))
                                 ).first()
 
                                 if existing_p_tag:
@@ -1329,15 +1465,15 @@ class BackupManager:
                                         id_map["p_tags"][old_id] = existing_p_tag.id
                                     continue
 
-                        # Remap Foreign Keys for insertion
-
                         # Removes ID to allow the database to generate a new one.
                         if "id" in item_data:
                             del item_data["id"]
 
                         old_recording_speaker_merge_id = None
 
-                        # Remaps Foreign Keys.
+                        # Per-table conflict resolution. Foreign keys are already
+                        # remapped by _apply_foreign_keys above, so every comparison
+                        # below is against target-database ids.
                         if table_name == "calendar_provider_configs":
                             candidate = model_cls.model_validate(item_data)
                             existing_config = session.exec(
@@ -1390,13 +1526,6 @@ class BackupManager:
                                 continue
 
                         elif table_name == "calendar_connections":
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
-                            else:
-                                continue
-
                             candidate = model_cls.model_validate(item_data)
                             existing_connection = session.exec(
                                 select(CalendarConnection)
@@ -1511,16 +1640,6 @@ class BackupManager:
                                 continue
 
                         elif table_name == "calendar_sources":
-                            if (
-                                item_data.get("connection_id")
-                                in id_map["calendar_connections"]
-                            ):
-                                item_data["connection_id"] = id_map[
-                                    "calendar_connections"
-                                ][item_data["connection_id"]]
-                            else:
-                                continue
-
                             candidate = model_cls.model_validate(item_data)
                             existing_source = session.exec(
                                 select(CalendarSource)
@@ -1633,16 +1752,6 @@ class BackupManager:
                                 continue
 
                         elif table_name == "calendar_events":
-                            if (
-                                item_data.get("calendar_id")
-                                in id_map["calendar_sources"]
-                            ):
-                                item_data["calendar_id"] = id_map["calendar_sources"][
-                                    item_data["calendar_id"]
-                                ]
-                            else:
-                                continue
-
                             candidate = model_cls.model_validate(item_data)
                             existing_event = session.exec(
                                 select(CalendarEvent)
@@ -1708,21 +1817,11 @@ class BackupManager:
                                 continue
 
                         elif table_name == "global_speakers":
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
-                            else:
-                                continue
-
                             # Checks for existing duplicates to prevent redundant entries.
-                            speaker_name = item_data.get("name")
-                            user_id = item_data.get("user_id")
-
                             existing_speaker = session.exec(
                                 select(GlobalSpeaker)
-                                .where(GlobalSpeaker.name == speaker_name)
-                                .where(GlobalSpeaker.user_id == user_id)
+                                .where(GlobalSpeaker.name == item_data.get("name"))
+                                .where(GlobalSpeaker.user_id == item_data.get("user_id"))
                             ).first()
 
                             if existing_speaker:
@@ -1784,67 +1883,7 @@ class BackupManager:
                                     )
                                 continue
 
-                        elif table_name == "tags":
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
-                            else:
-                                continue
-
-                            # Remap parent_id if it exists
-                            if item_data.get("parent_id") in id_map["tags"]:
-                                item_data["parent_id"] = id_map["tags"][
-                                    item_data["parent_id"]
-                                ]
-                            elif item_data.get("parent_id"):
-                                # Fallback: if parent not found despite sort, set to None?
-                                # Consistent with p_tags logic
-                                item_data["parent_id"] = None
-
-                        elif table_name == "p_tags":
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
-                            else:
-                                # PeopleTags require a user. If user is missing, skip the tag.
-                                pass
-
-                            # Remap parent_id if it exists
-                            if item_data.get("parent_id") in id_map["p_tags"]:
-                                item_data["parent_id"] = id_map["p_tags"][
-                                    item_data["parent_id"]
-                                ]
-                            elif item_data.get("parent_id"):
-                                # Parent tag was not restored (skipped or absent from the
-                                # backup); null the link to avoid a dangling foreign key.
-                                item_data["parent_id"] = None
-
                         elif table_name == "people_tag_links":
-                            if (
-                                item_data.get("global_speaker_id")
-                                in id_map["global_speakers"]
-                            ):
-                                item_data["global_speaker_id"] = id_map[
-                                    "global_speakers"
-                                ][item_data["global_speaker_id"]]
-                            else:
-                                logger.warning(
-                                    f"Skipping people_tag_link: global_speaker_id {item_data.get('global_speaker_id')} not found in map."
-                                )
-                                continue
-
-                            if item_data.get("tag_id") in id_map["p_tags"]:
-                                item_data["tag_id"] = id_map["p_tags"][
-                                    item_data["tag_id"]
-                                ]
-                            else:
-                                logger.warning(
-                                    f"Skipping people_tag_link: tag_id {item_data.get('tag_id')} not found in map."
-                                )
-                                continue
-
                             # Checks for duplicates
                             existing_link = session.exec(
                                 select(PeopleTagLink)
@@ -1862,39 +1901,7 @@ class BackupManager:
                                     )
                                 continue
 
-                        elif table_name == "recordings":
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
-                            else:
-                                continue
-
-                        elif table_name == "user_tasks":
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
-                            else:
-                                continue
-
                         elif table_name == "user_task_tags":
-                            old_task_id = item_data.get("task_id")
-                            if old_task_id in id_map["user_tasks"]:
-                                item_data["task_id"] = id_map["user_tasks"][old_task_id]
-                            else:
-                                continue
-
-                            if item_data.get("tag_id") in id_map["tags"]:
-                                item_data["tag_id"] = id_map["tags"][
-                                    item_data["tag_id"]
-                                ]
-                            else:
-                                logger.warning(
-                                    f"Skipping user_task_tag: tag_id {item_data.get('tag_id')} not found in map."
-                                )
-                                continue
-
                             existing_link = session.exec(
                                 select(UserTaskTag)
                                 .where(UserTaskTag.task_id == item_data["task_id"])
@@ -1907,20 +1914,6 @@ class BackupManager:
                                 continue
 
                         elif table_name == "user_task_recordings":
-                            old_task_id = item_data.get("task_id")
-                            if old_task_id in id_map["user_tasks"]:
-                                item_data["task_id"] = id_map["user_tasks"][old_task_id]
-                            else:
-                                continue
-
-                            old_rec_id = item_data.get("recording_id")
-                            if old_rec_id in id_map["recordings"]:
-                                item_data["recording_id"] = id_map["recordings"][
-                                    old_rec_id
-                                ]
-                            else:
-                                continue
-
                             existing_link = session.exec(
                                 select(UserTaskRecording)
                                 .where(
@@ -1940,26 +1933,9 @@ class BackupManager:
                                 continue
 
                         elif table_name == "recording_speakers":
-                            old_rec_id = item_data.get("recording_id")
-                            if old_rec_id in id_map["recordings"]:
-                                new_rec_id = id_map["recordings"][old_rec_id]
-
-                                # recordings are restored before recording_speakers, so
-                                # an id present in id_map["recordings"] always refers to a
-                                # row already inserted earlier in this transaction.
-                                item_data["recording_id"] = new_rec_id
-                            else:
-                                continue
-
-                            # Safely map Global Speaker ID
-                            old_gs_id = item_data.get("global_speaker_id")
-                            if old_gs_id and old_gs_id in id_map["global_speakers"]:
-                                item_data["global_speaker_id"] = id_map[
-                                    "global_speakers"
-                                ][old_gs_id]
-                            elif old_gs_id:
-                                item_data["global_speaker_id"] = None
-
+                            # merged_into_id is self-referential: the target row may not
+                            # exist yet, so it is nulled here and reattached by the
+                            # deferred pass once the whole table has been inserted.
                             old_recording_speaker_merge_id = item_data.get(
                                 "merged_into_id"
                             )
@@ -1967,23 +1943,6 @@ class BackupManager:
                                 item_data["merged_into_id"] = None
 
                         elif table_name == "recording_tags":
-                            old_rec_id = item_data.get("recording_id")
-                            if old_rec_id in id_map["recordings"]:
-                                new_rec_id = id_map["recordings"][old_rec_id]
-                                item_data["recording_id"] = new_rec_id
-                            else:
-                                continue
-
-                            if item_data.get("tag_id") in id_map["tags"]:
-                                item_data["tag_id"] = id_map["tags"][
-                                    item_data["tag_id"]
-                                ]
-                            else:
-                                logger.warning(
-                                    f"Skipping recording_tag: tag_id {item_data.get('tag_id')} not found in map."
-                                )
-                                continue
-
                             # DUPLICATE CHECK
                             existing_link = session.exec(
                                 select(RecordingTag)
@@ -2000,17 +1959,11 @@ class BackupManager:
                                 continue
 
                         elif table_name == "transcripts":
-                            old_rec_id = item_data.get("recording_id")
-                            if old_rec_id in id_map["recordings"]:
-                                new_rec_id = id_map["recordings"][old_rec_id]
-                                item_data["recording_id"] = new_rec_id
-                            else:
-                                continue
-
                             # DUPLICATE CHECK
                             existing_transcript = session.exec(
                                 select(Transcript).where(
-                                    Transcript.recording_id == new_rec_id
+                                    Transcript.recording_id
+                                    == item_data["recording_id"]
                                 )
                             ).first()
 
@@ -2020,18 +1973,6 @@ class BackupManager:
                                         existing_transcript.id
                                     )
                                 continue
-
-                        elif table_name == "chat_messages":
-                            old_rec_id = item_data.get("recording_id")
-                            if old_rec_id in id_map["recordings"]:
-                                new_rec_id = id_map["recordings"][old_rec_id]
-                                item_data["recording_id"] = new_rec_id
-                            else:
-                                continue
-                            if item_data.get("user_id") in id_map["users"]:
-                                item_data["user_id"] = id_map["users"][
-                                    item_data["user_id"]
-                                ]
 
                         # Create instance inside a savepoint so an integrity error on a single
                         # row (e.g. unforeseen unique-constraint collision) is logged and the
@@ -2046,6 +1987,7 @@ class BackupManager:
                                 f"Failed to insert restored {table_name} row "
                                 f"(old_id={old_id}): {insert_err}. Skipping."
                             )
+                            state.record_skip(table_name, SKIP_REASON_INSERT_FAILED)
                             continue
 
                         if old_id is not None:
@@ -2105,9 +2047,26 @@ class BackupManager:
             BackupManager._restore_enqueue_proxies(state)
             BackupManager._restore_cleanup_orphans(state)
 
-        logger.info("Restore process finished successfully.")
-        BackupManager.restore_jobs[job_id]["status"] = "completed"
-        BackupManager.restore_jobs[job_id]["progress"] = "Done"
+        skip_summary = state.skip_summary()
+        job = BackupManager.restore_jobs[job_id]
+        job["warnings"] = {"skipped": skip_summary}
+        job["progress"] = "Done"
+
+        if skip_summary:
+            # The restore succeeded, but rows did not come across. Reporting this as a
+            # distinct terminal status keeps the client from treating it as a clean run.
+            total_skipped = sum(
+                sum(reasons.values()) for reasons in skip_summary.values()
+            )
+            logger.warning(
+                "Restore process finished with %s skipped rows: %s",
+                total_skipped,
+                skip_summary,
+            )
+            job["status"] = "completed_with_warnings"
+        else:
+            logger.info("Restore process finished successfully.")
+            job["status"] = "completed"
 
     @staticmethod
     async def restore_backup(
@@ -2128,6 +2087,7 @@ class BackupManager:
                 "status": "pending",
                 "progress": "Initializing...",
                 "error": None,
+                "warnings": None,
             }
 
         try:
