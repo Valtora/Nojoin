@@ -61,14 +61,21 @@ export const exportBackupAsync = async (
   return response.data;
 };
 
+export interface BackupStatus {
+  state: string;
+  status: string;
+  /** Coarse phase name, e.g. "Compressing audio". */
+  stage?: string | null;
+  /** Items completed and expected within the current stage, when countable. */
+  current?: number | null;
+  total?: number | null;
+  result?: unknown;
+}
+
 export const getBackupStatus = async (
   taskId: string,
-): Promise<{ state: string; status: string; result?: unknown }> => {
-  const response = await api.get<{
-    state: string;
-    status: string;
-    result?: unknown;
-  }>(`/backup/export/${taskId}`);
+): Promise<BackupStatus> => {
+  const response = await api.get<BackupStatus>(`/backup/export/${taskId}`);
   return response.data;
 };
 

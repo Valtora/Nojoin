@@ -2469,3 +2469,83 @@ def test_cleanup_temp_files_removes_abandoned_upload_directories(tmp_path: Path)
     assert not abandoned.exists()
     assert not stale_file.exists()
     assert fresh.exists()
+
+
+@pytest.mark.anyio
+async def test_backup_reports_progress_through_each_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Compressing a large library runs for minutes. The task previously reported a single
+    # fixed string at the start and then went silent, so the UI could not tell a working
+    # export from a stalled one and appeared to do nothing at all.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    master = context.path_manager.recordings_directory / "quarterly-planning.wav"
+    master.write_bytes(b"MASTER-AUDIO")
+
+    encoded = tmp_path / "encoded.opus"
+    encoded.write_bytes(b"OPUS-AUDIO")
+    monkeypatch.setattr(
+        BackupManager, "_compress_to_opus", staticmethod(lambda source: str(encoded))
+    )
+
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-progress",
+        recording_audio_path=str(master),
+        recording_proxy_path=None,
+    )
+
+    reports: list[tuple[str, int, int]] = []
+
+    await BackupManager.create_backup(
+        include_audio=True,
+        progress_callback=lambda stage, current, total: reports.append(
+            (stage, current, total)
+        ),
+    )
+
+    stages = [stage for stage, _, _ in reports]
+
+    # The database dump is reported per table, so a large library shows movement before
+    # any file work begins.
+    assert "Reading database" in stages
+    # Audio is reported per file with a countable total, which is what lets the client
+    # draw a determinate bar rather than an indeterminate spinner.
+    assert ("Compressing audio", 1, 1) in reports
+    assert "Finalising archive" in stages
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_backup_progress_callback_failure_never_breaks_the_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Progress reporting is telemetry. A broken result backend must not cost the operator
+    # their backup.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-progress-fails",
+        recording_proxy_path=None,
+    )
+
+    def _explode(stage: str, current: int, total: int) -> None:
+        raise RuntimeError("result backend unreachable")
+
+    zip_path, _ = await BackupManager.create_backup(
+        include_audio=False, progress_callback=_explode
+    )
+
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        assert json.loads(archive.read("recordings.json"))
+
+    await context.async_engine.dispose()

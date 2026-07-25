@@ -11,7 +11,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 const POLL_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 export default function BackupPoller() {
-  const { taskId, startedAt, setTaskId } = useBackupStore();
+  const { taskId, startedAt, setTaskId, setProgress } = useBackupStore();
   const { addNotification } = useNotificationStore();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -26,9 +26,25 @@ export default function BackupPoller() {
 
     const poll = async () => {
       try {
-        const { state, status: statusMsg, result } = await getBackupStatus(taskId);
+        const {
+          state,
+          status: statusMsg,
+          stage,
+          current,
+          total,
+          result,
+        } = await getBackupStatus(taskId);
 
         if (state !== "SUCCESS" && state !== "FAILURE" && state !== "REVOKED") {
+          // Publish progress so the settings panel can show what the server is doing.
+          // Without this the export is indistinguishable from nothing happening.
+          setProgress({
+            status: statusMsg || "Working...",
+            stage,
+            current,
+            total,
+          });
+
           const elapsed = Date.now() - (startedAt ?? Date.now());
           if (elapsed > POLL_TIMEOUT_MS) {
             setTaskId(null);
@@ -43,6 +59,7 @@ export default function BackupPoller() {
 
         if (state === "SUCCESS") {
           // Task complete
+          setProgress(null);
           setTaskId(null); // Stop polling immediately
 
           addNotification({
@@ -75,6 +92,7 @@ export default function BackupPoller() {
             });
           }
         } else if (state === "FAILURE" || state === "REVOKED") {
+          setProgress(null);
           setTaskId(null);
           addNotification({
             type: "error",
@@ -99,7 +117,7 @@ export default function BackupPoller() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [taskId, startedAt, setTaskId, addNotification]);
+  }, [taskId, startedAt, setTaskId, setProgress, addNotification]);
 
   return null; // Invisible component
 }

@@ -12,6 +12,7 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
+import { useBackupStore } from "@/lib/backupStore";
 import RestoreOptionsModal from "@/components/settings/RestoreOptionsModal";
 import BackupOptionsModal from "@/components/settings/BackupOptionsModal";
 
@@ -68,6 +69,19 @@ export default function BackupRestore() {
   const [showRestoreOptions, setShowRestoreOptions] = useState(false);
   const [showBackupOptions, setShowBackupOptions] = useState(false);
   const [skipReport, setSkipReport] = useState<RestoreSkipSummary | null>(null);
+
+  // Driven by the global BackupPoller, so the panel keeps reporting even if the user
+  // navigates away and comes back mid-export.
+  const exportTaskId = useBackupStore((state) => state.taskId);
+  const exportProgress = useBackupStore((state) => state.progress);
+
+  const exportPercent =
+    exportProgress?.total && exportProgress.total > 0
+      ? Math.min(
+          100,
+          Math.round(((exportProgress.current ?? 0) / exportProgress.total) * 100),
+        )
+      : null;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -228,13 +242,46 @@ export default function BackupRestore() {
               integrations restore correctly. Treat backup files as sensitive.
             </span>
           </p>
-          <button
-            onClick={handleExportClick}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download Backup
-          </button>
+          {exportTaskId ? (
+            <div className="rounded-lg border border-orange-200 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-900/10 p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <Loader2 className="w-4 h-4 animate-spin text-orange-600 dark:text-orange-400 shrink-0" />
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {exportProgress?.status ?? "Preparing backup..."}
+                </span>
+              </div>
+
+              {/* A determinate bar while the server can count what it is doing, and an
+                  indeterminate shimmer otherwise. Either way the panel proves work is
+                  happening, which is what the silent version could not do. */}
+              {exportPercent !== null ? (
+                <div className="h-2 w-full rounded-full bg-orange-100 dark:bg-orange-900/30 overflow-hidden">
+                  <div
+                    className="h-full bg-orange-600 transition-all duration-500"
+                    style={{ width: `${exportPercent}%` }}
+                  />
+                </div>
+              ) : (
+                <div className="h-2 w-full rounded-full bg-orange-100 dark:bg-orange-900/30 overflow-hidden">
+                  <div className="h-full w-1/3 bg-orange-600 animate-pulse" />
+                </div>
+              )}
+
+              <p className="mt-2 text-xs contrast-helper">
+                Compressing a large library can take several minutes. The download
+                starts automatically when it is ready, and you can leave this page
+                without interrupting it.
+              </p>
+            </div>
+          ) : (
+            <button
+              onClick={handleExportClick}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download Backup
+            </button>
+          )}
         </div>
 
         {/* Import Section */}

@@ -93,16 +93,35 @@ def create_backup_task(
     """
     from backend.core.backup_manager import BackupManager
 
+    def report(stage: str, current: int = 0, total: int = 0) -> None:
+        # Compressing a large library takes minutes. Without per-file reporting the UI
+        # cannot tell a working export from a stalled one, so it reports neither.
+        status = stage
+        if total:
+            status = f"{stage} ({current} of {total})"
+
+        self.update_state(
+            state="PROCESSING",
+            meta={
+                "status": status,
+                "stage": stage,
+                "current": current,
+                "total": total,
+            },
+        )
+
     try:
         logger.info(
             "Starting backup task (include_audio=%s, archive_quality=%s)",
             include_audio,
             archive_quality,
         )
-        self.update_state(state="PROCESSING", meta={"status": "Creating backup..."})
+        report("Starting backup")
 
         zip_path, warnings = BackupManager.create_backup_blocking(
-            include_audio=include_audio, archive_quality=archive_quality
+            include_audio=include_audio,
+            archive_quality=archive_quality,
+            progress_callback=report,
         )
 
         logger.info(f"Backup created successfully at {zip_path}")

@@ -45,3 +45,36 @@ describe("backupStore", () => {
     );
   });
 });
+
+describe("backupStore progress", () => {
+  beforeEach(() => {
+    useBackupStore.setState({ taskId: null, startedAt: null, progress: null });
+  });
+
+  it("holds the latest reported progress", () => {
+    useBackupStore.getState().setTaskId("task-abc");
+    useBackupStore.getState().setProgress({
+      status: "Compressing audio (12 of 340)",
+      stage: "Compressing audio",
+      current: 12,
+      total: 340,
+    });
+
+    expect(useBackupStore.getState().progress?.current).toBe(12);
+    expect(useBackupStore.getState().progress?.total).toBe(340);
+  });
+
+  it("clears stale progress when a new task starts", () => {
+    // Otherwise the panel would briefly show the previous export's position against the
+    // new one, which reads as the bar jumping backwards.
+    useBackupStore.getState().setProgress({
+      status: "Compressing audio (300 of 340)",
+      current: 300,
+      total: 340,
+    });
+
+    useBackupStore.getState().setTaskId("task-new");
+
+    expect(useBackupStore.getState().progress).toBeNull();
+  });
+});

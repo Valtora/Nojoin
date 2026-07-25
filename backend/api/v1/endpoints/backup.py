@@ -169,13 +169,20 @@ async def get_export_status(task_id: str):
         task_result = AsyncResult(task_id, app=celery_app)
 
         if task_result.state == "PENDING":
-            response = {"state": task_result.state, "status": "Pending..."}
-        elif task_result.state != "FAILURE":
             response = {
                 "state": task_result.state,
-                "status": task_result.info.get("status", "")
-                if isinstance(task_result.info, dict)
-                else "",
+                "status": "Waiting for a worker...",
+            }
+        elif task_result.state != "FAILURE":
+            info = task_result.info if isinstance(task_result.info, dict) else {}
+            response = {
+                "state": task_result.state,
+                "status": info.get("status", ""),
+                # Stage and counts let the client draw a real progress bar rather than
+                # an indeterminate spinner that cannot distinguish work from a stall.
+                "stage": info.get("stage"),
+                "current": info.get("current"),
+                "total": info.get("total"),
                 "result": task_result.result
                 if task_result.state == "SUCCESS"
                 else None,

@@ -1058,13 +1058,26 @@ class BackupManager:
         audio_plan: _AudioPlan | None = None,
         archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
         document_plan: _DocumentPlan | None = None,
+        progress_callback: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Synchronous method to handle heavy file compression and zipping.
         Runs in a thread to prevent blocking the main event loop.
 
+        Reports progress as it goes. Compressing a large library to Opus takes minutes,
+        and without per-file reporting the export looks indistinguishable from a hang.
+
         Returns the temporary zip path and a warnings summary for the operator.
         """
+
+        def report(stage: str, current: int = 0, total: int = 0) -> None:
+            if progress_callback is None:
+                return
+            try:
+                progress_callback(stage, current, total)
+            except Exception:  # noqa: BLE001 -- reporting must never fail an export
+                logger.debug("Backup progress callback failed", exc_info=True)
+
         # Written to the shared export directory so the API can serve it and the periodic
         # sweep can reclaim it.
         os.makedirs(BACKUP_EXPORT_DIR, exist_ok=True)
@@ -1081,12 +1094,21 @@ class BackupManager:
         try:
             with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # 1. Write DB Dump
+                report("Writing records")
                 for filename, content in db_dump.items():
                     zipf.writestr(filename, content)
 
                 # 2. Add audio, one member per recording row.
                 if include_audio:
-                    for entry in audio_plan.entries:
+                    total_audio = len(audio_plan.entries)
+                    for index, entry in enumerate(audio_plan.entries, start=1):
+                        report(
+                            "Compressing audio"
+                            if archive_quality == ARCHIVE_QUALITY_COMPRESSED
+                            else "Copying audio",
+                            index,
+                            total_audio,
+                        )
                         opus_path: str | None = None
                         try:
                             if entry.compress:
@@ -1115,7 +1137,11 @@ class BackupManager:
                                     )
 
                 # 3. Add attached documents, always included.
-                for source_path, arcname in document_plan.entries:
+                total_documents = len(document_plan.entries)
+                for doc_index, (source_path, arcname) in enumerate(
+                    document_plan.entries, start=1
+                ):
+                    report("Adding documents", doc_index, total_documents)
                     try:
                         zipf.write(source_path, arcname)
                     except Exception as e:  # noqa: BLE001
@@ -1123,6 +1149,7 @@ class BackupManager:
                         failed_documents += 1
 
                 # 4. Add Config
+                report("Finalising archive")
                 if config_path.exists():
                     try:
                         config_data = json.loads(config_path.read_text())
@@ -1238,6 +1265,7 @@ class BackupManager:
     async def create_backup(
         include_audio: bool = True,
         archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+        progress_callback: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
@@ -1252,7 +1280,12 @@ class BackupManager:
         audio_plan = _AudioPlan()
         document_plan = _DocumentPlan()
         async with async_session_maker() as session:
-            for table_name, model_cls in MODELS:
+            for table_index, (table_name, model_cls) in enumerate(MODELS, start=1):
+                if progress_callback is not None:
+                    try:
+                        progress_callback("Reading database", table_index, len(MODELS))
+                    except Exception:  # noqa: BLE001
+                        logger.debug("Backup progress callback failed", exc_info=True)
                 results = await session.execute(
                     BackupManager._table_dump_statement(table_name, model_cls)
                 )
@@ -1283,12 +1316,14 @@ class BackupManager:
             audio_plan,
             archive_quality,
             document_plan,
+            progress_callback,
         )
 
     @staticmethod
     def create_backup_blocking(
         include_audio: bool = True,
         archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+        progress_callback: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
@@ -1300,7 +1335,12 @@ class BackupManager:
         audio_plan = _AudioPlan()
         document_plan = _DocumentPlan()
         with Session(sync_engine) as session:
-            for table_name, model_cls in MODELS:
+            for table_index, (table_name, model_cls) in enumerate(MODELS, start=1):
+                if progress_callback is not None:
+                    try:
+                        progress_callback("Reading database", table_index, len(MODELS))
+                    except Exception:  # noqa: BLE001
+                        logger.debug("Backup progress callback failed", exc_info=True)
                 items = session.exec(
                     BackupManager._table_dump_statement(table_name, model_cls)
                 ).all()
@@ -1327,6 +1367,7 @@ class BackupManager:
             audio_plan,
             archive_quality,
             document_plan,
+            progress_callback,
         )
 
     @staticmethod
