@@ -158,6 +158,13 @@ DEFAULT_SYSTEM_CONFIG = {
         "fade_duration_ms": 50,
         "silence_method": "mute",
     },
+    # Anonymous opt-out telemetry (docs/TELEMETRY.md). Enabled by default, but
+    # an install that was upgraded into the feature sends nothing until the
+    # admin notice has been shown; see backend/utils/telemetry.py for the
+    # consent rules these three keys drive. Only the API writes them.
+    "telemetry_enabled": True,
+    "telemetry_notice_acknowledged": False,
+    "telemetry_notice_first_shown_at": None,
 }
 
 DEFAULT_USER_SETTINGS = {
@@ -451,6 +458,8 @@ class ConfigManager:
             "enable_meeting_edge",
             "enable_canonical_transcript_writes",
             "enable_asr_window_result_ledger",
+            "telemetry_enabled",
+            "telemetry_notice_acknowledged",
         }:
             return isinstance(value, bool)
         if key in {"live_context_window_s", "live_forced_max_s", "live_max_segment_s"}:

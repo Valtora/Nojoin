@@ -69,6 +69,7 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 | `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
 | `Frontend build` | same as `Frontend lint` |
+| `Telemetry worker` (tsc and vitest on the ingest) | `telemetry/**` changed |
 | `Whitespace check` | always (the only trailing-whitespace guard for non-Python files) |
 | `Docs validation` | always |
 | `Alembic validation` | always |
@@ -89,6 +90,14 @@ npm run build
 cd ..
 python3 scripts/validate_docs.py
 python3 scripts/validate_alembic.py
+
+# Only when telemetry/ changed. Node 20 is enough for these; wrangler itself
+# needs Node 22, but the ingest's decision surface is deliberately free of
+# Worker runtime APIs so it tests on plain Node.
+cd telemetry
+npm ci
+npm run typecheck
+npm test
 ```
 
 ### Branch Protection (maintainer action)
@@ -589,6 +598,12 @@ x-shared-app-environment: &shared-app-environment
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0
   HF_TOKEN: ${HF_TOKEN:-}
   DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+  # Shared, not api-only: the worker resolves the public origin too, for
+  # calendar webhook URLs and the telemetry local-origin flag.
+  WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
+  # Local development stacks should not contribute to the public telemetry
+  # dataset; unset it here if you deliberately want to exercise the ping.
+  NOJOIN_TELEMETRY_ENABLED: ${NOJOIN_TELEMETRY_ENABLED:-false}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -677,7 +692,6 @@ services:
     environment:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
-      WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
       NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS: ${NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS:-true}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache

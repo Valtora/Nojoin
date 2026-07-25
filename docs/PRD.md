@@ -203,6 +203,7 @@ The system provides the following core capabilities:
 - **Settings:** Comprehensive server and user configuration.
   - **Language Scope:** Language preferences are per-user and apply to ASR plus generated meeting titles/notes. Per-meeting overrides, interface localization, Meeting Edge/chat language controls, speech translation, and automatic translation of existing notes remain out of scope.
 - **Updates & Releases:** Built-in Settings page for installed version visibility from the current API build, release history, and release notes sourced from GitHub Releases.
+- **Anonymous Usage Data:** An opt-out daily ping reporting deployment count, version, scale, configuration shape, and feature adoption, identified only by a random install ID. Contains no meeting data, names, addresses, or credentials, and is never sold. New installations consent through a checkbox in the first-run wizard; upgraded installations send nothing until an administrator has been shown a one-time notice. Disable from Settings, with `NOJOIN_TELEMETRY_ENABLED=false`, or at the network layer. The receiving collector is open source alongside the client. See [TELEMETRY.md](TELEMETRY.md).
 - **Backup & Restore:** Full system backup capabilities including database records, Task List and Tasks page items, people voiceprints, calendar integrations, and compressed audio, with selective restoration and targeted redaction for non-restorable application keys.
 
 ### 3.1 Processing Lifecycle Details

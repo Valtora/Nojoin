@@ -351,4 +351,33 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
             )
 
 
+@celery_app.task(
+    name="backend.worker.tasks.send_telemetry_ping_task", base=DatabaseTask, bind=True
+)
+def send_telemetry_ping_task(self):
+    """Send the daily anonymous telemetry ping, if the install consents.
+
+    Best-effort throughout: a disabled install, an install still inside its
+    consent grace period, an unreachable endpoint, or a rejected payload all
+    return quietly. Nothing here retries, so a network fault cannot escalate
+    into repeated calls against our own endpoint; the next daily beat tick is
+    the only retry. See backend/utils/telemetry.py for the consent rules.
+    """
+    from backend.utils import telemetry
+
+    if not telemetry.should_send():
+        logger.debug("Telemetry ping skipped: disabled or awaiting consent.")
+        return
+
+    try:
+        payload = telemetry.build_payload(self.session)
+    except Exception as exc:  # noqa: BLE001 -- boundary: telemetry must never break the worker
+        logger.debug("Telemetry payload could not be built: %s", exc)
+        return
+
+    if telemetry.send_payload(payload):
+        telemetry.record_sent_at(datetime.now(UTC))
+        logger.info("Telemetry ping sent.")
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

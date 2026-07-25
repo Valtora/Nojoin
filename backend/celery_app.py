@@ -195,6 +195,7 @@ TASK_ROUTES = {
     "backend.worker.tasks.ensure_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.renew_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.cleanup_temp_recordings": {"queue": IO_QUEUE},
+    "backend.worker.tasks.send_telemetry_ping_task": {"queue": IO_QUEUE},
 }
 
 celery_app.conf.update(
@@ -226,6 +227,14 @@ celery_app.conf.update(
         "renew-calendar-push-channels-every-30m": {
             "task": "backend.worker.tasks.renew_calendar_push_channels_task",
             "schedule": 1800.0,
+        },
+        # Anonymous opt-out telemetry (docs/TELEMETRY.md). The task itself is a
+        # no-op unless the install is enabled and has consented, so scheduling it
+        # unconditionally is safe. Beat runs on the io lane only, so exactly one
+        # ping is attempted per day per install regardless of worker count.
+        "send-telemetry-ping-every-24h": {
+            "task": "backend.worker.tasks.send_telemetry_ping_task",
+            "schedule": 86400.0,
         },
     },
 )

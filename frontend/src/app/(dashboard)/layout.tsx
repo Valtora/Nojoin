@@ -6,6 +6,7 @@ import MainNav from "@/components/MainNav";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
+import TelemetryNotice from "@/components/TelemetryNotice";
 import TourGuide from "@/components/TourGuide";
 import CaptureShell from "@/components/CaptureShell";
 import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
@@ -50,6 +51,7 @@ export default function DashboardLayout({
               className="flex-1 overflow-y-auto relative flex flex-col min-w-0 h-full"
             >
               {children}
+              <TelemetryNotice />
               <ServiceStatusAlerts />
             </main>
           </div>

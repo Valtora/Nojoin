@@ -106,6 +106,7 @@ Notes:
 - [Backup & Restore](docs/BACKUP_RESTORE.md)
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Security Policy](docs/SECURITY.md)
+- [Anonymous Usage Data](docs/TELEMETRY.md)
 - [Legal Disclaimer](docs/LEGAL.md)
 - [Screenshots](docs/SCREENSHOTS.md)
 
@@ -116,6 +117,14 @@ Nojoin is under active development. Back up your instance regularly before upgra
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and contribution expectations.
+
+## Anonymous Usage Data
+
+Nojoin sends one anonymous ping a day so it is possible to know how many deployments exist, which versions are in use, and which features are worth investing in. It contains a random install ID, the version, user and recording counts, and which features are switched on. It contains **none of your meeting data** — no audio, transcripts, notes, names, hostnames, or keys — and it is never sold.
+
+It is on by default and can be turned off in **Settings > Administration**, by setting `NOJOIN_TELEMETRY_ENABLED=false` in `.env`, or by blocking `telemetry.nojoin.co.uk`. On an existing installation nothing is sent until an administrator has seen the notice explaining it.
+
+The receiving service is open source in [telemetry/](telemetry/), so what is stored can be checked rather than taken on trust. See [docs/TELEMETRY.md](docs/TELEMETRY.md) for the full disclosure.
 
 ## Security
 

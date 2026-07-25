@@ -716,6 +716,21 @@ export interface DeploymentWarning {
   message: string;
 }
 
+/** Admin view of anonymous telemetry state. See docs/TELEMETRY.md. */
+export interface TelemetryStatus {
+  enabled: boolean;
+  /** Pinned by NOJOIN_TELEMETRY_ENABLED; the UI toggle is read-only when true. */
+  managed_by_env: boolean;
+  notice_acknowledged: boolean;
+  notice_pending: boolean;
+  notice_first_shown_at: string | null;
+  consent_granted: boolean;
+  install_id: string;
+  endpoint: string;
+  last_sent_at: string | null;
+  grace_period_days: number;
+}
+
 export interface AdminHealthSummary {
   pipeline_status: "ready" | "degraded" | "blocked";
   message: string;

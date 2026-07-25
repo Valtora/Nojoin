@@ -18,6 +18,7 @@ Use the links below by task rather than treating the root README as the source o
 - [MCP.md](MCP.md): Connecting AI assistants (Claude and other MCP clients) to Nojoin, authorisation flow, and revocation.
 - [ADMIN.md](ADMIN.md): Roles, invitations, password rotation, admin settings, and system operations.
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
+- [TELEMETRY.md](TELEMETRY.md): What the anonymous usage ping contains, when it is sent, and how to turn it off.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development setup for backend, frontend, and browser capture work.
 
@@ -42,5 +43,6 @@ Use the links below by task rather than treating the root README as the source o
 | Connect Claude or another MCP client to my meetings | [MCP.md](MCP.md) |
 | Manage users, invitations, and admin settings | [ADMIN.md](ADMIN.md) |
 | Understand backup sensitivity and restore modes | [BACKUP_RESTORE.md](BACKUP_RESTORE.md) |
+| See what anonymous usage data is sent, or turn it off | [TELEMETRY.md](TELEMETRY.md) |
 | Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Set up a local source development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |

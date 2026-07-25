@@ -20,6 +20,8 @@ export default function SetupPage() {
     error,
     unlocking,
     includeDemoRecording,
+    enableTelemetry,
+    setEnableTelemetry,
     setIncludeDemoRecording,
     ffmpegMissing,
     showSkipLLMModal,
@@ -137,7 +139,13 @@ export default function SetupPage() {
           )}
 
           {/* Step 1: Legal Disclaimer */}
-          {step === 1 && <LegalStep onAccept={handleLegalSubmit} />}
+          {step === 1 && (
+            <LegalStep
+              onAccept={handleLegalSubmit}
+              enableTelemetry={enableTelemetry}
+              onEnableTelemetryChange={setEnableTelemetry}
+            />
+          )}
 
           {/* Step 2: Account */}
           {step === 2 && (
