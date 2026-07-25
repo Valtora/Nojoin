@@ -263,6 +263,9 @@ describe("SetupPage", () => {
           selected_model: "gemini-pro-latest",
           whisper_model_size: "small",
           include_demo_recording: false,
+          // Opt-out: the wizard checkbox defaults to ticked, and that tick is
+          // the install's telemetry consent.
+          enable_telemetry: true,
         },
         "first-run-pw",
       );
@@ -272,5 +275,60 @@ describe("SetupPage", () => {
       expect(screen.getByText("Setup Complete")).toBeInTheDocument();
     });
     expect(screen.getByText("FFmpeg not detected")).toBeInTheDocument();
+  });
+
+  it("carries a telemetry opt-out from the legal step through to setup", async () => {
+    validateLLM.mockResolvedValue({ message: "Validation successful" });
+    listModels.mockResolvedValue({ models: ["gemini-pro-latest"] });
+    setupSystem.mockResolvedValue({ initialized: true });
+    login.mockResolvedValue({});
+    getDownloadProgress.mockResolvedValue({
+      status: "complete",
+      progress: 100,
+      message: "Models ready",
+      stage: "complete",
+    });
+    getInitialConfig.mockResolvedValue({
+      llm_provider: "gemini",
+      gemini_api_key: "key-123",
+    });
+
+    renderWithProviders(<SetupPage />);
+    await unlockWizard();
+
+    // The telemetry checkbox lives on the legal step and is ticked by default;
+    // unticking it is the opt-out, and it must survive every later step.
+    const telemetryCheckbox = screen.getByRole("checkbox");
+    expect(telemetryCheckbox).toBeChecked();
+    fireEvent.click(telemetryCheckbox);
+
+    fireEvent.click(screen.getByText("I Accept & Continue"));
+    await screen.findByLabelText("Username");
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "admin" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "supersecret" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: "supersecret" },
+    });
+    fireEvent.click(screen.getByText(/Next Step/));
+
+    await waitFor(() => {
+      expect(screen.getByText("Select Model")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/Next Step/));
+
+    await screen.findByLabelText("Transcription model");
+    fireEvent.click(screen.getByText(/Finish Setup/));
+
+    await waitFor(() => {
+      expect(setupSystem).toHaveBeenCalledWith(
+        expect.objectContaining({ enable_telemetry: false }),
+        "first-run-pw",
+      );
+    });
   });
 });

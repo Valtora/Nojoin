@@ -23,6 +23,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       scripts: ${{ steps.filter.outputs.scripts }}
       deployment: ${{ steps.filter.outputs.deployment }}
+      telemetry: ${{ steps.filter.outputs.telemetry }}
 
     steps:
       - name: Checkout repository
@@ -61,6 +62,8 @@ jobs:
               - 'docker-compose*.yml'
               - 'nginx/**'
               - '.github/workflows/ci.yml'
+            telemetry:
+              - 'telemetry/**'
 
   backend-tests:
     name: Backend tests
@@ -198,6 +201,40 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  telemetry-worker:
+    # The telemetry ingest is the one place a bug is invisible from the app: a
+    # broken validator would silently drop real pings rather than fail loudly.
+    # Only tsc and vitest run here — wrangler needs Node 22, and the Worker's
+    # decision surface (payload validation, retention SQL) is deliberately free
+    # of Worker runtime APIs so it tests on plain Node.
+    name: Telemetry worker
+    needs: detect-changes
+    if: needs.detect-changes.outputs.telemetry == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: telemetry/package-lock.json
+
+      - name: Install telemetry dependencies
+        working-directory: telemetry
+        run: npm ci
+
+      - name: Type-check the telemetry worker
+        working-directory: telemetry
+        run: npm run typecheck
+
+      - name: Run telemetry worker tests
+        working-directory: telemetry
+        run: npm test
+
   docs-validation:
     name: Docs validation
     runs-on: ubuntu-latest
@@ -286,6 +323,7 @@ jobs:
       - frontend-lint
       - frontend-unit-tests
       - frontend-build
+      - telemetry-worker
       - docs-validation
       - alembic-validation
       - whitespace

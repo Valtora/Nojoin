@@ -61,6 +61,8 @@ Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every un
 
 The first user becomes the Owner account.
 
+The legal step also carries an **anonymous usage data** checkbox, ticked by default. Leaving it ticked sends one anonymous ping a day with counts and configuration settings — never your recordings, transcripts, notes, names, or keys. Unticking it means nothing is ever sent. You can change this later in **Settings > Administration**; see [TELEMETRY.md](TELEMETRY.md).
+
 During setup, the system automatically detects configured API keys and Hugging Face tokens from the environment variables (set in `.env` before starting the stack). The setup wizard will:
 
 - Detect active AI provider credentials and Hugging Face tokens.

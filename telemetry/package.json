@@ -1,0 +1,18 @@
+{
+  "name": "nojoin-telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker ingest for Nojoin anonymous opt-out telemetry",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "esbuild src/index.ts --bundle --format=esm --target=es2022 --outfile=dist/worker.js"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250726.0",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

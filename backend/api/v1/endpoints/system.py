@@ -321,6 +321,9 @@ class SetupRequest(BaseModel):
     whisper_model_size: Optional[str] = "turbo"
     selected_model: Optional[str] = None
     include_demo_recording: bool = True
+    # The wizard checkbox is this install's telemetry consent, so a first-run
+    # install never needs the admin notice and can start pinging immediately.
+    enable_telemetry: bool = True
 
     @field_validator("password")
     @classmethod
@@ -347,7 +350,15 @@ async def get_system_health(
     """
     Return authenticated system health detail.
     """
-    return await get_system_health_status()
+    from backend.utils import telemetry
+
+    status = await get_system_health_status()
+    # Ride the existing health poll rather than adding a second polling surface.
+    # Admin-only: a standard user can neither act on the notice nor change the
+    # setting, so telling them about it would be noise.
+    if current_user.role in ("owner", "admin") or current_user.is_superuser:
+        status["telemetry_notice_pending"] = telemetry.notice_pending()
+    return status
 
 
 @router.get("/admin-health")
@@ -453,6 +464,16 @@ async def setup_system(
             await seed_demo_data(user.id)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to seed demo data during setup: {e}")
+
+    # The wizard checkbox is an explicit, visible consent, so it also retires
+    # the admin notice: a first-run install never needs to be told after the
+    # fact, and can start pinging on the next beat tick.
+    from backend.utils import telemetry
+
+    try:
+        telemetry.set_enabled(setup_in.enable_telemetry)
+    except Exception as e:  # noqa: BLE001 -- boundary: setup must not fail on a telemetry write
+        logger.error("Failed to persist first-run telemetry choice: %s", e)
 
     model_preparation_task_id = None
     try:
@@ -630,6 +651,61 @@ async def get_companion_releases(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     return JSONResponse(status_code=410, content=RETIRED_COMPANION_RESPONSE)
+
+
+class TelemetryUpdate(BaseModel):
+    enabled: bool
+
+
+@router.get("/telemetry")
+async def get_telemetry_settings(
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """Current anonymous-telemetry state (docs/TELEMETRY.md)."""
+    from backend.utils import telemetry
+
+    return telemetry.telemetry_status()
+
+
+@router.post("/telemetry")
+async def update_telemetry_settings(
+    settings: TelemetryUpdate,
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """Turn telemetry on or off, and retire the one-time admin notice.
+
+    Refused while the environment pins the value: an operator who set
+    NOJOIN_TELEMETRY_ENABLED must not be able to have it overridden from the UI.
+    """
+    from backend.utils import telemetry
+
+    if telemetry.is_env_managed():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Telemetry is pinned by the NOJOIN_TELEMETRY_ENABLED environment "
+                "variable. Change it in .env and restart Nojoin."
+            ),
+        )
+
+    telemetry.set_enabled(settings.enabled)
+    return telemetry.telemetry_status()
+
+
+@router.post("/telemetry/notice-shown")
+async def mark_telemetry_notice_shown(
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """Record that the telemetry notice reached an admin's screen.
+
+    This starts the grace period. It is called by the banner on first render
+    rather than inferred from a session existing, so the clock only ever starts
+    when the notice could actually have been read. Write-once server-side.
+    """
+    from backend.utils import telemetry
+
+    telemetry.mark_notice_shown()
+    return telemetry.telemetry_status()
 
 
 @router.get("/fingerprint")

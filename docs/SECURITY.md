@@ -97,6 +97,21 @@ Live recording is initiated and controlled by the authenticated web app.
 
 For end-user capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
 
+## Outbound Connections and Anonymous Telemetry
+
+Nojoin makes a small number of outbound connections from the server. Operators running in restricted networks should know what they are.
+
+- **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings.
+- **AI providers**: only when a non-local provider is configured; local Ollama keeps inference on your own network.
+- **Calendar providers**: only when a user connects a Google or Microsoft account.
+- **Anonymous telemetry**: one daily ping to `telemetry.nojoin.co.uk` from the `worker-io` lane.
+
+The telemetry ping is anonymous by construction rather than by policy. It is identified only by a UUID4 generated on your own server, and it carries counts and configuration shape — never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
+
+It is enabled by default, but an installation upgraded into the feature sends nothing until an administrator has been shown the notice. It can be disabled from Settings, pinned off with `NOJOIN_TELEMETRY_ENABLED=false` (which the UI cannot override), or blocked at the network layer with no effect on any other function.
+
+The payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md) and [ADR-0004](adr/0004-anonymous-opt-out-telemetry.md).
+
 ## Vulnerability Scanning and Severity Policy
 
 Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before their rolling tags are published. The policy balances strong assurance against the reality that the worker image is built on a large CUDA/PyTorch base with a slow-moving, inherited CVE surface.

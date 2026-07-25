@@ -45,6 +45,9 @@ export function useSetupWizard() {
     whisper_model_size: "turbo",
   });
   const [includeDemoRecording, setIncludeDemoRecording] = useState(true);
+  // Opt-out: ticked by default, and the tick is this install's telemetry
+  // consent, so a first-run install never sees the later admin notice.
+  const [enableTelemetry, setEnableTelemetry] = useState(true);
 
   // Validation State
   const [validatingLLM, setValidatingLLM] = useState(false);
@@ -398,6 +401,7 @@ export function useSetupWizard() {
         selected_model: formData.selected_model || undefined,
         whisper_model_size: formData.whisper_model_size,
         include_demo_recording: includeDemoRecording,
+        enable_telemetry: enableTelemetry,
       }, getBootstrapPassword());
 
       // 2. Login
@@ -443,6 +447,8 @@ export function useSetupWizard() {
     unlocking,
     includeDemoRecording,
     setIncludeDemoRecording,
+    enableTelemetry,
+    setEnableTelemetry,
     ffmpegMissing,
     showSkipLLMModal,
     setShowSkipLLMModal,

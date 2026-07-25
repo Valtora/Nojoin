@@ -1,5 +1,37 @@
-import type { AdminHealthStatus, AsyncTaskStatus, RecordingId } from "@/types";
+import type {
+  AdminHealthStatus,
+  AsyncTaskStatus,
+  RecordingId,
+  TelemetryStatus,
+} from "@/types";
 import api from "./client";
+
+export const getTelemetryStatus = async (): Promise<TelemetryStatus> => {
+  const response = await api.get<TelemetryStatus>("/system/telemetry");
+  return response.data;
+};
+
+export const updateTelemetryEnabled = async (
+  enabled: boolean,
+): Promise<TelemetryStatus> => {
+  const response = await api.post<TelemetryStatus>("/system/telemetry", {
+    enabled,
+  });
+  return response.data;
+};
+
+/**
+ * Records that the telemetry notice reached an admin's screen, which is what
+ * starts the grace period. Called on first render of the banner rather than
+ * inferred from a session existing, so the clock only starts when the notice
+ * could actually have been read.
+ */
+export const markTelemetryNoticeShown = async (): Promise<TelemetryStatus> => {
+  const response = await api.post<TelemetryStatus>(
+    "/system/telemetry/notice-shown",
+  );
+  return response.data;
+};
 
 export const getTlsFingerprint = async (): Promise<{ fingerprint: string | null }> => {
   try {

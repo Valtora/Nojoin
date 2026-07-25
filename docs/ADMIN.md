@@ -69,6 +69,14 @@ Each user can also configure **Language preferences** in **Settings > AI**. Tran
 
 Notes-language choices include British and American English, the transcription language, listed languages, and a validated custom language/style instruction. These choices localize generated content while preserving machine-readable JSON keys and speaker labels. Existing saved transcripts and notes are not translated in place; users must reprocess or run **Generate Notes** after changing the relevant preference.
 
+### Anonymous Usage Data
+
+Use **Settings > Administration > Anonymous usage data** to turn the daily anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. The panel also lists exactly what the ping contains.
+
+On an installation upgraded into this feature, nothing is sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
+
+Read [TELEMETRY.md](TELEMETRY.md) for the full disclosure, the retention policy, and how to verify what is sent.
+
 ### Backup and Restore
 
 Use **Settings > Administration > Backup and restore** for export and restore operations.
@@ -124,4 +132,5 @@ Read [CAPTURE.md](CAPTURE.md) for the support matrix, browser picker behaviour, 
 - [CALENDAR.md](CALENDAR.md)
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
 - [CAPTURE.md](CAPTURE.md)
+- [TELEMETRY.md](TELEMETRY.md)
 - [USAGE.md](USAGE.md)

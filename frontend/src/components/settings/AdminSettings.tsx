@@ -4,6 +4,7 @@ import CliUsageTab from "./CliUsageTab";
 import InvitesTab from "./InvitesTab";
 import BackupRestore from "./BackupRestore";
 import SystemTab from "./SystemTab";
+import TelemetrySection from "./TelemetrySection";
 import CalendarProviderSettings from "./CalendarProviderSettings";
 import SettingsCallout from "./SettingsCallout";
 import SettingsSection from "./SettingsSection";
@@ -63,6 +64,17 @@ export default function AdminSettings({
     "redis",
     "worker",
   ]);
+  const showTelemetry = !searchQuery || fuzzyMatch(searchQuery, [
+    "telemetry",
+    "usage data",
+    "anonymous",
+    "analytics",
+    "privacy",
+    "opt out",
+    "phone home",
+    "tracking",
+    "statistics",
+  ]);
   const showBackup = !searchQuery || fuzzyMatch(searchQuery, [
     "backup",
     "restore",
@@ -79,6 +91,7 @@ export default function AdminSettings({
     !showInvites &&
     !showCalendar &&
     !showSystem &&
+    !showTelemetry &&
     !showBackup
   ) {
     return (
@@ -146,6 +159,8 @@ export default function AdminSettings({
           <SystemTab />
         </SettingsSection>
       )}
+
+      {showTelemetry && <TelemetrySection />}
 
       {showBackup && (
         <SettingsSection

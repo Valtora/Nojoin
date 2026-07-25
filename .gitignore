@@ -28,6 +28,7 @@ backend/tests/pipeline_fixtures/generated/
 # Dist and Output Folders and Files
 /output/
 /dist
+telemetry/dist/
 
 # Companion App (Rust)
 companion/target/

@@ -1,6 +1,14 @@
 import { ArrowRight } from "lucide-react";
 
-export default function LegalStep({ onAccept }: { onAccept: () => void }) {
+export default function LegalStep({
+  onAccept,
+  enableTelemetry,
+  onEnableTelemetryChange,
+}: {
+  onAccept: () => void;
+  enableTelemetry: boolean;
+  onEnableTelemetryChange: (enabled: boolean) => void;
+}) {
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
@@ -30,8 +38,10 @@ export default function LegalStep({ onAccept }: { onAccept: () => void }) {
         <p>Nojoin is designed with a privacy-first architecture.</p>
         <ul className="list-disc pl-4 space-y-1">
           <li>
-            Nojoin does not store or transmit audio data to third
-            parties without your explicit consent.
+            Your meeting data — audio, transcripts, notes, chat,
+            documents, voiceprints, and calendar content — is never
+            stored or transmitted to third parties without your
+            explicit consent.
           </li>
           <li>
             All audio processing (transcription, diarization, etc.) is
@@ -47,11 +57,43 @@ export default function LegalStep({ onAccept }: { onAccept: () => void }) {
         </p>
       </div>
 
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enableTelemetry}
+            onChange={(e) => onEnableTelemetryChange(e.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-orange-600 focus:ring-orange-600"
+          />
+          <span className="text-sm">
+            <span className="font-medium text-gray-900 dark:text-white">
+              Share anonymous usage data
+            </span>
+            <span className="block text-gray-500 dark:text-gray-400 mt-1">
+              Sends one anonymous ping a day with a random install ID, your
+              Nojoin version, how many users and recordings this server has, and
+              which features are switched on. It never includes your recordings,
+              transcripts, notes, names, or API keys, and the data is never
+              sold. This helps decide what to build next. You can change this
+              any time in Settings.
+            </span>
+            <a
+              href="https://www.nojoin.co.uk/docs/TELEMETRY"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-1 text-orange-600 hover:text-orange-700 dark:text-orange-500"
+            >
+              Read exactly what is collected
+            </a>
+          </span>
+        </label>
+      </div>
+
       <button
         onClick={onAccept}
         className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
       >
-        I Accept & Continue <ArrowRight className="w-4 h-4" />
+        I Accept &amp; Continue <ArrowRight className="w-4 h-4" />
       </button>
     </div>
   );

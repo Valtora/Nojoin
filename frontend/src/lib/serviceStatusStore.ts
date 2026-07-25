@@ -6,6 +6,8 @@ interface DetailedHealthStatus {
   status: string;
   version: string;
   deployment_warnings: DeploymentWarning[];
+  /** Admin-only: absent for standard users, who cannot act on the notice. */
+  telemetry_notice_pending?: boolean;
   components: {
     db: string;
     worker: string;
@@ -23,6 +25,8 @@ interface ServiceStatusState {
   worker: boolean;
   backendVersion: string | null;
   deploymentWarnings: DeploymentWarning[];
+  /** True only for admins of an install that has not yet answered the notice. */
+  telemetryNoticePending: boolean;
   isPolling: boolean;
   refreshHealth: () => Promise<void>;
   startPolling: () => void;
@@ -58,6 +62,7 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
     worker: true,
     backendVersion: null,
     deploymentWarnings: [],
+    telemetryNoticePending: false,
     isPolling: false,
 
     refreshHealth: async () => {
@@ -103,6 +108,8 @@ export const useServiceStatusStore = create<ServiceStatusState>((set, get) => {
             worker: data.components.worker === "active",
             backendVersion: data.version,
             deploymentWarnings: data.deployment_warnings,
+            // Absent for non-admins, who must never see the notice.
+            telemetryNoticePending: data.telemetry_notice_pending === true,
           });
         }
       } catch {

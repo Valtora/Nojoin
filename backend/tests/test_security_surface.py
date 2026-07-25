@@ -650,8 +650,10 @@ async def test_detailed_system_health_returns_component_status_for_authenticated
     monkeypatch,
 ) -> None:
     app, _ = _build_app(initialized=True)
+    # A standard user: the health payload must not carry the admin-only
+    # telemetry notice flag for them.
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id=1, role="user"
+        id=1, role="user", is_superuser=False
     )
 
     async def fake_health_status():

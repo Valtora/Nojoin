@@ -13,6 +13,11 @@ x-shared-app-environment: &shared-app-environment
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0
   HF_TOKEN: ${HF_TOKEN:-}
   DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+  # Shared, not api-only: the worker lanes resolve the public origin too, for
+  # calendar webhook URLs and for the telemetry local-origin flag. Without it
+  # they fall back to the localhost default and build the wrong URL.
+  WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
+  NOJOIN_TELEMETRY_ENABLED: ${NOJOIN_TELEMETRY_ENABLED:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -128,7 +133,6 @@ services:
     environment:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
-      WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
       MCP_ENABLED: ${MCP_ENABLED:-true}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache
