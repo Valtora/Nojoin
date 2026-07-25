@@ -195,6 +195,8 @@ Use the resume-or-discard modal. Starting a second recording while a paused uplo
 
 Open Nojoin in Chrome on desktop for shared-audio recording, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording. Review and playback still work in unsupported browsers, but live recording does not.
 
+If the browser is already a supported one, check the address you opened. Browsers expose capture APIs only on a secure context, so a supported browser reaching Nojoin over plain HTTP on any address other than `localhost` reports as unsupported. See [HTTPS Is Required for Live Capture](DEPLOYMENT.md#https-is-required-for-live-capture).
+
 ## Privacy Notes
 
 The browser picker controls what Nojoin can receive on desktop. Nojoin cannot silently capture your screen, tab, system audio, or microphone without browser permission. On mobile Chrome, Nojoin receives only the microphone stream granted by the browser. Stop sharing from the browser's sharing indicator or stop the meeting in Nojoin to end capture.

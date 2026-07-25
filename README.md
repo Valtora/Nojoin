@@ -92,7 +92,8 @@ Notes:
 - CPU-only mode is supported but it is much slower.
 - Browser capture supports shared-audio recording on Chrome for Windows, Linux, and macOS, Chromium-family browsers on Windows and Linux, and best-effort macOS Chromium-family browsers, plus microphone-only recording on Chrome for Android and iOS.
 - Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
-- For remote access, reverse proxy setup, calendar OAuth, updates, and backup guidance, use the documentation below.
+- To reach Nojoin from another device, a phone, a VPN, or a tailnet, read [Remote Access and Trusted Public Origin](docs/DEPLOYMENT.md#remote-access-and-trusted-public-origin). Live capture requires an HTTPS origin, so remote access means putting a reverse proxy in front of Nojoin rather than only changing a port.
+- For calendar OAuth, updates, and backup guidance, use the documentation below.
 
 ## Documentation
 

@@ -254,18 +254,45 @@ The per-user CLI OAuth AI mode (routing inference through a user's own Claude or
 
 ## Remote Access and Trusted Public Origin
 
+This is the section to read if you want to reach Nojoin from a device other than
+the machine it runs on: another computer on the LAN, a laptop over a VPN or
+tailnet, or a phone. The mechanics of the proxy itself are in
+[Reverse Proxy Requirements](#reverse-proxy-requirements); this section covers
+what the application expects from the resulting origin.
+
 If you expose Nojoin beyond localhost:
 
 - Set `WEB_APP_URL` to the exact browser origin users will visit.
 - Keep the browser origin, reverse proxy origin, and OAuth callback origin aligned.
 - The backend automatically includes `WEB_APP_URL` in its browser CORS allowlist.
+- Serve the remote origin over HTTPS. This is a hard requirement, not a
+  recommendation; see below.
+
+### HTTPS Is Required for Live Capture
+
+Browsers only expose the microphone and screen-sharing APIs to a **secure
+context**: an HTTPS origin, or `localhost`. A remote origin served over plain
+HTTP is not a secure context, so `navigator.mediaDevices` is absent and Nojoin's
+capture feature detection reports the browser as unsupported. Reviewing
+recordings, playback, transcript editing, search, and administration all still
+work over plain HTTP; **starting a live recording does not**.
+
+Practically, this means any remote-access arrangement must terminate TLS in
+front of Nojoin. Reaching the bundled proxy's plain HTTP port (`14141`) from
+another device is enough to sign in and browse, and will then fail confusingly
+at the point a user tries to record.
+
+The API enforces the same expectation independently: non-HTTPS requests that it
+cannot recognise as proxied HTTPS are redirected to `WEB_APP_URL` when safe, and
+rejected with `400 Plain HTTP requests are not allowed. Use HTTPS.` otherwise.
 
 For publicly reachable deployments, use a VPN or a secure reverse proxy rather than exposing the service casually.
 For internet-exposed deployments, treat `FIRST_RUN_PASSWORD` as a deployment secret and avoid logging request headers that could capture it during the setup flow.
 
 ## Reverse Proxy Requirements
 
-When fronting Nojoin with Nginx, Caddy, Traefik, or another reverse proxy:
+When fronting Nojoin with Nginx, Caddy, Traefik, Tailscale Serve, or another
+reverse proxy:
 
 ### Loopback Port Binding (DEP-001)
 
@@ -275,6 +302,8 @@ By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to
 * **Direct-Access Deployments**: If you do not use an edge proxy and want the bundled Nginx proxy to be reachable directly from other hosts or the public internet, set `NOJOIN_BIND_ADDRESS=0.0.0.0` in your `.env` file and restart the stack.
 * **Firewall Expectations**: If exposing ports directly by setting `NOJOIN_BIND_ADDRESS=0.0.0.0` or a public IP, ensure you have configured appropriate host firewall rules (e.g., `ufw` or `iptables`) to restrict access to authorized IP ranges.
 
+### Forwarding Checklist
+
 1. Proxy to the HTTPS endpoint, not the plain HTTP port.
 2. By default that means the host-facing port `14443`.
 3. Disable upstream certificate verification because Nojoin uses a self-signed internal certificate by default.
@@ -283,8 +312,65 @@ By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to
 6. Forward `X-Forwarded-Proto: https` so Nojoin can recognise secure browser requests through the proxy chain.
 7. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
 8. Forward the whole site through one origin, including `/mcp` and `/.well-known/oauth-*`. Those paths serve the built-in MCP connector and its OAuth discovery documents (see [MCP.md](MCP.md)); the bundled Nginx proxy already routes them to the API service, so an edge proxy that forwards everything to port `14443` needs no extra rules.
+9. Stream responses rather than buffering them, forward WebSocket upgrades, allow long-lived connections, and allow large request bodies. See [Streaming, WebSocket, and Upload Forwarding](#streaming-websocket-and-upload-forwarding).
+10. Add the edge proxy to `NOJOIN_TRUSTED_PROXIES` so per-client rate limiting resolves real client addresses. See [Trusted Proxy IPs for Rate Limiting (DEP-002)](#trusted-proxy-ips-for-rate-limiting-dep-002).
 
-If API requests fail with `400 Invalid host header`, the edge proxy is usually forwarding an internal upstream host such as `nojoin-nginx:443` instead of the public `WEB_APP_URL` host.
+### Why the Host and Proto Headers Are Load-Bearing
+
+Items 4, 5, and 6 are not stylistic. The API process is reached over plain HTTP
+inside the Docker network, so it cannot observe TLS directly and instead treats a
+request as secure only when **all** of the following hold:
+
+- The immediate peer is a private, loopback, or link-local address, which the
+  bundled proxy satisfies.
+- `X-Forwarded-Proto` resolves to `https`.
+- The `Host` header's hostname matches the hostname in `WEB_APP_URL`.
+- The `X-Forwarded-Host` header's hostname matches the hostname in `WEB_APP_URL`.
+
+Two distinct failures follow from getting this wrong, and they look nothing
+alike:
+
+- **`400 Invalid host header`** means the `Host` hostname is not in the trusted
+  host list at all. Besides the loopback names (`localhost`, `127.0.0.1`, `::1`),
+  the only hostname Nojoin trusts is the one in `WEB_APP_URL`. The usual cause is
+  an edge proxy forwarding an internal upstream host such as `nojoin-nginx:443`,
+  or `WEB_APP_URL` not having been updated to the public hostname and the stack
+  restarted.
+- **A redirect loop on page loads, plus `400 Plain HTTP requests are not
+  allowed. Use HTTPS.` on saves**, means the host is trusted but one of the four
+  conditions above fails, most often a rewritten `Host` or a missing
+  `X-Forwarded-Proto`. Safe methods are redirected to `WEB_APP_URL`, which the
+  proxy then rewrites the same way again; unsafe methods are rejected outright.
+  If browsing appears to loop but the API is plainly up, check these headers
+  before anything else.
+
+`/health` and `/api/health` are deliberately exempt so container and uptime
+checks can reach them over plain HTTP.
+
+### Streaming, WebSocket, and Upload Forwarding
+
+Most of Nojoin is ordinary request/response HTTP, including browser capture:
+recording segments are uploaded as individual HTTP requests, not over a socket.
+Three behaviours still need explicit proxy support.
+
+- **Server-sent events.** Meeting chat responses stream as `text/event-stream`.
+  A proxy that buffers responses will hold the entire answer until the stream
+  closes, so replies appear all at once after a long pause or time out. Disable
+  response buffering and allow read timeouts of several minutes. The bundled
+  proxy uses `proxy_buffering off` with 300 second timeouts.
+- **WebSocket upgrades.** Nojoin uses exactly one WebSocket endpoint,
+  `/api/v1/system/logs/live`, which backs the live container log viewer in
+  **Settings > System** for administrators. Nothing else in the product uses
+  WebSockets. If upgrades are not forwarded, that one panel fails to connect and
+  the rest of Nojoin is unaffected.
+- **Request body size.** The bundled proxy allows request bodies up to 500 MB.
+  An edge proxy with a smaller limit will reject uploads with `413`. Nginx in
+  particular defaults to 1 MB, which is below the live capture segment limit and
+  far below document and backup uploads.
+
+Caddy needs none of this stated explicitly: it streams responses, forwards
+upgrades, and does not cap request bodies by default. Nginx needs all three
+configured, which is why the example below is longer than the Caddy one.
 
 ### Caddy Example
 
@@ -304,17 +390,101 @@ nojoin.yourdomain.com {
 
 ### Nginx Example
 
+The `map` block belongs in the `http` context, not inside `server`. It is the
+standard Nginx idiom for conditional WebSocket upgrades, and avoids sending
+`Connection: upgrade` on ordinary requests.
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+```
+
 ```nginx
 location / {
     proxy_pass https://localhost:14443;
     proxy_ssl_verify off;
+
+    # Nginx defaults to 1 MB, which is below Nojoin's capture segment size.
+    client_max_body_size 500M;
+
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Host $host;
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # WebSocket upgrades for the admin live log viewer.
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    # Server-sent events: stream chat responses instead of buffering them.
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_connect_timeout 300s;
 }
 ```
+
+### Tailscale Serve
+
+Tailscale Serve publishes Nojoin to your tailnet over HTTPS using a
+Tailscale-issued certificate for the node's MagicDNS name. It suits the common
+case of a GPU workstation at home that you want to reach from a laptop
+elsewhere, without opening any router ports. Nojoin does not bundle or manage
+Tailscale; Serve runs on the host, in front of the stack, like any other edge
+proxy.
+
+Two constraints decide whether this arrangement is appropriate at all:
+
+- **The accessing device must be signed in to the same tailnet.** Serve does not
+  publish anything to the public internet. A borrowed or locked-down device that
+  cannot run Tailscale cannot reach a Serve endpoint.
+- **Funnel is out of scope and is not recommended.** Funnel exposes the endpoint
+  to the whole internet, which removes the network boundary that makes this
+  arrangement worth choosing. If you need public access, treat it as a normal
+  internet-exposed deployment and apply the guidance in
+  [Remote Access and Trusted Public Origin](#remote-access-and-trusted-public-origin).
+
+Against the contract above, a Serve deployment resolves as follows.
+
+- **Leave `NOJOIN_BIND_ADDRESS` at its `127.0.0.1` default.** Serve runs on the
+  host, so the loopback binding is already the correct target and the bundled
+  proxy stays unreachable from the LAN. This is the one edge-proxy arrangement
+  that needs no change to DEP-001.
+- **Target the bundled proxy's HTTPS port, `14443`, on loopback.** Serve accepts
+  an insecure-HTTPS target form (`https+insecure://`) for exactly this case, so
+  it will not reject Nojoin's self-signed internal certificate. This satisfies
+  checklist items 1 to 3.
+- **Set `WEB_APP_URL` to the full tailnet origin**, `https://<node>.<tailnet>.ts.net`,
+  and restart the stack. Until you do, the tailnet hostname is not in the trusted
+  host list and the API answers `400 Invalid host header`.
+- **Headers need no special handling.** Serve preserves the inbound `Host` and
+  sets `X-Forwarded-Host`, `X-Forwarded-Proto: https`, and `X-Forwarded-For`.
+  Because Serve connects to the bundled proxy over TLS, that proxy independently
+  derives `X-Forwarded-Proto: https` from its own listener and passes the client
+  `Host` through unchanged. Checklist items 5 and 6 are therefore met without
+  extra configuration, and streaming, WebSocket upgrades, and body size are
+  already handled by the bundled proxy.
+- **Rate limiting needs one addition.** Because Serve connects from the host
+  rather than from a container, the bundled proxy records the Docker bridge
+  gateway as the immediate peer. Without trusting it, every tailnet device shares
+  one rate-limit bucket. See
+  [Host-Run Edge Proxies](#host-run-edge-proxies-tailscale-serve-and-similar).
+- **Tailnet identity is not sign-on.** Serve adds `Tailscale-User-*` headers
+  describing the tailnet user. Nojoin ignores them and does not support
+  proxy-header authentication. Users still sign in to Nojoin normally, and
+  tailnet membership is a network boundary rather than an authentication one.
+
+The practical payoff beyond reachability is that the tailnet certificate is a
+real, browser-trusted certificate. The origin is a secure context with no
+certificate warning, so browser live capture works from the remote device, which
+is not true of reaching the stack over plain HTTP.
+
+Serve requires HTTPS certificates to be enabled for your tailnet in the
+Tailscale admin console.
 
 ### Trusted Proxy IPs for Rate Limiting (DEP-002)
 
@@ -327,6 +497,46 @@ NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.18.0.0/16
 ```
 
 Using the bare container name (`...,nginx,caddy`) instead silently collapses every remote client into a single shared rate-limit bucket: `caddy` does not resolve from the API's network, so that hop is treated as untrusted and the walk stops on the proxy's own IP. Per-IP throttles (login, invitation, `/setup`, MCP registration) then key on one address for all external users. Nojoin logs a warning at API startup naming any configured trusted-proxy hostname it cannot resolve.
+
+#### Host-Run Edge Proxies (Tailscale Serve and Similar)
+
+An edge proxy that runs directly on the host rather than in a container -
+Tailscale Serve, a system Nginx or Caddy service, or an SSH tunnel - reaches the
+stack through the published loopback port. Docker's port publishing rewrites the
+source address of that connection, so the bundled proxy typically records the
+**Docker bridge gateway** of Nojoin's own network as the peer, not the real
+client. The result is the same shared rate-limit bucket described above, reached
+by a different route.
+
+Read the actual gateway address rather than assuming one; the subnet depends on
+what else the Docker daemon has allocated:
+
+```bash
+docker inspect nojoin-nginx \
+  --format '{{ range $name, $net := .NetworkSettings.Networks }}{{ $name }} {{ $net.Gateway }}{{ printf "\n" }}{{ end }}'
+```
+
+On a stock deployment that prints one line, for the Compose-created
+`nojoin_net`. Trust that address, or the subnet containing it:
+
+```dotenv
+NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.19.0.1
+```
+
+The subnet form (`172.19.0.0/16`) survives a gateway address change if the
+network is recreated, at the cost of trusting any address in that range. Both
+are acceptable; the range contains only Nojoin's own containers and the gateway.
+
+The definitive check is the bundled proxy's own access log, which records the
+address it actually sees for a remote request:
+
+```bash
+docker compose logs --tail 20 nginx
+```
+
+Leaving this unset is not a security problem. It only means per-IP throttles
+count every remote user as one client, which on a small private tailnet may be an
+acceptable trade for one less moving part.
 
 ## Image Trust and Supply Chain
 
