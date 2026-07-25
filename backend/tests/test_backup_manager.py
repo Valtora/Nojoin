@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -2244,3 +2245,227 @@ async def test_legacy_format_archive_still_restores_completely(
     assert recording.pipeline_generation is None
 
     await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_skip_mode_leaves_the_existing_recording_audio_untouched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Extraction used to write straight into the recordings directory before any conflict
+    # resolution ran, so Skip kept the existing database row but silently replaced its
+    # audio with the archive's copy. Both the UI and the docs promise the current copy is
+    # kept. Staging is what makes that true.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    source_audio = source_context.path_manager.recordings_directory / "shared.opus"
+    source_audio.write_bytes(b"BACKUP-COPY")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-shared-skip",
+        recording_audio_path=str(source_audio),
+        recording_proxy_path=None,
+    )
+    zip_path, _ = await BackupManager.create_backup(include_audio=True)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    target_audio = target_context.path_manager.recordings_directory / "shared.opus"
+    target_audio.write_bytes(b"EXISTING-COPY")
+    await seed_existing_target_recording(
+        target_context.async_session_maker,
+        meeting_uid="meeting-uid-shared-skip",
+        public_id="public-target",
+        audio_path=str(target_audio),
+    )
+
+    job_id = "skip-audio-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
+
+    # The existing recording is kept, and so is its audio, byte for byte.
+    assert target_audio.read_bytes() == b"EXISTING-COPY"
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_failed_restore_leaves_the_installation_untouched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The worst outcome in the subsystem used to be a clearing restore that wiped the
+    # database and the recordings directory in their own committed transaction, then
+    # failed: unrecoverable loss. The clear now shares the restore's transaction and the
+    # directory wipe waits for the commit, so a failure is a no-op.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    existing_audio = target_context.path_manager.recordings_directory / "keepme.opus"
+    existing_audio.write_bytes(b"PRECIOUS")
+    await seed_existing_target_recording(
+        target_context.async_session_maker,
+        meeting_uid="meeting-uid-precious",
+        public_id="public-precious",
+        audio_path=str(existing_audio),
+    )
+
+    backup_zip = tmp_path / "explodes.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        archive.writestr("backup_info.json", json.dumps({"version": "0.6.0"}))
+        archive.writestr("users.json", json.dumps([]))
+
+    # Fail after the clear has been staged but before the transaction can commit.
+    def _explode(session, state):
+        raise RuntimeError("simulated failure part-way through the restore")
+
+    monkeypatch.setattr(
+        BackupManager,
+        "_normalise_restored_recording_state",
+        staticmethod(_explode),
+    )
+
+    job_id = "failed-restore-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, str(backup_zip), clear_existing=True)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "failed"
+
+    with Session(target_context.sync_engine) as session:
+        surviving = session.exec(select(TestRecording)).all()
+
+    # Rolled back: the row is still there and so is its audio.
+    assert len(surviving) == 1
+    assert existing_audio.read_bytes() == b"PRECIOUS"
+    # And no staging directory was left behind.
+    assert not (
+        target_context.path_manager.user_data_directory
+        / backup_manager_module.RESTORE_STAGING_DIRNAME
+        / job_id
+    ).exists()
+
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_refuses_when_the_archive_will_not_fit_on_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Extraction was previously unbounded, so an archive larger than the free space
+    # filled the volume part-way through and left a half-restored installation.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    backup_zip = tmp_path / "huge.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        archive.writestr("backup_info.json", json.dumps({"version": "0.6.0"}))
+        archive.writestr("users.json", json.dumps([]))
+        archive.writestr("recordings/big.opus", b"x" * 1024)
+
+    class _NoSpace:
+        total = 0
+        used = 0
+        free = 16  # Bytes. Nowhere near enough for the payload plus headroom.
+
+    monkeypatch.setattr(
+        backup_manager_module.shutil, "disk_usage", lambda _path: _NoSpace()
+    )
+
+    job_id = "no-space-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, str(backup_zip))
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "failed"
+    assert "free disk space" in BackupManager.restore_jobs[job_id]["error"]
+
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_refuses_a_damaged_archive_before_touching_anything(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+
+    await seed_existing_target_recording(
+        target_context.async_session_maker,
+        meeting_uid="meeting-uid-intact",
+        public_id="public-intact",
+    )
+
+    backup_zip = tmp_path / "damaged.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        archive.writestr("backup_info.json", json.dumps({"version": "0.6.0"}))
+        archive.writestr("users.json", "{not valid json")
+
+    job_id = "damaged-archive-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, str(backup_zip), clear_existing=True)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "failed"
+    assert "damaged" in BackupManager.restore_jobs[job_id]["error"]
+
+    with Session(target_context.sync_engine) as session:
+        assert len(session.exec(select(TestRecording)).all()) == 1
+
+    await target_context.async_engine.dispose()
+
+
+def test_cleanup_temp_files_removes_abandoned_upload_directories(tmp_path: Path) -> None:
+    # Abandoned multipart uploads are directories of chunk files. The file-only sweep
+    # could never reclaim them, so every interrupted upload leaked its parts forever.
+    from backend.utils.path_manager import PathManager as RealPathManager
+
+    temp_root = tmp_path / "temp_uploads"
+    abandoned = temp_root / "11111111-1111-1111-1111-111111111111"
+    abandoned.mkdir(parents=True)
+    (abandoned / "0.part").write_bytes(b"chunk")
+
+    stale_file = temp_root / "old.zip"
+    stale_file.write_bytes(b"zip")
+
+    old = time.time() - (48 * 3600)
+    os.utime(abandoned, (old, old))
+    os.utime(stale_file, (old, old))
+
+    fresh = temp_root / "22222222-2222-2222-2222-222222222222"
+    fresh.mkdir()
+
+    removed = RealPathManager().cleanup_temp_files(temp_root, max_age_hours=24)
+
+    assert removed == 2
+    assert not abandoned.exists()
+    assert not stale_file.exists()
+    assert fresh.exists()

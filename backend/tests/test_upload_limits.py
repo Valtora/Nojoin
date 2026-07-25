@@ -147,4 +147,7 @@ def test_upload_limit_constants():
     assert UPLOAD_LIMIT_SEGMENT == 15 * 1024 * 1024
     assert UPLOAD_LIMIT_LEGACY_RECORDING == 250 * 1024 * 1024
     assert UPLOAD_LIMIT_DOCUMENT == 20 * 1024 * 1024
-    assert UPLOAD_LIMIT_BACKUP == 300 * 1024 * 1024
+    # Deliberately generous: an Original-quality archive stores audio without
+    # re-encoding, so a backup this server produces can be far larger than a compressed
+    # one, and a tighter cap would make our own exports non-restorable.
+    assert UPLOAD_LIMIT_BACKUP == 25 * 1024 * 1024 * 1024

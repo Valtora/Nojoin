@@ -165,6 +165,103 @@ def generate_proxy_task(self, recording_id: int):
         # Not re-raised because proxy generation is optional/secondary.
 
 
+@celery_app.task(name="backend.worker.tasks.cleanup_backup_artifacts", bind=True)
+def cleanup_backup_artifacts(self, max_age_hours: int = 24):
+    """
+    Reclaim backup working files.
+
+    The download endpoint used to promise that "the periodic cleanup task" would remove
+    exported archives. No such task existed, so every export left a full-size zip in the
+    shared volume forever. This is that task.
+
+    Exports age out on a TTL rather than being deleted on first download, which keeps
+    range requests and interrupted downloads resumable.
+    """
+    from pathlib import Path
+
+    from backend.core.backup_manager import (
+        BACKUP_EXPORT_DIR,
+        RESTORE_STAGING_DIRNAME,
+    )
+    from backend.utils.path_manager import PathManager
+
+    path_manager = PathManager()
+    reclaimed = 0
+
+    targets = [
+        Path(BACKUP_EXPORT_DIR),
+        path_manager.user_data_directory / "temp_restores",
+        path_manager.user_data_directory / "temp_uploads",
+        path_manager.user_data_directory / RESTORE_STAGING_DIRNAME,
+    ]
+
+    for target in targets:
+        reclaimed += path_manager.cleanup_temp_files(target, max_age_hours=max_age_hours)
+
+    logger.info("Backup artifact cleanup complete. Reclaimed %s items.", reclaimed)
+    return {"reclaimed": reclaimed}
+
+
+@celery_app.task(name="backend.worker.tasks.restore_backup_task", bind=True)
+def restore_backup_task(
+    self,
+    zip_path: str,
+    clear_existing: bool = False,
+    overwrite_existing: bool = False,
+):
+    """
+    Restore a backup archive.
+
+    Runs here rather than as a FastAPI background task so job state lives in the Celery
+    result backend: it survives an API restart, it is visible however many API workers
+    are running, and multi-gigabyte extraction happens off the request path.
+    """
+    import os
+
+    from backend.core.backup_manager import BackupManager
+
+    def report(progress: str) -> None:
+        self.update_state(state="PROCESSING", meta={"progress": progress})
+
+    try:
+        logger.info("Starting restore task for %s", zip_path)
+        report("Queued")
+
+        result = BackupManager.restore_backup_blocking(
+            job_id=self.request.id,
+            zip_path=zip_path,
+            clear_existing=clear_existing,
+            overwrite_existing=overwrite_existing,
+            progress_callback=report,
+        )
+
+        return {
+            "status": result.get("status", "completed"),
+            "progress": result.get("progress", "Done"),
+            "warnings": result.get("warnings"),
+        }
+    finally:
+        # The uploaded archive has served its purpose either way. The periodic sweep is
+        # the backstop for a worker that dies before reaching this point.
+        try:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        except OSError as e:
+            logger.warning("Failed to remove restored archive %s: %s", zip_path, e)
+
+        # Let the next restore through. The lock also carries a TTL, so a worker killed
+        # before this point does not block restores forever.
+        try:
+            import redis as _redis
+
+            from backend.core.backup_manager import RESTORE_LOCK_KEY
+            from backend.core.redis import REDIS_URL
+
+            _redis.from_url(REDIS_URL).delete(RESTORE_LOCK_KEY)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to release restore lock: %s", e)
+
+
 @celery_app.task(
     name="backend.worker.tasks.finalize_restored_recording_task",
     base=DatabaseTask,

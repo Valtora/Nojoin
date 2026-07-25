@@ -175,6 +175,10 @@ TASK_ROUTES = {
     "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
     # Orchestrates post-restore rebuilds; dispatches the ffmpeg work to the cpu lane.
     "backend.worker.tasks.finalize_restored_recording_task": {"queue": IO_QUEUE},
+    # Restore is IO-bound: unpack an archive and write rows. Running it here rather than
+    # in the API keeps job state durable and heavy extraction off the request path.
+    "backend.worker.tasks.restore_backup_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.cleanup_backup_artifacts": {"queue": IO_QUEUE},
     # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.
     "backend.worker.tasks.refresh_meeting_edge_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
@@ -208,6 +212,12 @@ celery_app.conf.update(
         "cleanup-temp-recordings-every-24h": {
             "task": "backend.worker.tasks.cleanup_temp_recordings",
             "schedule": 86400.0,  # 24 hours in seconds
+        },
+        # Reclaims exported archives, uploaded archives, abandoned multipart uploads and
+        # any restore staging left behind by a worker that died mid-restore.
+        "cleanup-backup-artifacts-every-6h": {
+            "task": "backend.worker.tasks.cleanup_backup_artifacts",
+            "schedule": 21600.0,
         },
         "sync-calendar-connections-every-15m": {
             "task": "backend.worker.tasks.sync_calendar_connections_task",

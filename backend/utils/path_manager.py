@@ -418,34 +418,49 @@ class PathManager:
             logger.error(f"Migration failed: {e}")
             return False
 
-    def cleanup_temp_files(self, temp_dir: Path, max_age_hours: int = 24):
+    def cleanup_temp_files(self, temp_dir: Path, max_age_hours: int = 24) -> int:
         """
-        Clean up old temporary files from the specified directory.
+        Clean up old temporary entries from the specified directory.
+
+        Removes directories as well as files. The file-only version could never reclaim
+        an abandoned multipart upload, because those are directories of chunk files, so
+        every interrupted upload leaked its parts permanently.
 
         Args:
             temp_dir: Directory to clean up
-            max_age_hours: Delete files older than this (default: 24h)
+            max_age_hours: Delete entries older than this (default: 24h)
+
+        Returns:
+            int: Number of entries removed.
         """
+        import shutil
         import time
 
+        removed = 0
         try:
             current_time = time.time()
             if not temp_dir.exists():
-                return
+                return 0
 
             for p in temp_dir.glob("*"):
-                if p.is_file():
-                    file_age_hours = (current_time - p.stat().st_mtime) / 3600
-                    if file_age_hours > max_age_hours:
-                        try:
-                            p.unlink()
-                            logger.info(f"Deleted old temporary file: {p}")
-                        except Exception as e:  # noqa: BLE001
-                            logger.warning(
-                                f"Failed to delete old temporary file {p}: {e}"
-                            )
+                try:
+                    age_hours = (current_time - p.stat().st_mtime) / 3600
+                    if age_hours <= max_age_hours:
+                        continue
+
+                    if p.is_dir():
+                        shutil.rmtree(p)
+                    else:
+                        p.unlink()
+
+                    removed += 1
+                    logger.info(f"Deleted old temporary entry: {p}")
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Failed to delete old temporary entry {p}: {e}")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Error during temp file cleanup: {e}")
+
+        return removed
 
     def get_upload_temp_dir(self, upload_id: str) -> Path:
         """
