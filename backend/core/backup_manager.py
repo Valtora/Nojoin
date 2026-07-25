@@ -2,311 +2,83 @@ import json
 import logging
 import os
 import shutil
-import subprocess
-import tempfile
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Set, Tuple, Type
+from pathlib import Path
+from typing import Any, Dict, List, Set, Tuple
 from uuid import uuid4
 
-from sqlmodel import Session, SQLModel, delete, select
+from sqlmodel import delete, select
 
-from backend.core.db import async_session_maker, sync_engine
-from backend.core.encryption import decrypt_secret, encrypt_secret
-from backend.models.calendar import (
-    CalendarConnection,
-    CalendarEvent,
-    CalendarProvider,
-    CalendarProviderConfig,
-    CalendarSource,
+from backend.core.backup import runtime
+from backend.core.backup.export import (  # noqa: F401  (public surface preserved)
+    _compress_to_opus,
+    _create_backup_sync,
+    _normalise_archive_quality,
+    _table_dump_statement,
+    create_backup,
+    create_backup_blocking,
 )
-from backend.models.chat import ChatMessage
-from backend.models.document import Document
-from backend.models.people_tag import PeopleTag, PeopleTagLink
-from backend.models.recording import Recording
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.models.tag import RecordingTag, Tag
-from backend.models.task import UserTask, UserTaskRecording, UserTaskTag
-from backend.models.transcript import Transcript
-from backend.models.user import User
-from backend.utils.audio import ensure_ffmpeg_in_path
-from backend.utils.path_manager import PathManager
-from backend.utils.version import get_installed_version
+from backend.core.backup.format import (  # noqa: F401  (re-exported for callers and tests)
+    ARCHIVABLE_AUDIO_EXTENSIONS,
+    ARCHIVE_QUALITIES,
+    ARCHIVE_QUALITY_COMPRESSED,
+    ARCHIVE_QUALITY_ORIGINAL,
+    BACKUP_EXPORT_DIR,
+    BACKUP_FORMAT_VERSION,
+    CALENDAR_PROVIDER_ENV_KEYS,
+    DEFERRED_FOREIGN_KEYS,
+    LEGACY_BACKUP_FORMAT_VERSION,
+    MICROSOFT_COMMON_TENANT,
+    RESTORE_DISK_HEADROOM_BYTES,
+    RESTORE_FOREIGN_KEYS,
+    RESTORE_LOCK_KEY,
+    RESTORE_LOCK_TTL_SECONDS,
+    RESTORE_STAGING_DIRNAME,
+    RESTORED_RECORDING_INTERRUPTED_MESSAGE,
+    RESTORED_RECORDING_INTERRUPTED_STATUS,
+    RESTORED_RECORDING_TERMINAL_STATUS,
+    SKIP_REASON_INSERT_FAILED,
+    SKIP_REASON_NO_IDENTITY,
+    SKIP_REASON_UNRESOLVED_OWNER,
+    TRANSIENT_RECORDING_STATUSES,
+    UNARCHIVED_TABLES,
+    _ForeignKeySpec,
+)
+from backend.core.backup.paths import (  # noqa: F401
+    _build_backup_document_path,
+    _build_backup_recording_audio_path,
+    _build_runtime_document_path,
+    _build_runtime_recording_audio_path,
+    _get_document_subpath,
+    _get_recording_identity,
+    _get_recording_match_key,
+    _get_recording_match_keys,
+    _get_recording_subpath,
+    _get_subpath_after,
+    _normalise_meeting_uid,
+    _normalise_public_id,
+)
+from backend.core.backup.plans import (  # noqa: F401
+    _AudioPlan,
+    _AudioPlanEntry,
+    _build_audio_plan,
+    _build_document_plan,
+    _DocumentPlan,
+    _resolve_source_audio_path,
+)
+from backend.core.backup.records import (  # noqa: F401
+    _adapt_record,
+    _prepare_calendar_connection_for_restore,
+    _prepare_calendar_provider_config_for_restore,
+    _redact_sensitive_data,
+    _restore_redacted_sensitive_data,
+    _serialise_backup_table_rows,
+    _serialise_calendar_provider_configs,
+    _topological_sort,
+)
 
 logger = logging.getLogger(__name__)
-
-# Archive layout version, independent of the application version. Bump it only when the
-# archive's structure changes in a way an older restore could not read correctly. A
-# restore accepts anything at or below its own version and refuses anything above, so a
-# newer archive fails at the door rather than deep inside the insert loop.
-#
-#   1: implicit; archives written before this field existed. Audio always re-encoded to
-#      Opus, so every recordings/ member carries a .opus extension.
-#   2: format_version recorded. Audio may be stored unmodified, so the archived
-#      extension varies and is carried by the recording row's audio_path.
-BACKUP_FORMAT_VERSION = 2
-LEGACY_BACKUP_FORMAT_VERSION = 1
-
-# Archive quality. Compressed re-encodes to Opus for size; original stores the file
-# byte-for-byte so a restored recording can be reprocessed without transcode loss.
-ARCHIVE_QUALITY_COMPRESSED = "compressed"
-ARCHIVE_QUALITY_ORIGINAL = "original"
-ARCHIVE_QUALITIES = (ARCHIVE_QUALITY_COMPRESSED, ARCHIVE_QUALITY_ORIGINAL)
-
-# Extensions the backup knows how to carry. Anything else is left out of the archive and
-# counted as missing audio rather than copied blindly.
-ARCHIVABLE_AUDIO_EXTENSIONS = frozenset(
-    {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".opus"}
-)
-
-# The archive payload is unpacked here first and only moved into place after the
-# database transaction commits. Sits inside the data directory so the move is a rename
-# on the same filesystem rather than a copy.
-RESTORE_STAGING_DIRNAME = "restore_staging"
-
-# Exported archives are written to a dedicated directory rather than loose in /tmp, so
-# the periodic sweep can reclaim them without pattern-matching unrelated files. /tmp is a
-# volume shared between the API and the workers, which is how the worker that builds an
-# archive and the API that serves it see the same file.
-BACKUP_EXPORT_DIR = os.getenv("BACKUP_EXPORT_DIR", "/tmp/nojoin_backups")
-
-# One restore at a time, installation-wide. Two overlapping restores would interleave
-# against the same tables and the same recordings directory, and the io lane runs with
-# concurrency above one, so the queue alone does not serialise them. The TTL means a
-# worker killed mid-restore cannot block restores forever.
-RESTORE_LOCK_KEY = "nojoin:backup:restore-lock"
-RESTORE_LOCK_TTL_SECONDS = 6 * 60 * 60
-
-# Spare room demanded on top of the archive payload before a restore is allowed to
-# start, since the staged copy and the final copy briefly coexist.
-RESTORE_DISK_HEADROOM_BYTES = 512 * 1024 * 1024
-
-MICROSOFT_COMMON_TENANT = "common"
-CALENDAR_PROVIDER_ENV_KEYS: Dict[str, Dict[str, str | None]] = {
-    CalendarProvider.GOOGLE.value: {
-        "client_id": "GOOGLE_OAUTH_CLIENT_ID",
-        "client_secret": "GOOGLE_OAUTH_CLIENT_SECRET",
-        "tenant_id": None,
-    },
-    CalendarProvider.MICROSOFT.value: {
-        "client_id": "MICROSOFT_OAUTH_CLIENT_ID",
-        "client_secret": "MICROSOFT_OAUTH_CLIENT_SECRET",
-        "tenant_id": "MICROSOFT_OAUTH_TENANT_ID",
-    },
-}
-
-# Order matters for restoration: a table may only reference tables listed above it, so
-# that ``id_map`` already holds the remapped target ids by the time the row is inserted.
-#
-# The calendar tables sit ahead of ``recordings`` because ``Recording.calendar_event_id``
-# points at ``calendar_events``. No calendar model references a recording, so this
-# ordering is acyclic. The reverse of this list drives the ``clear_existing`` wipe;
-# deleting recordings before calendar events is safe because that foreign key is
-# ON DELETE SET NULL.
-MODELS: List[Tuple[str, Type[SQLModel]]] = [
-    ("users", User),
-    ("calendar_provider_configs", CalendarProviderConfig),
-    ("calendar_connections", CalendarConnection),
-    ("calendar_sources", CalendarSource),
-    ("calendar_events", CalendarEvent),
-    ("user_tasks", UserTask),
-    ("p_tags", PeopleTag),
-    ("global_speakers", GlobalSpeaker),
-    ("people_tag_links", PeopleTagLink),
-    ("tags", Tag),
-    ("user_task_tags", UserTaskTag),
-    ("recordings", Recording),
-    ("user_task_recordings", UserTaskRecording),
-    ("recording_speakers", RecordingSpeaker),
-    ("recording_tags", RecordingTag),
-    ("transcripts", Transcript),
-    ("chat_messages", ChatMessage),
-    ("documents", Document),
-]
-
-
-@dataclass(frozen=True)
-class _ForeignKeySpec:
-    """One restorable foreign-key column and how the restore should treat it."""
-
-    column: str
-    # Key into ``id_map``. A table absent from ``MODELS`` (e.g. "invitations") never
-    # populates its map, so every reference to it resolves as unmappable.
-    target_table: str
-    # Ownership links decide whether the row means anything at all: if the target
-    # cannot be resolved the row is skipped. Nullability is deliberately NOT the test
-    # here. Several ownership columns (Recording.user_id, Tag.user_id, PeopleTag.user_id,
-    # GlobalSpeaker.user_id) are nullable in the database, yet every read path is scoped
-    # by user_id, so a null owner produces a row that no user can ever see.
-    #
-    # Enrichment links only decorate the row: if the target cannot be resolved the
-    # column is nulled and the row is still restored, because losing an optional link is
-    # always better than losing the data the row carries.
-    ownership: bool
-
-
-def _own(column: str, target_table: str) -> _ForeignKeySpec:
-    return _ForeignKeySpec(column=column, target_table=target_table, ownership=True)
-
-
-def _enrich(column: str, target_table: str) -> _ForeignKeySpec:
-    return _ForeignKeySpec(column=column, target_table=target_table, ownership=False)
-
-
-# Every foreign-key column carried by a backed-up table, classified. This is the single
-# source of truth for restore remapping; ``test_backup_model_parity`` reflects over the
-# real models and fails if a foreign key exists that is not listed here or exempted.
-RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
-    "users": (_enrich("invitation_id", "invitations"),),
-    "calendar_provider_configs": (),
-    "calendar_connections": (_own("user_id", "users"),),
-    "calendar_sources": (_own("connection_id", "calendar_connections"),),
-    "calendar_events": (_own("calendar_id", "calendar_sources"),),
-    "user_tasks": (_own("user_id", "users"),),
-    "p_tags": (_own("user_id", "users"), _enrich("parent_id", "p_tags")),
-    "global_speakers": (_own("user_id", "users"),),
-    "people_tag_links": (
-        _own("global_speaker_id", "global_speakers"),
-        _own("tag_id", "p_tags"),
-    ),
-    "tags": (_own("user_id", "users"), _enrich("parent_id", "tags")),
-    "user_task_tags": (_own("task_id", "user_tasks"), _own("tag_id", "tags")),
-    "recordings": (
-        _own("user_id", "users"),
-        _enrich("calendar_event_id", "calendar_events"),
-    ),
-    "user_task_recordings": (
-        _own("task_id", "user_tasks"),
-        _own("recording_id", "recordings"),
-    ),
-    "recording_speakers": (
-        _own("recording_id", "recordings"),
-        _enrich("global_speaker_id", "global_speakers"),
-        # Back-references into canonical pipeline tables that are rebuilt rather than
-        # archived. Their targets never exist on the restore side, so they are nulled;
-        # carrying the source system's ids would fail the constraint and take the whole
-        # speaker row, and therefore the speaker's name, down with it.
-        _enrich("processing_run_id", "processing_runs"),
-        _enrich("last_speaker_correction_event_id", "speaker_correction_events"),
-        _enrich("last_diarization_window_result_id", "diarization_window_results"),
-    ),
-    "recording_tags": (_own("recording_id", "recordings"), _own("tag_id", "tags")),
-    "transcripts": (_own("recording_id", "recordings"),),
-    "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
-    "documents": (_own("recording_id", "recordings"),),
-}
-
-# Tables deliberately left out of the archive, each with the reason. ``test_backup_model_parity``
-# fails if a table exists that is neither archived nor listed here, so a new model cannot be
-# forgotten: someone has to decide, in writing, whether it belongs in a backup.
-UNARCHIVED_TABLES: Dict[str, str] = {
-    "async_task_ownerships": "Ephemeral ownership records for in-flight Celery tasks.",
-    "calendar_push_channels": (
-        "Provider webhook subscriptions bound to this installation's public URL; they "
-        "would point at the wrong host after a restore."
-    ),
-    "cli_oauth_credentials": "Machine-bound CLI OAuth credentials; re-authenticate on the target.",
-    "cli_usage_daily": "Per-installation CLI usage counters.",
-    "context_chunks": (
-        "RAG embeddings, regenerated from the restored transcript and documents by "
-        "finalize_restored_recording_task."
-    ),
-    "invitations": (
-        "Not archived by design; User.invitation_id is provenance only and is nulled on "
-        "restore. See RESTORE_FOREIGN_KEYS."
-    ),
-    "oauth_clients": "This installation's OAuth server registrations.",
-    "oauth_authorization_codes": "Short-lived OAuth codes.",
-    "oauth_refresh_tokens": "Tokens issued against this installation's signing key.",
-    "revoked_jwts": "Revocation list for this installation's signing key.",
-    # Canonical pipeline state, rebuilt from the transcript projection on restore.
-    # transcript.segments carries the manual edit flags, so hand corrections survive the
-    # round trip; what is lost is audit history. See docs/adr/0003.
-    "processing_runs": "Canonical pipeline state; rebuilt from the transcript projection.",
-    "recording_asr_window_results": "Canonical pipeline state; rebuilt.",
-    "recording_audio_chunks": "Live capture scratch data for in-flight recordings.",
-    "recording_audio_window_manifests": "Live capture scratch data for in-flight recordings.",
-    "recording_speaker_aliases": "Canonical pipeline state; rebuilt.",
-    "speaker_correction_events": "Canonical pipeline audit history; not rebuilt.",
-    "diarization_window_results": "Canonical pipeline state; rebuilt.",
-    "diarization_window_turns": "Canonical pipeline state; rebuilt.",
-    "transcript_utterances": "Canonical pipeline state; rebuilt from transcript.segments.",
-    "transcript_utterance_events": "Canonical pipeline audit history; not rebuilt.",
-}
-
-
-# Self-referential columns that cannot be resolved in a single forward pass because the
-# target row may not be inserted yet. These are nulled on insert and reattached by a
-# dedicated second pass once every row in the table exists.
-DEFERRED_FOREIGN_KEYS: Dict[str, Tuple[str, ...]] = {
-    "recording_speakers": ("merged_into_id",),
-}
-
-
-# Recording state that belongs to the source installation and means nothing on the
-# target: a task id from another broker, a browser capture that is not portable, and
-# progress counters for work that is not running. Restoring these verbatim left
-# recordings stuck as permanently processing, which also blocked the canonical backfill
-# because it refuses to touch an in-flight recording.
-TRANSIENT_RECORDING_STATUSES = frozenset(
-    {"UPLOADING", "QUEUED", "PROCESSING", "PAUSED"}
-)
-RESTORED_RECORDING_TERMINAL_STATUS = "PROCESSED"
-RESTORED_RECORDING_INTERRUPTED_STATUS = "ERROR"
-RESTORED_RECORDING_INTERRUPTED_MESSAGE = (
-    "This recording was still being processed when the backup was taken, so it was "
-    "restored without a completed transcript. Reprocess it to finish."
-)
-
-
-# Skip reasons reported back to the operator. Kept coarse on purpose: enough to tell a
-# missing owner from a constraint clash without echoing row identifiers to the client.
-SKIP_REASON_UNRESOLVED_OWNER = "unresolved_owner"
-SKIP_REASON_NO_IDENTITY = "no_identity"
-SKIP_REASON_INSERT_FAILED = "insert_failed"
-
-
-@dataclass
-class _AudioPlanEntry:
-    """One recording's audio, resolved on disk and assigned an archive member path."""
-
-    source_path: str
-    arcname: str
-    compress: bool
-
-
-@dataclass
-class _AudioPlan:
-    """What audio the archive will carry, derived from the recording rows themselves.
-
-    Selecting by ``Recording.audio_path`` rather than walking the recordings directory is
-    what makes proxy shadowing impossible. A recording and its playback proxy share a
-    filename stem (``<uuid>.wav`` and ``<uuid>.mp3``), so a stem-keyed directory walk had
-    to guess between them and could archive the mono, lossy proxy as the master audio.
-    """
-
-    entries: List[_AudioPlanEntry] = field(default_factory=list)
-    # Recording.audio_path as stored on the row -> archive member path.
-    arcname_by_audio_path: Dict[str, str] = field(default_factory=dict)
-    # Recordings whose row survives but whose audio file could not be found on disk.
-    missing_audio: int = 0
-
-
-@dataclass
-class _DocumentPlan:
-    """Attached document files the archive will carry.
-
-    Documents are always included: they are capped at UPLOAD_LIMIT_DOCUMENT each and are
-    a rounding error next to audio, so a separate toggle would add format surface for no
-    real benefit. They are stored verbatim; there is nothing useful to re-encode.
-    """
-
-    # (source path on disk, archive member path)
-    entries: List[Tuple[str, str]] = field(default_factory=list)
-    # Document.file_path as stored on the row -> archive member path.
-    arcname_by_file_path: Dict[str, str] = field(default_factory=dict)
-    missing_files: int = 0
 
 
 @dataclass
@@ -401,9 +173,35 @@ class BackupManager:
     # Job tracking: job_id -> {status: str, progress: str, error: str, result: Dict}
     restore_jobs: Dict[str, Dict[str, Any]] = {}
 
+    # Export lives in backup.export; these keep the public entry points on the facade so
+    # callers and the worker tasks are unaffected by where the implementation sits.
+    @staticmethod
+    async def create_backup(
+        include_audio: bool = True,
+        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+        progress_callback: Any = None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        return await create_backup(
+            include_audio=include_audio,
+            archive_quality=archive_quality,
+            progress_callback=progress_callback,
+        )
+
+    @staticmethod
+    def create_backup_blocking(
+        include_audio: bool = True,
+        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+        progress_callback: Any = None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        return create_backup_blocking(
+            include_audio=include_audio,
+            archive_quality=archive_quality,
+            progress_callback=progress_callback,
+        )
+
     @staticmethod
     def _get_app_version() -> str:
-        return get_installed_version()
+        return runtime.get_app_version()
 
     @staticmethod
     def _documents_directory(path_manager: Any) -> Any:
@@ -412,57 +210,6 @@ class BackupManager:
         if documents_dir is not None:
             return documents_dir
         return path_manager.user_data_directory / "documents"
-
-    @staticmethod
-    def _redact_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Recursively redact sensitive keys from a dictionary.
-        """
-        redacted = data.copy()
-        for k, v in redacted.items():
-            if isinstance(v, dict):
-                redacted[k] = BackupManager._redact_sensitive_data(v)
-            elif isinstance(k, str) and (
-                k.endswith("_key") or k.endswith("_token") or "password" in k
-            ):
-                if v:  # Only redact if there is a value
-                    redacted[k] = "REDACTED"
-        return redacted
-
-    @staticmethod
-    def _restore_redacted_sensitive_data(value: Any) -> Any:
-        """
-        Converts redacted placeholders back to null-like values on restore.
-        """
-        if isinstance(value, dict):
-            return {
-                key: BackupManager._restore_redacted_sensitive_data(item)
-                for key, item in value.items()
-            }
-        if isinstance(value, list):
-            return [
-                BackupManager._restore_redacted_sensitive_data(item) for item in value
-            ]
-        if value == "REDACTED":
-            return None
-        return value
-
-    @staticmethod
-    def _adapt_record(
-        model_cls: Type[SQLModel], data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Adapts a record dictionary to match the current model schema.
-        Removes fields that no longer exist in the model.
-        """
-        # Gets current field names.
-        if hasattr(model_cls, "model_fields"):
-            current_fields = model_cls.model_fields.keys()
-        else:
-            current_fields = model_cls.__fields__.keys()
-
-        # Filters data to only include fields that exist in the current model.
-        return {k: v for k, v in data.items() if k in current_fields}
 
     @staticmethod
     def _apply_foreign_keys(
@@ -499,876 +246,10 @@ class BackupManager:
         return None
 
     @staticmethod
-    def _serialise_backup_table_rows(
-        table_name: str,
-        items: List[SQLModel],
-        audio_plan: _AudioPlan | None = None,
-        document_plan: _DocumentPlan | None = None,
-    ) -> List[Dict[str, Any]]:
-        if table_name == "calendar_provider_configs":
-            data = BackupManager._serialise_calendar_provider_configs(items)
-        elif table_name == "calendar_connections":
-            data = BackupManager._serialise_calendar_connections(items)
-        else:
-            data = [item.model_dump(mode="json") for item in items]
-
-        if table_name == "recordings":
-            arcnames = audio_plan.arcname_by_audio_path if audio_plan else {}
-            for item in data:
-                original_audio_path = item.get("audio_path")
-                if original_audio_path:
-                    # The archived member path is the row's audio_path inside the backup,
-                    # which is what lets a variable archive extension round-trip without a
-                    # separate manifest. A recording whose audio could not be found still
-                    # gets a plausible path so the row itself survives the restore.
-                    item["audio_path"] = arcnames.get(
-                        original_audio_path
-                    ) or BackupManager._build_backup_recording_audio_path(
-                        original_audio_path,
-                        os.path.splitext(original_audio_path)[1].lower() or ".opus",
-                    )
-                    # Recomputed from the extracted file on restore, since a re-encoded
-                    # archive makes the source system's byte count wrong.
-                    item["file_size_bytes"] = None
-
-                # Proxy files are not backed up directly; they are regenerated after restore.
-                item["proxy_path"] = None
-
-        if table_name == "documents":
-            arcnames = document_plan.arcname_by_file_path if document_plan else {}
-            for item in data:
-                original_file_path = item.get("file_path")
-                if original_file_path:
-                    item["file_path"] = arcnames.get(
-                        original_file_path
-                    ) or BackupManager._build_backup_document_path(original_file_path)
-
-        if table_name == "users":
-            for item in data:
-                if "settings" in item and item["settings"]:
-                    item["settings"] = BackupManager._redact_sensitive_data(
-                        item["settings"]
-                    )
-
-        return data
-
-    @staticmethod
     def _enqueue_proxy_generation(recording_id: int) -> None:
         from backend.worker.tasks import generate_proxy_task
 
         generate_proxy_task.delay(recording_id)
-
-    @staticmethod
-    def _serialise_calendar_provider_configs(
-        rows: List[CalendarProviderConfig],
-    ) -> List[Dict[str, Any]]:
-        serialised: List[Dict[str, Any]] = []
-        rows_by_provider = {row.provider: row for row in rows}
-        handled_providers: set[str] = set()
-
-        for provider, env_keys in CALENDAR_PROVIDER_ENV_KEYS.items():
-            row = rows_by_provider.get(provider)
-            env_client_id = (
-                os.getenv(env_keys["client_id"] or "")
-                if env_keys["client_id"]
-                else None
-            )
-            env_client_secret = (
-                os.getenv(env_keys["client_secret"] or "")
-                if env_keys["client_secret"]
-                else None
-            )
-            env_tenant_id = (
-                os.getenv(env_keys["tenant_id"] or "")
-                if env_keys["tenant_id"]
-                else None
-            )
-
-            if row is None:
-                has_env_config = bool(
-                    env_client_id
-                    or env_client_secret
-                    or (provider == CalendarProvider.MICROSOFT.value and env_tenant_id)
-                )
-                if not has_env_config:
-                    continue
-
-                serialised.append(
-                    {
-                        "provider": provider,
-                        "client_id": env_client_id,
-                        "client_secret": env_client_secret,
-                        "tenant_id": env_tenant_id
-                        or (
-                            MICROSOFT_COMMON_TENANT
-                            if provider == CalendarProvider.MICROSOFT.value
-                            else None
-                        ),
-                        "enabled": True,
-                    }
-                )
-                handled_providers.add(provider)
-                continue
-
-            row_data = row.model_dump(mode="json")
-            decrypted_secret = decrypt_secret(row.client_secret_encrypted)
-
-            if row.enabled is False:
-                row_data["client_id"] = row.client_id
-                row_data["tenant_id"] = row.tenant_id or (
-                    MICROSOFT_COMMON_TENANT
-                    if provider == CalendarProvider.MICROSOFT.value
-                    else None
-                )
-                row_data["client_secret"] = decrypted_secret
-            else:
-                row_data["client_id"] = row.client_id or env_client_id
-                row_data["tenant_id"] = (
-                    row.tenant_id
-                    or env_tenant_id
-                    or (
-                        MICROSOFT_COMMON_TENANT
-                        if provider == CalendarProvider.MICROSOFT.value
-                        else None
-                    )
-                )
-                row_data["client_secret"] = decrypted_secret or env_client_secret
-
-            row_data.pop("client_secret_encrypted", None)
-            serialised.append(row_data)
-            handled_providers.add(provider)
-
-        for row in rows:
-            if row.provider in handled_providers:
-                continue
-            row_data = row.model_dump(mode="json")
-            row_data["client_secret"] = decrypt_secret(row.client_secret_encrypted)
-            row_data.pop("client_secret_encrypted", None)
-            serialised.append(row_data)
-
-        return serialised
-
-    @staticmethod
-    def _serialise_calendar_connections(
-        rows: List[CalendarConnection],
-    ) -> List[Dict[str, Any]]:
-        serialised: List[Dict[str, Any]] = []
-        for row in rows:
-            row_data = row.model_dump(mode="json")
-            row_data["access_token"] = decrypt_secret(row.access_token_encrypted)
-            row_data["refresh_token"] = decrypt_secret(row.refresh_token_encrypted)
-            row_data.pop("access_token_encrypted", None)
-            row_data.pop("refresh_token_encrypted", None)
-            serialised.append(row_data)
-        return serialised
-
-    @staticmethod
-    def _prepare_calendar_provider_config_for_restore(
-        data: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        restored = data.copy()
-        client_secret = restored.pop("client_secret", None)
-        if "client_secret_encrypted" not in restored or client_secret is not None:
-            stripped_secret = (
-                client_secret.strip()
-                if isinstance(client_secret, str)
-                else client_secret
-            )
-            restored["client_secret_encrypted"] = (
-                encrypt_secret(stripped_secret) if stripped_secret else None
-            )
-
-        if restored.get("provider") == CalendarProvider.GOOGLE.value:
-            restored["tenant_id"] = None
-        elif restored.get(
-            "provider"
-        ) == CalendarProvider.MICROSOFT.value and not restored.get("tenant_id"):
-            restored["tenant_id"] = MICROSOFT_COMMON_TENANT
-
-        return restored
-
-    @staticmethod
-    def _prepare_calendar_connection_for_restore(
-        data: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        restored = data.copy()
-        access_token = restored.pop("access_token", None)
-        refresh_token = restored.pop("refresh_token", None)
-
-        if "access_token_encrypted" not in restored or access_token is not None:
-            stripped_access = (
-                access_token.strip() if isinstance(access_token, str) else access_token
-            )
-            restored["access_token_encrypted"] = (
-                encrypt_secret(stripped_access) if stripped_access else None
-            )
-
-        if "refresh_token_encrypted" not in restored or refresh_token is not None:
-            stripped_refresh = (
-                refresh_token.strip()
-                if isinstance(refresh_token, str)
-                else refresh_token
-            )
-            restored["refresh_token_encrypted"] = (
-                encrypt_secret(stripped_refresh) if stripped_refresh else None
-            )
-
-        return restored
-
-    @staticmethod
-    def _get_subpath_after(path: str | None, marker: str) -> str | None:
-        """Return the portion of ``path`` below the last ``marker`` directory component.
-
-        Falls back to the bare filename so a path stored in an unexpected layout still
-        yields a stable archive member name.
-        """
-        if not path:
-            return None
-
-        normalized = str(path).strip().replace("\\", "/")
-        parts = [part for part in normalized.split("/") if part and part != "."]
-        if not parts:
-            return None
-
-        for index in range(len(parts) - 1, -1, -1):
-            if parts[index].lower() == marker:
-                tail = parts[index + 1 :]
-                if tail:
-                    return "/".join(tail)
-                break
-
-        return parts[-1]
-
-    @staticmethod
-    def _get_recording_subpath(audio_path: str | None) -> str | None:
-        return BackupManager._get_subpath_after(audio_path, "recordings")
-
-    @staticmethod
-    def _get_document_subpath(file_path: str | None) -> str | None:
-        return BackupManager._get_subpath_after(file_path, "documents")
-
-    @staticmethod
-    def _build_backup_document_path(file_path: str | None) -> str | None:
-        subpath = BackupManager._get_document_subpath(file_path)
-        if not subpath:
-            return None
-        return os.path.join("documents", subpath)
-
-    @staticmethod
-    def _build_runtime_document_path(
-        file_path: str | None,
-        documents_dir: str | os.PathLike[str],
-    ) -> str | None:
-        subpath = BackupManager._get_document_subpath(file_path)
-        if not subpath:
-            return None
-
-        target_abs = os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
-        cwd = os.path.abspath(os.getcwd())
-
-        try:
-            if os.path.commonpath([cwd, target_abs]) == cwd:
-                return os.path.relpath(target_abs, cwd)
-        except ValueError:
-            pass
-
-        return target_abs
-
-    @staticmethod
-    def _get_recording_identity(audio_path: str | None) -> str | None:
-        subpath = BackupManager._get_recording_subpath(audio_path)
-        if not subpath:
-            return None
-
-        stem, _ = os.path.splitext(subpath)
-        return os.path.normcase(stem)
-
-    @staticmethod
-    def _normalise_meeting_uid(meeting_uid: Any) -> str | None:
-        if meeting_uid is None:
-            return None
-
-        normalized = str(meeting_uid).strip().lower()
-        return normalized or None
-
-    @staticmethod
-    def _normalise_public_id(public_id: Any) -> str | None:
-        if public_id is None:
-            return None
-
-        normalized = str(public_id).strip().lower()
-        return normalized or None
-
-    @staticmethod
-    def _get_recording_match_keys(
-        audio_path: str | None,
-        meeting_uid: Any = None,
-        public_id: Any = None,
-    ) -> set[str]:
-        """
-        Returns every identifier key under which two recordings should be considered the same.
-        Prefers durable identifiers (meeting_uid, public_id) and falls back to the legacy audio-path
-        stem for backups created before those columns existed.
-        """
-        keys: set[str] = set()
-        normalized_uid = BackupManager._normalise_meeting_uid(meeting_uid)
-        if normalized_uid:
-            keys.add(f"meeting_uid:{normalized_uid}")
-        normalized_pid = BackupManager._normalise_public_id(public_id)
-        if normalized_pid:
-            keys.add(f"public_id:{normalized_pid}")
-        if not keys:
-            legacy_identity = BackupManager._get_recording_identity(audio_path)
-            if legacy_identity:
-                keys.add(f"audio_path:{legacy_identity}")
-        return keys
-
-    @staticmethod
-    def _get_recording_match_key(
-        audio_path: str | None,
-        meeting_uid: Any = None,
-        public_id: Any = None,
-    ) -> str | None:
-        """
-        Returns the single highest-priority match key. Retained for callers that only need a
-        primary identifier; prefer ``_get_recording_match_keys`` when comparing two records.
-        """
-        normalized_uid = BackupManager._normalise_meeting_uid(meeting_uid)
-        if normalized_uid:
-            return f"meeting_uid:{normalized_uid}"
-
-        normalized_pid = BackupManager._normalise_public_id(public_id)
-        if normalized_pid:
-            return f"public_id:{normalized_pid}"
-
-        legacy_identity = BackupManager._get_recording_identity(audio_path)
-        if legacy_identity:
-            return f"audio_path:{legacy_identity}"
-
-        return None
-
-    @staticmethod
-    def _build_backup_recording_audio_path(
-        audio_path: str | None, extension: str = ".opus"
-    ) -> str | None:
-        subpath = BackupManager._get_recording_subpath(audio_path)
-        if not subpath:
-            return None
-
-        stem, _ = os.path.splitext(subpath)
-        return os.path.join("recordings", stem + extension)
-
-    @staticmethod
-    def _resolve_source_audio_path(
-        audio_path: str | None,
-        recordings_dir: str | os.PathLike[str],
-    ) -> str | None:
-        """Find a recording's audio on disk, or ``None`` if it is not there.
-
-        ``Recording.audio_path`` is stored relative to the process working directory,
-        which is ``/app`` in every container. The recordings directory is tried as a
-        fallback so a library moved via ``NOJOIN_DATA_DIR`` still resolves.
-        """
-        if not audio_path:
-            return None
-
-        candidates = [os.path.abspath(audio_path)]
-
-        subpath = BackupManager._get_recording_subpath(audio_path)
-        if subpath:
-            candidates.append(
-                os.path.abspath(os.path.join(os.fspath(recordings_dir), subpath))
-            )
-
-        for candidate in candidates:
-            if os.path.isfile(candidate):
-                return candidate
-
-        return None
-
-    @staticmethod
-    def _build_audio_plan(
-        recording_rows: List[Any],
-        recordings_dir: str | os.PathLike[str],
-        archive_quality: str,
-    ) -> _AudioPlan:
-        """Resolve every recording row's audio and decide how it enters the archive."""
-        plan = _AudioPlan()
-        claimed_arcnames: Set[str] = set()
-
-        for row in recording_rows:
-            audio_path = getattr(row, "audio_path", None)
-            if not audio_path:
-                continue
-
-            source_path = BackupManager._resolve_source_audio_path(
-                audio_path, recordings_dir
-            )
-            if source_path is None:
-                logger.warning(
-                    "Recording audio not found on disk; archiving metadata only: %s",
-                    audio_path,
-                )
-                plan.missing_audio += 1
-                continue
-
-            extension = os.path.splitext(source_path)[1].lower()
-            if extension not in ARCHIVABLE_AUDIO_EXTENSIONS:
-                logger.warning(
-                    "Recording audio has an unsupported extension %r; "
-                    "archiving metadata only: %s",
-                    extension,
-                    audio_path,
-                )
-                plan.missing_audio += 1
-                continue
-
-            # Already-Opus audio is copied verbatim under either quality: re-encoding it
-            # would be a pointless generation loss.
-            compress = (
-                archive_quality == ARCHIVE_QUALITY_COMPRESSED and extension != ".opus"
-            )
-            arc_extension = ".opus" if compress else extension
-
-            arcname = BackupManager._build_backup_recording_audio_path(
-                audio_path, arc_extension
-            )
-            if not arcname or arcname in claimed_arcnames:
-                continue
-
-            claimed_arcnames.add(arcname)
-            plan.entries.append(
-                _AudioPlanEntry(
-                    source_path=source_path, arcname=arcname, compress=compress
-                )
-            )
-            plan.arcname_by_audio_path[audio_path] = arcname
-
-        return plan
-
-    @staticmethod
-    def _build_document_plan(
-        document_rows: List[Any],
-        documents_dir: str | os.PathLike[str],
-    ) -> _DocumentPlan:
-        plan = _DocumentPlan()
-        claimed_arcnames: Set[str] = set()
-
-        for row in document_rows:
-            file_path = getattr(row, "file_path", None)
-            if not file_path:
-                continue
-
-            source_path = None
-            candidates = [os.path.abspath(file_path)]
-            subpath = BackupManager._get_document_subpath(file_path)
-            if subpath:
-                candidates.append(
-                    os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
-                )
-            for candidate in candidates:
-                if os.path.isfile(candidate):
-                    source_path = candidate
-                    break
-
-            if source_path is None:
-                logger.warning(
-                    "Document file not found on disk; archiving metadata only: %s",
-                    file_path,
-                )
-                plan.missing_files += 1
-                continue
-
-            arcname = BackupManager._build_backup_document_path(file_path)
-            if not arcname or arcname in claimed_arcnames:
-                continue
-
-            claimed_arcnames.add(arcname)
-            plan.entries.append((source_path, arcname))
-            plan.arcname_by_file_path[file_path] = arcname
-
-        return plan
-
-    @staticmethod
-    def _build_runtime_recording_audio_path(
-        audio_path: str | None,
-        recordings_dir: str | os.PathLike[str],
-    ) -> str | None:
-        """Map an archived member path back onto a runtime path under the recordings dir.
-
-        The archived extension is preserved rather than forced to ``.opus``, so an
-        Original-quality archive restores as the format it was taken in. Legacy archives
-        already carry ``.opus`` and are therefore unaffected.
-        """
-        subpath = BackupManager._get_recording_subpath(audio_path)
-        if not subpath:
-            return None
-
-        target_abs = os.path.abspath(
-            os.path.join(os.fspath(recordings_dir), subpath)
-        )
-        cwd = os.path.abspath(os.getcwd())
-
-        try:
-            if os.path.commonpath([cwd, target_abs]) == cwd:
-                return os.path.relpath(target_abs, cwd)
-        except ValueError:
-            pass
-
-        return target_abs
-
-    @staticmethod
-    def _compress_to_opus(input_path: str) -> str:
-        """
-        Compresses audio file to Opus format in a temporary file.
-        Returns path to temporary opus file.
-        """
-        ensure_ffmpeg_in_path()
-        temp_opus = tempfile.NamedTemporaryFile(delete=False, suffix=".opus")
-        temp_opus.close()
-
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            input_path,
-            "-c:a",
-            "libopus",
-            "-b:a",
-            "64k",  # 64k is good for speech
-            "-v",
-            "error",
-            temp_opus.name,
-        ]
-
-        try:
-            subprocess.run(cmd, check=True, capture_output=True)
-            return temp_opus.name
-        except subprocess.CalledProcessError as e:
-            if os.path.exists(temp_opus.name):
-                os.remove(temp_opus.name)
-            raise RuntimeError(f"FFmpeg compression failed: {e}")
-
-    @staticmethod
-    def _create_backup_sync(
-        recordings_dir: PathManager,
-        config_path: PathManager,
-        db_dump: Dict[str, str],
-        include_audio: bool,
-        audio_plan: _AudioPlan | None = None,
-        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
-        document_plan: _DocumentPlan | None = None,
-        progress_callback: Any = None,
-    ) -> Tuple[str, Dict[str, Any]]:
-        """
-        Synchronous method to handle heavy file compression and zipping.
-        Runs in a thread to prevent blocking the main event loop.
-
-        Reports progress as it goes. Compressing a large library to Opus takes minutes,
-        and without per-file reporting the export looks indistinguishable from a hang.
-
-        Returns the temporary zip path and a warnings summary for the operator.
-        """
-
-        def report(stage: str, current: int = 0, total: int = 0) -> None:
-            if progress_callback is None:
-                return
-            try:
-                progress_callback(stage, current, total)
-            except Exception:  # noqa: BLE001 -- reporting must never fail an export
-                logger.debug("Backup progress callback failed", exc_info=True)
-
-        # Written to the shared export directory so the API can serve it and the periodic
-        # sweep can reclaim it.
-        os.makedirs(BACKUP_EXPORT_DIR, exist_ok=True)
-        temp_zip = tempfile.NamedTemporaryFile(
-            delete=False, suffix=".zip", dir=BACKUP_EXPORT_DIR
-        )
-        temp_zip.close()
-
-        audio_plan = audio_plan or _AudioPlan()
-        document_plan = document_plan or _DocumentPlan()
-        failed_audio = 0
-        failed_documents = 0
-
-        try:
-            with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zipf:
-                # 1. Write DB Dump
-                report("Writing records")
-                for filename, content in db_dump.items():
-                    zipf.writestr(filename, content)
-
-                # 2. Add audio, one member per recording row.
-                if include_audio:
-                    total_audio = len(audio_plan.entries)
-                    for index, entry in enumerate(audio_plan.entries, start=1):
-                        report(
-                            "Compressing audio"
-                            if archive_quality == ARCHIVE_QUALITY_COMPRESSED
-                            else "Copying audio",
-                            index,
-                            total_audio,
-                        )
-                        opus_path: str | None = None
-                        try:
-                            if entry.compress:
-                                opus_path = BackupManager._compress_to_opus(
-                                    entry.source_path
-                                )
-                                zipf.write(opus_path, entry.arcname)
-                            else:
-                                zipf.write(entry.source_path, entry.arcname)
-                        except Exception as e:  # noqa: BLE001
-                            logger.error(
-                                f"Failed to process audio {entry.source_path}: {e}"
-                            )
-                            failed_audio += 1
-                            # Continue with other files
-                        finally:
-                            # Removed in a finally block so a failed zipf.write does not
-                            # strand the intermediate file in the shared /tmp volume.
-                            if opus_path and os.path.exists(opus_path):
-                                try:
-                                    os.remove(opus_path)
-                                except OSError:
-                                    logger.warning(
-                                        "Failed to remove temporary Opus file %s",
-                                        opus_path,
-                                    )
-
-                # 3. Add attached documents, always included.
-                total_documents = len(document_plan.entries)
-                for doc_index, (source_path, arcname) in enumerate(
-                    document_plan.entries, start=1
-                ):
-                    report("Adding documents", doc_index, total_documents)
-                    try:
-                        zipf.write(source_path, arcname)
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"Failed to archive document {source_path}: {e}")
-                        failed_documents += 1
-
-                # 4. Add Config
-                report("Finalising archive")
-                if config_path.exists():
-                    try:
-                        config_data = json.loads(config_path.read_text())
-                        # Redact sensitive config
-                        config_data = BackupManager._redact_sensitive_data(config_data)
-                        zipf.writestr("config.json", json.dumps(config_data, indent=2))
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"Failed to back up config: {e}")
-
-                # 5. Add Backup Info
-                warnings = {
-                    "recordings_without_audio": audio_plan.missing_audio
-                    if include_audio
-                    else 0,
-                    "recordings_audio_failed": failed_audio,
-                    "documents_without_files": document_plan.missing_files,
-                    "documents_failed": failed_documents,
-                }
-                backup_info = {
-                    "format_version": BACKUP_FORMAT_VERSION,
-                    "version": BackupManager._get_app_version(),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "include_audio": include_audio,
-                    "archive_quality": archive_quality,
-                    "contains_restorable_calendar_credentials": True,
-                    "warnings": warnings,
-                }
-                zipf.writestr("backup_info.json", json.dumps(backup_info, indent=2))
-
-            return temp_zip.name, warnings
-
-        except Exception as e:
-            # Cleanup temp zip if failed
-            if os.path.exists(temp_zip.name):
-                os.remove(temp_zip.name)
-            raise e
-
-    @staticmethod
-    def _topological_sort(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Sorts tags so that parents appear before children.
-        """
-        # 1. Build index and adjacency
-        by_id = {item["id"]: item for item in data if "id" in item}
-        children_map: Dict[
-            Any, List[Dict[str, Any]]
-        ] = {}  # parent_id -> list of children
-        roots = []
-
-        for item in data:
-            parent_id = item.get("parent_id")
-            if parent_id and parent_id in by_id:
-                if parent_id not in children_map:
-                    children_map[parent_id] = []
-                children_map[parent_id].append(item)
-            else:
-                roots.append(item)
-
-        # 2. Flatten
-        sorted_items = []
-        queue = list(roots)
-
-        # Sort roots by ID to be deterministic
-        queue.sort(key=lambda x: x.get("id", 0))
-
-        while queue:
-            node = queue.pop(0)
-            sorted_items.append(node)
-
-            node_id = node.get("id")
-            if node_id in children_map:
-                children = children_map[node_id]
-                # Sort children by ID
-                children.sort(key=lambda x: x.get("id", 0))
-                # Append children to the end of the queue (BFS traversal).
-                queue.extend(children)
-
-        # Items in a cycle or with a missing parent are never reached by the BFS
-        # above; append any leftovers so no row is dropped from the restore.
-        if len(sorted_items) < len(data):
-            processed_ids = {x.get("id") for x in sorted_items}
-            for item in data:
-                if item.get("id") not in processed_ids:
-                    sorted_items.append(item)
-
-        return sorted_items
-
-    @staticmethod
-    def _normalise_archive_quality(archive_quality: str | None) -> str:
-        quality = (archive_quality or ARCHIVE_QUALITY_COMPRESSED).strip().lower()
-        if quality not in ARCHIVE_QUALITIES:
-            logger.warning(
-                "Unknown archive quality %r; falling back to %s.",
-                archive_quality,
-                ARCHIVE_QUALITY_COMPRESSED,
-            )
-            return ARCHIVE_QUALITY_COMPRESSED
-        return quality
-
-    @staticmethod
-    def _table_dump_statement(table_name: str, model_cls: Type[SQLModel]):
-        statement = select(model_cls)
-        if table_name in ["tags", "p_tags"]:
-            # Order parents before children (parent_id NULLS FIRST, then id) so the dump
-            # lists a parent ahead of any child referencing it. Deeper nesting is
-            # reordered by the topological sort on restore.
-            statement = statement.order_by(
-                model_cls.parent_id.nullsfirst(), model_cls.id
-            )
-        return statement
-
-    @staticmethod
-    async def create_backup(
-        include_audio: bool = True,
-        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
-        progress_callback: Any = None,
-    ) -> Tuple[str, Dict[str, Any]]:
-        path_manager = PathManager()
-        recordings_dir = path_manager.recordings_directory
-        documents_dir = BackupManager._documents_directory(path_manager)
-        config_path = path_manager.config_path
-        archive_quality = BackupManager._normalise_archive_quality(archive_quality)
-
-        import asyncio
-
-        # 1. Dump Database (Async)
-        db_dump = {}
-        audio_plan = _AudioPlan()
-        document_plan = _DocumentPlan()
-        async with async_session_maker() as session:
-            for table_index, (table_name, model_cls) in enumerate(MODELS, start=1):
-                if progress_callback is not None:
-                    try:
-                        progress_callback("Reading database", table_index, len(MODELS))
-                    except Exception:  # noqa: BLE001
-                        logger.debug("Backup progress callback failed", exc_info=True)
-                results = await session.execute(
-                    BackupManager._table_dump_statement(table_name, model_cls)
-                )
-                items = results.scalars().all()
-
-                if table_name == "recordings" and include_audio:
-                    audio_plan = BackupManager._build_audio_plan(
-                        list(items), recordings_dir, archive_quality
-                    )
-                elif table_name == "documents":
-                    document_plan = BackupManager._build_document_plan(
-                        list(items), documents_dir
-                    )
-
-                data = BackupManager._serialise_backup_table_rows(
-                    table_name, items, audio_plan, document_plan
-                )
-
-                db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
-
-        # 2. Heavy Lifting in Thread
-        return await asyncio.to_thread(
-            BackupManager._create_backup_sync,
-            recordings_dir,
-            config_path,
-            db_dump,
-            include_audio,
-            audio_plan,
-            archive_quality,
-            document_plan,
-            progress_callback,
-        )
-
-    @staticmethod
-    def create_backup_blocking(
-        include_audio: bool = True,
-        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
-        progress_callback: Any = None,
-    ) -> Tuple[str, Dict[str, Any]]:
-        path_manager = PathManager()
-        recordings_dir = path_manager.recordings_directory
-        documents_dir = BackupManager._documents_directory(path_manager)
-        config_path = path_manager.config_path
-        archive_quality = BackupManager._normalise_archive_quality(archive_quality)
-
-        db_dump: Dict[str, str] = {}
-        audio_plan = _AudioPlan()
-        document_plan = _DocumentPlan()
-        with Session(sync_engine) as session:
-            for table_index, (table_name, model_cls) in enumerate(MODELS, start=1):
-                if progress_callback is not None:
-                    try:
-                        progress_callback("Reading database", table_index, len(MODELS))
-                    except Exception:  # noqa: BLE001
-                        logger.debug("Backup progress callback failed", exc_info=True)
-                items = session.exec(
-                    BackupManager._table_dump_statement(table_name, model_cls)
-                ).all()
-
-                if table_name == "recordings" and include_audio:
-                    audio_plan = BackupManager._build_audio_plan(
-                        list(items), recordings_dir, archive_quality
-                    )
-                elif table_name == "documents":
-                    document_plan = BackupManager._build_document_plan(
-                        list(items), documents_dir
-                    )
-
-                data = BackupManager._serialise_backup_table_rows(
-                    table_name, items, audio_plan, document_plan
-                )
-                db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
-
-        return BackupManager._create_backup_sync(
-            recordings_dir,
-            config_path,
-            db_dump,
-            include_audio,
-            audio_plan,
-            archive_quality,
-            document_plan,
-            progress_callback,
-        )
 
     @staticmethod
     def _parse_version(value: Any) -> Tuple[int, ...]:
@@ -1420,15 +301,15 @@ class BackupManager:
             )
 
         backup_version = info.get("version", "0.0.0")
-        current_version = BackupManager._get_app_version()
+        current_version = runtime.get_app_version()
 
         if backup_version != current_version:
             logger.info(
                 f"Restoring backup from version {backup_version} to {current_version}"
             )
-            if BackupManager._parse_version(backup_version) > BackupManager._parse_version(
-                current_version
-            ):
+            if BackupManager._parse_version(
+                backup_version
+            ) > BackupManager._parse_version(current_version):
                 logger.warning(
                     f"Restoring a backup from a NEWER application version "
                     f"({backup_version}) onto an OLDER one ({current_version}). "
@@ -1492,7 +373,7 @@ class BackupManager:
             return
 
         logger.info("Clearing existing data...")
-        for table_name, model_cls in reversed(MODELS):
+        for table_name, model_cls in reversed(runtime.MODELS):
             if table_name == "users":
                 continue
             session.exec(delete(model_cls))
@@ -1611,7 +492,7 @@ class BackupManager:
             backup_recording_keys: set[str] = set()
             for item in rec_data:
                 backup_recording_keys.update(
-                    BackupManager._get_recording_match_keys(
+                    _get_recording_match_keys(
                         item.get("audio_path"),
                         item.get("meeting_uid"),
                         item.get("public_id"),
@@ -1621,11 +502,11 @@ class BackupManager:
             if not backup_recording_keys:
                 return
 
-            existing_rows = session.exec(select(Recording)).all()
+            existing_rows = session.exec(select(runtime.Recording)).all()
             existing_ids = [
                 row.id
                 for row in existing_rows
-                if BackupManager._get_recording_match_keys(
+                if _get_recording_match_keys(
                     row.audio_path,
                     getattr(row, "meeting_uid", None),
                     getattr(row, "public_id", None),
@@ -1639,7 +520,11 @@ class BackupManager:
                 )
                 # Delete via the Recording table so the configured
                 # ON DELETE cascades remove dependent rows.
-                session.exec(delete(Recording).where(Recording.id.in_(existing_ids)))
+                session.exec(
+                    delete(runtime.Recording).where(
+                        runtime.Recording.id.in_(existing_ids)
+                    )
+                )
                 session.flush()
         except Exception as e:  # noqa: BLE001
             logger.error(f"Pre-flight cleanup failed: {e}")
@@ -1661,7 +546,7 @@ class BackupManager:
         the rest are marked errored so the operator can reprocess them deliberately.
         """
         for recording_id in sorted(state.restored_recording_ids):
-            recording = session.get(Recording, recording_id)
+            recording = session.get(runtime.Recording, recording_id)
             if recording is None:
                 continue
 
@@ -1671,7 +556,9 @@ class BackupManager:
                 continue
 
             transcript = session.exec(
-                select(Transcript).where(Transcript.recording_id == recording_id)
+                select(runtime.Transcript).where(
+                    runtime.Transcript.recording_id == recording_id
+                )
             ).first()
             transcript_complete = bool(transcript) and (
                 getattr(transcript, "transcript_status", "completed") == "completed"
@@ -1682,9 +569,7 @@ class BackupManager:
             else:
                 recording.status = RESTORED_RECORDING_INTERRUPTED_STATUS
                 if transcript is not None and hasattr(transcript, "error_message"):
-                    transcript.error_message = (
-                        RESTORED_RECORDING_INTERRUPTED_MESSAGE
-                    )
+                    transcript.error_message = RESTORED_RECORDING_INTERRUPTED_MESSAGE
                     session.add(transcript)
 
             logger.info(
@@ -1721,10 +606,10 @@ class BackupManager:
         zip_path: str,
         clear_existing: bool,
         overwrite_existing: bool,
-        recordings_dir: PathManager,
-        config_path: PathManager,
-        user_data_dir: PathManager,
-        documents_dir: PathManager,
+        recordings_dir: Path,
+        config_path: Path,
+        user_data_dir: Path,
+        documents_dir: Path,
         progress_callback: Any = None,
     ):
         """
@@ -1750,7 +635,7 @@ class BackupManager:
             config_path=config_path,
             user_data_dir=user_data_dir,
             documents_dir=documents_dir,
-            id_map={name: {} for name, _ in MODELS},
+            id_map={name: {} for name, _ in runtime.MODELS},
             staging_dir=os.path.join(
                 os.fspath(user_data_dir), RESTORE_STAGING_DIRNAME, job_id
             ),
@@ -1778,12 +663,10 @@ class BackupManager:
                 state.report("Restoring database...")
                 from sqlmodel import Session
 
-                from backend.core.db import sync_engine
-
-                with Session(sync_engine) as session:
+                with Session(runtime.sync_engine) as session:
                     BackupManager._restore_clear_existing_data(session, state)
                     BackupManager._restore_preflight_overwrite(zipf, session, state)
-                    for table_name, model_cls in MODELS:
+                    for table_name, model_cls in runtime.MODELS:
                         if f"{table_name}.json" not in zipf.namelist():
                             continue
 
@@ -1795,23 +678,23 @@ class BackupManager:
 
                         # Topological Sort for Tags to ensure Parents are created first
                         if table_name in ["tags", "p_tags"]:
-                            data = BackupManager._topological_sort(data)
+                            data = _topological_sort(data)
 
                         count = 0
                         for item_data in data:
                             if table_name == "calendar_provider_configs":
-                                item_data = BackupManager._prepare_calendar_provider_config_for_restore(
-                                    item_data
-                                )
-                            elif table_name == "calendar_connections":
                                 item_data = (
-                                    BackupManager._prepare_calendar_connection_for_restore(
+                                    _prepare_calendar_provider_config_for_restore(
                                         item_data
                                     )
                                 )
+                            elif table_name == "calendar_connections":
+                                item_data = _prepare_calendar_connection_for_restore(
+                                    item_data
+                                )
 
                             # Adapt record to current schema (handle removed columns)
-                            item_data = BackupManager._adapt_record(model_cls, item_data)
+                            item_data = _adapt_record(model_cls, item_data)
 
                             old_id = item_data.get("id")
                             # Staged file backing this row, if any, so the post-insert
@@ -1846,14 +729,16 @@ class BackupManager:
                             if table_name == "users":
                                 if item_data.get("settings"):
                                     item_data["settings"] = (
-                                        BackupManager._restore_redacted_sensitive_data(
+                                        _restore_redacted_sensitive_data(
                                             item_data["settings"]
                                         )
                                     )
 
                                 username = item_data.get("username")
                                 existing_user = session.exec(
-                                    select(User).where(User.username == username)
+                                    select(runtime.User).where(
+                                        runtime.User.username == username
+                                    )
                                 ).first()
 
                                 if existing_user:
@@ -1868,16 +753,18 @@ class BackupManager:
                                 audio_path = item_data.get("audio_path")
                                 meeting_uid = item_data.get("meeting_uid")
                                 public_id = item_data.get("public_id")
-                                backup_keys = BackupManager._get_recording_match_keys(
+                                backup_keys = _get_recording_match_keys(
                                     audio_path,
                                     meeting_uid,
                                     public_id,
                                 )
 
                                 if not existing_recordings_loaded:
-                                    existing_rows = session.exec(select(Recording)).all()
+                                    existing_rows = session.exec(
+                                        select(runtime.Recording)
+                                    ).all()
                                     for row in existing_rows:
-                                        for key in BackupManager._get_recording_match_keys(
+                                        for key in _get_recording_match_keys(
                                             row.audio_path,
                                             getattr(row, "meeting_uid", None),
                                             getattr(row, "public_id", None),
@@ -1913,7 +800,9 @@ class BackupManager:
                                         f"Linking old_id {old_id} to existing new_id {duplicate_match_id}"
                                     )
                                     if old_id is not None:
-                                        id_map["recordings"][old_id] = duplicate_match_id
+                                        id_map["recordings"][old_id] = (
+                                            duplicate_match_id
+                                        )
                                     continue
 
                                 existing_rec = next(
@@ -1951,37 +840,41 @@ class BackupManager:
                                         # Skip strategy (safe merge): map the backup row's
                                         # id onto the existing row and reuse it.
                                         if old_id is not None:
-                                            id_map["recordings"][old_id] = existing_rec.id
+                                            id_map["recordings"][old_id] = (
+                                                existing_rec.id
+                                            )
                                             skipped_recording_ids.add(old_id)
                                             # Tracks as restored/processed so subsequent duplicates map to it,
                                             # registering every identity the existing row owns.
                                             for (
                                                 existing_key
-                                            ) in BackupManager._get_recording_match_keys(
+                                            ) in _get_recording_match_keys(
                                                 existing_rec.audio_path,
-                                                getattr(existing_rec, "meeting_uid", None),
-                                                getattr(existing_rec, "public_id", None),
+                                                getattr(
+                                                    existing_rec, "meeting_uid", None
+                                                ),
+                                                getattr(
+                                                    existing_rec, "public_id", None
+                                                ),
                                             ):
-                                                restored_recording_keys[existing_key] = (
-                                                    existing_rec.id
-                                                )
+                                                restored_recording_keys[
+                                                    existing_key
+                                                ] = existing_rec.id
                                             for backup_key in backup_keys:
                                                 restored_recording_keys[backup_key] = (
                                                     existing_rec.id
                                                 )
                                         continue
 
-                                normalized_meeting_uid = (
-                                    BackupManager._normalise_meeting_uid(meeting_uid)
+                                normalized_meeting_uid = _normalise_meeting_uid(
+                                    meeting_uid
                                 )
                                 if normalized_meeting_uid:
                                     item_data["meeting_uid"] = normalized_meeting_uid
                                 else:
                                     item_data.pop("meeting_uid", None)
 
-                                normalized_public_id = BackupManager._normalise_public_id(
-                                    public_id
-                                )
+                                normalized_public_id = _normalise_public_id(public_id)
                                 if normalized_public_id:
                                     item_data["public_id"] = normalized_public_id
                                 else:
@@ -2016,7 +909,7 @@ class BackupManager:
                                     item_data["pipeline_generation"] = None
 
                                 runtime_audio_path = (
-                                    BackupManager._build_runtime_recording_audio_path(
+                                    _build_runtime_recording_audio_path(
                                         audio_path,
                                         recordings_dir,
                                     )
@@ -2033,7 +926,8 @@ class BackupManager:
                                 ):
                                     conflicting_pid_row = session.exec(
                                         select(model_cls).where(
-                                            model_cls.public_id == item_data["public_id"]
+                                            model_cls.public_id
+                                            == item_data["public_id"]
                                         )
                                     ).first()
                                     if conflicting_pid_row is not None:
@@ -2051,7 +945,8 @@ class BackupManager:
                                 if item_data.get("audio_path"):
                                     conflicting_path_row = session.exec(
                                         select(model_cls).where(
-                                            model_cls.audio_path == item_data["audio_path"]
+                                            model_cls.audio_path
+                                            == item_data["audio_path"]
                                         )
                                     ).first()
                                     if conflicting_path_row is not None:
@@ -2090,9 +985,14 @@ class BackupManager:
                                 # target-database id at this point.
                                 if table_name == "tags":
                                     existing_tag = session.exec(
-                                        select(Tag)
-                                        .where(Tag.name == item_data.get("name"))
-                                        .where(Tag.user_id == item_data.get("user_id"))
+                                        select(runtime.Tag)
+                                        .where(
+                                            runtime.Tag.name == item_data.get("name")
+                                        )
+                                        .where(
+                                            runtime.Tag.user_id
+                                            == item_data.get("user_id")
+                                        )
                                     ).first()
 
                                     if existing_tag:
@@ -2102,9 +1002,15 @@ class BackupManager:
 
                                 elif table_name == "p_tags":
                                     existing_p_tag = session.exec(
-                                        select(PeopleTag)
-                                        .where(PeopleTag.name == item_data.get("name"))
-                                        .where(PeopleTag.user_id == item_data.get("user_id"))
+                                        select(runtime.PeopleTag)
+                                        .where(
+                                            runtime.PeopleTag.name
+                                            == item_data.get("name")
+                                        )
+                                        .where(
+                                            runtime.PeopleTag.user_id
+                                            == item_data.get("user_id")
+                                        )
                                     ).first()
 
                                     if existing_p_tag:
@@ -2124,8 +1030,8 @@ class BackupManager:
                             if table_name == "calendar_provider_configs":
                                 candidate = model_cls.model_validate(item_data)
                                 existing_config = session.exec(
-                                    select(CalendarProviderConfig).where(
-                                        CalendarProviderConfig.provider
+                                    select(runtime.CalendarProviderConfig).where(
+                                        runtime.CalendarProviderConfig.provider
                                         == candidate.provider
                                     )
                                 ).first()
@@ -2145,7 +1051,9 @@ class BackupManager:
                                             not existing_config.client_id
                                             and candidate.client_id
                                         ):
-                                            existing_config.client_id = candidate.client_id
+                                            existing_config.client_id = (
+                                                candidate.client_id
+                                            )
                                             updated = True
                                         if (
                                             not existing_config.client_secret_encrypted
@@ -2157,11 +1065,13 @@ class BackupManager:
                                             updated = True
                                         if (
                                             candidate.provider
-                                            == CalendarProvider.MICROSOFT.value
+                                            == runtime.CalendarProvider.MICROSOFT.value
                                             and not existing_config.tenant_id
                                             and candidate.tenant_id
                                         ):
-                                            existing_config.tenant_id = candidate.tenant_id
+                                            existing_config.tenant_id = (
+                                                candidate.tenant_id
+                                            )
                                             updated = True
                                         if updated:
                                             session.add(existing_config)
@@ -2175,13 +1085,17 @@ class BackupManager:
                             elif table_name == "calendar_connections":
                                 candidate = model_cls.model_validate(item_data)
                                 existing_connection = session.exec(
-                                    select(CalendarConnection)
-                                    .where(CalendarConnection.user_id == candidate.user_id)
+                                    select(runtime.CalendarConnection)
                                     .where(
-                                        CalendarConnection.provider == candidate.provider
+                                        runtime.CalendarConnection.user_id
+                                        == candidate.user_id
                                     )
                                     .where(
-                                        CalendarConnection.provider_account_id
+                                        runtime.CalendarConnection.provider
+                                        == candidate.provider
+                                    )
+                                    .where(
+                                        runtime.CalendarConnection.provider_account_id
                                         == candidate.provider_account_id
                                     )
                                 ).first()
@@ -2258,7 +1172,8 @@ class BackupManager:
                                         )
                                         if candidate_sync_marker and (
                                             existing_sync_marker is None
-                                            or candidate_sync_marker >= existing_sync_marker
+                                            or candidate_sync_marker
+                                            >= existing_sync_marker
                                         ):
                                             existing_connection.sync_status = (
                                                 candidate.sync_status
@@ -2269,9 +1184,7 @@ class BackupManager:
                                             existing_connection.last_sync_started_at = (
                                                 candidate.last_sync_started_at
                                             )
-                                            existing_connection.last_sync_completed_at = (
-                                                candidate.last_sync_completed_at
-                                            )
+                                            existing_connection.last_sync_completed_at = candidate.last_sync_completed_at
                                             existing_connection.last_synced_at = (
                                                 candidate.last_synced_at
                                             )
@@ -2289,13 +1202,13 @@ class BackupManager:
                             elif table_name == "calendar_sources":
                                 candidate = model_cls.model_validate(item_data)
                                 existing_source = session.exec(
-                                    select(CalendarSource)
+                                    select(runtime.CalendarSource)
                                     .where(
-                                        CalendarSource.connection_id
+                                        runtime.CalendarSource.connection_id
                                         == candidate.connection_id
                                     )
                                     .where(
-                                        CalendarSource.provider_calendar_id
+                                        runtime.CalendarSource.provider_calendar_id
                                         == candidate.provider_calendar_id
                                     )
                                 ).first()
@@ -2303,16 +1216,26 @@ class BackupManager:
                                 if existing_source:
                                     if overwrite_existing:
                                         existing_source.name = candidate.name
-                                        existing_source.description = candidate.description
+                                        existing_source.description = (
+                                            candidate.description
+                                        )
                                         existing_source.time_zone = candidate.time_zone
                                         existing_source.colour = candidate.colour
-                                        existing_source.user_colour = candidate.user_colour
-                                        existing_source.is_primary = candidate.is_primary
+                                        existing_source.user_colour = (
+                                            candidate.user_colour
+                                        )
+                                        existing_source.is_primary = (
+                                            candidate.is_primary
+                                        )
                                         existing_source.is_read_only = (
                                             candidate.is_read_only
                                         )
-                                        existing_source.is_selected = candidate.is_selected
-                                        existing_source.sync_cursor = candidate.sync_cursor
+                                        existing_source.is_selected = (
+                                            candidate.is_selected
+                                        )
+                                        existing_source.sync_cursor = (
+                                            candidate.sync_cursor
+                                        )
                                         existing_source.last_synced_at = (
                                             candidate.last_synced_at
                                         )
@@ -2325,7 +1248,11 @@ class BackupManager:
                                         session.add(existing_source)
                                     else:
                                         updated = False
-                                        for field in ("name", "description", "time_zone"):
+                                        for field in (
+                                            "name",
+                                            "description",
+                                            "time_zone",
+                                        ):
                                             candidate_value = getattr(candidate, field)
                                             if (
                                                 candidate_value
@@ -2333,13 +1260,16 @@ class BackupManager:
                                                 != candidate_value
                                             ):
                                                 setattr(
-                                                    existing_source, field, candidate_value
+                                                    existing_source,
+                                                    field,
+                                                    candidate_value,
                                                 )
                                                 updated = True
 
                                         if (
                                             candidate.colour
-                                            and existing_source.colour != candidate.colour
+                                            and existing_source.colour
+                                            != candidate.colour
                                         ):
                                             existing_source.colour = candidate.colour
                                             updated = True
@@ -2401,12 +1331,13 @@ class BackupManager:
                             elif table_name == "calendar_events":
                                 candidate = model_cls.model_validate(item_data)
                                 existing_event = session.exec(
-                                    select(CalendarEvent)
+                                    select(runtime.CalendarEvent)
                                     .where(
-                                        CalendarEvent.calendar_id == candidate.calendar_id
+                                        runtime.CalendarEvent.calendar_id
+                                        == candidate.calendar_id
                                     )
                                     .where(
-                                        CalendarEvent.provider_event_id
+                                        runtime.CalendarEvent.provider_event_id
                                         == candidate.provider_event_id
                                     )
                                 ).first()
@@ -2432,7 +1363,9 @@ class BackupManager:
                                         existing_event.location_text = (
                                             candidate.location_text
                                         )
-                                        existing_event.meeting_url = candidate.meeting_url
+                                        existing_event.meeting_url = (
+                                            candidate.meeting_url
+                                        )
                                         existing_event.source_url = candidate.source_url
                                         existing_event.external_updated_at = (
                                             candidate.external_updated_at
@@ -2466,16 +1399,24 @@ class BackupManager:
                             elif table_name == "global_speakers":
                                 # Checks for existing duplicates to prevent redundant entries.
                                 existing_speaker = session.exec(
-                                    select(GlobalSpeaker)
-                                    .where(GlobalSpeaker.name == item_data.get("name"))
-                                    .where(GlobalSpeaker.user_id == item_data.get("user_id"))
+                                    select(runtime.GlobalSpeaker)
+                                    .where(
+                                        runtime.GlobalSpeaker.name
+                                        == item_data.get("name")
+                                    )
+                                    .where(
+                                        runtime.GlobalSpeaker.user_id
+                                        == item_data.get("user_id")
+                                    )
                                 ).first()
 
                                 if existing_speaker:
                                     if overwrite_existing:
                                         # Updates existing speaker details from backup.
                                         existing_speaker.title = item_data.get("title")
-                                        existing_speaker.company = item_data.get("company")
+                                        existing_speaker.company = item_data.get(
+                                            "company"
+                                        )
                                         existing_speaker.email = item_data.get("email")
                                         existing_speaker.phone_number = item_data.get(
                                             "phone_number"
@@ -2533,12 +1474,15 @@ class BackupManager:
                             elif table_name == "people_tag_links":
                                 # Checks for duplicates
                                 existing_link = session.exec(
-                                    select(PeopleTagLink)
+                                    select(runtime.PeopleTagLink)
                                     .where(
-                                        PeopleTagLink.global_speaker_id
+                                        runtime.PeopleTagLink.global_speaker_id
                                         == item_data["global_speaker_id"]
                                     )
-                                    .where(PeopleTagLink.tag_id == item_data["tag_id"])
+                                    .where(
+                                        runtime.PeopleTagLink.tag_id
+                                        == item_data["tag_id"]
+                                    )
                                 ).first()
 
                                 if existing_link:
@@ -2550,24 +1494,33 @@ class BackupManager:
 
                             elif table_name == "user_task_tags":
                                 existing_link = session.exec(
-                                    select(UserTaskTag)
-                                    .where(UserTaskTag.task_id == item_data["task_id"])
-                                    .where(UserTaskTag.tag_id == item_data["tag_id"])
+                                    select(runtime.UserTaskTag)
+                                    .where(
+                                        runtime.UserTaskTag.task_id
+                                        == item_data["task_id"]
+                                    )
+                                    .where(
+                                        runtime.UserTaskTag.tag_id
+                                        == item_data["tag_id"]
+                                    )
                                 ).first()
 
                                 if existing_link:
                                     if old_id is not None:
-                                        id_map["user_task_tags"][old_id] = existing_link.id
+                                        id_map["user_task_tags"][old_id] = (
+                                            existing_link.id
+                                        )
                                     continue
 
                             elif table_name == "user_task_recordings":
                                 existing_link = session.exec(
-                                    select(UserTaskRecording)
+                                    select(runtime.UserTaskRecording)
                                     .where(
-                                        UserTaskRecording.task_id == item_data["task_id"]
+                                        runtime.UserTaskRecording.task_id
+                                        == item_data["task_id"]
                                     )
                                     .where(
-                                        UserTaskRecording.recording_id
+                                        runtime.UserTaskRecording.recording_id
                                         == item_data["recording_id"]
                                     )
                                 ).first()
@@ -2592,24 +1545,29 @@ class BackupManager:
                             elif table_name == "recording_tags":
                                 # DUPLICATE CHECK
                                 existing_link = session.exec(
-                                    select(RecordingTag)
+                                    select(runtime.RecordingTag)
                                     .where(
-                                        RecordingTag.recording_id
+                                        runtime.RecordingTag.recording_id
                                         == item_data["recording_id"]
                                     )
-                                    .where(RecordingTag.tag_id == item_data["tag_id"])
+                                    .where(
+                                        runtime.RecordingTag.tag_id
+                                        == item_data["tag_id"]
+                                    )
                                 ).first()
 
                                 if existing_link:
                                     if old_id is not None:
-                                        id_map["recording_tags"][old_id] = existing_link.id
+                                        id_map["recording_tags"][old_id] = (
+                                            existing_link.id
+                                        )
                                     continue
 
                             elif table_name == "transcripts":
                                 # DUPLICATE CHECK
                                 existing_transcript = session.exec(
-                                    select(Transcript).where(
-                                        Transcript.recording_id
+                                    select(runtime.Transcript).where(
+                                        runtime.Transcript.recording_id
                                         == item_data["recording_id"]
                                     )
                                 ).first()
@@ -2627,7 +1585,7 @@ class BackupManager:
                                 # Point the row at where the file will land once staging
                                 # is applied.
                                 item_data["file_path"] = (
-                                    BackupManager._build_runtime_document_path(
+                                    _build_runtime_document_path(
                                         archived_file_path, state.documents_dir
                                     )
                                     or archived_file_path
@@ -2639,7 +1597,8 @@ class BackupManager:
                                 if item_data.get("file_path"):
                                     conflicting_doc = session.exec(
                                         select(model_cls).where(
-                                            model_cls.file_path == item_data["file_path"]
+                                            model_cls.file_path
+                                            == item_data["file_path"]
                                         )
                                     ).first()
                                     if conflicting_doc is not None:
@@ -2701,13 +1660,15 @@ class BackupManager:
                                 and instance.audio_path
                             ):
                                 state.restored_recording_ids.add(instance.id)
-                                for instance_key in BackupManager._get_recording_match_keys(
+                                for instance_key in _get_recording_match_keys(
                                     instance.audio_path,
                                     getattr(instance, "meeting_uid", None),
                                     getattr(instance, "public_id", None),
                                 ):
                                     restored_recording_keys[instance_key] = instance.id
-                                    existing_recordings_by_identity[instance_key] = instance
+                                    existing_recordings_by_identity[instance_key] = (
+                                        instance
+                                    )
 
                                 # Size and proxy flag come from the staged file, since
                                 # nothing has moved into place yet. A recording restored
@@ -2748,7 +1709,7 @@ class BackupManager:
                             continue
 
                         recording_speaker = session.get(
-                            RecordingSpeaker, recording_speaker_id
+                            runtime.RecordingSpeaker, recording_speaker_id
                         )
                         if recording_speaker is None:
                             continue
@@ -2814,7 +1775,7 @@ class BackupManager:
         backend rather than in an API process's memory, so it survives a restart and a
         restore no longer runs multi-gigabyte extraction inside a request worker.
         """
-        path_manager = PathManager()
+        path_manager = runtime.PathManager()
 
         BackupManager.restore_jobs.setdefault(
             job_id,
@@ -2834,7 +1795,7 @@ class BackupManager:
             path_manager.recordings_directory,
             path_manager.config_path,
             path_manager.user_data_directory,
-            BackupManager._documents_directory(path_manager),
+            runtime.documents_directory(path_manager),
             progress_callback,
         )
 

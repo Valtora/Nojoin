@@ -24,6 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Field, Session, SQLModel, select
 
+import backend.core.backup.export as backup_export
+import backend.core.backup.format as backup_format
+import backend.core.backup.paths as backup_paths
+import backend.core.backup.runtime as backup_runtime
 import backend.core.backup_manager as backup_manager_module
 import backend.core.db as db_module
 import backend.utils.version as version_utils
@@ -420,39 +424,33 @@ def build_test_context(root: Path) -> TestContext:
 
 
 def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) -> None:
-    monkeypatch.setattr(
-        backup_manager_module, "PathManager", lambda: context.path_manager
-    )
+    monkeypatch.setattr(backup_runtime, "PathManager", lambda: context.path_manager)
     monkeypatch.setattr(version_utils, "PathManager", lambda: context.path_manager)
     monkeypatch.setattr(
-        backup_manager_module, "async_session_maker", context.async_session_maker
+        backup_runtime, "async_session_maker", context.async_session_maker
     )
-    monkeypatch.setattr(backup_manager_module, "sync_engine", context.sync_engine)
-    monkeypatch.setattr(backup_manager_module, "MODELS", TEST_MODELS)
-    monkeypatch.setattr(backup_manager_module, "User", TestUser)
+    monkeypatch.setattr(backup_runtime, "sync_engine", context.sync_engine)
+    monkeypatch.setattr(backup_runtime, "MODELS", TEST_MODELS)
+    monkeypatch.setattr(backup_runtime, "User", TestUser)
     monkeypatch.setattr(
-        backup_manager_module, "CalendarProviderConfig", TestCalendarProviderConfig
+        backup_runtime, "CalendarProviderConfig", TestCalendarProviderConfig
     )
-    monkeypatch.setattr(backup_manager_module, "UserTask", TestUserTask)
-    monkeypatch.setattr(backup_manager_module, "PeopleTag", TestPeopleTag)
-    monkeypatch.setattr(backup_manager_module, "GlobalSpeaker", TestGlobalSpeaker)
-    monkeypatch.setattr(backup_manager_module, "PeopleTagLink", TestPeopleTagLink)
-    monkeypatch.setattr(backup_manager_module, "Tag", TestTag)
-    monkeypatch.setattr(backup_manager_module, "UserTaskTag", TestUserTaskTag)
-    monkeypatch.setattr(backup_manager_module, "Recording", TestRecording)
-    monkeypatch.setattr(
-        backup_manager_module, "UserTaskRecording", TestUserTaskRecording
-    )
-    monkeypatch.setattr(
-        backup_manager_module, "CalendarConnection", TestCalendarConnection
-    )
-    monkeypatch.setattr(backup_manager_module, "CalendarSource", TestCalendarSource)
-    monkeypatch.setattr(backup_manager_module, "CalendarEvent", TestCalendarEvent)
-    monkeypatch.setattr(backup_manager_module, "RecordingSpeaker", TestRecordingSpeaker)
-    monkeypatch.setattr(backup_manager_module, "RecordingTag", TestRecordingTag)
-    monkeypatch.setattr(backup_manager_module, "Transcript", TestTranscript)
-    monkeypatch.setattr(backup_manager_module, "ChatMessage", TestChatMessage)
-    monkeypatch.setattr(backup_manager_module, "Document", TestDocument)
+    monkeypatch.setattr(backup_runtime, "UserTask", TestUserTask)
+    monkeypatch.setattr(backup_runtime, "PeopleTag", TestPeopleTag)
+    monkeypatch.setattr(backup_runtime, "GlobalSpeaker", TestGlobalSpeaker)
+    monkeypatch.setattr(backup_runtime, "PeopleTagLink", TestPeopleTagLink)
+    monkeypatch.setattr(backup_runtime, "Tag", TestTag)
+    monkeypatch.setattr(backup_runtime, "UserTaskTag", TestUserTaskTag)
+    monkeypatch.setattr(backup_runtime, "Recording", TestRecording)
+    monkeypatch.setattr(backup_runtime, "UserTaskRecording", TestUserTaskRecording)
+    monkeypatch.setattr(backup_runtime, "CalendarConnection", TestCalendarConnection)
+    monkeypatch.setattr(backup_runtime, "CalendarSource", TestCalendarSource)
+    monkeypatch.setattr(backup_runtime, "CalendarEvent", TestCalendarEvent)
+    monkeypatch.setattr(backup_runtime, "RecordingSpeaker", TestRecordingSpeaker)
+    monkeypatch.setattr(backup_runtime, "RecordingTag", TestRecordingTag)
+    monkeypatch.setattr(backup_runtime, "Transcript", TestTranscript)
+    monkeypatch.setattr(backup_runtime, "ChatMessage", TestChatMessage)
+    monkeypatch.setattr(backup_runtime, "Document", TestDocument)
     monkeypatch.setattr(
         BackupManager,
         "_enqueue_recording_finalization",
@@ -926,7 +924,7 @@ async def test_safe_merge_skips_existing_recordings_matched_by_recording_identit
     assert len(restored_recordings) == 1
     assert restored_recordings[0].name == "Existing quarterly planning"
     assert (
-        BackupManager._get_recording_identity(restored_recordings[0].audio_path)
+        backup_paths._get_recording_identity(restored_recordings[0].audio_path)
         == "quarterly-planning"
     )
     assert restored_recording_speakers == []
@@ -1051,7 +1049,7 @@ async def test_overwrite_replaces_existing_recordings_matched_by_recording_ident
     assert len(restored_recordings) == 1
     assert restored_recordings[0].name == "Quarterly planning"
     assert (
-        BackupManager._get_recording_identity(restored_recordings[0].audio_path)
+        backup_paths._get_recording_identity(restored_recordings[0].audio_path)
         == "quarterly-planning"
     )
     assert len(restored_recording_speakers) == 2
@@ -1582,9 +1580,7 @@ def test_apply_foreign_keys_remaps_resolvable_links() -> None:
     id_map = {"users": {7: 42}, "calendar_events": {3: 99}}
     item = {"user_id": 7, "calendar_event_id": 3}
 
-    assert (
-        BackupManager._apply_foreign_keys("recordings", item, id_map) is None
-    )
+    assert BackupManager._apply_foreign_keys("recordings", item, id_map) is None
     assert item == {"user_id": 42, "calendar_event_id": 99}
 
 
@@ -1632,15 +1628,17 @@ def test_apply_foreign_keys_skips_row_with_unresolvable_owner(
 
     assert (
         BackupManager._apply_foreign_keys(table_name, item, id_map)
-        == backup_manager_module.SKIP_REASON_UNRESOLVED_OWNER
+        == backup_format.SKIP_REASON_UNRESOLVED_OWNER
     )
 
 
 def test_apply_foreign_keys_skips_row_whose_owner_was_never_set() -> None:
     # A backup row that never had an owner cannot gain one during restore.
     assert (
-        BackupManager._apply_foreign_keys("recordings", {"user_id": None}, {"users": {}})
-        == backup_manager_module.SKIP_REASON_UNRESOLVED_OWNER
+        BackupManager._apply_foreign_keys(
+            "recordings", {"user_id": None}, {"users": {}}
+        )
+        == backup_format.SKIP_REASON_UNRESOLVED_OWNER
     )
 
 
@@ -1648,11 +1646,9 @@ def test_models_are_ordered_so_foreign_key_targets_are_restored_first() -> None:
     # The restore resolves foreign keys in a single forward pass, so every table must be
     # listed after the tables it references. This is what makes Recording.calendar_event_id
     # resolvable at all; deferred self-references are exempt by definition.
-    position = {
-        name: index for index, (name, _) in enumerate(backup_manager_module.MODELS)
-    }
+    position = {name: index for index, (name, _) in enumerate(backup_runtime.MODELS)}
 
-    for table_name, specs in backup_manager_module.RESTORE_FOREIGN_KEYS.items():
+    for table_name, specs in backup_format.RESTORE_FOREIGN_KEYS.items():
         for spec in specs:
             if spec.target_table not in position:
                 # Targets outside MODELS (e.g. invitations) never resolve by design.
@@ -1699,11 +1695,13 @@ async def test_backup_archives_the_master_audio_not_the_playback_proxy(
 
     zip_path, warnings = await BackupManager.create_backup(
         include_audio=True,
-        archive_quality=backup_manager_module.ARCHIVE_QUALITY_ORIGINAL,
+        archive_quality=backup_format.ARCHIVE_QUALITY_ORIGINAL,
     )
 
     with zipfile.ZipFile(zip_path, "r") as archive:
-        members = [name for name in archive.namelist() if name.startswith("recordings/")]
+        members = [
+            name for name in archive.namelist() if name.startswith("recordings/")
+        ]
         assert members == ["recordings/quarterly-planning.wav"]
         assert archive.read("recordings/quarterly-planning.wav") == b"MASTER-AUDIO"
 
@@ -1726,11 +1724,7 @@ async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim
 
     encoded = tmp_path / "encoded.opus"
     encoded.write_bytes(b"OPUS-AUDIO")
-    monkeypatch.setattr(
-        BackupManager,
-        "_compress_to_opus",
-        staticmethod(lambda source: str(encoded)),
-    )
+    monkeypatch.setattr(backup_export, "_compress_to_opus", lambda source: str(encoded))
 
     await seed_source_data(
         context.async_session_maker,
@@ -1741,7 +1735,7 @@ async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim
 
     compressed_zip, _ = await BackupManager.create_backup(
         include_audio=True,
-        archive_quality=backup_manager_module.ARCHIVE_QUALITY_COMPRESSED,
+        archive_quality=backup_format.ARCHIVE_QUALITY_COMPRESSED,
     )
 
     with zipfile.ZipFile(compressed_zip, "r") as archive:
@@ -1752,7 +1746,7 @@ async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim
         assert rows[0]["audio_path"] == "recordings/quarterly-planning.opus"
         info = json.loads(archive.read("backup_info.json"))
         assert info["archive_quality"] == "compressed"
-        assert info["format_version"] == backup_manager_module.BACKUP_FORMAT_VERSION
+        assert info["format_version"] == backup_format.BACKUP_FORMAT_VERSION
 
     await context.async_engine.dispose()
 
@@ -1782,9 +1776,12 @@ async def test_backup_counts_recordings_whose_audio_is_missing_from_disk(
         assert not [n for n in archive.namelist() if n.startswith("recordings/")]
         # The row survives regardless.
         assert len(json.loads(archive.read("recordings.json"))) == 1
-        assert json.loads(archive.read("backup_info.json"))["warnings"][
-            "recordings_without_audio"
-        ] == 1
+        assert (
+            json.loads(archive.read("backup_info.json"))["warnings"][
+                "recordings_without_audio"
+            ]
+            == 1
+        )
 
     await context.async_engine.dispose()
 
@@ -1804,7 +1801,7 @@ async def test_restore_refuses_an_archive_from_a_newer_format_version(
             "backup_info.json",
             json.dumps(
                 {
-                    "format_version": backup_manager_module.BACKUP_FORMAT_VERSION + 1,
+                    "format_version": backup_format.BACKUP_FORMAT_VERSION + 1,
                     "version": "99.0.0",
                 }
             ),
@@ -2359,7 +2356,7 @@ async def test_failed_restore_leaves_the_installation_untouched(
     # And no staging directory was left behind.
     assert not (
         target_context.path_manager.user_data_directory
-        / backup_manager_module.RESTORE_STAGING_DIRNAME
+        / backup_format.RESTORE_STAGING_DIRNAME
         / job_id
     ).exists()
 
@@ -2443,7 +2440,9 @@ async def test_restore_refuses_a_damaged_archive_before_touching_anything(
     await target_context.async_engine.dispose()
 
 
-def test_cleanup_temp_files_removes_abandoned_upload_directories(tmp_path: Path) -> None:
+def test_cleanup_temp_files_removes_abandoned_upload_directories(
+    tmp_path: Path,
+) -> None:
     # Abandoned multipart uploads are directories of chunk files. The file-only sweep
     # could never reclaim them, so every interrupted upload leaked its parts forever.
     from backend.utils.path_manager import PathManager as RealPathManager
@@ -2488,9 +2487,7 @@ async def test_backup_reports_progress_through_each_stage(
 
     encoded = tmp_path / "encoded.opus"
     encoded.write_bytes(b"OPUS-AUDIO")
-    monkeypatch.setattr(
-        BackupManager, "_compress_to_opus", staticmethod(lambda source: str(encoded))
-    )
+    monkeypatch.setattr(backup_export, "_compress_to_opus", lambda source: str(encoded))
 
     await seed_source_data(
         context.async_session_maker,

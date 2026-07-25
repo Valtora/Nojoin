@@ -215,7 +215,9 @@ def cleanup_backup_artifacts(self, max_age_hours: int = 24):
     ]
 
     for target in targets:
-        reclaimed += path_manager.cleanup_temp_files(target, max_age_hours=max_age_hours)
+        reclaimed += path_manager.cleanup_temp_files(
+            target, max_age_hours=max_age_hours
+        )
 
     logger.info("Backup artifact cleanup complete. Reclaimed %s items.", reclaimed)
     return {"reclaimed": reclaimed}

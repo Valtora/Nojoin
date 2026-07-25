@@ -24,12 +24,12 @@ from sqlmodel import SQLModel
 
 import backend.models
 import backend.models.registry  # noqa: F401  (registers every model with the metadata)
-from backend.core.backup_manager import (
+from backend.core.backup.format import (
     DEFERRED_FOREIGN_KEYS,
-    MODELS,
     RESTORE_FOREIGN_KEYS,
     UNARCHIVED_TABLES,
 )
+from backend.core.backup.runtime import MODELS
 
 
 def _real_table_names() -> set[str]:
@@ -93,7 +93,9 @@ def test_exclusion_list_does_not_name_tables_that_no_longer_exist() -> None:
 
 def test_exclusion_list_gives_a_reason_for_every_entry() -> None:
     missing_reason = sorted(
-        table_name for table_name, reason in UNARCHIVED_TABLES.items() if not reason.strip()
+        table_name
+        for table_name, reason in UNARCHIVED_TABLES.items()
+        if not reason.strip()
     )
 
     assert not missing_reason, (
