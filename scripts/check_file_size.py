@@ -42,7 +42,6 @@ GRANDFATHERED: dict[str, int] = {
     "backend/worker/tasks/pipeline.py": 1579,
     "backend/utils/canonical_pipeline/diarization.py": 2485,
     "backend/utils/canonical_pipeline/core.py": 2192,
-    "backend/core/backup_manager.py": 2147,
     "backend/processing/live_transcribe.py": 1973,
     "backend/utils/canonical_pipeline/speaker.py": 1342,
 }

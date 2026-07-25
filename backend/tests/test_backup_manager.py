@@ -27,11 +27,12 @@ from sqlmodel import Field, Session, SQLModel, select
 import backend.core.backup.export as backup_export
 import backend.core.backup.format as backup_format
 import backend.core.backup.paths as backup_paths
+import backend.core.backup.restore.runner as backup_runner
+import backend.core.backup.restore.stages as backup_stages
 import backend.core.backup.runtime as backup_runtime
-import backend.core.backup_manager as backup_manager_module
 import backend.core.db as db_module
 import backend.utils.version as version_utils
-from backend.core.backup_manager import BackupManager
+from backend.core.backup import BackupManager
 from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.context_chunk import ContextChunk  # noqa: F401
@@ -452,9 +453,9 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_runtime, "ChatMessage", TestChatMessage)
     monkeypatch.setattr(backup_runtime, "Document", TestDocument)
     monkeypatch.setattr(
-        BackupManager,
+        backup_stages,
         "_enqueue_recording_finalization",
-        staticmethod(lambda recording_id, needs_proxy=True: None),
+        lambda recording_id, needs_proxy=True: None,
     )
     monkeypatch.setattr(db_module, "sync_engine", context.sync_engine)
     version_utils.reset_installed_version_cache()
@@ -1138,12 +1139,10 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
     finalized: list[tuple[int, bool]] = []
 
     monkeypatch.setattr(
-        BackupManager,
+        backup_stages,
         "_enqueue_recording_finalization",
-        staticmethod(
-            lambda recording_id, needs_proxy=True: finalized.append(
-                (recording_id, needs_proxy)
-            )
+        lambda recording_id, needs_proxy=True: finalized.append(
+            (recording_id, needs_proxy)
         ),
     )
 
@@ -1580,7 +1579,7 @@ def test_apply_foreign_keys_remaps_resolvable_links() -> None:
     id_map = {"users": {7: 42}, "calendar_events": {3: 99}}
     item = {"user_id": 7, "calendar_event_id": 3}
 
-    assert BackupManager._apply_foreign_keys("recordings", item, id_map) is None
+    assert backup_runner._apply_foreign_keys("recordings", item, id_map) is None
     assert item == {"user_id": 42, "calendar_event_id": 99}
 
 
@@ -1592,7 +1591,7 @@ def test_apply_foreign_keys_nulls_unresolvable_enrichment_link() -> None:
     id_map = {"users": {7: 42}, "calendar_events": {}}
     item = {"user_id": 7, "calendar_event_id": 3}
 
-    assert BackupManager._apply_foreign_keys("recordings", item, id_map) is None
+    assert backup_runner._apply_foreign_keys("recordings", item, id_map) is None
     assert item == {"user_id": 42, "calendar_event_id": None}
 
 
@@ -1604,7 +1603,7 @@ def test_apply_foreign_keys_nulls_invitation_id_because_invitations_are_not_arch
     # everything they owned.
     item = {"username": "alice", "invitation_id": 11}
 
-    assert BackupManager._apply_foreign_keys("users", item, {}) is None
+    assert backup_runner._apply_foreign_keys("users", item, {}) is None
     assert item["invitation_id"] is None
 
 
@@ -1627,7 +1626,7 @@ def test_apply_foreign_keys_skips_row_with_unresolvable_owner(
     id_map = {"users": {}, "recordings": {1: 1}}
 
     assert (
-        BackupManager._apply_foreign_keys(table_name, item, id_map)
+        backup_runner._apply_foreign_keys(table_name, item, id_map)
         == backup_format.SKIP_REASON_UNRESOLVED_OWNER
     )
 
@@ -1635,7 +1634,7 @@ def test_apply_foreign_keys_skips_row_with_unresolvable_owner(
 def test_apply_foreign_keys_skips_row_whose_owner_was_never_set() -> None:
     # A backup row that never had an owner cannot gain one during restore.
     assert (
-        BackupManager._apply_foreign_keys(
+        backup_runner._apply_foreign_keys(
             "recordings", {"user_id": None}, {"users": {}}
         )
         == backup_format.SKIP_REASON_UNRESOLVED_OWNER
@@ -1857,7 +1856,7 @@ async def test_restore_accepts_a_legacy_archive_without_a_format_version(
 def test_version_parsing_orders_releases_numerically(older: str, newer: str) -> None:
     # String comparison put 0.10.0 below 0.9.0, so the newer-backup warning misfired on
     # most real version bumps.
-    assert BackupManager._parse_version(older) < BackupManager._parse_version(newer)
+    assert backup_stages._parse_version(older) < backup_stages._parse_version(newer)
 
 
 @pytest.mark.anyio
@@ -2330,11 +2329,7 @@ async def test_failed_restore_leaves_the_installation_untouched(
     def _explode(session, state):
         raise RuntimeError("simulated failure part-way through the restore")
 
-    monkeypatch.setattr(
-        BackupManager,
-        "_normalise_restored_recording_state",
-        staticmethod(_explode),
-    )
+    monkeypatch.setattr(backup_stages, "_normalise_restored_recording_state", _explode)
 
     job_id = "failed-restore-job"
     BackupManager.restore_jobs[job_id] = {
@@ -2384,9 +2379,7 @@ async def test_restore_refuses_when_the_archive_will_not_fit_on_disk(
         used = 0
         free = 16  # Bytes. Nowhere near enough for the payload plus headroom.
 
-    monkeypatch.setattr(
-        backup_manager_module.shutil, "disk_usage", lambda _path: _NoSpace()
-    )
+    monkeypatch.setattr(backup_stages.shutil, "disk_usage", lambda _path: _NoSpace())
 
     job_id = "no-space-job"
     BackupManager.restore_jobs[job_id] = {

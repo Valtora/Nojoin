@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_active_superuser, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.celery_app import celery_app
-from backend.core.backup_manager import (
+from backend.core.backup import (
     ARCHIVE_QUALITIES,
     ARCHIVE_QUALITY_COMPRESSED,
     RESTORE_LOCK_KEY,

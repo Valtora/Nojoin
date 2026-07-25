@@ -91,7 +91,7 @@ def create_backup_task(
     Background task to create a backup zip file.
     Returns the path to the backup file.
     """
-    from backend.core.backup_manager import BackupManager
+    from backend.core.backup import BackupManager
 
     def report(stage: str, current: int = 0, total: int = 0) -> None:
         # Compressing a large library takes minutes. Without per-file reporting the UI
@@ -198,7 +198,7 @@ def cleanup_backup_artifacts(self, max_age_hours: int = 24):
     """
     from pathlib import Path
 
-    from backend.core.backup_manager import (
+    from backend.core.backup import (
         BACKUP_EXPORT_DIR,
         RESTORE_STAGING_DIRNAME,
     )
@@ -239,7 +239,7 @@ def restore_backup_task(
     """
     import os
 
-    from backend.core.backup_manager import BackupManager
+    from backend.core.backup import BackupManager
 
     def report(progress: str) -> None:
         self.update_state(state="PROCESSING", meta={"progress": progress})
@@ -275,7 +275,7 @@ def restore_backup_task(
         try:
             import redis as _redis
 
-            from backend.core.backup_manager import RESTORE_LOCK_KEY
+            from backend.core.backup import RESTORE_LOCK_KEY
             from backend.core.redis import REDIS_URL
 
             _redis.from_url(REDIS_URL).delete(RESTORE_LOCK_KEY)
