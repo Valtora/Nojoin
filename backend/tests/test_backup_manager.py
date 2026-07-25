@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -261,9 +262,23 @@ class TestChatMessage(TestBase, table=True):
     content: str = ""
 
 
+class TestDocument(TestBase, table=True):
+    __tablename__ = "backup_test_documents"
+
+    recording_id: int
+    title: str
+    file_path: str = Field(sa_column=Column(Text, unique=True, nullable=False))
+    file_type: str = "text/plain"
+    status: str = "READY"
+    error_message: Optional[str] = None
+
+
 TEST_MODELS = [
     ("users", TestUser),
     ("calendar_provider_configs", TestCalendarProviderConfig),
+    ("calendar_connections", TestCalendarConnection),
+    ("calendar_sources", TestCalendarSource),
+    ("calendar_events", TestCalendarEvent),
     ("user_tasks", TestUserTask),
     ("p_tags", TestPeopleTag),
     ("global_speakers", TestGlobalSpeaker),
@@ -272,13 +287,11 @@ TEST_MODELS = [
     ("user_task_tags", TestUserTaskTag),
     ("recordings", TestRecording),
     ("user_task_recordings", TestUserTaskRecording),
-    ("calendar_connections", TestCalendarConnection),
-    ("calendar_sources", TestCalendarSource),
-    ("calendar_events", TestCalendarEvent),
     ("recording_speakers", TestRecordingSpeaker),
     ("recording_tags", TestRecordingTag),
     ("transcripts", TestTranscript),
     ("chat_messages", TestChatMessage),
+    ("documents", TestDocument),
 ]
 
 
@@ -286,10 +299,12 @@ class StubPathManager:
     def __init__(self, root: Path) -> None:
         self._root = root
         self._recordings_directory = root / "recordings"
+        self._documents_directory = root / "documents"
         self._config_path = root / "config.json"
         self._executable_directory = root / "app"
         (self._executable_directory / "docs").mkdir(parents=True, exist_ok=True)
         self._recordings_directory.mkdir(parents=True, exist_ok=True)
+        self._documents_directory.mkdir(parents=True, exist_ok=True)
         self._config_path.write_text(
             json.dumps({"gemini_api_key": "top-secret", "theme": "dark"}),
             encoding="utf-8",
@@ -305,6 +320,10 @@ class StubPathManager:
     @property
     def recordings_directory(self) -> Path:
         return self._recordings_directory
+
+    @property
+    def documents_directory(self) -> Path:
+        return self._documents_directory
 
     @property
     def config_path(self) -> Path:
@@ -378,6 +397,7 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_manager_module, "RecordingTag", TestRecordingTag)
     monkeypatch.setattr(backup_manager_module, "Transcript", TestTranscript)
     monkeypatch.setattr(backup_manager_module, "ChatMessage", TestChatMessage)
+    monkeypatch.setattr(backup_manager_module, "Document", TestDocument)
     monkeypatch.setattr(db_module, "sync_engine", context.sync_engine)
     version_utils.reset_installed_version_cache()
     BackupManager.restore_jobs.clear()
@@ -1756,3 +1776,93 @@ def test_version_parsing_orders_releases_numerically(older: str, newer: str) -> 
     # String comparison put 0.10.0 below 0.9.0, so the newer-backup warning misfired on
     # most real version bumps.
     assert BackupManager._parse_version(older) < BackupManager._parse_version(newer)
+
+
+@pytest.mark.anyio
+async def test_documents_round_trip_with_their_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Attached documents were previously absent from the archive entirely: neither the
+    # table nor the files on disk were carried, so every restore lost them silently.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    attachment = source_context.path_manager.documents_directory / "agenda.pdf"
+    attachment.write_bytes(b"%PDF-1.4 agenda")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-docs",
+        recording_audio_path="data/recordings/quarterly-planning.wav",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        session.add(
+            TestDocument(
+                id=1,
+                recording_id=40,
+                title="Agenda.pdf",
+                file_path=str(attachment),
+                file_type="application/pdf",
+            )
+        )
+        await session.commit()
+
+    zip_path, warnings = await BackupManager.create_backup(include_audio=False)
+
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        assert archive.read("documents/agenda.pdf") == b"%PDF-1.4 agenda"
+        rows = json.loads(archive.read("documents.json"))
+        # The archived member path is what the row carries inside the backup.
+        assert rows[0]["file_path"] == "documents/agenda.pdf"
+    assert warnings["documents_without_files"] == 0
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    job_id = "documents-round-trip-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        restored = session.exec(select(TestDocument)).one()
+        restored_recording = session.exec(select(TestRecording)).one()
+
+    assert restored.recording_id == restored_recording.id
+    assert restored.title == "Agenda.pdf"
+    # The file landed under the target's documents directory and survived the orphan
+    # sweep, which now understands document paths as well as audio paths.
+    assert os.path.exists(restored.file_path)
+    assert Path(restored.file_path).read_bytes() == b"%PDF-1.4 agenda"
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_documents_directory_follows_the_data_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DOCUMENTS_DIR used to be a CWD-relative literal, so documents and recordings ended
+    # up in different roots on any install that moved its data directory via
+    # NOJOIN_DATA_DIR, and document files fell outside the restore's extraction guard.
+    from backend.utils.path_manager import PathManager as RealPathManager
+
+    monkeypatch.delenv("DOCUMENTS_DIR", raising=False)
+    monkeypatch.setenv("NOJOIN_DATA_DIR", str(tmp_path / "relocated"))
+
+    manager = RealPathManager()
+
+    assert manager.documents_directory.parent == manager.recordings_directory.parent
+    assert manager.documents_directory == manager.user_data_directory / "documents"

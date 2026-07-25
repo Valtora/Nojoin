@@ -22,6 +22,7 @@ from backend.models.calendar import (
     CalendarSource,
 )
 from backend.models.chat import ChatMessage
+from backend.models.document import Document
 from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
@@ -99,6 +100,7 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
     ("chat_messages", ChatMessage),
+    ("documents", Document),
 ]
 
 
@@ -163,6 +165,7 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
     "recording_tags": (_own("recording_id", "recordings"), _own("tag_id", "tags")),
     "transcripts": (_own("recording_id", "recordings"),),
     "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
+    "documents": (_own("recording_id", "recordings"),),
 }
 
 # Self-referential columns that cannot be resolved in a single forward pass because the
@@ -207,6 +210,22 @@ class _AudioPlan:
 
 
 @dataclass
+class _DocumentPlan:
+    """Attached document files the archive will carry.
+
+    Documents are always included: they are capped at UPLOAD_LIMIT_DOCUMENT each and are
+    a rounding error next to audio, so a separate toggle would add format surface for no
+    real benefit. They are stored verbatim; there is nothing useful to re-encode.
+    """
+
+    # (source path on disk, archive member path)
+    entries: List[Tuple[str, str]] = field(default_factory=list)
+    # Document.file_path as stored on the row -> archive member path.
+    arcname_by_file_path: Dict[str, str] = field(default_factory=dict)
+    missing_files: int = 0
+
+
+@dataclass
 class _RestoreState:
     """Mutable state threaded through the restore stages.
 
@@ -222,6 +241,7 @@ class _RestoreState:
     recordings_dir: Any
     config_path: Any
     user_data_dir: Any
+    documents_dir: Any
     # table_name -> { old_id: new_id } for additive foreign-key remapping.
     id_map: Dict[str, Dict[int, int]]
     # Identity key (meeting_uid:/public_id:/audio_path:) -> new recording id, so later
@@ -261,6 +281,14 @@ class BackupManager:
     @staticmethod
     def _get_app_version() -> str:
         return get_installed_version()
+
+    @staticmethod
+    def _documents_directory(path_manager: Any) -> Any:
+        """Resolve the documents directory, tolerating path managers without it."""
+        documents_dir = getattr(path_manager, "documents_directory", None)
+        if documents_dir is not None:
+            return documents_dir
+        return path_manager.user_data_directory / "documents"
 
     @staticmethod
     def _redact_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -352,6 +380,7 @@ class BackupManager:
         table_name: str,
         items: List[SQLModel],
         audio_plan: _AudioPlan | None = None,
+        document_plan: _DocumentPlan | None = None,
     ) -> List[Dict[str, Any]]:
         if table_name == "calendar_provider_configs":
             data = BackupManager._serialise_calendar_provider_configs(items)
@@ -381,6 +410,15 @@ class BackupManager:
 
                 # Proxy files are not backed up directly; they are regenerated after restore.
                 item["proxy_path"] = None
+
+        if table_name == "documents":
+            arcnames = document_plan.arcname_by_file_path if document_plan else {}
+            for item in data:
+                original_file_path = item.get("file_path")
+                if original_file_path:
+                    item["file_path"] = arcnames.get(
+                        original_file_path
+                    ) or BackupManager._build_backup_document_path(original_file_path)
 
         if table_name == "users":
             for item in data:
@@ -555,23 +593,63 @@ class BackupManager:
         return restored
 
     @staticmethod
-    def _get_recording_subpath(audio_path: str | None) -> str | None:
-        if not audio_path:
+    def _get_subpath_after(path: str | None, marker: str) -> str | None:
+        """Return the portion of ``path`` below the last ``marker`` directory component.
+
+        Falls back to the bare filename so a path stored in an unexpected layout still
+        yields a stable archive member name.
+        """
+        if not path:
             return None
 
-        normalized = str(audio_path).strip().replace("\\", "/")
+        normalized = str(path).strip().replace("\\", "/")
         parts = [part for part in normalized.split("/") if part and part != "."]
         if not parts:
             return None
 
         for index in range(len(parts) - 1, -1, -1):
-            if parts[index].lower() == "recordings":
+            if parts[index].lower() == marker:
                 tail = parts[index + 1 :]
                 if tail:
                     return "/".join(tail)
                 break
 
         return parts[-1]
+
+    @staticmethod
+    def _get_recording_subpath(audio_path: str | None) -> str | None:
+        return BackupManager._get_subpath_after(audio_path, "recordings")
+
+    @staticmethod
+    def _get_document_subpath(file_path: str | None) -> str | None:
+        return BackupManager._get_subpath_after(file_path, "documents")
+
+    @staticmethod
+    def _build_backup_document_path(file_path: str | None) -> str | None:
+        subpath = BackupManager._get_document_subpath(file_path)
+        if not subpath:
+            return None
+        return os.path.join("documents", subpath)
+
+    @staticmethod
+    def _build_runtime_document_path(
+        file_path: str | None,
+        documents_dir: str | os.PathLike[str],
+    ) -> str | None:
+        subpath = BackupManager._get_document_subpath(file_path)
+        if not subpath:
+            return None
+
+        target_abs = os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
+        cwd = os.path.abspath(os.getcwd())
+
+        try:
+            if os.path.commonpath([cwd, target_abs]) == cwd:
+                return os.path.relpath(target_abs, cwd)
+        except ValueError:
+            pass
+
+        return target_abs
 
     @staticmethod
     def _get_recording_identity(audio_path: str | None) -> str | None:
@@ -746,6 +824,49 @@ class BackupManager:
         return plan
 
     @staticmethod
+    def _build_document_plan(
+        document_rows: List[Any],
+        documents_dir: str | os.PathLike[str],
+    ) -> _DocumentPlan:
+        plan = _DocumentPlan()
+        claimed_arcnames: Set[str] = set()
+
+        for row in document_rows:
+            file_path = getattr(row, "file_path", None)
+            if not file_path:
+                continue
+
+            source_path = None
+            candidates = [os.path.abspath(file_path)]
+            subpath = BackupManager._get_document_subpath(file_path)
+            if subpath:
+                candidates.append(
+                    os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
+                )
+            for candidate in candidates:
+                if os.path.isfile(candidate):
+                    source_path = candidate
+                    break
+
+            if source_path is None:
+                logger.warning(
+                    "Document file not found on disk; archiving metadata only: %s",
+                    file_path,
+                )
+                plan.missing_files += 1
+                continue
+
+            arcname = BackupManager._build_backup_document_path(file_path)
+            if not arcname or arcname in claimed_arcnames:
+                continue
+
+            claimed_arcnames.add(arcname)
+            plan.entries.append((source_path, arcname))
+            plan.arcname_by_file_path[file_path] = arcname
+
+        return plan
+
+    @staticmethod
     def _build_runtime_recording_audio_path(
         audio_path: str | None,
         recordings_dir: str | os.PathLike[str],
@@ -813,6 +934,7 @@ class BackupManager:
         include_audio: bool,
         audio_plan: _AudioPlan | None = None,
         archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+        document_plan: _DocumentPlan | None = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Synchronous method to handle heavy file compression and zipping.
@@ -825,7 +947,9 @@ class BackupManager:
         temp_zip.close()
 
         audio_plan = audio_plan or _AudioPlan()
+        document_plan = document_plan or _DocumentPlan()
         failed_audio = 0
+        failed_documents = 0
 
         try:
             with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -863,7 +987,15 @@ class BackupManager:
                                         opus_path,
                                     )
 
-                # 3. Add Config
+                # 3. Add attached documents, always included.
+                for source_path, arcname in document_plan.entries:
+                    try:
+                        zipf.write(source_path, arcname)
+                    except Exception as e:  # noqa: BLE001
+                        logger.error(f"Failed to archive document {source_path}: {e}")
+                        failed_documents += 1
+
+                # 4. Add Config
                 if config_path.exists():
                     try:
                         config_data = json.loads(config_path.read_text())
@@ -873,12 +1005,14 @@ class BackupManager:
                     except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to back up config: {e}")
 
-                # 4. Add Backup Info
+                # 5. Add Backup Info
                 warnings = {
                     "recordings_without_audio": audio_plan.missing_audio
                     if include_audio
                     else 0,
                     "recordings_audio_failed": failed_audio,
+                    "documents_without_files": document_plan.missing_files,
+                    "documents_failed": failed_documents,
                 }
                 backup_info = {
                     "format_version": BACKUP_FORMAT_VERSION,
@@ -980,6 +1114,7 @@ class BackupManager:
     ) -> Tuple[str, Dict[str, Any]]:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
+        documents_dir = BackupManager._documents_directory(path_manager)
         config_path = path_manager.config_path
         archive_quality = BackupManager._normalise_archive_quality(archive_quality)
 
@@ -988,6 +1123,7 @@ class BackupManager:
         # 1. Dump Database (Async)
         db_dump = {}
         audio_plan = _AudioPlan()
+        document_plan = _DocumentPlan()
         async with async_session_maker() as session:
             for table_name, model_cls in MODELS:
                 results = await session.execute(
@@ -999,9 +1135,13 @@ class BackupManager:
                     audio_plan = BackupManager._build_audio_plan(
                         list(items), recordings_dir, archive_quality
                     )
+                elif table_name == "documents":
+                    document_plan = BackupManager._build_document_plan(
+                        list(items), documents_dir
+                    )
 
                 data = BackupManager._serialise_backup_table_rows(
-                    table_name, items, audio_plan
+                    table_name, items, audio_plan, document_plan
                 )
 
                 db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
@@ -1015,6 +1155,7 @@ class BackupManager:
             include_audio,
             audio_plan,
             archive_quality,
+            document_plan,
         )
 
     @staticmethod
@@ -1024,11 +1165,13 @@ class BackupManager:
     ) -> Tuple[str, Dict[str, Any]]:
         path_manager = PathManager()
         recordings_dir = path_manager.recordings_directory
+        documents_dir = BackupManager._documents_directory(path_manager)
         config_path = path_manager.config_path
         archive_quality = BackupManager._normalise_archive_quality(archive_quality)
 
         db_dump: Dict[str, str] = {}
         audio_plan = _AudioPlan()
+        document_plan = _DocumentPlan()
         with Session(sync_engine) as session:
             for table_name, model_cls in MODELS:
                 items = session.exec(
@@ -1039,9 +1182,13 @@ class BackupManager:
                     audio_plan = BackupManager._build_audio_plan(
                         list(items), recordings_dir, archive_quality
                     )
+                elif table_name == "documents":
+                    document_plan = BackupManager._build_document_plan(
+                        list(items), documents_dir
+                    )
 
                 data = BackupManager._serialise_backup_table_rows(
-                    table_name, items, audio_plan
+                    table_name, items, audio_plan, document_plan
                 )
                 db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
 
@@ -1052,6 +1199,7 @@ class BackupManager:
             include_audio,
             audio_plan,
             archive_quality,
+            document_plan,
         )
 
     @staticmethod
@@ -1171,6 +1319,8 @@ class BackupManager:
         # Extract recordings
         logger.info("Extracting files...")
         BackupManager.restore_jobs[job_id]["progress"] = "Extracting files..."
+        documents_dir = state.documents_dir
+
         for file in zipf.namelist():
             if file.startswith("recordings/"):
                 # Zip Slip Mitigation
@@ -1185,7 +1335,27 @@ class BackupManager:
                 # Optimization: Extract all files. If the DB record is skipped,
                 # the file will be orphaned but cleaned up later.
                 zipf.extract(file, user_data_dir)
-                extracted_files.add(file)
+                extracted_files.add(target_path)
+            elif file.startswith("documents/"):
+                # Documents are guarded against their own root rather than the data
+                # directory, because DOCUMENTS_DIR can point outside it.
+                subpath = file[len("documents/") :]
+                if not subpath:
+                    continue
+
+                documents_root = os.path.abspath(os.fspath(documents_dir))
+                target_path = os.path.abspath(os.path.join(documents_root, subpath))
+                if not target_path.startswith(documents_root + os.sep):
+                    error_msg = (
+                        f"Zip Slip detected: Skipping malicious file path {file}"
+                    )
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                with zipf.open(file) as source, open(target_path, "wb") as target:
+                    shutil.copyfileobj(source, target)
+                extracted_files.add(target_path)
             elif file == "config.json":
                 if clear_existing:
                     # Only restore config if we are clearing data, otherwise keep current system config
@@ -1296,12 +1466,10 @@ class BackupManager:
 
     @staticmethod
     def _restore_cleanup_orphans(state: "_RestoreState") -> None:
-        """Finalization stage: delete extracted files not referenced by any restored recording."""
-        user_data_dir = state.user_data_dir
+        """Finalization stage: delete extracted files no restored row refers to."""
         job_id = state.job_id
         extracted_files = state.extracted_files
 
-        # 4. Cleanup Orphaned Files
         # Identifies files extracted from the backup that are not referenced in the database.
         logger.info("Cleaning up orphaned files...")
         BackupManager.restore_jobs[job_id]["progress"] = "Cleaning up..."
@@ -1310,32 +1478,26 @@ class BackupManager:
         from backend.core.db import sync_engine
 
         with Session(sync_engine) as session:
-            # Fetches all audio paths currently in the DB to verify against extracted files.
-            all_recordings = session.exec(select(Recording.audio_path)).all()
-            valid_paths = set()
-            for vp in all_recordings:
-                recording_identity = BackupManager._get_recording_identity(vp)
-                if recording_identity:
-                    valid_paths.add(recording_identity)
+            # Every path the database still points at, absolute so it can be compared
+            # against the extracted files directly.
+            referenced: Set[str] = set()
+            for audio_path in session.exec(select(Recording.audio_path)).all():
+                if audio_path:
+                    referenced.add(os.path.abspath(audio_path))
+            for file_path in session.exec(select(Document.file_path)).all():
+                if file_path:
+                    referenced.add(os.path.abspath(file_path))
 
-            orphans = []
-            for file_path in extracted_files:
-                normalized_path = BackupManager._get_recording_identity(file_path)
-
-                if normalized_path not in valid_paths:
-                    orphans.append(file_path)
+            orphans = [path for path in extracted_files if path not in referenced]
 
             if orphans:
                 logger.info(f"Cleaning up {len(orphans)} orphaned files from restore.")
                 for orphan in orphans:
-                    full_path = os.path.join(user_data_dir, orphan)
-                    if os.path.exists(full_path):
+                    if os.path.exists(orphan):
                         try:
-                            os.remove(full_path)
+                            os.remove(orphan)
                         except OSError:
-                            logger.warning(
-                                f"Failed to delete orphaned file: {full_path}"
-                            )
+                            logger.warning(f"Failed to delete orphaned file: {orphan}")
 
     @staticmethod
     def _restore_backup_sync(
@@ -1346,6 +1508,7 @@ class BackupManager:
         recordings_dir: PathManager,
         config_path: PathManager,
         user_data_dir: PathManager,
+        documents_dir: PathManager,
     ):
         """
         Synchronous implementation of backup restoration to be run in a separate thread.
@@ -1361,6 +1524,7 @@ class BackupManager:
             recordings_dir=recordings_dir,
             config_path=config_path,
             user_data_dir=user_data_dir,
+            documents_dir=documents_dir,
             id_map={name: {} for name, _ in MODELS},
         )
 
@@ -2195,6 +2359,51 @@ class BackupManager:
                                     )
                                 continue
 
+                        elif table_name == "documents":
+                            # Point the row at where the file was actually extracted.
+                            item_data["file_path"] = (
+                                BackupManager._build_runtime_document_path(
+                                    item_data.get("file_path"), state.documents_dir
+                                )
+                                or item_data.get("file_path")
+                            )
+
+                            # file_path is unique. A stale row holding the same path
+                            # would abort the insert, so regenerate ours and move the
+                            # extracted file to match rather than lose the document.
+                            if item_data.get("file_path"):
+                                conflicting_doc = session.exec(
+                                    select(model_cls).where(
+                                        model_cls.file_path == item_data["file_path"]
+                                    )
+                                ).first()
+                                if conflicting_doc is not None:
+                                    original_path = item_data["file_path"]
+                                    stem, ext = os.path.splitext(original_path)
+                                    new_path = f"{stem}__{uuid4()}{ext}"
+                                    logger.warning(
+                                        f"file_path collision for restored document "
+                                        f"({original_path}); renaming to {new_path}."
+                                    )
+                                    original_abs = os.path.abspath(original_path)
+                                    new_abs = os.path.abspath(new_path)
+                                    try:
+                                        if os.path.exists(
+                                            original_abs
+                                        ) and not os.path.exists(new_abs):
+                                            os.makedirs(
+                                                os.path.dirname(new_abs), exist_ok=True
+                                            )
+                                            os.rename(original_abs, new_abs)
+                                            state.extracted_files.discard(original_abs)
+                                            state.extracted_files.add(new_abs)
+                                    except OSError as rename_err:
+                                        logger.error(
+                                            f"Failed to rename colliding restored document "
+                                            f"{original_path} -> {new_path}: {rename_err}"
+                                        )
+                                    item_data["file_path"] = new_path
+
                         # Create instance inside a savepoint so an integrity error on a single
                         # row (e.g. unforeseen unique-constraint collision) is logged and the
                         # row is skipped, rather than rolling back the whole restore.
@@ -2334,6 +2543,7 @@ class BackupManager:
                 path_manager.recordings_directory,
                 path_manager.config_path,
                 path_manager.user_data_directory,
+                BackupManager._documents_directory(path_manager),
             )
         except Exception as e:
             logger.error(f"Restore failed: {e}", exc_info=True)

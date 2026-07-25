@@ -284,6 +284,24 @@ class PathManager:
         """Get the default recordings directory path."""
         return self._user_data_directory / "recordings"
 
+    @property
+    def documents_directory(self) -> Path:
+        """Get the attached-documents directory path.
+
+        Rooted at the user data directory so it follows NOJOIN_DATA_DIR alongside
+        recordings. The previous CWD-relative literal put documents and recordings in
+        different roots on any install that moved its data directory, and left document
+        files outside the extraction guard the restore applies to the data directory.
+        """
+        configured = os.getenv("DOCUMENTS_DIR", "").strip()
+        if configured:
+            configured_path = Path(configured).expanduser()
+            if not configured_path.is_absolute():
+                configured_path = self._user_data_directory.parent / configured_path
+            return configured_path
+
+        return self._user_data_directory / "documents"
+
     def get_recordings_directory_from_config(self, config_recordings_dir: str) -> Path:
         """
         Resolve recordings directory from configuration.
