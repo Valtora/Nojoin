@@ -17,6 +17,7 @@ from backend.api.v1.api import api_router
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -93,6 +94,7 @@ CREATE TABLE context_chunks (
 
 RECORDING_SPEAKERS_SCHEMA = """
 CREATE TABLE recording_speakers (
+    embedding_version INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -178,6 +180,7 @@ CREATE TABLE recording_audio_window_manifests (
 
 GLOBAL_SPEAKERS_SCHEMA = """
 CREATE TABLE global_speakers (
+    embedding_version INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -735,13 +738,16 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
     _install("backend.processing.transcribe", transcribe_audio=fake_transcribe_audio)
     _install("backend.processing.diarize", diarize_audio=lambda *a, **k: None)
     _install(
-        "backend.processing.embedding_core", extract_embeddings=lambda *a, **k: None
+        "backend.processing.embedding_core",
+        extract_embeddings=lambda *a, **k: None,
+        EMBEDDING_METHOD_VERSION=2,
     )
     _install(
         "backend.processing.embedding",
         cosine_similarity=lambda *a, **k: 0.0,
         merge_embeddings=lambda *a, **k: None,
         find_matching_global_speaker=lambda *a, **k: None,
+        embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
     )
     _install(
@@ -901,12 +907,17 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         diarize_audio=lambda *a, **k: None,
         release_pipeline_cache=lambda: None,
     )
-    _install("backend.processing.embedding_core", extract_embeddings=lambda *a, **k: {})
+    _install(
+        "backend.processing.embedding_core",
+        extract_embeddings=lambda *a, **k: {},
+        EMBEDDING_METHOD_VERSION=2,
+    )
     _install(
         "backend.processing.embedding",
         cosine_similarity=lambda *a, **k: 0.0,
         merge_embeddings=lambda *a, **k: None,
         find_matching_global_speaker=lambda *a, **k: (None, 0.0),
+        embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
     )
     _install(

@@ -113,6 +113,7 @@ def test_validate_config_value_live_max_segment_s():
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

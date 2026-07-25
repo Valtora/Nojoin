@@ -353,6 +353,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
       {showReprocessDialog && (
         <ReprocessDialog
           recordingId={recording.id}
+          currentMaxSpeakers={recording.max_speakers ?? null}
           isOpen={showReprocessDialog}
           onClose={() => setShowReprocessDialog(false)}
           onReprocessed={(updatedRecording) => {

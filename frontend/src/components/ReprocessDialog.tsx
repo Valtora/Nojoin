@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, RefreshCw, AlertTriangle } from "lucide-react";
+import SpeakerCapField from "@/components/SpeakerCapField";
 import { reprocessRecording } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingId, ReprocessRequest } from "@/types";
@@ -27,6 +28,8 @@ interface ReprocessDialogProps {
   onClose: () => void;
   onReprocessed: (updatedRecording: Recording) => void;
   defaultBackend?: TranscriptionBackend;
+  /** The recording's current speaker cap, so the field opens showing it. */
+  currentMaxSpeakers?: number | null;
 }
 
 export default function ReprocessDialog({
@@ -35,10 +38,14 @@ export default function ReprocessDialog({
   onClose,
   onReprocessed,
   defaultBackend = "whisper",
+  currentMaxSpeakers = null,
 }: ReprocessDialogProps) {
   const [backend, setBackend] = useState<TranscriptionBackend>(defaultBackend);
   const [whisperModelSize, setWhisperModelSize] = useState<string>(
     DEFAULT_WHISPER_MODEL_SIZE,
+  );
+  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(
+    currentMaxSpeakers,
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { addNotification } = useNotificationStore();
@@ -47,9 +54,10 @@ export default function ReprocessDialog({
     if (isOpen) {
       setBackend(defaultBackend);
       setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
+      setMaxSpeakers(currentMaxSpeakers);
       setIsSubmitting(false);
     }
-  }, [isOpen, defaultBackend]);
+  }, [isOpen, defaultBackend, currentMaxSpeakers]);
 
   if (!isOpen) return null;
 
@@ -73,6 +81,10 @@ export default function ReprocessDialog({
         parakeet_model: PARAKEET_MODEL,
       };
     }
+
+    // Always sent, so clearing the field genuinely clears the cap rather than
+    // leaving the previous one in place.
+    body.max_speakers = maxSpeakers;
 
     try {
       const updatedRecording = await reprocessRecording(recordingId, body);
@@ -190,6 +202,14 @@ export default function ReprocessDialog({
               </div>
             </div>
           )}
+
+          {/* Speaker cap */}
+          <SpeakerCapField
+            value={maxSpeakers}
+            onCommit={setMaxSpeakers}
+            disabled={isSubmitting}
+            idPrefix="reprocess-speaker-cap"
+          />
 
           {/* Destructive warning */}
           <div className="flex gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">

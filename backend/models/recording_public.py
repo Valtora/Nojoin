@@ -138,6 +138,7 @@ class RecordingPublicRead(PublicModel):
     processing_eta_seconds: Optional[int] = None
     processing_eta_learning: bool = False
     processing_eta_sample_size: int = 0
+    max_speakers: Optional[int] = None
     is_archived: bool = False
     is_deleted: bool = False
     last_activity_at: Optional[datetime] = None
@@ -328,6 +329,7 @@ def serialize_recording(
         processing_eta_seconds=processing_eta_seconds,
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
+        max_speakers=getattr(recording, "max_speakers", None),
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,

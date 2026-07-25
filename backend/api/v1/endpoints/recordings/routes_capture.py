@@ -21,6 +21,11 @@ from backend.models.recording import (
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.processing.speaker_cap import (
+    MAX_SPEAKER_CAP,
+    MIN_SPEAKER_CAP,
+    normalize_speaker_cap,
+)
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.time import utc_now
@@ -591,6 +596,44 @@ async def update_client_status(
     recording.client_status = status
     if upload_progress is not None:
         recording.upload_progress = upload_progress
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+    return serialize_recording(
+        recording, has_proxy=recordings_module._recording_has_proxy(recording)
+    )
+
+
+@router.put("/{recording_id}/max_speakers", response_model=RecordingPublicRead)
+async def update_max_speakers(
+    recording_id: str,
+    max_speakers: Optional[int] = Query(
+        None,
+        ge=MIN_SPEAKER_CAP,
+        le=MAX_SPEAKER_CAP,
+        description=(
+            "Upper bound on the number of speakers. Omit or send null for "
+            "auto-detect, which is the default."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_recording_client_user),
+):
+    """Set or clear the speaker cap for an in-progress recording.
+
+    Editable for as long as the recording accepts status updates, because
+    diarization does not run until the capture is stopped -- so the value
+    present when the user hits stop is the value that gets used. That is what
+    makes a late joiner survivable: the participant count can be corrected
+    after the meeting has already started.
+    """
+    recording = await recordings_module._get_owned_recording(
+        db, recording_id, current_user.id
+    )
+
+    recordings_module._ensure_recording_accepts_status_updates(recording)
+
+    recording.max_speakers = normalize_speaker_cap(max_speakers)
     db.add(recording)
     await db.commit()
     await db.refresh(recording)

@@ -1004,6 +1004,10 @@ export default function Sidebar() {
       {reprocessRecordingId && (
         <ReprocessDialog
           recordingId={reprocessRecordingId}
+          currentMaxSpeakers={
+            recordings.find((r) => r.id === reprocessRecordingId)?.max_speakers ??
+            null
+          }
           isOpen={!!reprocessRecordingId}
           onClose={() => setReprocessRecordingId(null)}
           onReprocessed={(updatedRecording) => {

@@ -25,6 +25,14 @@ class GlobalSpeaker(BaseDBModel, table=True):
         index=True
     )  # Removed unique=True to allow same name for different users
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    embedding_version: Optional[int] = Field(
+        default=None,
+        description=(
+            "Voiceprint extraction method version. NULL means the embedding "
+            "predates versioning and is treated as version 1. Only embeddings of "
+            "the same version may be compared."
+        ),
+    )
     is_voiceprint_locked: bool = Field(
         default=False,
         description="If True, voiceprint is manually verified and won't be auto-updated",
@@ -174,6 +182,14 @@ class RecordingSpeaker(BaseDBModel, table=True):
     voice_snippet_path: Optional[str] = None
 
     embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    embedding_version: Optional[int] = Field(
+        default=None,
+        description=(
+            "Voiceprint extraction method version. NULL means the embedding "
+            "predates versioning and is treated as version 1. Only embeddings of "
+            "the same version may be compared."
+        ),
+    )
     color: Optional[str] = None
 
     recording: "Recording" = Relationship(back_populates="speakers")

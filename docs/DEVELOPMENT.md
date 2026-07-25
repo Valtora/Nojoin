@@ -65,6 +65,7 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 | Check | Runs when |
 | --- | --- |
 | `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, or a deployment path changed |
+| `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py`, or a deployment path changed |
 | `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | as `Backend tests`, plus `scripts/**` |
 | `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
@@ -74,7 +75,7 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 | `Docs validation` | always |
 | `Alembic validation` | always |
 
-A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, `scripts`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/ci.yml` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or CI-workflow change can break the built images or the test pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../CONTRIBUTING.md#merge-requirements). Only `ci.yml` is included from `.github/workflows/`: it defines the suites, so editing it must re-exercise them. Other workflows (such as the tag-driven [release pipeline](#release-workflow-and-version-detection)) cannot be validated by the unit suites and run on their own triggers — the release pipeline re-runs the full validation set on every tag push — so a change to them is not gated here and runs only the always-on validators. The `scripts` filter runs the `Python quality` job (which lints and type-checks scripts and runs the validators) without the full `Backend tests` suite, since the standalone tooling under `scripts/` is not imported by the backend tests. Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
+A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, `scripts`, `migrations`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/ci.yml` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or CI-workflow change can break the built images or the test pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../CONTRIBUTING.md#merge-requirements). Only `ci.yml` is included from `.github/workflows/`: it defines the suites, so editing it must re-exercise them. Other workflows (such as the tag-driven [release pipeline](#release-workflow-and-version-detection)) cannot be validated by the unit suites and run on their own triggers — the release pipeline re-runs the full validation set on every tag push — so a change to them is not gated here and runs only the always-on validators. The `scripts` filter runs the `Python quality` job (which lints and type-checks scripts and runs the validators) without the full `Backend tests` suite, since the standalone tooling under `scripts/` is not imported by the backend tests. Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
 
 Local equivalents:
 
@@ -149,7 +150,7 @@ The release pipeline is instead self-gating through the workflow's own `needs:` 
 - Frontend code: run `npm run lint`, `npm run test`, and `npm run build`.
 - Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behaviour, selected microphone behaviour, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
 - Documentation-only changes: run `python3 scripts/validate_docs.py`.
-- Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision.
+- Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision. Also run `python3 scripts/check_migrations.py` against a throwaway Postgres — `validate_alembic.py` only proves the revision graph resolves, and a migration that is well-formed can still abort on real data.
 - Deployment or release workflow changes: run the backend, frontend, docs, and Alembic validation set together before opening the pull request.
 - Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behaviour changes.
 - Recording context-menu changes: update both `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx`, then run the full frontend lint, test, and build set.
@@ -327,6 +328,25 @@ Development guardrails:
 - `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` controls the batch size used by the startup cutover loop. The default is `100`.
 - The localhost dev compose template at the end of this document sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on the API service. If a local dev database is stamped to a revision that no longer exists in your checkout, startup will restamp it to the current checked-in head before running `alembic upgrade head`.
 - Keep that auto-repair flag limited to disposable local databases. For persistent deployments, fix the migration graph or reconcile the database revision manually instead of auto-stamping.
+
+### Running Migrations Against Postgres
+
+`scripts/validate_alembic.py` checks the revision graph only. `scripts/check_migrations.py` executes the chain against a real Postgres, which is the only way to catch a migration that is valid SQL but fails on real rows:
+
+```bash
+docker run -d --name nojoin-migcheck -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_USER=postgres -e POSTGRES_DB=nojoin_migration_check \
+  -p 55432:5432 pgvector/pgvector:pg18-trixie
+
+DATABASE_URL=postgresql://postgres:test@localhost:55432/nojoin_migration_check \
+  python3 scripts/check_migrations.py
+
+docker rm -f nojoin-migcheck
+```
+
+It runs three phases: a fresh install from base to head; a seeded round trip that inserts deliberately awkward values, rolls the newest migration back, and re-applies it **with that data present**; and an assertion that the database really is at head. The second phase is the one that catches data-dependent failures, and it keeps working for future migrations without being rewritten.
+
+The hostile fixture includes columns holding JSON `null` rather than SQL `NULL`, because the manual speaker-merge flow writes exactly that when clearing a voiceprint. A predicate such as `jsonb_typeof(col) = 'array' AND jsonb_array_length(col) > 0` still aborts on those rows: Postgres may evaluate the two conditions in either order, so the type guard does not protect the length call. Use a plain comparison like `col <> '[]'::jsonb` instead.
 
 ### Test Reliability
 

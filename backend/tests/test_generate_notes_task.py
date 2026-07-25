@@ -43,6 +43,7 @@ CREATE TABLE users (
 );
 
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -90,6 +91,7 @@ CREATE TABLE transcripts (
 );
 
 CREATE TABLE recording_speakers (
+    embedding_version INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

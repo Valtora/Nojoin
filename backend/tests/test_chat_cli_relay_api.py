@@ -35,6 +35,7 @@ CREATE TABLE users (
     invitation_id INTEGER
 );
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
     name VARCHAR(255) NOT NULL, public_id VARCHAR(36) NOT NULL, meeting_uid VARCHAR(36) NOT NULL,
     audio_path VARCHAR(1024) NOT NULL, proxy_path VARCHAR(1024), celery_task_id VARCHAR(255),

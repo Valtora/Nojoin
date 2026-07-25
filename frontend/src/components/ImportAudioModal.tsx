@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { X, Upload, FileAudio, Loader2, CheckCircle, Calendar, FileText } from 'lucide-react';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
 import { importAudio, getSupportedAudioFormats } from '@/lib/api';
+import SpeakerCapField from '@/components/SpeakerCapField';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 interface ImportAudioModalProps {
@@ -33,6 +34,8 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [meetingName, setMeetingName] = useState('');
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
+  // null means auto-detect, which is the default and the unchanged path.
+  const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -52,6 +55,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     setSelectedFile(null);
     setMeetingName('');
     setRecordedAt(null);
+    setMaxSpeakers(null);
     setUploadState('idle');
     setUploadProgress(0);
     setIsDragging(false);
@@ -136,6 +140,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
       await importAudio(selectedFile, {
         name: meetingName || undefined,
         recordedAt: recordedAt || undefined,
+        maxSpeakers,
         onUploadProgress: setUploadProgress,
       });
 
@@ -315,6 +320,14 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                   If not set, the current time will be used.
                 </p>
               </div>
+
+              {/* Speaker cap */}
+              <SpeakerCapField
+                value={maxSpeakers}
+                onCommit={setMaxSpeakers}
+                disabled={uploadState === 'uploading'}
+                idPrefix="import-speaker-cap"
+              />
             </div>
           )}
         </div>

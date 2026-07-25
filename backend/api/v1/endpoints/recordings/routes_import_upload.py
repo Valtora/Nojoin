@@ -1,5 +1,6 @@
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -17,6 +18,11 @@ from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowMan
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.user import User
+from backend.processing.speaker_cap import (
+    MAX_SPEAKER_CAP,
+    MIN_SPEAKER_CAP,
+    normalize_speaker_cap,
+)
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import (
@@ -53,13 +59,33 @@ SUPPORTED_AUDIO_FORMATS = {
 }
 
 
+@dataclass
+class ImportOptions:
+    """Shared query parameters for the import routes.
+
+    Bundled into one dependency so both handlers stay within the argument
+    limit and so a new import-time option only has to be added in one place.
+    """
+
+    name: Optional[str] = Query(None, description="Custom name for the recording")
+    recorded_at: Optional[datetime] = Query(
+        None, description="Original recording timestamp"
+    )
+    max_speakers: Optional[int] = Query(
+        None,
+        ge=MIN_SPEAKER_CAP,
+        le=MAX_SPEAKER_CAP,
+        description=(
+            "Optional upper bound on the number of speakers. Omit for "
+            "auto-detect, which is the default."
+        ),
+    )
+
+
 @router.post("/import", response_model=RecordingPublicRead)
 async def import_audio(
     file: UploadFile = File(...),
-    name: Optional[str] = Query(None, description="Custom name for the recording"),
-    recorded_at: Optional[datetime] = Query(
-        None, description="Original recording timestamp"
-    ),
+    options: ImportOptions = Depends(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -108,8 +134,8 @@ async def import_audio(
         logger.warning(f"Failed to get duration: {e}")
 
     # Determine recording name
-    if name:
-        recording_name = name
+    if options.name:
+        recording_name = options.name
     else:
         recording_name = os.path.splitext(file.filename)[0] if file.filename else ""
         if not recording_name or recording_name == "blob":
@@ -122,10 +148,12 @@ async def import_audio(
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
         status=RecordingStatus.QUEUED,
+        max_speakers=normalize_speaker_cap(options.max_speakers),
         user_id=current_user.id,
     )
 
     # Override created_at if recorded_at is provided
+    recorded_at = options.recorded_at
     if recorded_at:
         # Ensure naive UTC datetime for database compatibility
         if recorded_at.tzinfo is not None:
@@ -168,10 +196,7 @@ async def import_audio(
 @router.post("/import/chunked/init", response_model=RecordingPublicRead)
 async def init_chunked_import(
     filename: str = Query(..., description="Original filename with extension"),
-    name: Optional[str] = Query(None, description="Custom name for the recording"),
-    recorded_at: Optional[datetime] = Query(
-        None, description="Original recording timestamp"
-    ),
+    options: ImportOptions = Depends(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -191,8 +216,8 @@ async def init_chunked_import(
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
     # Determine recording name
-    if name:
-        recording_name = name
+    if options.name:
+        recording_name = options.name
     else:
         recording_name = os.path.splitext(filename)[0]
         if not recording_name:
@@ -203,10 +228,12 @@ async def init_chunked_import(
         proxy_path=get_initial_proxy_path(file_path),
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
+        max_speakers=normalize_speaker_cap(options.max_speakers),
         user_id=current_user.id,
     )
 
     # Override created_at if recorded_at is provided
+    recorded_at = options.recorded_at
     if recorded_at:
         if recorded_at.tzinfo is not None:
             recorded_at = recorded_at.astimezone(timezone.utc).replace(tzinfo=None)

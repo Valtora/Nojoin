@@ -3,6 +3,11 @@ from typing import List, Optional
 
 import numpy as np
 
+from backend.processing.embedding_version import (
+    EMBEDDING_METHOD_VERSION,
+    LEGACY_EMBEDDING_METHOD_VERSION,
+)
+
 logger = logging.getLogger(__name__)
 
 # --- Speaker Identification Thresholds ---
@@ -23,6 +28,34 @@ UI_STRONG_MATCH_THRESHOLD = 0.75
 DUPLICATE_SPEAKER_MERGE_THRESHOLD = 0.70
 # Default threshold for the scan-matches endpoint
 SCAN_MATCH_THRESHOLD = 0.75
+
+
+def embedding_version_of(obj) -> int:
+    """Read the extraction method version off a speaker row.
+
+    Rows written before versioning existed carry ``NULL`` and are legacy by
+    definition, so the absent value maps to version 1 rather than to the
+    current version.
+    """
+    value = getattr(obj, "embedding_version", None)
+    if value is None:
+        return LEGACY_EMBEDDING_METHOD_VERSION
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return LEGACY_EMBEDDING_METHOD_VERSION
+
+
+def embeddings_are_comparable(a, b) -> bool:
+    """True when two speaker rows' voiceprints may be scored against each other.
+
+    Cosine similarity between embeddings produced by different extraction
+    methods is not meaningful -- the vectors occupy different regions of the
+    space -- so a cross-version score must never be used to merge speakers or
+    identify a person. Stale voiceprints are repaired by re-extraction, not by
+    comparing them anyway.
+    """
+    return embedding_version_of(a) == embedding_version_of(b)
 
 
 def cosine_similarity(v1: Optional[List[float]], v2: Optional[List[float]]) -> float:
@@ -94,6 +127,7 @@ def find_matching_global_speaker(
     global_speakers: List,
     threshold: float = IDENTIFICATION_THRESHOLD,
     margin: float = MARGIN_OF_VICTORY,
+    method_version: Optional[int] = None,
 ):
     """
     Find the best matching GlobalSpeaker for a given embedding.
@@ -104,12 +138,19 @@ def find_matching_global_speaker(
         threshold: Minimum similarity score to consider a match.
         margin: The minimum difference required between the best and second best match
                 to avoid ambiguous assignments.
+        method_version: Extraction method version of ``embedding``. Global
+                speakers stored under a different version are skipped, because a
+                cross-version cosine score is not a meaningful similarity.
+                Defaults to the current extraction version.
 
     Returns:
         Tuple of (best_matching_speaker, similarity_score).
         Returns (None, 0.0) if no match above threshold or if match is ambiguous.
     """
     import re
+
+    if method_version is None:
+        method_version = EMBEDDING_METHOD_VERSION
 
     placeholder_pattern = re.compile(
         r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE
@@ -118,10 +159,15 @@ def find_matching_global_speaker(
     best_match = None
     best_score = 0.0
     second_best_score = 0.0
+    skipped_stale = 0
 
     for gs in global_speakers:
         # Skip placeholder names and speakers without embeddings
         if not gs.embedding or placeholder_pattern.match(gs.name):
+            continue
+
+        if embedding_version_of(gs) != method_version:
+            skipped_stale += 1
             continue
 
         score = cosine_similarity(embedding, gs.embedding)
@@ -132,6 +178,14 @@ def find_matching_global_speaker(
             best_match = gs
         elif score > second_best_score:
             second_best_score = score
+
+    if skipped_stale:
+        logger.info(
+            "Skipped %d global speaker(s) whose voiceprint predates extraction "
+            "method v%d. Re-extract voiceprints to make them matchable again.",
+            skipped_stale,
+            method_version,
+        )
 
     # Check if the best match passes the threshold
     if best_match and best_score >= threshold:

@@ -33,6 +33,7 @@ CREATE TABLE users (
     invitation_id INTEGER
 );
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

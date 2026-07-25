@@ -5,6 +5,10 @@ import numpy as np
 import torch
 from pyannote.core import Segment
 
+from backend.processing.embedding_version import (
+    EMBEDDING_METHOD_VERSION,
+    LEGACY_EMBEDDING_METHOD_VERSION,
+)
 from backend.utils.config_manager import config_manager
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
@@ -12,6 +16,21 @@ logger = logging.getLogger(__name__)
 
 # Default embedding model
 DEFAULT_EMBEDDING_MODEL = "pyannote/wespeaker-voxceleb-resnet34-LM"
+
+# Re-exported for the worker-side callers that already import them from here.
+# They are defined in a torch-free module because the API image has no torch and
+# importing this one from a request path raises ModuleNotFoundError.
+
+# Crops shorter than this carry too little evidence to be a reliable voiceprint.
+EMBEDDING_MIN_CROP_S = 1.0
+# Absolute floor used only when a speaker has nothing longer to offer.
+EMBEDDING_FALLBACK_MIN_CROP_S = 0.5
+# Long turns are split into crops of at most this length. window="whole" pools
+# over the entire crop in one forward pass, so an uncapped 5-minute monologue
+# would be a single very large tensor.
+EMBEDDING_MAX_CROP_S = 30.0
+# How many crops to average per speaker.
+EMBEDDING_MAX_CROPS = 20
 
 
 _embedding_model_cache = {}
@@ -91,7 +110,13 @@ def load_embedding_model(device_str: str, hf_token: str = None):
         else:
             loaded_model = Model.from_pretrained(resolved_model.load_ref)
 
-        model = Inference(loaded_model, window="sliding")
+        # window="whole" pools over the entire crop in a single forward pass,
+        # which is what a speaker embedding model is designed for. The previous
+        # window="sliding" setting fed the model 5s sub-windows and averaged the
+        # raw outputs, which measurably depressed same-speaker similarity and
+        # inflated different-speaker similarity. Callers must keep crops bounded
+        # (see EMBEDDING_MAX_CROP_S).
+        model = Inference(loaded_model, window="whole")
         model.to(torch.device(device_str))
         return model
     except OSError as e:
@@ -157,12 +182,109 @@ def _filter_outlier_embeddings(embeddings: list) -> list:
     return filtered
 
 
+def _unit(vector: np.ndarray) -> Optional[np.ndarray]:
+    """L2-normalise a vector, or return None when it has no direction."""
+    norm = np.linalg.norm(vector)
+    if not np.isfinite(norm) or norm == 0:
+        return None
+    return vector / norm
+
+
+def _crop_embedding(model, audio_path: str, segment) -> Optional[np.ndarray]:
+    """Run the embedding model over one crop and return a unit vector."""
+    emb = model.crop(audio_path, segment)
+    if hasattr(emb, "data"):
+        emb = emb.data
+    emb = np.asarray(emb, dtype=float)
+    # window="whole" yields a single vector; stay tolerant of a frame axis so a
+    # caller that supplies a sliding-window Inference still gets a sane result.
+    if emb.ndim == 2:
+        emb = np.mean(emb, axis=0)
+    if emb.ndim != 1 or not np.all(np.isfinite(emb)):
+        return None
+    return _unit(emb)
+
+
+def _split_long_segment(segment, max_length_s: float = EMBEDDING_MAX_CROP_S) -> list:
+    """Chop a turn into crops of at most ``max_length_s`` seconds.
+
+    Keeps a single forward pass bounded, and makes crops comparable in length so
+    one long monologue cannot dominate the averaged voiceprint.
+    """
+    from pyannote.core import Segment
+
+    if segment.duration <= max_length_s:
+        return [segment]
+
+    pieces = []
+    start = segment.start
+    while start < segment.end - 0.01:
+        end = min(start + max_length_s, segment.end)
+        pieces.append(Segment(start, end))
+        start = end
+    return pieces
+
+
+def _select_voiceprint_crops(segments, overlap=None) -> list:
+    """Pick the crops used to build one speaker's voiceprint.
+
+    Overlapped speech is removed first: the diarization pipeline itself sets
+    ``embedding_exclude_overlap: true`` for exactly this reason, and a crop
+    containing two voices pulls the centroid towards a mixture of both.
+    """
+    from pyannote.core import Timeline
+
+    timeline = Timeline(segments)
+    if overlap is not None:
+        try:
+            timeline = timeline.extrude(overlap)
+        except Exception as e:  # noqa: BLE001 -- boundary: overlap removal is an optimisation
+            logger.warning("Could not extrude overlapped speech: %s", e)
+
+    candidates = []
+    for segment in timeline:
+        candidates.extend(_split_long_segment(segment))
+
+    usable = [s for s in candidates if s.duration >= EMBEDDING_MIN_CROP_S]
+    if not usable:
+        usable = [s for s in candidates if s.duration >= EMBEDDING_FALLBACK_MIN_CROP_S]
+    if not usable:
+        # Nothing survived overlap removal; fall back to the raw turns so a
+        # speaker who only ever talks over others still gets a voiceprint.
+        usable = [
+            piece
+            for segment in segments
+            for piece in _split_long_segment(segment)
+            if piece.duration >= EMBEDDING_FALLBACK_MIN_CROP_S
+        ] or list(segments)
+
+    usable.sort(key=lambda s: s.duration, reverse=True)
+    return usable[:EMBEDDING_MAX_CROPS]
+
+
+def _aggregate_crop_embeddings(embeddings: list) -> Optional[List[float]]:
+    """Average unit crop embeddings into one unit voiceprint."""
+    if not embeddings:
+        return None
+    if len(embeddings) >= 3:
+        embeddings = _filter_outlier_embeddings(embeddings)
+    mean = np.mean(np.array(embeddings), axis=0)
+    unit = _unit(mean)
+    if unit is None:
+        return None
+    return unit.tolist()
+
+
 def extract_embeddings(
     audio_path: str, diarization_result, device_str: str = "auto", config: dict = None
 ) -> Dict[str, List[float]]:
     """
     Extracts embeddings for each speaker in the diarization result.
     Returns a dictionary mapping speaker label to embedding vector (list of floats).
+
+    Every vector returned is unit length and carries method version
+    ``EMBEDDING_METHOD_VERSION``; callers persisting these must record that
+    version alongside them.
     """
     if diarization_result is None:
         logger.warning("Diarization result is None, skipping embedding extraction")
@@ -194,56 +316,40 @@ def extract_embeddings(
                 speaker_segments[label] = []
             speaker_segments[label].append(turn)
 
-        # For each speaker, extract embedding from the longest high-quality segment(s).
-        # Averages embeddings from multiple segments for robustness.
+        # Regions where two or more speakers are simultaneously active. Removed
+        # from every speaker's crops below so no voiceprint is built from a
+        # mixture of voices.
+        try:
+            overlap = diarization_result.get_overlap()
+        except Exception as e:  # noqa: BLE001 -- boundary: not all annotations support this
+            logger.warning("Could not compute overlapped speech regions: %s", e)
+            overlap = None
+
         for label, segments in speaker_segments.items():
-            # Filter out segments that are too short to provide a reliable voiceprint (< 0.5s)
-            valid_segments = [s for s in segments if s.duration >= 0.5]
-
-            # If no valid segments exist, fall back to whatever segments are available
-            if not valid_segments:
-                valid_segments = segments
-
-            # Sort by duration, take top 10 segments for a more robust average
-            valid_segments.sort(key=lambda s: s.duration, reverse=True)
-            top_segments = valid_segments[:10]
+            crops = _select_voiceprint_crops(segments, overlap)
 
             speaker_embeddings = []
-            for seg in top_segments:
-                # Inference takes a path and a window (Segment)
-                # But pyannote Inference usually works on the whole file with a sliding window OR a specific crop.
-                # model.crop(audio_path, seg) returns the embedding for that segment.
+            for seg in crops:
                 try:
-                    # Pyannote 3.1 / SpeechBrain 1.0+ change:
-                    # Extracts embedding for segment using model.crop (correct usage for Inference wrapper).
-
-                    emb = model.crop(audio_path, seg)
-
-                    if hasattr(emb, "data"):
-                        emb = emb.data
-
-                    # Ensure it's a numpy array
-                    emb = np.array(emb)
-
-                    # emb is (1, dimension) or (dimension,) or (frames, dimension)
-                    # If it returns multiple frames for the segment, we should average them.
-                    if len(emb.shape) == 2:
-                        emb = np.mean(emb, axis=0)
-
-                    speaker_embeddings.append(emb)
+                    unit_embedding = _crop_embedding(model, audio_path, seg)
+                    if unit_embedding is not None:
+                        speaker_embeddings.append(unit_embedding)
                 except Exception as e:  # noqa: BLE001
                     logger.warning(
                         f"Failed to extract embedding for speaker {label} segment {seg}: {e}"
                     )
 
-            if speaker_embeddings:
-                # Filter outlier segments before averaging. A mis-diarised segment
-                # from a different speaker would corrupt the mean embedding.
-                if len(speaker_embeddings) >= 3:
-                    speaker_embeddings = _filter_outlier_embeddings(speaker_embeddings)
-
-                avg_embedding = np.mean(np.array(speaker_embeddings), axis=0)
-                embeddings[label] = avg_embedding.tolist()
+            # Outlier filtering drops crops unlike the rest, which is how a
+            # mis-diarised turn from another speaker is kept out of the mean.
+            voiceprint = _aggregate_crop_embeddings(speaker_embeddings)
+            if voiceprint is not None:
+                embeddings[label] = voiceprint
+                logger.info(
+                    "Voiceprint for %s built from %d crop(s) (method v%d).",
+                    label,
+                    len(speaker_embeddings),
+                    EMBEDDING_METHOD_VERSION,
+                )
 
         return embeddings
 
@@ -294,35 +400,22 @@ def extract_embedding_for_segments(
             )
         model = _embedding_model_cache[cache_key]
 
-        # Sort segments by duration (longest first) and take top segments
-        sorted_segments = sorted(segments, key=lambda s: s[1] - s[0], reverse=True)
-        top_segments = sorted_segments[:5]  # Use up to 5 best segments
+        # Same crop preparation as automatic extraction so a manually created
+        # voiceprint lands in the same region of the space as a pipeline one and
+        # the two remain directly comparable.
+        crops = _select_voiceprint_crops(
+            [Segment(start, end) for start, end in segments]
+        )
 
         speaker_embeddings = []
-
-        for start, end in top_segments:
-            # Skip very short segments (< 0.5 seconds)
-            if end - start < 0.5:
-                continue
-
+        for seg in crops:
             try:
-                seg = Segment(start, end)
-                emb = model.crop(audio_path, seg)
-
-                if hasattr(emb, "data"):
-                    emb = emb.data
-
-                emb = np.array(emb)
-
-                # Average over frames if multi-dimensional
-                if len(emb.shape) == 2:
-                    emb = np.mean(emb, axis=0)
-
-                speaker_embeddings.append(emb)
-
+                unit_embedding = _crop_embedding(model, audio_path, seg)
+                if unit_embedding is not None:
+                    speaker_embeddings.append(unit_embedding)
             except Exception as e:  # noqa: BLE001
                 logger.warning(
-                    f"Failed to extract embedding for segment ({start:.2f}, {end:.2f}): {e}"
+                    f"Failed to extract embedding for segment ({seg.start:.2f}, {seg.end:.2f}): {e}"
                 )
                 continue
 
@@ -332,10 +425,14 @@ def extract_embedding_for_segments(
             )
             return None
 
-        # Average all extracted embeddings
-        avg_embedding = np.mean(np.array(speaker_embeddings), axis=0)
-        return avg_embedding.tolist()
+        return _aggregate_crop_embeddings(speaker_embeddings)
 
     except Exception as e:
         logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)
         return None
+
+
+__all__ = [
+    "EMBEDDING_METHOD_VERSION",
+    "LEGACY_EMBEDDING_METHOD_VERSION",
+]

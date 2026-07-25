@@ -144,6 +144,8 @@ export const getRecordingInfo = async (
 export interface ImportAudioOptions {
   name?: string;
   recordedAt?: Date;
+  /** Optional upper bound on speakers. Omit for auto-detect (the default). */
+  maxSpeakers?: number | null;
   onUploadProgress?: (progress: number) => void;
 }
 
@@ -162,6 +164,8 @@ export const importAudio = async (
   if (options?.name) initParams.append("name", options.name);
   if (options?.recordedAt)
     initParams.append("recorded_at", options.recordedAt.toISOString());
+  if (options?.maxSpeakers != null)
+    initParams.append("max_speakers", String(options.maxSpeakers));
 
   const initResponse = await api.post<Recording>(
     `/recordings/import/chunked/init?${initParams.toString()}`,

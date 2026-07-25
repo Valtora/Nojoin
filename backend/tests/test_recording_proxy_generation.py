@@ -12,6 +12,7 @@ import backend.worker.tasks as tasks_module
 
 RECORDING_PROXY_SCHEMA = """
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

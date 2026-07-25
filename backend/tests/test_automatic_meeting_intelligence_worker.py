@@ -18,6 +18,7 @@ from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResul
 
 BASE_SCHEMA = """
 CREATE TABLE recordings (
+    max_speakers INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -65,6 +66,7 @@ CREATE TABLE transcripts (
 );
 
 CREATE TABLE global_speakers (
+    embedding_version INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -89,6 +91,7 @@ CREATE TABLE people_tags (
 );
 
 CREATE TABLE recording_speakers (
+    embedding_version INTEGER,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
