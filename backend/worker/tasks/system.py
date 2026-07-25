@@ -165,4 +165,72 @@ def generate_proxy_task(self, recording_id: int):
         # Not re-raised because proxy generation is optional/secondary.
 
 
+@celery_app.task(
+    name="backend.worker.tasks.finalize_restored_recording_task",
+    base=DatabaseTask,
+    bind=True,
+)
+def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool = True):
+    """
+    Rebuild the derived artefacts a restored recording does not carry in its archive.
+
+    Backups store the transcript projection, the audio and the attached documents. The
+    canonical utterance graph, the RAG index and the playback proxy are all reproducible
+    from those, so they are rebuilt here rather than archived.
+
+    Runs on the io lane and dispatches proxy generation to the cpu lane, because ffmpeg
+    belongs on cpu while indexing belongs on io. One task per recording keeps a large
+    restore from flooding the queue with four messages per meeting.
+    """
+    from backend.utils.canonical_pipeline.startup import ensure_canonical_backfill
+
+    session = self.session
+
+    recording = session.get(Recording, recording_id)
+    if not recording:
+        logger.warning("Recording %s not found for restore finalization", recording_id)
+        return
+
+    # 1. Rebuild the canonical utterances from the restored transcript projection. The
+    #    projection carries the manual edit flags, so hand corrections survive this.
+    try:
+        ensure_canonical_backfill(session, recording_id)
+        session.commit()
+    except Exception as e:  # noqa: BLE001
+        session.rollback()
+        logger.error(
+            "Canonical backfill failed for restored recording %s: %s", recording_id, e
+        )
+
+    # 2. Rebuild the RAG index for the transcript and every attached document.
+    try:
+        celery_app.send_task(
+            "backend.worker.tasks.index_transcript_task", args=[recording_id]
+        )
+        document_ids = session.exec(
+            select(Document.id).where(Document.recording_id == recording_id)
+        ).all()
+        for document_id in document_ids:
+            celery_app.send_task(
+                "backend.worker.tasks.process_document_task", args=[document_id]
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            "Failed to queue indexing for restored recording %s: %s", recording_id, e
+        )
+
+    # 3. Playback proxy, on the cpu lane where ffmpeg lives.
+    if needs_proxy:
+        try:
+            celery_app.send_task(
+                "backend.worker.tasks.generate_proxy_task", args=[recording_id]
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error(
+                "Failed to queue proxy generation for restored recording %s: %s",
+                recording_id,
+                e,
+            )
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

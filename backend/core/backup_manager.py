@@ -176,6 +176,22 @@ DEFERRED_FOREIGN_KEYS: Dict[str, Tuple[str, ...]] = {
 }
 
 
+# Recording state that belongs to the source installation and means nothing on the
+# target: a task id from another broker, a browser capture that is not portable, and
+# progress counters for work that is not running. Restoring these verbatim left
+# recordings stuck as permanently processing, which also blocked the canonical backfill
+# because it refuses to touch an in-flight recording.
+TRANSIENT_RECORDING_STATUSES = frozenset(
+    {"UPLOADING", "QUEUED", "PROCESSING", "PAUSED"}
+)
+RESTORED_RECORDING_TERMINAL_STATUS = "PROCESSED"
+RESTORED_RECORDING_INTERRUPTED_STATUS = "ERROR"
+RESTORED_RECORDING_INTERRUPTED_MESSAGE = (
+    "This recording was still being processed when the backup was taken, so it was "
+    "restored without a completed transcript. Reprocess it to finish."
+)
+
+
 # Skip reasons reported back to the operator. Kept coarse on purpose: enough to tell a
 # missing owner from a constraint clash without echoing row identifiers to the client.
 SKIP_REASON_UNRESOLVED_OWNER = "unresolved_owner"
@@ -257,6 +273,8 @@ class _RestoreState:
     )
     # Restored recordings whose audio landed on disk need a regenerated playback proxy.
     recordings_requiring_proxy: Set[int] = field(default_factory=set)
+    # Every recording newly inserted by this restore, for post-restore finalisation.
+    restored_recording_ids: Set[int] = field(default_factory=set)
     # Archive members extracted under recordings/, used for orphan cleanup.
     extracted_files: Set[str] = field(default_factory=set)
     # table_name -> reason -> count, surfaced to the operator when the restore finishes.
@@ -1451,15 +1469,72 @@ class BackupManager:
                     logger.error(f"Pre-flight cleanup failed: {e}")
 
     @staticmethod
-    def _restore_enqueue_proxies(state: "_RestoreState") -> None:
-        """Finalization stage: queue proxy regeneration for restored on-disk recordings."""
-        recordings_requiring_proxy = state.recordings_requiring_proxy
-        for recording_id in sorted(recordings_requiring_proxy):
+    def _enqueue_recording_finalization(recording_id: int, needs_proxy: bool) -> None:
+        from backend.worker.tasks import finalize_restored_recording_task
+
+        finalize_restored_recording_task.delay(recording_id, needs_proxy=needs_proxy)
+
+    @staticmethod
+    def _normalise_restored_recording_state(
+        session: Any, state: "_RestoreState"
+    ) -> None:
+        """Finalization stage: settle the status of every newly restored recording.
+
+        A recording captured mid-flight carries a status this installation can never
+        advance. Recordings whose transcript came across completed are marked processed;
+        the rest are marked errored so the operator can reprocess them deliberately.
+        """
+        for recording_id in sorted(state.restored_recording_ids):
+            recording = session.get(Recording, recording_id)
+            if recording is None:
+                continue
+
+            status = getattr(recording, "status", None)
+            status_value = getattr(status, "value", status)
+            if status_value not in TRANSIENT_RECORDING_STATUSES:
+                continue
+
+            transcript = session.exec(
+                select(Transcript).where(Transcript.recording_id == recording_id)
+            ).first()
+            transcript_complete = bool(transcript) and (
+                getattr(transcript, "transcript_status", "completed") == "completed"
+            )
+
+            if transcript_complete:
+                recording.status = RESTORED_RECORDING_TERMINAL_STATUS
+            else:
+                recording.status = RESTORED_RECORDING_INTERRUPTED_STATUS
+                if transcript is not None and hasattr(transcript, "error_message"):
+                    transcript.error_message = (
+                        RESTORED_RECORDING_INTERRUPTED_MESSAGE
+                    )
+                    session.add(transcript)
+
+            logger.info(
+                "Restored recording %s carried in-flight status %s; settled as %s.",
+                recording_id,
+                status_value,
+                recording.status,
+            )
+            session.add(recording)
+
+    @staticmethod
+    def _restore_enqueue_finalization(state: "_RestoreState") -> None:
+        """Finalization stage: queue the per-recording rebuild of derived artefacts.
+
+        One task per recording rather than one per concern. It runs on the io lane and
+        dispatches proxy generation to the cpu lane, so the queue separation survives.
+        """
+        for recording_id in sorted(state.restored_recording_ids):
             try:
-                BackupManager._enqueue_proxy_generation(recording_id)
+                BackupManager._enqueue_recording_finalization(
+                    recording_id,
+                    needs_proxy=recording_id in state.recordings_requiring_proxy,
+                )
             except Exception as e:  # noqa: BLE001
                 logger.error(
-                    "Failed to enqueue proxy generation for restored recording %s: %s",
+                    "Failed to enqueue finalization for restored recording %s: %s",
                     recording_id,
                     e,
                 )
@@ -1755,6 +1830,27 @@ class BackupManager:
 
                             # Backups do not preserve proxy files; regenerate them after restore.
                             item_data["proxy_path"] = None
+
+                            # Drop state that belongs to the source installation. The
+                            # celery_task_id in particular names a task on another
+                            # broker, which the cancel path would otherwise try to revoke.
+                            for transient_field, blank in (
+                                ("celery_task_id", None),
+                                ("client_status", None),
+                                ("processing_step", None),
+                                ("processing_progress", 0),
+                                ("upload_progress", 0),
+                            ):
+                                if transient_field in item_data:
+                                    item_data[transient_field] = blank
+
+                            # Canonical utterances are rebuilt from the transcript
+                            # projection rather than archived, so restored recordings
+                            # enter as un-classified and are backfilled exactly like
+                            # legacy rows. The status is settled in the finalisation
+                            # pass, once the transcript rows exist.
+                            if "pipeline_generation" in item_data:
+                                item_data["pipeline_generation"] = None
 
                             runtime_audio_path = (
                                 BackupManager._build_runtime_recording_audio_path(
@@ -2437,6 +2533,7 @@ class BackupManager:
                             and hasattr(instance, "audio_path")
                             and instance.audio_path
                         ):
+                            state.restored_recording_ids.add(instance.id)
                             for instance_key in BackupManager._get_recording_match_keys(
                                 instance.audio_path,
                                 getattr(instance, "meeting_uid", None),
@@ -2483,12 +2580,14 @@ class BackupManager:
                     recording_speaker.merged_into_id = new_merge_target_id
                     session.add(recording_speaker)
 
+                BackupManager._normalise_restored_recording_state(session, state)
+
                 session.commit()
                 logger.info("Database restore complete.")
                 BackupManager.restore_jobs[job_id]["progress"] = "Database restored"
 
-            BackupManager._restore_enqueue_proxies(state)
             BackupManager._restore_cleanup_orphans(state)
+            BackupManager._restore_enqueue_finalization(state)
 
         skip_summary = state.skip_summary()
         job = BackupManager.restore_jobs[job_id]

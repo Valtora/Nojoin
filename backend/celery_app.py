@@ -173,6 +173,8 @@ TASK_ROUTES = {
     "backend.processing.segment_transcode.transcode_segment_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.generate_proxy_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
+    # Orchestrates post-restore rebuilds; dispatches the ffmpeg work to the cpu lane.
+    "backend.worker.tasks.finalize_restored_recording_task": {"queue": IO_QUEUE},
     # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.
     "backend.worker.tasks.refresh_meeting_edge_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},

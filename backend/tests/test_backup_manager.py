@@ -148,6 +148,17 @@ class TestRecording(TestBase, table=True):
     proxy_path: Optional[str] = None
     file_size_bytes: Optional[int] = None
     status: str = "PROCESSED"
+    client_status: Optional[str] = None
+    celery_task_id: Optional[str] = None
+    processing_step: Optional[str] = None
+    processing_progress: int = 0
+    upload_progress: int = 0
+    # Mirrors the real model: the default lives on the Pydantic field, not the column,
+    # so an explicit NULL is inserted as NULL rather than being replaced by a
+    # SQLAlchemy column default.
+    pipeline_generation: Optional[str] = Field(
+        default="unified", sa_column=Column(Text, nullable=True)
+    )
     user_id: Optional[int] = None
 
 
@@ -398,6 +409,11 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_manager_module, "Transcript", TestTranscript)
     monkeypatch.setattr(backup_manager_module, "ChatMessage", TestChatMessage)
     monkeypatch.setattr(backup_manager_module, "Document", TestDocument)
+    monkeypatch.setattr(
+        BackupManager,
+        "_enqueue_recording_finalization",
+        staticmethod(lambda recording_id, needs_proxy=True: None),
+    )
     monkeypatch.setattr(db_module, "sync_engine", context.sync_engine)
     version_utils.reset_installed_version_cache()
     BackupManager.restore_jobs.clear()
@@ -1064,12 +1080,16 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
     restored_audio = (
         target_context.path_manager.recordings_directory / "imported-meeting.opus"
     )
-    queued_proxy_ids: list[int] = []
+    finalized: list[tuple[int, bool]] = []
 
     monkeypatch.setattr(
         BackupManager,
-        "_enqueue_proxy_generation",
-        staticmethod(lambda recording_id: queued_proxy_ids.append(recording_id)),
+        "_enqueue_recording_finalization",
+        staticmethod(
+            lambda recording_id, needs_proxy=True: finalized.append(
+                (recording_id, needs_proxy)
+            )
+        ),
     )
 
     backup_zip = tmp_path / "restore-proxy.zip"
@@ -1131,7 +1151,9 @@ async def test_restore_clears_stale_proxy_path_and_enqueues_proxy_generation_whe
     with Session(target_context.sync_engine) as session:
         restored_recording = session.exec(select(TestRecording)).one()
 
-    assert queued_proxy_ids == [restored_recording.id]
+    # One finalization task per restored recording, flagged for a proxy rebuild because
+    # the audio landed on disk.
+    assert finalized == [(restored_recording.id, True)]
     assert restored_audio.exists()
 
     assert restored_recording.proxy_path is None
@@ -1866,3 +1888,114 @@ async def test_documents_directory_follows_the_data_directory(
 
     assert manager.documents_directory.parent == manager.recordings_directory.parent
     assert manager.documents_directory == manager.user_data_directory / "documents"
+
+
+@pytest.mark.anyio
+async def test_restore_settles_in_flight_recordings_and_drops_foreign_task_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A recording backed up mid-processing used to restore as permanently processing,
+    # carrying a celery_task_id that names a task on the source system's broker. That
+    # status also blocks the canonical backfill, so the recording could never recover.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-inflight",
+        recording_audio_path="data/recordings/in-flight.wav",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        recording = await session.get(TestRecording, 40)
+        recording.status = "PROCESSING"
+        recording.client_status = "RECORDING"
+        recording.celery_task_id = "source-broker-task-id"
+        recording.processing_step = "Diarizing"
+        recording.processing_progress = 45
+        recording.upload_progress = 100
+        session.add(recording)
+        session.add(TestTranscript(id=5, recording_id=40, text="Partial transcript"))
+        await session.commit()
+
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    job_id = "in-flight-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    with Session(target_context.sync_engine) as session:
+        restored = session.exec(select(TestRecording)).one()
+
+    # The transcript came across, so the recording settles as processed rather than
+    # sitting in a state nothing on this installation can advance.
+    assert restored.status == "PROCESSED"
+    assert restored.celery_task_id is None
+    assert restored.client_status is None
+    assert restored.processing_step is None
+    assert restored.processing_progress == 0
+    assert restored.upload_progress == 0
+    # Un-classified, so the existing cutover machinery treats it exactly like a legacy
+    # row and rebuilds the canonical utterances from the transcript projection.
+    assert restored.pipeline_generation is None
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_marks_in_flight_recording_without_transcript_as_errored(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-interrupted",
+        recording_audio_path="data/recordings/interrupted.wav",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        recording = await session.get(TestRecording, 40)
+        recording.status = "QUEUED"
+        session.add(recording)
+        await session.commit()
+
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+
+    job_id = "interrupted-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    with Session(target_context.sync_engine) as session:
+        restored = session.exec(select(TestRecording)).one()
+
+    # No transcript came across, so the operator is told to reprocess rather than being
+    # shown a meeting that silently has nothing in it.
+    assert restored.status == "ERROR"
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
