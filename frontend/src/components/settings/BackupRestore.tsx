@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { uploadBackupChunked } from "@/lib/api";
+import { uploadBackupChunked, type RestoreSkipSummary } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import {
   Download,
@@ -14,6 +14,37 @@ import {
 } from "lucide-react";
 import RestoreOptionsModal from "@/components/settings/RestoreOptionsModal";
 import BackupOptionsModal from "@/components/settings/BackupOptionsModal";
+
+/** Turns the machine-readable reason codes into something an operator can act on. */
+const SKIP_REASON_LABELS: Record<string, string> = {
+  unresolved_owner:
+    "the user or parent record they belong to was not part of this restore",
+  no_identity: "the backup did not identify them well enough to match",
+  insert_failed: "the database rejected them",
+};
+
+const TABLE_LABELS: Record<string, string> = {
+  users: "Users",
+  recordings: "Meetings",
+  transcripts: "Transcripts",
+  recording_speakers: "Meeting speakers",
+  global_speakers: "People",
+  documents: "Attached documents",
+  tags: "Tags",
+  p_tags: "People tags",
+  user_tasks: "Tasks",
+  chat_messages: "Chat messages",
+  calendar_connections: "Calendar connections",
+  calendar_sources: "Calendars",
+  calendar_events: "Calendar events",
+};
+
+const countSkippedRows = (skipped?: RestoreSkipSummary | null): number =>
+  Object.values(skipped ?? {}).reduce(
+    (total, reasons) =>
+      total + Object.values(reasons).reduce((sum, count) => sum + count, 0),
+    0,
+  );
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return "0 Bytes";
@@ -36,6 +67,7 @@ export default function BackupRestore() {
   const [processingStatus, setProcessingStatus] = useState<string>("");
   const [showRestoreOptions, setShowRestoreOptions] = useState(false);
   const [showBackupOptions, setShowBackupOptions] = useState(false);
+  const [skipReport, setSkipReport] = useState<RestoreSkipSummary | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -123,12 +155,13 @@ export default function BackupRestore() {
       setImporting(true);
       setUploadProgress(0);
       setMessage(null);
+      setSkipReport(null);
       setShowRestoreOptions(false); // Close the modal
 
       setProcessingStatus("Preparing upload...");
 
       // Use chunked upload for robustness
-      await uploadBackupChunked(
+      const result = await uploadBackupChunked(
         selectedFile,
         clear,
         overwrite,
@@ -136,12 +169,28 @@ export default function BackupRestore() {
         (status) => setProcessingStatus(status),
       );
 
+      setSelectedFile(null);
+      setIsValidZip(false);
+
+      const skipped = result?.skipped;
+      const skippedRows = countSkippedRows(skipped);
+
+      if (skippedRows > 0) {
+        // The restore succeeded but did not bring everything across. Reporting that as a
+        // plain success, then reloading the page two seconds later, would hide it
+        // entirely, so the report stays on screen until the operator dismisses it.
+        setSkipReport(skipped ?? null);
+        setMessage({
+          type: "error",
+          text: `Backup restored, but ${skippedRows} record${skippedRows === 1 ? "" : "s"} could not be restored. Review the details below, then refresh the page.`,
+        });
+        return;
+      }
+
       setMessage({
         type: "success",
         text: "Backup restored successfully. Please refresh the page.",
       });
-      setSelectedFile(null);
-      setIsValidZip(false);
 
       // Refresh page after short delay to show success message
       setTimeout(() => {
@@ -323,6 +372,42 @@ export default function BackupRestore() {
               )}
               <p className="text-sm font-medium">{message.text}</p>
             </div>
+          </div>
+        )}
+
+        {skipReport && (
+          <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <h5 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                Records that could not be restored
+              </h5>
+              <button
+                onClick={() => {
+                  setSkipReport(null);
+                  window.location.reload();
+                }}
+                className="text-xs font-medium text-amber-900 dark:text-amber-200 underline shrink-0"
+              >
+                Dismiss and refresh
+              </button>
+            </div>
+            <ul className="space-y-2">
+              {Object.entries(skipReport).map(([table, reasons]) => (
+                <li key={table} className="text-xs text-amber-900 dark:text-amber-200">
+                  <span className="font-medium">
+                    {TABLE_LABELS[table] ?? table}
+                  </span>
+                  <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                    {Object.entries(reasons).map(([reason, count]) => (
+                      <li key={reason}>
+                        {count} skipped because{" "}
+                        {SKIP_REASON_LABELS[reason] ?? reason}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
