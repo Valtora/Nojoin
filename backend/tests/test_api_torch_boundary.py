@@ -126,6 +126,33 @@ def test_recordings_endpoints_import_without_torch():
     )
 
 
+def test_transcript_utterance_reads_are_torch_free():
+    """The utterance serializer resolves each utterance's capture channel.
+
+    That vocabulary lives in ``backend.processing.browser_live_audio`` rather
+    than in ``live_transcribe``, which imports torch. Importing the wrong one
+    would take every transcript read down in the API image, so pin the boundary
+    here rather than trusting the import to stay where it was put.
+    """
+    _assert_torch_free(
+        """
+        import backend.api.v1.endpoints.transcripts.routes_utterances
+        from backend.processing.browser_live_audio import (
+            source_channel_from_confidence_payload,
+        )
+
+        clear = {
+            "source_channel_evidence": {
+                "authority": "clear",
+                "dominant_source": "system",
+            }
+        }
+        assert source_channel_from_confidence_payload(clear) == "system"
+        assert source_channel_from_confidence_payload(None) is None
+        """
+    )
+
+
 def test_no_api_module_imports_embedding_core() -> None:
     """Catch the exact shape of the regression: a lazy import in a handler.
 

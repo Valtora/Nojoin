@@ -6985,3 +6985,98 @@ async def test_be006_orchestrator_none_effective_point_is_noop(
         "updated_utterance_count": 0,
         "preserved_manual_lock_count": 0,
     }
+
+
+@pytest.mark.anyio
+async def test_serialized_utterances_expose_the_capture_source_channel(
+    test_session_maker: sessionmaker,
+) -> None:
+    """Utterance reads carry the live lane's channel reading, when it was clear.
+
+    The live lane persists its channel-dominance evidence inside
+    ``confidence_payload``; the serializer lifts it to a flat ``source_channel``
+    so the live transcript panel can label audio provenance without the client
+    having to understand the evidence shape. Anything short of CLEAR authority
+    must serialize as ``None`` so the panel renders no label at all.
+    """
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        serialize_canonical_utterances,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    def _evidence(authority: str, dominant_source: str | None) -> dict:
+        return {
+            "source_channel_evidence": {
+                "authority": authority,
+                "dominant_source": dominant_source,
+            }
+        }
+
+    def append_live_utterances(sync_session):
+        append_utterances_from_segments(
+            sync_session,
+            recording_id=1,
+            segments=[
+                {
+                    "id": "live-utt-system",
+                    "start": 0.0,
+                    "end": 1.0,
+                    "speaker": "UNKNOWN",
+                    "text": "from the shared tab",
+                    "provisional": True,
+                    "segment_source": "live",
+                    "confidence_payload": _evidence("clear", "system"),
+                },
+                {
+                    "id": "live-utt-mic",
+                    "start": 1.0,
+                    "end": 2.0,
+                    "speaker": "UNKNOWN",
+                    "text": "from the microphone",
+                    "provisional": True,
+                    "segment_source": "live",
+                    "confidence_payload": _evidence("clear", "microphone"),
+                },
+                {
+                    "id": "live-utt-overlap",
+                    "start": 2.0,
+                    "end": 3.0,
+                    "speaker": "UNKNOWN",
+                    "text": "both at once",
+                    "provisional": True,
+                    "segment_source": "live",
+                    "confidence_payload": _evidence("overlap", "microphone"),
+                },
+                {
+                    "id": "live-utt-bare",
+                    "start": 3.0,
+                    "end": 4.0,
+                    "speaker": "UNKNOWN",
+                    "text": "no evidence at all",
+                    "provisional": True,
+                    "segment_source": "live",
+                },
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.PROVISIONAL,
+            trigger_source="test",
+        )
+        return serialize_canonical_utterances(sync_session, 1)
+
+    async with test_session_maker() as session:
+        serialized = await session.run_sync(append_live_utterances)
+        await session.commit()
+
+    by_id = {payload["id"]: payload for payload in serialized}
+
+    assert by_id["live-utt-system"]["source_channel"] == "system"
+    assert by_id["live-utt-mic"]["source_channel"] == "microphone"
+    assert by_id["live-utt-overlap"]["source_channel"] is None
+    assert by_id["live-utt-bare"]["source_channel"] is None
+
+    # Live utterances carry no speaker: diarization only runs at finalize.
+    assert {payload["speaker"] for payload in serialized} == {"UNKNOWN"}
+    assert all(payload["provisional"] is True for payload in serialized)
