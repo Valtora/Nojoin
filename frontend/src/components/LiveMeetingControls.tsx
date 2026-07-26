@@ -72,12 +72,16 @@ export default function LiveMeetingControls({
     }
   };
 
+  // Inline during capture: a full-width field spanned the whole workspace for
+  // what is at most a two-character value, and pushed the transcript panel down
+  // by three lines of label and hint.
   const speakerCapField = (
     <SpeakerCapField
       value={maxSpeakers}
       onCommit={handleMaxSpeakersCommit}
       disabled={disabled || !recordingId}
       size={size}
+      layout="inline"
       liveHint
       idPrefix={`live-speaker-cap-${size}`}
     />

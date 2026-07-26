@@ -131,25 +131,37 @@ runs:
 1. Each segment upload endpoint dispatches a live transcription task
    (`backend/processing/live_transcribe.py`).
 2. The task slices completed speech regions, transcribes them with the same
-   engine selected by `transcription_backend` for final processing, assigns
-   provisional live speaker identities, writes canonical provisional utterances
-   first, and refreshes `Transcript.segments` as a compatibility projection.
+   engine selected by `transcription_backend` for final processing, writes
+   canonical provisional utterances first, and refreshes `Transcript.segments`
+   as a compatibility projection.
    VAD regions
    are padded and each region clip is prepended with a short rolling audio
    context window (`live/context.wav`) so the engine has acoustic run-up and
    word edges are not clipped; the engine output is then sliced back to the
    region.
-3. The web client shows a single in-flight workspace with waveform, Meeting
-   Edge guidance, notes, and processing visibility as soon as the recording is
-   in flight. The page no longer exposes provisional live transcript text,
-   even though the backend live lane still emits it internally for Meeting
-   Edge and later processing reuse.
-4. Live speaker assignment uses online voice embeddings. Matching regions are
-   merged into stable `LIVE_XX` speaker labels; short or embedding-less regions
-   reuse the most recent stable label instead of creating new speaker churn.
-   Embedding extraction uses a centred window trimmed away from segment edges
-   to reduce noise-pickup bias. Live speaker names and transcript edits made by
+3. The web client shows a single in-flight workspace with a live transcript
+   panel, waveform, Meeting Edge guidance, notes, and processing visibility as
+   soon as the recording is in flight. The panel polls
+   `GET /transcripts/{id}/utterances` every three seconds for provisional
+   utterances and is read-only. The recording detail payload continues to
+   suppress in-flight transcript text and segments, so provisional text still
+   never reaches recording cards, the sidebar, or exports; the utterances
+   endpoint is the only in-flight transcript surface.
+4. Live utterances carry no speaker. Every provisional utterance is written
+   with the `UNKNOWN` label, because diarization runs only at finalize; speaker
+   identity for live text is therefore resolved by the catch-up diarization and
+   final pipeline passes rather than during capture. Transcript edits made by
    the user are treated as authoritative.
+   What the lane does resolve per region is the *capture channel*: it compares
+   per-channel RMS to decide whether the microphone or the shared system audio
+   dominated, and persists that reading in the utterance's
+   `confidence_payload`. Utterance reads expose it as `source_channel`
+   (`microphone`, `system`, or null), which the live panel uses to label audio
+   provenance. It is populated only when the evidence was unambiguous, and it
+   describes the channel rather than a person: browser capture always produces
+   two channels, and a capture with no shared audio leaves channel 0 silent, so
+   a microphone-only capture reads as clear microphone dominance for every
+   region including speech from everyone else in the room.
 5. After new live segments land, the API/worker layer best-effort dispatches a
    separate `refresh_meeting_edge_task`. That task builds a bounded recent
    transcript window, reuses the previous run's dedicated rolling summary (a

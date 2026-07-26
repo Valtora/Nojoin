@@ -141,6 +141,9 @@ export interface TranscriptSpeakerAssignment {
 
 export type ExportContentType = "transcript" | "notes" | "both" | "audio";
 
+/** A browser capture channel: the local microphone or the shared system audio. */
+export type CaptureSourceChannel = "microphone" | "system";
+
 export interface TranscriptUtterance {
   id: string;
   start: number;
@@ -159,6 +162,14 @@ export interface TranscriptUtterance {
   speaker_manually_edited?: boolean;
   text_manually_edited?: boolean;
   speaker_confidence?: number | null;
+  /**
+   * Which capture channel carried this audio, when the live lane could tell.
+   * Audio provenance only: a capture with no shared tab audio still carries
+   * every voice in the room on the microphone channel, so this must never be
+   * presented as a speaker identity. Null when the sources overlapped or
+   * neither dominated.
+   */
+  source_channel?: CaptureSourceChannel | null;
   text_confidence?: number | null;
   speaker_assignment_source?: string;
   speaker_assignment_authority?: "provisional" | "finalized" | "manual" | string;
@@ -194,6 +205,14 @@ export interface TranscriptSegment {
   speaker_manually_edited?: boolean;
   text_manually_edited?: boolean;
   speaker_confidence?: number | null;
+  /**
+   * Which capture channel carried this audio, when the live lane could tell.
+   * Audio provenance only: a capture with no shared tab audio still carries
+   * every voice in the room on the microphone channel, so this must never be
+   * presented as a speaker identity. Null when the sources overlapped or
+   * neither dominated.
+   */
+  source_channel?: CaptureSourceChannel | null;
   text_confidence?: number | null;
   speaker_assignment_source?: string;
   speaker_assignment_authority?: "provisional" | "finalized" | "manual" | string;

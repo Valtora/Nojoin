@@ -1,9 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import RecordingStatusDisplay from "./RecordingStatusDisplay";
-import { Recording, RecordingStatus } from "@/types";
+import { ClientStatus, Recording, RecordingStatus } from "@/types";
+
+const getTranscriptUtterances = vi.fn();
+
+vi.mock("@/lib/api/transcript", () => ({
+  getTranscriptUtterances: (...args: unknown[]) =>
+    getTranscriptUtterances(...args),
+}));
 
 vi.mock("./AmbientWorkspace", () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -15,6 +22,10 @@ vi.mock("./LiveAudioWaveform", () => ({
 
 vi.mock("./LiveMeetingControls", () => ({
   default: () => <div data-testid="live-meeting-controls" />,
+}));
+
+vi.mock("./LiveTranscriptPanel", () => ({
+  default: () => <div data-testid="live-transcript-panel" />,
 }));
 
 vi.mock("./MeetingEdgePanel", () => ({
@@ -53,6 +64,17 @@ const buildRecording = (overrides: Partial<Recording> = {}): Recording => ({
 });
 
 describe("RecordingStatusDisplay", () => {
+  beforeEach(() => {
+    getTranscriptUtterances.mockReset();
+    getTranscriptUtterances.mockResolvedValue({
+      recording_id: "rec-1",
+      revision: 0,
+      utterances: [],
+      tombstones: [],
+      speakers: [],
+    });
+  });
+
   it("renders Meeting Edge and notes panels by default", () => {
     render(
       <RecordingStatusDisplay
@@ -96,5 +118,80 @@ describe("RecordingStatusDisplay", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to Recordings" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the live transcript panel during a browser capture", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.UPLOADING,
+          client_status: ClientStatus.RECORDING,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("live-transcript-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("live-audio-waveform")).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-edge-panel")).toBeInTheDocument();
+  });
+
+  it("hides the live transcript panel once processing starts", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.QUEUED,
+          client_status: ClientStatus.IDLE,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("live-transcript-panel"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-edge-panel")).toBeInTheDocument();
+  });
+
+  it("treats an uploading file import as processing, not as a live capture", () => {
+    // Imports also sit in UPLOADING but never carry a capture client status.
+    // Before this was pinned, an import rendered the recording UI -- heading,
+    // waveform and transport controls -- for the whole upload.
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.UPLOADING,
+          client_status: undefined,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("live-transcript-panel"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("live-audio-waveform")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("live-meeting-controls"),
+    ).not.toBeInTheDocument();
+    expect(getTranscriptUtterances).not.toHaveBeenCalled();
+  });
+
+  it("still recognises a capture paused before client status was recorded", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.PAUSED,
+          client_status: undefined,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("live-transcript-panel")).toBeInTheDocument();
   });
 });

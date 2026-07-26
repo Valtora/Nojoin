@@ -157,6 +157,9 @@ class TranscriptUtteranceRead(BaseModel):
     speaker_manually_edited: bool = False
     text_manually_edited: bool = False
     speaker_confidence: Optional[float] = None
+    # "microphone" | "system" when the live lane could attribute the audio to a
+    # capture channel, else None. Provenance of the audio, not who was speaking.
+    source_channel: Optional[str] = None
     text_confidence: Optional[float] = None
     speaker_assignment_source: Optional[str] = None
     speaker_assignment_authority: Optional[str] = None
