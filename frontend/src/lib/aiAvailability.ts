@@ -1,4 +1,4 @@
-import type { Settings } from "@/types";
+import type { CliOAuthStatus, Settings } from "@/types";
 
 /**
  * Single source of truth for "can AI actually run for this account?".
@@ -35,4 +35,53 @@ export function isServerProviderConfigured(settings: Settings): boolean {
     default:
       return false;
   }
+}
+
+export type AiUnavailableReason =
+  | "server_unconfigured"
+  | "subscription_disconnected";
+
+export interface AiAvailability {
+  available: boolean;
+  /** Only set when `available` is false; drives which guidance the UI shows. */
+  reason?: AiUnavailableReason;
+}
+
+/**
+ * Whether AI can serve a request for this user, across both routing modes.
+ *
+ * On `usage_model: "cli_oauth"` the backend builds a three-tier chain — the
+ * user's own subscription, then the server's primary provider, then its
+ * secondary (see backend/utils/llm_config.py and the CLI backend's
+ * CliOAuthUnavailableError degradation). So a disconnected subscription is not
+ * on its own a blocker: a configured server provider still answers. Gating on
+ * the subscription alone would have swapped one wrong answer for another.
+ *
+ * `cliStatus` may be null for users who are not on cli_oauth; callers should
+ * only fetch it when they need it.
+ */
+export function resolveAiAvailability(
+  settings: Settings,
+  cliStatus: CliOAuthStatus | null,
+): AiAvailability {
+  const serverConfigured = isServerProviderConfigured(settings);
+
+  if (settings.usage_model !== "cli_oauth") {
+    return serverConfigured
+      ? { available: true }
+      : { available: false, reason: "server_unconfigured" };
+  }
+
+  // Only one subscription can be connected at a time, so any connected entry
+  // is the active one (mirrors AiRoutingSection's own resolution).
+  const subscriptionConnected = (cliStatus?.providers ?? []).some(
+    (entry) => entry.connected,
+  );
+
+  if (subscriptionConnected || serverConfigured) {
+    return { available: true };
+  }
+  // Telling a subscription user to add an API key is misleading advice; name
+  // the thing they actually need to fix.
+  return { available: false, reason: "subscription_disconnected" };
 }

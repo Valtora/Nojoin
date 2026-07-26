@@ -21,7 +21,9 @@ import {
   getUserMe,
   getTags,
 } from "@/lib/api";
-import { ChatMessage, RecordingId, Tag } from "@/types";
+import { getCliOAuthStatus } from "@/lib/api/cliOauth";
+import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
+import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -50,48 +52,52 @@ export default function ChatPanel({
   const { addNotification } = useNotificationStore();
 
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLLMConfigured, setIsLLMConfigured] = useState(true);
+  // Optimistic until the settings load: a brief flash of a working composer
+  // beats blocking a chat that is in fact configured.
+  const [availability, setAvailability] = useState<AiAvailability>({
+    available: true,
+  });
 
   // Cross-Meeting Context State
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<(number | string)[]>([]);
   const [showTagFilter, setShowTagFilter] = useState(false);
 
-  // Load provider name and check config
+  // Resolve whether AI can answer at all, for either routing mode.
   useEffect(() => {
-    Promise.all([getSettings(), getUserMe()])
-      .then(([settings, user]) => {
-        setIsAdmin(user.is_superuser);
+    let cancelled = false;
 
-        const provider = settings.llm_provider;
-        let key = "";
-        let model = "";
-        if (provider === "gemini") {
-          key = settings.gemini_api_key || "";
-          model = settings.gemini_model || "";
-        } else if (provider === "openai") {
-          key = settings.openai_api_key || "";
-          model = settings.openai_model || "";
-        } else if (provider === "anthropic") {
-          key = settings.anthropic_api_key || "";
-          model = settings.anthropic_model || "";
-        } else if (provider === "ollama") {
-          // Ollama doesn't need a key, just a model and URL (which has a default)
-          model = settings.ollama_model || "";
+    const load = async () => {
+      const [settings, user] = await Promise.all([getSettings(), getUserMe()]);
+      if (cancelled) return;
+      setIsAdmin(user.is_superuser);
+
+      // Only users routed through their own subscription need the connection
+      // status, so everyone else is spared the extra request.
+      let cliStatus: CliOAuthStatus | null = null;
+      if (settings.usage_model === "cli_oauth") {
+        try {
+          cliStatus = await getCliOAuthStatus();
+        } catch (error) {
+          // Fail open: a status endpoint blip must not block a chat that would
+          // have worked.
+          console.error(error);
+          return;
         }
+        if (cancelled) return;
+      }
 
-        const configured = !!(
-          provider &&
-          (key || provider === "ollama") &&
-          model
-        );
-        setIsLLMConfigured(configured);
+      setAvailability(resolveAiAvailability(settings, cliStatus));
+    };
 
-      })
-      .catch(console.error);
+    load().catch(console.error);
 
     // Fetch tags
     getTags().then(setAvailableTags).catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Tag Options
@@ -334,10 +340,23 @@ export default function ChatPanel({
       </div>
 
       <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 relative">
-        {!isLLMConfigured && (
+        {!availability.available && (
           <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-[1px] z-20 flex items-center justify-center p-4 text-center">
             <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
-              {isAdmin ? (
+              {availability.reason === "subscription_disconnected" ? (
+                // AI routing is per-user, so this link is right for admins and
+                // non-admins alike.
+                <p>
+                  Chat is disabled. Your AI subscription is not connected.{" "}
+                  <Link
+                    href="/settings"
+                    className="text-orange-500 hover:underline"
+                  >
+                    Reconnect it in Settings
+                  </Link>
+                  .
+                </p>
+              ) : isAdmin ? (
                 <p>
                   Chat is disabled. Please{" "}
                   <Link
