@@ -116,6 +116,11 @@ from backend.utils.meeting_notes import (
     format_segments_for_llm,
     meeting_event_context_from_calendar_event,
 )
+from backend.utils.notes_templates import (
+    ResolvedNotesTemplate,
+    build_notes_prompt_context,
+    resolve_glossary,
+)
 from backend.utils.recording_storage import (
     cleanup_recording_audio_chunks,
     cleanup_stale_recording_artifacts,

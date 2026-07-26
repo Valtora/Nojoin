@@ -65,6 +65,7 @@ def _apply_automatic_meeting_intelligence_result(
     *,
     meeting_context: MeetingEventContext | None,
     provider: str | None,
+    resolved_template: ResolvedNotesTemplate | None = None,
 ) -> None:
     from backend.processing.embedding import cosine_similarity
 
@@ -121,6 +122,10 @@ def _apply_automatic_meeting_intelligence_result(
     transcript.notes = result.notes_markdown
     transcript.notes_status = "completed"
     transcript.error_message = None
+    if resolved_template is not None:
+        # Provenance: the template and its text at generation time (issue #137).
+        transcript.notes_template_id = resolved_template.template_id
+        transcript.notes_template_sections = resolved_template.sections
     session.add(recording)
     session.add(transcript)
     session.commit()
@@ -235,6 +240,13 @@ def _run_automatic_meeting_intelligence_stage_impl(
         transcription_backend=llm_config.merged_config.get("transcription_backend"),
         detected_transcription_language=detected_transcription_language,
     )
+    notes_context, resolved_template = build_notes_prompt_context(
+        session,
+        recording=recording,
+        speakers=speakers,
+        settings=llm_config.merged_config,
+        user_id=recording.user_id,
+    )
     request = AutomaticMeetingIntelligenceRequest(
         resolved_transcript=cleaned_transcript,
         unresolved_speakers=tuple(unresolved_speakers),
@@ -242,6 +254,9 @@ def _run_automatic_meeting_intelligence_stage_impl(
         prefer_short_titles=prefer_short_titles,
         meeting_context=meeting_context,
         output_language_instruction=language_preferences.notes_language_instruction,
+        notes_sections=notes_context.notes_sections,
+        glossary=notes_context.glossary,
+        meeting_metadata=notes_context.metadata,
     )
 
     if update_processing_status:
@@ -279,6 +294,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             result,
             meeting_context=meeting_context,
             provider=llm_config.provider,
+            resolved_template=resolved_template,
         )
         logger.info(
             "Generated unified meeting intelligence for recording %s",

@@ -25,6 +25,7 @@ from backend.models.calendar import (  # noqa: F401
 )
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.document import Document  # noqa: F401
+from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker  # noqa: F401
@@ -37,6 +38,8 @@ from backend.utils.version import get_installed_version
 
 MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("users", User),
+    # Ahead of transcripts, which reference a template as provenance.
+    ("notes_templates", NotesTemplate),
     ("calendar_provider_configs", CalendarProviderConfig),
     ("calendar_connections", CalendarConnection),
     ("calendar_sources", CalendarSource),

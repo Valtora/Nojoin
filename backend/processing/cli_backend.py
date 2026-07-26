@@ -21,13 +21,12 @@ from backend.processing.cli.manager import (
     CliOAuthUnavailableError,
 )
 from backend.processing.llm_services import LLMBackend
-from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import MeetingEdgeRequest, MeetingEdgeResult
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
 )
-from backend.utils.meeting_notes import MeetingEventContext
+from backend.utils.meeting_notes import MeetingEventContext, NotesPromptContext
 from backend.utils.speaker_name_suggestions import SpeakerInferenceResult
 
 logger = logging.getLogger(__name__)
@@ -39,6 +38,7 @@ __all__ = ["CliLLMBackend", "CliOAuthUnavailableError"]
 # Keep in sync with the frontend cliModels.ts. Codex ids are curated (VERIFY
 # against the live Codex model set before release).
 _CLAUDE_CLI_MODELS = (
+    "claude-opus-5",
     "claude-opus-4-8",
     "claude-sonnet-5",
     "claude-sonnet-4-6",
@@ -54,6 +54,11 @@ _MODELS_BY_PROVIDER = {
     "claude_code": _CLAUDE_CLI_MODELS,
     "codex": _CODEX_CLI_MODELS,
 }
+
+
+def models_for_provider(provider: str) -> list[str]:
+    """The curated model ids a subscription provider accepts, most capable first."""
+    return list(_MODELS_BY_PROVIDER.get(provider, _CLAUDE_CLI_MODELS))
 
 
 class CliLLMBackend(LLMBackend):
@@ -89,8 +94,6 @@ class CliLLMBackend(LLMBackend):
         meeting_context: Optional[MeetingEventContext] = None,
         eligible_labels: Optional[Sequence[str]] = None,
     ) -> SpeakerInferenceResult:
-        if prompt_template is None:
-            prompt_template = self.get_speaker_suggestion_prompt_template()
         prompt = self.build_speaker_suggestion_prompt(
             prompt_template, transcript, eligible_labels, user_notes, meeting_context
         )
@@ -106,9 +109,8 @@ class CliLLMBackend(LLMBackend):
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
-        if prompt_template is None:
-            prompt_template = self.get_notes_prompt_template()
         prompt = self.build_notes_prompt(
             prompt_template,
             transcript,
@@ -116,6 +118,7 @@ class CliLLMBackend(LLMBackend):
             user_notes,
             meeting_context,
             output_language_instruction,
+            notes_context,
         )
         text = self._run(prompt)
         return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
@@ -131,6 +134,14 @@ class CliLLMBackend(LLMBackend):
         )
         text = self._run(prompt)
         return self.parse_automatic_meeting_intelligence_result(text, request)
+
+    def generate_text(
+        self,
+        prompt: str,
+        timeout: int = 60,
+        max_tokens: int = 4096,
+    ) -> str:
+        return self._run(prompt)
 
     def generate_meeting_edge(
         self,
@@ -155,13 +166,10 @@ class CliLLMBackend(LLMBackend):
         timeout: int = 60,
         output_language_instruction: Optional[str] = None,
     ) -> str:
-        if prompt_template is None:
-            prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(
-            transcript=transcript,
-            output_language_section=build_output_language_prompt_section(
-                output_language_instruction
-            ),
+        prompt = self.build_title_prompt(
+            prompt_template,
+            transcript,
+            output_language_instruction,
         )
         return self.parse_title(self._run(prompt))
 

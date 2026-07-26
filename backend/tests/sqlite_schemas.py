@@ -25,6 +25,20 @@ CREATE TABLE users (
 )
 """
 
+NOTES_TEMPLATES_SCHEMA = """
+CREATE TABLE notes_templates (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    sections TEXT NOT NULL,
+    scope VARCHAR NOT NULL DEFAULT 'personal',
+    user_id INTEGER,
+    builtin_version INTEGER
+)
+"""
+
 USER_TASKS_SCHEMA = """
 CREATE TABLE user_tasks (
     id INTEGER PRIMARY KEY,
@@ -85,6 +99,8 @@ CREATE TABLE transcripts (
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
     speaker_name_suggestions JSON,
+    notes_template_id INTEGER,
+    notes_template_sections TEXT,
     notes_status VARCHAR(32) NOT NULL,
     transcript_status VARCHAR(32) NOT NULL,
     error_message TEXT

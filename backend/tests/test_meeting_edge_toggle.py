@@ -163,6 +163,7 @@ def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestio
             provider="openai",
             model="gpt-test",
             api_url=None,
+            merged_config={},
             missing_configuration_message=lambda: None,
         ),
     )
@@ -303,6 +304,7 @@ def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_em
             provider="openai",
             model="gpt-test",
             api_url=None,
+            merged_config={},
             missing_configuration_message=lambda: None,
         ),
     )

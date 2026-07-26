@@ -37,6 +37,19 @@ class Transcript(BaseDBModel, table=True):
     speaker_name_suggestions: List[Dict[str, Any]] = Field(
         default_factory=list, sa_column=Column(JSONB)
     )
+    # Provenance for the notes above: which template produced them, plus a
+    # verbatim snapshot of the structure text used. The snapshot is what makes
+    # the record honest -- a template can be edited or deleted after the fact,
+    # so the id alone would eventually describe text that never ran.
+    notes_template_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("notes_templates.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    notes_template_sections: Optional[str] = Field(default=None, sa_column=Column(Text))
     notes_status: str = Field(
         default="pending"
     )  # pending, generating, completed, error

@@ -144,3 +144,19 @@ async def read_model_catalog() -> Optional[list]:
     finally:
         await client.aclose()
     return json.loads(raw) if raw else None
+
+
+async def clear_model_catalog() -> None:
+    """API side (async): drop the cached catalogue so the next read is live.
+
+    Used by the manual refresh. Without the delete, a stale-but-present cache
+    would keep being served for up to six hours and the button would look like
+    it did nothing.
+    """
+    import redis.asyncio as redis
+
+    client = redis.from_url(get_redis_url(), decode_responses=True)
+    try:
+        await client.delete(_CATALOG_KEY)
+    finally:
+        await client.aclose()

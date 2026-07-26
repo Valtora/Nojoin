@@ -74,6 +74,8 @@ CREATE TABLE transcripts (
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
     speaker_name_suggestions JSON,
+    notes_template_id INTEGER,
+    notes_template_sections TEXT,
     notes_status VARCHAR NOT NULL,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT

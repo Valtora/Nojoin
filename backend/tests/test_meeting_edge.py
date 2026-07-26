@@ -314,29 +314,42 @@ def test_build_meeting_edge_prompt_parts_reconstructs_full_prompt() -> None:
     assert "Speaker A: lock the launch date." in suffix
 
 
-def test_build_meeting_edge_prompt_parts_falls_back_without_marker() -> None:
+def test_build_meeting_edge_prompt_parts_does_not_cache_an_override() -> None:
     request = MeetingEdgeRequest(recent_transcript="Speaker A: hi.")
-    template = "No marker here: {recent_transcript}"
+    override = "A caller-supplied prompt, used verbatim."
 
-    prefix, suffix = build_meeting_edge_prompt_parts(request, prompt_template=template)
+    prefix, suffix = build_meeting_edge_prompt_parts(request, override)
 
-    # A custom template without the split marker yields no cacheable prefix.
+    # An override is opaque: nothing about it is known to be stable across
+    # refreshes, so none of it is offered to the provider as a cache prefix.
     assert prefix == ""
-    assert suffix == build_meeting_edge_prompt(request, template)
+    assert suffix == override
+    assert build_meeting_edge_prompt(request, override) == override
 
 
-def test_meeting_edge_cache_split_marker_stays_in_sync_with_template() -> None:
-    from backend.utils.meeting_edge import (
-        DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE,
-        MEETING_EDGE_CACHE_SPLIT_MARKER,
+def test_meeting_edge_cache_prefix_is_stable_across_refreshes() -> None:
+    from backend.utils.meeting_edge import MEETING_EDGE_CACHE_SPLIT_MARKER
+
+    # The prefix is now composed separately rather than found by searching a
+    # rendered string, so this asserts the property that actually matters: two
+    # refreshes of the same meeting produce an identical, non-empty prefix, and
+    # everything that changes between refreshes lands in the suffix.
+    first = MeetingEdgeRequest(
+        recent_transcript="Speaker A: hi.",
+        rolling_summary="Nothing yet.",
+        context_level=2,
+    )
+    second = MeetingEdgeRequest(
+        recent_transcript="Speaker A: hi. Speaker B: and the budget?",
+        rolling_summary="Discussed scope.",
+        previous_questions=("What is the budget?",),
+        context_level=2,
     )
 
-    # If the heading is renamed in the template without updating the marker (or
-    # vice versa), the split silently returns no prefix and caching stops. Bind
-    # the two so a rename fails here instead of regressing caching unnoticed.
-    assert MEETING_EDGE_CACHE_SPLIT_MARKER in DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE
+    first_prefix, first_suffix = build_meeting_edge_prompt_parts(first)
+    second_prefix, second_suffix = build_meeting_edge_prompt_parts(second)
 
-    # The default prompt must actually split into a non-empty cacheable prefix.
-    request = MeetingEdgeRequest(recent_transcript="Speaker A: hi.")
-    prefix, _ = build_meeting_edge_prompt_parts(request)
-    assert prefix != ""
+    assert first_prefix != ""
+    assert first_prefix == second_prefix
+    assert first_suffix != second_suffix
+    assert first_suffix.startswith(MEETING_EDGE_CACHE_SPLIT_MARKER)

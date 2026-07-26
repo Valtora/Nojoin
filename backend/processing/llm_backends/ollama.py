@@ -2,7 +2,6 @@ import logging
 from typing import Dict, Generator, List, Optional, Sequence
 
 from backend.utils.config_manager import config_manager
-from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -13,6 +12,7 @@ from backend.utils.meeting_intelligence import (
 )
 from backend.utils.meeting_notes import (
     MeetingEventContext,
+    NotesPromptContext,
 )
 from backend.utils.ollama_url_policy import validate_ollama_api_url
 from backend.utils.speaker_name_suggestions import (
@@ -109,8 +109,6 @@ class OllamaLLMBackend(LLMBackend):
         meeting_context: Optional[MeetingEventContext] = None,
         eligible_labels: Optional[Sequence[str]] = None,
     ) -> SpeakerInferenceResult:
-        if prompt_template is None:
-            prompt_template = self.get_speaker_suggestion_prompt_template()
         prompt = self.build_speaker_suggestion_prompt(
             prompt_template,
             transcript,
@@ -167,9 +165,8 @@ class OllamaLLMBackend(LLMBackend):
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
-        if prompt_template is None:
-            prompt_template = self.get_notes_prompt_template()
         prompt = self.build_notes_prompt(
             prompt_template,
             transcript,
@@ -177,6 +174,7 @@ class OllamaLLMBackend(LLMBackend):
             user_notes,
             meeting_context,
             output_language_instruction,
+            notes_context,
         )
         if not self.model:
             raise ValueError(
@@ -265,6 +263,32 @@ class OllamaLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (meeting intelligence): {e}")
             raise RuntimeError(f"Ollama API error (meeting intelligence): {e}")
+
+    def generate_text(
+        self,
+        prompt: str,
+        timeout: int = 60,
+        max_tokens: int = 4096,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
+        try:
+            payload = {
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": self._chat_options(temperature=0.3),
+            }
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            response_json = resp.json()
+            self._raise_if_truncated(response_json)
+            return response_json.get("message", {}).get("content", "")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Ollama API error (text generation): {e}")
+            raise RuntimeError(f"Ollama API error (text generation): {e}")
 
     def generate_meeting_edge(
         self,
@@ -443,13 +467,10 @@ class OllamaLLMBackend(LLMBackend):
         timeout: int = 60,
         output_language_instruction: Optional[str] = None,
     ) -> str:
-        if prompt_template is None:
-            prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(
-            transcript=transcript,
-            output_language_section=build_output_language_prompt_section(
-                output_language_instruction
-            ),
+        prompt = self.build_title_prompt(
+            prompt_template,
+            transcript,
+            output_language_instruction,
         )
         if not self.model:
             raise ValueError(

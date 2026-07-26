@@ -4,9 +4,14 @@ from .constants import *
 @celery_app.task(
     name="backend.worker.tasks.generate_notes_task", base=DatabaseTask, bind=True
 )
-def generate_notes_task(self, recording_id: int):
+def generate_notes_task(self, recording_id: int, notes_template_id: int | None = None):
     """
     Generate meeting notes for a recording.
+
+    ``notes_template_id`` is the template picked for this run (Regenerate Notes).
+    ``None`` falls back through the user's default, the install default and then
+    the built-in structure, so an existing queued task with a single argument
+    behaves exactly as before.
     """
     session = self.session
     recording = None
@@ -78,6 +83,14 @@ def generate_notes_task(self, recording_id: int):
             llm_config.merged_config,
             transcription_backend=llm_config.merged_config.get("transcription_backend"),
         )
+        notes_context, resolved_template = build_notes_prompt_context(
+            session,
+            recording=recording,
+            speakers=speakers,
+            settings=llm_config.merged_config,
+            user_id=recording.user_id,
+            explicit_template_id=notes_template_id,
+        )
         notes = llm.generate_meeting_notes(
             transcript_text,
             speaker_map,
@@ -85,12 +98,17 @@ def generate_notes_task(self, recording_id: int):
             user_notes=transcript.user_notes,
             meeting_context=_resolve_meeting_event_context(session, recording),
             output_language_instruction=language_preferences.notes_language_instruction,
+            notes_context=notes_context,
         )
 
         # Save Notes
         transcript.notes = notes
         transcript.notes_status = "completed"
         transcript.error_message = None
+        # Provenance: which template produced these notes, and its text at the
+        # time, so a later edit or deletion cannot rewrite the record.
+        transcript.notes_template_id = resolved_template.template_id
+        transcript.notes_template_sections = resolved_template.sections
         recording.processing_step = "Completed"
         recording.processing_progress = 100
         session.add(transcript)
@@ -917,3 +935,58 @@ def generate_meeting_intelligence_task(self, recording_id: int):
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
+
+
+@celery_app.task(
+    name="backend.worker.tasks.generate_notes_structure_task",
+    base=DatabaseTask,
+    bind=True,
+)
+def generate_notes_structure_task(self, job_id: str, user_id: int, brief: str) -> None:
+    """Draft a notes structure from the user's brief (issue #137).
+
+    Runs here rather than in the API because it is an LLM call, and its result
+    goes to a short-lived Redis job record the browser polls -- the structure is
+    a proposal for the user to review and save, not something to persist itself.
+    """
+    from backend.services.notes_structure_jobs import (
+        STATUS_COMPLETED,
+        STATUS_ERROR,
+        publish_job,
+    )
+    from backend.utils.notes_structure_generator import (
+        build_notes_structure_generator_prompt,
+        parse_generated_notes_structure,
+    )
+
+    session = self.session
+    try:
+        user = session.get(User, user_id)
+        user_settings = (user.settings if user else {}) or {}
+        llm_config = resolve_llm_config(session, user_settings, user_id=user_id)
+        missing_llm_config = llm_config.missing_configuration_message()
+        if missing_llm_config:
+            publish_job(
+                job_id,
+                {"status": STATUS_ERROR, "error": missing_llm_config},
+            )
+            return
+
+        llm = _llm_backend_from_config(llm_config)
+        text = llm.generate_text(
+            build_notes_structure_generator_prompt(brief),
+            timeout=180,
+        )
+        structure = parse_generated_notes_structure(text)
+        publish_job(
+            job_id,
+            {
+                "status": STATUS_COMPLETED,
+                "name": structure.name,
+                "description": structure.description,
+                "sections": structure.sections,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Notes structure generation failed for job %s: %s", job_id, exc)
+        publish_job(job_id, {"status": STATUS_ERROR, "error": str(exc)})

@@ -7,7 +7,6 @@ from backend.utils.chat_prompt import (
     build_chat_messages,
 )
 from backend.utils.config_manager import config_manager
-from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -18,6 +17,7 @@ from backend.utils.meeting_intelligence import (
 )
 from backend.utils.meeting_notes import (
     MeetingEventContext,
+    NotesPromptContext,
 )
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 from backend.processing.llm_backends.base import (
     LLMBackend,
+    TruncatedNotesError,
     _get_default_model_for_provider,
+    raise_if_output_truncated,
 )
 
 
@@ -77,8 +79,6 @@ class OpenAILLMBackend(LLMBackend):
         Run speaker inference on the transcript and return structured suggestions.
         Can be called independently of meeting notes generation.
         """
-        if prompt_template is None:
-            prompt_template = self.get_speaker_suggestion_prompt_template()
         prompt = self.build_speaker_suggestion_prompt(
             prompt_template,
             transcript,
@@ -142,12 +142,11 @@ class OpenAILLMBackend(LLMBackend):
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
-        if prompt_template is None:
-            prompt_template = self.get_notes_prompt_template()
         prompt = self.build_notes_prompt(
             prompt_template,
             transcript,
@@ -155,6 +154,7 @@ class OpenAILLMBackend(LLMBackend):
             user_notes,
             meeting_context,
             output_language_instruction,
+            notes_context,
         )
         if not self.model:
             raise ValueError(
@@ -169,12 +169,19 @@ class OpenAILLMBackend(LLMBackend):
                 stream=True,
             )
             text_chunks = []
+            finish_reason = None
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     text_chunks.append(chunk.choices[0].delta.content)
+                # Arrives on the final chunk; "length" means the output limit cut
+                # the notes off mid-sentence.
+                finish_reason = chunk.choices[0].finish_reason or finish_reason
+            raise_if_output_truncated("OpenAI", finish_reason)
             text = "".join(text_chunks)
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
+        except TruncatedNotesError:
+            raise
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -209,8 +216,13 @@ class OpenAILLMBackend(LLMBackend):
             request_kwargs["temperature"] = 0.2
         try:
             response = self.client.chat.completions.create(**request_kwargs)
+            raise_if_output_truncated(
+                "OpenAI", getattr(response.choices[0], "finish_reason", None)
+            )
             text = response.choices[0].message.content or ""
             return self.parse_automatic_meeting_intelligence_result(text, request)
+        except TruncatedNotesError:
+            raise
         except Exception as e:  # noqa: BLE001
             if "not a chat model" in str(e) or "404" in str(e):
                 logger.error(
@@ -221,6 +233,27 @@ class OpenAILLMBackend(LLMBackend):
                 )
             logger.error(f"OpenAI API error (meeting intelligence): {e}")
             raise RuntimeError(f"OpenAI API error (meeting intelligence): {e}")
+
+    def generate_text(
+        self,
+        prompt: str,
+        timeout: int = 60,
+        max_tokens: int = 4096,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=timeout,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"OpenAI API error (text generation): {e}")
+            raise RuntimeError(f"OpenAI API error (text generation): {e}")
 
     def generate_meeting_edge(
         self,
@@ -429,13 +462,10 @@ class OpenAILLMBackend(LLMBackend):
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
         """
-        if prompt_template is None:
-            prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(
-            transcript=transcript,
-            output_language_section=build_output_language_prompt_section(
-                output_language_instruction
-            ),
+        prompt = self.build_title_prompt(
+            prompt_template,
+            transcript,
+            output_language_instruction,
         )
         if not self.model:
             raise ValueError(

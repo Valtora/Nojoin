@@ -219,6 +219,25 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 - **Documents** can be uploaded to support meeting context and later search.
 - **Search** spans recordings, transcript text, notes, tags, and document content where available.
 
+### Choosing How Notes Are Structured
+
+The default notes cover a summary, key decisions, action items, per-topic detail, and a miscellaneous section. That fits a project or status meeting well and fits a user interview or an incident review badly, so the structure is editable in **Settings > AI > Notes structure**.
+
+- A structure is a list of Markdown headings and a short description of what belongs under each. It controls what the notes contain, how they are ordered, what terminology is used, and how much detail is captured.
+- Accuracy rules are not editable. Nojoin always instructs the model never to invent facts, decisions, or attributions, to attribute statements to the participant who made them, to format tables so the editor can render them, and to start at the first section without repeating the meeting title. A custom structure changes what the notes contain, never how faithful they are.
+- **Generate** drafts a structure for you. Describe the meetings you run and what you need out of them, and the AI writes a structure, a name and a description into the editor for you to review and edit. Nothing is saved until you save it.
+- **Preview** shows the exact prompt a structure produces, protected parts included, using a short sample transcript. It makes no AI request.
+- The recording title, date, duration, and participants are always supplied to the model, so a structure can ask for them without any placeholder syntax.
+- Administrators can additionally publish install structures, which everyone can see and use but only an administrator can change. Anyone can copy one into their own list to vary it. One install structure can be marked the install default, which applies to every user who has not chosen their own.
+- Your chosen structure applies to notes generated automatically after processing. On the recording page, the arrow beside **Regenerate Notes** generates with a different structure for that meeting only, without changing your default.
+- When a Nojoin update improves the built-in structure, any copy made from it is marked as out of date and offers a reset. Nothing is changed for you automatically.
+
+### Glossary
+
+**Settings > AI > Glossary** holds project names, acronyms, products, and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators maintain an install glossary for the whole installation, and each user can add their own; the two are merged rather than replaced, and a personal entry wins where both define the same term.
+
+The glossary is used when writing notes and by Meeting Edge when it explains a term during a live meeting. It does not change the transcript, which is produced by the speech model before the glossary is ever read.
+
 ### Tables In Notes
 
 Generated notes present key decisions and action items as tables, since both are naturally tabular. The notes editor renders these as real editable tables rather than raw Markdown.

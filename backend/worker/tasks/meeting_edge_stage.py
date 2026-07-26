@@ -279,11 +279,16 @@ def refresh_meeting_edge_task(self, recording_id: int):
             purpose=LLM_PURPOSE_MEETING_EDGE,
             user_id=recording.user_id,
         )
+        # The glossary sits in the prompt, so a change to it must invalidate the
+        # refresh signature; otherwise an edit mid-meeting would not take effect
+        # until the transcript moved on by itself.
+        glossary = resolve_glossary(llm_config.merged_config)
         config_signature = ":".join(
             [
                 llm_config.provider,
                 llm_config.model or "",
                 llm_config.api_url or "",
+                hashlib.sha1(glossary.encode("utf-8")).hexdigest() if glossary else "",
             ]
         )
 
@@ -340,6 +345,7 @@ def refresh_meeting_edge_task(self, recording_id: int):
             user_notes=user_notes,
             meeting_context=_resolve_meeting_event_context(session, recording),
             context_level=context_level,
+            glossary=glossary or None,
             previous_questions=_read_meeting_edge_payload_items(
                 previous_payload, "questions"
             ),

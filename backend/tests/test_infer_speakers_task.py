@@ -79,6 +79,8 @@ CREATE TABLE transcripts (
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
     speaker_name_suggestions JSON,
+    notes_template_id INTEGER,
+    notes_template_sections TEXT,
     notes_status VARCHAR NOT NULL,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT
@@ -252,13 +254,19 @@ def _run_infer_speakers_task(engine: Any) -> None:
         engine.dispose()
 
 
-def test_default_speaker_suggestion_prompt_template_is_available() -> None:
+def test_speaker_suggestion_prompt_lists_only_the_eligible_labels() -> None:
     from backend.processing.llm_services import LLMBackend
 
-    prompt = LLMBackend.get_default_speaker_suggestion_prompt_template()
+    prompt = LLMBackend.build_speaker_suggestion_prompt(
+        None, "SPEAKER_00: Hello.", ["SPEAKER_01"]
+    )
 
     assert "evidence-backed speaker name suggestions" in prompt
-    assert "{eligible_labels_section}" in prompt
+    # Composed, not substituted: the eligible-label block is rendered content, so
+    # an unfilled placeholder can no longer reach a provider.
+    assert "Only return suggestions for these diarization labels:" in prompt
+    assert "- SPEAKER_01" in prompt
+    assert "{" not in prompt.split("# Required JSON Schema")[0]
 
 
 def test_rule_based_speaker_suggestions_ignore_non_name_this_is_phrase() -> None:

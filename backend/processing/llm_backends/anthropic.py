@@ -8,7 +8,6 @@ from backend.utils.chat_prompt import (
     build_chat_messages,
 )
 from backend.utils.config_manager import config_manager
-from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -19,6 +18,7 @@ from backend.utils.meeting_intelligence import (
 )
 from backend.utils.meeting_notes import (
     MeetingEventContext,
+    NotesPromptContext,
 )
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -27,8 +27,13 @@ from backend.utils.speaker_name_suggestions import (
 logger = logging.getLogger(__name__)
 
 from backend.processing.llm_backends.base import (
+    CHAT_MAX_OUTPUT_TOKEN_LADDER,
+    NOTES_MAX_OUTPUT_TOKEN_LADDER,
     LLMBackend,
+    TruncatedNotesError,
     _get_default_model_for_provider,
+    is_output_ceiling_error,
+    raise_if_output_truncated,
 )
 
 
@@ -62,6 +67,84 @@ class AnthropicLLMBackend(LLMBackend):
             logger.error(f"Anthropic API error (list models): {e}")
             return []
 
+    def _create_with_ceiling(self, ladder: tuple[int, ...], **kwargs):
+        """Run a completion at the largest output ceiling the model accepts.
+
+        Streams rather than calling ``messages.create``, and collects the final
+        message. That is not a style choice: the SDK refuses any *non-streaming*
+        request whose max_tokens implies a run over ten minutes -- above roughly
+        21,000 tokens it raises ValueError before sending anything. Streaming
+        removes both that guard and the HTTP timeout it exists to prevent, which
+        is what makes a ceiling near the model's real maximum usable at all.
+
+        Anthropic rejects a ``max_tokens`` above the model's own maximum instead
+        of clamping it, and that maximum varies by model, so the ladder steps down
+        only on that specific error. A response that then stops *because* of the
+        ceiling is raised rather than returned half-written.
+        """
+        last_error: Exception | None = None
+
+        for max_tokens in ladder:
+            try:
+                with self.client.messages.stream(
+                    max_tokens=max_tokens, **kwargs
+                ) as stream:
+                    response = stream.get_final_message()
+            except Exception as exc:  # noqa: BLE001
+                if not is_output_ceiling_error(exc):
+                    raise
+                logger.info(
+                    "Model %s rejected max_tokens=%s; stepping down",
+                    self.model,
+                    max_tokens,
+                )
+                last_error = exc
+                continue
+
+            raise_if_output_truncated(
+                "Anthropic", getattr(response, "stop_reason", None)
+            )
+            return response
+
+        raise RuntimeError(
+            f"Model {self.model} rejected every supported output limit: {last_error}"
+        )
+
+    def _create_notes_message(self, prompt: str):
+        return self._create_with_ceiling(
+            NOTES_MAX_OUTPUT_TOKEN_LADDER,
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
+
+    def _open_chat_stream(self, **kwargs):
+        """Open a streaming chat request at the largest ceiling the model accepts.
+
+        Returns the entered stream and its context manager so the caller can close
+        it. The ceiling error surfaces when the request is made, before anything
+        is yielded, so stepping down never replays partial output to the user.
+        """
+        last_error: Exception | None = None
+
+        for max_tokens in CHAT_MAX_OUTPUT_TOKEN_LADDER:
+            manager = self.client.messages.stream(max_tokens=max_tokens, **kwargs)
+            try:
+                return manager.__enter__(), manager
+            except Exception as exc:  # noqa: BLE001
+                if not is_output_ceiling_error(exc):
+                    raise
+                logger.info(
+                    "Model %s rejected max_tokens=%s for chat; stepping down",
+                    self.model,
+                    max_tokens,
+                )
+                last_error = exc
+
+        raise RuntimeError(
+            f"Model {self.model} rejected every supported output limit: {last_error}"
+        )
+
     def infer_speaker_suggestions(
         self,
         transcript: str,
@@ -75,8 +158,6 @@ class AnthropicLLMBackend(LLMBackend):
         Run speaker inference on the transcript and return structured suggestions.
         Can be called independently of meeting notes generation.
         """
-        if prompt_template is None:
-            prompt_template = self.get_speaker_suggestion_prompt_template()
         prompt = self.build_speaker_suggestion_prompt(
             prompt_template,
             transcript,
@@ -132,12 +213,11 @@ class AnthropicLLMBackend(LLMBackend):
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
-        if prompt_template is None:
-            prompt_template = self.get_notes_prompt_template()
         prompt = self.build_notes_prompt(
             prompt_template,
             transcript,
@@ -145,6 +225,7 @@ class AnthropicLLMBackend(LLMBackend):
             user_notes,
             meeting_context,
             output_language_instruction,
+            notes_context,
         )
         if not self.model:
             raise ValueError(
@@ -153,12 +234,7 @@ class AnthropicLLMBackend(LLMBackend):
         try:
             # Match the unified meeting-intelligence path's ceiling so the shared
             # "be comprehensive" notes spec is not silently truncated on long meetings.
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-            )
+            response = self._create_notes_message(prompt)
             text = (
                 response.content[0].text
                 if hasattr(response.content[0], "text")
@@ -166,6 +242,10 @@ class AnthropicLLMBackend(LLMBackend):
             )
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
+        except TruncatedNotesError:
+            # Already a precise, user-facing message; wrapping it as a generic
+            # API error would bury the one thing the user can act on.
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting notes): {e}")
             raise RuntimeError(f"Anthropic API error (meeting notes): {e}")
@@ -185,21 +265,46 @@ class AnthropicLLMBackend(LLMBackend):
                 "No Anthropic model configured. Please select a model in Settings."
             )
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-            )
+            response = self._create_notes_message(prompt)
             text = (
                 response.content[0].text
                 if hasattr(response.content[0], "text")
                 else response.content[0]
             )
             return self.parse_automatic_meeting_intelligence_result(text, request)
+        except TruncatedNotesError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting intelligence): {e}")
             raise RuntimeError(f"Anthropic API error (meeting intelligence): {e}")
+
+    def generate_text(
+        self,
+        prompt: str,
+        timeout: int = 60,
+        max_tokens: int = 4096,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
+        try:
+            response = self._create_with_ceiling(
+                (max_tokens,),
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+            return (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else str(response.content[0])
+            )
+        except TruncatedNotesError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Anthropic API error (text generation): {e}")
+            raise RuntimeError(f"Anthropic API error (text generation): {e}")
 
     def generate_meeting_edge(
         self,
@@ -275,9 +380,9 @@ class AnthropicLLMBackend(LLMBackend):
                 "No Anthropic model configured. Please select a model in Settings."
             )
         try:
-            response = self.client.messages.create(
+            response = self._create_with_ceiling(
+                CHAT_MAX_OUTPUT_TOKEN_LADDER,
                 model=self.model,
-                max_tokens=1024,
                 system=anthropic_cached_system(context),
                 messages=messages,
                 temperature=0.2,
@@ -287,6 +392,8 @@ class AnthropicLLMBackend(LLMBackend):
                 if hasattr(response.content[0], "text")
                 else response.content[0]
             )
+        except TruncatedNotesError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
@@ -325,14 +432,16 @@ class AnthropicLLMBackend(LLMBackend):
         }
 
         try:
-            with self.client.messages.stream(
+            # The ladder rather than a flat ceiling: update_meeting_notes rewrites
+            # the whole notes document, which a small cap truncates mid-document.
+            stream, stream_manager = self._open_chat_stream(
                 model=self.model,
-                max_tokens=1024,
                 system=anthropic_cached_system(context),
                 messages=messages,
                 temperature=0.2,
                 tools=[tool_definition],
-            ) as stream:
+            )
+            try:
                 current_tool_name = None
                 current_json_accum = ""
 
@@ -375,6 +484,8 @@ class AnthropicLLMBackend(LLMBackend):
                                 )
                             finally:
                                 current_tool_name = None
+            finally:
+                stream_manager.__exit__(None, None, None)
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (streaming chat): {e}")
@@ -391,13 +502,10 @@ class AnthropicLLMBackend(LLMBackend):
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
         """
-        if prompt_template is None:
-            prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(
-            transcript=transcript,
-            output_language_section=build_output_language_prompt_section(
-                output_language_instruction
-            ),
+        prompt = self.build_title_prompt(
+            prompt_template,
+            transcript,
+            output_language_instruction,
         )
         try:
             response = self.client.messages.create(

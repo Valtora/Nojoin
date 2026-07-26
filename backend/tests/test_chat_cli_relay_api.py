@@ -50,7 +50,8 @@ CREATE TABLE transcripts (
     recording_id INTEGER NOT NULL UNIQUE, text TEXT, segments JSON NOT NULL, notes TEXT,
     user_notes TEXT, meeting_edge_focus TEXT, meeting_edge_payload JSON,
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle', meeting_edge_error_message TEXT,
-    meeting_edge_source_signature TEXT, speaker_name_suggestions JSON, notes_status VARCHAR NOT NULL,
+    meeting_edge_source_signature TEXT, speaker_name_suggestions JSON,
+    notes_template_id INTEGER, notes_template_sections TEXT, notes_status VARCHAR NOT NULL,
     transcript_status VARCHAR NOT NULL, error_message TEXT
 );
 CREATE TABLE chat_messages (

@@ -268,6 +268,34 @@ def _apply_deferred_speaker_merges(session, state: _RestoreState) -> None:
         session.add(recording_speaker)
 
 
+def _remap_user_notes_template_settings(session, state: _RestoreState) -> None:
+    """Repoint each restored user's default notes template at the restored row.
+
+    ``settings.notes_template_id`` holds a primary key from the source
+    installation, and restore reassigns ids. Left alone it would either dangle or,
+    worse, match an unrelated template here and quietly change how that user's
+    notes are written. Unmappable values are removed, which falls back to the
+    install default and then to the built-in structure.
+    """
+    template_map = state.id_map.get("notes_templates", {})
+    for old_user_id, new_user_id in state.id_map.get("users", {}).items():
+        del old_user_id
+        user = session.get(runtime.User, new_user_id)
+        if user is None or not isinstance(user.settings, dict):
+            continue
+        if "notes_template_id" not in user.settings:
+            continue
+
+        settings = dict(user.settings)
+        remapped = template_map.get(settings.get("notes_template_id"))
+        if remapped is None:
+            settings.pop("notes_template_id", None)
+        else:
+            settings["notes_template_id"] = remapped
+        user.settings = settings
+        session.add(user)
+
+
 def _finish_restore_job(state: _RestoreState) -> None:
     """Publish the terminal status and skip report for a completed restore."""
     skip_summary = state.skip_summary()
@@ -341,6 +369,7 @@ def _restore_backup_sync(request: _RestoreRequest):
                     _restore_table(zipf, session, state, table_name, model_cls)
 
                 _apply_deferred_speaker_merges(session, state)
+                _remap_user_notes_template_settings(session, state)
 
                 stages._normalise_restored_recording_state(session, state)
 

@@ -3,6 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.processing.llm_backends.base import (
+    NOTES_MAX_OUTPUT_TOKEN_LADDER,
+    NOTES_MAX_OUTPUT_TOKENS,
+    TruncatedNotesError,
+)
 from backend.processing.llm_services import (
     OLLAMA_DEFAULT_NUM_CTX,
     AnthropicLLMBackend,
@@ -152,9 +157,14 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
     capture: dict[str, object] = {}
 
     class FakeMessages:
-        def create(self, **kwargs):
+        def stream(self, **kwargs):
             capture.update(kwargs)
-            return SimpleNamespace(content=[SimpleNamespace(text=_sample_payload())])
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[SimpleNamespace(text=_sample_payload())],
+                    stop_reason="end_turn",
+                )
+            )
 
     backend = object.__new__(AnthropicLLMBackend)
     backend.model = "claude-test"
@@ -164,7 +174,9 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
     assert "## User Notes" in result.notes_markdown
-    assert capture["max_tokens"] == 4096
+    # Raised with issue #137: a user-written notes structure asking for more
+    # sections or more detail is what hits this ceiling, and truncation is silent.
+    assert capture["max_tokens"] == NOTES_MAX_OUTPUT_TOKENS
     assert capture["messages"][0]["content"].startswith(
         "You are an expert meeting-notes assistant."
     )
@@ -555,3 +567,127 @@ def test_anthropic_generate_meeting_edge_sends_no_assistant_prefill() -> None:
     # A last-assistant-turn prefill 400s on current Claude models, so Meeting Edge
     # must send a single user message and rely on the tolerant JSON parser.
     assert [message["role"] for message in capture["messages"]] == ["user"]
+
+
+class _FakeAnthropicStream:
+    """Stands in for the SDK's streaming context manager."""
+
+    def __init__(self, message):
+        self._message = message
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def get_final_message(self):
+        return self._message
+
+
+def test_anthropic_streams_rather_than_tripping_the_non_streaming_guard() -> None:
+    """The note calls must stream.
+
+    The SDK raises ValueError *before sending* on a non-streaming request whose
+    max_tokens implies a run over ten minutes -- roughly 21,000 tokens -- so a
+    ceiling anywhere near the model maximum is only reachable via streaming.
+    """
+    calls: dict[str, object] = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):  # pragma: no cover - must never be reached
+            raise AssertionError(
+                "notes must not use the non-streaming path at this ceiling"
+            )
+
+        def stream(self, **kwargs):
+            calls.update(kwargs)
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[SimpleNamespace(text=_sample_payload())],
+                    stop_reason="end_turn",
+                )
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-opus-5"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    result = backend.generate_meeting_intelligence(_sample_request())
+
+    assert result.title
+    assert calls["max_tokens"] == NOTES_MAX_OUTPUT_TOKENS
+
+
+def test_anthropic_steps_down_when_a_model_rejects_the_output_ceiling() -> None:
+    """Old models cap their own output and reject rather than clamp.
+
+    The ladder must step down only on that error, so a modern model keeps the
+    largest ceiling and an older one still produces notes.
+    """
+    attempts: list[int] = []
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            attempts.append(kwargs["max_tokens"])
+            if kwargs["max_tokens"] > 4096:
+                raise RuntimeError(
+                    "max_tokens: 128000 > 4096, which is the maximum allowed for this model"
+                )
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[SimpleNamespace(text=_sample_payload())],
+                    stop_reason="end_turn",
+                )
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-3-opus-20240229"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    result = backend.generate_meeting_intelligence(_sample_request())
+
+    assert attempts == list(NOTES_MAX_OUTPUT_TOKEN_LADDER)
+    assert result.title
+
+
+def test_anthropic_refuses_to_save_notes_the_output_limit_cut_short() -> None:
+    """Truncated notes end mid-sentence and look plausible, so they must not be saved."""
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[SimpleNamespace(text=_sample_payload())],
+                    stop_reason="max_tokens",
+                )
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-sonnet-5"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    with pytest.raises(TruncatedNotesError):
+        backend.generate_meeting_intelligence(_sample_request())
+
+
+def test_openai_refuses_to_save_notes_the_output_limit_cut_short() -> None:
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=_sample_payload()),
+                        finish_reason="length",
+                    )
+                ]
+            )
+
+    backend = object.__new__(OpenAILLMBackend)
+    backend.model = "gpt-5.1"
+    backend.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions())
+    )
+
+    with pytest.raises(TruncatedNotesError):
+        backend.generate_meeting_intelligence(_sample_request())

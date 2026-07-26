@@ -164,12 +164,17 @@ class SecondaryLLMBackend(LLMBackend):
             "generate_meeting_intelligence", request, prompt_template, timeout
         )
 
+    def generate_text(self, prompt, timeout=60, max_tokens=4096):
+        return self._call_with_secondary(
+            "generate_text", prompt, timeout, max_tokens=max_tokens
+        )
+
     def generate_meeting_edge(self, request, prompt_template=None, timeout=60):
         return self._call_with_secondary(
             "generate_meeting_edge", request, prompt_template, timeout
         )
 
-    def generate_meeting_notes(
+    def generate_meeting_notes(  # noqa: PLR0913 - matches the LLMBackend contract
         self,
         transcript,
         speaker_mapping,
@@ -178,6 +183,7 @@ class SecondaryLLMBackend(LLMBackend):
         user_notes=None,
         meeting_context=None,
         output_language_instruction=None,
+        notes_context=None,
     ):
         return self._call_with_secondary(
             "generate_meeting_notes",
@@ -188,6 +194,7 @@ class SecondaryLLMBackend(LLMBackend):
             user_notes=user_notes,
             meeting_context=meeting_context,
             output_language_instruction=output_language_instruction,
+            notes_context=notes_context,
         )
 
     def infer_meeting_title(

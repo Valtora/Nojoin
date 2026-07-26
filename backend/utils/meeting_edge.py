@@ -7,9 +7,11 @@ from typing import Any, Mapping, Sequence
 
 from backend.utils.meeting_notes import (
     MeetingEventContext,
+    build_glossary_prompt_section,
     build_meeting_context_prompt_section,
     build_user_notes_prompt_section,
 )
+from backend.utils.prompt_blocks import render_prompt_blocks
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
@@ -32,7 +34,10 @@ MEETING_EDGE_CONTEXT_GUIDANCE = {
 # sync so a heading rename can't silently disable caching.
 MEETING_EDGE_CACHE_SPLIT_MARKER = "# Earlier Context Summary"
 
-DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE = """You are Meeting Edge, a live meeting assistant.
+# Static prompt text, split at the cache boundary. Plain strings, never format
+# templates: the JSON schema uses real braces and interpolated values need no
+# escaping. See backend.utils.prompt_blocks.
+MEETING_EDGE_INTRO = """You are Meeting Edge, a live meeting assistant.
 
 Your task is to produce concise, high-signal, real-time guidance that helps the user participate more effectively in the current meeting.
 
@@ -41,10 +46,9 @@ Return one valid JSON object with these keys:
 - `rolling_summary`: a 150-300 word running context of the meeting so far. Capture decisions made, open threads, action items, and the key positions of named speakers. Carry forward still-relevant facts from the Earlier Context Summary and fold in what changed in the recent transcript. This is internal working memory for your future turns, not user-facing text.
 - `questions`: 0-3 smart clarifying or high-leverage questions the user could ask next.
 - `points`: 0-3 overlooked points, risks, or considerations the user could raise.
-- `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion, but only when they meet the Technical Context Policy below.
+- `concepts`: brief explanations of the technical or domain terms that were actually mentioned and would help the user follow the discussion, but only when they meet the Technical Context Policy below."""
 
-# Critical Rules
-- Be tactful, professional, constructive, and non-manipulative.
+MEETING_EDGE_CRITICAL_RULES = """- Be tactful, professional, constructive, and non-manipulative.
 - Do not invent facts, commitments, requirements, or attendee intent.
 - Prefer fewer items over weak items.
 - Anchor guidance to the most recent exchanges at the end of the transcript; treat earlier material as supporting context only.
@@ -55,43 +59,20 @@ Return one valid JSON object with these keys:
 - Only explain concepts that were actually mentioned or clearly implied by the recent transcript.
 - Include all distinct concepts from the recent transcript that materially help comprehension, not just the top one or two.
 - Keep each question, point, and explanation concise.
-- Return valid JSON only. Do not include prose before or after the JSON object.
+- Return valid JSON only. Do not include prose before or after the JSON object."""
 
-# Technical Context Policy
-{concept_guidance_section}
-
-# Required JSON Schema
-{{
+MEETING_EDGE_JSON_SCHEMA = """{
     "summary": "One or two sentence read of the meeting right now.",
     "rolling_summary": "150-300 word running context of the meeting so far.",
     "questions": ["Question the user could ask"],
     "points": ["Point the user could raise"],
     "concepts": [
-        {{
+        {
             "term": "Technical term",
             "explanation": "Short explanation"
-        }}
+        }
     ]
-}}
-
-# Earlier Context Summary
-{rolling_summary_section}
-
-# Previously Suggested
-{previous_suggestions_section}
-
-# User Focus
-{focus_text_section}
-
-# User Notes Context
-{user_notes_section}
-
-# Meeting Context
-{meeting_context_section}
-
-# Recent Transcript
-{recent_transcript}
-"""
+}"""
 
 
 class MeetingEdgeContractError(ValueError):
@@ -106,6 +87,9 @@ class MeetingEdgeRequest:
     user_notes: str | None = None
     meeting_context: MeetingEventContext | None = None
     context_level: int = MEETING_EDGE_CONTEXT_LEVEL_DEFAULT
+    # Merged install + personal glossary. Sits in the cache-stable prefix, so
+    # editing it invalidates the cached prefix once and then re-warms.
+    glossary: str | None = None
     previous_questions: tuple[str, ...] = ()
     previous_points: tuple[str, ...] = ()
 
@@ -190,56 +174,78 @@ class MeetingEdgeResult:
         )
 
 
-def get_default_meeting_edge_prompt_template() -> str:
-    return DEFAULT_MEETING_EDGE_PROMPT_TEMPLATE
+def build_meeting_edge_prompt_parts(
+    request: MeetingEdgeRequest,
+    prompt_override: str | None = None,
+) -> tuple[str, str]:
+    """Compose the Meeting Edge prompt as a cache-stable prefix and a volatile suffix.
+
+    The prefix (system instructions, technical-context policy, glossary, and JSON
+    schema) is identical across refreshes of the same meeting, so a provider that
+    supports prompt caching can cache it. The suffix carries the per-refresh
+    context (rolling summary, previous suggestions, notes, recent transcript).
+    The two always concatenate to the whole prompt, so the model sees the same
+    text either way; only the cache breakpoint differs.
+
+    Composing the halves separately is what makes that guarantee structural. It
+    previously depended on finding MEETING_EDGE_CACHE_SPLIT_MARKER inside a
+    rendered string, which silently disabled caching if the heading was renamed.
+
+    Returns ``("", prompt)`` for a caller-supplied override, which callers treat
+    as "do not cache".
+    """
+    if prompt_override:
+        return "", prompt_override
+
+    prefix = render_prompt_blocks(
+        [
+            (None, MEETING_EDGE_INTRO),
+            ("# Critical Rules", MEETING_EDGE_CRITICAL_RULES),
+            (
+                "# Technical Context Policy",
+                build_concept_guidance_prompt_section(request.context_level),
+            ),
+            (
+                "# Glossary",
+                build_glossary_prompt_section(request.glossary, for_notes=False),
+            ),
+            ("# Required JSON Schema", MEETING_EDGE_JSON_SCHEMA),
+        ]
+    )
+    suffix = render_prompt_blocks(
+        [
+            (
+                MEETING_EDGE_CACHE_SPLIT_MARKER,
+                build_rolling_summary_prompt_section(request.rolling_summary),
+            ),
+            (
+                "# Previously Suggested",
+                build_previous_suggestions_prompt_section(
+                    request.previous_questions,
+                    request.previous_points,
+                ),
+            ),
+            ("# User Focus", build_focus_text_prompt_section(request.focus_text)),
+            (
+                "# User Notes Context",
+                build_user_notes_prompt_section(request.user_notes),
+            ),
+            (
+                "# Meeting Context",
+                build_meeting_context_prompt_section(request.meeting_context),
+            ),
+            ("# Recent Transcript", request.recent_transcript),
+        ]
+    )
+    return f"{prefix}\n\n", f"{suffix}\n"
 
 
 def build_meeting_edge_prompt(
     request: MeetingEdgeRequest,
-    prompt_template: str | None = None,
+    prompt_override: str | None = None,
 ) -> str:
-    template = prompt_template or get_default_meeting_edge_prompt_template()
-    return template.format(
-        recent_transcript=request.recent_transcript,
-        rolling_summary_section=build_rolling_summary_prompt_section(
-            request.rolling_summary
-        ),
-        focus_text_section=build_focus_text_prompt_section(request.focus_text),
-        user_notes_section=build_user_notes_prompt_section(request.user_notes),
-        meeting_context_section=build_meeting_context_prompt_section(
-            request.meeting_context
-        ),
-        concept_guidance_section=build_concept_guidance_prompt_section(
-            request.context_level
-        ),
-        previous_suggestions_section=build_previous_suggestions_prompt_section(
-            request.previous_questions,
-            request.previous_points,
-        ),
-    )
-
-
-def build_meeting_edge_prompt_parts(
-    request: MeetingEdgeRequest,
-    prompt_template: str | None = None,
-) -> tuple[str, str]:
-    """Split the Meeting Edge prompt into a cache-stable prefix and volatile suffix.
-
-    The prefix (system instructions, technical-context policy, and JSON schema) is
-    identical across refreshes of the same meeting, so a provider that supports
-    prompt caching can cache it. The suffix carries the per-refresh context
-    (rolling summary, previous suggestions, notes, recent transcript). The parts
-    always concatenate back to ``build_meeting_edge_prompt`` output, so the model
-    sees an identical prompt; only the cache breakpoint differs.
-
-    Returns ``("", full_prompt)`` when the split marker is absent (for example a
-    custom template), which callers treat as "do not cache".
-    """
-    full_prompt = build_meeting_edge_prompt(request, prompt_template)
-    boundary = full_prompt.find(MEETING_EDGE_CACHE_SPLIT_MARKER)
-    if boundary <= 0:
-        return "", full_prompt
-    return full_prompt[:boundary], full_prompt[boundary:]
+    prefix, suffix = build_meeting_edge_prompt_parts(request, prompt_override)
+    return f"{prefix}{suffix}"
 
 
 def parse_meeting_edge_response(

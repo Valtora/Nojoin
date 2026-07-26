@@ -10,7 +10,7 @@ interface NotesSectionProps {
   canUndo: boolean;
   canRedo: boolean;
   onNotesChange: (notes: string) => void;
-  onGenerateNotes: () => Promise<void>;
+  onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
   onFindAndReplace: (
     find: string,
     replace: string,

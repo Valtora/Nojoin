@@ -1,6 +1,8 @@
 import logging
+from typing import Optional
 
 from fastapi import Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -13,6 +15,7 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
+from backend.utils.notes_templates import resolve_notes_template_async
 
 from .helpers import (
     MeetingEdgeFocusUpdate,
@@ -24,6 +27,12 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+
+class GenerateNotesRequest(BaseModel):
+    """Optional body for Regenerate Notes: which structure to use this run."""
+
+    notes_template_id: Optional[int] = None
 
 
 @router.get("/{recording_id}/notes")
@@ -44,7 +53,13 @@ async def get_notes(
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    return {"notes": transcript.notes}
+    return {
+        "notes": transcript.notes,
+        # Provenance for the UI: which structure produced these notes. NULL means
+        # they predate templates, which is the shipped built-in structure.
+        "notes_template_id": transcript.notes_template_id,
+        "notes_template_sections": transcript.notes_template_sections,
+    }
 
 
 @router.get("/{recording_id}/user-notes")
@@ -160,11 +175,16 @@ async def update_notes(
 @router.post("/{recording_id}/notes/generate")
 async def generate_notes(
     recording_id: str,
+    request: Optional[GenerateNotesRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Generate meeting notes using the configured LLM provider.
+
+    An optional ``notes_template_id`` picks the structure for this run. Omitting
+    it falls through to the user's default, then the install default, then the
+    built-in structure.
     """
     # 1. Fetch Recording with Speakers
     recording = await _get_owned_recording(
@@ -205,14 +225,32 @@ async def generate_notes(
             detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
         )
 
-    # 4. Call Worker Task
+    # 4. Resolve the requested template, if any. Resolution is done here rather
+    # than in the worker so an unusable choice is a 400 the user sees at once,
+    # instead of a failed job they discover minutes later.
+    requested_template_id = request.notes_template_id if request else None
+    if requested_template_id is not None:
+        resolved_template = await resolve_notes_template_async(
+            db,
+            current_user.settings or {},
+            user_id=current_user.id,
+            explicit_template_id=requested_template_id,
+        )
+        if resolved_template.template_id != requested_template_id:
+            raise HTTPException(
+                status_code=404,
+                detail="Notes template not found",
+            )
+
+    # 5. Call Worker Task
     transcript.notes_status = "generating"
     transcript.error_message = None
     db.add(transcript)
     await db.commit()
 
     task = celery_app.send_task(
-        "backend.worker.tasks.generate_notes_task", args=[recording.id]
+        "backend.worker.tasks.generate_notes_task",
+        args=[recording.id, requested_template_id],
     )
     from backend.models.task import register_task_ownership
 

@@ -28,3 +28,4 @@ A routine bug fix, refactor, dependency bump, or documentation edit does **not**
 - [0003-rebuild-canonical-pipeline-state-on-restore.md](0003-rebuild-canonical-pipeline-state-on-restore.md) — Rebuild canonical pipeline state on restore rather than archiving it (Accepted).
 - [0004-anonymous-opt-out-telemetry.md](0004-anonymous-opt-out-telemetry.md) — Anonymous, opt-out telemetry with a public collector and a consent-gated rollout (Accepted).
 - [0005-versioned-voiceprint-extraction.md](0005-versioned-voiceprint-extraction.md) — Versioned voiceprint extraction, never compared across versions, plus an optional per-recording speaker cap (Accepted).
+- [0006-user-editable-notes-structure.md](0006-user-editable-notes-structure.md) — A protected/editable split for the meeting-notes prompt, with two-tier templates, provenance snapshots, and a merged glossary (Accepted).
