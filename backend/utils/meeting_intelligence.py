@@ -8,67 +8,50 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_notes import (
-    NOTES_BODY_SPEC,
     MeetingEventContext,
+    MeetingMetadata,
     append_user_notes_section,
+    build_glossary_prompt_section,
     build_meeting_context_prompt_section,
+    build_meeting_metadata_prompt_section,
+    build_notes_body_spec,
     build_user_notes_prompt_section,
     is_placeholder_speaker_name,
     resolve_recording_speaker_name,
     strip_leading_title_heading,
 )
+from backend.utils.prompt_blocks import render_prompt_blocks
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
-DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE = (
-    """You are an expert meeting-notes assistant.
+# Static prompt text. These are plain strings, never format templates: the JSON
+# schema below can therefore be written with real braces instead of doubled ones,
+# and nothing interpolated into the prompt needs escaping. See
+# backend.utils.prompt_blocks for why.
+AUTOMATIC_MEETING_INTELLIGENCE_INTRO = """You are an expert meeting-notes assistant.
 
 Your task is to produce one valid JSON object that combines:
 1. speaker suggestions for unresolved diarization labels only
 2. a meeting title
-3. final meeting notes in Markdown
+3. final meeting notes in Markdown"""
 
-# Critical Rules
-- Treat any non-generic speaker names already present in the transcript as trusted.
+AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES = """- Treat any non-generic speaker names already present in the transcript as trusted.
 - Only use `speaker_mapping` for the unresolved labels listed below.
 - If you are not confident about a label, omit it from `speaker_mapping` and keep the generic label in `notes_markdown`.
 - The names or roles used in `notes_markdown` for unresolved labels must match the returned `speaker_mapping` entries exactly.
 - The `title` and `notes_markdown` must reflect the same meeting interpretation.
 - Return valid JSON only. Do not include prose before or after the JSON object.
-- Escape newlines inside `notes_markdown` according to JSON rules.
+- Escape newlines inside `notes_markdown` according to JSON rules."""
 
-# Title Style
-{title_preference_instruction}
-
-# Unresolved Speaker Labels
-{unresolved_speakers_section}
-
-# User Notes Context
-{user_notes_section}
-
-# Meeting Context
-{meeting_context_section}
-
-{output_language_section}
-
-# Required JSON Schema
-{{
-    "speaker_mapping": {{
+# The ``\\n`` sequences are literal backslash-n in the rendered prompt: the schema
+# is showing the model how to escape newlines inside a JSON string.
+AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA = """{
+    "speaker_mapping": {
         "SPEAKER_00": "Person name or role"
-    }},
+    },
     "title": "Meeting title",
     "notes_markdown": "## Localized summary heading\\n\\n...\\n\\n## Localized section heading\\n..."
-}}
-
-# Notes Markdown Requirements
-"""
-    + NOTES_BODY_SPEC
-    + """
-
-# Transcript
-{transcript}
-"""
-)
+}"""
 
 
 class MeetingIntelligenceContractError(ValueError):
@@ -101,6 +84,15 @@ class AutomaticMeetingIntelligenceRequest:
     prefer_short_titles: bool = True
     meeting_context: MeetingEventContext | None = None
     output_language_instruction: str | None = None
+    # The user's notes structure, or None for the shipped one. Also decides
+    # whether the strict opening-heading contract applies to the response.
+    notes_sections: str | None = None
+    glossary: str | None = None
+    meeting_metadata: MeetingMetadata | None = None
+
+    @property
+    def uses_custom_notes_sections(self) -> bool:
+        return bool(self.notes_sections)
 
     def __post_init__(self) -> None:
         transcript = self.resolved_transcript.strip()
@@ -134,6 +126,16 @@ class AutomaticMeetingIntelligenceRequest:
             "output_language_instruction",
             normalized_output_language_instruction or None,
         )
+        object.__setattr__(
+            self,
+            "notes_sections",
+            (self.notes_sections.strip() or None) if self.notes_sections else None,
+        )
+        object.__setattr__(
+            self,
+            "glossary",
+            (self.glossary.strip() or None) if self.glossary else None,
+        )
 
     @property
     def has_unresolved_speakers(self) -> bool:
@@ -147,6 +149,11 @@ class AutomaticMeetingIntelligenceResult:
     speaker_mapping: dict[str, str]
     title: str
     notes_markdown: str
+    # The opening-``##``-heading rule below is the built-in structure's own first
+    # line, not a property of well-formed notes, so it cannot be enforced against
+    # a structure the user wrote. Runs on a custom template set this False; every
+    # other check still applies.
+    require_section_heading: bool = True
 
     def __post_init__(self) -> None:
         normalized_mapping = {
@@ -169,7 +176,7 @@ class AutomaticMeetingIntelligenceResult:
                 "notes_markdown must be a non-empty string"
             )
 
-        if not re.match(r"^##\s+\S", notes_markdown):
+        if self.require_section_heading and not re.match(r"^##\s+\S", notes_markdown):
             raise MeetingIntelligenceContractError(
                 "notes_markdown must start with a section heading (## ...)"
             )
@@ -194,8 +201,9 @@ class AutomaticMeetingIntelligenceResult:
             )
 
 
-def get_default_automatic_meeting_intelligence_prompt_template() -> str:
-    return DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE
+def get_default_notes_markdown_requirements() -> str:
+    """The shipped notes body spec, for tests and the settings preview."""
+    return build_notes_body_spec()
 
 
 def build_automatic_meeting_intelligence_request(
@@ -206,6 +214,9 @@ def build_automatic_meeting_intelligence_request(
     prefer_short_titles: bool = True,
     meeting_context: MeetingEventContext | None = None,
     output_language_instruction: str | None = None,
+    notes_sections: str | None = None,
+    glossary: str | None = None,
+    meeting_metadata: MeetingMetadata | None = None,
 ) -> AutomaticMeetingIntelligenceRequest:
     return AutomaticMeetingIntelligenceRequest(
         resolved_transcript=resolved_transcript,
@@ -214,6 +225,9 @@ def build_automatic_meeting_intelligence_request(
         prefer_short_titles=prefer_short_titles,
         meeting_context=meeting_context,
         output_language_instruction=output_language_instruction,
+        notes_sections=notes_sections,
+        glossary=glossary,
+        meeting_metadata=meeting_metadata,
     )
 
 
@@ -246,27 +260,57 @@ def get_speakers_eligible_for_llm_renaming(
 
 def build_automatic_meeting_intelligence_prompt(
     request: AutomaticMeetingIntelligenceRequest,
-    prompt_template: str | None = None,
+    prompt_override: str | None = None,
 ) -> str:
-    template = (
-        prompt_template or get_default_automatic_meeting_intelligence_prompt_template()
+    """Compose the unified prompt.
+
+    ``prompt_override`` replaces the whole prompt verbatim; it is a test seam, not
+    a template, and nothing in the application passes it.
+    """
+    if prompt_override:
+        return prompt_override
+
+    body = render_prompt_blocks(
+        [
+            (None, AUTOMATIC_MEETING_INTELLIGENCE_INTRO),
+            ("# Critical Rules", AUTOMATIC_MEETING_INTELLIGENCE_CRITICAL_RULES),
+            (
+                "# Title Style",
+                build_title_preference_instruction(request.prefer_short_titles),
+            ),
+            (
+                "# Unresolved Speaker Labels",
+                build_unresolved_speakers_prompt_section(request.unresolved_speakers),
+            ),
+            (
+                "# Recording Metadata",
+                build_meeting_metadata_prompt_section(request.meeting_metadata),
+            ),
+            ("# Glossary", build_glossary_prompt_section(request.glossary)),
+            (
+                "# User Notes Context",
+                build_user_notes_prompt_section(request.user_notes),
+            ),
+            (
+                "# Meeting Context",
+                build_meeting_context_prompt_section(request.meeting_context),
+            ),
+            # Carries its own heading.
+            (
+                None,
+                build_output_language_prompt_section(
+                    request.output_language_instruction
+                ),
+            ),
+            ("# Required JSON Schema", AUTOMATIC_MEETING_INTELLIGENCE_JSON_SCHEMA),
+            (
+                "# Notes Markdown Requirements",
+                build_notes_body_spec(request.notes_sections),
+            ),
+            ("# Transcript", request.resolved_transcript),
+        ]
     )
-    return template.format(
-        transcript=request.resolved_transcript,
-        unresolved_speakers_section=build_unresolved_speakers_prompt_section(
-            request.unresolved_speakers
-        ),
-        user_notes_section=build_user_notes_prompt_section(request.user_notes),
-        meeting_context_section=build_meeting_context_prompt_section(
-            request.meeting_context
-        ),
-        title_preference_instruction=build_title_preference_instruction(
-            request.prefer_short_titles
-        ),
-        output_language_section=build_output_language_prompt_section(
-            request.output_language_instruction
-        ),
-    )
+    return f"{body}\n"
 
 
 def apply_speaker_mapping_to_notes(
@@ -307,6 +351,7 @@ def finalise_automatic_meeting_intelligence_result(
         speaker_mapping=result.speaker_mapping,
         title=result.title,
         notes_markdown=append_user_notes_section(notes_markdown, user_notes),
+        require_section_heading=result.require_section_heading,
     )
 
 
@@ -340,6 +385,9 @@ def parse_automatic_meeting_intelligence_response(
         speaker_mapping=_read_speaker_mapping(payload),
         title=_read_required_string(payload, "title"),
         notes_markdown=_read_required_string(payload, "notes_markdown"),
+        require_section_heading=not (
+            request is not None and request.uses_custom_notes_sections
+        ),
     )
 
     if request is not None:

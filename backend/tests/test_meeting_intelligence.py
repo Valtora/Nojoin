@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 from backend.processing.llm_backends.base import LLMBackend
 from backend.utils.meeting_intelligence import (
-    DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE,
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
     MeetingIntelligenceContractError,
@@ -147,8 +146,17 @@ def test_both_notes_prompts_embed_the_shared_notes_body_spec() -> None:
     # Drift guard: the unified meeting-intelligence prompt and the standalone
     # regeneration prompt must both embed NOTES_BODY_SPEC verbatim so their note
     # structure and fidelity rules can never diverge again.
-    assert NOTES_BODY_SPEC in DEFAULT_AUTOMATIC_MEETING_INTELLIGENCE_PROMPT_TEMPLATE
-    assert NOTES_BODY_SPEC in LLMBackend.get_default_notes_prompt_template()
+    unified = build_automatic_meeting_intelligence_prompt(
+        AutomaticMeetingIntelligenceRequest(
+            resolved_transcript="SPEAKER_00: Hello.",
+            unresolved_speakers=(),
+        )
+    )
+
+    assert NOTES_BODY_SPEC in unified
+    assert NOTES_BODY_SPEC in LLMBackend.build_notes_prompt(
+        None, "SPEAKER_00: Hello.", {}
+    )
 
 
 def test_notes_body_spec_uses_the_best_practice_section_order() -> None:
