@@ -42,7 +42,6 @@ from .helpers import (
     _get_recording_speaker_display_name,
     _get_recording_transcript,
     _get_segment_revision,
-    _parse_markdown_line,
     _require_recording_transcript_mutations_supported,
     _sanitize_filename,
 )

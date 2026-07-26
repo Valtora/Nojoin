@@ -1,7 +1,6 @@
 import html
 import logging
 import os
-import re
 from datetime import timedelta
 from io import BytesIO
 from typing import List, Optional
@@ -29,6 +28,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.config_manager import config_manager
+from backend.utils.markdown_docx import MARKDOWN_RULES, render_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -324,37 +324,6 @@ def _apply_find_replace(
     return total_segment_replacements
 
 
-def _parse_markdown_line(line: str) -> dict:
-    """
-    Parse a markdown line to identify type (heading, list, paragraph) and content.
-    Basic parser for common notes format, handling indentation.
-    """
-    stripped_line = line.strip()
-    if not stripped_line:
-        return {"type": "empty", "content": ""}
-
-    # Counts leading spaces to determine indent level (2 spaces = 1 level).
-    leading_spaces = len(line) - len(line.lstrip(" "))
-    indent_level = leading_spaces // 2
-
-    if stripped_line.startswith("#"):
-        level = len(stripped_line.split(" ")[0])
-        content = stripped_line.lstrip("#").strip()
-        return {"type": "heading", "level": level, "content": content}
-
-    # Handle indent levels
-    if stripped_line.startswith("- ") or stripped_line.startswith("* "):
-        content = stripped_line[2:].strip()
-        return {"type": "list_item", "content": content, "indent": indent_level}
-
-    # Simple numbered list detection (1. , 2. )
-    if re.match(r"^\d+\.\s", stripped_line):
-        content = re.sub(r"^\d+\.\s", "", stripped_line).strip()
-        return {"type": "list_item", "content": content, "indent": indent_level}
-
-    return {"type": "paragraph", "content": stripped_line}
-
-
 def _generate_full_markdown(
     recording: Recording,
     transcript: Transcript,
@@ -458,7 +427,19 @@ def _generate_pdf_export(
     )
 
     pdf = MarkdownPdf(toc_level=2)
-    css = "body { font-family: Helvetica, sans-serif; }"
+    # markdown_pdf enables `table` itself; the rest are enabled here so the PDF
+    # and DOCX exports parse the same Markdown the same way.
+    for rule in MARKDOWN_RULES:
+        pdf.m_d.enable(rule)
+
+    # Without explicit borders the renderer lays a table out correctly but draws
+    # nothing, producing a borderless grid of floating text. The smaller cell
+    # font is what lets a six-column action-item table fit the page width.
+    css = """body { font-family: Helvetica, sans-serif; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #888888; padding: 4px; text-align: left; vertical-align: top; font-size: 9pt; }
+th { background-color: #eeeeee; font-weight: bold; }
+"""
     pdf.add_section(Section(markdown_content), user_css=css)
 
     # Use a temporary file since the library requires a file path string for saving.
@@ -534,42 +515,10 @@ def _generate_docx_export(
     if include_notes and transcript.notes:
         doc.add_heading("Meeting Notes", level=1)
 
-        for line in transcript.notes.split("\n"):
-            parsed = _parse_markdown_line(line)
-            content = parsed["content"]
-
-            # Basic bold handling for DOCX
-            def add_formatted_run(paragraph, text):
-                parts = re.split(r"(\*\*.*?\*\*)", text)
-                for part in parts:
-                    if part.startswith("**") and part.endswith("**"):
-                        run = paragraph.add_run(part[2:-2])
-                        run.bold = True
-                    else:
-                        paragraph.add_run(part)
-
-            if parsed["type"] == "heading":
-                doc.add_heading(content, level=min(parsed["level"] + 1, 9))
-            elif parsed["type"] == "list_item":
-                # Map indent level to docx styles
-                # 'List Bullet', 'List Bullet 2', 'List Bullet 3'
-                indent = parsed.get("indent", 0)
-                if indent == 0:
-                    style = "List Bullet"
-                else:
-                    style = f"List Bullet {min(indent + 1, 3)}"
-
-                try:
-                    p = doc.add_paragraph(style=style)
-                except KeyError:
-                    # Fallback if style doesn't exist
-                    p = doc.add_paragraph(style="List Bullet")
-                    # Could modify p.paragraph_format.left_indent manually if needed
-
-                add_formatted_run(p, content)
-            elif parsed["type"] == "paragraph":
-                p = doc.add_paragraph()
-                add_formatted_run(p, content)
+        # Notes are Markdown, so they are parsed rather than read line by line:
+        # tables become real Word tables instead of paragraphs of pipes. The
+        # offset keeps the notes' own headings beneath the level-1 heading above.
+        render_markdown(doc, transcript.notes, heading_offset=1)
 
         if include_transcript:
             doc.add_page_break()
