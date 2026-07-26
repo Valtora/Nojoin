@@ -9,7 +9,7 @@ import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import { getCodexModels } from "@/lib/api/cliOauth";
-import { checkLlmConfigured } from "./aiSettingsModels";
+import { isServerProviderConfigured } from "@/lib/aiAvailability";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
@@ -60,7 +60,7 @@ export default function AiRoutingSection({
   const [codexModels, setCodexModels] = useState<CliModelOption[] | null>(null);
 
   const isCli = settings.usage_model === "cli_oauth";
-  const providerConfigured = checkLlmConfigured(settings);
+  const providerConfigured = isServerProviderConfigured(settings);
   const activeServerProvider = settings.llm_provider || "none";
   const secondaryProvider = settings.secondary_llm_provider;
 

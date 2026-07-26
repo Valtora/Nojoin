@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { Settings } from "@/types";
 import {
   DEFAULT_OLLAMA_CONTEXT_WINDOW,
-  checkLlmConfigured,
   getModelOptionsForProvider,
   getSecondaryProviderApiKey,
   getSecondaryProviderLiveModel,
@@ -19,25 +18,6 @@ const base = (overrides: Partial<Settings> = {}): Settings =>
   ({ ...overrides }) as Settings;
 
 describe("aiSettingsModels", () => {
-  describe("checkLlmConfigured", () => {
-    it("defaults to gemini and checks its key", () => {
-      expect(checkLlmConfigured(base())).toBe(false);
-      expect(checkLlmConfigured(base({ gemini_api_key: "k" }))).toBe(true);
-    });
-
-    it("checks the credential for the active provider", () => {
-      expect(
-        checkLlmConfigured(base({ llm_provider: "openai", openai_api_key: "k" })),
-      ).toBe(true);
-      expect(
-        checkLlmConfigured(
-          base({ llm_provider: "ollama", ollama_api_url: "http://x" }),
-        ),
-      ).toBe(true);
-      expect(checkLlmConfigured(base({ llm_provider: "ollama" }))).toBe(false);
-    });
-  });
-
   describe("getSelectedModelForProvider", () => {
     it("reads the main and live model for the active provider", () => {
       const settings = base({

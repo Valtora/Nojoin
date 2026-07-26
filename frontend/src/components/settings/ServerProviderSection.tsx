@@ -2,6 +2,7 @@ import { Check, HelpCircle, Info, Loader2, RefreshCw, Server } from "lucide-reac
 
 import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
+import { isServerProviderConfigured } from "@/lib/aiAvailability";
 import Tooltip from "@/components/ui/Tooltip";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
@@ -9,7 +10,6 @@ import SettingsStatusBadge from "./SettingsStatusBadge";
 import type { AISettingsModels } from "./useAISettingsModels";
 import {
   DEFAULT_OLLAMA_CONTEXT_WINDOW,
-  checkLlmConfigured,
   getModelOptionsForProvider,
   getSelectedModelForProvider,
   parseContextWindow,
@@ -40,7 +40,7 @@ export default function ServerProviderSection({
   onPersist,
   models,
 }: ServerProviderSectionProps) {
-  const providerConfigured = checkLlmConfigured(settings);
+  const providerConfigured = isServerProviderConfigured(settings);
   const mainModelOptions = getModelOptionsForProvider(
     settings,
     models.availableModels,

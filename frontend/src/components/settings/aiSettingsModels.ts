@@ -11,16 +11,6 @@ export const DEFAULT_OLLAMA_CONTEXT_WINDOW = 131072;
 
 export type ModelKind = "main" | "live";
 
-/** Whether the active primary provider has the credential/endpoint it needs. */
-export function checkLlmConfigured(settings: Settings): boolean {
-  const provider = settings.llm_provider || "gemini";
-  if (provider === "gemini") return Boolean(settings.gemini_api_key);
-  if (provider === "openai") return Boolean(settings.openai_api_key);
-  if (provider === "anthropic") return Boolean(settings.anthropic_api_key);
-  if (provider === "ollama") return Boolean(settings.ollama_api_url);
-  return false;
-}
-
 export function getSelectedModelForProvider(
   settings: Settings,
   kind: ModelKind,
