@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import RecordingStatusDisplay from "./RecordingStatusDisplay";
-import { Recording, RecordingStatus } from "@/types";
+import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 vi.mock("./AmbientWorkspace", () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -96,5 +96,47 @@ describe("RecordingStatusDisplay", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to Recordings" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the live recording UI for a browser capture", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.UPLOADING,
+          client_status: ClientStatus.RECORDING,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("live-audio-waveform")).toBeInTheDocument();
+    expect(screen.getByTestId("live-meeting-controls")).toBeInTheDocument();
+    expect(screen.getByText("Meeting is being recorded")).toBeInTheDocument();
+  });
+
+  it("treats an uploading file import as processing, not as a live capture", () => {
+    // Imports also sit in UPLOADING but never carry a capture client status.
+    // The old test was "UPLOADING and client status is not UPLOADING", which an
+    // import's NULL satisfied, so a large import rendered the recording UI --
+    // heading, waveform and transport controls -- for its whole upload.
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.UPLOADING,
+          client_status: undefined,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("live-audio-waveform")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("live-meeting-controls"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Meeting is being recorded"),
+    ).not.toBeInTheDocument();
   });
 });

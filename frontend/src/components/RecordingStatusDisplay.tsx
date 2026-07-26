@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
 
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 import AmbientWorkspace from "./AmbientWorkspace";
@@ -89,10 +90,7 @@ export default function RecordingStatusDisplay({
     });
   };
 
-  const isActiveRecording =
-    recording.status === RecordingStatus.PAUSED ||
-    (recording.status === RecordingStatus.UPLOADING &&
-      recording.client_status !== ClientStatus.UPLOADING);
+  const isActiveRecording = isLiveCaptureInProgress(recording);
   const isPaused =
     recording.status === RecordingStatus.PAUSED ||
     recording.client_status === ClientStatus.PAUSED;
