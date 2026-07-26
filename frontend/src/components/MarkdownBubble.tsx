@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import Link from '@tiptap/extension-link';
+import { TableKit } from '@tiptap/extension-table';
 import { useEffect } from 'react';
 
 interface MarkdownBubbleProps {
@@ -24,6 +25,9 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
           rel: 'noopener noreferrer',
         },
       }),
+      // Read-only surface, so column resizing would only get in the way; the
+      // nodes are here purely so a table in a chat answer renders as a table.
+      TableKit.configure({ table: { resizable: false } }),
       Markdown,
     ],
     content: content,

@@ -16,6 +16,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@headlessui/react": "^2.2.10",
     "@tiptap/extension-link": "^3.28.0",
+    "@tiptap/extension-table": "^3.28.0",
     "@tiptap/extension-underline": "^3.28.0",
     "@tiptap/react": "^3.28.0",
     "@tiptap/starter-kit": "^3.28.0",
