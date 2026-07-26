@@ -543,6 +543,44 @@ Each ecosystem is capped at five open pull requests so the queue stays reviewabl
 
 **Security prioritisation.** Dependabot security alerts and any update that resolves a known CVE take priority over routine version bumps and should be merged promptly once CI is green. Because the release pipeline fails on fixable CRITICAL/HIGH image findings (REL-008), a security update is often the unblocking fix for a release: merge the relevant base-image or dependency update, then re-cut the tag. For a finding with no upstream fix, record a dated, justified entry in [.trivyignore](../.trivyignore) rather than blocking indefinitely.
 
+### Held Pins and Unfixable Advisories
+
+A few dependencies are pinned below their latest release because a companion package has not shipped a matching build, not because we chose to lag. The live example is the PyTorch stack: `pyannote.audio` and `torch-audiomentations` both require `torchaudio`, whose wheels are compiled against a matching `torch` minor, and torchaudio has published nothing above 2.11.0. Upgrading `torch` alone would install a mismatched ABI pair, so 2.11.0 is a ceiling rather than a preference.
+
+Two properties of Dependabot make a held pin more than a one-line comment, and both have caught this repository out before:
+
+- **`ignore:` does not silence security alerts.** The `ignore:` blocks in [dependabot.yml](../.github/dependabot.yml) suppress *version-update pull requests* only. Security alerts are a separate channel with no YAML equivalent, so a held pin sitting under an open advisory keeps raising alerts that no upgrade can resolve.
+- **The alert recurs, and multiplies.** An advisory's affected range is revised over time, and a fresh alert is raised on every revision, once per manifest that resolves the package. `torch` is declared in [requirements/test.txt](../requirements/test.txt) and [requirements/local.txt](../requirements/local.txt) and reached through `-r` from [requirements/dev.txt](../requirements/dev.txt), so a single revision of one advisory produces three alerts. Dismissing them by hand does not scale.
+
+The policy for a hold is therefore:
+
+1. **Record it in code, not just prose.** Add the hold to `HOLDS` in [scripts/check_held_pins.py](../scripts/check_held_pins.py) with the blocking package and the version that resolves the advisory. Add the matching `ignore:` entry to [dependabot.yml](../.github/dependabot.yml) to stop the pointless update pull requests.
+2. **Enforce that the stack moves together.** Every file declaring part of a matched stack must declare the same version. `python scripts/check_held_pins.py --offline` checks this, runs in CI and in `scripts/check.py`, and covers the requirements files and the worker base-image tag. It fails a bump applied to some declarations and not others.
+3. **Suppress the alerts automatically, not manually.** Add a custom **Dependabot rule** (repository *Settings > Code security > Dependabot rules > New rule*, free on public repositories) matching the held package. For the current hold, set *Target alerts* to `package:torch`, `ecosystem:pip`, and `severity:low` (the filters are ANDed), then tick **Dismiss alerts** and choose **Indefinitely**. The rule re-dismisses on every advisory revision and every new manifest, which is what makes the suppression durable. There is no REST API for these rules; they are configured in the web UI.
+
+   Three choices on that form are easy to get wrong:
+
+   - **Choose *Indefinitely*, not *Until patch is available*.** Dependabot only checks whether a patched version has been published, not whether this dependency graph can install it. GHSA-rrmf-rvhw-rf47 is patched in torch 2.13.0, which torchaudio makes unreachable, so *Until patch is available* would decline to dismiss and the alerts would keep recurring — a rule that looks configured but does nothing.
+   - **Filter on package and severity, not on `ghsa_id`.** A rule naming the one advisory suppresses the instance rather than the class. The torch advisory database currently carries three further low/moderate memory-corruption advisories with no fixed version at all (GHSA-x3gm-94wq-g975, GHSA-c678-jfcj-6jmf, GHSA-f4hp-rmr7-r7v8); any of them can have its affected range widened to include the held version, which is exactly how the current one reached us.
+   - **Do not add a scope filter.** Dependabot reports these manifests as `runtime` scope even though the files are developer-facing, so a `development` filter matches nothing. That is also why the GitHub preset rule *"Dismiss low impact issues for development-scoped dependencies"* does **not** cover this case.
+
+   Restricting the rule to `Low` is what keeps it honest: while the pin is held, no torch advisory of any severity can be fixed by upgrading, so auto-dismissing the local-only low tier costs nothing that could have been acted on, while moderate and above still surface for a human decision. `ecosystem:pip` is not redundant — an npm package named `torch` exists.
+
+   *Open a pull request to resolve alerts* cannot be unticked, which is harmless here: the `ignore:` entry for the same package already stops that pull request being opened.
+4. **Dismiss the alerts that are already open.** Auto-triage rules apply going forward, so clear the backlog once:
+
+   ```bash
+   gh api --method PATCH repos/Valtora/Nojoin/dependabot/alerts/<number> \
+     -f state=dismissed \
+     -f dismissed_reason=tolerable_risk \
+     -f dismissed_comment="<why the risk is tolerable and what blocks the fix>"
+   ```
+
+   Valid reasons are `fix_started`, `inaccurate`, `no_bandwidth`, `not_used`, and `tolerable_risk`; the comment is capped at 280 characters. Prefer `tolerable_risk` over `not_used` unless you have confirmed that no transitive dependency reaches the vulnerable code path.
+5. **Watch for the hold clearing.** Because the alerts are now silenced, nothing would otherwise announce the day the pin can move. [held-pin-watch.yml](../.github/workflows/held-pin-watch.yml) runs `scripts/check_held_pins.py` monthly against PyPI and opens a single `held-pin` issue when the blocking package catches up. Lifting a hold means moving the whole stack, updating `HOLDS`, removing the `ignore:` entry, and **removing the auto-triage rule** so genuine advisories surface again.
+
+A hold is a deliberate, dated, checked decision, not a silence. If a held advisory ever rises above the risk this repository is prepared to carry, the answer is to drop the blocking dependency, not to widen the hold.
+
 ### Image Provenance, SBOM, and Signing
 
 Every published image is signed with cosign keyless (OIDC) signing and carries build-provenance and SBOM attestations (`provenance: mode=max`, `sbom: true` in the build step). The signature is bound to the release workflow identity, so the `server-release` job requires `id-token: write`. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).

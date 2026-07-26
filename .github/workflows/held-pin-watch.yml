@@ -1,0 +1,117 @@
+name: Held Pin Watch
+
+# Watches the deliberately held dependency pins recorded in
+# scripts/check_held_pins.py and opens an issue when one can finally move.
+#
+# A held pin (currently the torch/torchaudio stack) keeps attracting Dependabot
+# security alerts that no upgrade can fix, because the fixed version is not
+# installable while a companion package lags. Those alerts are auto-dismissed by
+# a Dependabot auto-triage rule, which means nothing would otherwise tell us the
+# day the hold can be lifted. This job is that signal: it asks PyPI directly
+# rather than waiting for an alert we have deliberately silenced.
+#
+# It mirrors repo-audit-reminder.yml: the runner's built-in gh CLI rather than a
+# third-party action, so there is no extra pinned SHA to maintain, and it is
+# idempotent, so it never stacks a second open issue.
+
+on:
+  schedule:
+    # 10:00 UTC on the first day of each month.
+    - cron: "0 10 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch-held-pins:
+    name: Check whether a held pin can move
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Check held pins against PyPI
+        id: check
+        run: |
+          set -uo pipefail
+
+          # The script is pure stdlib, so there is nothing to install. Exit 1
+          # means "action available", which is the signal this job exists to
+          # catch, not a failure -- capture it rather than letting it abort.
+          report="$(python scripts/check_held_pins.py --json)"
+          status=$?
+
+          echo "${report}"
+          {
+            echo "report<<REPORT_EOF"
+            echo "${report}"
+            echo "REPORT_EOF"
+            echo "status=${status}"
+          } >> "${GITHUB_OUTPUT}"
+
+          if [[ "${status}" -eq 2 ]]; then
+            echo "::warning::A held-pin release check could not be completed (likely a PyPI lookup failure). No issue was opened."
+          fi
+
+      - name: Open or skip the held-pin issue
+        if: steps.check.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REPORT: ${{ steps.check.outputs.report }}
+        run: |
+          set -euo pipefail
+
+          gh label create held-pin \
+            --color b60205 \
+            --description "A deliberately held dependency pin can now move" \
+            --force
+
+          # Idempotency: if an open held-pin issue already exists, do nothing.
+          existing="$(gh issue list --label held-pin --state open --json number --jq 'length')"
+          if [[ "${existing}" -gt 0 ]]; then
+            echo "An open held-pin issue already exists; nothing to do."
+            exit 0
+          fi
+
+          stamp="$(date -u +'%Y-%m')"
+          body_file="$(mktemp)"
+          {
+            cat <<'EOF'
+          A dependency pin held below its latest release can now move, or the
+          held pins have drifted apart. The hold policy is documented under
+          "Held Pins and Unfixable Advisories" in docs/DEVELOPMENT.md.
+
+          Report from `scripts/check_held_pins.py --json`:
+
+          ```json
+          EOF
+            printf '%s\n' "${REPORT}"
+            cat <<'EOF'
+          ```
+
+          If a hold has cleared:
+
+          - [ ] Move every pin in the matched stack together (requirements files and the worker base image digest).
+          - [ ] Update `HOLDS` in `scripts/check_held_pins.py` to the new version, or delete the entry if the hold is gone for good.
+          - [ ] Remove the matching `ignore:` entry from `.github/dependabot.yml`.
+          - [ ] Remove the Dependabot auto-triage rule for the package, so real advisories surface again.
+          - [ ] Confirm the previously-dismissed alerts close as fixed.
+
+          If the report shows drift instead, the stack was bumped inconsistently:
+          reconcile the pins before doing anything else.
+          EOF
+          } > "${body_file}"
+
+          gh issue create \
+            --title "Held dependency pin can move (${stamp})" \
+            --label held-pin \
+            --body-file "${body_file}"

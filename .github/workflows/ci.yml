@@ -338,6 +338,26 @@ jobs:
       - name: Check trailing whitespace
         run: python scripts/check_whitespace.py
 
+  held-pins:
+    # Always run: the matched torch/torchaudio stack is declared across several
+    # requirements files and the worker base image, and nothing else fails a
+    # bump applied to only some of them. Offline and pure stdlib, so it is
+    # cheap; the networked half runs from held-pin-watch.yml on a schedule.
+    name: Held pin drift check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Check held pins agree across the matched stack
+        run: python scripts/check_held_pins.py --offline
+
   dependency-scan:
     name: Dependency vulnerability scan
     runs-on: ubuntu-latest
@@ -380,6 +400,7 @@ jobs:
       - docs-validation
       - alembic-validation
       - whitespace
+      - held-pins
     runs-on: ubuntu-latest
 
     steps:
