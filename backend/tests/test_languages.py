@@ -53,7 +53,7 @@ def test_british_english_notes_instruction_is_explicit() -> None:
 
 def test_manual_notes_prompt_includes_output_language_instruction() -> None:
     prompt = LLMBackend.build_notes_prompt(
-        LLMBackend.get_default_notes_prompt_template(),
+        None,
         "SPEAKER_00: Bonjour.",
         {},
         output_language_instruction=("Write the meeting title and notes in French."),
