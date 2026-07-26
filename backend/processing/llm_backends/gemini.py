@@ -2,7 +2,6 @@ import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
 from backend.utils.config_manager import config_manager
-from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -13,6 +12,7 @@ from backend.utils.meeting_intelligence import (
 )
 from backend.utils.meeting_notes import (
     MeetingEventContext,
+    NotesPromptContext,
 )
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 from backend.processing.llm_backends.base import (
     LLMBackend,
+    TruncatedNotesError,
     _get_default_model_for_provider,
+    raise_if_output_truncated,
 )
 
 
@@ -47,6 +49,17 @@ class GeminiLLMBackend(LLMBackend):
         self.model = model or _get_default_model_for_provider("gemini")
         self.genai = genai  # Store reference for later use
         self.client = genai.Client(api_key=self.api_key)
+
+    @staticmethod
+    def _raise_if_truncated(response) -> None:
+        """Fail rather than save notes the output limit cut short."""
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return
+        finish_reason = getattr(candidates[0], "finish_reason", None)
+        raise_if_output_truncated(
+            "Gemini", getattr(finish_reason, "name", finish_reason)
+        )
 
     def _extract_text_from_response(self, response):
         """
@@ -112,8 +125,6 @@ class GeminiLLMBackend(LLMBackend):
         Run speaker inference on the transcript and return structured suggestions.
         Can be called independently of meeting notes generation.
         """
-        if prompt_template is None:
-            prompt_template = self.get_speaker_suggestion_prompt_template()
         prompt = self.build_speaker_suggestion_prompt(
             prompt_template,
             transcript,
@@ -163,12 +174,11 @@ class GeminiLLMBackend(LLMBackend):
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
         """
         Generate meeting notes using the provided speaker mapping. Should be called after user relabeling.
         """
-        if prompt_template is None:
-            prompt_template = self.get_notes_prompt_template()
         prompt = self.build_notes_prompt(
             prompt_template,
             transcript,
@@ -176,6 +186,7 @@ class GeminiLLMBackend(LLMBackend):
             user_notes,
             meeting_context,
             output_language_instruction,
+            notes_context,
         )
         if not self.model:
             raise ValueError(
@@ -186,9 +197,12 @@ class GeminiLLMBackend(LLMBackend):
                 model=self.model,
                 contents=prompt,
             )
+            self._raise_if_truncated(response)
             text = self._extract_text_from_response(response)
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
+        except TruncatedNotesError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (meeting notes): {e}")
             raise RuntimeError(f"Gemini API error (meeting notes): {e}")
@@ -212,11 +226,34 @@ class GeminiLLMBackend(LLMBackend):
                 model=self.model,
                 contents=prompt,
             )
+            self._raise_if_truncated(response)
             text = self._extract_text_from_response(response)
             return self.parse_automatic_meeting_intelligence_result(text, request)
+        except TruncatedNotesError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (meeting intelligence): {e}")
             raise RuntimeError(f"Gemini API error (meeting intelligence): {e}")
+
+    def generate_text(
+        self,
+        prompt: str,
+        timeout: int = 60,
+        max_tokens: int = 4096,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+            )
+            return self._extract_text_from_response(response)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Gemini API error (text generation): {e}")
+            raise RuntimeError(f"Gemini API error (text generation): {e}")
 
     def generate_meeting_edge(
         self,
@@ -381,13 +418,10 @@ class GeminiLLMBackend(LLMBackend):
         Infer a concise, descriptive meeting title from the provided transcript.
         Sub-classes must implement.
         """
-        if prompt_template is None:
-            prompt_template = self.get_title_prompt_template()
-        prompt = prompt_template.format(
-            transcript=transcript,
-            output_language_section=build_output_language_prompt_section(
-                output_language_instruction
-            ),
+        prompt = self.build_title_prompt(
+            prompt_template,
+            transcript,
+            output_language_instruction,
         )
         if not self.model:
             raise ValueError(

@@ -85,6 +85,8 @@ CREATE TABLE transcripts (
     meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT,
     speaker_name_suggestions JSON,
+    notes_template_id INTEGER,
+    notes_template_sections TEXT,
     notes_status VARCHAR NOT NULL,
     transcript_status VARCHAR NOT NULL,
     error_message TEXT
@@ -243,6 +245,7 @@ def test_generate_notes_task_completes_with_saved_provider_config(
             user_notes: str | None = None,
             meeting_context=None,
             output_language_instruction: str | None = None,
+            notes_context=None,
         ) -> str:
             captured["transcript"] = transcript
             captured["speaker_mapping"] = speaker_mapping
@@ -375,6 +378,7 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
             user_notes: str | None = None,
             meeting_context=None,
             output_language_instruction: str | None = None,
+            notes_context=None,
         ) -> str:
             captured["transcript"] = transcript
             captured["speaker_mapping"] = speaker_mapping

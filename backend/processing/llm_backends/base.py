@@ -10,7 +10,6 @@ from backend.utils.meeting_edge import (
     MeetingEdgeContractError,
     MeetingEdgeRequest,
     MeetingEdgeResult,
-    get_default_meeting_edge_prompt_template,
 )
 from backend.utils.meeting_edge import (
     build_meeting_edge_prompt as build_meeting_edge_prompt_text,
@@ -26,7 +25,6 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceResult,
     MeetingIntelligenceContractError,
     build_title_preference_instruction,
-    get_default_automatic_meeting_intelligence_prompt_template,
 )
 from backend.utils.meeting_intelligence import (
     build_automatic_meeting_intelligence_prompt as build_automatic_meeting_intelligence_prompt_text,
@@ -38,13 +36,17 @@ from backend.utils.meeting_intelligence import (
     parse_automatic_meeting_intelligence_response as parse_automatic_meeting_intelligence_payload,
 )
 from backend.utils.meeting_notes import (
-    NOTES_BODY_SPEC,
     MeetingEventContext,
+    NotesPromptContext,
     append_user_notes_section,
+    build_glossary_prompt_section,
     build_meeting_context_prompt_section,
+    build_meeting_metadata_prompt_section,
+    build_notes_body_spec,
     build_user_notes_prompt_section,
     strip_leading_title_heading,
 )
+from backend.utils.prompt_blocks import render_prompt_blocks
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     parse_speaker_inference_response,
@@ -53,6 +55,74 @@ from backend.utils.speaker_name_suggestions import (
 logger = logging.getLogger(__name__)
 
 JSON_CONTRACT_ERRORS = (MeetingIntelligenceContractError, MeetingEdgeContractError)
+
+# Output ceiling for the two note-producing calls, tried in order.
+#
+# Only Anthropic needs this: max_tokens is a required parameter of the Messages
+# API. OpenAI, Gemini and Ollama are sent no output cap at all, so each model's
+# own maximum applies -- setting a number there would *lower* them, and on
+# OpenAI's reasoning models max_tokens is rejected outright in favour of
+# max_completion_tokens. The asymmetry is deliberate, not an oversight.
+#
+# Anthropic rejects a value above the model's own maximum rather than clamping
+# it, and the maximum varies by model, so the ladder asks for the largest first
+# and steps down on that specific error. 128k is the real ceiling on current
+# Claude models (Opus 5, Fable 5, Opus 4.8/4.7/4.6, Sonnet 5, Sonnet 4.6); 64k
+# covers Haiku 4.5 and the 4.x generation, then 8192 and 4096 for older models.
+# A rejection costs one failed round trip, not a generation.
+#
+# Reaching these values requires streaming: the SDK refuses a *non-streaming*
+# request whose max_tokens implies a run over ten minutes, which is anything
+# above roughly 21,000 tokens. See AnthropicLLMBackend._create_with_ceiling.
+NOTES_MAX_OUTPUT_TOKEN_LADDER = (128_000, 64_000, 8_192, 4_096)
+NOTES_MAX_OUTPUT_TOKENS = NOTES_MAX_OUTPUT_TOKEN_LADDER[0]
+
+# Meeting Chat uses the same ladder. Most chat answers are short, but the chat
+# tool `update_meeting_notes` rewrites the *entire* notes document, so a low cap
+# silently truncated a rewrite of any real length -- the old 1024 was roughly 750
+# words for a whole set of notes.
+CHAT_MAX_OUTPUT_TOKEN_LADDER = NOTES_MAX_OUTPUT_TOKEN_LADDER
+
+
+def is_output_ceiling_error(exc: Exception) -> bool:
+    """Whether a provider error is "max_tokens is larger than this model allows"."""
+    message = str(exc).lower()
+    if "max_tokens" not in message:
+        return False
+    return any(
+        marker in message
+        for marker in ("greater than", "less than or equal", "maximum", "at most")
+    )
+
+
+class TruncatedNotesError(RuntimeError):
+    """Raised when a provider stopped generating because it hit its output cap.
+
+    Truncated notes look plausible and end mid-sentence, so saving them is worse
+    than failing: the user has no way to tell a short meeting from a cut-off one.
+    Ollama already refused to save truncated output; this makes the other three
+    providers behave the same way.
+    """
+
+    def __init__(self, provider: str):
+        super().__init__(
+            f"{provider} stopped generating because it reached its output limit, "
+            "so the notes would have been cut off mid-sentence. Try a notes "
+            "structure that asks for less detail, or a model with a larger "
+            "output limit."
+        )
+
+
+def raise_if_output_truncated(provider: str, stop_reason: Optional[str]) -> None:
+    """Fail loudly when a response was cut short by the output limit.
+
+    Accepts each provider's own vocabulary for the same condition: Anthropic's
+    ``max_tokens``, OpenAI's ``length``, and Gemini's ``MAX_TOKENS``.
+    """
+    if not stop_reason:
+        return
+    if str(stop_reason).strip().lower() in {"max_tokens", "length", "max_token"}:
+        raise TruncatedNotesError(provider)
 
 
 def summarize_llm_response_shape(response_text: str) -> Dict[str, Any]:
@@ -127,7 +197,7 @@ class LLMBackend:
         """
         raise NotImplementedError
 
-    def generate_meeting_notes(
+    def generate_meeting_notes(  # noqa: PLR0913 - matches the prompt-section arguments
         self,
         transcript: str,
         speaker_mapping: Dict[str, str],
@@ -136,6 +206,7 @@ class LLMBackend:
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
         """
         Generate meeting notes using the provided speaker mapping to replace generic labels.
@@ -152,6 +223,20 @@ class LLMBackend:
         """
         Generate speaker suggestions for unresolved labels, a meeting title, and
         meeting notes from a single LLM call.
+        """
+        raise NotImplementedError
+
+    def generate_text(
+        self,
+        prompt: str,
+        timeout: int = 60,
+        max_tokens: int = 4096,
+    ) -> str:
+        """One prompt in, raw text out.
+
+        The generic primitive the task-specific methods above are missing: used
+        by features that supply their own prompt and their own parser (the
+        notes-structure generator, issue #137).
         """
         raise NotImplementedError
 
@@ -240,117 +325,41 @@ class LLMBackend:
     ) -> str:
         return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
 
-    @staticmethod
-    def get_default_speaker_suggestion_prompt_template():
-        return """
-You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels.
+    # Static prompt text. Plain strings, never format templates: JSON schema
+    # examples use real braces, and interpolated values need no escaping.
+    SPEAKER_SUGGESTION_INTRO = """You are an expert meeting assistant. Analyze the diarized meeting transcript below and return only evidence-backed speaker name suggestions for unresolved diarization labels."""
 
-# Critical Rules
-- Return valid JSON only. Do not include Markdown, commentary, or code fences unless the client asks for them.
+    SPEAKER_SUGGESTION_CRITICAL_RULES = """- Return valid JSON only. Do not include Markdown, commentary, or code fences unless the client asks for them.
 - Only include suggestions for the eligible diarization labels listed below.
 - Omit a label entirely if the transcript evidence is weak or ambiguous.
 - Each suggestion must include at least one direct evidence span quoted from the transcript.
 - Prefer names already present in the transcript or linked meeting attendees. Do not invent names.
 - Be conservative. If you are unsure, omit the suggestion instead of guessing.
-- `confidence` must be between 0.0 and 1.0.
+- `confidence` must be between 0.0 and 1.0."""
 
-# Eligible Diarization Labels
-{eligible_labels_section}
-
-# User Notes Context
-{user_notes_section}
-
-# Meeting Context
-{meeting_context_section}
-
-# Required JSON Schema
-{{
+    SPEAKER_SUGGESTION_JSON_SCHEMA = """{
     "suggestions": [
-        {{
+        {
             "diarization_label": "SPEAKER_00",
             "suggested_name": "Alex Johnson",
             "confidence": 0.93,
             "rationale": "The speaker says 'I'm Alex' and the attendee list contains Alex Johnson.",
             "signals": ["self_introduction", "meeting_attendee_exact"],
             "evidence_spans": [
-                {{
+                {
                     "quote": "Hi everyone, I'm Alex from product.",
                     "reason": "self_introduction",
                     "start_seconds": 0.0,
                     "end_seconds": 3.2
-                }}
+                }
             ]
-        }}
+        }
     ]
-}}
+}"""
 
-# Transcript
-{transcript}
-"""
+    NOTES_INTRO = """You are an expert meeting-notes assistant. Generate meeting notes from the transcript below. Use the speaker mapping to refer to participants by their inferred names or roles instead of generic labels."""
 
-    @staticmethod
-    def get_default_notes_prompt_template():
-        # Body structure and fidelity rules live in the shared NOTES_BODY_SPEC so
-        # this standalone (regeneration) prompt and the unified meeting-intelligence
-        # prompt cannot drift. Only the delivery wrapper (raw Markdown, speaker
-        # mapping, transcript) is specific to this path.
-        return (
-            """You are an expert meeting-notes assistant. Generate meeting notes from the transcript below. Use the speaker mapping to refer to participants by their inferred names or roles instead of generic labels.
-
-# Speaker Mapping
-{mapping_table}
-
-# User Notes Context
-{user_notes_section}
-
-# Meeting Context
-{meeting_context_section}
-
-{output_language_section}
-
-# Notes Format
-"""
-            + NOTES_BODY_SPEC
-            + """
-
-# Transcript to Analyze
-{transcript}
-
-Return only the meeting notes described above, starting directly with the Summary section and with no preamble or closing commentary."""
-        )
-
-    @staticmethod
-    def get_default_title_prompt_template():
-        # Reuse the shared title-style instruction (short titles by default) so the
-        # standalone title path matches the unified meeting-intelligence path.
-        return (
-            "You are an expert meeting-notes assistant. Given the full meeting transcript below, "
-            "provide a title that summarises the main topic or purpose of the meeting. "
-            + build_title_preference_instruction(True)
-            + " Output ONLY the title with no additional commentary, punctuation, or formatting.\n\n"
-            "{output_language_section}\n\n"
-            "# Transcript\n\n{transcript}\n"
-        )
-
-    @staticmethod
-    def get_notes_prompt_template() -> str:
-        return LLMBackend.get_default_notes_prompt_template()
-
-    @staticmethod
-    def get_title_prompt_template() -> str:
-        return LLMBackend.get_default_title_prompt_template()
-
-    @staticmethod
-    def get_speaker_suggestion_prompt_template() -> str:
-        return LLMBackend.get_default_speaker_suggestion_prompt_template()
-
-    @staticmethod
-    def get_automatic_meeting_intelligence_prompt_template() -> str:
-        return get_default_automatic_meeting_intelligence_prompt_template()
-
-    @staticmethod
-    def get_meeting_edge_prompt_template() -> str:
-        return get_default_meeting_edge_prompt_template()
+    NOTES_CLOSING = """Return only the meeting notes described above, starting directly with the first section and with no preamble or closing commentary."""
 
     @staticmethod
     def parse_notes(response_text: str) -> str:
@@ -393,44 +402,120 @@ Return only the meeting notes described above, starting directly with the Summar
         return "\n".join([header] + rows)
 
     @staticmethod
-    def build_notes_prompt(
-        prompt_template: str,
+    def build_notes_prompt(  # noqa: PLR0913 - one argument per prompt section
+        prompt_override: Optional[str],
         transcript: str,
         speaker_mapping: Dict[str, str],
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
         output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
     ) -> str:
-        return prompt_template.format(
-            transcript=transcript,
-            mapping_table=LLMBackend.mapping_to_markdown_table(speaker_mapping),
-            user_notes_section=build_user_notes_prompt_section(user_notes),
-            meeting_context_section=build_meeting_context_prompt_section(
-                meeting_context
-            ),
-            output_language_section=build_output_language_prompt_section(
-                output_language_instruction
-            ),
+        """Compose the standalone (regeneration) notes prompt.
+
+        ``prompt_override`` replaces the whole prompt verbatim; it is a test seam,
+        not a template, and nothing in the application passes it.
+        """
+        if prompt_override:
+            return prompt_override
+
+        context = notes_context or NotesPromptContext()
+        body = render_prompt_blocks(
+            [
+                (None, LLMBackend.NOTES_INTRO),
+                (
+                    "# Speaker Mapping",
+                    LLMBackend.mapping_to_markdown_table(speaker_mapping),
+                ),
+                (
+                    "# Recording Metadata",
+                    build_meeting_metadata_prompt_section(context.metadata),
+                ),
+                ("# Glossary", build_glossary_prompt_section(context.glossary)),
+                ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
+                (
+                    "# Meeting Context",
+                    build_meeting_context_prompt_section(meeting_context),
+                ),
+                # Carries its own heading.
+                (
+                    None,
+                    build_output_language_prompt_section(output_language_instruction),
+                ),
+                # Structure and fidelity rules come from the shared body spec, so
+                # this prompt and the unified one cannot drift.
+                ("# Notes Format", build_notes_body_spec(context.notes_sections)),
+                ("# Transcript to Analyze", transcript),
+                (None, LLMBackend.NOTES_CLOSING),
+            ]
         )
+        return body
 
     @staticmethod
     def build_speaker_suggestion_prompt(
-        prompt_template: str,
+        prompt_override: Optional[str],
         transcript: str,
         eligible_labels: Optional[Sequence[str]] = None,
         user_notes: Optional[str] = None,
         meeting_context: Optional[MeetingEventContext] = None,
     ) -> str:
-        return prompt_template.format(
-            transcript=transcript,
-            eligible_labels_section=build_eligible_speaker_labels_prompt_section(
-                eligible_labels
-            ),
-            user_notes_section=build_user_notes_prompt_section(user_notes),
-            meeting_context_section=build_meeting_context_prompt_section(
-                meeting_context
-            ),
+        if prompt_override:
+            return prompt_override
+
+        body = render_prompt_blocks(
+            [
+                (None, LLMBackend.SPEAKER_SUGGESTION_INTRO),
+                ("# Critical Rules", LLMBackend.SPEAKER_SUGGESTION_CRITICAL_RULES),
+                (
+                    "# Eligible Diarization Labels",
+                    build_eligible_speaker_labels_prompt_section(eligible_labels),
+                ),
+                ("# User Notes Context", build_user_notes_prompt_section(user_notes)),
+                (
+                    "# Meeting Context",
+                    build_meeting_context_prompt_section(meeting_context),
+                ),
+                ("# Required JSON Schema", LLMBackend.SPEAKER_SUGGESTION_JSON_SCHEMA),
+                ("# Transcript", transcript),
+            ]
         )
+        # Leading and trailing newlines preserved from the original template.
+        return f"\n{body}\n"
+
+    @staticmethod
+    def build_title_prompt(
+        prompt_override: Optional[str],
+        transcript: str,
+        output_language_instruction: Optional[str] = None,
+    ) -> str:
+        """Compose the standalone title prompt.
+
+        Shared by every backend: this used to be the same ``str.format`` call
+        copy-pasted into five of them, which is exactly the duplication that lets
+        one provider's prompt drift away from the others.
+        """
+        if prompt_override:
+            return prompt_override
+
+        intro = (
+            "You are an expert meeting-notes assistant. Given the full meeting "
+            "transcript below, provide a title that summarises the main topic or "
+            "purpose of the meeting. "
+            + build_title_preference_instruction(True)
+            + " Output ONLY the title with no additional commentary, punctuation, "
+            "or formatting."
+        )
+        body = render_prompt_blocks(
+            [
+                (None, intro),
+                (
+                    None,
+                    build_output_language_prompt_section(output_language_instruction),
+                ),
+                ("# Transcript\n", transcript),
+            ]
+        )
+        return f"{body}\n"
 
     @staticmethod
     def build_automatic_meeting_intelligence_prompt(
