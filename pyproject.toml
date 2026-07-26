@@ -42,6 +42,7 @@ files = [
     "backend/api/deps.py",
     "backend/api/error_handling.py",
     "backend/utils/upload_limit.py",
+    "backend/utils/markdown_docx.py",
     # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",
     "backend/models/recording.py",

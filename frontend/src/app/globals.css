@@ -430,3 +430,74 @@ html {
   text-decoration-skip-ink: none;
   text-underline-offset: 2px;
 }
+
+/* Notes and chat tables.
+   The editor stores notes as Markdown, so these style the real table nodes
+   parsed out of Markdown tables rather than any bespoke markup. */
+.ProseMirror .tableWrapper {
+  /* A six-column action-item table is wider than the notes pane on a laptop.
+     Scrolling the table alone keeps the page itself from scrolling sideways. */
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.ProseMirror table {
+  border-collapse: collapse;
+  /* Fixed layout is what makes the column resize handles meaningful; without
+     it the browser re-derives widths from content on every keystroke. */
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+}
+
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid #d1d5db;
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+  text-align: left;
+  position: relative;
+  min-width: 6rem;
+}
+
+.ProseMirror th {
+  background-color: #f3f4f6;
+  font-weight: 600;
+}
+
+.ProseMirror th > p,
+.ProseMirror td > p {
+  margin: 0;
+}
+
+.dark .ProseMirror th,
+.dark .ProseMirror td {
+  border-color: #4b5563;
+}
+
+.dark .ProseMirror th {
+  background-color: #374151;
+}
+
+/* Cell selection and column resizing (prosemirror-tables) */
+.ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(234, 88, 12, 0.16);
+  pointer-events: none;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: #ea580c;
+  pointer-events: none;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}

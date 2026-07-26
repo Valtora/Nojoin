@@ -4,11 +4,13 @@ import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
+import { TableKit } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
 import { useEffect } from 'react';
 
 import { SearchExtension } from '@/lib/SearchExtension';
 import { SpellCheckExtension } from '@/lib/SpellCheckExtension';
+import { TableKeymap } from '@/lib/TableKeymap';
 
 interface RichTextEditorProps {
   content: string;
@@ -45,6 +47,12 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
           rel: 'noopener noreferrer',
         },
       }),
+      // Registering the table nodes is what makes Markdown tables survive a
+      // load: without them ProseMirror discards the table structure and
+      // flattens every cell into one run-on paragraph, which the notes
+      // autosave then writes back over the original.
+      TableKit.configure({ table: { resizable: true } }),
+      TableKeymap,
       Markdown,
       SearchExtension,
       SpellCheckExtension,

@@ -13,4 +13,7 @@ reportlab==5.0.0
 python-docx==1.2.0
 Markdown==3.10.2
 markdown_pdf==1.13.2
+# Imported directly by backend/utils/markdown_docx.py, not only pulled in by
+# markdown_pdf, so it is pinned here rather than left to a transitive resolve.
+markdown-it-py==4.2.0
 google-re2==1.1.20251105
