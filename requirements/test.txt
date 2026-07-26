@@ -2,8 +2,12 @@
 -r worker.txt
 aiosqlite==0.22.1
 pytest==9.1.1
-# torch and torchaudio must move together with the CUDA stack in local.txt,
-# the torchcodec pin in worker.txt, and the base image in docker/Dockerfile.worker.
-# torchaudio publishes no 2.12.x, so 2.11.0 is the current matched-stack ceiling.
+# Matched stack. torch and torchaudio must move together with the CUDA pins in
+# local.txt, the torchcodec pin in worker.txt, and the base image in
+# docker/Dockerfile.worker; scripts/check_held_pins.py fails CI if they drift
+# apart. torchaudio has published nothing above 2.11.0 and its wheels are
+# compiled against a matching torch minor, so 2.11.0 is the ceiling. It is held
+# under an open advisory no upgrade can clear -- see "Held Pins and Unfixable
+# Advisories" in docs/DEVELOPMENT.md before touching these two lines.
 torch==2.11.0
 torchaudio==2.11.0

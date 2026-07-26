@@ -2,6 +2,9 @@
 -r worker.txt
 aiosqlite==0.22.1
 pyannote.audio==4.0.5
+# CUDA half of the matched torch stack. Held at the torchaudio ceiling and
+# checked by scripts/check_held_pins.py; see the note in test.txt and
+# "Held Pins and Unfixable Advisories" in docs/DEVELOPMENT.md.
 torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126
 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu126
 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu126

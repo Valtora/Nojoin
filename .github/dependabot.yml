@@ -7,6 +7,12 @@
 # - Docker base images are pinned by digest in the Dockerfiles. Dependabot
 #   bumps the digest (and tag comment) when a new image is published.
 # - Updates are grouped where practical to keep pull-request volume reviewable.
+# - The `ignore:` blocks below suppress *version-update pull requests* only.
+#   They do NOT suppress Dependabot *security alerts*: those are a separate
+#   channel with no YAML equivalent, so a held pin under an open advisory keeps
+#   raising alerts that no upgrade can fix. See "Held Pins and Unfixable
+#   Advisories" in docs/DEVELOPMENT.md for how those are handled, and
+#   scripts/check_held_pins.py for the checked-in record of each hold.
 version: 2
 
 updates:
@@ -37,7 +43,10 @@ updates:
           - "*"
     # Held pins (see PR #43). Remove an entry when its blocker clears.
     ignore:
-      # torchaudio publishes no 2.12.x; 2.11.0 is the matched-stack ceiling.
+      # torchaudio has published nothing above 2.11.0, and its wheels are
+      # compiled against a matching torch minor, so 2.11.0 is the matched-stack
+      # ceiling. Held under GHSA-rrmf-rvhw-rf47, which is not fixed until torch
+      # 2.13.0; held-pin-watch.yml opens an issue when torchaudio catches up.
       - dependency-name: "torch"
         versions: [">=2.12.0"]
       # torchcodec stays matched to torch 2.11 (the 0.11.x line).
