@@ -24,14 +24,29 @@ NOTES_BODY_SPEC = """Structure the notes for fast follow-through, not verbatim t
 Two to four sentences the reader can scan first: why the meeting happened and what came out of it. Lead with outcomes, not chronology.
 
 ## Key Decisions
-Each decision the meeting actually reached, one per line, paired with the reasoning behind it so it is not re-litigated later:
-- The decision - the reasoning or trade-off behind it.
-Omit this entire section if no decisions were reached. Never record a decision that was not made.
+Each decision the meeting actually reached, one row per decision, paired with the reasoning behind it so it is not re-litigated later. Use exactly this Markdown table, keeping the header row and the delimiter row:
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| DEC-001 | The decision that was reached | The reasoning or trade-off behind it |
+
+Number the IDs sequentially from DEC-001. Omit this entire section if no decisions were reached. Never record a decision that was not made.
 
 ## Action Items / Tasks
-Every task, commitment, or follow-up that was actually raised, one per line:
-- [ ] Task description - Owner: single named person, or Unassigned - Due: a date, or TBD
-Give each item exactly one owner; never assign a task to the team as a whole. If none were raised, write a single line stating that no action items were identified.
+Every task, commitment, or follow-up that was actually raised, one row per item. Use exactly this Markdown table, keeping the header row and the delimiter row:
+
+| ID | Action | Owner | Due |
+| --- | --- | --- | --- |
+| ACT-001 | The task that was committed to | A single named person, or Unassigned | A date, or TBD |
+
+Number the IDs sequentially from ACT-001. Give each item exactly one owner; never assign a task to the team as a whole. If none were raised, omit the table and write a single line stating that no action items were identified.
+
+Apply these rules to every Markdown table you write:
+- Always include the header row and the `| --- |` delimiter row directly beneath it, and give every row the same number of columns.
+- Keep cells short enough to read in a narrow column, and never exceed six columns.
+- Write a line break inside a cell as `<br>`, never as a real newline, which would break the row.
+- Escape any literal pipe character inside a cell as `\\|`.
+- Never merge or split cells, and never nest a table inside another table.
 
 ## Detailed Notes
 One ### subsection per major topic, in the order discussed, with the subheading naming the topic. Under each, include only what applies:

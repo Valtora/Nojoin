@@ -170,6 +170,36 @@ def test_notes_body_spec_uses_the_best_practice_section_order() -> None:
     assert "do not add a title heading" in NOTES_BODY_SPEC.lower()
 
 
+def test_notes_body_spec_prescribes_tables_for_decisions_and_actions() -> None:
+    # Decisions and action items are tabular by nature, so the spec asks for
+    # Markdown tables rather than lists. The editor and both document exporters
+    # render these as real tables (issue #136).
+    decisions = NOTES_BODY_SPEC.index("## Key Decisions")
+    actions = NOTES_BODY_SPEC.index("## Action Items / Tasks")
+    detail = NOTES_BODY_SPEC.index("## Detailed Notes")
+
+    assert "| ID | Decision | Rationale |" in NOTES_BODY_SPEC[decisions:actions]
+    assert "| ID | Action | Owner | Due |" in NOTES_BODY_SPEC[actions:detail]
+    # Both tables need the delimiter row or they are not tables at all.
+    assert NOTES_BODY_SPEC.count("| --- |") >= 1
+
+
+def test_notes_body_spec_states_the_table_constraints() -> None:
+    # These constraints keep generated tables inside what Markdown storage and
+    # the DOCX and PDF exporters can carry: a merged cell or a real newline in a
+    # cell would drop the table out of one surface or another.
+    assert "never exceed six columns" in NOTES_BODY_SPEC
+    assert "<br>" in NOTES_BODY_SPEC
+    assert "Never merge or split cells" in NOTES_BODY_SPEC
+
+
+def test_notes_body_spec_stays_safe_for_str_format() -> None:
+    # Both embedding templates run str.format over the spec, so a stray brace
+    # would raise at prompt-render time rather than in review.
+    assert "{" not in NOTES_BODY_SPEC
+    assert "}" not in NOTES_BODY_SPEC
+
+
 def test_rendered_unified_prompt_carries_the_new_structure() -> None:
     request = AutomaticMeetingIntelligenceRequest(
         resolved_transcript="[00:00 - 00:05] Alex: We will ship on Friday.",
