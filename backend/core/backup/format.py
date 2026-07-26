@@ -125,7 +125,16 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         _enrich("last_diarization_window_result_id", "diarization_window_results"),
     ),
     "recording_tags": (_own("recording_id", "recordings"), _own("tag_id", "tags")),
-    "transcripts": (_own("recording_id", "recordings"),),
+    # user_id is enrichment rather than ownership despite being the owning column:
+    # install-tier templates are owned by the installation and carry a NULL user_id
+    # by design, and an ownership link skips every row whose owner is NULL.
+    "notes_templates": (_enrich("user_id", "users"),),
+    "transcripts": (
+        _own("recording_id", "recordings"),
+        # Provenance only. transcripts.notes_template_sections holds the structure
+        # text itself, so losing the link costs a label, never the notes.
+        _enrich("notes_template_id", "notes_templates"),
+    ),
     "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
     "documents": (_own("recording_id", "recordings"),),
 }

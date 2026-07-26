@@ -196,7 +196,11 @@ def _restore_config(zipf: zipfile.ZipFile, state: "_RestoreState") -> None:
     """Merge the archived config in, on a clearing restore only.
 
     config.json is a flat map that ConfigManager filters to known keys on load and
-    which never holds secrets, so a plain update is enough.
+    which never holds secrets, so a plain update is enough -- with one exception:
+    install_notes_template_id is a primary key from the source installation, and
+    ids are reassigned on restore. Carried across unchanged it would point at
+    whichever template happens to hold that id here, silently applying the wrong
+    structure install-wide, so it is remapped or dropped.
     """
     if not state.clear_existing or "config.json" not in zipf.namelist():
         return
@@ -205,6 +209,12 @@ def _restore_config(zipf: zipfile.ZipFile, state: "_RestoreState") -> None:
         new_config = json.loads(zipf.read("config.json"))
         if not isinstance(new_config, dict):
             return
+
+        if "install_notes_template_id" in new_config:
+            old_id = new_config.get("install_notes_template_id")
+            new_config["install_notes_template_id"] = state.id_map.get(
+                "notes_templates", {}
+            ).get(old_id)
 
         config_path = state.config_path
         if config_path.exists():
