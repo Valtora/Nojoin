@@ -22,6 +22,7 @@ import {
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
 import LinkModal from "./LinkModal";
+import TableMenu from "./TableMenu";
 import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
 import { spellCheckService } from "@/lib/spellCheckService";
@@ -449,6 +450,7 @@ export default function NotesView({
                 >
                   <LinkIcon className="w-4 h-4" />
                 </button>
+                <TableMenu editor={editor} />
               </>
             )}
           </div>
