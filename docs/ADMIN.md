@@ -65,6 +65,13 @@ Admin-only sections let you:
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared automatically, and repo-bundled model assets remain read-only in the UI.
 
+**Notes structure and Glossary** are also administered from **Settings > AI**. Both are two-tier: an install value you maintain for everyone, plus a per-user value.
+
+- Install structures are visible to every user and editable only by an administrator. One can be marked the install default, which applies to anyone who has not chosen their own. Users can copy an install structure into their own list to vary it, which is the intended route when someone wants a change to shared text.
+- The install glossary is merged into each user's own glossary rather than replacing it, so a user adding one personal term keeps the organisation's vocabulary. Where both define the same term, the user's definition is used.
+- Only the section structure is editable. Accuracy, attribution, table formatting, and the response contract are fixed by the application and cannot be removed by a template. See [ADR-0006](adr/0006-user-editable-notes-structure.md) for the boundary and why it sits there.
+- A template's structure text is snapshotted onto each set of notes it generates, so editing or deleting a template never changes what past notes were produced from. Restores remap template references; a reference that cannot be remapped is dropped rather than pointed at an unrelated template.
+
 Each user can also configure **Language preferences** in **Settings > AI**. Transcription defaults to automatic language detection, while generated meeting titles and notes default to English. Whisper supports forced language selection, Canary supports its listed language set, and Parakeet remains automatic-only. The selected effective transcription language is part of the ASR reuse key, so cached/live transcript work is not reused across incompatible language settings.
 
 Notes-language choices include British and American English, the transcription language, listed languages, and a validated custom language/style instruction. These choices localize generated content while preserving machine-readable JSON keys and speaker labels. Existing saved transcripts and notes are not translated in place; users must reprocess or run **Generate Notes** after changing the relevant preference.
