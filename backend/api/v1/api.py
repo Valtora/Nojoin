@@ -11,6 +11,7 @@ from backend.api.v1.endpoints import (
     invitations,
     llm,
     login,
+    notes_templates,
     oauth,
     people_tags,
     recordings,
@@ -159,6 +160,12 @@ api_router.include_router(
     settings.router,
     prefix="/settings",
     tags=["settings"],
+    dependencies=[Depends(get_current_user)],
+)
+api_router.include_router(
+    notes_templates.router,
+    prefix="/notes-templates",
+    tags=["notes-templates"],
     dependencies=[Depends(get_current_user)],
 )
 api_router.include_router(

@@ -30,6 +30,10 @@ from backend.utils.languages import (
     validate_notes_language,
     validate_transcription_language,
 )
+from backend.utils.notes_templates import (
+    NotesTemplateError,
+    validate_glossary,
+)
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
@@ -87,6 +91,12 @@ class SettingsUpdate(BaseModel):
     secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     prefer_short_titles: Optional[bool] = None
+    # Notes structure and vocabulary (issue #137). The install_* keys are
+    # admin-only and are dropped for everyone else by _build_settings_update_data.
+    notes_template_id: Optional[int] = None
+    install_notes_template_id: Optional[int] = None
+    glossary_terms: Optional[str] = None
+    install_glossary_terms: Optional[str] = None
     enable_vad: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
@@ -132,6 +142,16 @@ class SettingsUpdate(BaseModel):
         if value is None:
             return value
         return validate_custom_notes_language_instruction(value)
+
+    @field_validator("glossary_terms", "install_glossary_terms")
+    @classmethod
+    def validate_glossary_terms(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        try:
+            return validate_glossary(value)
+        except NotesTemplateError as exc:
+            raise ValueError(str(exc)) from exc
 
     @field_validator("theme")
     @classmethod
