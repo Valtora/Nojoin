@@ -177,6 +177,19 @@ class CliCodexModelsRead(BaseModel):
     source: str
 
 
+# The Claude catalogue is curated, not fetched: a Claude subscription exposes no
+# models endpoint, so there is nothing live to query. Served from the API anyway
+# so the picker reads one source of truth rather than a duplicate hardcoded list
+# in the frontend, which is how the two drifted apart.
+_CLAUDE_MODEL_LABELS = {
+    "claude-opus-5": "Claude Opus 5",
+    "claude-opus-4-8": "Claude Opus 4.8",
+    "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6",
+    "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+}
+
+
 # Curated fallback shown only until the live catalogue is cached (or if codex
 # can't be queried). The live list from `codex debug models` is authoritative.
 _CODEX_FALLBACK_MODELS = [
@@ -350,6 +363,43 @@ async def get_codex_models(
             models=[CliCodexModel(**model) for model in cached], source="live"
         )
     # Warm the cache for next time (runs in worker-io); serve the fallback now.
+    celery_app.send_task("backend.worker.tasks.refresh_codex_models_task")
+    return CliCodexModelsRead(models=_CODEX_FALLBACK_MODELS, source="fallback")
+
+
+@router.get("/claude/models", response_model=CliCodexModelsRead)
+async def get_claude_models(
+    current_user: User = Depends(get_current_user),
+) -> CliCodexModelsRead:
+    """The Claude model catalogue for the picker.
+
+    Always ``curated``: a subscription exposes no models endpoint, so there is
+    nothing to refresh against. The endpoint exists so the frontend reads the
+    same list the CLI backend accepts instead of keeping its own copy.
+    """
+    from backend.processing.cli_backend import models_for_provider
+
+    return CliCodexModelsRead(
+        models=[
+            CliCodexModel(id=model, label=_CLAUDE_MODEL_LABELS.get(model, model))
+            for model in models_for_provider("claude_code")
+        ],
+        source="curated",
+    )
+
+
+@router.post("/codex/models/refresh", response_model=CliCodexModelsRead)
+async def refresh_codex_models(
+    current_user: User = Depends(get_current_user),
+) -> CliCodexModelsRead:
+    """Drop the cached Codex catalogue and re-query the codex binary.
+
+    Returns the fallback immediately with ``source="fallback"``; the caller polls
+    GET /codex/models until it reports ``live``. The delete is the point -- the
+    cache holds for six hours, so without it a refresh would keep serving the
+    stale list it was pressed to replace.
+    """
+    await codex_oauth.clear_model_catalog()
     celery_app.send_task("backend.worker.tasks.refresh_codex_models_task")
     return CliCodexModelsRead(models=_CODEX_FALLBACK_MODELS, source="fallback")
 

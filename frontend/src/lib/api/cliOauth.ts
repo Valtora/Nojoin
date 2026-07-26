@@ -74,3 +74,21 @@ export const getCodexModels = async (): Promise<CodexModelsResponse> => {
   const response = await api.get<CodexModelsResponse>("/cli-oauth/codex/models");
   return response.data;
 };
+
+/**
+ * The curated Claude catalogue. Always `source: "curated"` — a subscription
+ * exposes no models endpoint — but served from the API so the picker shows what
+ * the backend actually accepts rather than a second hardcoded list.
+ */
+export const getClaudeCliModels = async (): Promise<CodexModelsResponse> => {
+  const response = await api.get<CodexModelsResponse>("/cli-oauth/claude/models");
+  return response.data;
+};
+
+/** Drop the cached Codex catalogue and re-query the binary; poll getCodexModels after. */
+export const refreshCodexModels = async (): Promise<CodexModelsResponse> => {
+  const response = await api.post<CodexModelsResponse>(
+    "/cli-oauth/codex/models/refresh",
+  );
+  return response.data;
+};

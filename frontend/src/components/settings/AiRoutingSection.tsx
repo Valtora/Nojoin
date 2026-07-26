@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Cloud, Info, Server } from "lucide-react";
+import { Check, Cloud, Info, RefreshCw, Server } from "lucide-react";
 
 import { CliOAuthStatus, CliProvider, Settings } from "@/types";
 import { cn } from "@/lib/cn";
@@ -8,7 +8,11 @@ import SettingsCallout from "./SettingsCallout";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 import SettingsStatusBadge from "./SettingsStatusBadge";
-import { getCodexModels } from "@/lib/api/cliOauth";
+import {
+  getClaudeCliModels,
+  getCodexModels,
+  refreshCodexModels,
+} from "@/lib/api/cliOauth";
 import { isServerProviderConfigured } from "@/lib/aiAvailability";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
@@ -58,6 +62,10 @@ export default function AiRoutingSection({
   const [cliStatus, setCliStatus] = useState<CliOAuthStatus | null>(null);
   // Live Codex model catalogue (from `codex debug models`); null until loaded.
   const [codexModels, setCodexModels] = useState<CliModelOption[] | null>(null);
+  const [claudeModels, setClaudeModels] = useState<CliModelOption[] | null>(null);
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  // Bumped by the refresh button to re-run the catalogue effect.
+  const [modelReload, setModelReload] = useState(0);
 
   const isCli = settings.usage_model === "cli_oauth";
   const providerConfigured = isServerProviderConfigured(settings);
@@ -118,22 +126,36 @@ export default function AiRoutingSection({
   const liveModel =
     (settings[MODEL_FIELDS[activeProvider].live] as string | null | undefined) ||
     "";
-  // Codex's model list is fetched live (the catalogue changes per codex version);
-  // the curated cliModelOptions is only a fallback until it loads.
+  // Both catalogues come from the API. Codex's is fetched live from the binary
+  // (it changes per codex version); Claude's is curated server-side, because a
+  // subscription exposes no models endpoint. cliModelOptions is only the
+  // offline fallback until either loads.
   useEffect(() => {
-    if (!isCli || activeProvider !== "codex") return;
+    if (!isCli) return;
     let cancelled = false;
     let refetch: ReturnType<typeof setTimeout>;
     const load = async () => {
       try {
-        const result = await getCodexModels();
-        if (cancelled) return;
-        if (result.models?.length) setCodexModels(result.models);
-        // First call returns the curated fallback while the worker fetches the
-        // live catalogue — refetch shortly for the real list.
-        if (result.source === "fallback") refetch = setTimeout(load, 3000);
+        if (activeProvider === "codex") {
+          const result = await getCodexModels();
+          if (cancelled) return;
+          if (result.models?.length) setCodexModels(result.models);
+          // A fallback response means the worker is still fetching the live
+          // catalogue — refetch shortly for the real list.
+          if (result.source === "fallback") {
+            refetch = setTimeout(load, 3000);
+          } else {
+            setRefreshingModels(false);
+          }
+        } else {
+          const result = await getClaudeCliModels();
+          if (cancelled) return;
+          if (result.models?.length) setClaudeModels(result.models);
+          setRefreshingModels(false);
+        }
       } catch {
-        // Keep the curated fallback.
+        // Keep whichever list is already showing.
+        if (!cancelled) setRefreshingModels(false);
       }
     };
     void load();
@@ -141,12 +163,23 @@ export default function AiRoutingSection({
       cancelled = true;
       clearTimeout(refetch);
     };
-  }, [isCli, activeProvider]);
+  }, [isCli, activeProvider, modelReload]);
 
-  const modelOptions =
-    activeProvider === "codex" && codexModels
-      ? codexModels
-      : cliModelOptions(activeProvider);
+  const handleRefreshModels = async () => {
+    setRefreshingModels(true);
+    try {
+      // Only Codex has a cache to bust; Claude's list is curated, so the button
+      // simply re-reads it rather than being disabled and looking broken.
+      if (activeProvider === "codex") await refreshCodexModels();
+    } catch (error) {
+      console.error("Failed to refresh the model catalogue", error);
+    } finally {
+      setModelReload((value) => value + 1);
+    }
+  };
+
+  const liveModelOptions = activeProvider === "codex" ? codexModels : claudeModels;
+  const modelOptions = liveModelOptions ?? cliModelOptions(activeProvider);
 
   return (
     <SettingsSection
@@ -204,9 +237,27 @@ export default function AiRoutingSection({
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Model for your subscription
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Model for your subscription
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRefreshModels}
+                    disabled={refreshingModels}
+                    title={
+                      activeProvider === "codex"
+                        ? "Re-query your Codex CLI for its current models"
+                        : "Reload the model list"
+                    }
+                    className="inline-flex items-center gap-1.5 text-xs contrast-helper hover:text-gray-900 dark:hover:text-white disabled:opacity-60"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${refreshingModels ? "animate-spin" : ""}`}
+                    />
+                    {refreshingModels ? "Refreshing..." : "Refresh models"}
+                  </button>
+                </div>
                 <select
                   value={mainModel}
                   onChange={(event) => setModel("main", event.target.value)}
