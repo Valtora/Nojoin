@@ -36,6 +36,9 @@ from backend.models.recording import (
 )
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
+from backend.processing.browser_live_audio import (
+    source_channel_from_confidence_payload,
+)
 from backend.processing.embedding import merge_embeddings
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_assignment import (

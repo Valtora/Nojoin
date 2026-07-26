@@ -1641,6 +1641,7 @@ def serialize_canonical_utterances(
         if only_public_ids is not None and utterance.public_id not in only_public_ids:
             continue
         projection = projection_by_id.get(utterance.public_id, {})
+        state_value = str(getattr(utterance.state, "value", utterance.state))
         payload = {
             "id": utterance.public_id,
             "start": utterance.start_ms / 1000.0,
@@ -1652,23 +1653,20 @@ def serialize_canonical_utterances(
             or projection.get("speaker")
             or UNKNOWN_SPEAKER,
             "recording_speaker_id": utterance.recording_speaker_id,
-            "state": utterance.state.value
-            if hasattr(utterance.state, "value")
-            else str(utterance.state),
+            "state": state_value,
             "revision": utterance.revision,
             "segment_source": utterance.source_kind,
-            "provisional": (
-                utterance.state.value
-                if hasattr(utterance.state, "value")
-                else str(utterance.state)
-            )
-            == TranscriptUtteranceState.PROVISIONAL.value,
+            "provisional": state_value == TranscriptUtteranceState.PROVISIONAL.value,
             "speaker_manually_edited": utterance.manual_speaker_locked,
             "text_manually_edited": utterance.manual_text_locked,
             "speaker_state": _speaker_state_for_utterance(
                 utterance, projection=projection
             ),
             "speaker_confidence": utterance.speaker_confidence,
+            # Audio provenance for this utterance, never speaker identity.
+            "source_channel": source_channel_from_confidence_payload(
+                utterance.confidence_payload
+            ),
             "text_confidence": utterance.text_confidence,
             "speaker_assignment_source": _utterance_speaker_assignment_source(
                 utterance,

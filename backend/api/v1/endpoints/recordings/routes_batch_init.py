@@ -9,7 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
-from backend.models.recording import Recording, RecordingInitResponse, RecordingStatus
+from backend.models.recording import (
+    ClientStatus,
+    Recording,
+    RecordingInitResponse,
+    RecordingStatus,
+)
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.utils.time import utc_now
@@ -165,6 +170,12 @@ async def init_upload(
         name=name,
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
+        # A live capture declares itself here rather than leaving client_status
+        # NULL until the first pause. UPLOADING alone does not identify a
+        # capture -- file imports sit in UPLOADING while their bytes are sent --
+        # so without this the UI has to infer "recording" from the absence of a
+        # value, which an import satisfies just as well.
+        client_status=ClientStatus.RECORDING,
         user_id=current_user.id,
         last_activity_at=utc_now(),
     )

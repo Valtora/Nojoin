@@ -3,14 +3,17 @@
 import { useState } from "react";
 import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
 
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
+import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
+import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
@@ -72,6 +75,7 @@ export default function RecordingStatusDisplay({
 }: RecordingStatusDisplayProps) {
   const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
+  const liveTranscript = useLiveTranscript(recording);
 
   // Discard path for a recording shown on the processing/queued screen. Routed
   // through the shared action so that, if this browser still owns the capture
@@ -89,10 +93,7 @@ export default function RecordingStatusDisplay({
     });
   };
 
-  const isActiveRecording =
-    recording.status === RecordingStatus.PAUSED ||
-    (recording.status === RecordingStatus.UPLOADING &&
-      recording.client_status !== ClientStatus.UPLOADING);
+  const isActiveRecording = isLiveCaptureInProgress(recording);
   const isPaused =
     recording.status === RecordingStatus.PAUSED ||
     recording.client_status === ClientStatus.PAUSED;
@@ -151,7 +152,19 @@ export default function RecordingStatusDisplay({
         </div>
       ) : null}
 
-      <div className={showMobileBackButton && onBack ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0" : ""}>
+      {/* AmbientWorkspace's workspace-shell supplies the flex gap between its
+          children, but everything here is nested one level inside this wrapper,
+          so that gap applied to the wrapper alone and the capture card sat flush
+          against the panel column below it. Restate it here so the card and the
+          panels are separated by the same workspace gap the panels use between
+          themselves. */}
+      <div
+        className={`flex flex-col gap-[var(--workspace-gap)] ${
+          showMobileBackButton && onBack
+            ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0"
+            : ""
+        }`}
+      >
       <section className="density-surface mx-auto flex min-w-0 w-full max-w-5xl flex-col border border-white/60 bg-white/82 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
@@ -262,6 +275,13 @@ export default function RecordingStatusDisplay({
       </section>
 
       <div className="mx-auto w-full max-w-5xl space-y-[var(--workspace-gap)]">
+        {isActiveRecording ? (
+          <LiveTranscriptPanel
+            segments={liveTranscript.segments}
+            hasLoaded={liveTranscript.hasLoaded}
+            isPaused={isPaused}
+          />
+        ) : null}
         {showMeetingEdge ? (
           <MeetingEdgePanel
             payload={recording.transcript?.meeting_edge_payload}

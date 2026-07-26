@@ -103,7 +103,7 @@ If you close the browser share picker with **Cancel**, Nojoin silently returns t
 
 Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is useful for microphone or in-room speakerphone capture only.
 
-While recording, Nojoin shows recording state, duration, upload state, a live waveform, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
+While recording, Nojoin shows recording state, duration, upload state, a live waveform, a live transcript panel, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
 
 On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu button on the main dashboard surfaces. The active recording workspace and processed recording detail view both provide a native back control so you can return to the recordings list without relying on the browser's history buttons. Mobile Meeting Chat also includes its own back action to return to the meeting workspace.
 
@@ -126,9 +126,13 @@ Paused recordings are retained indefinitely until you resume or discard them.
 
 ### Live Transcription
 
-Nojoin still runs a live transcription lane during capture, but the recording page no longer shows provisional live transcript text while a meeting is in flight.
+While a meeting is being recorded, the recording page shows a **Live Transcript** panel above Meeting Edge. Sentences appear as they finalize, a few seconds behind the conversation, because transcription works on windows of audio rather than decoding word by word. The panel follows the newest line automatically; scroll up to read back and it stops following until you scroll to the bottom again or use **Jump to latest**.
 
-That live lane now works in the background to support Meeting Edge and to speed up later processing. The user-facing transcript appears after the recording has been finalized and the authoritative processing pass has produced review-ready output.
+The panel is read-only. Live text is provisional and is corrected by the authoritative processing pass when the recording is finalized, so you cannot edit it during capture.
+
+Live text is not attributed to speakers. Speaker identification runs when the recording is processed, so names, and any merging of speakers who were split during the meeting, appear only in the final transcript. Where Nojoin can tell which audio source a line came from it labels the line **Microphone** or **Shared audio**, and it labels nothing when people were talking over each other or the source was unclear. These labels describe where the audio came from, not who was speaking: if you are recording an in-person meeting without sharing tab audio, everyone in the room arrives on the microphone channel.
+
+The live lane also feeds Meeting Edge and speeds up later processing. The full, corrected transcript appears once the recording has been finalized and the authoritative processing pass has produced review-ready output.
 
 ### Meeting Edge
 

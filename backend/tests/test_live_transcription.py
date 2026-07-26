@@ -2024,6 +2024,150 @@ def test_live_source_channel_evidence_overlap_reduces_authority():
     )
 
 
+def _live_confidence_payload_for(source_activity: dict):
+    """Build a real persisted confidence payload for a given channel reading."""
+    from backend.processing.live_transcribe import (
+        _build_live_confidence_payload,
+        _build_live_source_channel_evidence,
+    )
+
+    return _build_live_confidence_payload(
+        region_segment_payloads=[],
+        region_start_ms=100,
+        region_end_ms=800,
+        source_activity=source_activity,
+        source_channel_evidence=_build_live_source_channel_evidence(
+            source_activity, {}
+        ),
+    )
+
+
+def test_source_channel_reports_microphone_when_evidence_is_clear():
+    from backend.processing.browser_live_audio import (
+        source_channel_from_confidence_payload,
+    )
+
+    payload = _live_confidence_payload_for(
+        {
+            "dominant_source": "microphone",
+            "primary_source": "microphone",
+            "primary_share": 0.94,
+            "secondary_share": 0.06,
+            "source_overlap": False,
+        }
+    )
+
+    assert source_channel_from_confidence_payload(payload) == "microphone"
+
+
+def test_source_channel_reports_system_when_evidence_is_clear():
+    from backend.processing.browser_live_audio import (
+        source_channel_from_confidence_payload,
+    )
+
+    payload = _live_confidence_payload_for(
+        {
+            "dominant_source": "system",
+            "primary_source": "system",
+            "primary_share": 0.91,
+            "secondary_share": 0.09,
+            "source_overlap": False,
+        }
+    )
+
+    assert source_channel_from_confidence_payload(payload) == "system"
+
+
+def test_source_channel_is_none_when_sources_overlap():
+    """Crosstalk is exactly when a confident label would mislead most."""
+    from backend.processing.browser_live_audio import (
+        source_channel_from_confidence_payload,
+    )
+
+    payload = _live_confidence_payload_for(
+        {
+            "dominant_source": "microphone",
+            "primary_source": "microphone",
+            "primary_share": 0.74,
+            "secondary_share": 0.26,
+            "source_overlap": True,
+        }
+    )
+
+    assert source_channel_from_confidence_payload(payload) is None
+
+
+def test_source_channel_is_none_without_clear_dominance():
+    from backend.processing.browser_live_audio import (
+        source_channel_from_confidence_payload,
+    )
+
+    payload = _live_confidence_payload_for(
+        {
+            "dominant_source": None,
+            "primary_source": "microphone",
+            "primary_share": 0.55,
+            "secondary_share": 0.45,
+            "source_overlap": False,
+        }
+    )
+
+    assert source_channel_from_confidence_payload(payload) is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"source_channel_evidence": None},
+        {"source_channel_evidence": {}},
+        {"source_channel_evidence": {"authority": "clear"}},
+        {"source_channel_evidence": {"authority": "clear", "dominant_source": "x"}},
+        "not-a-dict",
+    ],
+)
+def test_source_channel_tolerates_missing_or_malformed_payloads(payload):
+    """Serialisation runs on every utterance read, so it must never raise."""
+    from backend.processing.browser_live_audio import (
+        source_channel_from_confidence_payload,
+    )
+
+    assert source_channel_from_confidence_payload(payload) is None
+
+
+def test_microphone_only_capture_attributes_the_channel_not_the_person():
+    """A capture with no shared audio still carries the whole room on the mic.
+
+    Browser capture always produces two channels; declining to share tab audio
+    leaves channel 0 as digital silence, which reads as *clear* microphone
+    dominance rather than as missing evidence. The label must therefore describe
+    the channel ("microphone"), never the speaker, or every voice in an in-person
+    meeting would be attributed to the person holding the laptop.
+    """
+    import torch
+
+    from backend.processing.browser_live_audio import (
+        source_channel_from_confidence_payload,
+    )
+    from backend.processing.live_transcribe import _analyze_live_source_channels
+
+    silent_system_channel = torch.zeros(1600)
+    microphone_channel = torch.full((1600,), 0.4)
+    audio = torch.stack([silent_system_channel, microphone_channel])
+
+    source_activity = _analyze_live_source_channels(audio)
+
+    assert source_activity["dominant_source"] == "microphone"
+    assert source_activity["source_overlap"] is False
+    assert (
+        source_channel_from_confidence_payload(
+            _live_confidence_payload_for(source_activity)
+        )
+        == "microphone"
+    )
+
+
 def test_extract_region_text_straddle_without_words_midpoint():
     """A boundary-straddling segment without words uses the midpoint heuristic."""
     from backend.processing.live_transcribe import _extract_region_text
