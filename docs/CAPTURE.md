@@ -39,6 +39,8 @@ Nojoin combines two browser-granted audio sources:
 
 On desktop shared-audio capture, the browser mixes those sources in the Nojoin tab, uploads short audio segments to the backend, and the worker transcodes each segment to the canonical 16 kHz, two-channel WAV path used by live transcription and final processing. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
 
+The recording page shows those transcribed segments in a **Live Transcript** panel as each sentence finalizes, a few seconds behind the conversation. Where one channel clearly carried a line, the panel labels it **Microphone** or **Shared audio**. Those labels describe the audio source and not the speaker: the capture always produces two channels, so if you do not share tab audio, channel 0 is silent and everyone in the room arrives on the microphone channel. Speaker names appear only after the recording is processed.
+
 On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
 
 For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps while uploads are still in flight, but a segment that repeatedly fails transcoding (for example one truncated by a network outage) is quarantined and skipped so finalization can complete with a short audio gap instead of failing forever; each skipped segment is logged as a `segment_corrupt_skipped` pipeline metric. Live ASR and rolling speaker-window diarisation are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
@@ -173,7 +175,11 @@ Check that the meeting is producing audible sound, verify the browser share pick
 
 ### Meeting Edge is still empty during capture
 
-Confirm the waveform shows speech activity. Meeting Edge only updates after Nojoin has enough completed speech to build guidance, so very short tests may show waveform activity before any live guidance appears. The user-facing transcript is expected to appear after final processing rather than during capture.
+Confirm the waveform shows speech activity. Meeting Edge only updates after Nojoin has enough completed speech to build guidance, so very short tests may show waveform activity before any live guidance appears. The Live Transcript panel fills sooner than Meeting Edge does, so text appearing there while Meeting Edge is still empty is expected rather than a fault.
+
+### The Live Transcript panel stays empty
+
+Text appears a few seconds behind speech, so allow for that before treating an empty panel as broken. Confirm the waveform is responding to audio: if it is flat, the problem is capture rather than transcription. The panel is also empty by design for an imported file, which is transcribed in a single pass after upload rather than by the live lane.
 
 ### Linux screen audio does not work
 
