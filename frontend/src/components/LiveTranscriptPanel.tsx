@@ -139,44 +139,52 @@ export default function LiveTranscriptPanel({
       </div>
 
       <div className="relative mt-4">
-        <div
-          ref={scrollContainerRef}
-          onScroll={handleScroll}
-          data-testid="live-transcript-scroll"
-          className="density-surface-panel h-[24rem] overflow-y-auto border border-orange-200/70 bg-white px-4 py-4 dark:border-orange-500/20 dark:bg-gray-900"
-        >
-          {isEmpty ? (
-            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                {isPaused ? "Recording is paused." : "Listening."}
-              </p>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-gray-500 dark:text-gray-400">
-                {hasLoaded
-                  ? "Text appears a few seconds behind the conversation, as each sentence completes."
-                  : "Loading the transcript so far."}
-              </p>
-            </div>
-          ) : (
-            <ol className="space-y-3">
-              {lines.map(({ segment, key, sourceChannel, showSourceLabel }) => (
-                <li key={key} data-testid="live-transcript-line">
-                  {showSourceLabel && sourceChannel ? (
-                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:text-orange-300">
-                      {SOURCE_CHANNEL_LABELS[sourceChannel]}
+        {/* The rounding, border and clipping live on this wrapper rather than on
+            the scrolling element itself. A scroll container draws its scrollbar
+            inside its own padding box, so with the 1.5rem panel radius applied
+            directly to it the bar ran straight through both right-hand corners.
+            Clipping it to the rounded shape from the parent keeps the corner
+            intact. */}
+        <div className="density-surface-panel overflow-hidden border border-orange-200/70 bg-white dark:border-orange-500/20 dark:bg-gray-900">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            data-testid="live-transcript-scroll"
+            className="h-[24rem] overflow-y-auto px-4 py-4"
+          >
+            {isEmpty ? (
+              <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {isPaused ? "Recording is paused." : "Listening."}
+                </p>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-gray-500 dark:text-gray-400">
+                  {hasLoaded
+                    ? "Text appears a few seconds behind the conversation, as each sentence completes."
+                    : "Loading the transcript so far."}
+                </p>
+              </div>
+            ) : (
+              <ol className="space-y-3">
+                {lines.map(({ segment, key, sourceChannel, showSourceLabel }) => (
+                  <li key={key} data-testid="live-transcript-line">
+                    {showSourceLabel && sourceChannel ? (
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:text-orange-300">
+                        {SOURCE_CHANNEL_LABELS[sourceChannel]}
+                      </div>
+                    ) : null}
+                    <div className="flex gap-3">
+                      <span className="shrink-0 pt-0.5 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                        {formatElapsed(segment.start)}
+                      </span>
+                      <p className="min-w-0 flex-1 text-sm italic leading-6 text-gray-600 dark:text-gray-300">
+                        {segment.text}
+                      </p>
                     </div>
-                  ) : null}
-                  <div className="flex gap-3">
-                    <span className="shrink-0 pt-0.5 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
-                      {formatElapsed(segment.start)}
-                    </span>
-                    <p className="min-w-0 flex-1 text-sm italic leading-6 text-gray-600 dark:text-gray-300">
-                      {segment.text}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
         </div>
 
         {!isEmpty && !isPinnedToBottom ? (

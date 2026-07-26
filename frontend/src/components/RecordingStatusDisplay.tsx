@@ -152,7 +152,19 @@ export default function RecordingStatusDisplay({
         </div>
       ) : null}
 
-      <div className={showMobileBackButton && onBack ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0" : ""}>
+      {/* AmbientWorkspace's workspace-shell supplies the flex gap between its
+          children, but everything here is nested one level inside this wrapper,
+          so that gap applied to the wrapper alone and the capture card sat flush
+          against the panel column below it. Restate it here so the card and the
+          panels are separated by the same workspace gap the panels use between
+          themselves. */}
+      <div
+        className={`flex flex-col gap-[var(--workspace-gap)] ${
+          showMobileBackButton && onBack
+            ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0"
+            : ""
+        }`}
+      >
       <section className="density-surface mx-auto flex min-w-0 w-full max-w-5xl flex-col border border-white/60 bg-white/82 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
