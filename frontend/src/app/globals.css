@@ -17,6 +17,10 @@
   --scrollbar-thumb: rgba(148, 163, 184, 0.42);
   --scrollbar-thumb-hover: rgba(249, 115, 22, 0.52);
   --scrollbar-track: transparent;
+  /* Space reserved to the right of the live transcript window so its scrollbar
+     sits outside the framed area rather than across its rounded corners. Keep
+     this at or above the 10px scrollbar width set below. */
+  --live-transcript-gutter: 1rem;
   --settings-tab-active-bg: #ffedd5;
   --settings-tab-active-border: #fdba74;
   --settings-tab-active-text: #9a3412;

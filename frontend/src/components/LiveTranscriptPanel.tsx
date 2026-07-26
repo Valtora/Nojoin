@@ -139,21 +139,26 @@ export default function LiveTranscriptPanel({
       </div>
 
       <div className="relative mt-4">
-        {/* The rounding, border and clipping live on this wrapper rather than on
-            the scrolling element itself. A scroll container draws its scrollbar
-            inside its own padding box, so with the 1.5rem panel radius applied
-            directly to it the bar ran straight through both right-hand corners.
-            Clipping it to the rounded shape from the parent keeps the corner
-            intact. */}
-        <div className="density-surface-panel overflow-hidden border border-orange-200/70 bg-white dark:border-orange-500/20 dark:bg-gray-900">
-          <div
-            ref={scrollContainerRef}
-            onScroll={handleScroll}
-            data-testid="live-transcript-scroll"
-            className="h-[24rem] overflow-y-auto px-4 py-4"
-          >
+        {/* The transcript window is painted by this overlay rather than by the
+            scrolling element, and stops short of the right edge by
+            SCROLLBAR_GUTTER. A scroll container always draws its scrollbar
+            inside its own border box, so any framing applied to the scroller
+            itself puts the bar within the frame and across its rounded corners.
+            Drawing the frame behind the content and ending it before the gutter
+            leaves the bar outside the window entirely. */}
+        <div
+          aria-hidden
+          className="density-surface-panel pointer-events-none absolute inset-y-0 left-0 right-[var(--live-transcript-gutter)] border border-orange-200/70 bg-white dark:border-orange-500/20 dark:bg-gray-900"
+        />
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          data-testid="live-transcript-scroll"
+          className="relative h-[24rem] overflow-y-auto"
+        >
+          <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
             {isEmpty ? (
-              <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+              <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   {isPaused ? "Recording is paused." : "Listening."}
                 </p>
@@ -191,7 +196,7 @@ export default function LiveTranscriptPanel({
           <button
             type="button"
             onClick={jumpToLatest}
-            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 shadow-lg shadow-orange-950/10 transition-colors hover:bg-orange-50 dark:border-orange-500/30 dark:bg-gray-950 dark:text-orange-300 dark:hover:bg-orange-500/10"
+            className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 shadow-lg shadow-orange-950/10 transition-colors hover:bg-orange-50 dark:border-orange-500/30 dark:bg-gray-950 dark:text-orange-300 dark:hover:bg-orange-500/10"
           >
             <ArrowDown className="h-3.5 w-3.5" />
             Jump to latest
