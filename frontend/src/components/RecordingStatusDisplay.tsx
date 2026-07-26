@@ -9,9 +9,11 @@ import { ClientStatus, Recording, RecordingStatus } from "@/types";
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveMeetingControls from "./LiveMeetingControls";
+import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
+import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
@@ -73,6 +75,7 @@ export default function RecordingStatusDisplay({
 }: RecordingStatusDisplayProps) {
   const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
+  const liveTranscript = useLiveTranscript(recording);
 
   // Discard path for a recording shown on the processing/queued screen. Routed
   // through the shared action so that, if this browser still owns the capture
@@ -260,6 +263,13 @@ export default function RecordingStatusDisplay({
       </section>
 
       <div className="mx-auto w-full max-w-5xl space-y-[var(--workspace-gap)]">
+        {isActiveRecording ? (
+          <LiveTranscriptPanel
+            segments={liveTranscript.segments}
+            hasLoaded={liveTranscript.hasLoaded}
+            isPaused={isPaused}
+          />
+        ) : null}
         {showMeetingEdge ? (
           <MeetingEdgePanel
             payload={recording.transcript?.meeting_edge_payload}
