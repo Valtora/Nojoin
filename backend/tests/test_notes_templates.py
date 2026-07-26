@@ -36,6 +36,7 @@ from backend.utils.meeting_notes import (
     format_duration_for_prompt,
 )
 from backend.utils.notes_templates import (
+    MAX_GLOSSARY_LENGTH,
     NotesTemplateError,
     build_meeting_metadata,
     builtin_notes_template,
@@ -182,6 +183,43 @@ def test_merge_glossaries_is_additive_with_personal_winning():
         "Nojoin: the product",
         "DRI: directly responsible individual",
     ]
+
+
+def test_glossary_keys_are_read_without_catastrophic_backtracking():
+    """The key scan must stay linear on hostile input.
+
+    The regex this replaced backtracked quadratically on a line of spaces with no
+    separator (CodeQL: polynomial ReDoS), and the glossary is user text up to
+    MAX_GLOSSARY_LENGTH characters. A generous ceiling here still fails in
+    seconds if quadratic behaviour returns, while never tripping on the linear
+    implementation.
+    """
+    import time
+
+    hostile = " " * (MAX_GLOSSARY_LENGTH - 1) + "!"
+
+    started = time.perf_counter()
+    merge_glossaries(hostile, hostile)
+    assert time.perf_counter() - started < 1.0
+
+
+def test_glossary_keys_survive_bullets_separators_and_prose():
+    # Bulleted and plain forms of the same term must collide, so a personal entry
+    # replaces the install one rather than appearing twice.
+    assert merge_glossaries("ARR: annual recurring", "- arr = annualised run") == (
+        "- arr = annualised run"
+    )
+    # Whichever separator comes first wins, matching the old character class.
+    assert merge_glossaries("A=B: c", "a: x") == "a: x"
+    # A long prose line that happens to contain a colon is not a definition, so
+    # the whole line is its own key and both lines survive the merge.
+    prose = "x" * 90 + ": tail"
+    assert merge_glossaries(prose, "short: tail").splitlines() == [
+        prose,
+        "short: tail",
+    ]
+    # A line opening with a separator has no term.
+    assert merge_glossaries(": orphan", "") == ": orphan"
 
 
 def test_merge_glossaries_handles_one_sided_and_empty_inputs():

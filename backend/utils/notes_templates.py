@@ -53,9 +53,14 @@ INSTALL_GLOSSARY_SETTING_KEY = "install_glossary_terms"
 
 _CONTROL_CHARACTER_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s+\S", re.MULTILINE)
-# "Term: definition", "Term - definition", "Term = definition". The term before
-# the separator is the merge key; a line with no separator is its own key.
-_GLOSSARY_ENTRY_PATTERN = re.compile(r"^\s*(?:[-*+]\s+)?([^:=]{1,80}?)\s*[:=]\s*(.+)$")
+
+# A glossary line is "Term: definition" or "Term = definition", optionally
+# bulleted. The term is the merge key; a line with no separator is its own key.
+_GLOSSARY_SEPARATORS = (":", "=")
+_GLOSSARY_BULLETS = ("-", "*", "+")
+# A term longer than this is prose that happens to contain a colon, not a
+# definition, so the whole line becomes the key instead.
+_MAX_GLOSSARY_TERM_LENGTH = 80
 
 
 class NotesTemplateError(ValueError):
@@ -160,10 +165,34 @@ def validate_glossary(value: Optional[str]) -> str:
 
 
 def _glossary_entry_key(line: str) -> str:
-    match = _GLOSSARY_ENTRY_PATTERN.match(line)
-    if match:
-        return match.group(1).strip().casefold()
-    return line.strip().casefold()
+    """The term a glossary line defines, used to match entries across tiers.
+
+    String operations rather than a regular expression, deliberately. The pattern
+    this replaced put four whitespace-matching quantifiers in sequence, so a line
+    of N spaces with no separator forced the engine to try every division of
+    those spaces between them -- quadratic backtracking on user input of up to
+    MAX_GLOSSARY_LENGTH characters (CodeQL: polynomial ReDoS). Scanning for the
+    first separator is linear and says what it means.
+    """
+    entry = line.strip()
+
+    if entry[:1] in _GLOSSARY_BULLETS and entry[1:2].isspace():
+        entry = entry[1:].lstrip()
+
+    positions = [
+        index
+        for index in (entry.find(separator) for separator in _GLOSSARY_SEPARATORS)
+        # index 0 means the line opens with a separator, so there is no term.
+        if index > 0
+    ]
+    if positions:
+        split_at = min(positions)
+        term = entry[:split_at].strip()
+        definition = entry[split_at + 1 :].strip()
+        if term and definition and len(term) <= _MAX_GLOSSARY_TERM_LENGTH:
+            return term.casefold()
+
+    return entry.casefold()
 
 
 def merge_glossaries(
