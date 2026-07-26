@@ -95,6 +95,11 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "secondary_gemini_api_key",
     "secondary_openai_api_key",
     "secondary_anthropic_api_key",
+    # Admin-managed notes-structure defaults. Listed here so a non-admin's
+    # attempt to set them is dropped rather than silently stored on their user
+    # row, and so they persist to the install config instead.
+    "install_notes_template_id",
+    "install_glossary_terms",
 )
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -218,6 +223,16 @@ DEFAULT_USER_SETTINGS = {
     "transcription_language": AUTO_TRANSCRIPTION_LANGUAGE,
     "notes_language": DEFAULT_NOTES_LANGUAGE,
     "notes_language_custom_instruction": "",
+    # Meeting-notes structure (issue #137). The per-user key selects that user's
+    # default template; the install key is the fallback an admin sets for
+    # everyone. Both NULL means the shipped built-in structure, which is the
+    # unchanged behaviour for every existing install.
+    "notes_template_id": None,
+    "install_notes_template_id": None,
+    # Organisation vocabulary fed to the notes and Meeting Edge prompts. The two
+    # tiers are merged (personal wins on conflict), never replaced.
+    "glossary_terms": "",
+    "install_glossary_terms": "",
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
