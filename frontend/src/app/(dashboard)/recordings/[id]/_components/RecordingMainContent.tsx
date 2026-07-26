@@ -77,7 +77,7 @@ interface RecordingMainContentProps {
   notesCanUndo: boolean;
   notesCanRedo: boolean;
   onNotesChange: (notes: string) => void;
-  onGenerateNotes: () => Promise<void>;
+  onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
   onNotesUndo: () => void;
   onNotesRedo: () => void;
 }

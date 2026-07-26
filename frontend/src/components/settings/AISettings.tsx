@@ -9,6 +9,8 @@ import ServerProviderSection from "./ServerProviderSection";
 import MeetingEdgeSection from "./MeetingEdgeSection";
 import SecondaryProviderSection from "./SecondaryProviderSection";
 import AiAutomaticEnhancementSection from "./AiAutomaticEnhancementSection";
+import NotesTemplatesSection from "./NotesTemplatesSection";
+import GlossarySection from "./GlossarySection";
 import AiLanguageSection from "./AiLanguageSection";
 import AiHuggingFaceSection from "./AiHuggingFaceSection";
 import VoiceprintMaintenanceSection from "./VoiceprintMaintenanceSection";
@@ -101,6 +103,27 @@ export default function AISettings({
     "title",
     "titles",
   ]);
+  const showNotesTemplates = fuzzyMatch(searchQuery, [
+    "notes structure",
+    "notes template",
+    "template",
+    "templates",
+    "prompt",
+    "sections",
+    "headings",
+    "action items",
+    "decisions",
+    "custom notes",
+  ]);
+  const showGlossary = fuzzyMatch(searchQuery, [
+    "glossary",
+    "terms",
+    "acronyms",
+    "vocabulary",
+    "jargon",
+    "spelling",
+    "corrections",
+  ]);
   const showLanguage = fuzzyMatch(searchQuery, [
     "language",
     "transcription language",
@@ -129,6 +152,8 @@ export default function AISettings({
   const showLLMSection = !hasSearch || showLLM;
   const showAutomaticEnhancementSection = !hasSearch || showAutomaticEnhancement;
   const showLanguageSection = !hasSearch || showLanguage;
+  const showNotesTemplatesSection = !hasSearch || showNotesTemplates;
+  const showGlossarySection = !hasSearch || showGlossary;
   const showHFSection = isAdmin && (!hasSearch || showHF);
   const showTranscriptionSection = isAdmin && (!hasSearch || showTranscription);
   const showDependenciesSection = isAdmin && (!hasSearch || showDependencies);
@@ -136,6 +161,8 @@ export default function AISettings({
   if (
     !showLLMSection &&
     !showAutomaticEnhancementSection &&
+    !showNotesTemplatesSection &&
+    !showGlossarySection &&
     !showLanguageSection &&
     !showHFSection &&
     !showTranscriptionSection &&
@@ -192,6 +219,22 @@ export default function AISettings({
         <AiAutomaticEnhancementSection
           settings={settings}
           onPersist={persistNow}
+        />
+      )}
+
+      {showNotesTemplatesSection && (
+        <NotesTemplatesSection
+          settings={settings}
+          onPersist={persistNow}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {showGlossarySection && (
+        <GlossarySection
+          settings={settings}
+          onUpdate={onUpdate}
+          isAdmin={isAdmin}
         />
       )}
 

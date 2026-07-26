@@ -3,10 +3,16 @@ import api from "./client";
 
 export const getNotes = async (
   recordingId: RecordingId,
-): Promise<{ notes: string | null }> => {
-  const response = await api.get<{ notes: string | null }>(
-    `/transcripts/${recordingId}/notes`,
-  );
+): Promise<{
+  notes: string | null;
+  notes_template_id?: number | null;
+  notes_template_sections?: string | null;
+}> => {
+  const response = await api.get<{
+    notes: string | null;
+    notes_template_id?: number | null;
+    notes_template_sections?: string | null;
+  }>(`/transcripts/${recordingId}/notes`);
   return response.data;
 };
 
@@ -56,6 +62,7 @@ export const updateMeetingEdgeFocus = async (
 
 export const generateNotes = async (
   recordingId: RecordingId,
+  notesTemplateId?: number | null,
 ): Promise<{
   status: string;
   notes_status?: string;
@@ -67,9 +74,11 @@ export const generateNotes = async (
     notes_status?: string;
     error_message?: string | null;
     message?: string;
-  }>(
-    `/transcripts/${recordingId}/notes/generate`,
-  );
+  }>(`/transcripts/${recordingId}/notes/generate`, {
+    // Omitted entirely when no template was picked, so the backend falls through
+    // to the user default, the install default and then the built-in structure.
+    notes_template_id: notesTemplateId ?? null,
+  });
   return response.data;
 };
 

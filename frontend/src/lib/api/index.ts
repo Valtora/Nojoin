@@ -16,6 +16,7 @@ export * from "./speakers";
 export * from "./voiceprints";
 export * from "./transcript";
 export * from "./notes";
+export * from "./notesTemplates";
 export * from "./tags";
 export * from "./calendar";
 export * from "./export";

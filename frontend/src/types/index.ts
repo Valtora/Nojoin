@@ -394,6 +394,12 @@ export interface Settings {
   worker_url?: string;
   enable_auto_voiceprints?: boolean;
   prefer_short_titles?: boolean;
+  // Notes structure and vocabulary. The install_* keys are admin-managed and are
+  // read-only for everyone else; the API drops writes to them from non-admins.
+  notes_template_id?: number | null;
+  install_notes_template_id?: number | null;
+  glossary_terms?: string;
+  install_glossary_terms?: string;
   enable_vad?: boolean;
   enable_diarization?: boolean;
   spellcheck_language?: string;

@@ -970,11 +970,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   };
 
   // Notes Handlers
-  const handleGenerateNotes = async () => {
+  const handleGenerateNotes = async (notesTemplateId?: number | null) => {
     if (!recording) return;
     setIsGeneratingNotes(true);
     try {
-      await generateNotes(recording.id);
+      // Undefined means "use my default"; an id regenerates with that structure
+      // for this run only, without changing the user's default.
+      await generateNotes(recording.id, notesTemplateId ?? null);
       const updated = await getRecording(recording.id);
       setRecording(updated);
       setActivePanel("notes"); // Switch to notes panel after generation

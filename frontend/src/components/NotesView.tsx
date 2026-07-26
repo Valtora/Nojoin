@@ -22,6 +22,7 @@ import {
 import { Editor } from "@tiptap/react";
 import RichTextEditor from "./RichTextEditor";
 import LinkModal from "./LinkModal";
+import NotesTemplatePicker from "./NotesTemplatePicker";
 import TableMenu from "./TableMenu";
 import SpellCheckContextMenu from "./SpellCheckContextMenu";
 import Fuse from "fuse.js";
@@ -34,7 +35,9 @@ interface NotesViewProps {
   recordingId: RecordingId;
   notes: string | null;
   onNotesChange: (notes: string) => void;
-  onGenerateNotes: () => Promise<void>;
+  onGenerateNotes: (notesTemplateId?: number | null) => Promise<void>;
+  /** Template that produced the current notes, for the picker's tick. */
+  activeTemplateId?: number | null;
   onFindAndReplace: (
     find: string,
     replace: string,
@@ -52,6 +55,7 @@ export default function NotesView({
   notes,
   onNotesChange,
   onGenerateNotes,
+  activeTemplateId = null,
   onFindAndReplace,
   onUndo,
   onRedo,
@@ -456,19 +460,31 @@ export default function NotesView({
           </div>
 
           <div className="flex flex-wrap items-center gap-1">
-            <button
-              onClick={onGenerateNotes}
-              disabled={isGenerating}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Generate Notes with AI"
-            >
-              {isGenerating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              {isGenerating ? "Generating..." : generateNotesLabel}
-            </button>
+            {/* Segmented control. items-stretch so the picker matches the main
+                button's height: its icon is shorter than the button's text line,
+                so equal padding alone leaves the two a few pixels apart. */}
+            <div className="flex items-stretch">
+              <button
+                onClick={() => onGenerateNotes()}
+                disabled={isGenerating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-l-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Generate Notes with AI"
+              >
+                {isGenerating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {isGenerating ? "Generating..." : generateNotesLabel}
+              </button>
+              {/* Structure picker: the plain button keeps the default, so a user
+                  who never made a template sees no behaviour change. */}
+              <NotesTemplatePicker
+                disabled={isGenerating}
+                activeTemplateId={activeTemplateId}
+                onSelect={(templateId) => onGenerateNotes(templateId)}
+              />
+            </div>
             <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
             <button
               onClick={onUndo}
@@ -687,7 +703,7 @@ export default function NotesView({
               notes from the transcript.
             </p>
             <button
-              onClick={onGenerateNotes}
+              onClick={() => onGenerateNotes()}
               disabled={isGenerating}
               className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
