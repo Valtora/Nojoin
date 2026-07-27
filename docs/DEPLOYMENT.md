@@ -248,6 +248,13 @@ Nojoin splits configuration between:
 The first-run setup wizard can pre-fill many values from environment variables to speed up deployment.
 On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_PASSWORD`.
 
+Install-wide settings that an administrator changes in the UI (the AI provider and models, the install
+glossary, the install default notes structure) are written to `data/config.json` rather than to the
+database, so the mounted `data/` directory must be writable by the API container's user. If it is not,
+saving any of those settings now fails with an explicit error instead of appearing to succeed and then
+reverting on the next restart. If you see that error, check the ownership of the host directory bound to
+`/app/data`.
+
 ## CLI OAuth (worker-io image)
 
 The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). Point the `worker-io` service at that image via the `image:`/`build:` override in `docker-compose.example.yml`; `worker-gpu` and `worker-cpu` stay on the base image. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`). See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md).

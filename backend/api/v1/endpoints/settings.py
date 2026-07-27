@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.celery_app import celery_app
+from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
 from backend.services.model_preparation import enqueue_model_preparation
@@ -285,6 +286,13 @@ def _apply_default_user_settings(
 
 
 def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
+    """Write the install-wide keys to config.json.
+
+    Reloads first so a config edited out of band (by an operator, or by a
+    restore) is not reverted by this process's older in-memory copy, and lets a
+    failed write propagate: these keys live nowhere else, so reporting success
+    on a write that did not happen is how a setting silently stays unset.
+    """
     install_wide_updates = {
         key: value
         for key, value in update_data.items()
@@ -293,6 +301,7 @@ def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
     if not install_wide_updates:
         return
 
+    config_manager.reload()
     config_data = config_manager.get_all()
     config_data.update(install_wide_updates)
     config_manager.save_config(config_data)
@@ -383,6 +392,31 @@ def _build_settings_update_data(
     return update_data
 
 
+async def _validate_install_notes_template(
+    update_data: dict[str, Any],
+    db: AsyncSession,
+) -> None:
+    """Reject an install default that does not name an install-scoped template.
+
+    The id is a foreign key held in a flat config file with nothing to enforce
+    it, and resolution degrades to the built-in structure rather than failing,
+    so a wrong id would otherwise be accepted and then quietly do nothing.
+    """
+    if "install_notes_template_id" not in update_data:
+        return
+
+    template_id = update_data["install_notes_template_id"]
+    if template_id is None:
+        return
+
+    template = await db.get(NotesTemplate, template_id)
+    if template is None or template.scope != NotesTemplateScope.INSTALL.value:
+        raise HTTPException(
+            status_code=400,
+            detail="The install default must be an install-scoped notes structure.",
+        )
+
+
 async def _dispatch_meeting_edge_refresh_for_active_recordings(
     db: AsyncSession,
     current_user: User,
@@ -450,8 +484,22 @@ async def _save_user_settings(
             exc=e,
         )
 
+    await _validate_install_notes_template(update_data, db)
+
     if is_admin:
-        _persist_install_wide_ai_settings(update_data)
+        try:
+            _persist_install_wide_ai_settings(update_data)
+        except Exception as e:  # noqa: BLE001
+            raise sanitized_http_exception(
+                logger=logger,
+                status_code=500,
+                client_message=(
+                    "Could not save install-wide settings: the configuration "
+                    "file could not be written."
+                ),
+                log_message="Failed to persist install-wide settings to config.",
+                exc=e,
+            )
 
     user_scoped_updates = {
         key: value
