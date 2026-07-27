@@ -271,7 +271,7 @@ Settings are grouped by task.
 - **Profile**: account details and password changes.
 - **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
 - **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
-- **Transcription**: transcription backend and model choices.
+- **Transcription**: transcription backend and model choices. Administrators picking a model the server does not have yet are asked whether to download it now, so it is ready before the next recording, or to leave it until first use.
 - **Calendar**: user calendar connections and timezone behaviour.
 - **Help**: tours and support surfaces.
 - **Admin**: user, invitations, CLI usage, system, provider, release, and maintenance settings for administrators.

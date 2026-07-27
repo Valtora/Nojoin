@@ -257,6 +257,7 @@ export default function AISettings({
           settings={settings}
           onPersist={persistNow}
           isAdmin={isAdmin}
+          models={models}
         />
       )}
 
@@ -266,6 +267,9 @@ export default function AISettings({
           deleting={models.deleting}
           handleDeleteModel={models.handleDeleteModel}
           isAdmin={isAdmin}
+          downloadProgress={models.downloadProgress}
+          preparationRunning={models.preparationRunning}
+          startPreparation={models.startPreparation}
         />
       )}
     </div>

@@ -581,6 +581,82 @@ async def get_models_status(
     return status
 
 
+class ModelPreparationRequest(BaseModel):
+    """Which assets to prepare.
+
+    ``active`` covers whatever the saved transcription settings actually need,
+    which is what the Settings prompt asks about. The remaining targets exist so
+    a single missing row in Model dependencies can be repaired on its own.
+    """
+
+    target: str = Field(default="active")
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, value: str) -> str:
+        allowed = {"active", "core", "parakeet", "canary"}
+        if value not in allowed:
+            raise ValueError(f"target must be one of {sorted(allowed)}")
+        return value
+
+
+@router.post("/models/prepare")
+async def prepare_models_endpoint(
+    payload: ModelPreparationRequest | None = None,
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Queue preparation of local model assets.
+
+    Preparation is explicit: saving a transcription model change no longer
+    downloads anything by itself, because the preparation task runs on the GPU
+    lane and would otherwise queue in front of live work unannounced.
+    """
+    target = (payload or ModelPreparationRequest()).target
+
+    if is_download_in_progress():
+        raise HTTPException(
+            status_code=409,
+            detail="Model preparation is already running. Wait for it to finish.",
+        )
+
+    # The transcription keys are user-scoped rather than install-wide, so the
+    # admin's own row wins over config.json. Reading config alone would prepare
+    # whatever the install default happens to be, not the model just chosen.
+    user_settings = current_user.settings or {}
+
+    def effective(key: str, default: str) -> str:
+        value = user_settings.get(key)
+        return str(value) if value else str(config_manager.get(key, default))
+
+    if target == "active":
+        transcription_backend = effective("transcription_backend", "whisper")
+        include_core = transcription_backend == "whisper"
+    elif target == "core":
+        transcription_backend = "whisper"
+        include_core = True
+    else:
+        transcription_backend = target
+        include_core = False
+
+    try:
+        task_id = enqueue_model_preparation(
+            whisper_model_size=effective("whisper_model_size", "turbo"),
+            transcription_backend=transcription_backend,
+            parakeet_model=effective("parakeet_model", "parakeet-tdt-0.6b-v3"),
+            canary_model=effective("canary_model", "nemo-canary-1b-v2"),
+            include_core=include_core,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to queue model preparation: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not queue model preparation. Is the worker running?",
+        )
+
+    return {"task_id": task_id, "target": target, "status": "queued"}
+
+
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(
     model_name: str,

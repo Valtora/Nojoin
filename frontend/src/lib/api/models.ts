@@ -1,4 +1,9 @@
-import type { DownloadProgress, SystemModelStatus } from "@/types";
+import type {
+  DownloadProgress,
+  ModelPreparationResponse,
+  ModelPreparationTarget,
+  SystemModelStatus,
+} from "@/types";
 import api, { buildFirstRunRequestConfig } from "./client";
 
 export const listModels = async (
@@ -46,6 +51,16 @@ export const getModelsStatus = async (
 
 export const getDownloadProgress = async (): Promise<DownloadProgress> => {
   const response = await api.get<DownloadProgress>("/system/download-progress");
+  return response.data;
+};
+
+export const prepareModels = async (
+  target: ModelPreparationTarget = "active",
+): Promise<ModelPreparationResponse> => {
+  const response = await api.post<ModelPreparationResponse>(
+    "/system/models/prepare",
+    { target },
+  );
   return response.data;
 };
 

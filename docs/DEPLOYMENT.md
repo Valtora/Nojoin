@@ -118,9 +118,15 @@ restarts. Optional calendar live sync (push notifications) additionally requires
 the instance to be reachable from the public internet over HTTPS at
 `WEB_APP_URL`; see [CALENDAR.md](CALENDAR.md).
 
-If an administrator switches transcription to Parakeet or Canary, Nojoin queues
-preparation for the selected ONNX ASR model after the setting is saved. Live and
-final processing still load inference models only for active work. After each
+Changing the transcription model later does not download anything on its own.
+Preparation runs on the GPU lane, so an unannounced download would queue in
+front of live work; instead **Settings > AI** asks whether to fetch a newly
+selected model now, and **Model dependencies** offers a `Download` action plus
+live progress for anything still missing. A model that is never prepared is
+fetched on first use, which delays live transcription and Meeting Edge until it
+is ready. Only one preparation runs at a time; a second request is refused with
+409 while one is in flight. Live and final processing still load inference
+models only for active work. After each
 worker task, Nojoin releases model caches and clears CUDA memory when
 `keep_models_loaded` is unset or false — except while a recording is actively
 uploading (live capture), where the live ASR model is kept resident so

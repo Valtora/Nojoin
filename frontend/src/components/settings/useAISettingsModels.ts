@@ -2,12 +2,20 @@
 
 import { useEffect, useState } from "react";
 
-import { LanguageRegistry, Settings, SystemModelStatus } from "@/types";
+import {
+  DownloadProgress,
+  LanguageRegistry,
+  ModelPreparationTarget,
+  Settings,
+  SystemModelStatus,
+} from "@/types";
 import {
   deleteModel,
+  getDownloadProgress,
   getLanguageOptions,
   getModelsStatus,
   listModels,
+  prepareModels,
   validateLLM,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -30,6 +38,14 @@ export interface AISettingsModels {
   modelStatus: SystemModelStatus | null;
   languageRegistry: LanguageRegistry | null;
   deleting: string | null;
+
+  /** Live preparation progress, or null before the first read. */
+  downloadProgress: DownloadProgress | null;
+  /** Target of the preparation this session queued, while it is running. */
+  preparing: ModelPreparationTarget | null;
+  /** True whenever the server reports a preparation in flight, whoever started it. */
+  preparationRunning: boolean;
+  startPreparation: (target: ModelPreparationTarget) => Promise<boolean>;
 
   availableModels: string[];
   setAvailableModels: React.Dispatch<React.SetStateAction<string[]>>;
@@ -69,6 +85,13 @@ export function useAISettingsModels(
   const [languageRegistry, setLanguageRegistry] =
     useState<LanguageRegistry | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  const [downloadProgress, setDownloadProgress] =
+    useState<DownloadProgress | null>(null);
+  const [preparing, setPreparing] = useState<ModelPreparationTarget | null>(
+    null,
+  );
+  const [pollingProgress, setPollingProgress] = useState(false);
 
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
@@ -199,6 +222,85 @@ export function useAISettingsModels(
       .catch(console.error);
   };
 
+  // One read on open, so a preparation started elsewhere (first-run setup, or
+  // another admin) is visible immediately instead of only after a local action.
+  useEffect(() => {
+    let cancelled = false;
+    getDownloadProgress()
+      .then((progress) => {
+        if (cancelled) return;
+        setDownloadProgress(progress);
+        if (progress.in_progress) setPollingProgress(true);
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pollingProgress) return;
+
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const progress = await getDownloadProgress();
+        if (cancelled) return;
+        setDownloadProgress(progress);
+
+        if (progress.status === "complete") {
+          setPollingProgress(false);
+          setPreparing(null);
+          refreshStatus();
+          addNotification({
+            type: "success",
+            message: "Model preparation complete.",
+          });
+        } else if (progress.status === "error") {
+          setPollingProgress(false);
+          setPreparing(null);
+          addNotification({
+            type: "error",
+            message: progress.message || "Model preparation failed.",
+          });
+        }
+      } catch (e: unknown) {
+        console.error("Failed to read model preparation progress", e);
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollingProgress]);
+
+  const startPreparation = async (
+    target: ModelPreparationTarget,
+  ): Promise<boolean> => {
+    setPreparing(target);
+    try {
+      await prepareModels(target);
+      setPollingProgress(true);
+      addNotification({
+        type: "success",
+        message: "Model preparation started. Progress is shown below.",
+      });
+      return true;
+    } catch (e: unknown) {
+      setPreparing(null);
+      addNotification({
+        type: "error",
+        message: `Could not start model preparation: ${getErrorMessage(
+          e,
+          "Unknown error",
+        )}`,
+      });
+      return false;
+    }
+  };
+
   const handleDeleteModel = async (modelName: string) => {
     if (
       !confirm(
@@ -232,6 +334,10 @@ export function useAISettingsModels(
     modelStatus,
     languageRegistry,
     deleting,
+    downloadProgress,
+    preparing,
+    preparationRunning: pollingProgress,
+    startPreparation,
     availableModels,
     setAvailableModels,
     fetchingModels,

@@ -710,6 +710,16 @@ export interface SystemModelStatus {
   [key: string]: ModelStatusInfo;
 }
 
+/** Which local model assets a preparation request should fetch. `active` covers
+ * whatever the saved transcription settings need. */
+export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary";
+
+export interface ModelPreparationResponse {
+  task_id: string;
+  target: ModelPreparationTarget;
+  status: string;
+}
+
 export interface DownloadProgress {
   progress: number;
   message: string;

@@ -140,6 +140,7 @@ describe("api public surface", () => {
         "mergeSpeakers",
         "pauseRecordingCapture",
         "permanentlyDeleteRecording",
+        "prepareModels",
         "previewNotesPrompt",
         "promoteToGlobalSpeaker",
         "recalibrateSpeaker",
