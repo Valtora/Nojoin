@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 from celery.result import AsyncResult
 from docker.client import DockerClient
 from docker.errors import DockerException, NotFound
@@ -35,6 +36,7 @@ from backend.api.v1.endpoints.setup import (
     is_system_initialized,
     require_first_run_password,
 )
+from backend.celery_app import celery_app
 from backend.core.security import (
     MIN_PASSWORD_LENGTH,
     hash_user_password,
@@ -53,6 +55,11 @@ from backend.utils.model_utils import WHISPER_MODEL_SIZES_MB
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MODEL_DELETION_TASK = "backend.worker.tasks.delete_model_task"
+# Deleting a cached model is an rmtree on a local volume, so seconds; the ceiling
+# is here so an absent worker fails the request rather than holding the thread.
+MODEL_DELETION_TIMEOUT_S = 60
 
 RETIRED_COMPANION_RESPONSE = {
     "error": "companion_retired",
@@ -665,25 +672,50 @@ async def delete_model_endpoint(
 ) -> Any:
     """
     Delete a specific model from the cache.
+
+    Dispatched to a worker: the API mounts the shared model volume read-only, so
+    deleting from this process fails with EROFS. The call still waits for the
+    result, because the UI refreshes model status as soon as it returns.
     """
-    from backend.preload_models import delete_model
+    del current_user
 
     if model_name not in ["whisper", "pyannote", "embedding", "parakeet", "canary"]:
         raise HTTPException(status_code=400, detail="Invalid model name")
 
     try:
-        success = delete_model(model_name, whisper_model_size=variant)
-        if success:
-            return {"message": f"Model {model_name} deleted successfully"}
-        else:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {model_name} not found or could not be deleted",
-            )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        task = celery_app.send_task(
+            MODEL_DELETION_TASK,
+            kwargs={"model_name": model_name, "variant": variant},
+        )
+        result = await asyncio.to_thread(task.get, timeout=MODEL_DELETION_TIMEOUT_S)
+    except CeleryTimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "Model deletion did not finish in time. It may still be running "
+                "on the worker; refresh model status in a moment."
+            ),
+        )
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Model deletion task failed for %s: %s", model_name, e)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not reach the worker to delete the model.",
+        )
+
+    status = (result or {}).get("status")
+    message = (result or {}).get("message") or f"Model {model_name} deleted."
+
+    if status == "deleted":
+        return {"message": message}
+    if status == "not_found":
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {model_name} not found or could not be deleted",
+        )
+    if status == "forbidden":
+        raise HTTPException(status_code=400, detail=message)
+    raise HTTPException(status_code=500, detail=message)
 
 
 @router.post("/seed-demo")

@@ -125,8 +125,11 @@ selected model now, and **Model dependencies** offers a `Download` action plus
 live progress for anything still missing. A model that is never prepared is
 fetched on first use, which delays live transcription and Meeting Edge until it
 is ready. Only one preparation runs at a time; a second request is refused with
-409 while one is in flight. Live and final processing still load inference
-models only for active work. After each
+409 while one is in flight. Deleting a cached model also runs on a worker, not
+in the API: the API mounts the model volume read-only (`model_cache:ro`), so it
+has no write access to that cache by design. Both actions therefore need a
+running worker. Live and final processing still load inference models only for
+active work. After each
 worker task, Nojoin releases model caches and clears CUDA memory when
 `keep_models_loaded` is unset or false — except while a recording is actively
 uploading (live capture), where the live ASR model is kept resident so

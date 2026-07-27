@@ -200,6 +200,9 @@ TASK_ROUTES = {
     "backend.worker.tasks.ensure_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.renew_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.cleanup_temp_recordings": {"queue": IO_QUEUE},
+    # Local disk work on the model volume. Belongs on a worker at all because
+    # the API mounts that volume read-only.
+    "backend.worker.tasks.delete_model_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.send_telemetry_ping_task": {"queue": IO_QUEUE},
 }
 
