@@ -207,7 +207,11 @@ It is an upper bound, not an exact count. Setting 4 for a meeting with 3 speaker
 
 ### When Voiceprints Need Rebuilding
 
-Voiceprints are only comparable with others made the same way. When an upgrade improves how they are extracted, previously saved ones stop contributing to automatic identification until they are rebuilt from the original audio. Settings reports how many are affected and can queue the rebuild, which runs on the worker and can take a while on a large library. People whose recordings no longer have audio cannot be rebuilt and must be linked by hand.
+Voiceprints are only comparable with others made the same way. When an upgrade improves how they are extracted, previously saved ones stop contributing to automatic identification until they are rebuilt from the original audio.
+
+**This happens on its own.** Nojoin checks periodically and rebuilds affected voiceprints from the original audio in the background, a few meetings at a time so the work does not compete with recording or processing. There is nothing to enable and no button to press. A large library repairs itself over several passes rather than all at once, so identification may stay degraded for a while after an upgrade before returning to normal.
+
+Not every voiceprint can be rebuilt. Some belong to meetings whose audio has been removed, and others belong to a speaker who no longer has any speech in the transcript, which can happen after a meeting is reprocessed and that speaker's turns are attributed elsewhere. Neither can ever be re-extracted, so those are cleared rather than retried forever. A cleared voiceprint was already unusable for automatic identification, so nothing that was working is lost. The person and the meeting speaker are kept, so you can still link them by hand or save a new voiceprint from a later meeting.
 
 ## Notes, Chat, Documents, And Search
 

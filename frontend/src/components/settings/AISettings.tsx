@@ -13,7 +13,6 @@ import NotesTemplatesSection from "./NotesTemplatesSection";
 import GlossarySection from "./GlossarySection";
 import AiLanguageSection from "./AiLanguageSection";
 import AiHuggingFaceSection from "./AiHuggingFaceSection";
-import VoiceprintMaintenanceSection from "./VoiceprintMaintenanceSection";
 import AiTranscriptionSection from "./AiTranscriptionSection";
 import AiModelDependenciesSection from "./AiModelDependenciesSection";
 import { useAISettingsModels } from "./useAISettingsModels";
@@ -269,9 +268,6 @@ export default function AISettings({
           isAdmin={isAdmin}
         />
       )}
-
-      {/* Renders nothing when every stored voiceprint is current. */}
-      <VoiceprintMaintenanceSection />
     </div>
   );
 }

@@ -24,7 +24,13 @@ class GlobalSpeaker(BaseDBModel, table=True):
     name: str = Field(
         index=True
     )  # Removed unique=True to allow same name for different users
-    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    # none_as_null: without it, clearing a voiceprint stores a JSON ``null``
+    # rather than SQL NULL, which still satisfies ``embedding IS NOT NULL``.
+    # Queries that count stored voiceprints then disagree with the Python code,
+    # which reads the same value back as None and treats it as absent.
+    embedding: Optional[List[float]] = Field(
+        default=None, sa_column=Column(JSONB(none_as_null=True))
+    )
     embedding_version: Optional[int] = Field(
         default=None,
         description=(
@@ -181,7 +187,13 @@ class RecordingSpeaker(BaseDBModel, table=True):
     snippet_end: Optional[float] = None
     voice_snippet_path: Optional[str] = None
 
-    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(JSONB))
+    # none_as_null: without it, clearing a voiceprint stores a JSON ``null``
+    # rather than SQL NULL, which still satisfies ``embedding IS NOT NULL``.
+    # Queries that count stored voiceprints then disagree with the Python code,
+    # which reads the same value back as None and treats it as absent.
+    embedding: Optional[List[float]] = Field(
+        default=None, sa_column=Column(JSONB(none_as_null=True))
+    )
     embedding_version: Optional[int] = Field(
         default=None,
         description=(
