@@ -8,7 +8,6 @@ from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
-from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -449,77 +448,3 @@ async def extract_all_voiceprints(
         "results": results,
         "all_global_speakers": all_speakers_list,
     }
-
-
-@router.get("/voiceprints/method-status")
-async def voiceprint_method_status(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Report how many stored voiceprints predate the current extraction method.
-
-    A voiceprint extracted by an older method cannot be scored against a new
-    one, so it stops contributing to automatic speaker identification until it
-    is rebuilt from audio. This endpoint is what makes that state visible
-    instead of silent.
-    """
-    from backend.processing.embedding import embedding_version_of
-    from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
-
-    people = (
-        (
-            await db.execute(
-                select(GlobalSpeaker).where(GlobalSpeaker.user_id == current_user.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    stale_people = [
-        p
-        for p in people
-        if p.embedding and embedding_version_of(p) != EMBEDDING_METHOD_VERSION
-    ]
-
-    speakers = (
-        (
-            await db.execute(
-                select(RecordingSpeaker)
-                .join(Recording, Recording.id == RecordingSpeaker.recording_id)
-                .where(Recording.user_id == current_user.id)
-                .where(RecordingSpeaker.merged_into_id.is_(None))
-            )
-        )
-        .scalars()
-        .all()
-    )
-    stale_speakers = [
-        s
-        for s in speakers
-        if s.embedding and embedding_version_of(s) != EMBEDDING_METHOD_VERSION
-    ]
-
-    return {
-        "current_method_version": EMBEDDING_METHOD_VERSION,
-        "stale_people": len(stale_people),
-        "total_people_with_voiceprint": len([p for p in people if p.embedding]),
-        "stale_recording_speakers": len(stale_speakers),
-        "rebuild_required": bool(stale_people or stale_speakers),
-    }
-
-
-@router.post("/voiceprints/rebuild")
-async def rebuild_voiceprints(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Queue a re-extraction of this user's stale voiceprints.
-
-    Dispatched to the worker because it runs the embedding model over archived
-    audio; it must never execute on an API request thread.
-    """
-    task = speakers_module.celery_app.send_task(
-        "backend.worker.tasks.rebuild_voiceprints_task",
-        kwargs={"user_id": current_user.id},
-    )
-    return {"task_id": task.id, "status": "queued"}

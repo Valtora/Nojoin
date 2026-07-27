@@ -203,6 +203,14 @@ TASK_ROUTES = {
     "backend.worker.tasks.send_telemetry_ping_task": {"queue": IO_QUEUE},
 }
 
+# Recordings touched by one automatic voiceprint-rebuild tick. The rebuild runs
+# the embedding model on the GPU lane, which is also where live transcription
+# and final processing run, so a sweep must never enqueue an unbounded pile of
+# work ahead of a real meeting. Bounding each tick trades a slower repair for a
+# GPU that stays responsive; the sweep repeats, so a large library still
+# converges, just over several ticks rather than one.
+AUTOMATIC_VOICEPRINT_REBUILD_LIMIT = 25
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -240,6 +248,17 @@ celery_app.conf.update(
         "send-telemetry-ping-every-24h": {
             "task": "backend.worker.tasks.send_telemetry_ping_task",
             "schedule": 86400.0,
+        },
+        # Repairs voiceprints stranded by an extraction-method upgrade. Stale
+        # voiceprints stop contributing to speaker identification silently, so
+        # waiting for someone to notice and ask for a repair means the feature
+        # degrades unobserved. The task queries first and returns in
+        # milliseconds when nothing is stale, which is the steady state, so
+        # scheduling it unconditionally costs nothing.
+        "rebuild-stale-voiceprints-every-6h": {
+            "task": "backend.worker.tasks.rebuild_voiceprints_task",
+            "schedule": 21600.0,
+            "kwargs": {"limit": AUTOMATIC_VOICEPRINT_REBUILD_LIMIT},
         },
     },
 )

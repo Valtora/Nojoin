@@ -28,6 +28,33 @@ Two further defects surfaced while fixing the above. Survivor selection in the m
 
 **Stale voiceprints are repaired by re-extraction, not by tolerance.** `rebuild_voiceprints_task` re-derives them from the recordings' audio and rebuilds each affected person from their current-version speakers. It is operator-triggered, not automatic on upgrade, because it runs the embedding model over the entire library on hardware the user owns. `GET /speakers/voiceprints/method-status` reports how many are stale so the state is visible rather than silent.
 
+> **Amendment (2026-07-27):** the rebuild is now **automatic scheduled
+> maintenance**, and the Settings panel, `GET /speakers/voiceprints/method-status`
+> and `POST /speakers/voiceprints/rebuild` are removed.
+>
+> Making the repair operator-triggered assumed the operator would be told
+> something was wrong and would act. In practice it surfaced a prompt describing
+> a condition — "an older extraction method" — that the person reading it had no
+> way to act on beyond pressing the button, and which they could not verify had
+> worked. The visibility was real but useless: it exported an internal invariant
+> to the user without exporting any decision they were equipped to make. Staleness
+> is not a user-facing state; it is a maintenance obligation Nojoin owes itself
+> after changing its own extraction method.
+>
+> The cost this decision was protecting against — an unbounded embedding run on
+> the user's own GPU — is handled by bounding the work instead of by asking
+> permission. Each scheduled tick processes at most
+> `AUTOMATIC_VOICEPRINT_REBUILD_LIMIT` recordings on the GPU lane, where it is
+> already serialised behind live capture and final processing, so a large library
+> converges over several ticks. The task queries first and returns in milliseconds
+> when nothing is stale, which is the steady state, so scheduling it every six
+> hours costs effectively nothing.
+>
+> The trade-off accepted: identification stays degraded for longer after an
+> upgrade than a single operator-triggered full run would take, and nothing in
+> the UI says so. The `voiceprint_rebuild` pipeline metric remains the place to
+> see what each run did.
+
 **The merge pass reports every run.** A `speaker_merge_pass` metric is emitted for every execution — including runs that merge nothing and runs that cannot score anything, which carry an explicit reason — carrying each pair's cosine score. A companion `final_diarization_speaker_stats` metric records how much speech each cluster holds, which is what distinguishes a negligible fragment from a substantial mis-split.
 
 **Identification outranks acoustic similarity.** Two speakers already resolved to different people, or manually given different names, are never merged however they score, and survivor selection prefers an identified speaker over an anonymous one and ranks by diarised speech duration before utterance count.
@@ -42,6 +69,23 @@ Accepted trade-offs:
 
 - **Existing voiceprints stop matching until rebuilt.** This is the cost of refusing to compare across versions, and it is the honest failure mode: no automatic match, rather than a wrong one. `method-status` makes it visible and `rebuild` fixes it.
 - **A rebuild cannot recover voiceprints whose audio is gone.** Those rows stay stale and unmatchable; the person can still be linked manually.
+
+> **Amendment (2026-07-27):** leaving unrebuildable rows stale was wrong, and the
+> reason is that "stale" is the same state the rebuild prompt watches. A run that
+> could not repair them reported success having done nothing, the prompt never
+> cleared, and running it again produced an identical no-op — the failure was
+> invisible in exactly the place built to make this state visible. Audio removal
+> turned out not to be the only cause: re-diarisation can leave a speaker row
+> holding an embedding but owning no utterance or transcript segment, so there is
+> no audio range to re-extract from even though the file is present.
+>
+> A stale voiceprint that cannot be re-extracted is now **cleared** rather than
+> kept. It could never be scored against anything, so nothing is lost that was
+> working, and clearing it lets the run converge. The speaker or person record
+> survives; only the unusable vector goes, and manual linking is unaffected.
+> Transient extraction failures are excluded: an exception leaves the voiceprint
+> in place and is counted separately, so a later run can retry rather than find
+> it already discarded.
 - **A binding cap is blunt.** pyannote does not gently merge surplus clusters — `VBxClustering` discards its result and re-partitions with k-means at the requested count. Better than four-when-there-are-two, but not a substitute for the extraction fix, which is why both ship together.
 - **Changing extraction again means another version bump and another rebuild.** That is the intended cost; it is what stops a silent drift.
 
