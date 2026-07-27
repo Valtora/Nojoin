@@ -28,8 +28,11 @@ import NotesTemplateEditorModal from "./NotesTemplateEditorModal";
 
 interface NotesTemplatesSectionProps {
   settings: Settings;
-  /** Apply and save immediately (default selection is a discrete control). */
-  onPersist: (newSettings: Settings) => void;
+  /**
+   * Apply and save immediately (default selection is a discrete control).
+   * Resolves once the save has settled, so the install default can refetch.
+   */
+  onPersist: (newSettings: Settings) => void | Promise<void>;
   isAdmin?: boolean;
 }
 
@@ -53,6 +56,7 @@ export default function NotesTemplatesSection({
   const [creatingScope, setCreatingScope] = useState<"install" | "personal">(
     "personal",
   );
+  const [savingInstallDefault, setSavingInstallDefault] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -79,8 +83,23 @@ export default function NotesTemplatesSection({
     onPersist({ ...settings, notes_template_id: templateId });
   };
 
-  const handleSelectInstallDefault = (templateId: number | null) => {
-    onPersist({ ...settings, install_notes_template_id: templateId });
+  // Unlike the per-user default -- whose tick is rendered from `settings`, so
+  // it updates optimistically -- the install default badge comes from
+  // `is_install_default` on the server's template list. Without refetching, a
+  // save that worked perfectly still leaves the row unchanged and reads as a
+  // dead link (issue #149).
+  const handleSelectInstallDefault = async (templateId: number | null) => {
+    setSavingInstallDefault(true);
+    try {
+      await onPersist({ ...settings, install_notes_template_id: templateId });
+    } catch (error) {
+      // The caller reports the failure to the user; refetching below is what
+      // stops the row from claiming a default the server never stored.
+      console.error("Failed to set the install default notes structure", error);
+    } finally {
+      await refresh();
+      setSavingInstallDefault(false);
+    }
   };
 
   const handleSave = async (
@@ -275,12 +294,13 @@ export default function NotesTemplatesSection({
                   {isAdmin && template.scope === "install" && (
                     <button
                       type="button"
+                      disabled={savingInstallDefault}
                       onClick={() =>
-                        handleSelectInstallDefault(
+                        void handleSelectInstallDefault(
                           template.is_install_default ? null : template.id,
                         )
                       }
-                      className="mt-2 text-xs contrast-helper hover:text-gray-900 dark:hover:text-white"
+                      className="mt-2 text-xs contrast-helper hover:text-gray-900 dark:hover:text-white disabled:opacity-60"
                     >
                       {template.is_install_default
                         ? "Remove as install default"

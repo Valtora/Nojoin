@@ -356,8 +356,17 @@ class ConfigManager:
                 logger.info(
                     f"Configuration file not found at {self.config_path}. Using default settings."
                 )
-                # Save the default config if the file doesn't exist
-                self._save_config(config)
+                # Save the default config if the file doesn't exist. Best effort
+                # only: a config directory we cannot write is a problem for
+                # saving settings later, not a reason to refuse to start.
+                try:
+                    self._save_config(config)
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "Could not write the initial configuration file at %s. "
+                        "Install-wide settings will not be persistable.",
+                        self.config_path,
+                    )
 
             # Ensure necessary directories exist
             self._ensure_dirs_exist(config)
@@ -408,7 +417,12 @@ class ConfigManager:
         self._save_config(config_data)
 
     def _save_config(self, config_data):
-        """Saves the current configuration state to the file, excluding sensitive keys."""
+        """Saves the current configuration state to the file, excluding sensitive keys.
+
+        Raises on failure. Install-wide settings live only in this file, so a
+        swallowed write turns "saved" into a value that quietly reverts on the
+        next reload -- the caller has to be able to tell the operator.
+        """
         try:
             safe_config = {
                 k: v for k, v in config_data.items() if k not in SENSITIVE_KEYS
@@ -416,15 +430,17 @@ class ConfigManager:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(safe_config, f, indent=4)
             logger.info(f"Configuration saved to {self.config_path}")
-        except IOError as e:
+        except OSError as e:
             logger.error(
                 f"Error saving configuration to {self.config_path}: {e}", exc_info=True
             )
+            raise
         except Exception as e:
             logger.error(
                 f"An unexpected error occurred while saving configuration: {e}",
                 exc_info=True,
             )
+            raise
 
     def _ensure_dirs_exist(self, config):
         """Creates directories specified in the config if they don't exist."""

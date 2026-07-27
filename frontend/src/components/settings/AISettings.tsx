@@ -47,12 +47,16 @@ export default function AISettings({
 
   // Apply a change and save it immediately, for discrete controls (selects,
   // switches, routing radios). Continuous controls use `onUpdate` (1s debounce).
-  const persistNow = (updates: Settings) => {
+  // Returns a promise that settles when the save does, so a section whose UI is
+  // rendered from server state (rather than from `settings`) can refetch once
+  // the write has landed. Rejections are still handled here, so callers that
+  // ignore the result behave exactly as before.
+  const persistNow = (updates: Settings): Promise<void> => {
     onUpdate(updates);
     if (!onPersist) {
-      return;
+      return Promise.resolve();
     }
-    void onPersist(updates).catch((error) => {
+    return onPersist(updates).catch((error) => {
       console.error("Failed to persist AI settings update", error);
       addNotification({
         type: "error",
