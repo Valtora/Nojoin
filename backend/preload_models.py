@@ -40,6 +40,19 @@ WHISPER_FILENAMES = {
     "turbo": "large-v3-turbo.pt",
 }
 
+# Hugging Face cache directory fragments for the ONNX ASR models, used to detect
+# them without importing onnx-asr into the API process.
+#
+# These are fragments of the *repo* name, not of the Nojoin model id, because the
+# two diverge: `nemo-canary-1b-v2` is cached as `models--istupakov--canary-1b-v2-onnx`,
+# with no `nemo-` prefix. Matching the Nojoin id reported Canary as permanently
+# missing however many times it was downloaded, which also made it undeletable,
+# since deletion resolves its path through the same status check.
+ONNX_ASR_CACHE_FRAGMENTS = {
+    "parakeet": "parakeet-tdt-0.6b-v3",
+    "canary": "canary-1b-v2",
+}
+
 
 def _is_onnx_asr_model_cached(model_substring: str) -> bool:
     """Check if an onnx-asr model is present in the Hugging Face hub cache."""
@@ -510,7 +523,7 @@ def check_model_status(whisper_model_size=None):
                     status["whisper"]["downloaded"] = True
                     status["whisper"]["path"] = default_filepath
 
-    # Check Parakeet
+    # Check the ONNX ASR models.
     # Best-effort detection: onnx-asr caches the model under the Hugging Face hub
     # cache. Detection is a directory-name match; the exact repo dir name may vary
     # by onnx-asr version, so this is treated as a heuristic, not authoritative.
@@ -525,35 +538,20 @@ def check_model_status(whisper_model_size=None):
     if default_hf_cache not in parakeet_hf_caches:
         parakeet_hf_caches.append(default_hf_cache)
 
-    for cache_dir in parakeet_hf_caches:
-        status["parakeet"]["checked_paths"].append(cache_dir)
-        if os.path.isdir(cache_dir):
-            try:
-                for entry in os.listdir(cache_dir):
-                    if "parakeet-tdt-0.6b-v3" in entry:
-                        status["parakeet"]["downloaded"] = True
-                        status["parakeet"]["path"] = os.path.join(cache_dir, entry)
-                        break
-            except OSError:
-                pass
-        if status["parakeet"]["downloaded"]:
-            break
-
-    # Check Canary
-    # Same best-effort HF-cache directory-name match as Parakeet above.
-    for cache_dir in parakeet_hf_caches:
-        status["canary"]["checked_paths"].append(cache_dir)
-        if os.path.isdir(cache_dir):
-            try:
-                for entry in os.listdir(cache_dir):
-                    if "nemo-canary-1b-v2" in entry:
-                        status["canary"]["downloaded"] = True
-                        status["canary"]["path"] = os.path.join(cache_dir, entry)
-                        break
-            except OSError:
-                pass
-        if status["canary"]["downloaded"]:
-            break
+    for status_key, fragment in ONNX_ASR_CACHE_FRAGMENTS.items():
+        for cache_dir in parakeet_hf_caches:
+            status[status_key]["checked_paths"].append(cache_dir)
+            if os.path.isdir(cache_dir):
+                try:
+                    for entry in os.listdir(cache_dir):
+                        if fragment in entry:
+                            status[status_key]["downloaded"] = True
+                            status[status_key]["path"] = os.path.join(cache_dir, entry)
+                            break
+                except OSError:
+                    pass
+            if status[status_key]["downloaded"]:
+                break
 
     for status_key, model_id in (
         ("pyannote", "pyannote/speaker-diarization-community-1"),
