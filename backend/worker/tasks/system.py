@@ -11,8 +11,13 @@ def cleanup_temp_recordings(self):
     """
     logger.info("Starting cleanup of temp recordings...")
 
+    from backend.processing.audio_preprocessing import (
+        cleanup_stale_pipeline_temp_files,
+    )
+
     cleaned_count = cleanup_recording_audio_chunks(self.session, logger=logger)
     cleaned_count += cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
+    cleaned_count += cleanup_stale_pipeline_temp_files(max_age_hours=24)
     cleaned_count += cleanup_orphaned_uploading_recordings(
         self.session, logger=logger, max_age_hours=24
     )
