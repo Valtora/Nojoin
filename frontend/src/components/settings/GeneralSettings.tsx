@@ -27,11 +27,31 @@ import SettingsField from "./SettingsField";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 
+/**
+ * The sections this component can render. They now live on two different
+ * category pages — appearance, date and time, and spellcheck under Appearance;
+ * the processing defaults under Recording, next to the capture controls they
+ * belong with — so the caller selects which it wants.
+ */
+export type GeneralSettingsSection =
+  | "appearance"
+  | "dateTime"
+  | "spellcheck"
+  | "processing";
+
+const ALL_GENERAL_SECTIONS: GeneralSettingsSection[] = [
+  "appearance",
+  "dateTime",
+  "spellcheck",
+  "processing",
+];
+
 interface GeneralSettingsProps {
   settings: Settings;
   onUpdate: (newSettings: Settings) => void;
   searchQuery?: string;
   suppressNoMatch?: boolean;
+  sections?: GeneralSettingsSection[];
 }
 
 function formatTimeZoneDisplay(timeZone: string): string {
@@ -50,6 +70,7 @@ export default function GeneralSettings({
   onUpdate,
   searchQuery = "",
   suppressNoMatch = false,
+  sections = ALL_GENERAL_SECTIONS,
 }: GeneralSettingsProps) {
   const { theme, setTheme } = useTheme();
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
@@ -114,43 +135,53 @@ export default function GeneralSettings({
     onUpdate({ ...settings, timezone: resolvedTimeZone });
   };
 
-  const showAppearance = fuzzyMatch(searchQuery, [
-    "appearance",
-    "theme",
-    "light",
-    "dark",
-    "mode",
-    "color",
-  ]);
-  const showDateTime = fuzzyMatch(searchQuery, [
-    "timezone",
-    "time zone",
-    "date",
-    "time",
-    "clock",
-    "utc",
-    "gmt",
-    "bst",
-    "calendar",
-    "deadline",
-  ]);
-  const showProcessing = fuzzyMatch(searchQuery, [
-    "processing",
-    "vad",
-    "silence",
-    "diarization",
-    "voice activity detection",
-    "speaker separation",
-    "speaker diarization",
-    "speech",
-  ]);
+  const enabled = (section: GeneralSettingsSection) => sections.includes(section);
 
-  const showSpellCheck = fuzzyMatch(searchQuery, [
-    "spellcheck",
-    "spell",
-    "language",
-    "dictionary",
-  ]);
+  const showAppearance =
+    enabled("appearance") &&
+    fuzzyMatch(searchQuery, [
+      "appearance",
+      "theme",
+      "light",
+      "dark",
+      "mode",
+      "color",
+    ]);
+  const showDateTime =
+    enabled("dateTime") &&
+    fuzzyMatch(searchQuery, [
+      "timezone",
+      "time zone",
+      "date",
+      "time",
+      "clock",
+      "utc",
+      "gmt",
+      "bst",
+      "calendar",
+      "deadline",
+    ]);
+  const showProcessing =
+    enabled("processing") &&
+    fuzzyMatch(searchQuery, [
+      "processing",
+      "vad",
+      "silence",
+      "diarization",
+      "voice activity detection",
+      "speaker separation",
+      "speaker diarization",
+      "speech",
+    ]);
+
+  const showSpellCheck =
+    enabled("spellcheck") &&
+    fuzzyMatch(searchQuery, [
+      "spellcheck",
+      "spell",
+      "language",
+      "dictionary",
+    ]);
 
   if (!showAppearance && !showDateTime && !showProcessing && !showSpellCheck && searchQuery)
     return (

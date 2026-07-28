@@ -51,7 +51,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       ) {
         router.push(
           currentUser.force_password_change
-            ? '/settings?tab=account&forcePasswordChange=1'
+            ? '/settings/profile'
             : '/',
         );
         return;
@@ -61,7 +61,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         currentUser?.force_password_change &&
         !pathname?.startsWith('/settings')
       ) {
-        router.push('/settings?tab=account&forcePasswordChange=1');
+        router.push('/settings/profile');
         return;
       }
 

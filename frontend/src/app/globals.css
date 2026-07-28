@@ -40,10 +40,26 @@
   --surface-padding: 1.5rem;
   --surface-padding-lg: 2rem;
   --control-height-lg: 3.625rem;
+  /* Settings surface stack. Exactly two levels: the page, and one card on it.
+     Nothing nests further, so these must stay monotonic — a card is always a
+     step away from the page, never back towards it. --surface-inset is for
+     composite UI inside a card (meters, consoles) and steps the same way. */
+  --surface-page: #f8fafc;
+  --surface-card: #ffffff;
+  --surface-card-border: rgba(203, 213, 225, 0.75);
+  --surface-divider: rgba(203, 213, 225, 0.55);
+  --surface-card-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --surface-inset: rgba(241, 245, 249, 0.75);
 }
 
 .dark {
   --background: #0a0a0a;
+  --surface-page: #0a0a0a;
+  --surface-card: #141414;
+  --surface-card-border: rgba(75, 85, 99, 0.55);
+  --surface-divider: rgba(75, 85, 99, 0.35);
+  --surface-card-shadow: none;
+  --surface-inset: rgba(255, 255, 255, 0.03);
   --foreground: #ededed;
   --contrast-muted: #e5e7eb;
   --contrast-helper: #d1d5db;
@@ -199,6 +215,56 @@ html {
 
   .settings-tab-inactive:hover {
     background-color: var(--settings-tab-idle-hover);
+  }
+
+  /* Settings surfaces. Radius and padding come from the density-aware tokens
+     above, so Settings tightens with the rest of the app under compact
+     density instead of ignoring it. */
+  .settings-page {
+    background-color: var(--surface-page);
+  }
+
+  .settings-card {
+    border-radius: var(--surface-radius-panel);
+    background-color: var(--surface-card);
+    border: 1px solid var(--surface-card-border);
+    box-shadow: var(--surface-card-shadow);
+  }
+
+  /* Rows and blocks are separated by hairlines, never by their own borders.
+     One card, flat contents: no card ever contains another card. */
+  .settings-card-body > * + * {
+    border-top: 1px solid var(--surface-divider);
+  }
+
+  .settings-inset {
+    background-color: var(--surface-inset);
+  }
+
+  .settings-divider {
+    border-color: var(--surface-divider);
+  }
+
+  /* Search landing highlight, applied briefly when a result routes to a
+     setting so the eye is taken to it rather than merely to its page. */
+  @keyframes settings-target-fade {
+    from {
+      background-color: var(--settings-tab-active-bg);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+
+  .settings-target {
+    animation: settings-target-fade 2.4s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-target {
+      animation: none;
+      background-color: var(--settings-tab-active-bg);
+    }
   }
 
   .workspace-shell {

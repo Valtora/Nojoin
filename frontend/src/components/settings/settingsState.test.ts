@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  getPreferredSettingsSectionForSearch,
-  getSettingsSectionMatchScores,
-  mergeAutosaveStates,
-} from "./settingsState";
+import { mergeAutosaveStates } from "./settingsState";
+
+// Search-state tests moved to settingsRegistry.test.ts: search now resolves to
+// an individual setting rather than picking a tab, so the scoring it used to
+// assert against no longer exists.
 
 describe("mergeAutosaveStates", () => {
   it("returns saved when no autosave states are present", () => {
@@ -27,50 +27,12 @@ describe("mergeAutosaveStates", () => {
       ),
     ).toEqual({ status: "blocked", message: "Blocked" });
   });
-});
 
-describe("settings search state", () => {
-  it("prefers the best matching section for admin-only queries", () => {
-    const matchScores = getSettingsSectionMatchScores({
-      searchQuery: "backup",
-      isAdmin: true,
-    });
-
-    expect(matchScores?.administration).toBe(0);
+  it("ignores absent states rather than treating them as saved", () => {
+    // The account autosave slot is null until account settings mount, which
+    // must not report success over a save that is still in flight.
     expect(
-      getPreferredSettingsSectionForSearch({
-        activeSectionId: "personal",
-        matchScores,
-      }),
-    ).toBe("administration");
-  });
-
-  it("does not route non-admin users into hidden administration content", () => {
-    const matchScores = getSettingsSectionMatchScores({
-      searchQuery: "backup",
-      isAdmin: false,
-    });
-
-    expect(matchScores?.administration).toBe(1);
-    expect(
-      getPreferredSettingsSectionForSearch({
-        activeSectionId: "personal",
-        matchScores,
-      }),
-    ).not.toBe("administration");
-  });
-
-  it("switches to an exact-match section when the current section is weaker", () => {
-    const matchScores = getSettingsSectionMatchScores({
-      searchQuery: "help",
-      isAdmin: true,
-    });
-
-    expect(
-      getPreferredSettingsSectionForSearch({
-        activeSectionId: "capture",
-        matchScores,
-      }),
-    ).toBe("help");
+      mergeAutosaveStates(null, { status: "saving", message: "Saving" }, undefined),
+    ).toEqual({ status: "saving", message: "Saving" });
   });
 });

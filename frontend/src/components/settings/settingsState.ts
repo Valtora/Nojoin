@@ -1,10 +1,4 @@
-import { getMatchScore } from "@/lib/searchUtils";
-
 import type { SettingsAutosaveSnapshot } from "./SettingsAutosaveState";
-import { TAB_KEYWORDS } from "./keywords";
-import type { SettingsSectionId } from "./settingsMetadata";
-
-export type SettingsSectionMatchScores = Record<SettingsSectionId, number>;
 
 const AUTOSAVE_STATE_PRIORITY: Record<SettingsAutosaveSnapshot["status"], number> = {
   blocked: 4,
@@ -14,84 +8,33 @@ const AUTOSAVE_STATE_PRIORITY: Record<SettingsAutosaveSnapshot["status"], number
   saved: 0,
 };
 
+/**
+ * Collapses several autosave states into the one worth showing.
+ *
+ * Settings saves on two schedules — the shared settings object, and account
+ * fields that write to their own endpoint — but the footer has room for one
+ * message. The most urgent state wins, so a failure is never masked by a
+ * neighbour reporting success.
+ *
+ * Category-matching for search used to live here too; it now belongs to the
+ * settings registry, which matches individual settings rather than whole tabs.
+ */
 export function mergeAutosaveStates(
   ...states: Array<SettingsAutosaveSnapshot | null | undefined>
 ): SettingsAutosaveSnapshot {
-  const presentStates = states.filter(
+  const present = states.filter(
     (state): state is SettingsAutosaveSnapshot =>
       state !== null && state !== undefined,
   );
 
-  if (presentStates.length === 0) {
+  if (present.length === 0) {
     return { status: "saved" };
   }
 
-  return presentStates.reduce((strongest, candidate) => {
-    return AUTOSAVE_STATE_PRIORITY[candidate.status] >
-      AUTOSAVE_STATE_PRIORITY[strongest.status]
+  return present.reduce((strongest, candidate) =>
+    AUTOSAVE_STATE_PRIORITY[candidate.status] >
+    AUTOSAVE_STATE_PRIORITY[strongest.status]
       ? candidate
-      : strongest;
-  });
-}
-
-export function getSettingsSectionMatchScores({
-  searchQuery,
-  isAdmin,
-}: {
-  searchQuery: string;
-  isAdmin: boolean;
-}): SettingsSectionMatchScores | null {
-  if (!searchQuery) {
-    return null;
-  }
-
-  return {
-    personal: getMatchScore(searchQuery, TAB_KEYWORDS.personal),
-    ai: getMatchScore(searchQuery, TAB_KEYWORDS.ai),
-    capture: getMatchScore(searchQuery, TAB_KEYWORDS.capture),
-    administration: isAdmin
-      ? getMatchScore(searchQuery, TAB_KEYWORDS.administration)
-      : 1,
-    updates: getMatchScore(searchQuery, TAB_KEYWORDS.updates),
-    help: getMatchScore(searchQuery, TAB_KEYWORDS.help),
-  };
-}
-
-export function getPreferredSettingsSectionForSearch({
-  activeSectionId,
-  matchScores,
-}: {
-  activeSectionId: SettingsSectionId;
-  matchScores: SettingsSectionMatchScores | null;
-}): SettingsSectionId | null {
-  if (!matchScores) {
-    return null;
-  }
-
-  const currentScore = matchScores[activeSectionId];
-  let bestSectionId: SettingsSectionId | null = null;
-  let bestScore = 1.0;
-
-  (Object.entries(matchScores) as [SettingsSectionId, number][]).forEach(
-    ([sectionId, score]) => {
-      if (score < bestScore) {
-        bestScore = score;
-        bestSectionId = sectionId;
-      }
-    },
+      : strongest,
   );
-
-  if (!bestSectionId || bestSectionId === activeSectionId) {
-    return null;
-  }
-
-  if (bestScore === 0 && currentScore > 0) {
-    return bestSectionId;
-  }
-
-  if (currentScore >= 0.8 && bestScore < 0.6) {
-    return bestSectionId;
-  }
-
-  return null;
 }

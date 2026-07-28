@@ -60,7 +60,7 @@ export default function RecordingsLanding() {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              href="/settings?tab=help"
+              href="/settings/help"
               className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-white/10 dark:bg-gray-900/80 dark:text-white dark:hover:border-orange-500/30 dark:hover:text-orange-300"
             >
               <LifeBuoy className="h-4 w-4" />
