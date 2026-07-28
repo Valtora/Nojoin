@@ -8,11 +8,13 @@ set -e
 # container. The long-running process runs as uid 1000; the release smoke test
 # asserts that dropped runtime uid.
 if [ "$(id -u)" = "0" ]; then
-    mkdir -p /app/data/recordings
-    # Only walk the tree when ownership is actually wrong. The recursive chown
-    # does real work only on the first boot after a fresh ./data; on later
-    # restarts (potentially a large recordings library) this short-circuits.
-    [ "$(stat -c %u /app/data)" = "1000" ] || chown -R appuser:appuser /app/data
+    # Repair logic is shared with backend/worker_entrypoint.sh; it checks every
+    # write-critical directory independently rather than inferring the whole
+    # tree's state from the data root (issue #153).
+    . /app/backend/entrypoint_common.sh
+    # Never fatal: both entrypoints run under `set -e`, and a container that
+    # refuses to boot would hide the diagnostic it is trying to surface.
+    nojoin_repair_data_ownership || true
     exec gosu appuser "$0" "$@"
 fi
 

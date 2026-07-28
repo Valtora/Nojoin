@@ -70,7 +70,6 @@ RUN chmod +x /app/backend/entrypoint.sh
 # only to repair ./data bind-mount ownership, then drops to appuser via gosu, so
 # the long-running process runs as uid 1000 (asserted by the release smoke test).
 RUN useradd -m -u 1000 appuser && \
-    mkdir -p /app/recordings && \
     mkdir -p /shared_model_cache && \
     chown -R appuser:appuser /app /shared_model_cache
 

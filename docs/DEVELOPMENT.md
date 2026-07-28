@@ -244,7 +244,6 @@ services:
     volumes:
       - .:/app
       - ./data:/app/data
-      - ./data/recordings:/app/recordings
       - model_cache:/shared_model_cache:ro
       - backup_temp:/tmp
 
@@ -745,7 +744,6 @@ services:
     pull_policy: never
     volumes:
       - ./data:/app/data
-      - ./data/recordings:/app/recordings
       - model_cache:/shared_model_cache:ro
       - backup_temp:/tmp
     environment:
