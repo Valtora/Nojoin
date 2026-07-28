@@ -23,9 +23,12 @@ import {
   setCachedUserTimeZone,
 } from "@/lib/timezone";
 import SettingsCallout from "./SettingsCallout";
-import SettingsField from "./SettingsField";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import {
+  SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_SELECT_CLASS,
+} from "./settingsControls";
 
 /**
  * The sections this component can render. They now live on two different
@@ -195,47 +198,38 @@ export default function GeneralSettings({
     );
 
   return (
-    <div className="space-y-8">
+    <>
       {showAppearance && (
-        <SettingsSection
-          eyebrow="Preferences"
+        <SettingsCard
+          id="appearance-theme"
           title="Appearance"
-          description="Choose how Nojoin looks in your browser."
-          width="compact"
+          description="How Nojoin looks in your browser."
         >
-          <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
-            <SettingsField label="Theme">
-              <select
-                value={theme}
-                onChange={handleThemeChange}
-                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="system">System Default</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </SettingsField>
-          </div>
-        </SettingsSection>
+          <SettingsRow label="Theme">
+            <select
+              value={theme}
+              onChange={handleThemeChange}
+              className={SETTINGS_SELECT_CLASS}
+            >
+              <option value="system">System default</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </SettingsRow>
+        </SettingsCard>
       )}
 
       {showDateTime && (
-        <SettingsSection
-          eyebrow="Preferences"
+        <SettingsCard
+          id="appearance-timezone"
           title="Date and time"
-          description="Control the timezone used across the dashboard, calendars, and task deadlines."
-          width="compact"
+          description="The timezone used across the dashboard, calendars, and task deadlines."
         >
-          <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
-            <div className="space-y-3">
-              <SettingsField
-                label={
-                  <span className="flex items-center gap-2">
-                    <Clock3 className="h-4 w-4 text-orange-500" />
-                    Timezone
-                  </span>
-                }
-              >
+          <SettingsRow
+            label="Timezone"
+            description={`Browser detected: ${browserTimeZone}. Times are shown in this timezone and converted to UTC on save, so they stay stable if you travel or change timezone later.`}
+            icon={<Clock3 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+          >
                 <Popover className="relative block">
                   {({ open, close }) => (
                     <>
@@ -343,56 +337,47 @@ export default function GeneralSettings({
                     </>
                   )}
                 </Popover>
-              </SettingsField>
-
-              <p className="text-xs contrast-helper">
-                Browser detected: {browserTimeZone}. Calendar events and task deadlines are shown in this timezone, then converted to UTC on save so they stay stable if you travel or later change timezone.
-              </p>
-            </div>
-          </div>
-        </SettingsSection>
+          </SettingsRow>
+        </SettingsCard>
       )}
 
       {showSpellCheck && (
-        <SettingsSection
-          eyebrow="Preferences"
+        <SettingsCard
+          id="appearance-spellcheck"
           title="Spellcheck"
-          description="Pick a dictionary language and manage your personal custom words."
-          width="compact"
+          description="The dictionary used when you edit notes and tasks."
         >
-          <div className="mx-auto grid max-w-xl grid-cols-1 gap-4">
-            <SettingsField
-              label={
-                <span className="flex items-center gap-2">
-                  <SpellCheck className="h-4 w-4 text-orange-500" />
-                  Language
-                </span>
-              }
+          <SettingsRow
+            label="Language"
+            icon={<SpellCheck className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+          >
+            <select
+              value={settings.spellcheck_language || "en-GB"}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              className={SETTINGS_SELECT_CLASS}
             >
-              <select
-                value={settings.spellcheck_language || "en-GB"}
-                onChange={(e) => handleLanguageChange(e.target.value)}
-                className="w-full p-2 rounded-lg border border-gray-400 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              >
-                <option value="disabled">Disabled</option>
-                {Object.entries(SPELLCHECK_LANGUAGES).map(([locale, meta]) => (
-                  <option key={locale} value={locale}>
-                    {meta.label}
-                  </option>
-                ))}
-              </select>
-            </SettingsField>
+              <option value="disabled">Disabled</option>
+              {Object.entries(SPELLCHECK_LANGUAGES).map(([locale, meta]) => (
+                <option key={locale} value={locale}>
+                  {meta.label}
+                </option>
+              ))}
+            </select>
+          </SettingsRow>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsDictionaryModalOpen(true)}
-                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
-              >
-                Manage Dictionary
-              </button>
-            </div>
-          </div>
-        </SettingsSection>
+          <SettingsRow
+            label="Custom words"
+            description="Words you have taught Nojoin to accept."
+          >
+            <button
+              type="button"
+              onClick={() => setIsDictionaryModalOpen(true)}
+              className={SETTINGS_BUTTON_SECONDARY}
+            >
+              Manage dictionary
+            </button>
+          </SettingsRow>
+        </SettingsCard>
       )}
 
       <DictionaryModal
@@ -401,64 +386,41 @@ export default function GeneralSettings({
       />
 
       {showProcessing && (
-        <SettingsSection
-          eyebrow="Recording"
-          title="Capture defaults"
-          description="Adjust silence filtering and speaker separation defaults for future recordings."
-          width="regular"
+        <SettingsCard
+          title="Processing defaults"
+          description="How recorded audio is prepared before it is transcribed."
         >
-          <div className="mx-auto max-w-2xl space-y-4">
-            <SettingsPanel variant="field" className="flex items-start gap-3">
-              <div className="mt-1">
-                <Mic className="w-5 h-5 text-blue-500" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-900 dark:text-white">
-                    Voice Activity Detection (VAD)
-                  </label>
-                  <Switch
-                    checked={settings.enable_vad !== false} // Default true
-                    onCheckedChange={(checked) =>
-                      onUpdate({ ...settings, enable_vad: checked })
-                    }
-                  />
-                </div>
-                <p className="mt-1 text-xs contrast-helper">
-                  Filters out silence and background noise before transcription.
-                  Disabling this may increase processing time but can help if
-                  quiet speech is being cut off.
-                </p>
-              </div>
-            </SettingsPanel>
+          <SettingsRow
+            id="recording-vad"
+            label="Voice activity detection"
+            description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
+            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+          >
+            <Switch
+              checked={settings.enable_vad !== false} // Default true
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, enable_vad: checked })
+              }
+            />
+          </SettingsRow>
 
-            <SettingsPanel variant="field" className="flex items-start gap-3">
-              <div className="mt-1">
-                <Users className="w-5 h-5 text-purple-500" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-900 dark:text-white">
-                    Speaker Diarization
-                  </label>
-                  <Switch
-                    checked={settings.enable_diarization !== false} // Default true
-                    onCheckedChange={(checked) =>
-                      onUpdate({ ...settings, enable_diarization: checked })
-                    }
-                  />
-                </div>
-                <p className="mt-1 text-xs contrast-helper">
-                  Distinguishes between different speakers (e.g., &quot;Speaker
-                  1&quot;, &quot;Speaker 2&quot;). Disable this for
-                  single-speaker recordings to speed up processing.
-                </p>
-              </div>
-            </SettingsPanel>
-          </div>
-        </SettingsSection>
+          <SettingsRow
+            id="recording-diarization"
+            label="Speaker diarization"
+            description="Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing."
+            icon={<Users className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+          >
+            <Switch
+              checked={settings.enable_diarization !== false} // Default true
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, enable_diarization: checked })
+              }
+            />
+          </SettingsRow>
+        </SettingsCard>
       )}
-
-    </div>
+    </>
   );
 }

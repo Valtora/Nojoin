@@ -1,5 +1,6 @@
 "use client";
 
+import CaptureProcessingSettings from "@/components/settings/CaptureProcessingSettings";
 import CaptureSettings from "@/components/settings/CaptureSettings";
 import GeneralSettings from "@/components/settings/GeneralSettings";
 import SettingsAdvancedSection from "@/components/settings/SettingsAdvancedSection";
@@ -20,6 +21,8 @@ export default function RecordingSettingsPage() {
       <CaptureSettings />
 
       <SettingsAdvancedSection categoryId="recording">
+        <CaptureProcessingSettings />
+
         <GeneralSettings
           settings={settings}
           onUpdate={updateSetting}

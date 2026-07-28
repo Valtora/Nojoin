@@ -14,6 +14,8 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "../ConfirmationModal";
 import { User, UserRole } from "@/types";
 import { trimString } from "@/lib/validation";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsPanel from "./SettingsPanel";
 
 type NewUserFormState = {
@@ -187,7 +189,12 @@ export default function UsersTab() {
   };
 
   return (
-    <div className="space-y-6">
+    <SettingsCard
+      id="users-accounts"
+      title="Users"
+      description="Accounts on this installation, their roles, and the access each one has."
+    >
+      <SettingsBlock contentClassName="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -495,15 +502,17 @@ export default function UsersTab() {
         </div>
       )}
 
+      </SettingsBlock>
+
       <ConfirmationModal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={confirmDelete}
-        title="Delete User"
-        message="Are you sure you want to delete this user? This action cannot be undone and will delete all data associated with this user."
+        title="Delete user"
+        message="Are you sure you want to delete this user? This cannot be undone and deletes all data associated with the account."
         confirmText="Delete"
         isDangerous={true}
       />
-    </div>
+    </SettingsCard>
   );
 }

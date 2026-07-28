@@ -12,9 +12,10 @@ import {
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { CalendarRange, Loader2, Save } from "lucide-react";
-import SettingsCallout from "./SettingsCallout";
+import { Loader2, Save } from "lucide-react";
 import SettingsField from "./SettingsField";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsPanel from "./SettingsPanel";
 
 
@@ -171,25 +172,20 @@ export default function CalendarProviderSettings() {
   };
 
   return (
-    <div className="space-y-4">
-      <SettingsCallout tone="info">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
-            <CalendarRange className="w-5 h-5" />
-          </div>
-          <div>
-            Store the installation OAuth app credentials for Google and Microsoft here. End users never paste these values. They only click Connect from Personal settings and then complete the provider&apos;s own sign-in and consent flow.
-          </div>
-        </div>
-      </SettingsCallout>
-
+    <SettingsCard
+      id="integrations-calendar-providers"
+      title="Calendar provider credentials"
+      description="The installation's OAuth app credentials for Google and Microsoft. Nobody else pastes these values; everyone else only clicks Connect and completes the provider's own sign-in."
+    >
       {loading ? (
-        <SettingsPanel variant="subtle" className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading provider configuration...
-        </SettingsPanel>
+        <SettingsBlock>
+          <div className="flex items-center gap-2 text-sm contrast-helper">
+            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+            Loading provider configuration...
+          </div>
+        </SettingsBlock>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <SettingsBlock contentClassName="grid gap-4 lg:grid-cols-2">
           {providers.map((provider) => {
             const form = forms[provider.provider];
             const isSaving = savingProvider === provider.provider;
@@ -377,8 +373,8 @@ export default function CalendarProviderSettings() {
               </SettingsPanel>
             );
           })}
-        </div>
+        </SettingsBlock>
       )}
-    </div>
+    </SettingsCard>
   );
 }

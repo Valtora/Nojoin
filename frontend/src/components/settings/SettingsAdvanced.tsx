@@ -44,13 +44,16 @@ export default function SettingsAdvanced({
   }, [forceOpen]);
 
   return (
-    <section className={cn("settings-card", className)}>
+    // A group, not a container: the disclosure toggles sibling cards into view
+    // rather than wrapping them, so opening Advanced never produces a card
+    // inside a card.
+    <section className={cn("space-y-4", className)}>
       <button
         type="button"
         onClick={() => setOpen((previous) => !previous)}
         aria-expanded={open}
         aria-controls={contentId}
-        className="flex w-full items-center justify-between gap-3 rounded-[inherit] px-5 py-4 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:px-6 dark:hover:bg-gray-900/60"
+        className="settings-card flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:px-6 dark:hover:bg-gray-900/60"
       >
         <span className="flex items-center gap-2">
           <ChevronRight
@@ -73,10 +76,7 @@ export default function SettingsAdvanced({
       </button>
 
       {open && (
-        <div
-          id={contentId}
-          className="settings-card-body border-t settings-divider"
-        >
+        <div id={contentId} className="space-y-4">
           {children}
         </div>
       )}
