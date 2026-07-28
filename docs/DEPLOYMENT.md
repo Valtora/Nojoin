@@ -250,6 +250,15 @@ small database connection pool. The default PostgreSQL `max_connections` (100)
 comfortably covers the reference `3` / `4` lane sizing; if you scale the lanes
 much wider, raise `max_connections` to match.
 
+Change `--concurrency` freely, but treat `--pool` as load-bearing. `solo` and
+`prefork` both give a task an operating-system process to itself, which is what
+makes it safe for worker code to queue follow-on Celery work with a blocking
+call: it can stall only the task making it. A pool that shares one process
+between concurrent tasks, such as `gevent`, `eventlet` or `threads`, breaks that
+and reintroduces the head-of-line blocking described in
+[ADR-0007](adr/0007-bounded-fail-fast-task-dispatch.md), which documents the
+reasoning and what would need to change first.
+
 ### GPU Acceleration
 
 The worker image installs Triton in its virtual environment so Whisper word-level timestamps use GPU-accelerated kernels. Without Triton, `whisper/timing.py` falls back to slower CPU-based implementations for word alignment.
