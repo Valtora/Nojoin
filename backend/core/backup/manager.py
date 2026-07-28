@@ -15,7 +15,6 @@ from backend.core.backup.format import (  # noqa: F401  (re-exported for callers
     ARCHIVE_QUALITIES,
     ARCHIVE_QUALITY_COMPRESSED,
     ARCHIVE_QUALITY_ORIGINAL,
-    BACKUP_EXPORT_DIR,
     BACKUP_FORMAT_VERSION,
     CALENDAR_PROVIDER_ENV_KEYS,
     DEFERRED_FOREIGN_KEYS,

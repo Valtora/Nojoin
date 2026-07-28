@@ -11,8 +11,13 @@ def cleanup_temp_recordings(self):
     """
     logger.info("Starting cleanup of temp recordings...")
 
+    from backend.processing.audio_preprocessing import (
+        cleanup_stale_pipeline_temp_files,
+    )
+
     cleaned_count = cleanup_recording_audio_chunks(self.session, logger=logger)
     cleaned_count += cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
+    cleaned_count += cleanup_stale_pipeline_temp_files(max_age_hours=24)
     cleaned_count += cleanup_orphaned_uploading_recordings(
         self.session, logger=logger, max_age_hours=24
     )
@@ -234,19 +239,14 @@ def cleanup_backup_artifacts(self, max_age_hours: int = 24):
     Exports age out on a TTL rather than being deleted on first download, which keeps
     range requests and interrupted downloads resumable.
     """
-    from pathlib import Path
-
-    from backend.core.backup import (
-        BACKUP_EXPORT_DIR,
-        RESTORE_STAGING_DIRNAME,
-    )
+    from backend.core.backup import RESTORE_STAGING_DIRNAME, runtime
     from backend.utils.path_manager import PathManager
 
     path_manager = PathManager()
     reclaimed = 0
 
     targets = [
-        Path(BACKUP_EXPORT_DIR),
+        runtime.backup_export_directory(path_manager),
         path_manager.user_data_directory / "temp_restores",
         path_manager.user_data_directory / "temp_uploads",
         path_manager.user_data_directory / RESTORE_STAGING_DIRNAME,

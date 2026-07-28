@@ -245,7 +245,6 @@ services:
       - .:/app
       - ./data:/app/data
       - model_cache:/shared_model_cache:ro
-      - backup_temp:/tmp
 
   worker:
     command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu,cpu,io -B -s /app/data/celerybeat-schedule --loglevel=info --pool=solo
@@ -254,7 +253,6 @@ services:
       - ./data:/app/data
       - model_cache:/home/appuser/.cache
       - /sys/class/drm:/sys/class/drm:ro
-      - backup_temp:/tmp
 ```
 
 The development compose runs a single worker that drains all three resource lanes (`-Q gpu,cpu,io`) with embedded beat, which keeps the local loop simple. Production instead splits that work across dedicated `worker-gpu`, `worker-cpu`, and `worker-io` services; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes). The `-Q gpu,cpu,io` flag above is required — without it the worker would only consume the default (gpu) queue and CPU/IO tasks would never run.
@@ -745,7 +743,6 @@ services:
     volumes:
       - ./data:/app/data
       - model_cache:/shared_model_cache:ro
-      - backup_temp:/tmp
     environment:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
@@ -788,7 +785,6 @@ services:
       - ./data:/app/data
       - model_cache:/home/appuser/.cache
       - /sys/class/drm:/sys/class/drm:ro
-      - backup_temp:/tmp
     environment:
       <<: *shared-app-environment
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
@@ -877,7 +873,6 @@ volumes:
   postgres_data:
   model_cache:
   redis_data:
-  backup_temp:
 
 networks:
   nojoin_net:

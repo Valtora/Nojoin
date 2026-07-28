@@ -155,10 +155,14 @@ Restoring a backup onto a different installation preserves the original `public_
 
 Exported archives, uploaded archives and abandoned uploads are reclaimed automatically by a periodic cleanup task. Exports remain downloadable for a period after they are created rather than being deleted on first download, so an interrupted download can be retried.
 
+An export is built by a worker and served by the API, so it is the one backup file that has to be reachable from more than one container. It is written to `data/backups`, inside the data directory every service already mounts. Archives are never themselves archived: an export walks database rows rather than the filesystem, and a finished archive has no row.
+
+Uploaded archives take the opposite path, through `data/temp_uploads`, and restore staging happens in `data/restore_staging`. Every backup working file therefore lives under the data directory, and none of them depend on a shared `/tmp`.
+
 Two environment variables are relevant on large installations:
 
 - `UPLOAD_LIMIT_BACKUP`: the largest archive that may be uploaded for restore. Defaults to 25 GB. Raise it if you take Original-quality backups of a very large library.
-- `BACKUP_EXPORT_DIR`: where exported archives are written. Defaults to `/tmp/nojoin_backups`, which is a volume shared between the API and the workers.
+- `BACKUP_EXPORT_DIR`: where exported archives are written. Defaults to `data/backups`. Set it to move exports onto a separate disk. The API and the workers must agree on the value, or the API cannot serve what a worker wrote.
 
 ## Recommendations
 

@@ -33,6 +33,7 @@ recordings/temp
 recordings/failed
 logs
 documents
+backups
 temp_uploads
 temp_restores
 restore_staging

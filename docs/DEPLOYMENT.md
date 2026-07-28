@@ -140,6 +140,51 @@ could recreate the recordings directory root-owned under an appuser-owned
 parent. If you carry a Compose override derived from an older example file,
 remove that line.
 
+## Temporary Files and the Data Directory
+
+No service mounts a shared volume over `/tmp`. Each container keeps a private
+`/tmp` that is discarded when the container is recreated, which is what stops
+scratch files accumulating for the life of a deployment.
+
+Only one file has to pass between containers: a finished backup archive, built by
+a worker and served by the API. It travels through `data/backups` on the `./data`
+bind mount that every service already has, so the sharing uses the mount that
+already exists rather than a second one. Uploaded archives and restore staging
+work the same way, through `data/temp_uploads` and `data/restore_staging`.
+`BACKUP_EXPORT_DIR` moves exports elsewhere if you want them on a separate disk;
+the API and the workers must agree on the value.
+
+Everything else a container writes to `/tmp` is genuinely local to that
+container: ffmpeg intermediates, Python temporary files, and the scratch the
+finalise pipeline removes when it completes. The pipeline clears its own
+intermediates, and the daily cleanup task reclaims any left by a worker that was
+killed before it could.
+
+### Reclaiming the Old Shared /tmp Volume
+
+Deployments created before this change mounted a `backup_temp` named volume at
+`/tmp` in the `api` and all three `worker-*` services. That made `/tmp` both
+permanent and shared, so every temporary file any of those four services leaked
+accumulated there indefinitely, and only the export subdirectory was ever swept.
+
+After updating your Compose file, the volume is no longer referenced. Nothing
+durable is stored in it, so remove it to reclaim the space:
+
+```bash
+docker compose down
+docker volume rm nojoin_backup_temp
+docker compose up -d
+```
+
+Check what you are about to reclaim first if you want to see the scale of it:
+
+```bash
+docker run --rm -v nojoin_backup_temp:/old alpine du -sh /old
+```
+
+An export that was in flight when you upgrade is lost. Exports are transient by
+design, with a 24-hour lifetime, so take the backup again if you needed it.
+
 ## Worker Container Startup
 
 The worker container starts Celery without preloading inference models. Nojoin

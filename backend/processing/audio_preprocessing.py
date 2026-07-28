@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 from typing import Dict, Optional
 
 from backend.core.exceptions import AudioFormatError
@@ -140,6 +141,59 @@ def cleanup_temp_file(temp_path: str):
             logger.info(f"Deleted temp file: {temp_path}")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to delete temp file {temp_path}: {e}", exc_info=True)
+
+
+# Suffixes this module and the VAD stage give their scratch files. Matched by
+# suffix rather than by a bare "tmp*" glob so the sweep below can only ever reach
+# files Nojoin created.
+_PIPELINE_TEMP_SUFFIXES = (
+    "_vad.wav",
+    "_vad_processed.wav",
+    "_vad_processed.mp3",
+    "_preprocessed.wav",
+)
+
+
+def cleanup_stale_pipeline_temp_files(
+    *, max_age_hours: int = 24, temp_dir: str | None = None
+) -> int:
+    """Reclaim pipeline scratch left behind by a worker that did not exit cleanly.
+
+    The finalise pipeline removes these in a finally block, so nothing accumulates
+    on any normal or failing run. A worker killed outright, by an OOM kill or a
+    container restart mid-transcode, never reaches it, and each abandoned run
+    strands a pair of full-length WAVs.
+
+    An age floor well beyond any finalise means a file still in use cannot be
+    caught: a run old enough to qualify has no process left behind it.
+    """
+    directory = temp_dir or tempfile.gettempdir()
+    cutoff = time.time() - (max_age_hours * 60 * 60)
+    reclaimed = 0
+
+    try:
+        entries = os.listdir(directory)
+    except OSError as e:
+        logger.warning("Could not scan %s for stale pipeline files: %s", directory, e)
+        return 0
+
+    for name in entries:
+        if not name.endswith(_PIPELINE_TEMP_SUFFIXES):
+            continue
+
+        path = os.path.join(directory, name)
+        try:
+            if not os.path.isfile(path) or os.path.getmtime(path) >= cutoff:
+                continue
+            os.remove(path)
+        except OSError as e:
+            logger.warning("Failed to remove stale pipeline temp file %s: %s", path, e)
+            continue
+
+        reclaimed += 1
+        logger.info("Removed stale pipeline temp file: %s", path)
+
+    return reclaimed
 
 
 def preprocess_audio_for_vad(input_path: str) -> str | None:

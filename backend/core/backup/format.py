@@ -4,7 +4,6 @@ Pure data. Nothing here reads the database or the filesystem, which is what lets
 parity test and the restore agree on one description of the contract.
 """
 
-import os
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
@@ -31,9 +30,6 @@ ARCHIVABLE_AUDIO_EXTENSIONS = frozenset(
 
 
 RESTORE_STAGING_DIRNAME = "restore_staging"
-
-
-BACKUP_EXPORT_DIR = os.getenv("BACKUP_EXPORT_DIR", "/tmp/nojoin_backups")
 
 
 RESTORE_LOCK_KEY = "nojoin:backup:restore-lock"

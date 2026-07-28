@@ -37,13 +37,19 @@ x-shared-app-environment: &shared-app-environment
 
 # Shared config for the three worker lanes (worker-gpu / worker-cpu / worker-io).
 # They run the same image and differ only in Celery queue, pool, and GPU access.
+# No service mounts a shared volume over /tmp. A finished backup archive is the
+# only file that has to pass between containers, and it travels through
+# data/backups on the ./data bind mount that every service already has. Mounting
+# a named volume at /tmp instead made /tmp permanent and shared by all four
+# services, so every temporary file any of them leaked accumulated there for the
+# life of the deployment. Each container now keeps a private /tmp that is
+# discarded when it is recreated.
 x-worker-base: &worker-base
   image: ghcr.io/valtora/nojoin-worker:latest
   volumes:
     - ./data:/app/data
     - model_cache:/home/appuser/.cache
     - /sys/class/drm:/sys/class/drm:ro
-    - backup_temp:/tmp
   depends_on:
     db:
       condition: service_healthy
@@ -133,7 +139,6 @@ services:
       # appuser-owned parent, which is issue #153.
       - ./data:/app/data
       - model_cache:/shared_model_cache:ro
-      - backup_temp:/tmp
     environment:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
@@ -292,7 +297,6 @@ volumes:
   postgres_data:
   model_cache:
   redis_data:
-  backup_temp:
 
 networks:
   nojoin_net:
