@@ -123,7 +123,7 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the develo
 
 Nojoin sends one anonymous ping a day so it is possible to know how many deployments exist, which versions are in use, and which features are worth investing in. It contains a random install ID, the version, user and recording counts, and which features are switched on. It contains **none of your meeting data** — no audio, transcripts, notes, names, hostnames, or keys — and it is never sold.
 
-It is on by default and can be turned off in **Settings > Administration**, by setting `NOJOIN_TELEMETRY_ENABLED=false` in `.env`, or by blocking `telemetry.nojoin.co.uk`. On an existing installation nothing is sent until an administrator has seen the notice explaining it.
+It is on by default and can be turned off in **Settings > Privacy**, by setting `NOJOIN_TELEMETRY_ENABLED=false` in `.env`, or by blocking `telemetry.nojoin.co.uk`. On an existing installation nothing is sent until an administrator has seen the notice explaining it.
 
 The receiving service is open source in [telemetry/](telemetry/), so what is stored can be checked rather than taken on trust. See [docs/TELEMETRY.md](docs/TELEMETRY.md) for the full disclosure.
 

@@ -67,7 +67,7 @@ Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or
 - The subprocess environment is **scrubbed** so an install-wide key cannot out-rank the user's subscription token: for Claude, `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_*` are removed and only `CLAUDE_CODE_OAUTH_TOKEN` is injected; for ChatGPT, `OPENAI_API_KEY` / `CODEX_API_KEY` are excluded from the Codex subprocess env (or Codex would bill the API instead of the subscription). Both scrub invariants are locked by unit tests.
 - CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades through the server's default provider chain — the primary provider first, then the secondary if that also fails. Usage limits set a best-effort reset time surfaced in Settings.
 - Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
-- Disconnecting (Settings > AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
+- Disconnecting (Settings > Your AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
 
 ## JWT Signing Key Rotation
 

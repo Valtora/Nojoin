@@ -205,7 +205,7 @@ A subscription bearer token must be encrypted at rest. Mirror `CalendarConnectio
 ### E. Frontend Settings > AI
 
 - Add a **Usage model** selector (`Ollama | BYOK | CLI OAuth`) above the existing provider
-  UI in [AISettings.tsx](../../frontend/src/components/settings/AISettings.tsx); when
+  UI in [AiRoutingSection.tsx](../../frontend/src/components/settings/AiRoutingSection.tsx); when
   `cli_oauth` is chosen, show the CLI auth panel (connect / status / disconnect) and the
   per-task model pickers (`cli_model`, `cli_live_model`), reusing
   [aiSettingsModels.ts](../../frontend/src/components/settings/aiSettingsModels.ts)

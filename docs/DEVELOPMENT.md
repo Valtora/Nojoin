@@ -371,7 +371,7 @@ When changing capture behaviour, validate the relevant parts of this path:
 - Browser share picker flow for tab, window, and screen sharing.
 - Shared-audio track detection and missing-audio messaging.
 - Microphone permission and selected-device behaviour.
-- Per-source gain controls in **Settings > Capture**.
+- Per-source gain controls in **Settings > Recording**.
 - Segment creation, sequential upload, worker transcode, live transcript dispatch, stop/finalize, pause/resume, and discard.
 - The paused-recording lock after refresh or close (actual tab unload, not in-app navigation).
 - Focus changes to another tab, window, or application; these should not pause capture.

@@ -42,17 +42,55 @@ When an Admin or Owner creates a user manually:
 
 The same restriction also applies when a superuser resets another user's password through the privileged user-management flow.
 
+## Settings Structure
+
+Settings is organised by domain rather than by role. Categories that only an
+administrator can act on are simply not shown to anyone else, so an
+administrator sees fourteen categories and everyone else sees nine.
+
+| Group | Category | Who sees it |
+| --- | --- | --- |
+| General | Profile and security | Everyone |
+| | Users and access | Administrators |
+| | Appearance | Everyone |
+| | Integrations | Everyone (provider credentials are administrator-only) |
+| Meetings | Recording | Everyone |
+| | Transcription | Everyone (engine and model are administrator-only) |
+| | Notes and live assistance | Everyone |
+| | Your AI | Everyone |
+| | AI providers | Administrators |
+| Data | Backup and restore | Administrators |
+| | Privacy | Administrators |
+| | System and logs | Administrators |
+| About | Updates | Everyone |
+| | Help | Everyone |
+
+Each category is its own route, such as `/settings/recording`, so a link to a
+specific area can be shared or bookmarked. Pre-existing `?tab=` links still
+work and redirect to the matching category.
+
+Settings that ship with a sensible default, that can quietly degrade output if
+set wrong, that need credentials obtained elsewhere, or that only matter on a
+multi-user installation are collapsed behind an **Advanced** block at the foot
+of their category. The block opens itself when a search result lives inside it,
+and shows a count when anything inside differs from its default, so nothing is
+ever hidden without a trace. A category never hides all of its content.
+
+The search box matches individual settings rather than categories, so searching
+for a control by name reaches it directly, including one behind the Advanced
+gate.
+
 ## Administration Settings Areas
 
 ### Calendar
 
-Use **Settings > Administration > Calendar providers** to save installation-wide Google and Microsoft OAuth credentials.
+Use **Settings > Integrations** to save installation-wide Google and Microsoft OAuth credentials.
 
 Read [CALENDAR.md](CALENDAR.md) for the full provider registration and tenant guidance.
 
 ### AI and Models
 
-Use **Settings > AI** for installation-wide provider defaults, model operations, and Ollama configuration.
+Use **Settings > AI providers** for installation-wide provider defaults, model operations, and Ollama configuration.
 
 > [!IMPORTANT]
 > For security, LLM provider API keys and Hugging Face tokens are server-side environment-only variables and must be configured via environment variables (e.g., `.env`) and the container restarted, rather than through UI settings fields.
@@ -67,20 +105,20 @@ Admin-only sections let you:
 - Choose when a newly selected transcription model is downloaded. Picking a model that is not on the server prompts you to fetch it now, so it is ready before the next recording, or to leave it until first use. Declining is safe: the model is downloaded when it is first needed, but live transcription and Meeting Edge wait for that download to finish.
 - Download any model listed as **Missing** in **Model dependencies**, with progress shown in place. One preparation runs at a time, so the buttons are disabled while another is in flight.
 
-**Notes structure and Glossary** are also administered from **Settings > AI**. Both are two-tier: an install value you maintain for everyone, plus a per-user value.
+**Notes structure** is administered from **Settings > Notes and live assistance**, and **Glossary** from **Settings > Transcription**. Both are two-tier: an install value you maintain for everyone, plus a per-user value.
 
 - Install structures are visible to every user and editable only by an administrator. One can be marked the install default, which applies to anyone who has not chosen their own. Users can copy an install structure into their own list to vary it, which is the intended route when someone wants a change to shared text.
 - The install glossary is merged into each user's own glossary rather than replacing it, so a user adding one personal term keeps the organisation's vocabulary. Where both define the same term, the user's definition is used.
 - Only the section structure is editable. Accuracy, attribution, table formatting, and the response contract are fixed by the application and cannot be removed by a template. See [ADR-0006](adr/0006-user-editable-notes-structure.md) for the boundary and why it sits there.
 - A template's structure text is snapshotted onto each set of notes it generates, so editing or deleting a template never changes what past notes were produced from. Restores remap template references; a reference that cannot be remapped is dropped rather than pointed at an unrelated template.
 
-Each user can also configure **Language preferences** in **Settings > AI**. Transcription defaults to automatic language detection, while generated meeting titles and notes default to English. Whisper supports forced language selection, Canary supports its listed language set, and Parakeet remains automatic-only. The selected effective transcription language is part of the ASR reuse key, so cached/live transcript work is not reused across incompatible language settings.
+Each user can also configure **Language** in **Settings > Transcription**. Transcription defaults to automatic language detection, while generated meeting titles and notes default to English. Whisper supports forced language selection, Canary supports its listed language set, and Parakeet remains automatic-only. The selected effective transcription language is part of the ASR reuse key, so cached/live transcript work is not reused across incompatible language settings.
 
 Notes-language choices include British and American English, the transcription language, listed languages, and a validated custom language/style instruction. These choices localize generated content while preserving machine-readable JSON keys and speaker labels. Existing saved transcripts and notes are not translated in place; users must reprocess or run **Generate Notes** after changing the relevant preference.
 
 ### Anonymous Usage Data
 
-Use **Settings > Administration > Anonymous usage data** to turn the daily anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. The panel also lists exactly what the ping contains.
+Use **Settings > Privacy** to turn the daily anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. The panel also lists exactly what the ping contains.
 
 On an installation upgraded into this feature, nothing is sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
 
@@ -88,13 +126,13 @@ Read [TELEMETRY.md](TELEMETRY.md) for the full disclosure, the retention policy,
 
 ### Backup and Restore
 
-Use **Settings > Administration > Backup and restore** for export and restore operations.
+Use **Settings > Backup and restore** for export and restore operations.
 
 Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) before relying on it operationally, especially because backup archives can contain restorable calendar credentials and connected-account tokens.
 
 ### System
 
-Use **Settings > Administration > System operations** for operational controls such as:
+Use **Settings > System and logs** for operational controls such as:
 
 - Restarting the stack.
 - Viewing live logs.
@@ -123,7 +161,7 @@ Use **Settings > Updates** to see:
 - Chrome on Android and iOS can start microphone-only live recordings.
 - Firefox, Safari, and other mobile browsers can review and administer Nojoin but cannot start live capture.
 - Tab sharing with audio enabled is the recommended support path for browser-based meetings.
-- If local microphone audio is missing, ask the user to grant microphone permission and review **Settings > Capture**.
+- If local microphone audio is missing, ask the user to grant microphone permission and review **Settings > Recording**.
 - If remote participant audio is missing, ask the user to start again and enable shared audio in the browser picker.
 - If a mobile Chrome recording is missing remote participants, confirm the user expected microphone-only capture and that the phone microphone could hear the meeting audio.
 - If a user has a paused recording, they must resume or discard it before starting another capture.

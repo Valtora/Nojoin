@@ -98,7 +98,7 @@ Three consequences fold into the plan (details in plan §2a, §4.C, §4.G, §5):
 - Alembic versions dir + naming: `backend/alembic/versions/<12-hex>_desc.py`.
 - Worker image: single [docker/Dockerfile.worker](../../docker/Dockerfile.worker),
   shared via the `x-worker-base` anchor in `docker-compose.example.yml`.
-- Frontend: [AISettings.tsx](../../frontend/src/components/settings/AISettings.tsx),
+- Frontend: [AiRoutingSection.tsx](../../frontend/src/components/settings/AiRoutingSection.tsx),
   accessors [aiSettingsModels.ts](../../frontend/src/components/settings/aiSettingsModels.ts),
   types [types/index.ts:320](../../frontend/src/types/index.ts), api
   [lib/api/settings.ts](../../frontend/src/lib/api/settings.ts).

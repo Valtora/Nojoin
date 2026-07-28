@@ -50,7 +50,7 @@ For support and debugging, browser recording segments are numbered from `0` and 
 1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio capture, in Chrome, Edge, Brave, or Arc on Windows or Linux, or in Chrome on Android/iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
 2. Confirm your meeting platform is open in a browser tab if you want reliable tab audio capture.
 3. Check that your microphone is available to the browser.
-4. Open **Settings > Capture** if you need to choose a microphone or adjust system and microphone gain.
+4. Open **Settings > Recording** if you need to choose a microphone or adjust system and microphone gain.
 5. Start a short test meeting and verify that the live waveform responds before relying on Nojoin for an important meeting. If AI is configured, Meeting Edge guidance should begin updating once enough speech has accumulated.
 
 ## Starting A Recording
@@ -144,7 +144,7 @@ Paused recordings are retained indefinitely. They are not cleaned up automatical
 
 ## Capture Settings
 
-Open **Settings > Capture** to configure:
+Open **Settings > Recording** to configure:
 
 - Microphone device.
 - Shared audio gain.
@@ -157,7 +157,7 @@ The Capture settings page also includes a local microphone input test so you can
 
 These settings are stored in browser-local storage for the current cutover. They do not roam between browsers or devices.
 
-If you explicitly choose a microphone and that device is no longer available when a recording starts or resumes, Nojoin now fails closed. It does not silently fall back to the system default microphone. Choose another device in **Settings > Capture** before retrying.
+If you explicitly choose a microphone and that device is no longer available when a recording starts or resumes, Nojoin now fails closed. It does not silently fall back to the system default microphone. Choose another device in **Settings > Recording** before retrying.
 
 Nojoin logs the requested microphone, the browser-granted microphone track metadata, whether shared audio was granted, and the backend browser-live source-channel analysis. Browser APIs still do not reliably expose the physical OS speaker or headset name behind shared system audio, so those logs describe the granted browser capture surface and track metadata rather than a guaranteed output-device identity.
 
@@ -171,7 +171,7 @@ The browser granted screen or tab visibility but no audio track. Start again and
 
 ### Live waveform is quiet
 
-Check that the meeting is producing audible sound, verify the browser share picker audio option, then adjust gain in **Settings > Capture**. Use the local microphone input test to verify mic lift before recording. If only your microphone appears, the shared tab/window/screen audio was not granted.
+Check that the meeting is producing audible sound, verify the browser share picker audio option, then adjust gain in **Settings > Recording**. Use the local microphone input test to verify mic lift before recording. If only your microphone appears, the shared tab/window/screen audio was not granted.
 
 ### Meeting Edge is still empty during capture
 

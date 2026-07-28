@@ -8,7 +8,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 
 1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording.
 2. Sign in with your account.
-3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
+3. Open **Settings > Recording** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Use the **Meet Now** card on the dashboard and click **Start Meeting** to create a short test recording.
 5. In the browser share picker, choose the meeting tab, window, or screen and enable the browser's audio-sharing or system-audio option when it is offered.
 6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
@@ -138,7 +138,7 @@ The live lane also feeds Meeting Edge and speeds up later processing. The full, 
 
 Meeting Edge uses the recent live transcript window, an internally maintained rolling summary of the meeting so far (decisions, open threads, and action items), its own previous suggestions (so guidance stays fresh instead of repeating), your optional focus text, your manual notes, and linked calendar context when available.
 
-It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > AI > Meeting Edge**, everyone can tune the per-user **Technical context** slider to make concept explanations stricter or more detailed; administrators can additionally enable or disable Meeting Edge install-wide and choose a separate Meeting Edge model (if left empty, Nojoin reuses the main model).
+It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > Notes and live assistance**, everyone can tune the per-user **Technical context** slider to make concept explanations stricter or more detailed; administrators can additionally enable or disable Meeting Edge install-wide and choose a separate Meeting Edge model (if left empty, Nojoin reuses the main model).
 
 ## Importing Recordings
 
@@ -225,7 +225,7 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 
 ### Choosing How Notes Are Structured
 
-The default notes cover a summary, key decisions, action items, per-topic detail, and a miscellaneous section. That fits a project or status meeting well and fits a user interview or an incident review badly, so the structure is editable in **Settings > AI > Notes structure**.
+The default notes cover a summary, key decisions, action items, per-topic detail, and a miscellaneous section. That fits a project or status meeting well and fits a user interview or an incident review badly, so the structure is editable in **Settings > Notes and live assistance > Notes structure**.
 
 - A structure is a list of Markdown headings and a short description of what belongs under each. It controls what the notes contain, how they are ordered, what terminology is used, and how much detail is captured.
 - Accuracy rules are not editable. Nojoin always instructs the model never to invent facts, decisions, or attributions, to attribute statements to the participant who made them, to format tables so the editor can render them, and to start at the first section without repeating the meeting title. A custom structure changes what the notes contain, never how faithful they are.
@@ -238,7 +238,7 @@ The default notes cover a summary, key decisions, action items, per-topic detail
 
 ### Glossary
 
-**Settings > AI > Glossary** holds project names, acronyms, products, and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators maintain an install glossary for the whole installation, and each user can add their own; the two are merged rather than replaced, and a personal entry wins where both define the same term.
+**Settings > Transcription > Glossary** holds project names, acronyms, products, and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators maintain an install glossary for the whole installation, and each user can add their own; the two are merged rather than replaced, and a personal entry wins where both define the same term.
 
 The glossary is used when writing notes and by Meeting Edge when it explains a term during a live meeting. It does not change the transcript, which is produced by the speech model before the glossary is ever read.
 
@@ -262,7 +262,7 @@ Calendar events can provide meeting context, dashboard agenda views, linked reco
 
 ## AI Assistant Connections (MCP)
 
-Nojoin includes a read-only MCP connector so AI assistants such as Claude can search your recordings and read transcripts, meeting notes, and tags on your behalf. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Personal → Connected Apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
+Nojoin includes a read-only MCP connector so AI assistants such as Claude can search your recordings and read transcripts, meeting notes, and tags on your behalf. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Integrations → Connected apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
 
 ## Settings
 
@@ -278,7 +278,7 @@ Settings are grouped by task.
 
 ### Language Preferences
 
-Use **Settings > AI > Language preferences** to configure two independent choices:
+Use **Settings > Transcription > Language** to configure two independent choices:
 
 - **Transcription language** controls ASR. The default is **Auto-detect**. Whisper supports auto-detection or a forced language, Canary supports the listed forced languages, and Parakeet continues to use multilingual auto-detection without forced-language support.
 - **Notes generation language** controls AI-generated meeting titles, Markdown headings, summaries, detailed notes, and action items. The default is **English**. British English, American English, the transcription language, another listed language, or a custom language/style instruction can be selected.
@@ -291,7 +291,7 @@ Language preferences are per-user. Per-meeting overrides, full interface transla
 
 ### Your own subscription (CLI OAuth)
 
-Instead of using the server's configured provider, you can route your own AI through your own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription — usually faster, and you can pick a stronger model. In **Settings > AI > AI routing**, connect a subscription in the "Your AI subscription" panel, then set routing to **My own AI subscription**:
+Instead of using the server's configured provider, you can route your own AI through your own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription — usually faster, and you can pick a stronger model. In **Settings > Your AI**, connect a subscription in the "Your AI subscription" panel, then set routing to **My own AI subscription**:
 
 - **Claude** — open the grant link and paste back the code Anthropic shows you.
 - **ChatGPT** — open the sign-in page, enter the code shown, and approve access; the panel finishes automatically once you approve.
@@ -302,7 +302,7 @@ Because this uses your subscription quota, a cheaper model conserves *quota*, no
 
 ### CLI usage and quota (admin)
 
-Administrators can review per-user Claude-subscription usage under **Settings > Administration > CLI usage & quota**: a searchable table of each user's token usage over the last 7 days, last 30 days, and lifetime, alongside their rate-limit status. Tokens count what Nojoin sent through each user's own subscription. A subscription exposes no live "remaining quota" figure, so the status column reflects the rate-limit signal (OK, approaching a limit, or limited until a reset time) rather than a balance. Usage is shown in tokens, never money — a subscription is flat-rate, so a per-turn currency figure would be misleading.
+Administrators can review per-user Claude-subscription usage under **Settings > AI providers > Usage and quota**: a searchable table of each user's token usage over the last 7 days, last 30 days, and lifetime, alongside their rate-limit status. Tokens count what Nojoin sent through each user's own subscription. A subscription exposes no live "remaining quota" figure, so the status column reflects the rate-limit signal (OK, approaching a limit, or limited until a reset time) rather than a balance. Usage is shown in tokens, never money — a subscription is flat-rate, so a per-turn currency figure would be misleading.
 
 ### Secondary LLM Provider
 
@@ -314,13 +314,13 @@ The secondary provider has its own independent configuration:
 - Model and live model choices.
 - API key or Ollama URL.
 
-Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI** for administrators.
+Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI providers** for administrators.
 
 ## Troubleshooting
 
 - If live capture is unavailable, switch to Chrome on desktop for shared-audio recording or Chrome on Android/iOS for microphone-only recording.
 - If remote participants are missing, start again and enable shared audio in the browser picker.
-- If the microphone is missing, grant microphone permission and check **Settings > Capture**.
+- If the microphone is missing, grant microphone permission and check **Settings > Recording**.
 - If Nojoin reports a paused recording, resume or discard it before starting another capture.
 - If processing fails, use **Retry Processing** or check the administrator logs.
 - If calendar sync fails, review provider setup in [CALENDAR.md](CALENDAR.md).
