@@ -101,6 +101,45 @@ The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIV
 - Use Docker Desktop with the WSL 2 backend.
 - Install up-to-date NVIDIA Windows drivers.
 
+## Data Directory Ownership
+
+The `api` and `worker-*` containers run their long-lived process as UID 1000
+(`appuser`), but their entrypoints enter as root first for one purpose: Docker
+creates a missing bind-mount source on the host as `root:root`, which an
+unprivileged process cannot then write into. The entrypoint corrects ownership
+and immediately drops to `appuser` via `gosu`. The release smoke test asserts
+that the running process is non-root.
+
+Ownership is checked per directory, not just on the data root. Every
+write-critical path (`recordings`, `recordings/temp`, `recordings/failed`,
+`logs`, `documents`, `temp_uploads`, `temp_restores`, `restore_staging`,
+`cli-oauth`) is created if missing and repaired independently, so a child
+directory that was recreated as root under an already-correct parent is fixed
+rather than skipped. When the data root itself is mis-owned, which is the first
+boot on a fresh `data/`, a single recursive pass covers the whole tree; on later
+restarts a large recordings library is never walked.
+
+Ownership repair is best-effort by design. Some bind-mount backends, notably a
+Windows-drive mount under Docker Desktop, either reject `chown` or ignore it. In
+that case the container still starts and reports the problem rather than
+crash-looping:
+
+- The API logs an explicit error at startup naming the unwritable path.
+- **Settings > System** shows the **Storage** readiness card as an error, and the
+  pipeline summary is reported as blocked.
+- Uploads and imports fail with an actionable 503 rather than a bare 500.
+
+If you see that state, correct the ownership of the host directory bound to
+`/app/data` so it is owned by UID 1000, then restart the API and worker
+services.
+
+Only `./data` is bound into the API container. Earlier versions also declared a
+second bind of `./data/recordings` at `/app/recordings`; nothing read it, and
+because Docker materialises each declared bind source independently as root, it
+could recreate the recordings directory root-owned under an appuser-owned
+parent. If you carry a Compose override derived from an older example file,
+remove that line.
+
 ## Worker Container Startup
 
 The worker container starts Celery without preloading inference models. Nojoin

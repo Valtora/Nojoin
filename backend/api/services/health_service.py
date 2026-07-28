@@ -158,6 +158,51 @@ async def _get_worker_component() -> tuple[dict[str, Any], str]:
     )
 
 
+def _get_storage_component() -> tuple[dict[str, Any], bool]:
+    """Report whether the recordings storage is writable.
+
+    A mis-owned bind mount is invisible to every other check here: the database,
+    the queue and the workers are all fine, so the install reports itself healthy
+    right up until the first upload fails (issue #153). This makes it a first-class
+    readiness component so an operator sees the cause instead of a 500.
+    """
+    from backend.utils.recording_storage import (
+        probe_recordings_storage,
+        recordings_root_dir,
+    )
+
+    writable, detail = probe_recordings_storage()
+
+    try:
+        path = str(recordings_root_dir(create=False))
+    except OSError:  # pragma: no cover -- path resolution is not expected to fail
+        path = "the recordings directory"
+
+    if writable:
+        return (
+            _build_component(
+                "ok",
+                "Writable",
+                "The recordings storage directory is writable.",
+                None,
+                path=path,
+            ),
+            True,
+        )
+
+    return (
+        _build_component(
+            "error",
+            "Not writable",
+            detail or "The recordings storage directory is not writable.",
+            "Correct the ownership of the host directory bound to /app/data so it is "
+            "owned by uid 1000, then restart the API and worker services.",
+            path=path,
+        ),
+        False,
+    )
+
+
 def _get_ffmpeg_component() -> tuple[dict[str, Any], bool]:
     try:
         from backend.utils.audio import ensure_ffmpeg_in_path
@@ -611,6 +656,11 @@ def _build_summary(
         blocking_reasons.append("No active worker is available for processing tasks.")
     if checks["ffmpeg"]["status"] != "ok":
         blocking_reasons.append("ffmpeg or ffprobe is missing.")
+    if checks["storage"]["status"] != "ok":
+        blocking_reasons.append(
+            "The recordings storage directory is not writable, so uploads and "
+            "imports will fail."
+        )
     if not transcription_ready:
         blocking_reasons.append("The configured transcription model is not ready.")
     elif checks["transcription_model"]["status"] == "warning":
@@ -687,6 +737,7 @@ async def get_admin_health_status(db: AsyncSession) -> dict[str, Any]:
     queue_component, _ = await _get_queue_component()
     worker_component, worker_status = await _get_worker_component()
     ffmpeg_component, _ = _get_ffmpeg_component()
+    storage_component, _ = _get_storage_component()
     transcription_component, transcription_ready = _get_transcription_component(
         model_status,
         download,
@@ -704,6 +755,7 @@ async def get_admin_health_status(db: AsyncSession) -> dict[str, Any]:
         "queue": queue_component,
         "worker": worker_component,
         "ffmpeg": ffmpeg_component,
+        "storage": storage_component,
         "transcription_model": transcription_component,
         "diarization": diarization_component,
         "device": device_component,
