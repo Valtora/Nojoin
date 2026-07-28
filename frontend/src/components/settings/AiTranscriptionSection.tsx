@@ -94,7 +94,7 @@ export default function AiTranscriptionSection({
       title="Transcription model"
       description="Choose the engine Nojoin uses for live and final transcription during normal recording."
     >
-      <SettingsBlock className="mx-auto max-w-3xl space-y-4">
+      <SettingsBlock className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             <Tooltip

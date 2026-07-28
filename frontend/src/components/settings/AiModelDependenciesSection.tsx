@@ -86,7 +86,7 @@ export default function AiModelDependenciesSection({
       title="Model dependencies"
       description="Inspect and manage local AI model assets on the server."
     >
-      <SettingsBlock className="mx-auto max-w-3xl space-y-6">
+      <SettingsBlock className="space-y-6">
         {preparationRunning && (
           <div className="rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">

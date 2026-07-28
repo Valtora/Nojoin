@@ -186,7 +186,7 @@ export default function AiRoutingSection({
       title="AI routing"
       description="Choose how AI runs for your account. This is a per-user preference and does not change anything for other users."
     >
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="space-y-4">
         <div
           role="radiogroup"
           aria-label="AI routing"

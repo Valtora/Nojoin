@@ -169,7 +169,7 @@ export default function NotesTemplatesSection({
       title="Notes structure"
       description="Choose how generated meeting notes are organised. Accuracy rules, table formatting and the transcript itself are fixed; the sections and their emphasis are yours."
     >
-      <SettingsBlock className="mx-auto max-w-3xl space-y-4">
+      <SettingsBlock className="space-y-4">
         {loading && !data ? (
           <div className="flex items-center gap-2 text-sm contrast-helper">
             <Loader2 className="w-4 h-4 animate-spin" />

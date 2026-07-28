@@ -42,7 +42,7 @@ export default function SettingsRow({
     <div
       id={id}
       className={cn(
-        "px-5 py-4 sm:px-6",
+        "settings-cell px-5 py-4 sm:px-6",
         stacked
           ? "space-y-3"
           : "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6",

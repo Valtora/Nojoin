@@ -32,7 +32,7 @@ export default function AiLanguageSection({
       title="Language preferences"
       description="Choose the source language used for transcription and the language used for generated meeting titles and notes."
     >
-      <SettingsBlock className="mx-auto max-w-3xl space-y-6">
+      <SettingsBlock className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Transcription language

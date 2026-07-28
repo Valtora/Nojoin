@@ -237,6 +237,20 @@ html {
     border-top: 1px solid var(--surface-divider);
   }
 
+  /* Rows and blocks own their padding. Anything else placed directly in a card
+     body would otherwise sit flush against the card edge, so it inherits the
+     same gutter here rather than depending on every caller remembering to wrap
+     its content. */
+  .settings-card-body > *:not(.settings-cell) {
+    padding: 1rem 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .settings-card-body > *:not(.settings-cell) {
+      padding: 1rem 1.5rem;
+    }
+  }
+
   .settings-inset {
     background-color: var(--surface-inset);
   }

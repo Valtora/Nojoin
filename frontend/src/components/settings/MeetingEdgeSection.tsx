@@ -64,7 +64,7 @@ export default function MeetingEdgeSection({
       title="Meeting Edge"
       description="Live, in-meeting guidance that surfaces context and clarifies terms while you record."
     >
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="space-y-4">
         <SettingsBlock className="space-y-6">
           {isAdmin ? (
             <div className="flex items-center justify-between gap-3">

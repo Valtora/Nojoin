@@ -22,7 +22,7 @@ export default function AiAutomaticEnhancementSection({
       description="Control how AI-generated titles are written for your meetings and summaries."
     >
       <SettingsBlock
-        className="mx-auto max-w-2xl flex items-start gap-3"
+        className="flex items-start gap-3"
       >
         <div className="flex-1">
           <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">

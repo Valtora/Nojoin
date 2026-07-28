@@ -84,7 +84,7 @@ export default function HelpSettings({
         title="Tours and demos"
         description="Reset onboarding helpers or recreate the sample meeting used for first-run guidance."
       >
-        <div className="mx-auto max-w-2xl space-y-4">
+        <div className="space-y-4">
           <SettingsBlock inset
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
@@ -136,7 +136,7 @@ export default function HelpSettings({
         title="Report a bug"
         description="Open the project issue tracker when you hit a reproducible problem or need to share diagnostics with the team."
       >
-        <div className="mx-auto max-w-2xl space-y-4">
+        <div className="space-y-4">
           <SettingsBlock inset
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >

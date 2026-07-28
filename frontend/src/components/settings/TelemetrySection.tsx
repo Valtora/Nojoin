@@ -9,7 +9,10 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import type { TelemetryStatus } from "@/types";
 
 import SettingsCallout from "./SettingsCallout";
+import { Switch } from "@/components/ui/Switch";
+
 import SettingsBlock from "./SettingsBlock";
+import SettingsRow from "./SettingsRow";
 import SettingsCard from "./SettingsCard";
 
 /**
@@ -113,81 +116,85 @@ export default function TelemetrySection() {
       title="Anonymous usage data"
       description="Helps decide what to build next by counting deployments and feature use. Never includes recordings, transcripts, notes, names, or keys, and the data is never sold."
     >
-      <div className="space-y-4">
-        {status.managed_by_env && (
+      {status.managed_by_env && (
+        <SettingsBlock>
           <SettingsCallout
             tone="info"
             title="Pinned by the environment"
             message="NOJOIN_TELEMETRY_ENABLED is set in this deployment's environment, so this setting cannot be changed here. Update .env and restart Nojoin to change it."
           />
-        )}
+        </SettingsBlock>
+      )}
 
-        <label
-          className={`flex items-center justify-between rounded-xl border border-gray-200/80 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${
-            status.managed_by_env ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-          }`}
-        >
-          <span className="font-medium">
-            {status.enabled ? "Sharing anonymous usage data" : "Not sharing anything"}
-          </span>
-          <input
-            type="checkbox"
-            checked={status.enabled}
-            disabled={status.managed_by_env || saving}
-            onChange={(event) => void handleToggle(event.target.checked)}
-            className="h-4 w-4 accent-orange-500"
-          />
-        </label>
+      <SettingsRow
+        id="privacy-telemetry"
+        label="Share anonymous usage data"
+        description={
+          status.enabled
+            ? "A ping is sent once a day."
+            : "Nothing is sent."
+        }
+        controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+      >
+        <Switch
+          checked={status.enabled}
+          disabled={status.managed_by_env || saving}
+          onCheckedChange={(checked) => void handleToggle(checked)}
+        />
+      </SettingsRow>
 
-        {status.enabled && !status.consent_granted && (
+      {status.enabled && !status.consent_granted && (
+        <SettingsBlock>
           <SettingsCallout
             tone="warning"
             title="Nothing has been sent yet"
             message={`This install was upgraded into this feature, so it stays silent until you confirm above, or until ${status.grace_period_days} days after the notice was first shown.`}
           />
-        )}
-
-        <SettingsBlock inset>
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-            Exactly what is sent, once a day
-          </h4>
-          <dl className="mt-3 space-y-2 text-sm">
-            {COLLECTED_FIELDS.map((entry) => (
-              <div key={entry.group} className="sm:flex sm:gap-3">
-                <dt className="min-w-32 font-medium text-gray-700 dark:text-gray-300">
-                  {entry.group}
-                </dt>
-                <dd className="text-gray-500 dark:text-gray-400">{entry.fields}</dd>
-              </div>
-            ))}
-          </dl>
         </SettingsBlock>
+      )}
 
-        <SettingsBlock>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-gray-500 dark:text-gray-400">Install ID</dt>
-              <dd className="font-mono text-xs break-all text-gray-800 dark:text-gray-200">
-                {status.install_id}
-              </dd>
+      <SettingsBlock
+        label="Exactly what is sent, once a day"
+        contentClassName="settings-inset rounded-xl p-4"
+      >
+        <dl className="space-y-2 text-sm">
+          {COLLECTED_FIELDS.map((entry) => (
+            <div key={entry.group} className="sm:flex sm:gap-3">
+              <dt className="min-w-32 font-medium text-gray-700 dark:text-gray-300">
+                {entry.group}
+              </dt>
+              <dd className="text-gray-500 dark:text-gray-400">{entry.fields}</dd>
             </div>
-            <div>
-              <dt className="text-gray-500 dark:text-gray-400">Last sent</dt>
-              <dd className="text-gray-800 dark:text-gray-200">
-                {formatTimestamp(status.last_sent_at)}
-              </dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-gray-500 dark:text-gray-400">Endpoint</dt>
-              <dd className="font-mono text-xs break-all text-gray-800 dark:text-gray-200">
-                {status.endpoint}
-              </dd>
-            </div>
-          </dl>
-        </SettingsBlock>
+          ))}
+        </dl>
+      </SettingsBlock>
 
+      <SettingsBlock>
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-gray-500 dark:text-gray-400">Install ID</dt>
+            <dd className="font-mono text-xs break-all text-gray-800 dark:text-gray-200">
+              {status.install_id}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-gray-500 dark:text-gray-400">Last sent</dt>
+            <dd className="text-gray-800 dark:text-gray-200">
+              {formatTimestamp(status.last_sent_at)}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-gray-500 dark:text-gray-400">Endpoint</dt>
+            <dd className="font-mono text-xs break-all text-gray-800 dark:text-gray-200">
+              {status.endpoint}
+            </dd>
+          </div>
+        </dl>
+      </SettingsBlock>
+
+      <SettingsBlock>
         <p className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <BarChart3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <BarChart3 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
             The collector that receives these pings is open source in the{" "}
             <code className="font-mono">telemetry/</code> directory of the Nojoin
@@ -195,7 +202,7 @@ export default function TelemetrySection() {
             trust. Raw pings are kept for 13 months, then reduced to daily totals.
           </span>
         </p>
-      </div>
+      </SettingsBlock>
     </SettingsCard>
   );
 }

@@ -65,7 +65,7 @@ export default function ServerProviderSection({
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
       description="The provider and model this server uses for every account on the server default. Some fields are set in the server's .env file and shown here for reference."
     >
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="space-y-4">
         <SettingsBlock className="space-y-6">
           <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>

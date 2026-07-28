@@ -17,7 +17,7 @@ export default function AiHuggingFaceSection({
       title="Hugging Face access"
       description="View status of the installation token required for diarization and related model downloads."
     >
-      <SettingsBlock className="mx-auto max-w-3xl space-y-4">
+      <SettingsBlock className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl">
           <div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">

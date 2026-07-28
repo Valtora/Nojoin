@@ -51,7 +51,7 @@ export default function SecondaryProviderSection({
         badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
         description="Used automatically when the primary provider is unavailable."
       >
-        <SettingsCallout tone="neutral" className="mx-auto max-w-3xl">
+        <SettingsCallout tone="neutral" className="space-y-4">
           No fallback provider is configured. Set{" "}
           <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
             SECONDARY_LLM_PROVIDER
@@ -98,7 +98,7 @@ export default function SecondaryProviderSection({
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
       description="Used automatically when the primary provider — or a user's own Claude or ChatGPT subscription — is unavailable."
     >
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="space-y-4">
         <SettingsBlock className="space-y-6">
           <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
