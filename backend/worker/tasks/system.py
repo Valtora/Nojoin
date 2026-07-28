@@ -62,6 +62,41 @@ def download_models_task(
     return {"status": "success", "message": "Model preparation complete."}
 
 
+@celery_app.task(name="backend.worker.tasks.delete_model_task", bind=True)
+def delete_model_task(self, model_name: str, variant: str | None = None):
+    """
+    Remove a cached model from the shared model volume.
+
+    Deletion runs here rather than in the API because the API mounts that volume
+    read-only, so every delete failed with EROFS. The worker lanes are the only
+    processes with write access to it.
+
+    The path is resolved here too, not passed in: the same volume is mounted at a
+    different path in each container, so an API-supplied path would be wrong, and
+    a delete sink that trusts a caller-supplied path is worth not building.
+
+    Returns a status dict rather than raising, because Celery's JSON serialiser
+    would not carry the distinction between "not found" and "refused" across the
+    boundary intact.
+    """
+    from backend.preload_models import delete_model
+
+    try:
+        deleted = delete_model(model_name, whisper_model_size=variant)
+    except ValueError as e:
+        # Repo-bundled assets are read-only by policy, not by accident.
+        return {"status": "forbidden", "message": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to delete model %s: %s", model_name, e, exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+    if not deleted:
+        return {"status": "not_found", "message": f"Model {model_name} not found."}
+
+    logger.info("Deleted model %s (variant=%s)", model_name, variant)
+    return {"status": "deleted", "message": f"Model {model_name} deleted."}
+
+
 @celery_app.task(name="backend.worker.tasks.get_worker_device_status", bind=True)
 def get_worker_device_status(self):
     """

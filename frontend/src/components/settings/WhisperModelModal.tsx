@@ -196,8 +196,8 @@ export default function WhisperModelModal({
 
             {!isDownloaded && !loadingStatus && (
               <p className="text-sm contrast-helper">
-                The {modelInfo?.label} model is not cached yet. Nojoin will
-                prepare it automatically after this change is saved.
+                The {modelInfo?.label} model is not cached yet. Nojoin will ask
+                whether to download it once this change is saved.
               </p>
             )}
           </div>

@@ -2,10 +2,13 @@ import { useState } from "react";
 import { HelpCircle } from "lucide-react";
 
 import { Settings } from "@/types";
+import { getModelsStatus } from "@/lib/api";
 import Tooltip from "@/components/ui/Tooltip";
 import SettingsPanel from "./SettingsPanel";
 import SettingsSection from "./SettingsSection";
 import WhisperModelModal from "./WhisperModelModal";
+import ModelDownloadPromptModal from "./ModelDownloadPromptModal";
+import type { AISettingsModels } from "./useAISettingsModels";
 
 const WHISPER_MODELS = [
   { id: "tiny", label: "Tiny", params: "39 M", vram: "~1 GB", speed: "~10x" },
@@ -31,8 +34,9 @@ const WHISPER_MODELS = [
 interface AiTranscriptionSectionProps {
   settings: Settings;
   /** Apply and save immediately (engine and model are discrete controls). */
-  onPersist: (newSettings: Settings) => void;
+  onPersist: (newSettings: Settings) => void | Promise<void>;
   isAdmin: boolean;
+  models: AISettingsModels;
 }
 
 /** Admin-only "Transcription model" section. */
@@ -40,8 +44,50 @@ export default function AiTranscriptionSection({
   settings,
   onPersist,
   isAdmin,
+  models,
 }: AiTranscriptionSectionProps) {
   const [showWhisperModal, setShowWhisperModal] = useState(false);
+  const [downloadPromptLabel, setDownloadPromptLabel] = useState<string | null>(
+    null,
+  );
+  const [promptBusy, setPromptBusy] = useState(false);
+
+  /**
+   * Save the model change, then offer to fetch it.
+   *
+   * The save has to land first: preparation resolves the target from the saved
+   * settings, and a model already on disk should not raise a prompt at all.
+   */
+  const applyModelChange = async (
+    next: Settings,
+    statusKey: "whisper" | "parakeet" | "canary",
+    whisperSize: string,
+    label: string,
+  ) => {
+    await onPersist(next);
+    models.refreshStatus();
+
+    try {
+      const status = await getModelsStatus(whisperSize);
+      if (!status?.[statusKey]?.downloaded) {
+        setDownloadPromptLabel(label);
+      }
+    } catch (e: unknown) {
+      // A status check that fails is not a reason to block the setting change;
+      // the model still downloads lazily on first use.
+      console.error("Failed to check model status after change", e);
+    }
+  };
+
+  const confirmDownloadNow = async () => {
+    setPromptBusy(true);
+    await models.startPreparation("active");
+    setPromptBusy(false);
+    setDownloadPromptLabel(null);
+  };
+
+  const whisperLabelFor = (size: string) =>
+    `Whisper ${WHISPER_MODELS.find((m) => m.id === size)?.label || size}`;
 
   return (
     <SettingsSection
@@ -65,12 +111,22 @@ export default function AiTranscriptionSection({
           </label>
           <select
             value={settings.transcription_backend || "whisper"}
-            onChange={(e) =>
-              onPersist({
-                ...settings,
-                transcription_backend: e.target.value,
-              })
-            }
+            onChange={(e) => {
+              const engine = e.target.value as "whisper" | "parakeet" | "canary";
+              const whisperSize = settings.whisper_model_size || "turbo";
+              const label =
+                engine === "whisper"
+                  ? whisperLabelFor(whisperSize)
+                  : engine === "parakeet"
+                    ? "Parakeet"
+                    : "Canary 1B";
+              void applyModelChange(
+                { ...settings, transcription_backend: engine },
+                engine,
+                whisperSize,
+                label,
+              );
+            }}
             disabled={!isAdmin}
             className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
           >
@@ -184,8 +240,8 @@ export default function AiTranscriptionSection({
             </div>
             <p className="mt-2 text-xs contrast-helper">
               Click &apos;Change Model&apos; to select a different Whisper model
-              variant. Missing model files are prepared automatically after the
-              change is saved.
+              variant. If the model is not on the server yet, Nojoin asks
+              whether to download it now or on first use.
             </p>
           </div>
         )}
@@ -194,9 +250,22 @@ export default function AiTranscriptionSection({
           onClose={() => setShowWhisperModal(false)}
           currentSize={settings.whisper_model_size || "turbo"}
           isAdmin={isAdmin}
-          onUpdate={(newSize) =>
-            onPersist({ ...settings, whisper_model_size: newSize })
-          }
+          onUpdate={(newSize) => {
+            void applyModelChange(
+              { ...settings, whisper_model_size: newSize },
+              "whisper",
+              newSize,
+              whisperLabelFor(newSize),
+            );
+          }}
+        />
+
+        <ModelDownloadPromptModal
+          isOpen={downloadPromptLabel !== null}
+          modelLabel={downloadPromptLabel || ""}
+          busy={promptBusy}
+          onDownloadNow={() => void confirmDownloadNow()}
+          onLater={() => setDownloadPromptLabel(null)}
         />
       </SettingsPanel>
     </SettingsSection>

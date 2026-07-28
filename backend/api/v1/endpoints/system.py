@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 from celery.result import AsyncResult
 from docker.client import DockerClient
 from docker.errors import DockerException, NotFound
@@ -35,6 +36,7 @@ from backend.api.v1.endpoints.setup import (
     is_system_initialized,
     require_first_run_password,
 )
+from backend.celery_app import celery_app
 from backend.core.security import (
     MIN_PASSWORD_LENGTH,
     hash_user_password,
@@ -53,6 +55,11 @@ from backend.utils.model_utils import WHISPER_MODEL_SIZES_MB
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MODEL_DELETION_TASK = "backend.worker.tasks.delete_model_task"
+# Deleting a cached model is an rmtree on a local volume, so seconds; the ceiling
+# is here so an absent worker fails the request rather than holding the thread.
+MODEL_DELETION_TIMEOUT_S = 60
 
 RETIRED_COMPANION_RESPONSE = {
     "error": "companion_retired",
@@ -581,6 +588,82 @@ async def get_models_status(
     return status
 
 
+class ModelPreparationRequest(BaseModel):
+    """Which assets to prepare.
+
+    ``active`` covers whatever the saved transcription settings actually need,
+    which is what the Settings prompt asks about. The remaining targets exist so
+    a single missing row in Model dependencies can be repaired on its own.
+    """
+
+    target: str = Field(default="active")
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, value: str) -> str:
+        allowed = {"active", "core", "parakeet", "canary"}
+        if value not in allowed:
+            raise ValueError(f"target must be one of {sorted(allowed)}")
+        return value
+
+
+@router.post("/models/prepare")
+async def prepare_models_endpoint(
+    payload: ModelPreparationRequest | None = None,
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Queue preparation of local model assets.
+
+    Preparation is explicit: saving a transcription model change no longer
+    downloads anything by itself, because the preparation task runs on the GPU
+    lane and would otherwise queue in front of live work unannounced.
+    """
+    target = (payload or ModelPreparationRequest()).target
+
+    if is_download_in_progress():
+        raise HTTPException(
+            status_code=409,
+            detail="Model preparation is already running. Wait for it to finish.",
+        )
+
+    # The transcription keys are user-scoped rather than install-wide, so the
+    # admin's own row wins over config.json. Reading config alone would prepare
+    # whatever the install default happens to be, not the model just chosen.
+    user_settings = current_user.settings or {}
+
+    def effective(key: str, default: str) -> str:
+        value = user_settings.get(key)
+        return str(value) if value else str(config_manager.get(key, default))
+
+    if target == "active":
+        transcription_backend = effective("transcription_backend", "whisper")
+        include_core = transcription_backend == "whisper"
+    elif target == "core":
+        transcription_backend = "whisper"
+        include_core = True
+    else:
+        transcription_backend = target
+        include_core = False
+
+    try:
+        task_id = enqueue_model_preparation(
+            whisper_model_size=effective("whisper_model_size", "turbo"),
+            transcription_backend=transcription_backend,
+            parakeet_model=effective("parakeet_model", "parakeet-tdt-0.6b-v3"),
+            canary_model=effective("canary_model", "nemo-canary-1b-v2"),
+            include_core=include_core,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to queue model preparation: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not queue model preparation. Is the worker running?",
+        )
+
+    return {"task_id": task_id, "target": target, "status": "queued"}
+
+
 @router.delete("/models/{model_name}")
 async def delete_model_endpoint(
     model_name: str,
@@ -589,25 +672,50 @@ async def delete_model_endpoint(
 ) -> Any:
     """
     Delete a specific model from the cache.
+
+    Dispatched to a worker: the API mounts the shared model volume read-only, so
+    deleting from this process fails with EROFS. The call still waits for the
+    result, because the UI refreshes model status as soon as it returns.
     """
-    from backend.preload_models import delete_model
+    del current_user
 
     if model_name not in ["whisper", "pyannote", "embedding", "parakeet", "canary"]:
         raise HTTPException(status_code=400, detail="Invalid model name")
 
     try:
-        success = delete_model(model_name, whisper_model_size=variant)
-        if success:
-            return {"message": f"Model {model_name} deleted successfully"}
-        else:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {model_name} not found or could not be deleted",
-            )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        task = celery_app.send_task(
+            MODEL_DELETION_TASK,
+            kwargs={"model_name": model_name, "variant": variant},
+        )
+        result = await asyncio.to_thread(task.get, timeout=MODEL_DELETION_TIMEOUT_S)
+    except CeleryTimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "Model deletion did not finish in time. It may still be running "
+                "on the worker; refresh model status in a moment."
+            ),
+        )
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Model deletion task failed for %s: %s", model_name, e)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not reach the worker to delete the model.",
+        )
+
+    status = (result or {}).get("status")
+    message = (result or {}).get("message") or f"Model {model_name} deleted."
+
+    if status == "deleted":
+        return {"message": message}
+    if status == "not_found":
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {model_name} not found or could not be deleted",
+        )
+    if status == "forbidden":
+        raise HTTPException(status_code=400, detail=message)
+    raise HTTPException(status_code=500, detail=message)
 
 
 @router.post("/seed-demo")

@@ -11,7 +11,6 @@ from backend.celery_app import celery_app
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
-from backend.services.model_preparation import enqueue_model_preparation
 from backend.utils.config_manager import (
     APP_THEMES,
     INSTALL_WIDE_AI_SETTING_KEYS,
@@ -517,31 +516,10 @@ async def _save_user_settings(
     if meeting_edge_keys.intersection(update_data):
         await _dispatch_meeting_edge_refresh_for_active_recordings(db, current_user)
 
-    model_keys = {
-        "whisper_model_size",
-        "transcription_backend",
-        "parakeet_model",
-        "canary_model",
-    }
-    if is_admin and model_keys.intersection(update_data):
-        prepared_settings = dict(current_settings)
-        try:
-            enqueue_model_preparation(
-                whisper_model_size=prepared_settings.get("whisper_model_size"),
-                transcription_backend=prepared_settings.get("transcription_backend"),
-                parakeet_model=prepared_settings.get("parakeet_model"),
-                canary_model=prepared_settings.get("canary_model"),
-                include_core=(
-                    "whisper_model_size" in update_data
-                    or update_data.get("transcription_backend") == "whisper"
-                ),
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.error(
-                "Failed to queue model preparation after settings update: %s",
-                e,
-                exc_info=True,
-            )
+    # Changing the transcription model deliberately does not download anything.
+    # Preparation runs on the GPU lane, so it is requested explicitly through
+    # POST /system/models/prepare after the admin has been asked; a model that is
+    # never prepared is still fetched lazily on first use.
 
     return await _merge_settings(current_user.settings, db)
 
