@@ -21,7 +21,6 @@ from backend.core.backup import runtime
 from backend.core.backup.format import (
     ARCHIVE_QUALITIES,
     ARCHIVE_QUALITY_COMPRESSED,
-    BACKUP_EXPORT_DIR,
     BACKUP_FORMAT_VERSION,
 )
 from backend.core.backup.plans import (
@@ -208,10 +207,9 @@ def _create_backup_sync(request: _ExportRequest) -> Tuple[str, Dict[str, Any]]:
 
     # Written to the shared export directory so the API can serve it and the periodic
     # sweep can reclaim it.
-    os.makedirs(BACKUP_EXPORT_DIR, exist_ok=True)
-    temp_zip = tempfile.NamedTemporaryFile(
-        delete=False, suffix=".zip", dir=BACKUP_EXPORT_DIR
-    )
+    export_dir = runtime.backup_export_directory(runtime.PathManager())
+    os.makedirs(export_dir, exist_ok=True)
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir=export_dir)
     temp_zip.close()
 
     failed_audio = 0

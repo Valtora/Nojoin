@@ -11,6 +11,8 @@ that cannot be created on SQLite, so the tests run against surrogate tables. See
 ``backend/tests/test_backup_manager.py``.
 """
 
+import os
+from pathlib import Path
 from typing import Any, List, Tuple, Type
 
 from sqlmodel import SQLModel
@@ -70,3 +72,22 @@ def documents_directory(path_manager: Any) -> Any:
     if directory is not None:
         return directory
     return path_manager.user_data_directory / "documents"
+
+
+def backup_export_directory(path_manager: Any) -> Any:
+    """Resolve where finished archives are written.
+
+    An export is built by a worker and served by the API, so this is the one backup
+    path that must be reachable from more than one container. It lives under the data
+    directory because that is already bind-mounted into every service; the archives
+    are never themselves archived, since the export walks database rows rather than
+    the filesystem.
+
+    BACKUP_EXPORT_DIR overrides the location for deployments that want exports on a
+    separate disk. Both sides must agree on it, or the API cannot serve what the
+    worker wrote.
+    """
+    configured = os.getenv("BACKUP_EXPORT_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    return Path(path_manager.user_data_directory) / "backups"
