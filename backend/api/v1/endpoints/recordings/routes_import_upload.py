@@ -243,7 +243,28 @@ async def init_chunked_import(
     await db.commit()
     await db.refresh(recording)
 
-    recordings_module.recording_upload_temp_dir(recording.id, create=True)
+    # The row is already committed, so a filesystem failure here would otherwise
+    # leave a permanent UPLOADING record that never receives a byte -- one per
+    # retry (issue #153). Roll it back and report the cause instead.
+    try:
+        recordings_module.recording_upload_temp_dir(recording.id, create=True)
+    except OSError as e:
+        await db.delete(recording)
+        await db.commit()
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=503,
+            client_message=(
+                "Recording storage is not writable, so the import could not be "
+                "started. An administrator should check the ownership of the "
+                "directory bound to /app/data."
+            ),
+            log_message=(
+                "Failed to create the chunked import temp directory for recording "
+                f"{recording.id}; the recordings storage is not writable."
+            ),
+            exc=e,
+        )
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 

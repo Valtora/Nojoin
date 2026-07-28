@@ -122,6 +122,7 @@ from backend.utils.notes_templates import (
     resolve_glossary,
 )
 from backend.utils.recording_storage import (
+    cleanup_orphaned_uploading_recordings,
     cleanup_recording_audio_chunks,
     cleanup_stale_recording_artifacts,
     mark_recording_audio_chunks_ready_for_cleanup,
