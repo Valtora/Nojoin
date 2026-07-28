@@ -313,12 +313,6 @@ def _restore_preflight_overwrite(
         logger.error(f"Pre-flight cleanup failed: {e}")
 
 
-def _enqueue_proxy_generation(recording_id: int) -> None:
-    from backend.worker.tasks import generate_proxy_task
-
-    generate_proxy_task.delay(recording_id)
-
-
 def _enqueue_recording_finalization(recording_id: int, needs_proxy: bool) -> None:
     from backend.worker.tasks import finalize_restored_recording_task
 
