@@ -120,12 +120,54 @@ longer consume the threads those handlers need. It is also what lets the same
 helper be imported by `calendar_service`, which the worker image loads and
 which therefore cannot depend on an ASGI stack.
 
-Worker-side code still calls `celery_app.send_task` directly, deliberately. It
-has no event loop to protect, and the guard test only inspects `async def`.
+Worker-side code still calls `celery_app.send_task` directly, deliberately.
 
 Measured after the change, against an unreachable broker, unchanged from the
 numbers above: 6.03s to fail the dispatch, with 60 concurrent no-op requests at
 a 0.9ms median and a 0.00s worst case.
+
+### Why inline dispatch stays correct in the worker, 2026-07-28
+
+Recorded because it is not self-evident and the earlier wording implied
+something untrue. It is not that the worker has no event loop. It has several:
+`worker/tasks/calendar.py` drives calendar sync through `asyncio.run`, and in
+`worker-io` `processing/cli/manager.py` does the same per CLI turn, one of them
+on a dedicated thread feeding a streaming queue.
+
+Inline dispatch is safe there for three reasons, each of which is checkable and
+none of which is permanent:
+
+1. **The pools isolate work into processes.** The lanes run `--pool=solo`
+   (gpu, concurrency 1) and `--pool=prefork` (cpu 3, io 4), with no gevent or
+   eventlet anywhere in the image. Prefork means one task per operating-system
+   process, so a blocking publish stalls exactly the task making it, with no
+   second request in the process to starve. **This is the load-bearing
+   assumption, and it lives in `docker-compose`, not in the code.** Moving a
+   lane to `--pool=gevent` or `--pool=threads` would put concurrent tasks back
+   in one process and reintroduce precisely the head-of-line blocking this ADR
+   removed from the API. Revisit this section before changing a pool type.
+2. **Those loops carry no concurrency.** There is no `asyncio.gather`,
+   `create_task` or `TaskGroup` anywhere in worker-reachable async code, so each
+   loop drives a single coroutine chain and a blocking call has nothing to stall
+   but itself.
+3. **No synchronous dispatcher is reachable from a loop.** The remaining inline
+   dispatchers live in `core/backup/restore/stages.py`,
+   `processing/live_transcribe.py` and `processing/segment_transcode.py`, all of
+   which contain no `async def` at all and are entered from synchronous task
+   bodies.
+
+Note what the guard test does and does not cover. It walks the whole backend,
+not only the API, so worker code dispatching inline inside an `async def` would
+fail it. It cannot see a *synchronous* function that dispatches and is called
+from a loop, which is exactly how `_enqueue_push_channel_refresh` escaped the
+first count. Point 3 is therefore checked by reading rather than by CI.
+
+The worker is not unbounded either, which the original text left unclear. The
+connect cap is global, so only the retry *count* is API-only. Against a broker
+that drops packets, a worker dispatch fails in a measured 63.1s rather than the
+20 by roughly 127s, near enough 42 minutes, it would cost without the cap. That
+ties up one prefork child, during an outage in which that child cannot be sent
+work anyway.
 
 ## Alternatives Considered
 
