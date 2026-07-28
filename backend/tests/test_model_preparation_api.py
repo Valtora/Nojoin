@@ -226,15 +226,10 @@ async def _post_settings(payload: dict):
         await engine.dispose()
 
 
-def test_changing_the_transcription_model_queues_no_download(monkeypatch):
+def test_changing_the_transcription_model_queues_no_download(
+    monkeypatch, stub_celery_dispatch
+):
     monkeypatch.setattr(settings_ep, "config_manager", _FakeConfigManager())
-
-    sent: list[str] = []
-    monkeypatch.setattr(
-        settings_ep.celery_app,
-        "send_task",
-        lambda name, *args, **kwargs: sent.append(name),
-    )
 
     response = asyncio.run(
         _post_settings(
@@ -244,4 +239,4 @@ def test_changing_the_transcription_model_queues_no_download(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["whisper_model_size"] == "medium"
-    assert DOWNLOAD_TASK not in sent
+    assert DOWNLOAD_TASK not in [name for name, _, _ in stub_celery_dispatch]

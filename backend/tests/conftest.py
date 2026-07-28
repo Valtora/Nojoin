@@ -104,14 +104,14 @@ def stub_meeting_edge_dispatch(monkeypatch):
     background work, irrelevant to what the transcript tests assert, and it is
     the dispatch that made the suite slow. Returns the patched module names.
     """
+
+    async def _noop(*args, **kwargs) -> None:
+        return None
+
     patched = []
     for module in transcripts_route_modules():
         if hasattr(module, "_dispatch_meeting_edge_refresh"):
-            monkeypatch.setattr(
-                module,
-                "_dispatch_meeting_edge_refresh",
-                lambda *args, **kwargs: None,
-            )
+            monkeypatch.setattr(module, "_dispatch_meeting_edge_refresh", _noop)
             patched.append(module.__name__)
 
     # A stub that patches nothing is the failure this fixture exists to prevent.

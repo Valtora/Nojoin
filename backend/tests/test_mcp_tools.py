@@ -940,17 +940,13 @@ async def seed_transcript(session_maker, *, recording_id: int, user_notes: str) 
 
 
 @pytest.fixture
-def no_meeting_edge_dispatch(monkeypatch):
+def no_meeting_edge_dispatch(stub_meeting_edge_dispatch):
     """Stop the delegated notes update from dispatching a Meeting Edge refresh.
 
-    Otherwise update_user_notes calls celery_app.send_task, which blocks for
-    the broker connection timeout — irrelevant to the append logic here.
+    Irrelevant to the append logic here. Delegates to the shared fixture, which
+    patches every module that binds the dispatcher rather than only this one.
     """
-    import backend.api.v1.endpoints.transcripts.routes_notes as routes_notes
-
-    monkeypatch.setattr(
-        routes_notes, "_dispatch_meeting_edge_refresh", lambda *a, **k: None
-    )
+    return stub_meeting_edge_dispatch
 
 
 @pytest.mark.anyio

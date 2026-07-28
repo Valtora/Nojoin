@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
-from backend.celery_app import celery_app
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
@@ -427,6 +426,12 @@ async def _dispatch_meeting_edge_refresh_for_active_recordings(
     """
     from sqlalchemy import select as sa_select
 
+    # Imported here rather than at module scope to keep the endpoint modules
+    # from importing one another at import time.
+    from backend.api.v1.endpoints.transcripts.helpers import (
+        _dispatch_meeting_edge_refresh,
+    )
+
     try:
         result = await db.execute(
             sa_select(Recording.id).where(
@@ -441,11 +446,10 @@ async def _dispatch_meeting_edge_refresh_for_active_recordings(
             )
         )
         recording_ids = [row[0] for row in result.all()]
+        # One dispatch per in-flight recording, so an unbounded publish here
+        # multiplied the stall by the number of active recordings.
         for recording_id in recording_ids:
-            celery_app.send_task(
-                "backend.worker.tasks.refresh_meeting_edge_task",
-                args=[recording_id],
-            )
+            await _dispatch_meeting_edge_refresh(recording_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "Failed to dispatch Meeting Edge refresh after settings update: %s",
