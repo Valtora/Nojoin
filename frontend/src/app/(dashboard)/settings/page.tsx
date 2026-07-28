@@ -1,5 +1,11 @@
-import SettingsPage from '@/components/settings/SettingsPage';
+import { Suspense } from "react";
+
+import SettingsIndex from "@/components/settings/SettingsIndex";
 
 export default function Page() {
-  return <SettingsPage />;
+  return (
+    <Suspense fallback={null}>
+      <SettingsIndex />
+    </Suspense>
+  );
 }

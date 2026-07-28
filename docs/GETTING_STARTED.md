@@ -61,14 +61,14 @@ Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every un
 
 The first user becomes the Owner account.
 
-The legal step also carries an **anonymous usage data** checkbox, ticked by default. Leaving it ticked sends one anonymous ping a day with counts and configuration settings — never your recordings, transcripts, notes, names, or keys. Unticking it means nothing is ever sent. You can change this later in **Settings > Administration**; see [TELEMETRY.md](TELEMETRY.md).
+The legal step also carries an **anonymous usage data** checkbox, ticked by default. Leaving it ticked sends one anonymous ping a day with counts and configuration settings — never your recordings, transcripts, notes, names, or keys. Unticking it means nothing is ever sent. You can change this later in **Settings > Privacy**; see [TELEMETRY.md](TELEMETRY.md).
 
 During setup, the system automatically detects configured API keys and Hugging Face tokens from the environment variables (set in `.env` before starting the stack). The setup wizard will:
 
 - Detect active AI provider credentials and Hugging Face tokens.
 - Detect whether the bundled local Pyannote speaker models are already present.
 - Let you select the default model for your configured AI provider.
-- Let you choose the Whisper transcription model. Turbo (default) suits GPU servers; Small or Base is much faster on CPU-only deployments. You can change it later in Settings > AI.
+- Let you choose the Whisper transcription model. Turbo (default) suits GPU servers; Small or Base is much faster on CPU-only deployments. You can change it later in Settings > Transcription.
 - Let you choose whether to include the "Welcome to Nojoin" sample meeting. You can remove or recreate it later in Settings > Help.
 - Warn you if no AI provider credentials are configured, explaining the loss of core intelligence features (Meeting Edge, Notes, and Speaker Inference), and allow you to proceed or reload the configuration.
 
@@ -80,7 +80,7 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio capture, in another supported Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
 2. Open your meeting in a browser tab when possible. Tab sharing is the most reliable way to capture meeting audio.
-3. Open **Settings > Capture** if you need to choose a microphone or adjust shared-audio and microphone gain.
+3. Open **Settings > Recording** if you need to choose a microphone or adjust shared-audio and microphone gain.
 4. Keep the Nojoin tab open during live recording.
 
 On desktop, the browser will ask what tab, window, or screen to share when you start recording. Turn on the browser's audio-sharing or system-audio option in that picker when it is offered so remote participants are captured. If you close the picker with **Cancel**, Nojoin simply returns to the pre-start state. On mobile Chrome, Nojoin records only the phone microphone, so keep the phone close enough to hear the meeting and keep the tab open.

@@ -1,6 +1,6 @@
 import { LanguageRegistry, Settings } from "@/types";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 interface AiLanguageSectionProps {
   settings: Settings;
@@ -28,13 +28,11 @@ export default function AiLanguageSection({
     languageRegistry?.engine_capabilities[selectedTranscriptionBackend];
 
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Language preferences"
       description="Choose the source language used for transcription and the language used for generated meeting titles and notes."
-      width="regular"
     >
-      <SettingsPanel className="mx-auto max-w-3xl space-y-6">
+      <SettingsBlock className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Transcription language
@@ -122,7 +120,7 @@ export default function AiLanguageSection({
             </p>
           </div>
         )}
-      </SettingsPanel>
-    </SettingsSection>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

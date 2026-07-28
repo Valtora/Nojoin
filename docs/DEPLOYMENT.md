@@ -120,7 +120,7 @@ the instance to be reachable from the public internet over HTTPS at
 
 Changing the transcription model later does not download anything on its own.
 Preparation runs on the GPU lane, so an unannounced download would queue in
-front of live work; instead **Settings > AI** asks whether to fetch a newly
+front of live work; instead **Settings > AI providers** asks whether to fetch a newly
 selected model now, and **Model dependencies** offers a `Download` action plus
 live progress for anything still missing. A model that is never prepared is
 fetched on first use, which delays live transcription and Meeting Edge until it
@@ -211,7 +211,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `HF_TOKEN`: Optional Hugging Face token used only when you want to refresh the bundled Pyannote diarisation assets from upstream.
 - `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
 - `MCP_ENABLED`: Master switch for the built-in MCP connector ([MCP.md](MCP.md)). Defaults to `true`; set to `false` to remove the `/mcp` endpoint, the OAuth discovery documents, and the connector authorisation endpoints entirely. Requires an API container restart to change.
-- `NOJOIN_TELEMETRY_ENABLED`: Hard switch for anonymous usage data ([TELEMETRY.md](TELEMETRY.md)). Leave unset to manage it from **Settings > Administration**. Set to `false` to disable it permanently: the value overrides the in-app setting, and the Settings toggle becomes read-only. Set it before first start if telemetry must never be sent from this deployment.
+- `NOJOIN_TELEMETRY_ENABLED`: Hard switch for anonymous usage data ([TELEMETRY.md](TELEMETRY.md)). Leave unset to manage it from **Settings > Users and access**. Set to `false` to disable it permanently: the value overrides the in-app setting, and the Settings toggle becomes read-only. Set it before first start if telemetry must never be sent from this deployment.
 - `NOJOIN_TELEMETRY_ENDPOINT`: Overrides the ingest URL. Intended for testing; there is no reason to change it in a normal deployment.
 - `LLM_PROVIDER`: Default LLM provider such as `gemini`, `openai`, `anthropic`, or `ollama`.
 - `GEMINI_API_KEY`: Gemini API key.
@@ -376,7 +376,7 @@ Three behaviours still need explicit proxy support.
   proxy uses `proxy_buffering off` with 300 second timeouts.
 - **WebSocket upgrades.** Nojoin uses exactly one WebSocket endpoint,
   `/api/v1/system/logs/live`, which backs the live container log viewer in
-  **Settings > System** for administrators. Nothing else in the product uses
+  **Settings > System and logs** for administrators. Nothing else in the product uses
   WebSockets. If upgrades are not forwarded, that one panel fails to connect and
   the rest of Nojoin is unaffected.
 - **Request body size.** The bundled proxy allows request bodies up to 500 MB.

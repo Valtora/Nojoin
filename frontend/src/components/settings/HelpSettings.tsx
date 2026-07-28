@@ -5,8 +5,8 @@ import { useState } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 const ACTION_BUTTON_STYLES =
   "inline-flex items-center gap-2 self-start rounded-xl bg-orange-100 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-200 disabled:opacity-50 dark:bg-orange-900/20 dark:text-orange-400 dark:hover:bg-orange-900/30 sm:self-auto";
@@ -80,15 +80,12 @@ export default function HelpSettings({
 
   return (
     <div className="space-y-6">
-      <SettingsSection
-        eyebrow="Guidance"
+      <SettingsCard
         title="Tours and demos"
         description="Reset onboarding helpers or recreate the sample meeting used for first-run guidance."
-        width="regular"
       >
-        <div className="mx-auto max-w-2xl space-y-4">
-          <SettingsPanel
-            variant="subtle"
+        <div className="space-y-4">
+          <SettingsBlock inset
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
@@ -108,10 +105,9 @@ export default function HelpSettings({
             >
               Restart Tour
             </button>
-          </SettingsPanel>
+          </SettingsBlock>
 
-          <SettingsPanel
-            variant="subtle"
+          <SettingsBlock inset
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
@@ -132,19 +128,16 @@ export default function HelpSettings({
               {isSeeding && <RefreshCw className="w-3 h-3 animate-spin" />}
               {isSeeding ? "Creating..." : "Re-create Meeting"}
             </button>
-          </SettingsPanel>
+          </SettingsBlock>
         </div>
-      </SettingsSection>
+      </SettingsCard>
 
-      <SettingsSection
-        eyebrow="Support"
+      <SettingsCard
         title="Report a bug"
         description="Open the project issue tracker when you hit a reproducible problem or need to share diagnostics with the team."
-        width="regular"
       >
-        <div className="mx-auto max-w-2xl space-y-4">
-          <SettingsPanel
-            variant="subtle"
+        <div className="space-y-4">
+          <SettingsBlock inset
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
@@ -164,9 +157,9 @@ export default function HelpSettings({
             >
               Report Issue
             </a>
-          </SettingsPanel>
+          </SettingsBlock>
         </div>
-      </SettingsSection>
+      </SettingsCard>
     </div>
   );
 }

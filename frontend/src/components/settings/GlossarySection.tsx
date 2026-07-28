@@ -1,8 +1,8 @@
 "use client";
 
 import { Settings } from "@/types";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 interface GlossarySectionProps {
   settings: Settings;
@@ -30,13 +30,11 @@ export default function GlossarySection({
   isAdmin = false,
 }: GlossarySectionProps) {
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Glossary"
       description="Project names, acronyms and products the AI should spell correctly, plus corrections for words it commonly mishears."
-      width="regular"
     >
-      <SettingsPanel className="mx-auto max-w-3xl space-y-6">
+      <SettingsBlock className="space-y-6">
         {isAdmin && (
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -83,7 +81,7 @@ export default function GlossarySection({
             before the glossary is read.
           </p>
         </div>
-      </SettingsPanel>
-    </SettingsSection>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

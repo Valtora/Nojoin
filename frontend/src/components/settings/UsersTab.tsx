@@ -14,7 +14,8 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "../ConfirmationModal";
 import { User, UserRole } from "@/types";
 import { trimString } from "@/lib/validation";
-import SettingsPanel from "./SettingsPanel";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 type NewUserFormState = {
   username: string;
@@ -187,7 +188,12 @@ export default function UsersTab() {
   };
 
   return (
-    <div className="space-y-6">
+    <SettingsCard
+      id="users-accounts"
+      title="Users"
+      description="Accounts on this installation, their roles, and the access each one has."
+    >
+      <SettingsBlock contentClassName="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -211,7 +217,7 @@ export default function UsersTab() {
       </div>
 
       {isCreating && (
-        <SettingsPanel variant="subtle" className="space-y-4">
+        <div className="settings-inset rounded-xl p-4 space-y-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               Create user
@@ -279,10 +285,10 @@ export default function UsersTab() {
               </button>
             </div>
           </form>
-        </SettingsPanel>
+        </div>
       )}
 
-      <SettingsPanel className="overflow-hidden p-0">
+      <div className="settings-inset rounded-xl p-4 overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
             <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
@@ -390,7 +396,7 @@ export default function UsersTab() {
             </button>
           </div>
         </div>
-      </SettingsPanel>
+      </div>
 
       {/* Edit User Modal */}
       {editModalOpen && (
@@ -495,15 +501,17 @@ export default function UsersTab() {
         </div>
       )}
 
+      </SettingsBlock>
+
       <ConfirmationModal
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={confirmDelete}
-        title="Delete User"
-        message="Are you sure you want to delete this user? This action cannot be undone and will delete all data associated with this user."
+        title="Delete user"
+        message="Are you sure you want to delete this user? This cannot be undone and deletes all data associated with the account."
         confirmText="Delete"
         isDangerous={true}
       />
-    </div>
+    </SettingsCard>
   );
 }

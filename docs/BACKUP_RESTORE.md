@@ -1,6 +1,6 @@
 # Nojoin Backup and Restore Guide
 
-Nojoin includes a full-system backup and restore flow under **Settings > Administration > Backup and restore**.
+Nojoin includes a full-system backup and restore flow under **Settings > Backup and restore**.
 
 This guide explains what is included, what is deliberately left out, and what should be treated as sensitive during handling.
 
@@ -26,7 +26,7 @@ The following are deliberately absent from the archive. Each is either a secret 
 
 - LLM provider application keys.
 - Hugging Face style application keys and tokens.
-- CLI OAuth subscription credentials. Reconnect these in **Settings > AI**.
+- CLI OAuth subscription credentials. Reconnect these in **Settings > Your AI**.
 
 These must be set in the target installation's environment variables (e.g. `.env`) and the containers restarted if they are not already set.
 
@@ -57,7 +57,7 @@ Treat the archive like a secrets file, not just a convenience export.
 
 ## Creating a Backup
 
-1. Open **Settings > Administration > Backup and restore**.
+1. Open **Settings > Backup and restore**.
 2. Choose whether to include audio recordings.
 3. If including audio, choose the archive quality (see below).
 4. Start the export.
@@ -79,7 +79,7 @@ If a recording's audio file is missing from disk when the backup runs, its metad
 
 ## Restoring a Backup
 
-1. Open **Settings > Administration > Backup and restore**.
+1. Open **Settings > Backup and restore**.
 2. Upload the backup ZIP.
 3. Choose the conflict mode.
 4. Wait for the import to finish before closing the page.

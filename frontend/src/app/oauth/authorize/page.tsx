@@ -132,7 +132,7 @@ function AuthorizeContent() {
     try {
       const response = await login(username, password);
       if (response.force_password_change) {
-        window.location.href = "/settings?tab=account&forcePasswordChange=1";
+        window.location.href = "/settings/profile";
         return;
       }
       setSignedInUsername(response.username);

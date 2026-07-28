@@ -79,7 +79,7 @@ export function useSetupWizard() {
           const user = await getCurrentUser();
           router.push(
             user.force_password_change
-              ? "/settings?tab=account&forcePasswordChange=1"
+              ? "/settings/profile"
               : "/",
           );
           return;

@@ -8,9 +8,14 @@ import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 import CalendarConnectionsSettings from './CalendarConnectionsSettings';
 import ConnectedAppsSettings from './ConnectedAppsSettings';
+import SettingsBlock from './SettingsBlock';
 import SettingsCallout from './SettingsCallout';
-import SettingsField from './SettingsField';
-import SettingsSection from './SettingsSection';
+import SettingsCard from './SettingsCard';
+import SettingsRow from './SettingsRow';
+import {
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_INPUT_CLASS,
+} from './settingsControls';
 import useDebouncedAutosave, {
   type SettingsAutosaveSnapshot,
 } from './useDebouncedAutosave';
@@ -162,108 +167,135 @@ export default function AccountSettings({
   };
 
   return (
-    <div className="space-y-8">
+    <>
       {showProfile && (
-        <SettingsSection
-          eyebrow="Personal"
+        <SettingsCard
+          id="profile-username"
           title="Profile"
-          description="Update the name shown across your workspace."
-          width="compact"
+          description="The name shown across your workspace."
         >
-          <div className="mx-auto max-w-md space-y-4">
-            <SettingsField label="Username" icon={<User className="h-4 w-4" />}>
-              <input
-                id="account-username"
-                name="account-username"
-                type="text"
-                autoComplete="section-account-profile username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                disabled={initialUsername === null}
-                required
-              />
-            </SettingsField>
-          </div>
-        </SettingsSection>
+          <SettingsRow
+            label="Username"
+            icon={<User className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+          >
+            <input
+              id="account-username"
+              name="account-username"
+              type="text"
+              autoComplete="section-account-profile username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className={SETTINGS_INPUT_CLASS}
+              disabled={initialUsername === null}
+              required
+            />
+          </SettingsRow>
+        </SettingsCard>
       )}
 
       {showSecurity && (
-        <SettingsSection
-          eyebrow="Security"
+        <SettingsCard
+          id="profile-password"
           title="Password"
           description="Change the password used to sign in to this account."
-          width="compact"
         >
           {forcePasswordChange && (
-            <SettingsCallout
-              tone="warning"
-              message="You must choose a new password before continuing to the rest of the application."
-            />
+            <SettingsBlock>
+              <SettingsCallout
+                tone="warning"
+                message="You must choose a new password before continuing to the rest of the application."
+              />
+            </SettingsBlock>
           )}
+
+          {/* One form spanning the rows, so the browser still treats these as a
+              single credential change and password managers behave. */}
           <form
             id="account-password-form"
             name="account-password-form"
             onSubmit={handlePasswordUpdate}
-            className="mx-auto max-w-md space-y-4"
+            className="settings-card-body"
             autoComplete="on"
           >
-            <SettingsField label="Current Password" icon={<Lock className="h-4 w-4" />}>
+            <SettingsRow
+              label="Current password"
+              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            >
               <input
                 id="account-current-password"
                 name="account-current-password"
                 type="password"
                 autoComplete="section-account-password current-password"
                 value={passwordData.current_password}
-                onChange={(e) => setPasswordData({...passwordData, current_password: e.target.value})}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                onChange={(e) =>
+                  setPasswordData({ ...passwordData, current_password: e.target.value })
+                }
+                className={SETTINGS_INPUT_CLASS}
                 required
               />
-            </SettingsField>
-            <SettingsField label="New Password" icon={<Lock className="h-4 w-4" />}>
+            </SettingsRow>
+
+            <SettingsRow
+              label="New password"
+              description="At least 8 characters."
+              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            >
               <input
                 id="account-new-password"
                 name="account-new-password"
                 type="password"
                 autoComplete="section-account-password new-password"
                 value={passwordData.new_password}
-                onChange={(e) => setPasswordData({...passwordData, new_password: e.target.value})}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                onChange={(e) =>
+                  setPasswordData({ ...passwordData, new_password: e.target.value })
+                }
+                className={SETTINGS_INPUT_CLASS}
                 required
                 minLength={8}
               />
-            </SettingsField>
-            <SettingsField label="Confirm New Password" icon={<Lock className="h-4 w-4" />}>
+            </SettingsRow>
+
+            <SettingsRow
+              label="Confirm new password"
+              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            >
               <input
                 id="account-confirm-password"
                 name="account-confirm-password"
                 type="password"
                 autoComplete="section-account-password new-password"
                 value={passwordData.confirm_password}
-                onChange={(e) => setPasswordData({...passwordData, confirm_password: e.target.value})}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                onChange={(e) =>
+                  setPasswordData({ ...passwordData, confirm_password: e.target.value })
+                }
+                className={SETTINGS_INPUT_CLASS}
                 required
                 minLength={8}
               />
-            </SettingsField>
-            <button
-              type="submit"
-              disabled={passwordLoading}
-              className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
-            >
-              {passwordLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Update Password
-            </button>
+            </SettingsRow>
+
+            <SettingsBlock className="flex justify-end">
+              <button
+                type="submit"
+                disabled={passwordLoading}
+                className={SETTINGS_BUTTON_PRIMARY}
+              >
+                {passwordLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                )}
+                Update password
+              </button>
+            </SettingsBlock>
           </form>
-        </SettingsSection>
+        </SettingsCard>
       )}
 
       {showCalendars && <CalendarConnectionsSettings />}
 
       {showConnectedApps && <ConnectedAppsSettings />}
-    </div>
+    </>
   );
 }

@@ -30,7 +30,7 @@ For the full hosting context, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 You can provide the installation OAuth credentials in either of these ways:
 
-1. Preferred: sign in as an Owner or Admin and save them in **Settings > Administration > Calendar providers**.
+1. Preferred: sign in as an Owner or Admin and save them in **Settings > Integrations**.
 2. Alternative: set the matching environment variables and restart the stack.
 
 Supported environment variables:
@@ -49,7 +49,7 @@ Supported environment variables:
 
 Once the installation credentials exist:
 
-1. Open **Settings > Personal** and go to **Calendar Connections**.
+1. Open **Settings > Integrations** and go to **Calendar connections**.
 2. Choose **Connect Gmail Calendar** or **Connect Outlook Calendar**.
 3. Complete the provider sign-in and consent flow.
 4. Return to Nojoin and choose which calendars to sync.
@@ -88,7 +88,7 @@ You can also trigger an immediate refresh at any time with the **Sync now** acti
 
 ### Enabling Live Sync
 
-Live sync is off by default and is enabled per provider by an Owner or Admin in **Settings > Administration > Calendar providers**.
+Live sync is off by default and is enabled per provider by an Owner or Admin in **Settings > Integrations**.
 
 Requirements:
 
@@ -96,7 +96,7 @@ Requirements:
 - For **Google**, the webhook domain must be verified in the Google Cloud project, because Google only delivers push notifications to verified domains.
 - For **Microsoft**, no extra verification is needed; Microsoft validates the webhook automatically when the subscription is created.
 
-When live sync is active for a connected account, that account shows a **Live** indicator in **Settings > Personal > Calendar Connections**. If a subscription cannot be created (for example, the instance is not publicly reachable, or the Google domain is unverified), Nojoin records the failure and continues with scheduled sync; no data is lost.
+When live sync is active for a connected account, that account shows a **Live** indicator in **Settings > Integrations > Calendar connections**. If a subscription cannot be created (for example, the instance is not publicly reachable, or the Google domain is unverified), Nojoin records the failure and continues with scheduled sync; no data is lost.
 
 Nojoin exposes these webhook endpoints for the providers to call:
 
@@ -173,7 +173,7 @@ Microsoft setup is slightly more sensitive because tenant choice affects which a
 After setup:
 
 1. Sign in as a normal user.
-2. Connect Google or Microsoft from **Settings > Personal > Calendar Connections**.
+2. Connect Google or Microsoft from **Settings > Integrations > Calendar connections**.
 3. Approve the provider consent flow.
 4. Select one or more calendars.
 5. Confirm the dashboard shows calendar markers, agenda items, and next-event data.
@@ -214,7 +214,7 @@ If the Google app is still in testing mode, that Google account must be listed a
 
 If a connected account never shows the **Live** indicator:
 
-- Confirm the provider's push toggle is enabled in **Settings > Administration > Calendar providers**.
+- Confirm the provider's push toggle is enabled in **Settings > Integrations**.
 - Confirm Nojoin is reachable from the public internet over HTTPS at exactly `WEB_APP_URL`. Localhost or LAN-only deployments cannot receive webhooks; scheduled 15-minute sync still works.
 - For Google, confirm the webhook domain is verified in the Google Cloud project.
 - Confirm a reverse proxy or tunnel forwards `POST` requests to `/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft` and preserves the `Host` header.

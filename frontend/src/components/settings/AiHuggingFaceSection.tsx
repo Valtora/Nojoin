@@ -1,6 +1,6 @@
 import { Settings } from "@/types";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 
 interface AiHuggingFaceSectionProps {
@@ -13,13 +13,11 @@ export default function AiHuggingFaceSection({
   settings,
 }: AiHuggingFaceSectionProps) {
   return (
-    <SettingsSection
-      eyebrow="Administration"
+    <SettingsCard
       title="Hugging Face access"
       description="View status of the installation token required for diarization and related model downloads."
-      width="regular"
     >
-      <SettingsPanel className="mx-auto max-w-3xl space-y-4">
+      <SettingsBlock className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl">
           <div>
             <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -51,7 +49,7 @@ export default function AiHuggingFaceSection({
           the user agreement for{" "}
           <code>pyannote/speaker-diarization-community-1</code> on Hugging Face.
         </p>
-      </SettingsPanel>
-    </SettingsSection>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

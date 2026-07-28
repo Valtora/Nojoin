@@ -12,10 +12,10 @@ import {
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { CalendarRange, Loader2, Save } from "lucide-react";
-import SettingsCallout from "./SettingsCallout";
-import SettingsField from "./SettingsField";
-import SettingsPanel from "./SettingsPanel";
+import { Loader2, Save } from "lucide-react";
+import SettingsBlock from "./SettingsBlock";
+import SettingsRow from "./SettingsRow";
+import SettingsCard from "./SettingsCard";
 
 
 interface ProviderFormState {
@@ -171,33 +171,27 @@ export default function CalendarProviderSettings() {
   };
 
   return (
-    <div className="space-y-4">
-      <SettingsCallout tone="info">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
-            <CalendarRange className="w-5 h-5" />
-          </div>
-          <div>
-            Store the installation OAuth app credentials for Google and Microsoft here. End users never paste these values. They only click Connect from Personal settings and then complete the provider&apos;s own sign-in and consent flow.
-          </div>
-        </div>
-      </SettingsCallout>
-
+    <SettingsCard
+      id="integrations-calendar-providers"
+      title="Calendar provider credentials"
+      description="The installation's OAuth app credentials for Google and Microsoft. Nobody else pastes these values; everyone else only clicks Connect and completes the provider's own sign-in."
+    >
       {loading ? (
-        <SettingsPanel variant="subtle" className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading provider configuration...
-        </SettingsPanel>
+        <SettingsBlock>
+          <div className="flex items-center gap-2 text-sm contrast-helper">
+            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+            Loading provider configuration...
+          </div>
+        </SettingsBlock>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <SettingsBlock contentClassName="grid gap-4 lg:grid-cols-2">
           {providers.map((provider) => {
             const form = forms[provider.provider];
             const isSaving = savingProvider === provider.provider;
             return (
-              <SettingsPanel
+              <div
                 key={provider.provider}
-                variant="subtle"
-                className="space-y-4"
+                className="settings-inset space-y-4 rounded-xl p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -210,7 +204,7 @@ export default function CalendarProviderSettings() {
                         : "Missing OAuth credentials"}
                     </div>
                     {provider.redirect_uri && (
-                      <SettingsPanel variant="meta" className="mt-3 space-y-1 text-xs contrast-helper">
+                      <div className="settings-inset rounded-xl p-4 mt-3 space-y-1 text-xs contrast-helper">
                         <div>
                           Register redirect URI:
                         </div>
@@ -222,7 +216,7 @@ export default function CalendarProviderSettings() {
                             ? "Google app type: Web application"
                             : "Microsoft account types: if Tenant ID is common, the app must allow personal Microsoft accounts and work/school accounts"}
                         </div>
-                      </SettingsPanel>
+                      </div>
                     )}
                   </div>
                   <label className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -240,7 +234,7 @@ export default function CalendarProviderSettings() {
                   </label>
                 </div>
 
-                <SettingsField
+                <SettingsRow
                   label={
                     provider.provider === "microsoft"
                       ? "Application (client) ID"
@@ -260,10 +254,10 @@ export default function CalendarProviderSettings() {
                       ? "Paste the Application (client) ID"
                       : "Paste the OAuth client ID"}
                   />
-                </SettingsField>
+                </SettingsRow>
 
                 {provider.provider === "microsoft" && (
-                  <SettingsField
+                  <SettingsRow
                     label="Tenant ID or common"
                     description="Use common for both Outlook.com and Microsoft 365 accounts. Use a specific tenant ID only for a single-tenant app or to restrict sign-in to one directory."
                   >
@@ -278,10 +272,10 @@ export default function CalendarProviderSettings() {
                       className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-orange-500 text-gray-900 dark:text-white"
                       placeholder="common"
                     />
-                  </SettingsField>
+                  </SettingsRow>
                 )}
 
-                <SettingsField
+                <SettingsRow
                   label={
                     provider.provider === "microsoft"
                       ? "Client Secret Value"
@@ -306,7 +300,7 @@ export default function CalendarProviderSettings() {
                         ? "Stored. Enter a new value to replace it."
                         : "Paste the provider secret"}
                   />
-                </SettingsField>
+                </SettingsRow>
 
                 <label className="flex items-center gap-2 text-sm contrast-helper">
                   <input
@@ -323,10 +317,7 @@ export default function CalendarProviderSettings() {
                   Clear saved secret on next save
                 </label>
 
-                <SettingsPanel
-                  variant="meta"
-                  className="space-y-2 text-xs contrast-helper"
-                >
+                <div className="settings-inset space-y-2 rounded-xl p-4 text-xs contrast-helper">
                   <label className="flex items-center gap-2 text-sm contrast-helper">
                     <input
                       type="checkbox"
@@ -357,7 +348,7 @@ export default function CalendarProviderSettings() {
                       </div>
                     </>
                   )}
-                </SettingsPanel>
+                </div>
 
                 <div className="flex justify-end">
                   <button
@@ -374,11 +365,11 @@ export default function CalendarProviderSettings() {
                     Save provider
                   </button>
                 </div>
-              </SettingsPanel>
+              </div>
             );
           })}
-        </div>
+        </SettingsBlock>
       )}
-    </div>
+    </SettingsCard>
   );
 }

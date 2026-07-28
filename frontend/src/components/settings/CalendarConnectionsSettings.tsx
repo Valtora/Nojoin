@@ -22,7 +22,6 @@ import {
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import {
-  CalendarRange,
   CheckCircle2,
   ExternalLink,
   Loader2,
@@ -31,7 +30,11 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-
+import SettingsBlock from "./SettingsBlock";
+import SettingsCallout from "./SettingsCallout";
+import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import { SETTINGS_BUTTON_PRIMARY } from "./settingsControls";
 
 const PROVIDER_LABELS: Record<CalendarProvider, string> = {
   google: "Google",
@@ -295,85 +298,67 @@ export default function CalendarConnectionsSettings() {
   };
 
   return (
-    <div className="rounded-[28px] border border-gray-200/80 bg-white/95 p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950/60 space-y-6">
-      <div className="flex items-start gap-3">
-        <div className="rounded-xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
-          <CalendarRange className="w-5 h-5" />
-        </div>
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-            Calendar Connections
-          </h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-            Connect Gmail or Outlook calendars, approve access in the provider&apos;s
-            own consent screen, then choose which calendars Nojoin should sync for
-            this account. Installation-wide OAuth client credentials are managed
-            separately by an administrator.
-          </p>
-        </div>
-      </div>
-
+    <SettingsCard
+      id="integrations-calendars"
+      title="Calendar connections"
+      description="Connect Gmail or Outlook calendars, approve access in the provider's own consent screen, then choose which calendars Nojoin syncs for this account."
+    >
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading calendar connections...
-        </div>
+        <SettingsBlock>
+          <div className="flex items-center gap-2 text-sm contrast-helper">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Loading calendar connections...
+          </div>
+        </SettingsBlock>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2">
-            {overview?.providers.map((provider) => {
-              const isConnecting = busyKey === `connect:${provider.provider}`;
-              return (
-                <div
-                  key={provider.provider}
-                  className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 p-4"
+          {overview?.providers.map((provider) => {
+            const isConnecting = busyKey === `connect:${provider.provider}`;
+            return (
+              <SettingsRow
+                key={provider.provider}
+                label={CONNECT_LABELS[provider.provider]}
+                description={
+                  provider.configured
+                    ? `You will be redirected to ${PROVIDER_LABELS[provider.provider]} to sign in and approve access.`
+                    : "Not configured by an administrator yet."
+                }
+                controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+              >
+                <button
+                  type="button"
+                  disabled={!provider.configured || isConnecting}
+                  onClick={() => handleConnect(provider.provider)}
+                  className={SETTINGS_BUTTON_PRIMARY}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {CONNECT_LABELS[provider.provider]}
-                      </div>
-                      <div className="mt-1 text-xs contrast-helper">
-                        {provider.configured
-                          ? `Ready. You will be redirected to ${PROVIDER_LABELS[provider.provider]} to sign in and approve access.`
-                          : "Not configured by an administrator"}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!provider.configured || isConnecting}
-                      onClick={() => handleConnect(provider.provider)}
-                      className="inline-flex items-center gap-2 rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isConnecting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <ExternalLink className="w-4 h-4" />
-                      )}
-                      Connect
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  {isConnecting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Connect
+                </button>
+              </SettingsRow>
+            );
+          })}
 
           {configuredProviders.length === 0 && (
-            <div className="rounded-lg border border-dashed border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-500/30 dark:bg-orange-900/20 dark:text-orange-100">
-              Calendar providers are not configured yet. An owner or admin must
-              add the one-time Google and Microsoft OAuth app credentials first.
-              End users only click Connect and approve access in Google or Microsoft.
-            </div>
+            <SettingsBlock>
+              <SettingsCallout
+                tone="warning"
+                message="Calendar providers are not configured yet. An owner or admin must add the one-time Google and Microsoft OAuth app credentials first. Everyone else only clicks Connect and approves access."
+              />
+            </SettingsBlock>
           )}
 
           {overview?.connections.length ? (
-            <div className="space-y-4">
+            <SettingsBlock className="space-y-4">
               {overview.connections.map((connection) => {
                 const isBusy = busyKey?.endsWith(`:${connection.id}`) ?? false;
                 return (
                   <div
                     key={connection.id}
-                    className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 p-4 space-y-4"
+                    className="settings-inset space-y-4 rounded-xl p-4"
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
@@ -538,14 +523,16 @@ export default function CalendarConnectionsSettings() {
                   </div>
                 );
               })}
-            </div>
+            </SettingsBlock>
           ) : configuredProviders.length > 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-4 py-5 text-sm text-gray-600 dark:text-gray-300">
-              No calendar accounts are connected yet.
-            </div>
+            <SettingsBlock>
+              <p className="text-sm contrast-helper">
+                No calendar accounts are connected yet.
+              </p>
+            </SettingsBlock>
           ) : null}
         </>
       )}
-    </div>
+    </SettingsCard>
   );
 }

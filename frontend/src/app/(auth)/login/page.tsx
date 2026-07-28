@@ -44,7 +44,7 @@ export default function LoginPage() {
         const user = await getCurrentUser();
         router.push(
           user.force_password_change
-            ? "/settings?tab=account&forcePasswordChange=1"
+            ? "/settings/profile"
             : "/",
         );
         return;
@@ -65,7 +65,7 @@ export default function LoginPage() {
       const response = await login(username, password);
 
       if (response.force_password_change) {
-        router.push("/settings?tab=account&forcePasswordChange=1");
+        router.push("/settings/profile");
         return;
       }
 

@@ -59,7 +59,7 @@ Connections authorised before the write scope existed carry only the `mcp:read` 
 
 ## Managing and Revoking Access
 
-- **Settings → Personal → Connected Apps** lists every active connection with its scope, creation time, and last use, and offers per-connection revocation.
+- **Settings → Integrations → Connected apps** lists every active connection with its scope, creation time, and last use, and offers per-connection revocation.
 - Changing your password (or an admin resetting it, or `revoke all sessions`) immediately invalidates all connector access tokens, in the same way browser sessions are invalidated.
 - Revoking a connection invalidates its refresh tokens; the current access token expires within an hour.
 

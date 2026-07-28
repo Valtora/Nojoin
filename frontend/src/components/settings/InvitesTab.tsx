@@ -13,7 +13,9 @@ import { Plus, Trash2, Copy, Users, Clock, XCircle } from "lucide-react";
 import ConfirmationModal from "../ConfirmationModal";
 import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
+import { SETTINGS_BUTTON_PRIMARY } from "./settingsControls";
 
 export default function InvitesTab() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -149,16 +151,21 @@ export default function InvitesTab() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
+    <SettingsCard
+      id="users-invitations"
+      title="Invitations"
+      description="Invitation links for new sign-ups. Each can be revoked before it is used."
+      headerAside={
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors"
+          className={SETTINGS_BUTTON_PRIMARY}
         >
-          <Plus className="w-4 h-4" />
-          Create Invite
+          <Plus className="w-4 h-4" aria-hidden="true" />
+          Create invite
         </button>
-      </div>
+      }
+    >
+      <SettingsBlock contentClassName="space-y-6">
 
       {loading ? (
         <SettingsCallout tone="neutral" message="Loading invitations..." />
@@ -171,10 +178,9 @@ export default function InvitesTab() {
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
           {invitations.map((inv) => (
-            <SettingsPanel
+            <div
               key={inv.id}
-              variant={inv.is_revoked ? "subtle" : "default"}
-              className={inv.is_revoked ? "opacity-75" : ""}
+              className={`settings-inset rounded-xl p-4 ${inv.is_revoked ? "opacity-75" : ""}`}
             >
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
@@ -261,7 +267,7 @@ export default function InvitesTab() {
                   </div>
                 </div>
               )}
-            </SettingsPanel>
+            </div>
           ))}
         </div>
       )}
@@ -340,6 +346,8 @@ export default function InvitesTab() {
         </div>
       )}
 
+      </SettingsBlock>
+
       <ConfirmationModal
         isOpen={revokeModalOpen}
         onClose={() => setRevokeModalOpen(false)}
@@ -354,11 +362,11 @@ export default function InvitesTab() {
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={confirmDelete}
-        title="Delete Invitation"
-        message="Are you sure you want to permanently delete this invitation? This action cannot be undone."
+        title="Delete invitation"
+        message="Are you sure you want to permanently delete this invitation? This cannot be undone."
         confirmText="Delete"
         isDangerous={true}
       />
-    </div>
+    </SettingsCard>
   );
 }

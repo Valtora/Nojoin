@@ -2,7 +2,7 @@
 
 Nojoin sends one small, anonymous ping per day describing how the installation is configured and how much it is used. This page is the complete and canonical description of that: what is sent, what is never sent, when it is sent, and how to turn it off.
 
-If you would rather not read the whole page: it is anonymous, it contains none of your meeting content, it can be switched off in **Settings > Administration > Anonymous usage data**, and the data is never sold.
+If you would rather not read the whole page: it is anonymous, it contains none of your meeting content, it can be switched off in **Settings > Privacy**, and the data is never sold.
 
 ## Why This Exists
 
@@ -109,7 +109,7 @@ One consequence is deliberate and worth stating plainly: **if nobody ever signs 
 
 Any one of these is sufficient.
 
-**In the app.** Go to **Settings > Administration > Anonymous usage data** and switch it off. This takes effect immediately — the next daily cycle sends nothing. You do not need to restart.
+**In the app.** Go to **Settings > Privacy** and switch it off. This takes effect immediately — the next daily cycle sends nothing. You do not need to restart.
 
 **Before you ever start Nojoin.** Set this in `.env`:
 

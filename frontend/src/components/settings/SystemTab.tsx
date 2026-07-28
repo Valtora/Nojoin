@@ -1,7 +1,10 @@
 import {
   useState,
   useEffect,
+  useCallback,
+  useMemo,
   useRef,
+  memo,
   Fragment,
   type ComponentType,
 } from "react";
@@ -29,8 +32,9 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
 import type { AdminHealthCheckStatus, AdminHealthStatus } from "@/types";
 
+import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
+import SettingsCard from "./SettingsCard";
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -104,6 +108,20 @@ const STATUS_STYLES: Record<
   },
 };
 
+/**
+ * The live log view is a firehose: a busy container emits lines faster than
+ * React can usefully render them. Three limits keep it responsive.
+ *
+ * MAX_LOG_LINES bounds both memory and the DOM — older lines are dropped rather
+ * than accumulated forever. LOG_FLUSH_MS batches arrivals so a burst of fifty
+ * lines costs one render instead of fifty. SCROLL_PIN_SLOP decides when the
+ * viewer is "at the bottom" and may follow new output; outside it, the user is
+ * reading history and must not be yanked back down.
+ */
+const MAX_LOG_LINES = 2000;
+const LOG_FLUSH_MS = 200;
+const SCROLL_PIN_SLOP = 40;
+
 const SUMMARY_TONES = {
   ready: "success",
   degraded: "warning",
@@ -164,9 +182,130 @@ function formatCheckMeta(
   return items;
 }
 
+/**
+ * One rendered log line. Declared at module scope and memoised: it used to be
+ * defined inside SystemTab, which made it a new component type on every render,
+ * so React discarded and rebuilt every visible line each time a log arrived.
+ */
+const LogLine = memo(function LogLine({
+  text,
+  showTimestamps,
+  wordWrap,
+}: {
+  text: string;
+  showTimestamps: boolean;
+  wordWrap: boolean;
+}) {
+  // Expected format from backend (with timestamps enabled):
+  // [container-name] 2024-05-22T15:30:00.123456Z Log Message...
+
+  let container = "";
+  let timestamp = "";
+  let content = text;
+
+  let remainder = text;
+
+  // 1. Extract Container Prefix: [nojoin-api]
+  const containerMatch = remainder.match(/^(\[.*?\])\s*/);
+  if (containerMatch) {
+    container = containerMatch[1];
+    // Remove container and following whitespace from remainder
+    remainder = remainder.substring(containerMatch[0].length);
+  }
+
+  // 2. Extract Timestamp: 2024-05-22T...
+  // Look for ISO-like timestamp at start of remainder
+  const timeMatch = remainder.match(/^(\d{4}-\d{2}-\d{2}T\S+)\s*/);
+  if (timeMatch) {
+    timestamp = timeMatch[1];
+    // Remove timestamp and following whitespace
+    remainder = remainder.substring(timeMatch[0].length);
+  }
+
+  // 3. Remaining text is the content
+  content = remainder;
+
+  // Determine Level and Color
+  // Default to INFO (Green) as requested for "LOG" level
+  let level = "INFO";
+  let levelColor = "text-green-500";
+  const upperContent = content.toUpperCase();
+
+  // Check for specific levels (overrides default INFO)
+  if (upperContent.includes("WARN") || upperContent.includes("WRN")) {
+    level = "WARN";
+    levelColor = "text-yellow-500";
+  } else if (
+    upperContent.includes("ERR") ||
+    upperContent.includes("FAIL") ||
+    upperContent.includes("CRIT")
+  ) {
+    level = "ERROR";
+    levelColor = "text-red-500";
+  } else if (upperContent.includes("DBG") || upperContent.includes("DEBUG")) {
+    level = "DEBUG";
+    levelColor = "text-blue-500";
+  }
+
+  // 4. Strip redundant level prefixes to avoid duplication (e.g. "INFO: ...")
+  // Matches start of string: Level + optional colon + whitespace
+  content = content.replace(
+    /^(INFO|WARN|WARNING|ERROR|ERR|DEBUG|DBG|LOG)(:|)\s+/i,
+    "",
+  );
+
+  // Format time for display (HH:mm:ss)
+  let timeDisplay = "--:--:--";
+  if (timestamp) {
+    const tParts = timestamp.split("T");
+    if (tParts.length > 1) {
+      // Take HH:mm:ss from "...T15:30:00.123Z"
+      timeDisplay = tParts[1].substring(0, 8);
+    } else {
+      timeDisplay = timestamp.substring(0, 8);
+    }
+  }
+
+  return (
+    <div className="flex gap-3 hover:bg-gray-800/50 py-0.5 px-2 -mx-2 rounded">
+      {showTimestamps && (
+        <span
+          className="text-gray-500 shrink-0 select-none w-[68px] font-mono"
+          title={timestamp}
+        >
+          {timeDisplay}
+        </span>
+      )}
+
+      {/* Container Name */}
+      <span
+        className="text-gray-600 shrink-0 select-none w-[110px] truncate text-right"
+        title={container}
+      >
+        {container}
+      </span>
+
+      {/* Log Level */}
+      <span
+        className={`${levelColor} font-bold shrink-0 w-10 select-none text-right`}
+      >
+        {level}
+      </span>
+
+      {/* Content */}
+      <span
+        className={`break-all flex-1 ${wordWrap ? "whitespace-pre-wrap" : "whitespace-nowrap"}`}
+      >
+        {content}
+      </span>
+    </div>
+  );
+});
+
 export default function SystemTab() {
   const [logs, setLogs] = useState<string[]>([]);
-  const [filteredLogs, setFilteredLogs] = useState<string[]>([]);
+  const pendingLogsRef = useRef<string[]>([]);
+  const pinnedToBottomRef = useRef(true);
   const [selectedContainer, setSelectedContainer] = useState("all");
   const [isConnected, setIsConnected] = useState(false);
   const [logFilter, setLogFilter] = useState("");
@@ -201,8 +340,9 @@ export default function SystemTab() {
 
   const logLevels = ["ALL", "DEBUG", "INFO", "WARN", "ERROR"];
 
-  // Filter logs logic
-  useEffect(() => {
+  // Derived, not stored: storing it in state re-rendered the whole tab twice
+  // for every line that arrived.
+  const filteredLogs = useMemo(() => {
     let result = logs;
 
     // 1. Text/Regex Filter
@@ -240,7 +380,7 @@ export default function SystemTab() {
       });
     }
 
-    setFilteredLogs(result);
+    return result;
   }, [logs, logFilter, logLevel]);
 
   useEffect(() => {
@@ -282,17 +422,51 @@ export default function SystemTab() {
   }, []);
 
   // Auto-scroll
+  // Follow new output only while the viewer is already at the bottom. Writing
+  // scrollTop on every batch regardless is what made scrolling back through
+  // history feel like it kept snapping away.
   useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const element = scrollRef.current;
+    if (!autoScroll || !element || !pinnedToBottomRef.current) {
+      return;
     }
+    element.scrollTop = element.scrollHeight;
   }, [filteredLogs, autoScroll]);
+
+  const handleLogScroll = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) {
+      return;
+    }
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+    pinnedToBottomRef.current = distanceFromBottom <= SCROLL_PIN_SLOP;
+  }, []);
 
   // WebSocket for logs
   useEffect(() => {
     setLogs([]); // Clear logs on switch
+    pendingLogsRef.current = [];
     // Reset connection state
     setIsConnected(false);
+
+    // Buffer arrivals and flush on a timer: setLogs per message re-rendered the
+    // component (and copied the whole array) once for every line.
+    const flush = () => {
+      const batch = pendingLogsRef.current;
+      if (batch.length === 0) {
+        return;
+      }
+      pendingLogsRef.current = [];
+      setLogs((prev) => {
+        const next = prev.concat(batch);
+        return next.length > MAX_LOG_LINES
+          ? next.slice(next.length - MAX_LOG_LINES)
+          : next;
+      });
+    };
+
+    const flushTimer = window.setInterval(flush, LOG_FLUSH_MS);
 
     const connectWs = () => {
       try {
@@ -317,7 +491,7 @@ export default function SystemTab() {
         };
 
         ws.onmessage = (event) => {
-          setLogs((prev) => [...prev, event.data]);
+          pendingLogsRef.current.push(event.data as string);
         };
 
         ws.onclose = () => {
@@ -326,26 +500,26 @@ export default function SystemTab() {
 
         ws.onerror = (error) => {
           console.error("WebSocket error:", error);
-          setLogs((prev) => [
-            ...prev,
+          pendingLogsRef.current.push(
             "--- Connection Error (Check Console) - Ensure API is reachable ---",
-          ]);
+          );
         };
 
         wsRef.current = ws;
 
             } catch (err: unknown) {
         console.error("Failed to connect to log stream:", err);
-        setLogs((prev) => [
-          ...prev,
+        pendingLogsRef.current.push(
           "--- Auth Error - Unable to connect to the live log stream ---",
-        ]);
+        );
       }
     };
 
     connectWs();
 
     return () => {
+      window.clearInterval(flushTimer);
+      pendingLogsRef.current = [];
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -375,113 +549,6 @@ export default function SystemTab() {
     }
   };
 
-  const LogLine = ({ text }: { text: string }) => {
-    // Expected format from backend (with timestamps enabled):
-    // [container-name] 2024-05-22T15:30:00.123456Z Log Message...
-
-    let container = "";
-    let timestamp = "";
-    let content = text;
-
-    let remainder = text;
-
-    // 1. Extract Container Prefix: [nojoin-api]
-    const containerMatch = remainder.match(/^(\[.*?\])\s*/);
-    if (containerMatch) {
-      container = containerMatch[1];
-      // Remove container and following whitespace from remainder
-      remainder = remainder.substring(containerMatch[0].length);
-    }
-
-    // 2. Extract Timestamp: 2024-05-22T...
-    // Look for ISO-like timestamp at start of remainder
-    const timeMatch = remainder.match(/^(\d{4}-\d{2}-\d{2}T\S+)\s*/);
-    if (timeMatch) {
-      timestamp = timeMatch[1];
-      // Remove timestamp and following whitespace
-      remainder = remainder.substring(timeMatch[0].length);
-    }
-
-    // 3. Remaining text is the content
-    content = remainder;
-
-    // Determine Level and Color
-    // Default to INFO (Green) as requested for "LOG" level
-    let level = "INFO";
-    let levelColor = "text-green-500";
-    const upperContent = content.toUpperCase();
-
-    // Check for specific levels (overrides default INFO)
-    if (upperContent.includes("WARN") || upperContent.includes("WRN")) {
-      level = "WARN";
-      levelColor = "text-yellow-500";
-    } else if (
-      upperContent.includes("ERR") ||
-      upperContent.includes("FAIL") ||
-      upperContent.includes("CRIT")
-    ) {
-      level = "ERROR";
-      levelColor = "text-red-500";
-    } else if (upperContent.includes("DBG") || upperContent.includes("DEBUG")) {
-      level = "DEBUG";
-      levelColor = "text-blue-500";
-    }
-
-    // 4. Strip redundant level prefixes to avoid duplication (e.g. "INFO: ...")
-    // Matches start of string: Level + optional colon + whitespace
-    content = content.replace(
-      /^(INFO|WARN|WARNING|ERROR|ERR|DEBUG|DBG|LOG)(:|)\s+/i,
-      "",
-    );
-
-    // Format time for display (HH:mm:ss)
-    let timeDisplay = "--:--:--";
-    if (timestamp) {
-      const tParts = timestamp.split("T");
-      if (tParts.length > 1) {
-        // Take HH:mm:ss from "...T15:30:00.123Z"
-        timeDisplay = tParts[1].substring(0, 8);
-      } else {
-        timeDisplay = timestamp.substring(0, 8);
-      }
-    }
-
-    return (
-      <div className="flex gap-3 hover:bg-gray-800/50 py-0.5 px-2 -mx-2 rounded">
-        {logShowTimestamps && (
-          <span
-            className="text-gray-500 shrink-0 select-none w-[68px] font-mono"
-            title={timestamp}
-          >
-            {timeDisplay}
-          </span>
-        )}
-
-        {/* Container Name */}
-        <span
-          className="text-gray-600 shrink-0 select-none w-[110px] truncate text-right"
-          title={container}
-        >
-          {container}
-        </span>
-
-        {/* Log Level */}
-        <span
-          className={`${levelColor} font-bold shrink-0 w-10 select-none text-right`}
-        >
-          {level}
-        </span>
-
-        {/* Content */}
-        <span
-          className={`break-all flex-1 ${logWordWrap ? "whitespace-pre-wrap" : "whitespace-nowrap"}`}
-        >
-          {content}
-        </span>
-      </div>
-    );
-  };
-
   const summaryTone = adminHealth
     ? SUMMARY_TONES[adminHealth.summary.pipeline_status]
     : "neutral";
@@ -496,7 +563,12 @@ export default function SystemTab() {
     : [];
 
   return (
-    <div className="animate-in fade-in duration-500 space-y-4">
+    <SettingsCard
+      id="system-logs"
+      title="Service health and logs"
+      description="Live operational output from the Nojoin services."
+    >
+      <SettingsBlock contentClassName="animate-in fade-in duration-500 space-y-4">
       {adminHealth ? (
         <SettingsCallout tone={summaryTone} title={summaryTitle}>
           <div className="space-y-2">
@@ -535,7 +607,7 @@ export default function SystemTab() {
       )}
 
       {adminHealth?.download.in_progress && (
-        <SettingsPanel variant="subtle" className="space-y-3">
+        <div className="settings-inset rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -563,7 +635,7 @@ export default function SystemTab() {
               }}
             />
           </div>
-        </SettingsPanel>
+        </div>
       )}
 
       {adminHealth && (
@@ -574,7 +646,7 @@ export default function SystemTab() {
             const meta = formatCheckMeta(key, check);
 
             return (
-              <SettingsPanel key={key} variant="meta" className="space-y-3">
+              <div key={key} className="settings-inset rounded-xl p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] contrast-helper">
@@ -621,7 +693,7 @@ export default function SystemTab() {
                     {check.action}
                   </p>
                 )}
-              </SettingsPanel>
+              </div>
             );
           })}
         </div>
@@ -749,7 +821,8 @@ export default function SystemTab() {
           {/* Log Output */}
           <div
             ref={scrollRef}
-            className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed text-gray-300 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
+            onScroll={handleLogScroll}
+            className="flex-1 overflow-y-auto overscroll-contain p-4 font-mono text-[11px] leading-relaxed text-gray-300 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
           >
             {filteredLogs.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center opacity-30 select-none">
@@ -757,7 +830,14 @@ export default function SystemTab() {
                 <p>No logs to display</p>
               </div>
             ) : (
-              filteredLogs.map((log, i) => <LogLine key={i} text={log} />)
+              filteredLogs.map((log, i) => (
+                <LogLine
+                  key={i}
+                  text={log}
+                  showTimestamps={logShowTimestamps}
+                  wordWrap={logWordWrap}
+                />
+              ))
             )}
           </div>
 
@@ -767,6 +847,7 @@ export default function SystemTab() {
             <span>{filteredLogs.length} lines</span>
           </div>
       </div>
-    </div>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

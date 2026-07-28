@@ -4,8 +4,8 @@ import { HelpCircle } from "lucide-react";
 import { Settings } from "@/types";
 import { getModelsStatus } from "@/lib/api";
 import Tooltip from "@/components/ui/Tooltip";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import WhisperModelModal from "./WhisperModelModal";
 import ModelDownloadPromptModal from "./ModelDownloadPromptModal";
 import type { AISettingsModels } from "./useAISettingsModels";
@@ -90,13 +90,11 @@ export default function AiTranscriptionSection({
     `Whisper ${WHISPER_MODELS.find((m) => m.id === size)?.label || size}`;
 
   return (
-    <SettingsSection
-      eyebrow="Administration"
+    <SettingsCard
       title="Transcription model"
       description="Choose the engine Nojoin uses for live and final transcription during normal recording."
-      width="regular"
     >
-      <SettingsPanel className="mx-auto max-w-3xl space-y-4">
+      <SettingsBlock className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             <Tooltip
@@ -267,7 +265,7 @@ export default function AiTranscriptionSection({
           onDownloadNow={() => void confirmDownloadNow()}
           onLater={() => setDownloadPromptLabel(null)}
         />
-      </SettingsPanel>
-    </SettingsSection>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

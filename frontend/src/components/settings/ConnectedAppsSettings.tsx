@@ -11,7 +11,10 @@ import {
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import { SETTINGS_BUTTON_DANGER } from "./settingsControls";
 
 // Keyed by the grant's full normalised scope string (space-separated,
 // sorted), as recorded when the connection was authorised.
@@ -69,62 +72,56 @@ export default function ConnectedAppsSettings() {
   };
 
   return (
-    <SettingsSection
-      eyebrow="Integrations"
-      title="Connected Apps"
-      description="External assistants connected through the Nojoin MCP connector, such as Claude. Connections can read your meeting library and, when granted, add or update people in your People library. Access can be revoked at any time."
-      width="compact"
+    <SettingsCard
+      id="integrations-connected-apps"
+      title="Connected apps"
+      description="Assistants connected through the Nojoin MCP connector. They can read your meeting library and, when granted, add or update people in your People library."
     >
       {apps === null ? (
-        <div className="flex justify-center py-6">
-          <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
-        </div>
+        <SettingsBlock>
+          <div className="flex justify-center py-2">
+            <Loader2
+              className="h-5 w-5 animate-spin text-orange-600"
+              aria-hidden="true"
+            />
+          </div>
+        </SettingsBlock>
       ) : apps.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          No apps are connected. Add Nojoin as a custom connector from a
-          supported assistant using{" "}
-          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-800">
-            {typeof window !== "undefined" ? window.location.origin : ""}/mcp
-          </code>
-          .
-        </p>
+        <SettingsBlock>
+          <p className="text-sm contrast-helper">
+            No apps are connected. Add Nojoin as a custom connector from a
+            supported assistant using{" "}
+            <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-800">
+              {typeof window !== "undefined" ? window.location.origin : ""}/mcp
+            </code>
+            .
+          </p>
+        </SettingsBlock>
       ) : (
-        <ul className="space-y-3">
-          {apps.map((app) => (
-            <li
-              key={app.grant_id}
-              className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900"
+        apps.map((app) => (
+          <SettingsRow
+            key={app.grant_id}
+            label={app.client_name}
+            description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at)} · Last used ${formatTimestamp(app.last_used_at)}`}
+            icon={<Plug className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+          >
+            <button
+              type="button"
+              onClick={() => handleRevoke(app.grant_id)}
+              disabled={revokingGrantId === app.grant_id}
+              className={SETTINGS_BUTTON_DANGER}
             >
-              <div className="flex items-center gap-3 min-w-0">
-                <Plug className="h-5 w-5 shrink-0 text-orange-600" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                    {app.client_name}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {SCOPE_LABELS[app.scope] ?? app.scope} · Connected{" "}
-                    {formatTimestamp(app.created_at)} · Last used{" "}
-                    {formatTimestamp(app.last_used_at)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleRevoke(app.grant_id)}
-                disabled={revokingGrantId === app.grant_id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:border-red-400 hover:text-red-600 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-500 dark:hover:text-red-400"
-              >
-                {revokingGrantId === app.grant_id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
-                Revoke
-              </button>
-            </li>
-          ))}
-        </ul>
+              {revokingGrantId === app.grant_id ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+              )}
+              Revoke
+            </button>
+          </SettingsRow>
+        ))
       )}
-    </SettingsSection>
+    </SettingsCard>
   );
 }

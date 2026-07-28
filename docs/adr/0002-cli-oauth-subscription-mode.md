@@ -22,7 +22,7 @@ documented rather than implicit.
 ## Decision
 
 We will ship **CLI OAuth as a per-user, opt-in usage model**, off by default,
-selectable in Settings > AI only after the user connects their subscription. It
+selectable in Settings > AI providers only after the user connects their subscription. It
 is a **swappable** mode that degrades cleanly to the user's BYOK/Ollama secondary
 via `SecondaryLLMBackend` and is **never load-bearing**.
 

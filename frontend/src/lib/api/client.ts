@@ -6,7 +6,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
 const FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap";
-const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings?tab=account&forcePasswordChange=1";
+const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings/profile";
 
 type ValidationErrorItem = {
   loc?: unknown;

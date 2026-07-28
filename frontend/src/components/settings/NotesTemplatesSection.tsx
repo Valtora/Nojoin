@@ -22,8 +22,8 @@ import {
   updateNotesTemplate,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import NotesTemplateEditorModal from "./NotesTemplateEditorModal";
 
 interface NotesTemplatesSectionProps {
@@ -165,13 +165,11 @@ export default function NotesTemplatesSection({
   };
 
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Notes structure"
       description="Choose how generated meeting notes are organised. Accuracy rules, table formatting and the transcript itself are fixed; the sections and their emphasis are yours."
-      width="regular"
     >
-      <SettingsPanel className="mx-auto max-w-3xl space-y-4">
+      <SettingsBlock className="space-y-4">
         {loading && !data ? (
           <div className="flex items-center gap-2 text-sm contrast-helper">
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -339,7 +337,7 @@ export default function NotesTemplatesSection({
             </div>
           </>
         )}
-      </SettingsPanel>
+      </SettingsBlock>
 
       <NotesTemplateEditorModal
         isOpen={Boolean(editing) || creating}
@@ -354,6 +352,6 @@ export default function NotesTemplatesSection({
         maxDescriptionLength={data?.limits.max_description_length ?? 200}
         onSave={(payload) => handleSave(editing, payload)}
       />
-    </SettingsSection>
+    </SettingsCard>
   );
 }
