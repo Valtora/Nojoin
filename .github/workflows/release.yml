@@ -686,7 +686,7 @@ jobs:
 
           # Resolve the published image digests for reproducible-pin guidance.
           : > image-digests.txt
-          for suffix in -api -worker -frontend; do
+          for suffix in -api -worker -worker-io -frontend; do
             digest="$(docker buildx imagetools inspect "${IMAGE_BASE}${suffix}:${VERSION}" \
               --format '{{ .Manifest.Digest }}' 2>/dev/null || echo unknown)"
             printf -- '- `%s%s@%s`\n' "${IMAGE_BASE}" "${suffix}" "${digest}" >> image-digests.txt
