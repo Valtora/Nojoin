@@ -36,12 +36,12 @@ from backend.api.v1.endpoints.setup import (
     is_system_initialized,
     require_first_run_password,
 )
-from backend.celery_app import celery_app
 from backend.core.security import (
     MIN_PASSWORD_LENGTH,
     hash_user_password,
     validate_password_policy,
 )
+from backend.core.task_dispatch import dispatch_task
 from backend.models.user import User
 from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
@@ -484,7 +484,7 @@ async def setup_system(
 
     model_preparation_task_id = None
     try:
-        model_preparation_task_id = enqueue_model_preparation(
+        model_preparation_task_id = await enqueue_model_preparation(
             whisper_model_size=setup_in.whisper_model_size or "turbo",
             transcription_backend="whisper",
             include_core=True,
@@ -647,7 +647,7 @@ async def prepare_models_endpoint(
         include_core = False
 
     try:
-        task_id = enqueue_model_preparation(
+        task_id = await enqueue_model_preparation(
             whisper_model_size=effective("whisper_model_size", "turbo"),
             transcription_backend=transcription_backend,
             parakeet_model=effective("parakeet_model", "parakeet-tdt-0.6b-v3"),
@@ -683,7 +683,7 @@ async def delete_model_endpoint(
         raise HTTPException(status_code=400, detail="Invalid model name")
 
     try:
-        task = celery_app.send_task(
+        task = await dispatch_task(
             MODEL_DELETION_TASK,
             kwargs={"model_name": model_name, "variant": variant},
         )

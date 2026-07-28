@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_db
+from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarEvent
 from backend.models.recording import RecordingStatus, RecordingUpdate
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
@@ -298,7 +299,7 @@ async def infer_speakers_for_recording(
     await db.commit()
     await db.refresh(recording)
 
-    task = recordings_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.infer_speakers_task", args=[recording.id]
     )
     recording.celery_task_id = task.id

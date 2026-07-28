@@ -1,7 +1,8 @@
+import asyncio
 import logging
 from typing import Any
 
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task
 from backend.utils.config_manager import config_manager
 from backend.utils.download_progress import set_download_progress
 
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
 
 
-def enqueue_model_preparation(
+async def enqueue_model_preparation(
     *,
     whisper_model_size: str | None = None,
     transcription_backend: str | None = None,
@@ -18,7 +19,13 @@ def enqueue_model_preparation(
     canary_model: str | None = None,
     include_core: bool = True,
 ) -> str:
-    """Queue worker-side model preparation without importing inference code."""
+    """Queue worker-side model preparation without importing inference code.
+
+    Every caller is a request handler or the API's startup lifespan, and both
+    of the Redis calls below block, so both are kept off the event loop
+    (ADR-0007). `ignore_result` is set because nobody awaits this task's return
+    value; progress is reported through the download-progress key instead.
+    """
     kwargs: dict[str, Any] = {
         "whisper_model_size": whisper_model_size
         or str(config_manager.get("whisper_model_size", "turbo")),
@@ -30,10 +37,11 @@ def enqueue_model_preparation(
         or str(config_manager.get("canary_model", "nemo-canary-1b-v2")),
         "include_core": include_core,
     }
-    task = celery_app.send_task(
+    task = await dispatch_task(
         MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True
     )
-    set_download_progress(
+    await asyncio.to_thread(
+        set_download_progress,
         0,
         "Model preparation queued...",
         status="downloading",

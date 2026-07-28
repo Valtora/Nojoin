@@ -64,7 +64,7 @@ def prepare_app(monkeypatch):
     """System router with the enqueue call recorded rather than sent."""
     calls: list[dict] = []
 
-    def fake_enqueue(**kwargs):
+    async def fake_enqueue(**kwargs):
         calls.append(kwargs)
         return "task-123"
 

@@ -5,7 +5,9 @@ unbounded wait does not slow one request, it stalls the process. These assert
 the bounds that make that impossible, and the process asymmetry behind them.
 """
 
+import ast
 import inspect
+import pathlib
 
 from backend.api.v1.endpoints.transcripts import helpers
 from backend.celery_app import (
@@ -72,6 +74,51 @@ def test_best_effort_refresh_does_not_dispatch_on_the_event_loop():
     the process is serving rather than only this one.
     """
     assert inspect.iscoroutinefunction(helpers._dispatch_meeting_edge_refresh)
-    assert "run_in_threadpool" in inspect.getsource(
+    assert "dispatch_task_best_effort" in inspect.getsource(
         helpers._dispatch_meeting_edge_refresh
+    )
+
+
+def test_no_api_code_dispatches_celery_work_on_the_event_loop():
+    """The whole point, asserted over the tree rather than one call site.
+
+    Every dispatch reachable from a request handler must go through
+    `backend.core.task_dispatch`. A plain `send_task` inside an `async def`
+    puts a blocking socket call back on the loop, where an unreachable Redis
+    stalls every concurrent request rather than just its own.
+    """
+    offenders = []
+    for path in pathlib.Path("backend").rglob("*.py"):
+        if "/tests/" in str(path):
+            continue
+        tree = ast.parse(path.read_text())
+        stack: list[bool] = []
+
+        class Visitor(ast.NodeVisitor):
+            def visit_FunctionDef(self, node):
+                stack.append(False)
+                self.generic_visit(node)
+                stack.pop()
+
+            def visit_AsyncFunctionDef(self, node):
+                stack.append(True)
+                self.generic_visit(node)
+                stack.pop()
+
+            def visit_Call(self, node):
+                func = node.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr in {"send_task", "apply_async", "delay"}
+                    and stack
+                    and stack[-1]
+                ):
+                    offenders.append(f"{path}:{node.lineno}")
+                self.generic_visit(node)
+
+        Visitor().visit(tree)
+
+    assert not offenders, (
+        "Celery dispatched inline from an async def. Use "
+        "backend.core.task_dispatch.dispatch_task instead:\n  " + "\n  ".join(offenders)
     )

@@ -13,9 +13,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
-from starlette.concurrency import run_in_threadpool
 
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task_best_effort
 from backend.models.pipeline import SpeakerCorrectionScope
 from backend.models.recording import (
     LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL,
@@ -70,18 +69,11 @@ async def _dispatch_meeting_edge_refresh(
     if not enabled:
         return
 
-    try:
-        await run_in_threadpool(
-            celery_app.send_task,
-            "backend.worker.tasks.refresh_meeting_edge_task",
-            args=[recording_id],
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Failed to dispatch Meeting Edge refresh for recording %s: %s",
-            recording_id,
-            exc,
-        )
+    await dispatch_task_best_effort(
+        "backend.worker.tasks.refresh_meeting_edge_task",
+        args=[recording_id],
+        context=f"recording {recording_id}",
+    )
 
 
 async def _get_recording_transcript(

@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
@@ -248,7 +248,7 @@ async def generate_notes(
     db.add(transcript)
     await db.commit()
 
-    task = celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.generate_notes_task",
         args=[recording.id, requested_template_id],
     )

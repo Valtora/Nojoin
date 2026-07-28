@@ -9,7 +9,7 @@ from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task
 from backend.models.document import Document, DocumentStatus
 from backend.models.recording import Recording
 from backend.models.recording_public import DocumentPublicRead, serialize_document
@@ -119,7 +119,7 @@ async def upload_document(
     await db.commit()
     await db.refresh(document)
 
-    task = celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.process_document_task", args=[document.id]
     )
     from backend.models.task import register_task_ownership

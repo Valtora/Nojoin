@@ -20,6 +20,7 @@ from sqlalchemy.pool import StaticPool
 import backend.services.chat_relay as chat_relay
 from backend.api.v1.endpoints.transcripts import routes_chat
 from backend.api.v1.endpoints.transcripts.helpers import ChatRequest
+from backend.celery_app import celery_app
 
 # Register every ORM model so mappers configure via the recording/user FKs.
 from backend.models import registry  # noqa: F401
@@ -151,7 +152,7 @@ def test_cli_provider_dispatches_and_relays_byte_identical(monkeypatch):
             lambda *a, **k: _fake_async(_cli_config()),
         )
         monkeypatch.setattr(
-            routes_chat.celery_app, "send_task", _rag_and_dispatch_stubs(dispatched)
+            celery_app, "send_task", _rag_and_dispatch_stubs(dispatched)
         )
         monkeypatch.setattr(
             "backend.models.task.register_task_ownership",
@@ -199,7 +200,7 @@ def test_non_cli_provider_is_not_dispatched(monkeypatch):
             routes_chat, "resolve_llm_config_async", lambda *a, **k: _fake_async(ollama)
         )
         monkeypatch.setattr(
-            routes_chat.celery_app, "send_task", _rag_and_dispatch_stubs(dispatched)
+            celery_app, "send_task", _rag_and_dispatch_stubs(dispatched)
         )
         monkeypatch.setattr(routes_chat, "async_session_maker", maker)
 

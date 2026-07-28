@@ -14,6 +14,7 @@ from sqlmodel import Session, text
 from backend.celery_app import celery_app
 from backend.core.db import sync_engine
 from backend.core.redis import get_redis_url
+from backend.core.task_dispatch import dispatch_task
 from backend.preload_models import check_model_status
 from backend.utils.config_manager import async_get_system_api_keys, config_manager
 from backend.utils.deployment_warnings import get_deployment_warnings
@@ -528,7 +529,7 @@ async def _get_device_component(worker_status: str) -> tuple[dict[str, Any], boo
         )
 
     try:
-        task = celery_app.send_task("backend.worker.tasks.get_worker_device_status")
+        task = await dispatch_task("backend.worker.tasks.get_worker_device_status")
         payload = await asyncio.to_thread(task.get, timeout=5)
     except Exception:  # noqa: BLE001
         return (

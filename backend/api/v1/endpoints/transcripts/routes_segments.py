@@ -9,7 +9,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import SpeakerCorrectionScope
 from backend.models.recording_public import (
     TranscriptPublicRead,
@@ -155,7 +155,7 @@ async def update_segment_speaker(
                 end = refreshed_segment["end"]
                 duration = end - start
                 if duration > 0.5:
-                    celery_app.send_task(
+                    await dispatch_task(
                         "backend.worker.tasks.update_speaker_embedding_task",
                         args=[recording.id, start, end, target_speaker_id],
                     )
@@ -395,7 +395,7 @@ async def update_segment_speaker(
             duration = end - start
 
             if duration > 0.5:
-                celery_app.send_task(
+                await dispatch_task(
                     "backend.worker.tasks.update_speaker_embedding_task",
                     args=[
                         recording.id,

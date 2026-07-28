@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.endpoints import cli_oauth
 from backend.api.v1.endpoints.cli_oauth import _usage_by_user, _usage_row
+from backend.celery_app import celery_app
 from backend.core.encryption import decrypt_secret
 
 # Register every ORM model so the User mapper (reached via the credential FK)
@@ -188,18 +189,18 @@ def _patch_codex(fake: _FakeCodexLogin):
     originals = {
         "read_login_state": codex_oauth.read_login_state,
         "clear_login_state": codex_oauth.clear_login_state,
-        "send_task": cli_oauth.celery_app.send_task,
+        "send_task": celery_app.send_task,
     }
     codex_oauth.read_login_state = fake.read_login_state
     codex_oauth.clear_login_state = fake.clear_login_state
-    cli_oauth.celery_app.send_task = fake.send_task
+    celery_app.send_task = fake.send_task
     return originals
 
 
 def _restore_codex(originals):
     codex_oauth.read_login_state = originals["read_login_state"]
     codex_oauth.clear_login_state = originals["clear_login_state"]
-    cli_oauth.celery_app.send_task = originals["send_task"]
+    celery_app.send_task = originals["send_task"]
 
 
 def test_start_returns_authorize_url_and_stashes_pending():
@@ -488,9 +489,9 @@ def test_codex_models_live_and_fallback():
     async def _run():
         engine, _maker, app = await _build_app()
         original_read = codex_oauth.read_model_catalog
-        original_send = cli_oauth.celery_app.send_task
+        original_send = celery_app.send_task
         dispatched: list = []
-        cli_oauth.celery_app.send_task = lambda name, **kwargs: dispatched.append(name)
+        celery_app.send_task = lambda name, **kwargs: dispatched.append(name)
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(
@@ -516,7 +517,7 @@ def test_codex_models_live_and_fallback():
         finally:
             await engine.dispose()
             codex_oauth.read_model_catalog = original_read
-            cli_oauth.celery_app.send_task = original_send
+            celery_app.send_task = original_send
 
     asyncio.run(_run())
 
