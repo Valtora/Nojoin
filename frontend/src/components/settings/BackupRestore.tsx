@@ -15,6 +15,8 @@ import {
 import { useBackupStore } from "@/lib/backupStore";
 import RestoreOptionsModal from "@/components/settings/RestoreOptionsModal";
 import BackupOptionsModal from "@/components/settings/BackupOptionsModal";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 /** Turns the machine-readable reason codes into something an operator can act on. */
 const SKIP_REASON_LABELS: Record<string, string> = {
@@ -222,10 +224,12 @@ export default function BackupRestore() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Card chrome is supplied by the enclosing SettingsSection in
-          AdminSettings; this wrapper only groups the export/restore content. */}
-      <div className="space-y-6">
+    <SettingsCard
+      id="backup-export"
+      title="Backup and restore"
+      description="Export application data as a restorable archive, and recover it transactionally."
+    >
+      <SettingsBlock contentClassName="space-y-6">
         {/* Export Section */}
         <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
           <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
@@ -457,7 +461,7 @@ export default function BackupRestore() {
             </ul>
           </div>
         )}
-      </div>
+      </SettingsBlock>
       <RestoreOptionsModal
         isOpen={showRestoreOptions}
         onClose={() => setShowRestoreOptions(false)}
@@ -468,6 +472,6 @@ export default function BackupRestore() {
         isOpen={showBackupOptions}
         onClose={() => setShowBackupOptions(false)}
       />
-    </div>
+    </SettingsCard>
   );
 }

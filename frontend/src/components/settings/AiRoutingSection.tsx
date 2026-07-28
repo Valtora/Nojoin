@@ -5,8 +5,8 @@ import { CliOAuthStatus, CliProvider, Settings } from "@/types";
 import { cn } from "@/lib/cn";
 import CliOAuthPanel from "./CliOAuthPanel";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import {
   getClaudeCliModels,
@@ -182,11 +182,9 @@ export default function AiRoutingSection({
   const modelOptions = liveModelOptions ?? cliModelOptions(activeProvider);
 
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="AI routing"
       description="Choose how AI runs for your account. This is a per-user preference and does not change anything for other users."
-      width="wide"
     >
       <div className="mx-auto max-w-3xl space-y-4">
         <div
@@ -328,8 +326,7 @@ export default function AiRoutingSection({
             </SettingsCallout>
           </div>
         ) : (
-          <SettingsPanel
-            variant="subtle"
+          <SettingsBlock inset
             className="flex items-center justify-between gap-3"
           >
             <div>
@@ -350,10 +347,10 @@ export default function AiRoutingSection({
             >
               {providerConfigured ? "Configured" : "Not configured"}
             </SettingsStatusBadge>
-          </SettingsPanel>
+          </SettingsBlock>
         )}
       </div>
-    </SettingsSection>
+    </SettingsCard>
   );
 }
 
@@ -380,7 +377,7 @@ function RoutingCard({
         "flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all",
         selected
           ? "border-orange-500 bg-orange-50/60 shadow-sm dark:border-orange-500/50 dark:bg-orange-500/10"
-          : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm dark:border-gray-700 dark:bg-gray-950/60 dark:hover:border-gray-600",
+          : "settings-inset border-transparent hover:border-gray-300 dark:hover:border-gray-600",
       )}
     >
       <div className="flex items-center justify-between">

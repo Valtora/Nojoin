@@ -29,8 +29,9 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { useNavigationStore } from "@/lib/store";
 import type { AdminHealthCheckStatus, AdminHealthStatus } from "@/types";
 
+import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
+import SettingsCard from "./SettingsCard";
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -496,7 +497,12 @@ export default function SystemTab() {
     : [];
 
   return (
-    <div className="animate-in fade-in duration-500 space-y-4">
+    <SettingsCard
+      id="system-logs"
+      title="Service health and logs"
+      description="Live operational output from the Nojoin services."
+    >
+      <SettingsBlock contentClassName="animate-in fade-in duration-500 space-y-4">
       {adminHealth ? (
         <SettingsCallout tone={summaryTone} title={summaryTitle}>
           <div className="space-y-2">
@@ -535,7 +541,7 @@ export default function SystemTab() {
       )}
 
       {adminHealth?.download.in_progress && (
-        <SettingsPanel variant="subtle" className="space-y-3">
+        <div className="settings-inset rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -563,7 +569,7 @@ export default function SystemTab() {
               }}
             />
           </div>
-        </SettingsPanel>
+        </div>
       )}
 
       {adminHealth && (
@@ -574,7 +580,7 @@ export default function SystemTab() {
             const meta = formatCheckMeta(key, check);
 
             return (
-              <SettingsPanel key={key} variant="meta" className="space-y-3">
+              <div key={key} className="settings-inset rounded-xl p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] contrast-helper">
@@ -621,7 +627,7 @@ export default function SystemTab() {
                     {check.action}
                   </p>
                 )}
-              </SettingsPanel>
+              </div>
             );
           })}
         </div>
@@ -767,6 +773,7 @@ export default function SystemTab() {
             <span>{filteredLogs.length} lines</span>
           </div>
       </div>
-    </div>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

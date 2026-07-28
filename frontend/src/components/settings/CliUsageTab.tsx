@@ -10,8 +10,9 @@ import {
 import { CliUsageRow } from "@/types";
 import { getCliUsageOverview } from "@/lib/api/cliOauth";
 import { useNotificationStore } from "@/lib/notificationStore";
+import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
+import SettingsCard from "./SettingsCard";
 
 const PAGE_SIZE = 10;
 
@@ -114,7 +115,12 @@ export default function CliUsageTab() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="space-y-4">
+    <SettingsCard
+      id="ai-providers-usage"
+      title="Usage and quota"
+      description="Per-user subscription token usage and rate-limit status, across Claude and ChatGPT."
+    >
+      <SettingsBlock contentClassName="space-y-4">
       <SettingsCallout tone="info">
         Tokens are what Nojoin sent through each user&apos;s own Claude
         subscription. A subscription exposes no live remaining-quota figure, so
@@ -145,7 +151,7 @@ export default function CliUsageTab() {
         </button>
       </div>
 
-      <SettingsPanel className="overflow-hidden p-0">
+      <SettingsBlock className="px-0 pb-0 sm:px-0" contentClassName="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
             <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
@@ -241,7 +247,8 @@ export default function CliUsageTab() {
             </button>
           </div>
         </div>
-      </SettingsPanel>
-    </div>
+      </SettingsBlock>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

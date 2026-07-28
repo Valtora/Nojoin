@@ -2,8 +2,8 @@ import { Cpu } from "lucide-react";
 
 import { Settings } from "@/types";
 import { Switch } from "@/components/ui/Switch";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 interface AiAutomaticEnhancementSectionProps {
   settings: Settings;
@@ -17,14 +17,11 @@ export default function AiAutomaticEnhancementSection({
   onPersist,
 }: AiAutomaticEnhancementSectionProps) {
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Automatic enhancement"
       description="Control how AI-generated titles are written for your meetings and summaries."
-      width="compact"
     >
-      <SettingsPanel
-        variant="field"
+      <SettingsBlock
         className="mx-auto max-w-2xl flex items-start gap-3"
       >
         <div className="flex-1">
@@ -43,7 +40,7 @@ export default function AiAutomaticEnhancementSection({
             onPersist({ ...settings, prefer_short_titles: checked })
           }
         />
-      </SettingsPanel>
-    </SettingsSection>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

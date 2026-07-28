@@ -16,7 +16,6 @@ import { User, UserRole } from "@/types";
 import { trimString } from "@/lib/validation";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
-import SettingsPanel from "./SettingsPanel";
 
 type NewUserFormState = {
   username: string;
@@ -218,7 +217,7 @@ export default function UsersTab() {
       </div>
 
       {isCreating && (
-        <SettingsPanel variant="subtle" className="space-y-4">
+        <div className="settings-inset rounded-xl p-4 space-y-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
               Create user
@@ -286,10 +285,10 @@ export default function UsersTab() {
               </button>
             </div>
           </form>
-        </SettingsPanel>
+        </div>
       )}
 
-      <SettingsPanel className="overflow-hidden p-0">
+      <div className="settings-inset rounded-xl p-4 overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
             <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
@@ -397,7 +396,7 @@ export default function UsersTab() {
             </button>
           </div>
         </div>
-      </SettingsPanel>
+      </div>
 
       {/* Edit User Modal */}
       {editModalOpen && (

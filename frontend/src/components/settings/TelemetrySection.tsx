@@ -9,8 +9,8 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import type { TelemetryStatus } from "@/types";
 
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 
 /**
  * The exact fields the daily ping carries. Mirrored from build_payload in
@@ -95,13 +95,12 @@ export default function TelemetrySection() {
 
   if (loading) {
     return (
-      <SettingsSection
-        eyebrow="Administration"
+      <SettingsCard
         title="Anonymous usage data"
         description="Loading the current setting."
       >
         <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-      </SettingsSection>
+      </SettingsCard>
     );
   }
 
@@ -110,8 +109,7 @@ export default function TelemetrySection() {
   }
 
   return (
-    <SettingsSection
-      eyebrow="Administration"
+    <SettingsCard
       title="Anonymous usage data"
       description="Helps decide what to build next by counting deployments and feature use. Never includes recordings, transcripts, notes, names, or keys, and the data is never sold."
     >
@@ -149,7 +147,7 @@ export default function TelemetrySection() {
           />
         )}
 
-        <SettingsPanel variant="subtle">
+        <SettingsBlock inset>
           <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
             Exactly what is sent, once a day
           </h4>
@@ -163,9 +161,9 @@ export default function TelemetrySection() {
               </div>
             ))}
           </dl>
-        </SettingsPanel>
+        </SettingsBlock>
 
-        <SettingsPanel variant="meta">
+        <SettingsBlock>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-gray-500 dark:text-gray-400">Install ID</dt>
@@ -186,7 +184,7 @@ export default function TelemetrySection() {
               </dd>
             </div>
           </dl>
-        </SettingsPanel>
+        </SettingsBlock>
 
         <p className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
           <BarChart3 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -198,6 +196,6 @@ export default function TelemetrySection() {
           </span>
         </p>
       </div>
-    </SettingsSection>
+    </SettingsCard>
   );
 }

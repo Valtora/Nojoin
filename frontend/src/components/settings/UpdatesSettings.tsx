@@ -11,8 +11,8 @@ import { getVersion } from "@/lib/api";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { UpdateStatus, VersionInfo } from "@/types";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge, {
   type SettingsStatusBadgeTone,
 } from "./SettingsStatusBadge";
@@ -317,11 +317,9 @@ export default function UpdatesSettings({
 
   return (
     <div className="space-y-8">
-      <SettingsSection
-        eyebrow="Updates"
+      <SettingsCard
         title="Release overview"
         description="Track the installed version, the latest stable release, and the published release links."
-        width="full"
         headerAside={
           <button
             onClick={() => void loadVersionInfo(true)}
@@ -335,7 +333,7 @@ export default function UpdatesSettings({
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <SettingsPanel variant="subtle">
+              <SettingsBlock inset>
                 <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                   Installed version
                 </p>
@@ -345,9 +343,9 @@ export default function UpdatesSettings({
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                   {getStatusCopy(versionInfo)}
                 </p>
-              </SettingsPanel>
+              </SettingsBlock>
 
-              <SettingsPanel variant="subtle">
+              <SettingsBlock inset>
                 <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                   Latest stable release
                 </p>
@@ -357,10 +355,10 @@ export default function UpdatesSettings({
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                   {formatPublishedRelative(versionInfo.latest_published_at)}
                 </p>
-              </SettingsPanel>
+              </SettingsBlock>
             </div>
 
-            <SettingsPanel className="space-y-4">
+            <SettingsBlock className="space-y-4">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                   Release links
@@ -390,10 +388,10 @@ export default function UpdatesSettings({
                   Browse all releases
                 </a>
               </div>
-            </SettingsPanel>
+            </SettingsBlock>
           </div>
 
-          <SettingsPanel variant="subtle" className="space-y-4">
+          <SettingsBlock inset className="space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
               <ArrowUpCircle className="h-4 w-4 text-orange-500" />
               Server update guidance
@@ -413,15 +411,13 @@ export default function UpdatesSettings({
               <ExternalLink className="h-4 w-4" />
               Read the deployment guide
             </a>
-          </SettingsPanel>
+          </SettingsBlock>
         </div>
-      </SettingsSection>
+      </SettingsCard>
 
-      <SettingsSection
-        eyebrow="Updates"
+      <SettingsCard
         title="Latest release snapshot"
         description="The latest stable release metadata is sourced from GitHub Releases."
-        width="full"
         badge={
           <SettingsStatusBadge tone={getUpdateStatusTone(versionInfo.update_status)}>
             {getUpdateStatusLabel(versionInfo.update_status)}
@@ -430,7 +426,7 @@ export default function UpdatesSettings({
       >
         {latestRelease ? (
           <div className="space-y-5">
-            <SettingsPanel variant="subtle" className="space-y-4">
+            <SettingsBlock inset className="space-y-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-3">
@@ -463,14 +459,14 @@ export default function UpdatesSettings({
                   </a>
                 </div>
               </div>
-            </SettingsPanel>
+            </SettingsBlock>
 
-            <SettingsPanel>
+            <SettingsBlock>
               <ReleaseNotes
                 body={latestRelease.body}
                 releaseVersion={latestRelease.version}
               />
-            </SettingsPanel>
+            </SettingsBlock>
           </div>
         ) : (
           <SettingsCallout
@@ -478,13 +474,11 @@ export default function UpdatesSettings({
             message="Release history is not available right now. Version checks are using the fallback metadata source."
           />
         )}
-      </SettingsSection>
+      </SettingsCard>
 
-      <SettingsSection
-        eyebrow="Updates"
+      <SettingsCard
         title="Release history"
         description="Recent Nojoin releases published on GitHub."
-        width="full"
       >
         {versionInfo.releases.length > 0 ? (
           <div className="space-y-4">
@@ -493,7 +487,7 @@ export default function UpdatesSettings({
               const isLatest = release.version === versionInfo.latest_version;
 
               return (
-                <SettingsPanel key={release.tag_name} className="space-y-4">
+                <SettingsBlock key={release.tag_name} className="space-y-4">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -529,16 +523,15 @@ export default function UpdatesSettings({
                     </div>
                   </div>
 
-                  <SettingsPanel
-                    variant="subtle"
+                  <SettingsBlock inset
                     className="max-h-72 overflow-y-auto"
                   >
                     <ReleaseNotes
                       body={release.body}
                       releaseVersion={release.version}
                     />
-                  </SettingsPanel>
-                </SettingsPanel>
+                  </SettingsBlock>
+                </SettingsBlock>
               );
             })}
           </div>
@@ -548,7 +541,7 @@ export default function UpdatesSettings({
             message="Release history is unavailable right now."
           />
         )}
-      </SettingsSection>
+      </SettingsCard>
     </div>
   );
 }

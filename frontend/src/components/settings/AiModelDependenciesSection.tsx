@@ -5,8 +5,8 @@ import {
   ModelPreparationTarget,
   SystemModelStatus,
 } from "@/types";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 
 interface AiModelDependenciesSectionProps {
@@ -82,12 +82,11 @@ export default function AiModelDependenciesSection({
   );
 
   return (
-    <SettingsSection
-      eyebrow="Administration"
+    <SettingsCard
       title="Model dependencies"
       description="Inspect and manage local AI model assets on the server."
     >
-      <SettingsPanel className="mx-auto max-w-3xl space-y-6">
+      <SettingsBlock className="mx-auto max-w-3xl space-y-6">
         {preparationRunning && (
           <div className="rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
@@ -197,7 +196,7 @@ export default function AiModelDependenciesSection({
             and Meeting Edge until it is ready.
           </p>
         </div>
-      </SettingsPanel>
-    </SettingsSection>
+      </SettingsBlock>
+    </SettingsCard>
   );
 }

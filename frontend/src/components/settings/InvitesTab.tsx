@@ -15,7 +15,6 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
-import SettingsPanel from "./SettingsPanel";
 import { SETTINGS_BUTTON_PRIMARY } from "./settingsControls";
 
 export default function InvitesTab() {
@@ -179,10 +178,9 @@ export default function InvitesTab() {
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
           {invitations.map((inv) => (
-            <SettingsPanel
+            <div
               key={inv.id}
-              variant={inv.is_revoked ? "subtle" : "default"}
-              className={inv.is_revoked ? "opacity-75" : ""}
+              className={`settings-inset rounded-xl p-4 ${inv.is_revoked ? "opacity-75" : ""}`}
             >
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
@@ -269,7 +267,7 @@ export default function InvitesTab() {
                   </div>
                 </div>
               )}
-            </SettingsPanel>
+            </div>
           ))}
         </div>
       )}

@@ -302,7 +302,7 @@ function ProviderConnectRow({
   };
 
   return (
-    <div className="p-3 bg-white dark:bg-gray-950/40 border border-gray-200 dark:border-gray-700 rounded-lg space-y-2">
+    <div className="settings-inset space-y-2 rounded-xl p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-gray-900 dark:text-white">

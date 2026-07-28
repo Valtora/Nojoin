@@ -4,8 +4,8 @@ import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
 import Tooltip from "@/components/ui/Tooltip";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import type { AISettingsModels } from "./useAISettingsModels";
 import {
@@ -46,12 +46,10 @@ export default function SecondaryProviderSection({
 
   if (!sp) {
     return (
-      <SettingsSection
-        eyebrow="AI"
+      <SettingsCard
         title="Fallback provider"
         badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
         description="Used automatically when the primary provider is unavailable."
-        width="wide"
       >
         <SettingsCallout tone="neutral" className="mx-auto max-w-3xl">
           No fallback provider is configured. Set{" "}
@@ -65,7 +63,7 @@ export default function SecondaryProviderSection({
           file to enable automatic fallback for all AI features when the primary
           provider fails.
         </SettingsCallout>
-      </SettingsSection>
+      </SettingsCard>
     );
   }
 
@@ -95,15 +93,13 @@ export default function SecondaryProviderSection({
   };
 
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Fallback provider"
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
       description="Used automatically when the primary provider — or a user's own Claude or ChatGPT subscription — is unavailable."
-      width="wide"
     >
       <div className="mx-auto max-w-3xl space-y-4">
-        <SettingsPanel className="space-y-6">
+        <SettingsBlock className="space-y-6">
           <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -268,8 +264,8 @@ export default function SecondaryProviderSection({
               )}
             </div>
           )}
-        </SettingsPanel>
+        </SettingsBlock>
       </div>
-    </SettingsSection>
+    </SettingsCard>
   );
 }

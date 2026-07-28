@@ -4,8 +4,8 @@ import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
 import { isServerProviderConfigured } from "@/lib/aiAvailability";
 import Tooltip from "@/components/ui/Tooltip";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import type { AISettingsModels } from "./useAISettingsModels";
 import {
@@ -60,15 +60,13 @@ export default function ServerProviderSection({
   };
 
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Server provider"
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
       description="The provider and model this server uses for every account on the server default. Some fields are set in the server's .env file and shown here for reference."
-      width="wide"
     >
       <div className="mx-auto max-w-3xl space-y-4">
-        <SettingsPanel className="space-y-6">
+        <SettingsBlock className="space-y-6">
           <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -208,8 +206,8 @@ export default function ServerProviderSection({
                 )}
             </div>
           )}
-        </SettingsPanel>
+        </SettingsBlock>
       </div>
-    </SettingsSection>
+    </SettingsCard>
   );
 }

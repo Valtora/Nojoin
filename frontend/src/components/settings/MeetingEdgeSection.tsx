@@ -8,8 +8,8 @@ import {
 import Tooltip from "@/components/ui/Tooltip";
 import { Switch } from "@/components/ui/Switch";
 import SettingsCallout from "./SettingsCallout";
-import SettingsPanel from "./SettingsPanel";
-import SettingsSection from "./SettingsSection";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import type { AISettingsModels } from "./useAISettingsModels";
 import {
@@ -60,14 +60,12 @@ export default function MeetingEdgeSection({
   const selectedLiveModel = getSelectedModelForProvider(settings, "live");
 
   return (
-    <SettingsSection
-      eyebrow="AI"
+    <SettingsCard
       title="Meeting Edge"
       description="Live, in-meeting guidance that surfaces context and clarifies terms while you record."
-      width="wide"
     >
       <div className="mx-auto max-w-3xl space-y-4">
-        <SettingsPanel className="space-y-6">
+        <SettingsBlock className="space-y-6">
           {isAdmin ? (
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -179,8 +177,8 @@ export default function MeetingEdgeSection({
               {selectedOption.description}
             </p>
           </div>
-        </SettingsPanel>
+        </SettingsBlock>
       </div>
-    </SettingsSection>
+    </SettingsCard>
   );
 }
