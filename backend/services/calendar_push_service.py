@@ -30,6 +30,7 @@ from sqlmodel import select
 from backend.core.db import async_session_maker
 from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.core.redis import REDIS_URL
+from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import (
     CalendarConnection,
     CalendarProvider,
@@ -712,9 +713,7 @@ async def _debounced_enqueue_sync(connection_id: int) -> None:
         return
 
     try:
-        from backend.celery_app import celery_app
-
-        celery_app.send_task(
+        await dispatch_task(
             "backend.worker.tasks.sync_calendar_connection_task",
             args=[connection_id],
             countdown=SYNC_DEBOUNCE_COUNTDOWN,

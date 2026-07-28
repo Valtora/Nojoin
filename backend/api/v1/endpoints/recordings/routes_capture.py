@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_recording_client_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import (
     CaptureSourceReportCreate,
@@ -221,7 +222,7 @@ async def upload_segment(
         "enable_live_transcription"
     ):
         try:
-            recordings_module.celery_app.send_task(
+            await dispatch_task(
                 "backend.processing.live_transcribe.transcribe_segment_live_task",
                 args=[recording.id, sequence],
             )
@@ -234,7 +235,7 @@ async def upload_segment(
             )
     elif segment_suffix in BROWSER_AUDIO_SEGMENT_SUFFIXES:
         try:
-            recordings_module.celery_app.send_task(
+            await dispatch_task(
                 "backend.processing.segment_transcode.transcode_segment_task",
                 args=[recording.id, sequence],
             )
@@ -466,7 +467,7 @@ async def finalize_upload(
     await db.commit()
     await db.refresh(recording)
 
-    task = recordings_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]
     )
     recording.celery_task_id = task.id
@@ -476,7 +477,7 @@ async def finalize_upload(
 
     await register_task_ownership(db, task.id, recording.user_id)
 
-    proxy_task = recordings_module.celery_app.send_task(
+    proxy_task = await dispatch_task(
         "backend.worker.tasks.generate_proxy_task", args=[recording.id]
     )
     if proxy_task:

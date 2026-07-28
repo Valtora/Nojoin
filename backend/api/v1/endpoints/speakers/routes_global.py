@@ -13,6 +13,7 @@ from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
+from backend.core.task_dispatch import dispatch_task
 from backend.models.people_tag_schemas import PeopleTagRead
 from backend.models.recording import (
     Recording,
@@ -545,7 +546,7 @@ async def recalibrate_voiceprint(
             )
             continue
 
-        task = speakers_module.celery_app.send_task(
+        task = await dispatch_task(
             "backend.worker.tasks.extract_embedding_task",
             args=[target_audio, segs, device_str, hf_token],
         )
@@ -729,7 +730,7 @@ async def split_speaker(
             seg_tuples = [(s.start, s.end) for s in segments]
             target_audio = select_recording_audio_for_embedding(rec)
 
-            task = speakers_module.celery_app.send_task(
+            task = await dispatch_task(
                 "backend.worker.tasks.extract_embedding_task",
                 args=[target_audio, seg_tuples, device_str, hf_token],
             )
@@ -801,7 +802,7 @@ async def split_speaker(
 
         if remaining_seg_tuples:
             target_audio = select_recording_audio_for_embedding(rec)
-            task = speakers_module.celery_app.send_task(
+            task = await dispatch_task(
                 "backend.worker.tasks.extract_embedding_task",
                 args=[target_audio, remaining_seg_tuples, device_str, hf_token],
             )

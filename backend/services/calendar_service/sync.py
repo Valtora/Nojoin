@@ -87,25 +87,23 @@ except ModuleNotFoundError:  # pragma: no cover - worker image has no fastapi
 logger = logging.getLogger(__package__)
 
 
-def _enqueue_push_channel_refresh(connection_id: int) -> None:
+async def _enqueue_push_channel_refresh(connection_id: int) -> None:
     """Best-effort background provisioning/renewal of push channels.
 
     Runs in the worker so API paths (connect, calendar selection) stay fast and
-    are not coupled to the provider's synchronous webhook validation.
+    are not coupled to the provider's synchronous webhook validation. Queuing it
+    is itself a blocking socket call, so both callers being request handlers,
+    the dispatch goes off the event loop too (ADR-0007).
     """
-    try:
-        from backend.celery_app import celery_app
+    # Imported inside the function to keep this module importable by the worker,
+    # which has no ASGI stack.
+    from backend.core.task_dispatch import dispatch_task_best_effort
 
-        celery_app.send_task(
-            "backend.worker.tasks.ensure_calendar_push_channels_task",
-            args=[connection_id],
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Could not enqueue calendar push refresh for connection %s: %s",
-            connection_id,
-            exc,
-        )
+    await dispatch_task_best_effort(
+        "backend.worker.tasks.ensure_calendar_push_channels_task",
+        args=[connection_id],
+        context=f"connection {connection_id}",
+    )
 
 
 async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
@@ -189,7 +187,7 @@ async def handle_callback(
             provider,
         )
     await db.refresh(connection)
-    _enqueue_push_channel_refresh(connection.id)
+    await _enqueue_push_channel_refresh(connection.id)
     return connection
 
 
@@ -227,7 +225,7 @@ async def update_connection_selection(
         await sync_connection_in_session(db, connection.id)
     # Reconcile push channels: provision for newly selected calendars, stop for
     # deselected ones (including when the selection is now empty).
-    _enqueue_push_channel_refresh(connection.id)
+    await _enqueue_push_channel_refresh(connection.id)
 
     refreshed = (
         (

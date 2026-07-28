@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from backend.core.encryption import decrypt_secret, encrypt_secret
+from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import (
     CalendarConnection,
     CalendarProvider,
@@ -238,7 +239,7 @@ async def update_provider_configuration(
         try:
             from backend.celery_app import celery_app
 
-            celery_app.send_task(
+            await dispatch_task(
                 "backend.worker.tasks.renew_calendar_push_channels_task"
             )
         except Exception as exc:  # noqa: BLE001

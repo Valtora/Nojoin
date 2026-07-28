@@ -446,8 +446,12 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
         return None
 
     monkeypatch.setattr(system, "seed_demo_data", _fake_seed_demo_data)
+
+    async def _fake_enqueue_model_preparation(**kwargs):
+        return "model-prep-task"
+
     monkeypatch.setattr(
-        system, "enqueue_model_preparation", lambda **kwargs: "model-prep-task"
+        system, "enqueue_model_preparation", _fake_enqueue_model_preparation
     )
 
     async with AsyncClient(

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 import backend.api.v1.endpoints.recordings as recordings_module
+from backend.core.task_dispatch import dispatch_task
 from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
@@ -700,7 +701,7 @@ async def _requeue_for_processing(
     await db.commit()
     await db.refresh(recording)
 
-    task = recordings_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.process_recording_task",
         args=[recording.id, True, engine_override],
     )

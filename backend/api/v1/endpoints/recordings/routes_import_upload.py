@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import backend.api.v1.endpoints.recordings as recordings_module
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
+from backend.core.task_dispatch import dispatch_task
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
@@ -172,7 +173,7 @@ async def import_audio(
     await db.commit()
 
     # Trigger processing task
-    task = recordings_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]
     )
     recording.celery_task_id = task.id
@@ -184,7 +185,7 @@ async def import_audio(
 
     # Trigger proxy generation task
     if not recording.proxy_path:
-        proxy_task = recordings_module.celery_app.send_task(
+        proxy_task = await dispatch_task(
             "backend.worker.tasks.generate_proxy_task", args=[recording.id]
         )
         if proxy_task:
@@ -438,7 +439,7 @@ async def finalize_chunked_import(
     await db.commit()
     await db.refresh(recording)
 
-    task = recordings_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]
     )
     recording.celery_task_id = task.id
@@ -449,7 +450,7 @@ async def finalize_chunked_import(
     await register_task_ownership(db, task.id, recording.user_id)
 
     if not recording.proxy_path:
-        proxy_task = recordings_module.celery_app.send_task(
+        proxy_task = await dispatch_task(
             "backend.worker.tasks.generate_proxy_task", args=[recording.id]
         )
         if proxy_task:
@@ -538,7 +539,7 @@ async def upload_recording(
     await db.commit()
     await db.refresh(recording)
 
-    task = recordings_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]
     )
     recording.celery_task_id = task.id
@@ -549,7 +550,7 @@ async def upload_recording(
     await register_task_ownership(db, task.id, recording.user_id)
 
     if not recording.proxy_path:
-        proxy_task = recordings_module.celery_app.send_task(
+        proxy_task = await dispatch_task(
             "backend.worker.tasks.generate_proxy_task", args=[recording.id]
         )
         if proxy_task:

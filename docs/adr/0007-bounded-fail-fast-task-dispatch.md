@@ -98,6 +98,35 @@ configuration; the timeouts are not tunable by design, because they encode a
 property of the deployment topology (Redis is a container away) rather than a
 preference.
 
+### Update, 2026-07-28
+
+The first two residuals above are now closed. The decision is unchanged; what
+follows is the follow-up it named, carried out.
+
+Every dispatch reachable from a request handler goes through
+`backend/core/task_dispatch.py` (`dispatch_task`, or
+`dispatch_task_best_effort` where the caller must not fail), so none of them
+occupies the event loop. That covers the 33 remaining sites plus two helpers
+that were synchronous but only ever called from async code,
+`enqueue_model_preparation` and `_enqueue_push_channel_refresh`. A test walks
+the tree and fails on any `send_task`, `apply_async` or `delay` inside an
+`async def`, so the property is enforced rather than remembered.
+
+The threadpool residual is also gone, and for a better reason than the count
+changing. The shared helper uses `asyncio.to_thread` rather than Starlette's
+`run_in_threadpool`, so dispatches run on the loop's default executor instead
+of the anyio limiter that serves sync route handlers. A Redis outage can no
+longer consume the threads those handlers need. It is also what lets the same
+helper be imported by `calendar_service`, which the worker image loads and
+which therefore cannot depend on an ASGI stack.
+
+Worker-side code still calls `celery_app.send_task` directly, deliberately. It
+has no event loop to protect, and the guard test only inspects `async def`.
+
+Measured after the change, against an unreachable broker, unchanged from the
+numbers above: 6.03s to fail the dispatch, with 60 concurrent no-op requests at
+a 0.9ms median and a 0.00s worst case.
+
 ## Alternatives Considered
 
 **Leave it alone and rely on Redis being up.** Rejected on the numbers. The

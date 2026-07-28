@@ -23,7 +23,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task
 from backend.models.cli_oauth import (
     CliOAuthCredential,
     CliOAuthCredentialStatus,
@@ -363,7 +363,7 @@ async def get_codex_models(
             models=[CliCodexModel(**model) for model in cached], source="live"
         )
     # Warm the cache for next time (runs in worker-io); serve the fallback now.
-    celery_app.send_task("backend.worker.tasks.refresh_codex_models_task")
+    await dispatch_task("backend.worker.tasks.refresh_codex_models_task")
     return CliCodexModelsRead(models=_CODEX_FALLBACK_MODELS, source="fallback")
 
 
@@ -400,7 +400,7 @@ async def refresh_codex_models(
     stale list it was pressed to replace.
     """
     await codex_oauth.clear_model_catalog()
-    celery_app.send_task("backend.worker.tasks.refresh_codex_models_task")
+    await dispatch_task("backend.worker.tasks.refresh_codex_models_task")
     return CliCodexModelsRead(models=_CODEX_FALLBACK_MODELS, source="fallback")
 
 
@@ -476,7 +476,7 @@ async def start_cli_oauth(
         # verification URL + code. Never block the request — a slow login would
         # otherwise trip a proxy timeout (Cloudflare 520).
         await codex_oauth.clear_login_state(current_user.id)
-        celery_app.send_task(
+        await dispatch_task(
             "backend.worker.tasks.codex_device_login_task",
             args=[current_user.id],
         )

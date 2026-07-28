@@ -29,6 +29,7 @@ from backend.core.backup import (
     RESTORE_LOCK_TTL_SECONDS,
 )
 from backend.core.redis import REDIS_URL
+from backend.core.task_dispatch import dispatch_task
 from backend.models.user import User
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
@@ -92,7 +93,7 @@ async def _dispatch_restore(
         )
 
     try:
-        task = celery_app.send_task(
+        task = await dispatch_task(
             "backend.worker.tasks.restore_backup_task",
             kwargs={
                 "zip_path": str(archive_path),
@@ -138,7 +139,7 @@ async def export_backup(
     try:
         # Trigger Celery task
         # Uses send_task to avoid importing the task function directly (bypasses heavy imports).
-        task = celery_app.send_task(
+        task = await dispatch_task(
             "backend.worker.tasks.create_backup_task",
             kwargs={
                 "include_audio": include_audio,

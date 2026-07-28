@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
-from backend.celery_app import celery_app
+from backend.core.task_dispatch import dispatch_task
 from backend.models.notes_template import (
     NotesTemplate,
     NotesTemplateCreate,
@@ -414,7 +414,7 @@ async def generate_notes_structure(
 
     job_id = new_job_id()
     await publish_job_async(job_id, {"status": STATUS_PENDING})
-    task = celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.generate_notes_structure_task",
         args=[job_id, current_user.id, brief],
     )

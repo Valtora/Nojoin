@@ -19,6 +19,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.api.deps import get_current_user
 from backend.api.v1.endpoints import system
+from backend.celery_app import celery_app
 
 DELETE_TASK = "backend.worker.tasks.delete_model_task"
 
@@ -45,7 +46,7 @@ def delete_app(monkeypatch):
         sent.append((name, kwargs or {}))
         return box.task
 
-    monkeypatch.setattr(system.celery_app, "send_task", fake_send_task)
+    monkeypatch.setattr(celery_app, "send_task", fake_send_task)
 
     app = FastAPI()
     app.include_router(system.router, prefix="/system")

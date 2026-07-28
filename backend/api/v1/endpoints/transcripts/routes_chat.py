@@ -11,8 +11,8 @@ from starlette.concurrency import iterate_in_threadpool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
-from backend.celery_app import celery_app
 from backend.core.db import async_session_maker
+from backend.core.task_dispatch import dispatch_task
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
 from backend.models.recording import Recording
@@ -147,7 +147,7 @@ async def chat_with_meeting(
         # 1. Get embedding for the user query via Celery
         from fastapi.concurrency import run_in_threadpool
 
-        task = celery_app.send_task(
+        task = await dispatch_task(
             "backend.worker.tasks.get_text_embedding_task", args=[request.message]
         )
         embeddings = await run_in_threadpool(task.get, timeout=30)
@@ -242,7 +242,7 @@ async def chat_with_meeting(
         from backend.models.task import register_task_ownership
         from backend.services.chat_relay import relay_sse_frames
 
-        task = celery_app.send_task(
+        task = await dispatch_task(
             "backend.worker.tasks.meeting_chat_task",
             args=[recording.id, augmented_message, formatted_history],
         )

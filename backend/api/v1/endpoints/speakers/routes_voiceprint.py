@@ -8,6 +8,7 @@ from sqlmodel import select
 
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
+from backend.core.task_dispatch import dispatch_task
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -91,7 +92,7 @@ async def extract_voiceprint(
     )
 
     target_audio = select_recording_audio_for_embedding(recording)
-    task = speakers_module.celery_app.send_task(
+    task = await dispatch_task(
         "backend.worker.tasks.extract_embedding_task",
         args=[target_audio, speaker_segments, device_str, hf_token],
     )
@@ -375,7 +376,7 @@ async def extract_all_voiceprints(
         )
 
         target_audio = select_recording_audio_for_embedding(recording)
-        task = speakers_module.celery_app.send_task(
+        task = await dispatch_task(
             "backend.worker.tasks.extract_embedding_task",
             args=[target_audio, speaker_segments, device_str, hf_token],
         )
