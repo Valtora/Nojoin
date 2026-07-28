@@ -45,15 +45,25 @@ def harden_celery_retry_policies() -> None:
     celery_app.conf.broker_connection_max_retries = 0
     celery_app.conf.task_publish_retry_policy = {"max_retries": 0}
     # The publish settings above do not cover the result backend, which is the
-    # expensive half: `RedisBackend.ensure` has its own policy (20 retries, ~1s
-    # apart) that no Celery setting reaches. Zero means "do not retry", so the
-    # first refused connection propagates immediately.
-    celery_app.backend.retry_policy = {
-        "max_retries": 0,
-        "interval_start": 0,
-        "interval_step": 0,
-        "interval_max": 0,
+    # expensive half: `RedisBackend` keeps its own policy (20 retries, ~1s
+    # apart) that no top-level Celery setting reaches. Zero means "do not
+    # retry", so the first refused connection propagates immediately.
+    #
+    # Set through the same transport-options surface the API uses (see
+    # `apply_api_dispatch_limits`) rather than by assigning to the backend, so
+    # that building an app during a test re-derives a bounded policy instead of
+    # discarding this one.
+    celery_app.conf.result_backend_transport_options = {
+        **celery_app.conf.result_backend_transport_options,
+        "retry_policy": {
+            "max_retries": 0,
+            "interval_start": 0,
+            "interval_step": 0,
+            "interval_max": 0,
+        },
     }
+    celery_app._backend_cache = None
+    celery_app._local.__dict__.pop("backend", None)
 
 
 def app_frames(stack: list[str]) -> str:

@@ -267,6 +267,80 @@ celery_app.conf.update(
 )
 
 
+# --- Behaviour when Redis is unreachable -------------------------------------
+#
+# Dispatching a task is a blocking call, and the API dispatches from `async def`
+# handlers, so whatever it blocks for stalls that worker process's whole event
+# loop -- every concurrent request, not just the one dispatching.
+#
+# The default bound on that is the operating system's. A broker that refuses
+# connections fails per attempt in microseconds, but one that is merely
+# unreachable (a partition, a hung container, a dropped-packet firewall rule)
+# does not answer at all, and each attempt then waits out the kernel's TCP
+# connect timeout -- roughly two minutes at the default `tcp_syn_retries`.
+# Multiplied by the result backend's own 20 retries that is nearly an hour of
+# wedged event loop for one best-effort refresh nobody is waiting on.
+#
+# Capping the connect is the fix, and it is safe for both processes: it bounds
+# how long one attempt waits for a TCP handshake and does nothing to an
+# established connection, so the worker's blocking queue reads are unaffected.
+# How many attempts to make is where the two processes genuinely differ; see
+# `apply_api_dispatch_limits` below and ADR-0007.
+REDIS_CONNECT_TIMEOUT_SECONDS = 2.0
+
+# The two halves are configured through different surfaces, which is easy to
+# get wrong: the broker reads its transport options, while the result backend
+# reads top-level `redis_*` keys and ignores anything put in
+# `result_backend_transport_options` except its retry policy.
+celery_app.conf.broker_transport_options = {
+    **celery_app.conf.broker_transport_options,
+    "socket_connect_timeout": REDIS_CONNECT_TIMEOUT_SECONDS,
+}
+celery_app.conf.redis_socket_connect_timeout = REDIS_CONNECT_TIMEOUT_SECONDS
+
+
+def apply_api_dispatch_limits() -> None:
+    """Make a dispatch from the API give up quickly. Call from the API only.
+
+    The worker and the API want opposite things from a Redis outage. A worker
+    writing a result is on its own thread with nothing waiting on it, so
+    retrying hard is right: the alternative is a finished job whose result is
+    lost. An API handler is on the event loop, so retrying hard is exactly
+    wrong: it converts one unavailable dependency into a stalled process.
+
+    So the retry *counts* are set here, in the API process, rather than in the
+    shared configuration above. A dispatch against an unreachable broker then
+    costs about 6s rather than being unbounded: a small multiple of the connect
+    cap, since the pubsub reconnect makes an attempt of its own either side of
+    the retry loop. Every API dispatch either queues background work whose
+    failure the caller already tolerates, or returns a task id the client
+    re-polls, so failing fast costs a retry the client can make and never a
+    result that cannot be recovered.
+    """
+    fail_fast = {
+        "max_retries": 1,
+        "interval_start": 0,
+        "interval_step": 0.2,
+        "interval_max": 0.5,
+    }
+
+    celery_app.conf.task_publish_retry_policy = fail_fast
+    # The result backend keeps its own retry policy, which no top-level Celery
+    # setting reaches; `result_backend_transport_options["retry_policy"]` is
+    # the documented way in. It matters because `send_task` subscribes the
+    # backend to the new task's channel *before* publishing, so an unreachable
+    # backend blocks the dispatch even though the caller wants only to enqueue.
+    celery_app.conf.result_backend_transport_options = {
+        **celery_app.conf.result_backend_transport_options,
+        "retry_policy": fail_fast,
+    }
+    # The backend object is built once from the configuration above and cached,
+    # so an already-instantiated one would keep the unbounded policy. Drop both
+    # caches Celery may hold it in and let the next access rebuild it.
+    celery_app._backend_cache = None
+    celery_app._local.__dict__.pop("backend", None)
+
+
 # Heartbeat implementation to keep worker "active" during heavy tasks
 class HeartbeatThread(threading.Thread):
     def __init__(self, redis_url, interval=5.0, expire=15):

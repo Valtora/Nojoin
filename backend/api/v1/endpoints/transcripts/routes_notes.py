@@ -103,7 +103,7 @@ async def update_user_notes(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
-    _dispatch_meeting_edge_refresh(
+    await _dispatch_meeting_edge_refresh(
         recording.id,
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
     )
@@ -134,7 +134,7 @@ async def update_meeting_edge_focus(
     db.add(transcript)
     await db.commit()
     await db.refresh(transcript)
-    _dispatch_meeting_edge_refresh(
+    await _dispatch_meeting_edge_refresh(
         recording.id,
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
     )

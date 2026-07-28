@@ -222,7 +222,7 @@ async def update_transcript_utterance_text(
         },
         log=logger,
     )
-    _dispatch_meeting_edge_refresh(
+    await _dispatch_meeting_edge_refresh(
         recording.id,
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
     )
@@ -329,7 +329,7 @@ async def update_transcript_utterance_speaker(
         },
         log=logger,
     )
-    _dispatch_meeting_edge_refresh(
+    await _dispatch_meeting_edge_refresh(
         recording.id,
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
     )

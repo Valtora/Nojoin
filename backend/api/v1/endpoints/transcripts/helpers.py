@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
+from starlette.concurrency import run_in_threadpool
 
 from backend.celery_app import celery_app
 from backend.models.pipeline import SpeakerCorrectionScope
@@ -51,12 +52,27 @@ async def _get_owned_recording(
     return recording
 
 
-def _dispatch_meeting_edge_refresh(recording_id: int, *, enabled: bool = True) -> None:
+async def _dispatch_meeting_edge_refresh(
+    recording_id: int, *, enabled: bool = True
+) -> None:
+    """Queue a Meeting Edge refresh. Best-effort by design; see ADR-0007.
+
+    Runs off the event loop because publishing is a blocking socket call, and
+    every caller is an `async def` handler: blocking here stalls that process's
+    other in-flight requests too, not only this one.
+
+    A failure is logged and swallowed rather than surfaced. Meeting Edge is
+    derived guidance that the next transcript mutation or live segment
+    recomputes from scratch, so a lost refresh costs one stale panel until the
+    next edit, while failing the request would lose the edit the user actually
+    made. That is a deliberate policy, not an oversight.
+    """
     if not enabled:
         return
 
     try:
-        celery_app.send_task(
+        await run_in_threadpool(
+            celery_app.send_task,
             "backend.worker.tasks.refresh_meeting_edge_task",
             args=[recording_id],
         )

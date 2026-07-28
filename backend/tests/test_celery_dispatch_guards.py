@@ -28,16 +28,22 @@ from backend.tests.redis_guard import (
 def test_dispatch_retry_policies_are_bounded():
     """A leaked dispatch must cost milliseconds, not seconds.
 
-    The result backend is the expensive half and the one no Celery setting
-    reaches: `send_task` subscribes it to the new task's pubsub channel before
-    publishing, and its own policy retries 20 times a second apart.
+    The result backend is the expensive half and the one no top-level Celery
+    setting reaches: `send_task` subscribes it to the new task's pubsub channel
+    before publishing, and its own policy retries 20 times a second apart.
+
+    Bounded rather than exactly zero, because building an app during a test
+    applies the API's own limits (`apply_api_dispatch_limits`, one retry). The
+    property that matters is that neither is the stock 20.
     """
-    assert celery_app.backend.retry_policy["max_retries"] == 0
+    assert celery_app.backend.retry_policy["max_retries"] <= 1
+    assert celery_app.conf.task_publish_retry_policy["max_retries"] <= 1
     assert celery_app.conf.task_publish_retry is False
     assert celery_app.conf.broker_connection_retry is False
 
 
-def test_a_swallowed_dispatch_is_still_recorded(redis_contact_guard):
+@pytest.mark.anyio
+async def test_a_swallowed_dispatch_is_still_recorded(redis_contact_guard):
     """The swallow hides the failure from the caller, not from the guard.
 
     This is the exact shape of the original bug: the dispatcher catches
@@ -45,7 +51,7 @@ def test_a_swallowed_dispatch_is_still_recorded(redis_contact_guard):
     ever have noticed. The guard records at the connection layer instead.
     """
     started = time.perf_counter()
-    _dispatch_meeting_edge_refresh(1)
+    await _dispatch_meeting_edge_refresh(1)
     elapsed = time.perf_counter() - started
 
     assert redis_contact_guard, "an unstubbed dispatch was not recorded"

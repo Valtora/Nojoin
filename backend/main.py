@@ -13,6 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from backend.api.v1.api import api_router
 from backend.api.v1.endpoints.oauth import well_known_router
+from backend.celery_app import apply_api_dispatch_limits
 from backend.mcp_server import (
     NormaliseMcpMountPathMiddleware,
     build_mcp_asgi_app,
@@ -282,6 +283,10 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(*, app_lifespan=lifespan) -> FastAPI:
+    # This process dispatches Celery work from the event loop, so it gives up on
+    # an unreachable Redis quickly rather than retrying like a worker (ADR-0007).
+    apply_api_dispatch_limits()
+
     app = FastAPI(
         title="Nojoin API",
         description="Backend API for Nojoin - Containerized Meeting Intelligence",

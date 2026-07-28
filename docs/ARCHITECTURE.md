@@ -27,6 +27,8 @@ The backend is responsible for:
 
 The processing-heavy work runs in Celery workers rather than inside API endpoints.
 
+Dispatching that work is a blocking socket call to Redis, and the API dispatches from `async def` handlers, so an unreachable broker would otherwise stall the whole event loop rather than one request. The API therefore gives up quickly: connect attempts are capped at two seconds and the API process caps publish and result-backend retries at one, so a dispatch against a dead broker fails in milliseconds and against an unreachable one in a few seconds instead of being unbounded. Workers keep Celery's generous defaults, because a worker retrying to write a result has nothing waiting on it. The best-effort Meeting Edge refresh additionally runs off the event loop. See [ADR-0007](adr/0007-bounded-fail-fast-task-dispatch.md).
+
 Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's Claude subscription via the Claude Code CLI running in the `worker-io` lane (see [ADR-0002](adr/0002-cli-oauth-subscription-mode.md)). CLI OAuth degrades cleanly through the server's default provider chain (the primary provider first, then the secondary) and is never load-bearing.
 
 Celery work is split across three resource lanes so a long recording finalise
@@ -163,7 +165,11 @@ runs:
    a microphone-only capture reads as clear microphone dominance for every
    region including speech from everyone else in the room.
 5. After new live segments land, the API/worker layer best-effort dispatches a
-   separate `refresh_meeting_edge_task`. That task builds a bounded recent
+   separate `refresh_meeting_edge_task`. Best-effort means the dispatch failing
+   is logged and swallowed rather than failing the request that triggered it:
+   the refresh is derived guidance that the next mutation or live segment
+   recomputes from scratch, whereas failing the request would discard the edit
+   the user actually made. That task builds a bounded recent
    transcript window, reuses the previous run's dedicated rolling summary (a
    model-maintained 150-300 word running context of decisions, open threads,
    and action items, falling back to the short displayed summary for older
