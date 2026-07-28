@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.endpoints import login, setup, system
 from backend.main import create_app
+from backend.utils import download_progress
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
 SECURE_TEST_BASE_URL = "https://test"
@@ -70,7 +71,11 @@ def _bootstrap_auth_headers(password: str = BOOTSTRAP_PASSWORD) -> dict[str, str
 @pytest.mark.anyio
 async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(
     monkeypatch,
+    stub_celery_dispatch,
 ) -> None:
+    # Completing setup queues model preparation. That dispatch is incidental to
+    # the redirect assertions here, and it is the only unstubbed external call
+    # left in this test.
     app = _build_app(initialized=False)
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
 
@@ -100,6 +105,11 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(
 
     async def _fake_seed_demo_data(*args, **kwargs):
         return None
+
+    # Queuing model preparation also writes download progress to Redis through
+    # a client of its own, separate from Celery. Patched at its definition so
+    # the stub holds for every caller.
+    monkeypatch.setattr(download_progress, "_get_redis", lambda: None)
 
     monkeypatch.setattr(
         setup, "get_llm_backend", lambda *args, **kwargs: _ValidBackend()

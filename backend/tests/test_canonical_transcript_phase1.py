@@ -390,21 +390,14 @@ async def api_app() -> FastAPI:
 
 @pytest.fixture
 async def client(
-    api_app: FastAPI, test_session_maker: sessionmaker, monkeypatch
+    api_app: FastAPI, test_session_maker: sessionmaker, stub_meeting_edge_dispatch
 ) -> AsyncClient:
-    from backend.api.v1.endpoints import transcripts as transcripts_module
-
     async def override_get_db():
         async with test_session_maker() as session:
             yield session
 
     api_app.dependency_overrides[get_db] = override_get_db
     api_app.dependency_overrides[get_current_user] = lambda: build_test_user()
-    monkeypatch.setattr(
-        transcripts_module,
-        "_dispatch_meeting_edge_refresh",
-        lambda *args, **kwargs: None,
-    )
 
     transport = ASGITransport(app=api_app)
     async with AsyncClient(
