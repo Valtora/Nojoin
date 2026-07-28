@@ -228,6 +228,29 @@ def run_migrations():
     run_startup_migrations()
 
 
+def log_recordings_storage_warnings(*, logger_instance: logging.Logger) -> None:
+    """Announce an unwritable recordings directory at boot.
+
+    Without this the first evidence of a mis-owned bind mount is a failed upload,
+    which is a long way from the cause (issue #153). The API still starts: it is
+    the only surface that can tell an administrator what is wrong, and the admin
+    health check reports the same condition as blocking.
+    """
+    from backend.utils.recording_storage import probe_recordings_storage
+
+    try:
+        writable, detail = probe_recordings_storage()
+    except Exception as e:  # noqa: BLE001 -- boundary: a probe must not block startup
+        logger_instance.warning("Recordings storage probe failed to run: %s", e)
+        return
+
+    if not writable:
+        logger_instance.error(
+            "Recordings storage is not writable, so uploads and imports will fail. %s",
+            detail,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_migrations()
@@ -237,6 +260,7 @@ async def lifespan(app: FastAPI):
     await ensure_recording_meeting_uids_on_startup()
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)
     log_trusted_proxy_warnings(startup_path="API startup", logger_instance=logger)
+    log_recordings_storage_warnings(logger_instance=logger)
     # Seed demo data for the initial user if needed
     try:
         await seed_demo_data()

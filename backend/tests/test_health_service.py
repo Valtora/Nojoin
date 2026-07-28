@@ -103,3 +103,53 @@ async def test_get_diarization_component_accepts_local_assets_without_hf_token(
     assert component["label"] == "Ready"
     assert component["using_local_assets"] is True
     assert component["token_configured"] is False
+
+
+def test_storage_component_reports_ok_when_writable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.utils.recording_storage.probe_recordings_storage",
+        lambda: (True, None),
+    )
+
+    component, ready = health_service._get_storage_component()
+
+    assert ready is True
+    assert component["status"] == "ok"
+
+
+def test_storage_component_reports_error_when_not_writable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.utils.recording_storage.probe_recordings_storage",
+        lambda: (False, "Permission denied"),
+    )
+
+    component, ready = health_service._get_storage_component()
+
+    assert ready is False
+    assert component["status"] == "error"
+    assert component["detail"] == "Permission denied"
+    assert component["action"]
+
+
+def test_unwritable_storage_blocks_the_pipeline_summary() -> None:
+    checks = {
+        "database": {"status": "ok"},
+        "queue": {"status": "ok"},
+        "worker": {"status": "ok"},
+        "ffmpeg": {"status": "ok"},
+        "storage": {"status": "error"},
+        "transcription_model": {"status": "ok"},
+        "diarization": {"status": "ok", "enabled": True},
+        "device": {"status": "ok"},
+        "optional_ai": {"status": "ok"},
+    }
+
+    summary = health_service._build_summary(
+        checks,
+        transcription_ready=True,
+        diarization_ready=True,
+        device_ready=True,
+    )
+
+    assert summary["pipeline_status"] == "blocked"
+    assert any("not writable" in reason for reason in summary["blocking_reasons"])

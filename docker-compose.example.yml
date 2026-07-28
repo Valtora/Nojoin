@@ -126,8 +126,12 @@ services:
     container_name: nojoin-api
     image: ghcr.io/valtora/nojoin-api:latest
     volumes:
+      # ./data only. A second bind of ./data/recordings used to be declared here
+      # and was read by nothing (all storage resolves under /app/data), but Docker
+      # creates each declared bind source independently and as root -- so deleting
+      # the host recordings directory had it recreated root-owned under an
+      # appuser-owned parent, which is issue #153.
       - ./data:/app/data
-      - ./data/recordings:/app/recordings
       - model_cache:/shared_model_cache:ro
       - backup_temp:/tmp
     environment:

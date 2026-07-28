@@ -51,6 +51,55 @@ def recording_upload_temp_dir(
     return path
 
 
+def _running_user_hint() -> str:
+    """Describe the current user for an operator-facing message.
+
+    ``os.getuid`` is POSIX-only and this module also runs on the Windows desktop
+    build, so fall back to the account name there.
+    """
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None:
+        return f"uid {getuid()}"
+    return f"user {os.environ.get('USERNAME', 'the application account')}"
+
+
+def probe_recordings_storage() -> tuple[bool, str | None]:
+    """Verify the recordings tree is actually writable by the running user.
+
+    Returns ``(ok, detail)``, where ``detail`` is an operator-facing explanation
+    when the probe fails. Existence is not sufficient evidence: a bind mount whose
+    directories are owned by root leaves every path present and every write
+    refused, which previously surfaced only as a 500 on the first import
+    (issue #153). This creates and removes a real file so the answer reflects the
+    permissions the upload path will actually meet.
+    """
+    try:
+        temp_dir = recordings_temp_dir(create=True)
+    except OSError as error:
+        return False, (
+            f"The recordings directory could not be created or opened: {error.strerror}. "
+            f"Check that the host directory bound to the data volume is writable by "
+            f"{_running_user_hint()}."
+        )
+
+    probe_path = temp_dir / f".write-probe-{os.getpid()}"
+    try:
+        probe_path.touch()
+    except OSError as error:
+        return False, (
+            f"The recordings directory {temp_dir} is not writable: {error.strerror}. "
+            f"Check that the host directory bound to the data volume is owned by "
+            f"{_running_user_hint()}."
+        )
+    finally:
+        try:
+            probe_path.unlink(missing_ok=True)
+        except OSError:  # best-effort; a stale probe file is harmless
+            pass
+
+    return True, None
+
+
 def _resolve_path_within_recordings_root(target_path: str | None) -> Path | None:
     if not target_path:
         return None
@@ -204,6 +253,73 @@ def cleanup_recording_audio_chunks(
         session.commit()
 
     return cleaned_count
+
+
+def cleanup_orphaned_uploading_recordings(
+    session,
+    *,
+    logger: logging.Logger,
+    max_age_hours: int = 24,
+    now: datetime | None = None,
+) -> int:
+    """Soft-delete stale UPLOADING recordings that never received any audio.
+
+    An init that fails after its row is committed leaves an UPLOADING recording
+    with nothing behind it, and every retry adds another (issue #153). Besides
+    cluttering the library, those rows are read as an in-flight capture by
+    ``backend.celery_app._has_active_live_capture``, which then pins the ASR model
+    in worker memory indefinitely.
+
+    The criteria are deliberately strict, so a genuinely in-flight upload or live
+    capture can never be caught: the row must be older than ``max_age_hours``,
+    have no audio chunk rows, and have no file on disk. Anything that received a
+    single byte has one of the latter two.
+    """
+    from backend.models.recording import Recording, RecordingStatus
+
+    cutoff = (now or utc_now()) - timedelta(hours=max_age_hours)
+
+    candidates = session.exec(
+        select(Recording)
+        .where(Recording.status == RecordingStatus.UPLOADING)
+        .where(Recording.is_deleted == False)  # noqa: E712
+        .where(Recording.created_at <= cutoff)
+    ).all()
+
+    reaped = 0
+    for recording in candidates:
+        chunk_exists = session.exec(
+            select(RecordingAudioChunk.id)
+            .where(RecordingAudioChunk.recording_id == recording.id)
+            .limit(1)
+        ).first()
+        if chunk_exists is not None:
+            continue
+
+        resolved_audio = _resolve_path_within_recordings_root(recording.audio_path)
+        if resolved_audio is not None and resolved_audio.exists():
+            continue
+
+        temp_dir = recording_upload_temp_dir(recording.id, create=False)
+        try:
+            if temp_dir.exists() and any(temp_dir.iterdir()):
+                continue
+        except OSError:
+            # Unreadable temp dir: assume there may be data and leave the row be.
+            continue
+
+        recording.is_deleted = True
+        session.add(recording)
+        reaped += 1
+        logger.info(
+            "Soft-deleted orphaned UPLOADING recording %s (no audio was ever received)",
+            recording.id,
+        )
+
+    if reaped:
+        session.commit()
+
+    return reaped
 
 
 def mark_recording_audio_chunks_ready_for_cleanup(

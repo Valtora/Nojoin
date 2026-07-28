@@ -13,6 +13,9 @@ def cleanup_temp_recordings(self):
 
     cleaned_count = cleanup_recording_audio_chunks(self.session, logger=logger)
     cleaned_count += cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
+    cleaned_count += cleanup_orphaned_uploading_recordings(
+        self.session, logger=logger, max_age_hours=24
+    )
 
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
 

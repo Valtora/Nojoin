@@ -784,6 +784,7 @@ export interface AdminHealthStatus {
     queue: AdminHealthCheck;
     worker: AdminHealthCheck;
     ffmpeg: AdminHealthCheck;
+    storage: AdminHealthCheck;
     transcription_model: AdminHealthCheck;
     diarization: AdminHealthCheck;
     device: AdminHealthCheck;
