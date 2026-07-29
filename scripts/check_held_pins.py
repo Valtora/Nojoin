@@ -8,13 +8,20 @@ to be re-justified every time the advisory's affected range is revised. The
 policy, and the one-off dismissal procedure, are in
 docs/DEVELOPMENT.md#held-pins-and-unfixable-advisories.
 
-This script does the two things that keep the hold honest:
+This script does the three things that keep the hold honest:
 
 1. **Drift check (offline).** Every file that declares part of a matched stack
    must declare the same version. Nothing else enforces that today, so a bump
    applied to one requirements file and missed in another would install a
    mismatched, ABI-incompatible pair.
-2. **Release check (network).** Ask PyPI whether the blocking package has
+2. **Interpreter check (offline).** Every surface that runs ``backend/`` must
+   declare the same Python minor. This is a consequence of the torch hold rather
+   than a separate decision: the worker inherits its interpreter from the held
+   PyTorch base image, so the API image, CI, and mypy have to follow it. Left
+   unchecked, Dependabot walked the API base image from 3.12 to 3.14 on its own
+   and made the interpreter serving every HTTP request the only one the test
+   suite never ran on.
+3. **Release check (network).** Ask PyPI whether the blocking package has
    published a version that lets the pin move, so the hold is revisited when it
    can actually be lifted rather than on every alert.
 
@@ -93,6 +100,73 @@ HOLDS: tuple[Hold, ...] = (
 PIN_RE_TEMPLATE = r"^{package}==([^\s;#]+)"
 # FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:...
 IMAGE_TAG_RE = re.compile(r"^FROM\s+pytorch/pytorch:([^\s@]+)", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class Declaration:
+    """A file that states the Python version, and how to read it back out."""
+
+    path: str
+    pattern: re.Pattern[str]
+    # What the declaration governs, for the failure message.
+    what: str
+    # How many matches the file must contain, when that count is itself load
+    # bearing. Dockerfile.api names the interpreter once per build stage, and is
+    # only aligned if *both* moved: a half-applied bump builds the venv on one
+    # interpreter and runs it on another, which can still appear to work.
+    expected_matches: int | None = None
+
+
+# The Python minor that every surface running backend/ must agree on.
+#
+# This is derived, not chosen. The worker's interpreter comes from the PyTorch
+# base image, which is held at 2.11.x because torchaudio has published nothing
+# above it (see the torch Hold above), and that image ships Python 3.12. The
+# worker's Python is therefore fixed until the torch hold lifts, and everything
+# else has to match it rather than the other way round.
+#
+# The worker image is the source of truth but cannot be checked statically: the
+# pytorch/pytorch tag encodes the torch version, not the Python one. So this
+# constant records what that base ships, verified by running `python -V` in the
+# built image, and the declarations below are checked against it. Moving it is a
+# deliberate act that should come with the same verification.
+EXPECTED_PYTHON = "3.12"
+
+PYTHON_DECLARATIONS: tuple[Declaration, ...] = (
+    Declaration(
+        path="docker/Dockerfile.api",
+        # FROM python:3.12-slim@sha256:...
+        pattern=re.compile(r"^FROM\s+python:(\d+\.\d+)", re.MULTILINE),
+        what="the API image base",
+        expected_matches=2,
+    ),
+    Declaration(
+        path="pyproject.toml",
+        # python_version = "3.12"  (mypy's target)
+        pattern=re.compile(r"^python_version\s*=\s*\"([^\"]+)\"", re.MULTILINE),
+        what="the mypy target",
+    ),
+    Declaration(
+        # Globbed rather than listed, so a new workflow is covered on the day it
+        # lands instead of whenever someone remembers to add it here. Both
+        # extensions, so a .yaml file does not escape the check.
+        path=".github/workflows/*.y*ml",
+        # python-version: "3.12"
+        pattern=re.compile(r"python-version:\s*\"([^\"]+)\"", re.MULTILINE),
+        what="the CI interpreter",
+    ),
+    Declaration(
+        path="CONTRIBUTING.md",
+        # - Python 3.12   (the contributor prerequisite bullet)
+        pattern=re.compile(r"^-\s+Python\s+(\d+\.\d+)", re.MULTILINE),
+        what="the documented prerequisite",
+    ),
+    Declaration(
+        path="docs/DEVELOPMENT.md",
+        pattern=re.compile(r"^-\s+Python\s+(\d+\.\d+)", re.MULTILINE),
+        what="the documented prerequisite",
+    ),
+)
 
 
 def parse_version(raw: str) -> tuple[int, ...] | None:
@@ -195,6 +269,120 @@ def check_drift(hold: Hold) -> list[str]:
     return problems
 
 
+def minor_of(raw: str) -> str:
+    """Reduce a version to its ``X.Y`` minor, so 3.12.13 and 3.12 compare equal.
+
+    Patch releases are free to differ: the API image and the worker will not ship
+    the same 3.12.z, and that is fine. The minor is what changes behaviour.
+    """
+    parts = raw.strip().split(".")
+    return ".".join(parts[:2])
+
+
+def resolve_paths(pattern: str) -> list[Path]:
+    """Expand a declaration path, which may be a glob, to concrete files."""
+    if "*" in pattern:
+        return sorted(REPO_ROOT.glob(pattern))
+    return [REPO_ROOT / pattern]
+
+
+def check_one_file(
+    declaration: Declaration, path: Path, globbed: bool
+) -> tuple[list[str], int]:
+    """Check a single file, returning its problems and how many pins it declared.
+
+    The match count is returned because a globbed declaration can only judge
+    coverage across the whole set: see ``check_declaration``.
+    """
+    problems: list[str] = []
+    relative = path.relative_to(REPO_ROOT).as_posix()
+
+    if not path.is_file():
+        return (
+            [f"python: {relative} is missing, so {declaration.what} is unchecked."],
+            0,
+        )
+
+    text = path.read_text(encoding="utf-8")
+    matches = list(declaration.pattern.finditer(text))
+
+    if not matches:
+        # For a named file, declaring nothing means the check silently stopped
+        # covering it. Across a glob it is ordinary, so it is judged by the caller.
+        if not globbed:
+            problems.append(
+                f"python: {relative} declares no Python version, so "
+                f"{declaration.what} is unchecked. The file's format probably "
+                f"changed and PYTHON_DECLARATIONS in {Path(__file__).name} needs "
+                f"updating."
+            )
+        return problems, 0
+
+    expected_count = declaration.expected_matches
+    if expected_count is not None and len(matches) != expected_count:
+        problems.append(
+            f"python: {relative} declares the Python version {len(matches)} "
+            f"time(s), expected {expected_count}. Every build stage must name the "
+            f"same interpreter, or the venv is built on one and run on another."
+        )
+
+    for match in matches:
+        if minor_of(match.group(1)) == EXPECTED_PYTHON:
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        problems.append(
+            f"python: {relative}:{line} sets {declaration.what} to "
+            f"{match.group(1)}, but every surface running backend/ must be on "
+            f"{EXPECTED_PYTHON} — the minor the held PyTorch base ships to the "
+            f"worker. Either align this back, or move the worker, CI, mypy, the "
+            f"docs and EXPECTED_PYTHON in {Path(__file__).name} together in one "
+            f"reviewed change."
+        )
+
+    return problems, len(matches)
+
+
+def check_declaration(declaration: Declaration) -> list[str]:
+    """Check every file one declaration resolves to."""
+    # A globbed declaration sweeps a whole directory, where most files
+    # legitimately say nothing about Python (a workflow that never sets up an
+    # interpreter, say). So "declares nothing" is only a problem for a named file;
+    # across a glob the coverage assertion is that *some* file matched.
+    globbed = "*" in declaration.path
+    paths = resolve_paths(declaration.path)
+
+    if not paths:
+        return [
+            f"python: no file matched {declaration.path}, so {declaration.what} is "
+            f"unchecked. Either the path moved or the glob is wrong; the "
+            f"interpreter check is not covering what it claims to."
+        ]
+
+    problems: list[str] = []
+    total_matches = 0
+    for path in paths:
+        found, matched = check_one_file(declaration, path, globbed)
+        problems.extend(found)
+        total_matches += matched
+
+    if globbed and not total_matches:
+        problems.append(
+            f"python: no file under {declaration.path} declares a Python version, "
+            f"so {declaration.what} is unchecked. The format probably changed and "
+            f"PYTHON_DECLARATIONS in {Path(__file__).name} needs updating."
+        )
+    return problems
+
+
+def check_interpreter() -> list[str]:
+    """Return a problem per surface whose Python version is out of alignment."""
+    return [
+        problem
+        for declaration in PYTHON_DECLARATIONS
+        for problem in check_declaration(declaration)
+    ]
+
+
 def evaluate(hold: Hold) -> dict[str, object]:
     """Ask PyPI whether the blocker has released far enough to move the pin."""
     latest = latest_release(hold.blocker)
@@ -258,7 +446,10 @@ def render_text(
     for failure in failures:
         print(f"ERROR: could not check {failure}")
     if not problems:
-        print("Matched-stack pins agree with every recorded hold.")
+        print(
+            "Matched-stack pins agree with every recorded hold, and every "
+            f"surface running backend/ declares Python {EXPECTED_PYTHON}."
+        )
 
 
 def main() -> int:
@@ -274,6 +465,7 @@ def main() -> int:
     args = parser.parse_args()
 
     problems = [problem for hold in HOLDS for problem in check_drift(hold)]
+    problems += check_interpreter()
     results, failures = ((), []) if args.offline else check_releases(HOLDS)
     results = list(results)
     actionable = bool(problems or [r for r in results if r["status"] != "held"])

@@ -555,7 +555,8 @@ The policy for a hold is therefore:
 
 1. **Record it in code, not just prose.** Add the hold to `HOLDS` in [scripts/check_held_pins.py](../scripts/check_held_pins.py) with the blocking package and the version that resolves the advisory. Add the matching `ignore:` entry to [dependabot.yml](../.github/dependabot.yml) to stop the pointless update pull requests.
 2. **Enforce that the stack moves together.** Every file declaring part of a matched stack must declare the same version. `python scripts/check_held_pins.py --offline` checks this, runs in CI and in `scripts/check.py`, and covers the requirements files and the worker base-image tag. It fails a bump applied to some declarations and not others.
-3. **Suppress the alerts automatically, not manually.** Add a custom **Dependabot rule** (repository *Settings > Code security > Dependabot rules > New rule*, free on public repositories) matching the held package. For the current hold, set *Target alerts* to `package:torch`, `ecosystem:pip`, and `severity:low` (the filters are ANDed), then tick **Dismiss alerts** and choose **Indefinitely**. The rule re-dismisses on every advisory revision and every new manifest, which is what makes the suppression durable. There is no REST API for these rules; they are configured in the web UI.
+3. **Enforce anything the hold transitively fixes.** A hold can constrain more than its own version string. The PyTorch hold also fixes the worker's **Python minor**, because the interpreter arrives with the base image rather than being chosen, so the API image, CI, mypy, and the documented prerequisite all have to match it. `EXPECTED_PYTHON` and `PYTHON_DECLARATIONS` in [check_held_pins.py](../scripts/check_held_pins.py) record that, and the same `--offline` run fails on any surface that drifts. This is not hypothetical: with no `ignore:` entry for the `python` base image, Dependabot walked the API image from 3.12 to 3.14 on its own, and for a while the interpreter serving every HTTP request was the only one the test suite never ran on. When a hold implies a constraint like this, encode the constraint too, not just the pin.
+4. **Suppress the alerts automatically, not manually.** Add a custom **Dependabot rule** (repository *Settings > Code security > Dependabot rules > New rule*, free on public repositories) matching the held package. For the current hold, set *Target alerts* to `package:torch`, `ecosystem:pip`, and `severity:low` (the filters are ANDed), then tick **Dismiss alerts** and choose **Indefinitely**. The rule re-dismisses on every advisory revision and every new manifest, which is what makes the suppression durable. There is no REST API for these rules; they are configured in the web UI.
 
    Three choices on that form are easy to get wrong:
 
@@ -566,7 +567,7 @@ The policy for a hold is therefore:
    Restricting the rule to `Low` is what keeps it honest: while the pin is held, no torch advisory of any severity can be fixed by upgrading, so auto-dismissing the local-only low tier costs nothing that could have been acted on, while moderate and above still surface for a human decision. `ecosystem:pip` is not redundant — an npm package named `torch` exists.
 
    *Open a pull request to resolve alerts* cannot be unticked, which is harmless here: the `ignore:` entry for the same package already stops that pull request being opened.
-4. **Dismiss the alerts that are already open.** Auto-triage rules apply going forward, so clear the backlog once:
+5. **Dismiss the alerts that are already open.** Auto-triage rules apply going forward, so clear the backlog once:
 
    ```bash
    gh api --method PATCH repos/Valtora/Nojoin/dependabot/alerts/<number> \
@@ -576,7 +577,7 @@ The policy for a hold is therefore:
    ```
 
    Valid reasons are `fix_started`, `inaccurate`, `no_bandwidth`, `not_used`, and `tolerable_risk`; the comment is capped at 280 characters. Prefer `tolerable_risk` over `not_used` unless you have confirmed that no transitive dependency reaches the vulnerable code path.
-5. **Watch for the hold clearing.** Because the alerts are now silenced, nothing would otherwise announce the day the pin can move. [held-pin-watch.yml](../.github/workflows/held-pin-watch.yml) runs `scripts/check_held_pins.py` monthly against PyPI and opens a single `held-pin` issue when the blocking package catches up. Lifting a hold means moving the whole stack, updating `HOLDS`, removing the `ignore:` entry, and **removing the auto-triage rule** so genuine advisories surface again.
+6. **Watch for the hold clearing.** Because the alerts are now silenced, nothing would otherwise announce the day the pin can move. [held-pin-watch.yml](../.github/workflows/held-pin-watch.yml) runs `scripts/check_held_pins.py` monthly against PyPI and opens a single `held-pin` issue when the blocking package catches up. Lifting a hold means moving the whole stack, updating `HOLDS`, removing the `ignore:` entry, and **removing the auto-triage rule** so genuine advisories surface again.
 
 A hold is a deliberate, dated, checked decision, not a silence. If a held advisory ever rises above the risk this repository is prepared to carry, the answer is to drop the blocking dependency, not to widen the hold.
 
