@@ -1,11 +1,11 @@
 """Calendar service package facade.
 
-The calendar service was decomposed from a single 2700-line module into cohesive
-submodules (BE-008 file-size gate). This ``__init__`` re-exports the full public
-and test-imported surface so every existing import site -- API endpoints, the
-Celery worker tasks, the push service, and the test suite -- keeps working
-against ``backend.services.calendar_service`` unchanged. All implementation lives
-in the submodules; this file is a thin aggregator only.
+The calendar service is split across cohesive submodules to keep each within
+the file-size gate. This ``__init__`` re-exports the full public and
+test-imported surface, so every import site -- API endpoints, Celery worker
+tasks, the push service, and the test suite -- resolves against
+``backend.services.calendar_service`` directly. All implementation lives in the
+submodules; this file is a thin aggregator only.
 """
 
 from .config import (

@@ -124,7 +124,6 @@ async def import_audio(
             exc=e,
         )
 
-    # Get file stats
     file_stats = os.stat(file_path)
 
     # Get duration
@@ -212,7 +211,6 @@ async def init_chunked_import(
             detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}",
         )
 
-    # Generate a unique filename
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
@@ -364,7 +362,6 @@ async def finalize_chunked_import(
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
 
-        # Get file stats
         file_stats = os.stat(recording.audio_path)
         recording.file_size_bytes = file_stats.st_size
 
@@ -431,7 +428,6 @@ async def finalize_chunked_import(
             exc=e,
         )
 
-    # Update recording status
     recording.status = RecordingStatus.QUEUED
     recording.client_status = ClientStatus.IDLE
 

@@ -37,7 +37,6 @@ class MockDockerClient:
 def test_app(monkeypatch):
     app = create_app(app_lifespan=None)
 
-    # Mock user dependencies
     async def mock_superuser():
         return MagicMock(is_superuser=True, role="admin")
 

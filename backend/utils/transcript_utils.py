@@ -222,7 +222,6 @@ def _combine_word_level(segments, speaker_turns):
     """High-precision logic: Align individual words to speakers."""
     from pyannote.core import Segment
 
-    # Flatten all words
     all_words = []
     for seg in segments:
         if "words" in seg:
@@ -645,7 +644,6 @@ def consolidate_diarized_transcript(
                 split_idx = int(len(curr_text) * ratio)
 
                 # Try to split at a space near the ratio to avoid cutting words
-                # Search within a window
                 search_window = 10
                 for offset in range(search_window):
                     # Check forward

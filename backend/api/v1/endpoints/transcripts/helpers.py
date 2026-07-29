@@ -310,7 +310,6 @@ def _apply_find_replace(
             # Invalid regex provided by user
             raise HTTPException(status_code=400, detail="Invalid regular expression")
 
-        # Replace in transcript segments
         for segment in transcript.segments:
             # google-re2 python bindings support subn.
             new_text, count = regex.subn(replace_text, segment["text"])
@@ -325,7 +324,6 @@ def _apply_find_replace(
 
     if total_segment_replacements > 0:
         flag_modified(transcript, "segments")
-        # Reconstruct full text
         full_text = " ".join([s["text"] for s in transcript.segments])
         transcript.text = full_text
 

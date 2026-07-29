@@ -264,11 +264,9 @@ async def batch_add_tag(
         await db.commit()
         await db.refresh(tag)
 
-    # 2. Add to recordings
-    # Get all recordings that don't already have this tag
-    # This is a bit complex in SQLModel/SQLAlchemy async, so we'll iterate for simplicity
-    # given the likely scale (batch size usually < 100)
-
+    # Iterated rather than expressed as a single set-difference query: batches
+    # are small (typically under 100 recordings), so the clearer loop is worth
+    # more than the round trip it would save.
     recordings = await get_recordings_by_public_ids(
         db,
         batch.recording_ids,

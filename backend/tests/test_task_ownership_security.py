@@ -66,7 +66,6 @@ async def test_task_ownership_lifecycle_and_security(test_session_maker) -> None
     # 1. Setup app
     app = create_app()
 
-    # Mock task result
     class _MockTaskResult:
         status = "PROCESSING"
         info = {"progress": 42, "message": "Working..."}
@@ -113,7 +112,6 @@ async def test_task_ownership_lifecycle_and_security(test_session_maker) -> None
             session.add(admin_user)
             await session.commit()
 
-            # Register task ownership for user_a
             await register_task_ownership(session, "task-101", user_a.id)
 
         # Test Case A: User A queries their own task status -> SUCCESS (200)

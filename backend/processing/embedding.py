@@ -187,7 +187,6 @@ def find_matching_global_speaker(
             method_version,
         )
 
-    # Check if the best match passes the threshold
     if best_match and best_score >= threshold:
         # Check for ambiguity using the margin of victory
         if (best_score - second_best_score) >= margin:

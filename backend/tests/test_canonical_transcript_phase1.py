@@ -6579,13 +6579,13 @@ def test_match_utterance_does_not_dampen_when_overlap_is_clear() -> None:
 
 
 # ---------------------------------------------------------------------------
-# BE-006 characterization tests.
+# Rolling-diarization reconciliation characterization tests.
 #
-# These pin the behaviour of the rolling-diarization reconciliation seam
+# These pin the behaviour of the reconciliation seam
 # (`reconcile_diarization_window_result` and the
-# `_reconcile_completed_windows_from_effective_point` orchestrator) *before*
-# the function is decomposed into helpers. They lock down the two invariants
-# BE-006 must not weaken:
+# `_reconcile_completed_windows_from_effective_point` orchestrator), which is
+# spread across several helpers. They lock down two invariants that no
+# refactor of that seam may weaken:
 #
 #   * Manual-edit authority: a confident auto candidate must NOT overwrite a
 #     manually-locked speaker; the candidate is only recorded in the rolling

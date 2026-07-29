@@ -2931,7 +2931,7 @@ def test_mute_non_speech_segments_uses_configured_vad_parameters(tmp_path, monke
     assert captured["min_silence_duration_ms"] == 456
 
 
-# --- BE-005 characterization tests ------------------------------------------
+# --- Live transcription characterization tests -------------------------------
 # These pin the CURRENT observable behaviour of the seams about to be extracted
 # from transcribe_segment_live_task: sequence gating accept/skip, audio
 # buffering/concat, ASR result handling, persistence, diarisation (Meeting Edge)

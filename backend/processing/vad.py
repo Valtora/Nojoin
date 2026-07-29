@@ -118,7 +118,6 @@ def mute_non_speech_segments(
             f"[VAD] Audio duration: {total_duration_s:.2f}s ({total_samples:,} samples at {sampling_rate}Hz)"
         )
 
-        # Load Silero VAD model
         logger.info("[VAD] Loading Silero VAD model...")
         # Defaults to CPU but uses GPU if available/configured.
         from backend.utils.config_manager import config_manager
@@ -158,7 +157,6 @@ def mute_non_speech_segments(
             else:
                 raise e
 
-        # Run VAD
         logger.info("[VAD] Running speech detection...")
 
         # Ensure wav is on the correct device
@@ -174,13 +172,11 @@ def mute_non_speech_segments(
             min_silence_duration_ms=min_silence_duration_ms,
         )
 
-        # Calculate and log detailed VAD metrics
         vad_metrics = _calculate_vad_metrics(
             speech_timestamps, total_duration_s, sampling_rate
         )
         _log_vad_metrics(vad_metrics, input_wav_path)
 
-        # Process audio based on VAD results
         processed_audio = _apply_vad_processing(
             wav_np,
             speech_timestamps,
@@ -237,7 +233,6 @@ def _calculate_vad_metrics(
             "longest_silence_gap_s": total_duration_s,
         }
 
-    # Calculate speech duration
     speech_duration_s = sum(
         (seg["end"] - seg["start"]) / sampling_rate for seg in speech_timestamps
     )
@@ -247,7 +242,6 @@ def _calculate_vad_metrics(
     speech_percentage = (speech_duration_s / total_duration_s) * 100
     silence_percentage = 100 - speech_percentage
 
-    # Speech segment statistics
     num_segments = len(speech_timestamps)
     segment_durations = [
         (seg["end"] - seg["start"]) / sampling_rate for seg in speech_timestamps
@@ -257,7 +251,6 @@ def _calculate_vad_metrics(
     )
     longest_segment_s = max(segment_durations) if segment_durations else 0.0
 
-    # Calculate longest silence gap
     longest_silence_gap_s = 0.0
     if num_segments > 1:
         for i in range(1, num_segments):
@@ -377,7 +370,6 @@ def _apply_vad_processing(
         if start_sample >= end_sample:
             continue
 
-        # Copy speech segment
         segment_audio = wav_np[start_sample:end_sample].copy()
 
         # Apply fade-in/fade-out for smoother transitions
@@ -426,7 +418,6 @@ def detect_speech_segments(
 
     from backend.utils.config_manager import config_manager
 
-    # Resolve processing device
     device_str = config_manager.get("processing_device", "auto")
     device = torch.device("cpu")
 

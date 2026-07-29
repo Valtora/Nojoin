@@ -141,7 +141,6 @@ def setup_logging(log_level=None):
         log_verbosity = cfg.get("advanced", {}).get("log_verbosity", "INFO")
         log_level = getattr(logging, log_verbosity.upper(), logging.INFO)
 
-    # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 

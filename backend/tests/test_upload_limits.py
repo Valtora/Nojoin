@@ -103,9 +103,7 @@ async def test_concurrency_limiting_in_memory():
     # Reset state to clean
     await release_concurrency_limit(key)
 
-    # Acquire 1
     assert await acquire_concurrency_limit(key, limit=2) is True
-    # Acquire 2
     assert await acquire_concurrency_limit(key, limit=2) is True
     # Acquire 3 -> fails
     assert await acquire_concurrency_limit(key, limit=2) is False

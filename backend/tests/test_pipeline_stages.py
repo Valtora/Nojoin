@@ -1,7 +1,7 @@
 """Stage-level characterization tests for ``process_recording_task``.
 
-These tests pin the CURRENT observable behaviour at the seams that the
-BE-004 decomposition extracts into explicit orchestration stages:
+These tests pin the observable behaviour at the seams between the task's
+explicit orchestration stages:
 
 * input-audio resolution (proxy restore / repair / duration backfill),
 * the VAD stage and its "no speech" short-circuit,

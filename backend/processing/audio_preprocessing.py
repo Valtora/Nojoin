@@ -67,7 +67,6 @@ def repair_audio_file(file_path: str) -> Optional[str]:
     try:
         logger.info(f"Attempting to repair audio file: {file_path}")
 
-        # Create a temp file for the repaired output
         fd, repaired_path = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
 
@@ -120,7 +119,6 @@ def preprocess_audio_for_diarization(input_path: str) -> str | None:
     Returns None on failure.
     """
     try:
-        # Write to temp file
         temp_fd, temp_path = tempfile.mkstemp(suffix="_preprocessed.wav")
         os.close(temp_fd)
 
@@ -210,7 +208,6 @@ def preprocess_audio_for_vad(input_path: str) -> str | None:
         temp_fd, temp_path = tempfile.mkstemp(suffix="_vad.wav")
         os.close(temp_fd)
 
-        # Convert to mono 16k
         convert_to_mono_16k(input_path, temp_path)
 
         # Normalize (in-place or copy)

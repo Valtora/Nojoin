@@ -137,7 +137,7 @@ def friendly_chat_error(exc: Exception) -> str:
     """Map an upstream failure to a user-facing chat error string.
 
     Shared by the worker (CLI chat) and the API's inline generator so both speak
-    the same copy. Mirrors the categories from the original inline handler.
+    the same copy.
     """
     # A CLI usage-limit error already carries a precise, reset-time-aware message.
     from backend.processing.cli.manager import CliUsageLimitError

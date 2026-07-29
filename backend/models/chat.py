@@ -24,5 +24,4 @@ class ChatMessage(BaseDBModel, table=True):
     content: str = Field(description="Content of the chat message")
 
     # Relationships
-    # user: Optional["User"] = Relationship(back_populates="chat_messages")
     recording: Optional["Recording"] = Relationship(back_populates="chat_messages")

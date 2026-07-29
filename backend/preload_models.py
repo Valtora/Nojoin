@@ -138,8 +138,10 @@ def _download_file(
                             os.remove(dest_path)
                             downloaded = 0
                         else:
-                            # It's partially downloaded but named dest_path? This happens from old code or whisper itself.
-                            # So treat dest_path as part_path, we will resume it.
+                            # A partial download left under the final name,
+                            # which whisper itself can produce. Move it to the
+                            # part path so the transfer resumes rather than
+                            # restarting.
                             os.rename(dest_path, part_path)
                             resume_header = {"Range": f"bytes={downloaded}-"}
                             file_mode = "ab"

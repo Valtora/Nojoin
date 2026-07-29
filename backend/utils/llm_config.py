@@ -207,7 +207,6 @@ def _merge_llm_config(
         else None
     )
 
-    # Resolve secondary provider
     secondary_provider = merged.get("secondary_llm_provider") or None
     secondary_api_key = None
     secondary_model = None
