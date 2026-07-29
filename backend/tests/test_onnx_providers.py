@@ -156,3 +156,29 @@ def test_get_available_providers_is_not_a_substitute_for_this_check():
 
     session_providers = cpu_session().get_providers()
     assert CUDA_PROVIDER not in session_providers
+
+
+def test_asr_engine_picks_fp32_on_gpu_and_int8_on_cpu(monkeypatch):
+    """int8 has no CUDA kernels, so the engine must not request it on a GPU host."""
+    import sys
+    import types
+
+    from backend.processing.engines import onnx_asr_engine
+
+    captured: dict = {}
+    stub = types.ModuleType("onnx_asr")
+    stub.load_model = lambda onnx_id, **kw: captured.update(kw) or ModelStub()
+    monkeypatch.setitem(sys.modules, "onnx_asr", stub)
+
+    class Engine(onnx_asr_engine.OnnxAsrEngine):
+        name = "canary"
+        config_key = "canary_model"
+        default_model_id = "nemo-canary-1b-v2"
+        onnx_id_map: dict = {}
+
+    for gpu_present, expected in ((True, None), (False, "int8")):
+        monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda v=gpu_present: v)
+        engine = Engine()
+        engine._model_cache = {}
+        engine._get_model({})
+        assert captured["quantization"] == expected

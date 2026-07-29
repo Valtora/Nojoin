@@ -265,7 +265,9 @@ The worker image installs Triton in its virtual environment so Whisper word-leve
 
 Text embedding (used during AI-generated meeting intelligence) uses the ONNX Runtime CUDA execution provider when available, with an automatic CPU fallback.
 
-The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. Some ONNX graph operations are inherently CPU-pinned; the resulting memcpy overhead is expected and does not indicate a configuration problem.
+The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. They load fp32 weights where a GPU is present and int8 weights where one is not. This is deliberate: int8 is a CPU optimisation, and ONNX Runtime has no CUDA kernels for most quantized operations, so an int8 graph is handed back to the CPU node by node even when the CUDA provider loads cleanly. On Canary 1B that difference is 1046 memcpy nodes and roughly real-time transcription against 66 nodes and a GPU-bound run. The fp32 weights need more VRAM (about 5.4 GB for Canary 1B), which is why the choice follows GPU presence rather than being fixed.
+
+A small number of memcpy nodes is normal, since some graph operations are inherently CPU-pinned. A count in the hundreds or thousands is not, and means the graph is not really running on the GPU.
 
 #### Diagnosing a silent CPU fallback
 

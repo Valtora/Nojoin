@@ -6,7 +6,7 @@ import logging
 import os
 
 from ...utils.languages import resolve_transcription_language_code
-from ..onnx_providers import verify_gpu_providers
+from ..onnx_providers import gpu_is_present, verify_gpu_providers
 from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
@@ -217,10 +217,19 @@ class OnnxAsrEngine(TranscriptionEngine):
             import onnx_asr
 
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            logger.info(f"Loading {self.name} model: {onnx_id}")
+            # int8 is a CPU optimisation and defeats CUDA: onnxruntime has no CUDA
+            # kernels for most quantized ops, so it claims the session and then hands
+            # nearly every node back to CPU, inserting a memcpy at each handoff (1046
+            # of them for canary-1b). Load the fp32 weights where a GPU is present,
+            # which cuts that to 66 and keeps the graph on the card.
+            quantization = None if gpu_is_present() else "int8"
+            logger.info(
+                f"Loading {self.name} model: {onnx_id} "
+                f"(quantization={quantization or 'none'})"
+            )
             model = onnx_asr.load_model(
                 onnx_id,
-                quantization="int8",
+                quantization=quantization,
                 providers=providers,
             )
             # onnxruntime silently drops a provider it cannot load, so confirm the
