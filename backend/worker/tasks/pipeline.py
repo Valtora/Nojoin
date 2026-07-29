@@ -718,6 +718,35 @@ def _finalize_transcript_and_notes(
     )
 
 
+def _release_asr_vram() -> None:
+    """Free the ASR models once transcription is done, before diarization runs.
+
+    Only on a GPU host, where VRAM is the contended resource. ONNX Runtime's arena
+    grows with the transcription window and never shrinks, so on a small card a
+    finished ASR session can leave diarization with nothing left to allocate. The
+    engines reload lazily on the next task.
+    """
+    from backend.processing.onnx_providers import gpu_is_present
+
+    if not gpu_is_present():
+        return
+
+    import gc
+
+    import torch
+
+    try:
+        from backend.processing.transcribe import release_model_cache
+
+        release_model_cache()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info("Released ASR VRAM before diarization.")
+    except Exception as e:  # noqa: BLE001 -- boundary: VRAM release is best-effort
+        logger.error("Error releasing ASR VRAM: %s", e)
+
+
 def _release_pipeline_vram() -> None:
     """Best-effort release of cached ML models / VRAM after the task.
 
@@ -897,6 +926,9 @@ def process_recording_task(
         transcription_result = _run_final_asr_stage(
             ctx, recording, processed_audio_path, engine_override
         )
+
+        # Hand the card back before diarization asks for it.
+        _release_asr_vram()
 
         # --- Stage: diarization ---
         diarization_result = _run_final_diarization_stage(

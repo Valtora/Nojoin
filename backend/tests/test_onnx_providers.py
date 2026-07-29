@@ -182,3 +182,18 @@ def test_asr_engine_picks_fp32_on_gpu_and_int8_on_cpu(monkeypatch):
         engine._model_cache = {}
         engine._get_model({})
         assert captured["quantization"] == expected
+
+
+def test_window_cap_tightens_on_gpu_and_respects_test_overrides(monkeypatch):
+    """fp32 attention activations blow an 8GB card at the CPU-sized window."""
+    from backend.processing.engines import onnx_asr_engine as e
+
+    monkeypatch.setattr(e, "gpu_is_present", lambda: False)
+    assert e.max_chunk_duration_s() == e.MAX_CHUNK_DURATION_S
+
+    monkeypatch.setattr(e, "gpu_is_present", lambda: True)
+    assert e.max_chunk_duration_s() == e.GPU_MAX_CHUNK_DURATION_S
+
+    # Tests shrink MAX_CHUNK_DURATION_S to keep fixtures tiny; that must still win.
+    monkeypatch.setattr(e, "MAX_CHUNK_DURATION_S", 4.0)
+    assert e.max_chunk_duration_s() == 4.0

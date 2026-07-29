@@ -269,6 +269,10 @@ The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. They load fp32 w
 
 A small number of memcpy nodes is normal, since some graph operations are inherently CPU-pinned. A count in the hundreds or thousands is not, and means the graph is not really running on the GPU.
 
+The fp32 weights also constrain the transcription window. Attention activations grow with the square of the window length, so the ASR window is capped at 120 seconds on a GPU host against 240 on CPU (`GPU_MAX_CHUNK_DURATION_S`). On an 8 GB card the 240 second window overflows VRAM outright. If live capture and a transcription job contend for the same card, lower that value further.
+
+ONNX Runtime's memory arena grows to fit the largest window and never shrinks, so the ASR models are released after transcription and before diarization rather than at the end of the task. Without that release, a finished ASR session leaves diarization with no VRAM to allocate and it fails with a CUDA out-of-memory error while the transcript itself succeeds.
+
 #### Diagnosing a silent CPU fallback
 
 ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-gpu` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature.

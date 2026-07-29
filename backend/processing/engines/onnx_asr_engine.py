@@ -23,6 +23,24 @@ SEGMENT_PAUSE_THRESHOLD_S = 0.8
 # and the call never returns. Longer audio is transcribed in windows capped here.
 MAX_CHUNK_DURATION_S = 240.0
 
+# Tighter cap for GPU runs. The CUDA provider needs the fp32 weights (int8 has no
+# CUDA kernels), whose attention activations grow with the square of the window, so
+# 240s overflows an 8GB card while 160s fits. 120s is the largest window that still
+# leaves the card room for diarization afterwards.
+GPU_MAX_CHUNK_DURATION_S = 120.0
+
+
+def max_chunk_duration_s() -> float:
+    """Longest window to feed onnx-asr in one recognize() call, for this device.
+
+    Takes the smaller of the two caps on a GPU host so that tests, which shrink
+    MAX_CHUNK_DURATION_S to keep fixtures tiny, stay effective either way.
+    """
+    if gpu_is_present():
+        return min(MAX_CHUNK_DURATION_S, GPU_MAX_CHUNK_DURATION_S)
+    return MAX_CHUNK_DURATION_S
+
+
 # Half-width (seconds) of the search window used to snap a chunk boundary onto
 # the quietest nearby point, so a window never cuts through a spoken word.
 CHUNK_SNAP_RADIUS_S = 18.0
@@ -156,7 +174,7 @@ def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
     Returns a list of (start_frame, end_frame) pairs covering the whole signal.
     """
     total_frames = len(audio)
-    target = int(MAX_CHUNK_DURATION_S * sample_rate)
+    target = int(max_chunk_duration_s() * sample_rate)
     radius = int(CHUNK_SNAP_RADIUS_S * sample_rate)
     probe = max(1, int(0.2 * sample_rate))
 
@@ -282,7 +300,7 @@ class OnnxAsrEngine(TranscriptionEngine):
 
             logger.info(f"Starting {self.name} transcription for {audio_path}")
 
-            if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
+            if audio_duration is not None and audio_duration > max_chunk_duration_s():
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
@@ -338,7 +356,7 @@ class OnnxAsrEngine(TranscriptionEngine):
         boundaries = _chunk_boundaries(audio, sample_rate)
         logger.info(
             f"{self.name}: {audio_duration:.0f}s audio exceeds the "
-            f"{MAX_CHUNK_DURATION_S:.0f}s single-pass limit; transcribing in "
+            f"{max_chunk_duration_s():.0f}s single-pass limit; transcribing in "
             f"{len(boundaries)} windows."
         )
 
