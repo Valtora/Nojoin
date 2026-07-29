@@ -1,4 +1,4 @@
-# Canonical label taxonomy for Nojoin issues and pull requests (GOV-004).
+# Canonical label taxonomy for Nojoin issues and pull requests.
 #
 # This file is the single source of truth for the label set. Labels themselves
 # live in GitHub repository settings, so this file is applied with `gh` rather
@@ -94,4 +94,4 @@
   description: "Dependency update (used by Dependabot pull requests)."
 - name: "audit"
   color: "0052cc"
-  description: "Periodic repository-quality re-audit (GOV-008)."
+  description: "Periodic repository-quality re-audit."

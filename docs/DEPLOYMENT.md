@@ -257,6 +257,17 @@ call: it can stall only the task making it. A pool that shares one process
 between concurrent tasks, such as `gevent`, `eventlet` or `threads`, breaks that
 and reintroduces head-of-line blocking.
 
+This is worth stating plainly because the assumption lives here, in Compose,
+rather than in the code that depends on it. Worker code queues follow-on Celery
+work with a blocking call, and that is safe only while one task owns one
+operating-system process. The API was deliberately changed to stop doing this,
+because it dispatches from an event loop shared by every concurrent request;
+the worker was deliberately left alone, because a prefork child has nothing else
+to stall. Switch a lane to a pool that multiplexes tasks within a process and
+that reasoning silently stops holding, with no test to catch it — the guard test
+in the backend only detects inline dispatch inside an `async def`, which is a
+different mistake. Treat a pool change as a change to the dispatch model.
+
 ### GPU Acceleration
 
 The worker image installs Triton in its virtual environment so Whisper word-level timestamps use GPU-accelerated kernels. Without Triton, `whisper/timing.py` falls back to slower CPU-based implementations for word alignment.
@@ -328,7 +339,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 ### Change for Remote or Reverse-Proxy Deployments
 
 - `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, other public URLs, and the backend CORS allowlist.
-- `NOJOIN_TRUSTED_PROXIES`: Comma-separated list of trusted proxy IP addresses, CIDR blocks, or hostnames. Defaults to `127.0.0.1,::1,nginx` to cover local loopback access and the default Docker Nginx proxy container name. If deploying behind an external load balancer or edge proxy (e.g. Cloudflare, AWS ALB), add its IP/CIDR to ensure that rate-limiting resolves client IPs correctly and safely. A hostname entry only works if the API container can resolve it: a Docker container name resolves only on networks the API is itself attached to, so an edge proxy running on a **separate** Docker network must be trusted by its **IP or subnet CIDR, not its container name**. See [Trusted Proxy IPs for Rate Limiting (DEP-002)](#trusted-proxy-ips-for-rate-limiting-dep-002).
+- `NOJOIN_TRUSTED_PROXIES`: Comma-separated list of trusted proxy IP addresses, CIDR blocks, or hostnames. Defaults to `127.0.0.1,::1,nginx` to cover local loopback access and the default Docker Nginx proxy container name. If deploying behind an external load balancer or edge proxy (e.g. Cloudflare, AWS ALB), add its IP/CIDR to ensure that rate-limiting resolves client IPs correctly and safely. A hostname entry only works if the API container can resolve it: a Docker container name resolves only on networks the API is itself attached to, so an edge proxy running on a **separate** Docker network must be trusted by its **IP or subnet CIDR, not its container name**. See [Trusted Proxy IPs for Rate Limiting](#trusted-proxy-ips-for-rate-limiting).
 
 ### Common Optional Values
 
@@ -393,6 +404,8 @@ reverting on the next restart. If you see that error, check the ownership of the
 
 The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). Point the `worker-io` service at that image via the `image:`/`build:` override in `docker-compose.example.yml`; `worker-gpu` and `worker-cpu` stay on the base image. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`).
 
+The two CLIs carry different supply-chain weight, and the difference matters when reading a scan result. The Claude CLI is JavaScript running on a digest-pinned Node, with npm dropped after install, so `worker-io` shows no vulnerability delta over the shared worker base. The Codex payload is a stripped static-musl binary that Trivy cannot introspect at all. The image still passes the release gate, but for that image it passes because there is nothing to scan rather than because the contents were examined. Operators who need an audited image should leave the ChatGPT provider unused and run `worker-io` for the Claude path only, or skip the lane entirely.
+
 ## Remote Access and Trusted Public Origin
 
 This is the section to read if you want to reach Nojoin from a device other than
@@ -435,7 +448,7 @@ For internet-exposed deployments, treat `FIRST_RUN_PASSWORD` as a deployment sec
 When fronting Nojoin with Nginx, Caddy, Traefik, Tailscale Serve, or another
 reverse proxy:
 
-### Loopback Port Binding (DEP-001)
+### Loopback Port Binding
 
 By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to the loopback interface (`127.0.0.1`) rather than all host interfaces (`0.0.0.0`). This ensures that if you place Nojoin behind an edge reverse proxy (such as Caddy, Traefik, or a tunnel) on the same host, the bundled proxy is not exposed directly to the public internet, preventing bypass of the edge proxy's authentication, rate limiting, or filtering.
 
@@ -454,7 +467,7 @@ By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to
 7. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
 8. Forward the whole site through one origin, including `/mcp` and `/.well-known/oauth-*`. Those paths serve the built-in MCP connector and its OAuth discovery documents (see [MCP.md](MCP.md)); the bundled Nginx proxy already routes them to the API service, so an edge proxy that forwards everything to port `14443` needs no extra rules.
 9. Stream responses rather than buffering them, forward WebSocket upgrades, allow long-lived connections, and allow large request bodies. See [Streaming, WebSocket, and Upload Forwarding](#streaming-websocket-and-upload-forwarding).
-10. Add the edge proxy to `NOJOIN_TRUSTED_PROXIES` so per-client rate limiting resolves real client addresses. See [Trusted Proxy IPs for Rate Limiting (DEP-002)](#trusted-proxy-ips-for-rate-limiting-dep-002).
+10. Add the edge proxy to `NOJOIN_TRUSTED_PROXIES` so per-client rate limiting resolves real client addresses. See [Trusted Proxy IPs for Rate Limiting](#trusted-proxy-ips-for-rate-limiting).
 
 ### Why the Host and Proto Headers Are Load-Bearing
 
@@ -594,7 +607,7 @@ Against the contract above, a Serve deployment resolves as follows.
 - **Leave `NOJOIN_BIND_ADDRESS` at its `127.0.0.1` default.** Serve runs on the
   host, so the loopback binding is already the correct target and the bundled
   proxy stays unreachable from the LAN. This is the one edge-proxy arrangement
-  that needs no change to DEP-001.
+  that needs no change to the loopback port binding.
 - **Target the bundled proxy's HTTPS port, `14443`, on loopback.** Serve accepts
   an insecure-HTTPS target form (`https+insecure://`) for exactly this case, so
   it will not reject Nojoin's self-signed internal certificate. This satisfies
@@ -627,7 +640,7 @@ is not true of reaching the stack over plain HTTP.
 Serve requires HTTPS certificates to be enabled for your tailnet in the
 Tailscale admin console.
 
-### Trusted Proxy IPs for Rate Limiting (DEP-002)
+### Trusted Proxy IPs for Rate Limiting
 
 Nojoin derives each client's IP from the `X-Forwarded-For` chain by walking back through the proxies listed in `NOJOIN_TRUSTED_PROXIES` (see [Change for Remote or Reverse-Proxy Deployments](#change-for-remote-or-reverse-proxy-deployments)). Only the bundled Nginx proxy is trusted by default (`127.0.0.1,::1,nginx`).
 
@@ -716,11 +729,11 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
 ## Upgrading and Migration
 
 - When performing major upgrades, check release notes for breaking changes.
-- **TLS Private Key Permissions (SEC-005):** For security hardening, the TLS private key (`cert.key`) generated in `nginx/` is now set to mode `600` (owner-readable only) instead of `644` (world-readable). For existing deployments, operators should manually restrict the permissions of their existing private key on the host:
+- **TLS Private Key Permissions:** For security hardening, the TLS private key (`cert.key`) generated in `nginx/` is now set to mode `600` (owner-readable only) instead of `644` (world-readable). For existing deployments, operators should manually restrict the permissions of their existing private key on the host:
   ```bash
   chmod 600 nginx/cert.key
   ```
-- **Confidential Data File Permissions (SEC-006):** For security hardening, all confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) now default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. The pass skips symbolic links, so a link stored under the data directory never has its target re-permissioned elsewhere on the filesystem. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
+- **Confidential Data File Permissions:** For security hardening, all confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) now default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. The pass skips symbolic links, so a link stored under the data directory never has its target re-permissioned elsewhere on the filesystem. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
   ```bash
   chmod -R 700 ./data
   ```
