@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Any, List, Union
 
+from .onnx_providers import verify_gpu_providers
+
 logger = logging.getLogger(__name__)
 
 # Model configuration
@@ -27,9 +29,17 @@ class TextEmbeddingService:
             try:
                 from fastembed import TextEmbedding
 
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
                 self._model = TextEmbedding(
                     model_name=MODEL_NAME,
-                    providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+                    providers=providers,
+                )
+                # A TextEmbedding built with an unloadable CUDA provider still
+                # succeeds, on CPU, so the exception handler below never fires.
+                verify_gpu_providers(
+                    self._model,
+                    component=f"Text embedding model {MODEL_NAME}",
+                    requested=providers,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning(

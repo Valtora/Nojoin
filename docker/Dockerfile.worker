@@ -85,6 +85,32 @@ RUN apt-get update && \
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
     --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.7.0
 
+# Put the CUDA wheel libraries on the dynamic loader path. Despite the `cudnn9` tag,
+# this base ships CUDA and cuDNN only as nvidia-*-cu12 wheels under dist-packages,
+# with nothing in a system lib dir or the ldconfig cache. torch copes, because it
+# ctypes-preloads its own wheel libraries with RTLD_GLOBAL, but onnxruntime-gpu does
+# not: libonnxruntime_providers_cuda.so is linked against cuDNN 9's split
+# sub-libraries (libcudnn_adv, _ops, _cnn, _graph, _heuristic, _engines_*), which
+# torch never preloads, plus libcublasLt. Without this the loader cannot resolve
+# them, the CUDA execution provider is silently dropped, and Canary/Parakeet ASR and
+# text embeddings run on CPU while torch still reports CUDA as available.
+#
+# Register every wheel lib directory rather than just cuDNN's, so the CUDA provider
+# loads on its own merits instead of depending on torch being imported first. These
+# are CUDA runtime libraries only; the driver libraries still come from
+# /usr/local/nvidia/lib*, which LD_LIBRARY_PATH resolves ahead of the ldconfig cache.
+# Read paths from __path__ rather than __file__: the nvidia-*-cu12 wheels are PEP 420
+# namespace packages, whose __file__ is None. The greps assert the layout so a future
+# base bump fails the build here instead of degrading to CPU in production.
+RUN /usr/bin/python3 -c \
+      "import nvidia, os, glob; \
+       print('\n'.join(sorted(d for p in nvidia.__path__ \
+             for d in glob.glob(os.path.join(p, '*', 'lib')))))" \
+      > /etc/ld.so.conf.d/nvidia-cuda-wheels.conf && \
+    ldconfig && \
+    ldconfig -p | grep -q libcudnn_adv.so.9 && \
+    ldconfig -p | grep -q libcublasLt.so.12
+
 COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app

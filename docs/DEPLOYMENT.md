@@ -265,7 +265,41 @@ The worker image installs Triton in its virtual environment so Whisper word-leve
 
 Text embedding (used during AI-generated meeting intelligence) uses the ONNX Runtime CUDA execution provider when available, with an automatic CPU fallback.
 
-The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. Some ONNX graph operations are inherently CPU-pinned; the resulting memcpy overhead is expected and does not indicate a configuration problem.
+The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. They load fp32 weights where a GPU is present and int8 weights where one is not. This is deliberate: int8 is a CPU optimisation, and ONNX Runtime has no CUDA kernels for most quantized operations, so an int8 graph is handed back to the CPU node by node even when the CUDA provider loads cleanly. On Canary 1B that difference is 1046 memcpy nodes and roughly real-time transcription against 66 nodes and a GPU-bound run. The fp32 weights need more VRAM (about 5.4 GB for Canary 1B), which is why the choice follows GPU presence rather than being fixed.
+
+A small number of memcpy nodes is normal, since some graph operations are inherently CPU-pinned. A count in the hundreds or thousands is not, and means the graph is not really running on the GPU.
+
+The fp32 weights also constrain the transcription window. Attention activations grow with the square of the window length, so the ASR window is capped at 120 seconds on a GPU host against 240 on CPU (`GPU_MAX_CHUNK_DURATION_S`). On an 8 GB card the 240 second window overflows VRAM outright. If live capture and a transcription job contend for the same card, lower that value further.
+
+ONNX Runtime's memory arena grows to fit the largest window and never shrinks, so the ASR models are released after transcription and before diarization rather than at the end of the task. Without that release, a finished ASR session leaves diarization with no VRAM to allocate and it fails with a CUDA out-of-memory error while the transcript itself succeeds.
+
+#### Diagnosing a silent CPU fallback
+
+ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-gpu` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature.
+
+Note that PyTorch and ONNX Runtime resolve their CUDA libraries independently, so they can disagree. `torch.cuda.is_available()` returning `True`, VAD logging `Model loaded successfully on cuda`, and `nvidia-smi` working inside the container all confirm the container's GPU passthrough is intact. None of them say anything about ONNX Runtime.
+
+To check the real state:
+
+```bash
+docker compose logs worker-gpu | grep -i "execution provider"
+```
+
+The worker logs which provider each ONNX model actually got after loading. A warning naming `fell back to CPU` means the CUDA provider was dropped. The underlying cause is usually a missing shared library, logged nearby as:
+
+```
+Failed to load library libonnxruntime_providers_cuda.so with error: libcudnn_*.so.9: cannot open shared object file
+```
+
+`onnxruntime.get_available_providers()` is not a valid check here. It lists the providers the build was compiled with, so it reports `CUDAExecutionProvider` even on a host with no GPU.
+
+If a library is missing, confirm the loader can see cuDNN inside the container. The worker image registers the cuDNN wheel's directory with `ldconfig` at build time for exactly this reason:
+
+```bash
+docker compose exec worker-gpu ldconfig -p | grep libcudnn_adv
+```
+
+An empty result means the base image moved cuDNN and the image needs rebuilding against the corrected path.
 
 ## CPU-Only Deployment
 
