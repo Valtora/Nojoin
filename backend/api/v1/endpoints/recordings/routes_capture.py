@@ -37,6 +37,78 @@ from .router import router
 logger = logging.getLogger(__name__)
 
 
+def _capture_wall_span_seconds(recording: Recording) -> float | None:
+    """Wall-clock seconds between the capture starting and its last activity."""
+    started_at = recording.created_at
+    last_activity_at = recording.last_activity_at
+    if started_at is None or last_activity_at is None:
+        return None
+
+    try:
+        span = (last_activity_at - started_at).total_seconds()
+    except TypeError:
+        # Mixed naive/aware timestamps from an older row; not worth failing over.
+        return None
+
+    return span if span > 0 else None
+
+
+def _record_finalize_capture_metrics(
+    recording: Recording,
+    *,
+    chunk_rows,
+    duration_seconds,
+    finalized_from_paused: bool,
+) -> None:
+    """Emit the finalize-time capture diagnostics.
+
+    ``capture_coverage`` compares the audio actually stored against the wall-clock
+    span of the session. A browser tab that the OS or the browser suspends stops
+    feeding its MediaRecorder without surfacing any error, so a healthy-looking
+    recording can be missing large stretches of a meeting (issue #166). Coverage
+    is the only server-side signal that this happened.
+    """
+    try:
+        if finalized_from_paused:
+            recordings_module.record_pipeline_metric(
+                stage="recording_finalized_from_paused",
+                recording_id=recording.id,
+                payload={"public_id": recording.public_id},
+                log=logger,
+            )
+
+        captured_ms = sum(int(row.duration_ms or 0) for row in chunk_rows)
+        wall_span_seconds = _capture_wall_span_seconds(recording)
+        payload = {
+            "public_id": recording.public_id,
+            "chunk_count": len(chunk_rows),
+            "captured_seconds": round(captured_ms / 1000.0, 2),
+            "final_duration_seconds": (
+                round(float(duration_seconds), 2) if duration_seconds else None
+            ),
+            "wall_span_seconds": (
+                round(wall_span_seconds, 2) if wall_span_seconds else None
+            ),
+            "coverage_ratio": (
+                round((captured_ms / 1000.0) / wall_span_seconds, 4)
+                if wall_span_seconds
+                else None
+            ),
+        }
+        recordings_module.record_pipeline_metric(
+            stage="capture_coverage",
+            recording_id=recording.id,
+            payload=payload,
+            log=logger,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to record finalize capture metrics for recording %s: %s",
+            recording.id,
+            exc,
+        )
+
+
 def _serialize_capture_track(track_payload):
     if track_payload is None:
         return None
@@ -449,7 +521,10 @@ async def finalize_upload(
     recording.file_size_bytes = file_stats.st_size
     recording.duration_seconds = duration_seconds
 
-    if recording.status != RecordingStatus.UPLOADING:
+    # Re-read above picked up any pause committed while segments were being
+    # concatenated. PAUSED finalizes just like UPLOADING (issue #166); only a
+    # genuinely closed recording is refused here.
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         db.add(recording)
         await db.commit()
         await db.refresh(recording)
@@ -457,6 +532,8 @@ async def finalize_upload(
             status_code=409,
             detail=recordings_module.UPLOAD_CLOSED_DETAIL,
         )
+
+    finalized_from_paused = recording.status == RecordingStatus.PAUSED
 
     recording.status = RecordingStatus.QUEUED
     recording.client_status = ClientStatus.IDLE
@@ -466,6 +543,13 @@ async def finalize_upload(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
+
+    _record_finalize_capture_metrics(
+        recording,
+        chunk_rows=chunk_rows,
+        duration_seconds=duration_seconds,
+        finalized_from_paused=finalized_from_paused,
+    )
 
     task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]
