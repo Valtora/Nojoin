@@ -90,9 +90,18 @@ setting. Use or extend the tokens instead.
 and exposed as `--font-geist-sans` and `--font-geist-mono`, which `@theme inline` maps to Tailwind's
 `--font-sans` and `--font-mono`.
 
-Body text does not currently use them. `globals.css` sets `body { font-family: Arial, Helvetica,
-sans-serif; }`, so Geist applies only where a `font-sans` or `font-mono` utility is used
-explicitly.
+Geist Sans is the body font, set once on `body` in `globals.css`, so it is inherited everywhere
+rather than applied per component. Geist Mono is applied where it is wanted, through the `font-mono`
+utility.
+
+The `--font-geist-sans` variable already resolves to `Geist, Geist Fallback`, where the fallback is
+Arial carrying `size-adjust` and ascent/descent overrides that Next generates to match Geist's
+metrics. That is what covers the window before the webfont resolves, and it is why the swap does not
+visibly reflow the page. The generic families after the variable are a last resort for the case
+where the font class is absent entirely.
+
+There is no need to add a `font-sans` class to reach the body font; an element only needs one when
+it is overriding something else back to the default.
 
 ## Accessibility
 
