@@ -91,3 +91,50 @@ def test_repair_data_permissions(tmp_path, monkeypatch):
     assert (secret_file.stat().st_mode & 0o777) == 0o600
 
     _reset_path_manager_singleton()
+
+
+def test_repair_data_permissions_does_not_follow_symlinks(tmp_path, monkeypatch):
+    """A link inside the data directory must not re-permission its target.
+
+    Regression test for issue #164: the Codex CLI persists argv[0] dispatch
+    links under the data volume that point at its own binary inside the image,
+    and the repair pass chmod-ed the binary to 0600 through them, leaving it
+    unexecutable for the worker.
+    """
+    _reset_path_manager_singleton()
+    monkeypatch.setattr(PathManager, "_get_project_root", lambda self: tmp_path)
+    monkeypatch.setattr(PathManager, "_is_containerized_runtime", lambda self: True)
+
+    manager = PathManager()
+    user_data_dir = tmp_path / "data"
+    user_data_dir.mkdir(parents=True)
+    monkeypatch.setattr(manager, "_user_data_directory", user_data_dir)
+
+    # Targets outside the data directory, standing in for files in the image.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_binary = outside / "codex"
+    outside_binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    outside_binary.chmod(0o755)
+    outside_dir = outside / "vendor"
+    outside_dir.mkdir()
+    outside_dir.chmod(0o755)
+
+    # Links persisted inside the data directory, as the Codex CLI leaves them.
+    arg0_dir = user_data_dir / "cli-oauth" / "1" / "codex" / "tmp" / "arg0"
+    arg0_dir.mkdir(parents=True)
+    file_link = arg0_dir / "apply_patch"
+    file_link.symlink_to(outside_binary)
+    dir_link = arg0_dir / "vendor"
+    dir_link.symlink_to(outside_dir, target_is_directory=True)
+
+    manager.repair_data_permissions()
+
+    # Link targets are untouched, so the binary stays executable.
+    assert (outside_binary.stat().st_mode & 0o777) == 0o755
+    assert (outside_dir.stat().st_mode & 0o777) == 0o755
+
+    # Real entries in the same tree are still repaired.
+    assert (arg0_dir.stat().st_mode & 0o777) == 0o700
+
+    _reset_path_manager_singleton()

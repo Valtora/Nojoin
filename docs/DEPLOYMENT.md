@@ -688,7 +688,7 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   ```bash
   chmod 600 nginx/cert.key
   ```
-- **Confidential Data File Permissions (SEC-006):** For security hardening, all confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) now default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
+- **Confidential Data File Permissions (SEC-006):** For security hardening, all confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) now default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. The pass skips symbolic links, so a link stored under the data directory never has its target re-permissioned elsewhere on the filesystem. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
   ```bash
   chmod -R 700 ./data
   ```
