@@ -2,8 +2,8 @@
 
 The Codex CLI renders device-code login as a TUI: it prints the verification URL
 and one-time code only when attached to a real terminal (suppressed on a bare
-pipe — this is why an httpx reimplementation of the endpoints fails, see
-ADR-0002). So this runs the CLI under a pseudo-terminal, scrapes the URL + code
+pipe, which is why an httpx reimplementation of the endpoints fails). So this
+runs the CLI under a pseudo-terminal, scrapes the URL + code
 for the API to surface, and blocks until the user approves in a browser and the
 CLI writes ``auth.json`` (or the code lapses / times out). It lets the CLI own
 OpenAI's undocumented ``/deviceauth`` protocol end to end.

@@ -54,7 +54,7 @@ async def _get_owned_recording(
 async def _dispatch_meeting_edge_refresh(
     recording_id: int, *, enabled: bool = True
 ) -> None:
-    """Queue a Meeting Edge refresh. Best-effort by design; see ADR-0007.
+    """Queue a Meeting Edge refresh. Best-effort by design.
 
     Runs off the event loop because publishing is a blocking socket call, and
     every caller is an `async def` handler: blocking here stalls that process's

@@ -158,7 +158,7 @@ UNARCHIVED_TABLES: Dict[str, str] = {
     "revoked_jwts": "Revocation list for this installation's signing key.",
     # Canonical pipeline state, rebuilt from the transcript projection on restore.
     # transcript.segments carries the manual edit flags, so hand corrections survive the
-    # round trip; what is lost is audit history. See docs/adr/0003.
+    # round trip; what is lost is audit history. See docs/BACKUP_RESTORE.md.
     "processing_runs": "Canonical pipeline state; rebuilt from the transcript projection.",
     "recording_asr_window_results": "Canonical pipeline state; rebuilt.",
     "recording_audio_chunks": "Live capture scratch data for in-flight recordings.",

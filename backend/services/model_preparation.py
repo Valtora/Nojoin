@@ -22,8 +22,8 @@ async def enqueue_model_preparation(
     """Queue worker-side model preparation without importing inference code.
 
     Every caller is a request handler or the API's startup lifespan, and both
-    of the Redis calls below block, so both are kept off the event loop
-    (ADR-0007). `ignore_result` is set because nobody awaits this task's return
+    of the Redis calls below block, so both are kept off the event loop.
+    `ignore_result` is set because nobody awaits this task's return
     value; progress is reported through the download-progress key instead.
     """
     kwargs: dict[str, Any] = {

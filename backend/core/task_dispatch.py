@@ -2,9 +2,9 @@
 
 ``celery_app.send_task`` is a blocking socket call. The API dispatches from
 ``async def`` handlers, so calling it inline stalls that process's event loop
-and every request it is serving, not only the one dispatching. ADR-0007 bounds
-how long an unreachable Redis can make that last; these helpers stop it
-happening at all.
+and every request it is serving, not only the one dispatching. The API's bounded
+retry limits cap how long an unreachable Redis can make that last; these helpers
+stop it happening at all.
 
 Worker-side code calls ``celery_app.send_task`` directly and should keep doing
 so. It runs on its own thread, with no event loop to protect.

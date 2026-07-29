@@ -285,7 +285,7 @@ celery_app.conf.update(
 # how long one attempt waits for a TCP handshake and does nothing to an
 # established connection, so the worker's blocking queue reads are unaffected.
 # How many attempts to make is where the two processes genuinely differ; see
-# `apply_api_dispatch_limits` below and ADR-0007.
+# `apply_api_dispatch_limits` below.
 REDIS_CONNECT_TIMEOUT_SECONDS = 2.0
 
 # The two halves are configured through different surfaces, which is easy to

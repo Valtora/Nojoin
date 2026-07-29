@@ -170,11 +170,21 @@ Branch protection and required-reviewer enforcement cannot be applied from the r
 - Require the single `CI gate` status check to pass before merging, with branches required to be up to date. It is enforced for admins too, so nothing merges red. (Only `CI gate` is required, not the individual jobs, because those are skipped by the path filter when irrelevant and a skipped job would otherwise leave a required check pending forever.)
 - Require linear history and disallow force pushes and deletions.
 
-The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [ADR-0001](docs/adr/0001-gated-signed-release-model.md).
+The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action).
 
-### Architecture Decision Records
+### Recording Significant Decisions
 
-Changes that alter trust boundaries, persistence, capture, processing, or deployment contracts require an Architecture Decision Record. See [docs/adr/README.md](docs/adr/README.md) for when an ADR is required and how to add one.
+When a change alters one of Nojoin's core contracts, the reasoning belongs in the commit body and the pull request description, alongside the change itself. The contracts that warrant this are:
+
+- **Trust boundaries** — authentication, session or token handling, encryption, or what a given actor is permitted to do.
+- **Persistence** — the database schema's shape or guarantees, backup/restore semantics, or migration strategy.
+- **Capture** — the browser-capture contract: supported browsers, audio sources, segment upload, or live-processing dispatch.
+- **Processing** — the transcription/diarisation pipeline contract, including stage boundaries, engine selection, or canonical-pipeline reconciliation.
+- **Deployment** — the release model, image build/sign/scan pipeline, runtime topology, or operator-facing configuration contracts.
+
+Record the context that forced the decision, the alternatives weighed, and the trade-offs accepted — not just what changed. The test is whether a future maintainer would be surprised by the decision and need to know *why* it was made. A routine bug fix, refactor, dependency bump, or documentation edit needs no such treatment.
+
+Where a decision constrains future work — an invariant that a reasonable-looking change would silently break — say so in the relevant document under [docs/](docs/) as well, so it is found by someone reading the docs rather than only by someone reading history.
 
 ### Periodic Re-Audit
 
@@ -182,7 +192,7 @@ The repository-quality bar is maintained, not set once. Three passes keep it cur
 
 - **Quarterly (automated reminder):** `.github/workflows/repo-audit-reminder.yml` runs on the first day of each quarter and opens an `audit`-labelled issue if one is not already open. That issue carries the re-audit checklist; the maintainer works through it, records the measured evidence in the issue, and opens follow-up issues for any regression.
 - **Per release:** before tagging, confirm the release-blocking quality checks still hold and that open `severity:critical`/`severity:high` and `release:*` issues are reflected in the release notes.
-- **On significant change:** when a change alters a core contract (trust boundary, persistence, capture, processing, or deployment), the accompanying ADR is the record — see [docs/adr/README.md](docs/adr/README.md).
+- **On significant change:** when a change alters a core contract (trust boundary, persistence, capture, processing, or deployment), the commit body and pull request description are the record — see [Recording Significant Decisions](#recording-significant-decisions).
 
 The re-audit procedure is to run the required checks from a clean environment, capture the actual numbers (test counts and durations, lint results, link-check output) in the audit issue, and resolve regressions with tracked follow-up issues rather than silently closing the audit.
 

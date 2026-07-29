@@ -255,9 +255,7 @@ Change `--concurrency` freely, but treat `--pool` as load-bearing. `solo` and
 makes it safe for worker code to queue follow-on Celery work with a blocking
 call: it can stall only the task making it. A pool that shares one process
 between concurrent tasks, such as `gevent`, `eventlet` or `threads`, breaks that
-and reintroduces the head-of-line blocking described in
-[ADR-0007](adr/0007-bounded-fail-fast-task-dispatch.md), which documents the
-reasoning and what would need to change first.
+and reintroduces head-of-line blocking.
 
 ### GPU Acceleration
 
@@ -393,7 +391,7 @@ reverting on the next restart. If you see that error, check the ownership of the
 
 ## CLI OAuth (worker-io image)
 
-The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). Point the `worker-io` service at that image via the `image:`/`build:` override in `docker-compose.example.yml`; `worker-gpu` and `worker-cpu` stay on the base image. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`). See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md).
+The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). Point the `worker-io` service at that image via the `image:`/`build:` override in `docker-compose.example.yml`; `worker-gpu` and `worker-cpu` stay on the base image. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`).
 
 ## Remote Access and Trusted Public Origin
 

@@ -284,7 +284,7 @@ async def lifespan(app: FastAPI):
 
 def create_app(*, app_lifespan=lifespan) -> FastAPI:
     # This process dispatches Celery work from the event loop, so it gives up on
-    # an unreachable Redis quickly rather than retrying like a worker (ADR-0007).
+    # an unreachable Redis quickly rather than retrying like a worker.
     apply_api_dispatch_limits()
 
     app = FastAPI(

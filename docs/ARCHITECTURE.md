@@ -2,8 +2,6 @@
 
 This document provides a human-readable overview of how Nojoin fits together.
 
-For product scope and longer-term feature intent, see [PRD.md](PRD.md).
-
 ## System at a Glance
 
 Nojoin has three major parts:
@@ -27,9 +25,9 @@ The backend is responsible for:
 
 The processing-heavy work runs in Celery workers rather than inside API endpoints.
 
-Dispatching that work is a blocking socket call to Redis, and the API dispatches from `async def` handlers, so an unreachable broker would otherwise stall the whole event loop rather than one request. Two things prevent that. Every dispatch reachable from a request handler goes through `backend/core/task_dispatch.py`, which runs the publish off the event loop, so a slow or unreachable broker delays only the request that dispatched. And the API gives up quickly: connect attempts are capped at two seconds and the API process caps publish and result-backend retries at one, so a dispatch against a dead broker fails in milliseconds and against an unreachable one in a few seconds instead of being unbounded. Workers keep Celery's generous defaults and dispatch inline, because a worker retrying to write a result has nothing waiting on it and no event loop to protect. See [ADR-0007](adr/0007-bounded-fail-fast-task-dispatch.md).
+Dispatching that work is a blocking socket call to Redis, and the API dispatches from `async def` handlers, so an unreachable broker would otherwise stall the whole event loop rather than one request. Two things prevent that. Every dispatch reachable from a request handler goes through `backend/core/task_dispatch.py`, which runs the publish off the event loop, so a slow or unreachable broker delays only the request that dispatched. And the API gives up quickly: connect attempts are capped at two seconds and the API process caps publish and result-backend retries at one, so a dispatch against a dead broker fails in milliseconds and against an unreachable one in a few seconds instead of being unbounded. Workers keep Celery's generous defaults and dispatch inline, because a worker retrying to write a result has nothing waiting on it and no event loop to protect.
 
-Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's Claude subscription via the Claude Code CLI running in the `worker-io` lane (see [ADR-0002](adr/0002-cli-oauth-subscription-mode.md)). CLI OAuth degrades cleanly through the server's default provider chain (the primary provider first, then the secondary) and is never load-bearing.
+Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's Claude subscription via the Claude Code CLI running in the `worker-io` lane. CLI OAuth degrades cleanly through the server's default provider chain (the primary provider first, then the secondary) and is never load-bearing.
 
 Celery work is split across three resource lanes so a long recording finalise
 never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
@@ -106,7 +104,7 @@ The normal backend processing path is:
 
 `Recording.max_speakers` is an optional per-recording upper bound. `NULL` means auto-detect and is the default; that path passes no speaker keyword to pyannote at all, so it is unchanged from before the field existed. A set value is applied as pyannote's `max_speakers` and never as `num_speakers` — an exact count forces a split whenever the user overcounts, which is the over-clustering failure the field exists to prevent. It is settable at import, on the reprocess request, and throughout a live capture, since diarisation runs at stop time.
 
-Voiceprints are only comparable with others produced by the same extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_core.py](../backend/processing/embedding_core.py) records which one produced a stored vector, persisted on both `global_speakers.embedding_version` and `recording_speakers.embedding_version`. Speaker identification and the duplicate-merge pass both refuse to score across versions; a cross-version cosine value resembles a similarity but is not one. Stale voiceprints are repaired by `rebuild_voiceprints_task`, surfaced through `GET /speakers/voiceprints/method-status` and `POST /speakers/voiceprints/rebuild`, rather than by comparing them anyway. Any change to how embeddings are produced must bump the version. See [ADR-0005](adr/0005-versioned-voiceprint-extraction.md).
+Voiceprints are only comparable with others produced by the same extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_core.py](../backend/processing/embedding_core.py) records which one produced a stored vector, persisted on both `global_speakers.embedding_version` and `recording_speakers.embedding_version`. Speaker identification and the duplicate-merge pass both refuse to score across versions; a cross-version cosine value resembles a similarity but is not one. Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comparing them anyway. Any change to how embeddings are produced must bump the version.
 
 Two `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason), and lists each pair's cosine score. A pass that merged nothing previously logged nothing and was indistinguishable from one that never ran.
 
@@ -257,7 +255,7 @@ An opt-out daily Celery Beat task on the IO lane sends one anonymous ping descri
 
 State ownership is split deliberately so no two processes write the same value: the API is the only writer of the `telemetry_*` keys in `config.json`, the worker is the only writer of the Redis last-sent marker, and the install id file is write-once. The worker reloads configuration before every consent check, so an operator's opt-out takes effect on the next cycle rather than on the next container restart. Sending is best-effort with no retry, so a network fault can never escalate into repeated calls.
 
-The receiving Cloudflare Worker and its D1 schema live in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md) and [ADR-0004](adr/0004-anonymous-opt-out-telemetry.md).
+The receiving Cloudflare Worker and its D1 schema live in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
 
 ## Calendar Flow
 
@@ -303,4 +301,4 @@ Nojoin follows a unified release model:
 - [USAGE.md](USAGE.md)
 - [CALENDAR.md](CALENDAR.md)
 - [TELEMETRY.md](TELEMETRY.md)
-- [PRD.md](PRD.md)
+- [DESIGN.md](DESIGN.md)

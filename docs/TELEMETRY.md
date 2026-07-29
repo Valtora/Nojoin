@@ -151,4 +151,3 @@ Because there is no personal data, there is nothing to subject-access or erase. 
 - [ADMIN.md](ADMIN.md): the Settings area for administrators
 - [SECURITY.md](SECURITY.md): outbound connections and the wider security policy
 - [LEGAL.md](LEGAL.md): legal disclaimer and terms of use
-- [adr/0004-anonymous-opt-out-telemetry.md](adr/0004-anonymous-opt-out-telemetry.md): why it was built this way

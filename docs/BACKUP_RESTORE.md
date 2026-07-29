@@ -141,7 +141,7 @@ If a target installation already holds a row with the same `public_id` or `audio
 
 Playback proxies, the meeting-chat RAG index, and the canonical transcript pipeline's utterance graph are not carried in the archive. They are rebuilt automatically after a restore, so newly restored recordings may briefly show as still processing.
 
-Manual transcript and speaker corrections **do** survive, because they are recorded in the transcript itself. What is not preserved is audit history: the record of who changed what and when, per-window diarisation results, and confidence scores. If you need backups as audit evidence, this archive is not that. See [ADR-0003](adr/0003-rebuild-canonical-pipeline-state-on-restore.md) for why.
+Manual transcript and speaker corrections **do** survive, because they are recorded in the transcript itself. What is not preserved is audit history: the record of who changed what and when, per-window diarisation results, and confidence scores. If you need backups as audit evidence, this archive is not that.
 
 ## Archive Compatibility
 
@@ -176,4 +176,3 @@ Two environment variables are relevant on large installations:
 - [ADMIN.md](ADMIN.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [CALENDAR.md](CALENDAR.md)
-- [ADR-0003: Rebuild canonical pipeline state on restore](adr/0003-rebuild-canonical-pipeline-state-on-restore.md)

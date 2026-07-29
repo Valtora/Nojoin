@@ -1,4 +1,4 @@
-"""How the API behaves when Redis is unreachable (ADR-0007).
+"""How the API behaves when Redis is unreachable.
 
 Dispatching is a blocking socket call made from `async def` handlers, so an
 unbounded wait does not slow one request, it stalls the process. These assert

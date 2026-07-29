@@ -20,15 +20,13 @@ Use the links below by task rather than treating the root README as the source o
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
 - [TELEMETRY.md](TELEMETRY.md): What the anonymous usage ping contains, when it is sent, and how to turn it off.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
-- [DEVELOPMENT.md](DEVELOPMENT.md): Local development setup for backend, frontend, and browser capture work.
+- [DESIGN.md](DESIGN.md): The web client's design tokens, themes, density model, and accessibility posture.
 
 ## Policies and Project References
 
 - [SECURITY.md](SECURITY.md): Security policy and vulnerability reporting.
 - [LEGAL.md](LEGAL.md): Legal disclaimer and recording-law responsibility.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): Community conduct expectations.
-- [PRD.md](PRD.md): Product requirements and longer-term feature scope.
-- [adr/README.md](adr/README.md): Architecture Decision Records and when one is required.
 - [VERSION](VERSION): The current release version used by the project.
 
 ## Common Tasks
@@ -47,4 +45,5 @@ Use the links below by task rather than treating the root README as the source o
 | Understand backup sensitivity and restore modes | [BACKUP_RESTORE.md](BACKUP_RESTORE.md) |
 | See what anonymous usage data is sent, or turn it off | [TELEMETRY.md](TELEMETRY.md) |
 | Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Match the interface's colours, spacing, and themes | [DESIGN.md](DESIGN.md) |
 | Set up a local source development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |

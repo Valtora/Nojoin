@@ -60,10 +60,10 @@ Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access token
 
 ## CLI OAuth Subscription Access
 
-Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription (the per-user **CLI OAuth** AI-routing option, off by default). See [ADR-0002](adr/0002-cli-oauth-subscription-mode.md) for the accepted-risk decision — this uses a consumer subscription contrary to the provider's terms (Anthropic's, or OpenAI's for ChatGPT/Codex).
+Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription (the per-user **CLI OAuth** AI-routing option, off by default). This is an accepted risk taken deliberately: it uses a consumer subscription contrary to the provider's terms (Anthropic's, or OpenAI's for ChatGPT/Codex).
 
 - The subscription OAuth token is stored **encrypted at rest** (`encrypt_secret`, one row per `(user, provider)`), never in `User.settings`, never logged, and never returned by the API.
-- Inference runs as a **tools-off, single-turn** subprocess in the `worker-io` lane — the Claude Code CLI, or `codex exec --sandbox read-only` for ChatGPT — as a non-root user (uid 1000, which the worker entrypoint drops to via `gosu` at startup), under a wall-clock timeout. With tools disabled / read-only, an untrusted transcript can only produce text, not act — so no dedicated OS sandbox is used (see ADR-0002).
+- Inference runs as a **tools-off, single-turn** subprocess in the `worker-io` lane — the Claude Code CLI, or `codex exec --sandbox read-only` for ChatGPT — as a non-root user (uid 1000, which the worker entrypoint drops to via `gosu` at startup), under a wall-clock timeout. With tools disabled / read-only, an untrusted transcript can only produce text, not act — so no dedicated OS sandbox is used.
 - The subprocess environment is **scrubbed** so an install-wide key cannot out-rank the user's subscription token: for Claude, `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_*` are removed and only `CLAUDE_CODE_OAUTH_TOKEN` is injected; for ChatGPT, `OPENAI_API_KEY` / `CODEX_API_KEY` are excluded from the Codex subprocess env (or Codex would bill the API instead of the subscription). Both scrub invariants are locked by unit tests.
 - CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades through the server's default provider chain — the primary provider first, then the secondary if that also fails. Usage limits set a best-effort reset time surfaced in Settings.
 - Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
@@ -110,7 +110,7 @@ The telemetry ping is anonymous by construction rather than by policy. It is ide
 
 It is enabled by default, but an installation upgraded into the feature sends nothing until an administrator has been shown the notice. It can be disabled from Settings, pinned off with `NOJOIN_TELEMETRY_ENABLED=false` (which the UI cannot override), or blocked at the network layer with no effect on any other function.
 
-The payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md) and [ADR-0004](adr/0004-anonymous-opt-out-telemetry.md).
+The payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
 
 ## Vulnerability Scanning and Severity Policy
 
