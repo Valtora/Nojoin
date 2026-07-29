@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, PauseCircle } from "lucide-react";
+import { Loader2, PauseCircle, Square } from "lucide-react";
 
 import type { Recording } from "@/types";
 
 interface ResumeRecordingModalProps {
   isOpen: boolean;
   recording: Recording | null;
-  busyAction?: "resume" | "cancel" | null;
+  busyAction?: "resume" | "cancel" | "stop" | null;
   onResume: () => void;
   onCancel: () => void;
+  onStop: () => void;
 }
 
 export default function ResumeRecordingModal({
@@ -20,6 +21,7 @@ export default function ResumeRecordingModal({
   busyAction = null,
   onResume,
   onCancel,
+  onStop,
 }: ResumeRecordingModalProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -44,14 +46,15 @@ export default function ResumeRecordingModal({
               Recording paused
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">
-              Resume or discard before starting anything new
+              Choose what to do before starting anything new
             </h2>
           </div>
         </div>
 
         <p className="mt-4 text-sm leading-6 text-gray-600 dark:text-gray-300">
           Nojoin found a paused recording for your account. Resume it to keep
-          recording, or discard it to clear the capture lock.
+          recording, stop it to process the audio captured so far, or discard it
+          to clear the capture lock.
         </p>
 
         <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-100">
@@ -68,6 +71,24 @@ export default function ResumeRecordingModal({
           >
             {busyAction === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Discard recording
+          </button>
+          {/*
+            Stopping from here finalizes the uploaded segments without
+            re-acquiring the share picker. Without it, a recording whose browser
+            runtime was torn down could only be resumed or destroyed (issue #166).
+          */}
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={busyAction !== null}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+          >
+            {busyAction === "stop" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Square className="h-4 w-4 fill-current" />
+            )}
+            Stop and process
           </button>
           <button
             type="button"

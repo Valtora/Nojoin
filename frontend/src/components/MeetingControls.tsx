@@ -36,6 +36,7 @@ export default function MeetingControls({
     runtimeActive,
     start,
     status,
+    stopStage,
     support,
   } = useCapture();
 
@@ -47,6 +48,17 @@ export default function MeetingControls({
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
+
+  // Naming the stage keeps a slow stop legible instead of looking hung.
+  const stopStageLabel = !stopStage
+    ? null
+    : stopStage === "stopping-recorder"
+      ? "stopping the recorder"
+      : stopStage === "flushing-uploads"
+        ? "uploading the last segments"
+        : stopStage === "releasing-media"
+          ? "releasing the microphone"
+          : "finalizing";
 
   const meetingSurfaceState: MeetingSurfaceState = !backend
     ? {
@@ -78,7 +90,9 @@ export default function MeetingControls({
                   status === "finalizing"
                     ? finalizeRetry
                       ? `Finalizing meeting (waiting ${finalizeRetry.attempt}/${finalizeRetry.maxAttempts})...`
-                      : "Finalizing meeting..."
+                      : stopStageLabel
+                        ? `Ending meeting (${stopStageLabel})...`
+                        : "Finalizing meeting..."
                     : "Starting meeting...",
                 buttonMode: "wait",
                 buttonDisabled: true,
@@ -86,7 +100,9 @@ export default function MeetingControls({
                   status === "finalizing"
                     ? finalizeRetry
                       ? `Nojoin is waiting for the last uploaded segments to be processed (attempt ${finalizeRetry.attempt} of ${finalizeRetry.maxAttempts}).`
-                      : "Nojoin is finalizing the current meeting recording."
+                      : stopStageLabel
+                        ? `Nojoin is ${stopStageLabel} before queueing processing.`
+                        : "Nojoin is finalizing the current meeting recording."
                     : "Nojoin is preparing browser capture.",
               }
           : {

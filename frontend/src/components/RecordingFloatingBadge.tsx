@@ -38,7 +38,10 @@ export default function RecordingFloatingBadge() {
   const isRecording = status === "recording";
   const show =
     runtimeActive && (status === "recording" || status === "paused");
-  const disabled = !runtimeActive || status === "finalizing";
+  // Kept in step with LiveMeetingControls: pause and resume need live browser
+  // tracks, stop and discard do not (issue #166).
+  const transportDisabled = !runtimeActive || status === "finalizing";
+  const stopDisabled = status === "finalizing" || !recordingId;
 
   const isRecordingDetailPage =
     recordingId && pathname === `/recordings/${recordingId}`;
@@ -125,7 +128,7 @@ export default function RecordingFloatingBadge() {
           <button
             type="button"
             onClick={() => sendCommand("pause")}
-            disabled={disabled}
+            disabled={transportDisabled}
             className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
             title="Pause recording"
             aria-label="Pause recording"
@@ -136,7 +139,7 @@ export default function RecordingFloatingBadge() {
           <button
             type="button"
             onClick={() => sendCommand("resume")}
-            disabled={disabled}
+            disabled={transportDisabled}
             className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-green-50 hover:text-green-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-green-500/10 dark:hover:text-green-300"
             title="Resume recording"
             aria-label="Resume recording"
@@ -148,7 +151,7 @@ export default function RecordingFloatingBadge() {
         <button
           type="button"
           onClick={() => sendCommand("stop")}
-          disabled={disabled}
+          disabled={stopDisabled}
           className="rounded-lg bg-red-600 p-1.5 text-white transition-colors hover:bg-red-700 disabled:opacity-50"
           title="Stop recording"
           aria-label="Stop recording"
@@ -159,7 +162,7 @@ export default function RecordingFloatingBadge() {
         <button
           type="button"
           onClick={handleDiscard}
-          disabled={disabled}
+          disabled={stopDisabled}
           className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
           title="Discard recording"
           aria-label="Discard recording"
