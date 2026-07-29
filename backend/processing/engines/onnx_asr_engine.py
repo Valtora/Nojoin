@@ -6,6 +6,7 @@ import logging
 import os
 
 from ...utils.languages import resolve_transcription_language_code
+from ..onnx_providers import verify_gpu_providers
 from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
@@ -215,12 +216,19 @@ class OnnxAsrEngine(TranscriptionEngine):
         if onnx_id not in self._model_cache:
             import onnx_asr
 
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
             logger.info(f"Loading {self.name} model: {onnx_id}")
-            self._model_cache[onnx_id] = onnx_asr.load_model(
+            model = onnx_asr.load_model(
                 onnx_id,
                 quantization="int8",
-                providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+                providers=providers,
             )
+            # onnxruntime silently drops a provider it cannot load, so confirm the
+            # session actually landed on the GPU instead of assuming it did.
+            verify_gpu_providers(
+                model, component=f"{self.name} model {onnx_id}", requested=providers
+            )
+            self._model_cache[onnx_id] = model
             logger.info(f"{self.name} model {onnx_id} loaded successfully.")
         return self._model_cache[onnx_id]
 
