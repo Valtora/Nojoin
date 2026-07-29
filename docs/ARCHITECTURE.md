@@ -65,7 +65,9 @@ The browser capture stack is responsible for:
 - Recording short WebM/Opus, Ogg/Opus, or MP4 audio slices and uploading them with session-cookie authentication.
 - Preserving the browser-live source layout after worker transcode as 16 kHz, two-channel WAV: channel 0 is shared/system audio when available and channel 1 is microphone audio.
 - Exposing analyser output to the live waveform UI.
-- Moving recordings to `PAUSED` on real tab unload (pagehide/beforeunload) only, then requiring resume or discard before another capture starts. In-app page navigation does not pause capture.
+- Moving recordings to `PAUSED` on real tab unload (pagehide/beforeunload) only, then requiring resume, stop-and-process, or discard before another capture starts. In-app page navigation does not pause capture.
+- Bounding every stage of the stop sequence and reporting which stage it is on, so a stalled recorder or uploader degrades to a retryable finalize rather than leaving the recording unfinishable.
+- Comparing stored audio against elapsed recording time and warning when they diverge. A tab suspended by the browser or the operating system stops feeding the recorder without raising an error, so coverage is the only signal that audio is being lost.
 
 ## Recording Flow
 
@@ -75,10 +77,10 @@ The browser capture stack is responsible for:
 4. On desktop, the browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short audio slices. On mobile Chrome, the browser asks for microphone access only and records microphone-only slices.
 5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing 0-based sequence numbers.
 6. The worker transcodes each browser segment to 16 kHz, two-channel WAV and dispatches the live transcription lane. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
-7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation.
+7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation. It accepts an `UPLOADING` or a `PAUSED` recording, so a capture whose browser runtime is gone can still be finalised from its uploaded segments without resuming first; missing sequences and pending transcodes are still refused with a retryable 409.
 8. The web client shows a live capture or processing status workspace while the job runs.
 
-If the user refreshes, closes, or navigates away from the Nojoin tab while recording (actual tab unload, not in-app navigation), the browser stops capture, drops only the in-memory tail, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain available. On the next app load, Nojoin blocks new capture behind a mandatory resume-or-discard modal.
+If the user refreshes, closes, or navigates away from the Nojoin tab while recording (actual tab unload, not in-app navigation), the browser stops capture, drops only the in-memory tail, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain available. On the next app load, Nojoin blocks new capture behind a mandatory modal offering resume, stop-and-process, or discard. Stop does not require a live browser runtime, so a recording in this state always has a route to processing.
 
 Switching focus to another browser tab, window, or application does not pause capture. Navigating between pages within the Nojoin app also does not pause capture. Only a real Nojoin tab unload (pagehide/beforeunload) invokes the guarded pause path.
 

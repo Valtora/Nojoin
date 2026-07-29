@@ -17,8 +17,10 @@ interface CaptureShellProps {
 export default function CaptureShell({ children }: CaptureShellProps) {
   const router = useRouter();
   const { pausedRecording, hasPausedRecording } = usePausedRecordingGuard();
-  const { cancel, controller, resume, runtimeActive } = useCapture();
-  const [busyAction, setBusyAction] = useState<"resume" | "cancel" | null>(null);
+  const { cancel, controller, resume, runtimeActive, stop } = useCapture();
+  const [busyAction, setBusyAction] = useState<
+    "resume" | "cancel" | "stop" | null
+  >(null);
   const { addNotification } = useNotificationStore();
 
   const modalOpen = hasPausedRecording && !runtimeActive;
@@ -40,6 +42,33 @@ export default function CaptureShell({ children }: CaptureShellProps) {
           message: getErrorMessage(
             resumeError,
             "Failed to resume the paused recording.",
+          ),
+        });
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  // Finalizes straight from the uploaded segments; no share picker, because the
+  // browser runtime for this recording is already gone.
+  const handleStop = async () => {
+    if (!pausedRecording) {
+      return;
+    }
+
+    setBusyAction("stop");
+    try {
+      await stop();
+      router.push(`/recordings/${pausedRecording.id}`);
+
+        } catch (stopError: unknown) {
+      if (!controller.getState().error) {
+        addNotification({
+          type: "error",
+          message: getErrorMessage(
+            stopError,
+            "Failed to stop and process the paused recording.",
           ),
         });
       }
@@ -80,6 +109,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
         busyAction={busyAction}
         onResume={handleResume}
         onCancel={handleCancel}
+        onStop={handleStop}
       />
     </>
   );

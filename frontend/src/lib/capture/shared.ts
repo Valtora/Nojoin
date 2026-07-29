@@ -48,6 +48,28 @@ export interface FinalizeRetryProgress {
   maxAttempts: number;
 }
 
+/**
+ * Stage the stop sequence has reached. Surfaced so a slow or failed stop names
+ * the step it is on instead of looking hung (issue #166).
+ */
+export type CaptureStopStage =
+  | "stopping-recorder"
+  | "flushing-uploads"
+  | "releasing-media"
+  | "finalizing";
+
+/**
+ * Divergence between wall-clock recording time and the audio actually captured.
+ *
+ * A suspended tab stops feeding the MediaRecorder without raising an error, so
+ * this is the only client-side signal that audio is being lost.
+ */
+export interface CaptureCoverageWarning {
+  capturedSeconds: number;
+  elapsedSeconds: number;
+  missingSeconds: number;
+}
+
 export interface CaptureState {
   status: CaptureStatus;
   support: CaptureSupport;
@@ -60,6 +82,8 @@ export interface CaptureState {
   runtimeActive: boolean;
   settings: CaptureSettings;
   finalizeRetry: FinalizeRetryProgress | null;
+  stopStage: CaptureStopStage | null;
+  coverageWarning: CaptureCoverageWarning | null;
 }
 
 export interface StartCaptureResult {

@@ -109,20 +109,22 @@ On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu 
 
 You can switch to another browser tab, window, or application while recording. Nojoin only pauses automatically when the Nojoin tab is refreshed, closed, or navigated away from the active recording.
 
+Keep the Nojoin tab open and the device awake for the length of the meeting. If the browser or the operating system suspends the tab, capture stops receiving audio for that period and it cannot be recovered afterwards, even though the recording is not paused. Nojoin warns you when the audio it has stored falls behind the elapsed recording time. See [Recorded audio is shorter than the meeting](CAPTURE.md#recorded-audio-is-shorter-than-the-meeting).
+
 While a recording is active, a floating badge appears at the top-centre of the viewport on every page. The badge shows the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. You can control the recording from any page without navigating back to the recording workspace first.
 
 ### Pause, Resume, Stop, And Discard
 
 - **Pause** temporarily stops capture while preserving uploaded segments.
 - **Resume** opens the browser share picker again and continues the same recording.
-- **Stop** finalises the recording and starts processing.
+- **Stop** finalises the recording and starts processing. It names the stage it is working through, and it works on a paused recording as well as an active one.
 - **Discard** permanently removes an in-progress recording in one step. It stops capture, cancels any processing, deletes the captured audio, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
 
 Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu, so you can abandon a recording from wherever you are.
 
-If the browser is closed, refreshed, or loses the active recording page during capture, Nojoin pauses the recording to protect already uploaded data. When you return, Nojoin requires you to resume or discard that recording before starting anything else.
+If the browser is closed, refreshed, or loses the active recording page during capture, Nojoin pauses the recording to protect already uploaded data. When you return, Nojoin requires you to deal with that recording before starting anything else, offering three choices: resume it, **Stop and process** to keep the audio already captured and start processing, or discard it. Stopping this way does not reopen the browser share picker, so it works even though the original capture session is gone.
 
-Paused recordings are retained indefinitely until you resume or discard them.
+Paused recordings are retained indefinitely until you resume, stop, or discard them.
 
 ### Live Transcription
 
@@ -321,7 +323,7 @@ Configure the secondary provider through environment variables prefixed with `SE
 - If live capture is unavailable, switch to Chrome on desktop for shared-audio recording or Chrome on Android/iOS for microphone-only recording.
 - If remote participants are missing, start again and enable shared audio in the browser picker.
 - If the microphone is missing, grant microphone permission and check **Settings > Recording**.
-- If Nojoin reports a paused recording, resume or discard it before starting another capture.
+- If Nojoin reports a paused recording, resume it, stop and process it, or discard it before starting another capture.
 - If processing fails, use **Retry Processing** or check the administrator logs.
 - If calendar sync fails, review provider setup in [CALENDAR.md](CALENDAR.md).
 

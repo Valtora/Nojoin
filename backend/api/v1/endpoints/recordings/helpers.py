@@ -741,13 +741,13 @@ def _ensure_recording_accepts_status_updates(recording: Recording) -> None:
 
 
 def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
-    if recording.status == RecordingStatus.PAUSED:
-        raise HTTPException(
-            status_code=409,
-            detail="Recording is paused. Resume or discard it before finalizing.",
-        )
-
-    if recording.status != RecordingStatus.UPLOADING:
+    # PAUSED is accepted so a capture whose browser runtime is gone can still be
+    # finalized (issue #166). Requiring a resume first meant the client had to
+    # re-acquire the share picker, and a stale pause/stop ordering could skip the
+    # resume entirely and leave the recording stranded. Tail truncation stays
+    # guarded downstream: finalize still refuses missing sequences and pending
+    # transcodes with a retryable 409, and uploads are accepted while paused.
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409,
             detail=UPLOAD_CLOSED_DETAIL,

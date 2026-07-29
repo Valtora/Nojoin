@@ -3,6 +3,30 @@ import { uploadRecordingSegment } from "@/lib/api";
 
 const DEFAULT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
+/**
+ * How long a queued-sequence gap is tolerated before waitForIdle gives up. The
+ * recorder emits sequences in order, so a gap means a segment was dropped and
+ * waiting for it can never succeed.
+ */
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+
+const GAP_POLL_INTERVAL_MS = 50;
+
+export class UploaderTimeoutError extends Error {
+  readonly pendingSequences: number[];
+
+  readonly expectedSequence: number;
+
+  constructor(expectedSequence: number, pendingSequences: number[]) {
+    super(
+      `Timed out waiting for recording segment ${expectedSequence} to upload.`,
+    );
+    this.name = "UploaderTimeoutError";
+    this.expectedSequence = expectedSequence;
+    this.pendingSequences = pendingSequences;
+  }
+}
+
 export interface SegmentUploaderOptions {
   recordingId: RecordingId;
   initialSequence?: number;
@@ -11,6 +35,7 @@ export interface SegmentUploaderOptions {
   onStalled?: (error: Error) => void | Promise<void>;
   retryDelaysMs?: number[];
   wait?: (ms: number) => Promise<void>;
+  now?: () => number;
 }
 
 export class SegmentUploader {
@@ -25,6 +50,8 @@ export class SegmentUploader {
   private readonly retryDelaysMs: number[];
 
   private readonly wait: (ms: number) => Promise<void>;
+
+  private readonly now: () => number;
 
   private readonly pending = new Map<number, Blob>();
 
@@ -45,6 +72,7 @@ export class SegmentUploader {
     this.onStalled = options.onStalled;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
     this.wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.now = options.now ?? (() => Date.now());
     this.nextExpectedSequence = options.initialSequence ?? 0;
   }
 
@@ -75,7 +103,18 @@ export class SegmentUploader {
     return true;
   }
 
-  async waitForIdle() {
+  /**
+   * Resolves once every queued segment has uploaded.
+   *
+   * Bounded on purpose: stop() awaits this before finalizing, and an unbounded
+   * wait here meant a stalled queue silently prevented finalize from ever being
+   * called (issue #166). On expiry the caller gets an UploaderTimeoutError and
+   * can decide, rather than hanging.
+   */
+  async waitForIdle(options: { timeoutMs?: number } = {}) {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+    const deadline = this.now() + timeoutMs;
+
     while (true) {
       if (this.stalledError) {
         throw this.stalledError;
@@ -87,7 +126,17 @@ export class SegmentUploader {
         }
 
         if (!this.pending.has(this.nextExpectedSequence)) {
-          await Promise.resolve();
+          if (this.now() >= deadline) {
+            throw new UploaderTimeoutError(
+              this.nextExpectedSequence,
+              [...this.pending.keys()].sort((a, b) => a - b),
+            );
+          }
+
+          // A real macrotask yield. Spinning on a microtask here starved the
+          // event loop instead of yielding, locking up the tab rather than
+          // merely waiting.
+          await this.wait(GAP_POLL_INTERVAL_MS);
           continue;
         }
 
@@ -96,6 +145,13 @@ export class SegmentUploader {
       }
 
       await this.drainPromise.catch(() => {});
+
+      if (this.now() >= deadline && !this.closed && this.pending.size > 0) {
+        throw new UploaderTimeoutError(
+          this.nextExpectedSequence,
+          [...this.pending.keys()].sort((a, b) => a - b),
+        );
+      }
     }
   }
 

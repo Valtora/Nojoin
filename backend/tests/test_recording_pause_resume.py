@@ -562,6 +562,183 @@ async def test_session_init_pause_resume_finalize_round_trip(
 
 
 @pytest.mark.anyio
+async def test_finalize_accepts_paused_recording_without_resuming(
+    client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """A paused capture finalizes directly, no resume round trip (issue #166).
+
+    When the browser runtime is gone the client cannot resume without
+    re-prompting the share picker, so requiring UPLOADING here left the
+    recording stranded in PAUSED with no route to processing.
+    """
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    metrics: list[dict] = []
+    monkeypatch.setattr(
+        recordings_module,
+        "record_pipeline_metric",
+        lambda **kwargs: metrics.append(kwargs) or {},
+    )
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Abandoned meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_id = init_response.json()["id"]
+
+    segment_response = await client.post(
+        f"/api/v1/recordings/{recording_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.wav", make_wav_bytes(), "audio/wav")},
+    )
+    assert segment_response.status_code == 200
+
+    pause_response = await client.post(
+        f"/api/v1/recordings/{recording_id}/pause",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert pause_response.status_code == 200
+    assert pause_response.json()["status"] == "PAUSED"
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize_response.status_code == 200
+    assert finalize_response.json()["status"] == "QUEUED"
+    assert finalize_response.json()["client_status"] == "IDLE"
+
+    stages = [metric["stage"] for metric in metrics]
+    assert "recording_finalized_from_paused" in stages
+    assert "capture_coverage" in stages
+
+
+@pytest.mark.anyio
+async def test_finalize_emits_capture_coverage_metric(
+    client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """Coverage is the only server-side signal that a suspended tab lost audio."""
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    metrics: list[dict] = []
+    monkeypatch.setattr(
+        recordings_module,
+        "record_pipeline_metric",
+        lambda **kwargs: metrics.append(kwargs) or {},
+    )
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Coverage meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    recording_id = init_response.json()["id"]
+
+    for sequence in (0, 1):
+        segment_response = await client.post(
+            f"/api/v1/recordings/{recording_id}/segment",
+            params={"sequence": sequence},
+            headers={"Origin": TRUSTED_ORIGIN},
+            files={"file": (f"{sequence}.wav", make_wav_bytes(), "audio/wav")},
+        )
+        assert segment_response.status_code == 200
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert finalize_response.status_code == 200
+
+    coverage = next(
+        metric for metric in metrics if metric["stage"] == "capture_coverage"
+    )
+    payload = coverage["payload"]
+    assert payload["chunk_count"] == 2
+    assert payload["captured_seconds"] > 0
+    # A recording that finalized straight through was never paused.
+    assert "recording_finalized_from_paused" not in [
+        metric["stage"] for metric in metrics
+    ]
+
+
+@pytest.mark.anyio
+async def test_finalize_rejects_paused_recording_with_a_sequence_gap(
+    client: AsyncClient,
+) -> None:
+    """Accepting PAUSED must not weaken the completeness gates."""
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Gappy meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    recording_id = init_response.json()["id"]
+
+    # Sequence 1 never arrives, so the recording is not safe to concatenate.
+    for sequence in (0, 2):
+        segment_response = await client.post(
+            f"/api/v1/recordings/{recording_id}/segment",
+            params={"sequence": sequence},
+            headers={"Origin": TRUSTED_ORIGIN},
+            files={"file": (f"{sequence}.wav", make_wav_bytes(), "audio/wav")},
+        )
+        assert segment_response.status_code == 200
+
+    pause_response = await client.post(
+        f"/api/v1/recordings/{recording_id}/pause",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert pause_response.status_code == 200
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize_response.status_code == 409
+    assert finalize_response.json()["detail"] == (
+        "Recording upload is still in progress; finalize after all segment "
+        "uploads complete."
+    )
+
+
+@pytest.mark.anyio
+async def test_finalize_still_rejects_a_closed_recording(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+    public_id = "processed-recording-public-id"
+    await insert_recording(
+        test_session_maker,
+        recording_id=2002,
+        public_id=public_id,
+        status="PROCESSED",
+    )
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize_response.status_code == 409
+    assert finalize_response.json()["detail"] == (
+        "Recording is no longer accepting capture uploads"
+    )
+
+
+@pytest.mark.anyio
 async def test_init_rejects_existing_paused_recording(
     client: AsyncClient,
     test_session_maker: sessionmaker,

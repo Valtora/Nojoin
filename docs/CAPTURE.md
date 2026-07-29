@@ -110,7 +110,7 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 
 - **Pause** keeps uploaded segments and stops new segment capture until you resume.
 - **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
-- **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button shows the finalize progress during that wait.
+- **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button names the current stage during that wait (stopping the recorder, uploading the last segments, releasing the microphone, finalizing). Stop works on a paused recording too, and does not need the original browser capture session to still be active.
 - **Discard** permanently removes a recording in one step. It works for any recording that has not finished: uploading, paused, queued, or processing. Discard revokes any running processing task, releases the capture lock, deletes the captured audio and derived files, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
 
 Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu.
@@ -122,6 +122,8 @@ If you are recording in a shared-audio capture mode and click the browser's nati
 Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
 
 Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
+
+Not pausing is not the same as being safe in the background. If the browser or the operating system suspends the Nojoin tab, browser capture stops receiving audio for as long as the suspension lasts, and that audio cannot be recovered afterwards. The recording is not paused and no error is raised, because nothing in a web page can prevent or undo being suspended. Nojoin detects the shortfall by comparing the audio it has stored against elapsed recording time, and shows a warning naming how much was captured. Keep the Nojoin tab open, keep the device awake, and do not rely on a background tab for a long meeting. See [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting).
 
 ## Floating Recording Badge
 
@@ -138,9 +140,10 @@ Clicking the badge navigates directly to the recording detail page. The badge is
 Nojoin allows one active browser capture per user. If a paused recording exists, new capture and import entry points stay blocked until you choose one of the modal actions:
 
 - **Resume recording** to continue capture from the same recording.
+- **Stop and process** to finalize the audio already uploaded and queue processing, without recording any more. Use this when the meeting is over, or when the browser capture session was lost and you only want to keep what was captured. It does not reopen the share picker.
 - **Discard recording** to remove the partial upload and start fresh.
 
-Paused recordings are retained indefinitely. They are not cleaned up automatically.
+Paused recordings are retained indefinitely. They are not cleaned up automatically, and Nojoin never finalizes one on your behalf.
 
 ## Capture Settings
 
@@ -193,9 +196,24 @@ Use current Chrome and current macOS, then choose the meeting tab and enable the
 
 That is expected. Browsers do not let Nojoin silently recreate shared tab, window, screen, or microphone capture after a reload, close, or pause that released the previous tracks.
 
+### Recorded audio is shorter than the meeting
+
+The browser or the operating system suspended the Nojoin tab during capture. A suspended tab stops feeding audio to the recorder, so that stretch of the meeting was never recorded and cannot be recovered. The recording itself is intact and processes normally; it is only shorter than the elapsed time.
+
+Nojoin warns while this is happening, showing the captured duration next to the elapsed timer, and warns again when the recording is stopped. To avoid it:
+
+- Keep the Nojoin tab open, and prefer keeping it visible in its own window.
+- Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture.
+- Exempt Nojoin from browser tab-suspension features. In Chrome, add the site to the exceptions under **Settings > Performance > Memory Saver**.
+- On mobile Chrome, keep Nojoin in the foreground and stop the phone locking.
+
+### Stop did not finish
+
+The meeting button names the stage it is on while stopping. If stopping fails, the recording returns to paused with an error rather than being left in an unusable state, and you can stop it again from the live controls, the floating badge, or the resume-or-discard modal. Stopping does not need the original capture session, so it still works after a reload or after the browser has released the shared audio and microphone tracks.
+
 ### Nojoin says a paused recording exists
 
-Use the resume-or-discard modal. Starting a second recording while a paused upload exists is intentionally blocked to avoid overlapping segment streams and accidental data loss.
+Use the modal. Resume to keep recording, **Stop and process** to keep what was already captured, or discard to remove the partial upload. Starting a second recording while a paused upload exists is intentionally blocked to avoid overlapping segment streams and accidental data loss.
 
 ### Unsupported browser notice appears
 

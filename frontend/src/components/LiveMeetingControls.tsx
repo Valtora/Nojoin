@@ -1,6 +1,6 @@
 "use client";
 
-import { Pause, Play, Square, Trash2 } from "lucide-react";
+import { AlertTriangle, Pause, Play, Square, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
@@ -35,6 +35,7 @@ export default function LiveMeetingControls({
   const {
     cancel,
     controller,
+    coverageWarning,
     elapsedSeconds,
     pause,
     recordingId,
@@ -46,7 +47,11 @@ export default function LiveMeetingControls({
 
   const { addNotification } = useNotificationStore();
   const isRecording = status === "recording";
-  const disabled = !runtimeActive || status === "finalizing";
+  // Pause and resume need live browser tracks. Stop and discard do not: a
+  // recording whose runtime was torn down must still be finishable, or it is
+  // stranded in PAUSED with no route to processing (issue #166).
+  const transportDisabled = !runtimeActive || status === "finalizing";
+  const stopDisabled = status === "finalizing" || !recordingId;
 
   // Diarization runs at stop time, so the cap stays editable for the whole
   // recording: whatever is set when capture ends is what gets applied.
@@ -79,7 +84,7 @@ export default function LiveMeetingControls({
     <SpeakerCapField
       value={maxSpeakers}
       onCommit={handleMaxSpeakersCommit}
-      disabled={disabled || !recordingId}
+      disabled={transportDisabled || !recordingId}
       size={size}
       layout="inline"
       liveHint
@@ -148,6 +153,26 @@ export default function LiveMeetingControls({
 
   const statusLabel = isRecording ? "Recording" : "Paused";
 
+  // The timer is wall clock, so it keeps counting while a suspended tab records
+  // nothing. This badge appears only when the two diverge, naming what was
+  // actually captured rather than quietly overstating the recording (issue #166).
+  const coverageBadge = coverageWarning ? (
+    <div
+      className="density-surface-panel flex items-start gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
+      role="status"
+    >
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        <span className="font-semibold">
+          {formatTime(coverageWarning.capturedSeconds)} captured
+        </span>{" "}
+        of {formatTime(coverageWarning.elapsedSeconds)} elapsed. Audio is being
+        lost because this tab is being suspended. Keep the Nojoin tab open and
+        the device awake.
+      </span>
+    </div>
+  ) : null;
+
   if (size === "compact") {
     return (
       <div className="space-y-2">
@@ -167,7 +192,7 @@ export default function LiveMeetingControls({
             <button
               type="button"
               onClick={() => sendCommand("pause")}
-              disabled={disabled}
+              disabled={transportDisabled}
               className="rounded-xl border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
               title="Pause recording"
               aria-label="Pause recording"
@@ -178,7 +203,7 @@ export default function LiveMeetingControls({
             <button
               type="button"
               onClick={() => sendCommand("resume")}
-              disabled={disabled}
+              disabled={transportDisabled}
               className="rounded-xl border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
               title="Resume recording"
               aria-label="Resume recording"
@@ -189,7 +214,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={handleStop}
-            disabled={disabled}
+            disabled={stopDisabled}
             className="rounded-xl bg-red-600 p-2 text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             title="Stop recording"
             aria-label="Stop recording"
@@ -199,7 +224,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={handleDiscard}
-            disabled={disabled}
+            disabled={stopDisabled}
             className="rounded-xl border border-red-200 bg-white p-2 text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/30 dark:bg-gray-950/60 dark:text-red-300 dark:hover:bg-red-500/10"
             title="Discard recording"
             aria-label="Discard recording"
@@ -207,6 +232,7 @@ export default function LiveMeetingControls({
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
+        {coverageBadge}
         {speakerCapField}
       </div>
     );
@@ -233,7 +259,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={() => sendCommand("pause")}
-            disabled={disabled}
+            disabled={transportDisabled}
             className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
             title="Pause recording"
           >
@@ -244,7 +270,7 @@ export default function LiveMeetingControls({
           <button
             type="button"
             onClick={() => sendCommand("resume")}
-            disabled={disabled}
+            disabled={transportDisabled}
             className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
             title="Resume recording"
           >
@@ -256,7 +282,7 @@ export default function LiveMeetingControls({
         <button
           type="button"
           onClick={handleStop}
-          disabled={disabled}
+          disabled={stopDisabled}
           className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           title="Stop recording"
         >
@@ -267,7 +293,7 @@ export default function LiveMeetingControls({
         <button
           type="button"
           onClick={handleDiscard}
-          disabled={disabled}
+          disabled={stopDisabled}
           className="density-control-lg inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/30 dark:bg-gray-950/60 dark:text-red-300 dark:hover:bg-red-500/10"
           title="Discard recording"
         >
@@ -276,6 +302,7 @@ export default function LiveMeetingControls({
         </button>
       </div>
 
+      {coverageBadge}
       {speakerCapField}
     </div>
   );
