@@ -109,7 +109,6 @@ def _topological_sort(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         node_id = node.get("id")
         if node_id in children_map:
             children = children_map[node_id]
-            # Sort children by ID
             children.sort(key=lambda x: x.get("id", 0))
             # Append children to the end of the queue (BFS traversal).
             queue.extend(children)

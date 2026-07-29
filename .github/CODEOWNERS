@@ -1,4 +1,4 @@
-# Code ownership and review responsibility for Nojoin (GOV-001).
+# Code ownership and review responsibility for Nojoin.
 #
 # GitHub auto-requests a review from the owner of every changed path when a
 # pull request is opened. Matching is last-match-wins: the catch-all is first

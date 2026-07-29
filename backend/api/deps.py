@@ -374,9 +374,9 @@ async def get_current_user_ws(
         websocket.headers.get("authorization")
     ) or websocket.cookies.get("access_token")
     if not actual_token:
-        # For WebSockets, we can't easily raise HTTPException with headers.
-        # We'll just raise a standard 401/403 which FastAPI WS handles by closing connection usually,
-        # or handle gracefully in the endpoint.
+        # A WebSocket handshake cannot carry the WWW-Authenticate header an
+        # HTTPException would normally set, so this raises a plain 401 and
+        # leaves FastAPI to close the connection.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )

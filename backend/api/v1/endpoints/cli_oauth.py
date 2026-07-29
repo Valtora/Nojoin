@@ -470,8 +470,8 @@ async def start_cli_oauth(
         )
 
     if provider == CliOAuthProvider.CODEX.value:
-        # Codex connect is driven by the codex CLI in worker-io (OpenAI's device
-        # flow is an undocumented, header-gated protocol — see ADR-0002). Dispatch
+        # Codex connect is driven by the codex CLI in worker-io, because OpenAI's
+        # device flow is an undocumented, header-gated protocol. Dispatch
         # the login task and return immediately; the browser polls /poll for the
         # verification URL + code. Never block the request — a slow login would
         # otherwise trip a proxy timeout (Cloudflare 520).

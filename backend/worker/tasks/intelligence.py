@@ -39,7 +39,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         session.commit()
         update_recording_status(session, recording.id)
 
-        # Get User Settings
         user_settings = {}
         if recording.user_id:
             user = session.get(User, recording.user_id)
@@ -181,7 +180,6 @@ def infer_speakers_task(self, recording_id: int):
     """
     Independent task to re-run speaker inference using LLM.
     """
-    # Reload config
     config_manager.reload()
 
     session = self.session
@@ -262,8 +260,8 @@ def infer_speakers_task(self, recording_id: int):
             _complete_speaker_inference_task(session, recording)
             return
 
-        # Update status (optional, but good for UI feedback if we had a specific status for this)
-        # For now, we just log it.
+        # No dedicated recording status exists for standalone speaker inference,
+        # so the run is only visible in the log.
         logger.info(
             f"Starting independent speaker inference for recording {recording_id}"
         )

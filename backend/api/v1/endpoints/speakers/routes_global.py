@@ -119,7 +119,6 @@ async def list_global_speakers(
         speaker: GlobalSpeaker = row[0]
         count = row[1]
 
-        # Build tag list
         tag_list = []
         for link in speaker.tag_links:
             if link.tag:
@@ -639,7 +638,6 @@ async def split_speaker(
         db.add(new_speaker)
         await db.flush()
 
-    # Group segments by recording
     recording_segments = defaultdict(list)
     for s in request.segments:
         recording_segments[s.recording_id].append(s)

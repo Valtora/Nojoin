@@ -25,10 +25,9 @@ export interface SpeakerSnippetPlayback {
 }
 
 /**
- * Encapsulates the speaker preview/next-snippet playback behaviour previously
- * inlined in {@link SpeakerPanel} (FE-012). Behaviour is unchanged, including
- * the warning notification when a speaker has no audio segments and the random
- * snippet selection.
+ * Encapsulates the speaker preview and next-snippet playback behaviour for
+ * {@link SpeakerPanel}, including random snippet selection and the warning
+ * notification raised when a speaker has no audio segments.
  */
 export function useSpeakerSnippetPlayback(
   options: UseSpeakerSnippetPlaybackOptions,

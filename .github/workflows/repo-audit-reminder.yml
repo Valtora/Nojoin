@@ -1,7 +1,7 @@
 name: Repository Re-Audit Reminder
 
 # Opens a quarterly issue reminding the maintainer to run the repository-quality
-# re-audit (GOV-008); the re-audit process is documented in CONTRIBUTING.md. It
+# re-audit; the re-audit process is documented in CONTRIBUTING.md. It
 # uses the runner's built-in gh CLI rather than a third-party action, so there is
 # no extra pinned SHA to maintain, and it is idempotent: it never stacks a second
 # open reminder.
@@ -32,7 +32,7 @@ jobs:
           # work even before labels.yml has been applied manually.
           gh label create audit \
             --color 0052cc \
-            --description "Periodic repository-quality re-audit (GOV-008)" \
+            --description "Periodic repository-quality re-audit" \
             --force
 
           # Idempotency: if an open audit issue already exists, do nothing.
@@ -45,7 +45,7 @@ jobs:
           stamp="$(date -u +'%Y-%m')"
           body_file="$(mktemp)"
           cat > "${body_file}" <<'EOF'
-          Quarterly repository-quality re-audit (GOV-008). The re-audit process
+          Quarterly repository-quality re-audit. The re-audit process
           is documented under "Periodic Re-Audit" in CONTRIBUTING.md.
 
           Work through the checklist below and record measured evidence in this

@@ -141,7 +141,6 @@ def resolve_tls_fingerprint() -> str | None:
         return None
 
 
-# Initialize Docker client
 client: DockerClient | None = None
 client_init_error: str | None = None
 try:

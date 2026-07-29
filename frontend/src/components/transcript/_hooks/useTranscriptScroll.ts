@@ -28,9 +28,8 @@ export interface TranscriptScroll {
 
 /**
  * Owns the transcript scroll container refs and the scroll-anchoring behaviour
- * for {@link TranscriptView} (FE-012): centering the active/searched segment and
+ * for {@link TranscriptView}: centering the active or searched segment, and
  * preserving the viewport when older utterances are inserted ahead of it.
- * Lifted verbatim from the component so the measured scroll math is unchanged.
  */
 export function useTranscriptScroll(
   options: UseTranscriptScrollOptions,

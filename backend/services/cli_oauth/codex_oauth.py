@@ -3,8 +3,7 @@
 Connect is DRIVEN via the codex CLI itself (`codex login --device-auth` under a
 pty in worker-io — see :mod:`backend.processing.cli.codex_login` and
 ``codex_device_login_task``), because OpenAI's device flow is an undocumented,
-header-gated protocol a bare httpx client can't reproduce (see ADR-0002). This
-module holds:
+header-gated protocol a bare httpx client cannot reproduce. This module holds:
 
 - the Redis "login state" channel the worker publishes to and the API reads, so
   the browser can show the verification URL + code and learn when it connects;

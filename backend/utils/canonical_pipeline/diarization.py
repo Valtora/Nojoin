@@ -25,14 +25,14 @@ def reconcile_completed_diarization_windows(
 @dataclass
 class _WindowReconciliationContext:
     """Shared per-window state threaded through the reconciliation helpers
-    extracted from `reconcile_diarization_window_result` (BE-006).
+    that `reconcile_diarization_window_result` sequences.
 
     Holds the loaded inputs (window row, turns, transcript projection,
     recording speakers, overlapping utterances, prior-window support turns)
     plus the resolved replay policy and call-level provenance (source,
     processing_run_id). Bundling these keeps the orchestrator a thin sequence
-    of phases without changing any reconciliation decision: the helpers read
-    exactly the values the original inline code read.
+    of phases: every helper reads its inputs from here rather than recomputing
+    them, so no reconciliation decision depends on call order.
     """
 
     session: Any
@@ -751,9 +751,9 @@ def reconcile_diarization_window_result(
     replay_policy: SpeakerReplayPolicy | None = None,
 ) -> dict[str, int]:
     """Reconcile one completed diarization window against the canonical
-    transcript. Slim orchestrator (BE-006): load context, match turns to
-    speakers, apply merges, then reconcile each remaining overlapping
-    utterance. Stable-id alignment and manual-edit authority are enforced by
+    transcript. Orchestration only: load context, match turns to speakers,
+    apply merges, then reconcile each remaining overlapping utterance.
+    Stable-id alignment and manual-edit authority are enforced by
     `_reconcile_overlapping_utterance`; this function only sequences the phases
     and aggregates their counts."""
     from .core import refresh_transcript_projection_from_canonical
@@ -781,9 +781,8 @@ def reconcile_diarization_window_result(
 
     updated_utterance_count, merge_source_utterance_ids = _apply_window_merge_plans(ctx)
     preserved_manual_lock_count = 0
-    # Merges flush their own events inside _apply_boundary_reconciliation_segments;
-    # the projection refresh below is driven solely by per-utterance outcomes, as
-    # in the original inline implementation.
+    # Merges flush their own events inside _apply_boundary_reconciliation_segments,
+    # so the projection refresh below is driven solely by per-utterance outcomes.
     projection_dirty = False
 
     for utterance in ctx.overlapping_utterances:

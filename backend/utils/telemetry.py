@@ -3,7 +3,7 @@
 Nojoin sends one small anonymous ping per day describing how many deployments
 exist, how they are configured, and how much they are used. See
 ``docs/TELEMETRY.md`` for the user-facing disclosure this module must remain
-true to, and ``docs/adr/0004-anonymous-opt-out-telemetry.md`` for the decision.
+true to.
 
 Three invariants are load-bearing and are locked by tests:
 

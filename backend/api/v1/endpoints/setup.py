@@ -216,7 +216,6 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     """
     await check_setup_permission(db, req)
 
-    # helper to mask key
     def mask_key(key):
         if not key or len(key) < 8:
             return None

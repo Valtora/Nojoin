@@ -7,11 +7,11 @@ import { describe, expect, it } from "vitest";
 import { RECORDING_ACTION_IDS } from "./useRecordingActions";
 
 /**
- * FE-015 invariant: Sidebar.tsx and RecordingCard.tsx must drive their
- * recording menus through the SAME shared action model. DEVELOPMENT.md records
- * that the two menus stay behaviourally synchronised; this test fails if either
- * surface stops consuming `useRecordingActions`, so the duplication cannot
- * silently reappear.
+ * Invariant: Sidebar.tsx and RecordingCard.tsx must drive their recording
+ * menus through the SAME shared action model. DEVELOPMENT.md records that the
+ * two menus stay behaviourally synchronised; this test fails if either surface
+ * stops consuming `useRecordingActions`, so the duplication cannot silently
+ * reappear.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,7 +28,7 @@ const usedActionIds = (source: string): string[] =>
     new RegExp(`actions\\.${id}\\b`).test(source),
   );
 
-describe("shared recording action model (FE-015)", () => {
+describe("shared recording action model", () => {
   it("Sidebar consumes the shared useRecordingActions hook", () => {
     expect(sidebarSource).toContain("useRecordingActions");
   });
@@ -53,7 +53,7 @@ describe("shared recording action model (FE-015)", () => {
 
     // The two menus exercise overlapping core actions (rename, infer speakers,
     // discard) plus their view-specific lifecycle actions; the rename/infer/
-    // discard trio is the synchronised behaviour FE-015 protects.
+    // discard trio is the synchronised behaviour this test protects.
     for (const shared of ["rename", "inferSpeakers", "discard"] as const) {
       expect(sidebarActions).toContain(shared);
       expect(cardActions).toContain(shared);

@@ -4,7 +4,6 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-# Import the database URL
 from backend.core.db import SYNC_DATABASE_URL
 
 # Import the model registry so every table=True model is registered on
@@ -16,7 +15,6 @@ from backend.models import registry  # noqa: F401
 # access to the values within the .ini file in use.
 config = context.config
 
-# Set the database URL in the config
 config.set_main_option("sqlalchemy.url", SYNC_DATABASE_URL)
 
 # Interpret the config file for Python logging.

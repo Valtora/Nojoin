@@ -1,6 +1,6 @@
 [tool.pytest.ini_options]
 # --durations reports the slowest tests on every local and CI run so duration
-# creep and slow outliers stay visible without extra tooling (GOV-006).
+# creep and slow outliers stay visible without extra tooling.
 addopts = "--durations=15"
 pythonpath = [
   "."
@@ -83,7 +83,7 @@ ignore = [
     "F405",  # may-be-undefined-from-star-imports
 ]
 
-# Function-complexity gate (BE-008). C901 trips above max-complexity; the PLR
+# Function-complexity gate. C901 trips above max-complexity; the PLR
 # rules use Ruff's Pylint-default limits. Existing violators are grandfathered
 # below; new code in non-grandfathered files is enforced.
 [tool.ruff.lint.mccabe]
@@ -106,7 +106,7 @@ max-complexity = 10
 # readability; they must not be edited (committed revisions are immutable).
 "backend/alembic/versions/*.py" = ["F841", "C901", "PLR0912", "PLR0913", "PLR0915"]
 
-# BE-008 complexity baseline: existing violators grandfathered; do not add new
+# Complexity baseline: existing violators grandfathered; do not add new
 # entries; shrink over time. Each file ignores only the complexity/size rules it
 # currently trips (C901 too-complex, PLR0912 too-many-branches, PLR0913
 # too-many-arguments, PLR0915 too-many-statements). New code in any file NOT

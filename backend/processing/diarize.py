@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", message="TensorFloat-32")
 warnings.filterwarnings("ignore", message="std(): degrees of freedom is <= 0")
 
-# Default diarization pipeline
 DEFAULT_PIPELINE = "pyannote/speaker-diarization-community-1"
 OFFLINE_DIARIZATION_CONFIG = "backend/processing/offline_diarization_config.yaml"
 

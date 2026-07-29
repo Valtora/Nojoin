@@ -103,8 +103,8 @@ export default function BackupPoller() {
 
             } catch (error: unknown) {
         console.error("Backup polling error:", error);
-        // Don't clear taskId immediately on network error, retry.
-        // Consideration: Clear polling if 404 is encountered.
+        // The task id is kept so polling retries: a transient network error
+        // says nothing about whether the backup is still running.
       }
     };
 

@@ -141,7 +141,9 @@ If a target installation already holds a row with the same `public_id` or `audio
 
 Playback proxies, the meeting-chat RAG index, and the canonical transcript pipeline's utterance graph are not carried in the archive. They are rebuilt automatically after a restore, so newly restored recordings may briefly show as still processing.
 
-Manual transcript and speaker corrections **do** survive, because they are recorded in the transcript itself. What is not preserved is audit history: the record of who changed what and when, per-window diarisation results, and confidence scores. If you need backups as audit evidence, this archive is not that. See [ADR-0003](adr/0003-rebuild-canonical-pipeline-state-on-restore.md) for why.
+Manual transcript and speaker corrections **do** survive, because they are recorded in the transcript itself. What is not preserved is audit history: the record of who changed what and when, per-window diarisation results, and confidence scores. If you need backups as audit evidence, this archive is not that.
+
+The pipeline's canonical tables are rebuilt from the transcript rather than archived, and the deciding factor was that hand corrections round-trip safely. The transcript carries the flags that mark text and speakers as manually edited, and the rebuild reconstructs the locks that stop a later reprocess overwriting them; had those not survived the round trip, the archive would have had to carry the tables instead, because silently exposing corrected transcripts to being re-overwritten is not an acceptable cost. Against that, archiving the tables would mean remapping a dense foreign-key graph on every restore, which is where this subsystem's bugs have historically come from — one table alone carried three unhandled back-references that would have dropped every restored speaker row. A restored recording is indistinguishable from a pre-existing legacy one, so it is rebuilt by the same tested path those already use.
 
 ## Archive Compatibility
 
@@ -176,4 +178,3 @@ Two environment variables are relevant on large installations:
 - [ADMIN.md](ADMIN.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
 - [CALENDAR.md](CALENDAR.md)
-- [ADR-0003: Rebuild canonical pipeline state on restore](adr/0003-rebuild-canonical-pipeline-state-on-restore.md)

@@ -50,7 +50,6 @@ def test_setup_secure_umask_parsing(monkeypatch):
         assert current_umask == 0o077
 
     finally:
-        # Restore original umask
         os.umask(original_umask)
 
 

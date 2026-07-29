@@ -75,10 +75,10 @@ export interface SpeakerPanelActions {
 }
 
 /**
- * Owns the speaker mutation state and handlers for {@link SpeakerPanel}
- * (FE-012): rename, merge, delete, split, voiceprint extraction, and promotion
- * to the global library. Lifted verbatim from the component so the side
- * effects, notifications, and `recording-updated` dispatch are unchanged.
+ * Owns the speaker mutation state and handlers for {@link SpeakerPanel}:
+ * rename, merge, delete, split, voiceprint extraction, and promotion to the
+ * global library, along with their notifications and the `recording-updated`
+ * dispatch.
  *
  * The caller supplies `closeContextMenu` so the menu-driven actions clear the
  * menu exactly as before.

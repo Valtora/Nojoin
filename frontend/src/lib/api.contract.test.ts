@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-// FE-010 characterization guard: pin the public runtime surface of the API
-// layer before it is split into resource modules. The barrel that replaces the
-// monolithic api.ts must re-export exactly these names (plus the default axios
-// instance), so any dropped or renamed export fails here rather than silently
-// breaking one of the ~53 import sites. Type-only exports (interfaces, type
-// aliases) are erased at runtime and are guarded by the TypeScript build instead.
+// Characterization guard on the public runtime surface of the API layer, which
+// is split across resource modules behind a barrel. That barrel must re-export
+// exactly these names, plus the default axios instance, so a dropped or renamed
+// export fails here rather than silently breaking one of the many import sites.
+// Type-only exports are erased at runtime and are guarded by the TypeScript
+// build instead.
 
 vi.mock("axios", () => ({
   default: {

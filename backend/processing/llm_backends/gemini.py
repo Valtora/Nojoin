@@ -368,7 +368,6 @@ class GeminiLLMBackend(LLMBackend):
                 ),
             )
             for chunk in response_stream:
-                # Check for function calls
                 if chunk.function_calls:
                     for fc in chunk.function_calls:
                         if fc.name == "update_meeting_notes":

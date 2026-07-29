@@ -8,7 +8,7 @@ request path that needs to reason about embedding versions imports from here.
 The version is bumped whenever the extraction procedure changes in a way that
 moves embeddings to a different region of the vector space. Cosine similarity is
 only meaningful between two embeddings produced by the SAME version, so every
-comparison site must check this before scoring. See ADR-0005.
+comparison site must check this before scoring.
 
   1 -- Inference(window="sliding"): the model saw 5s sub-windows and their raw
        outputs were mean-averaged, overlapped speech included.

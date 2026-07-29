@@ -7,8 +7,7 @@ interface AiHuggingFaceSectionProps {
   settings: Settings;
 }
 
-/** Admin-only "Hugging Face access" section. Extracted verbatim from
- * {@link AISettings} so behaviour is unchanged. */
+/** Admin-only "Hugging Face access" section of {@link AISettings}. */
 export default function AiHuggingFaceSection({
   settings,
 }: AiHuggingFaceSectionProps) {

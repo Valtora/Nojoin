@@ -16,10 +16,9 @@ export interface SidebarResize {
 }
 
 /**
- * Owns the draggable sidebar resize behaviour for {@link Sidebar} (FE-012):
- * the resizing flag, the pointer move/up listeners constrained to the desktop
- * layout and width bounds, and the drag-selection lock. Lifted verbatim so the
- * resize math and event wiring are unchanged.
+ * Owns the draggable sidebar resize behaviour for {@link Sidebar}: the
+ * resizing flag, the pointer move and up listeners constrained to the desktop
+ * layout and width bounds, and the drag-selection lock.
  */
 export function useSidebarResize(
   options: UseSidebarResizeOptions,
@@ -31,7 +30,6 @@ export function useSidebarResize(
     if (!isResizing) return;
 
     const handlePointerMove = (e: PointerEvent) => {
-      // Don't resize on mobile
       if (window.innerWidth < 1024) return;
 
       const sidebarElement = document.getElementById("sidebar-recordings-list");

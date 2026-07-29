@@ -78,7 +78,6 @@ export default function SpeakerAssignmentPopover({
     // Focus input after a short delay to ensure render
     setTimeout(() => inputRef.current?.focus(), 50);
 
-    // Click outside to close
     const handleClickOutside = (event: MouseEvent) => {
       if (
         containerRef.current &&

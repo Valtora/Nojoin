@@ -81,7 +81,7 @@ gh label create "needs-triage"      --color ededed --description "Awaiting maint
 gh label create "flaky"             --color e99695 --description "Intermittently failing test (see DEVELOPMENT.md test reliability)." --force
 gh label create "slow-test"         --color fef2c0 --description "Test flagged as slow by pytest --durations." --force
 gh label create "dependencies"      --color 0366d6 --description "Dependency update (used by Dependabot pull requests)." --force
-gh label create "audit"             --color 0052cc --description "Periodic repository-quality re-audit (GOV-008)." --force
+gh label create "audit"             --color 0052cc --description "Periodic repository-quality re-audit." --force
 ```
 
 This step is a one-time (then on-change) maintainer action and is not enforced from the repository tree. `.github/labels.yml` remains the canonical definition; keep these commands in step with it when the taxonomy changes.

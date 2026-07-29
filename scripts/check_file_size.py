@@ -2,7 +2,7 @@
 """Fail if a backend Python source file grows past the review size threshold.
 
 Large modules are a maintainability hotspot, so new source files must stay at or
-below ``MAX_LINES`` lines (BE-008). Tests and generated Alembic migrations are
+below ``MAX_LINES`` lines. Tests and generated Alembic migrations are
 exempt -- fixtures and committed-immutable revisions legitimately run long.
 
 Files that already exceeded the limit when the gate was introduced are listed in
@@ -31,7 +31,7 @@ INCLUDED_PREFIX = "backend/"
 EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 
 
-# BE-008 file-size baseline: source files that already exceeded MAX_LINES when
+# File-size baseline: source files that already exceeded MAX_LINES when
 # the gate was introduced, mapped to their line count at that time. A listed
 # file is allowed up to its recorded count and FAILS if it grows beyond it. Do
 # not add new entries; shrink and remove them over time.
@@ -39,11 +39,11 @@ GRANDFATHERED: dict[str, int] = {
     # Being decomposed per-stage (mirroring the llm_services split): the
     # meeting-intelligence, meeting-edge, and catch-up diarization stages moved to
     # their own modules. What remains is the core final-recording pipeline.
-    "backend/worker/tasks/pipeline.py": 1579,
-    "backend/utils/canonical_pipeline/diarization.py": 2485,
-    "backend/utils/canonical_pipeline/core.py": 2192,
+    "backend/worker/tasks/pipeline.py": 1394,
+    "backend/utils/canonical_pipeline/diarization.py": 2484,
+    "backend/utils/canonical_pipeline/core.py": 2190,
     "backend/processing/live_transcribe.py": 1973,
-    "backend/utils/canonical_pipeline/speaker.py": 1342,
+    "backend/utils/canonical_pipeline/speaker.py": 1332,
 }
 
 

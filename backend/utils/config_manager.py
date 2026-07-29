@@ -133,7 +133,6 @@ def _get_default_models():
         }
 
 
-# Get default models
 _default_models = _get_default_models()
 
 DEFAULT_SYSTEM_CONFIG = {

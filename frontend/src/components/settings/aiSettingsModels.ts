@@ -1,10 +1,9 @@
 import { Settings } from "@/types";
 
 /**
- * Pure provider/model accessors and updaters extracted from
- * {@link AISettings} (FE-012). These functions read or derive a new `Settings`
- * object and never persist; the component remains responsible for calling
- * `onUpdate`/`onPersist`. Behaviour matches the original inline logic exactly.
+ * Pure provider/model accessors and updaters for {@link AISettings}. These
+ * functions read or derive a new `Settings` object and never persist; the
+ * component remains responsible for calling `onUpdate`/`onPersist`.
  */
 
 export const DEFAULT_OLLAMA_CONTEXT_WINDOW = 131072;

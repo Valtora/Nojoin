@@ -119,7 +119,6 @@ def transcribe_audio_with_progress(
         f"Starting transcription for {audio_path} using model: {model_size}, device: {device}"
     )
 
-    # Ensure ffmpeg is in PATH
     from backend.utils.audio import ensure_ffmpeg_in_path
 
     ensure_ffmpeg_in_path()
@@ -232,7 +231,6 @@ class WhisperEngine(TranscriptionEngine):
             f"Starting transcription for {audio_path} using model: {model_size}, device: {device}"
         )
 
-        # Ensure ffmpeg is in PATH
         from backend.utils.audio import ensure_ffmpeg_in_path
 
         ensure_ffmpeg_in_path()

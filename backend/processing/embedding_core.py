@@ -14,7 +14,6 @@ from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 logger = logging.getLogger(__name__)
 
-# Default embedding model
 DEFAULT_EMBEDDING_MODEL = "pyannote/wespeaker-voxceleb-resnet34-LM"
 
 # Re-exported for the worker-side callers that already import them from here.
@@ -309,7 +308,6 @@ def extract_embeddings(
 
         embeddings = {}
 
-        # Group segments by speaker
         speaker_segments = {}
         for turn, _, label in diarization_result.itertracks(yield_label=True):
             if label not in speaker_segments:

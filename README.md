@@ -103,6 +103,7 @@ Notes:
 - [Browser Capture Guide](docs/CAPTURE.md)
 - [User Guide](docs/USAGE.md)
 - [Calendar Guide](docs/CALENDAR.md)
+- [MCP Connector Guide](docs/MCP.md)
 - [Administration Guide](docs/ADMIN.md)
 - [Backup & Restore](docs/BACKUP_RESTORE.md)
 - [Architecture Overview](docs/ARCHITECTURE.md)

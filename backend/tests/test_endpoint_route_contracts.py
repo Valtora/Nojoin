@@ -1,9 +1,10 @@
-"""Characterization snapshot of mounted endpoint route contracts (BE-007).
+"""Snapshot of mounted endpoint route contracts.
 
-Guards the behaviour-preserving split of oversized endpoint modules into
-router-aggregator packages. The snapshots below capture every route exposed by
-the affected routers as ``(path, methods, name, response_model_name)`` so that
-any change to a path, HTTP method, handler name, or response model is caught.
+Endpoint modules are split into router-aggregator packages, and this guards
+that the split stays invisible from outside. The snapshots below capture every
+route exposed by the affected routers as
+``(path, methods, name, response_model_name)``, so any change to a path, HTTP
+method, handler name, or response model is caught.
 """
 
 from starlette.routing import Match

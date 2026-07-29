@@ -2,14 +2,14 @@ from .constants import *
 from .speaker_assignment import assign_and_identify_speakers
 
 # ---------------------------------------------------------------------------
-# process_recording_task orchestration stages (BE-004)
+# process_recording_task orchestration stages
 #
 # The canonical finalize pipeline is decomposed into explicit stages with typed
-# inputs/outputs and clear failure semantics. The stages run inside the task's
-# try/except/finally so Celery retry/ack/error handling, temp-file cleanup, and
-# VRAM release stay exactly where they were. Heavy ML inference imports remain
-# INSIDE the stage functions (whisper/pyannote/torch/embeddings/etc.) so the API
-# process never pays for them at module import time.
+# inputs and outputs. The stages run inside the task's try/except/finally, so
+# Celery retry and ack handling, temp-file cleanup and VRAM release all stay in
+# one place. Heavy ML imports (whisper, pyannote, torch, embeddings) must stay
+# INSIDE the stage functions so the API process never pays for them at import
+# time.
 # ---------------------------------------------------------------------------
 
 
@@ -17,11 +17,11 @@ from .speaker_assignment import assign_and_identify_speakers
 class _PipelineRunContext:
     """Shared handles threaded through the orchestration stages.
 
-    ``task`` is the bound Celery task (used for ``update_state`` progress
-    reporting); ``temp_files`` is the running cleanup list the finally block
-    drains. These are mutable, deliberately shared references -- the stages
-    mutate ``recording``/``temp_files`` in place exactly as the original inline
-    code did, preserving every DB write and progress emission.
+    ``task`` is the bound Celery task, used for ``update_state`` progress
+    reporting; ``temp_files`` is the running cleanup list the finally block
+    drains. These are deliberately shared mutable references: stages mutate
+    ``recording`` and ``temp_files`` in place, so each stage's database writes
+    and progress emissions are visible to the ones that follow it.
     """
 
     task: Task
@@ -135,7 +135,6 @@ def _resolve_input_audio(
             session.commit()
             return _InputAudioResolution(audio_path=None, finished=True)
 
-    # Fix missing duration if needed
     if not recording.duration_seconds or recording.duration_seconds == 0:
         try:
             duration = get_audio_duration(audio_path)
@@ -179,13 +178,11 @@ def _run_vad_stage(
         session.add(recording)
         session.commit()
 
-        # Preprocess for VAD (resample to 16k mono)
         vad_input_path = preprocess_audio_for_vad(audio_path)
         if not vad_input_path:
             raise RuntimeError("VAD preprocessing failed")
         temp_files.append(vad_input_path)
 
-        # Run VAD (mute silence)
         vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
         vad_success, speech_duration = mute_non_speech_segments(
             vad_input_path, vad_output_path
@@ -195,7 +192,6 @@ def _run_vad_stage(
             raise RuntimeError("VAD execution failed")
         temp_files.append(vad_output_path)
 
-        # Check for silence
         if speech_duration < 1.0:
             logger.warning(
                 f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)"
@@ -205,7 +201,6 @@ def _run_vad_stage(
             recording.processing_step = "Completed (No speech detected)"
             recording.processing_completed_at = utc_now()
 
-            # Create empty transcript
             transcript = session.exec(
                 select(Transcript).where(Transcript.recording_id == recording.id)
             ).first()
@@ -274,14 +269,12 @@ def _run_final_asr_stage(
     session.add(recording)
     session.commit()
 
-    # Apply per-reprocess transcription-engine override, if provided.
     if engine_override:
         merged_config.update(engine_override)
         logger.info("Reprocess: engine override applied: %s", engine_override)
 
     transcription_result = None
 
-    # Run the configured transcription engine.
     with pipeline_metric_timer(
         stage="final_asr_invocation",
         recording_id=recording_id,
@@ -395,7 +388,6 @@ def _run_final_diarization_stage(
         session.add(recording)
         session.commit()
 
-        # Run Pyannote
         with pipeline_metric_timer(
             stage="final_diarization_invocation",
             recording_id=recording_id,
@@ -420,7 +412,6 @@ def _run_final_diarization_stage(
             session.add(recording)
             session.commit()
         else:
-            # Post-diarization phantom speaker filter
             from backend.processing.phantom_filter import filter_phantom_speakers
 
             try:
@@ -471,10 +462,8 @@ def _combine_and_consolidate_segments(
         consolidate_diarized_transcript,
     )
 
-    # Combine Transcription and Diarization
     combined_segments = []
     if transcription_result:
-        # Only attempt combination if we have both results
         if diarization_result:
             combined_segments = combine_transcription_diarization(
                 transcription_result, diarization_result
@@ -487,7 +476,6 @@ def _combine_and_consolidate_segments(
     )
 
     if not combined_segments:
-        # Fallback if combination fails or was skipped
         if enable_diarization and diarization_result:
             logger.warning(
                 "Combination failed despite having diarization result. Using raw transcription segments with UNKNOWN speaker."
@@ -497,7 +485,6 @@ def _combine_and_consolidate_segments(
                 "Using raw transcription segments (Diarization disabled or failed)."
             )
 
-        # Check if transcription_result is None before accessing
         if transcription_result and "segments" in transcription_result:
             combined_segments = []
             for seg in transcription_result.get("segments", []):
@@ -518,7 +505,6 @@ def _combine_and_consolidate_segments(
             )
             combined_segments = []
 
-    # Consolidate segments
     final_segments = consolidate_diarized_transcript(combined_segments)
     record_pipeline_metric(
         stage="final_segments_built",
@@ -547,8 +533,6 @@ def _persist_final_transcript(
         select(Transcript).where(Transcript.recording_id == recording.id)
     ).first()
 
-    # Create or Update Transcript Record
-    # Handle case where transcription_result is None (e.g. due to error)
     full_text = transcription_result.get("text", "") if transcription_result else ""
 
     if transcript:
@@ -607,7 +591,6 @@ def _finalize_transcript_and_notes(
     session.add(recording)
     session.commit()
 
-    # Log final speaker distribution in updated segments
     final_speaker_counts = {}
     for seg in updated_segments:
         spk = seg["speaker"]
@@ -631,9 +614,9 @@ def _finalize_transcript_and_notes(
             recording.id,
         )
 
-        # Phase F4: frame-level segmentation safety net for utterances
-        # that span a speaker change but slipped through rolling
-        # diarization's coarser turn boundaries.
+        # Frame-level segmentation safety net for utterances that span a
+        # speaker change but slipped through rolling diarization's coarser
+        # turn boundaries.
         try:
             ctx.task.update_state(
                 state="PROCESSING", meta={"progress": 94, "stage": "Refining"}
@@ -816,8 +799,7 @@ def process_recording_task(
     The body is a slim orchestrator: it sets up the run context, then drives the
     explicit stages (resolve audio -> VAD -> ASR -> diarization -> combine/persist
     -> speaker assignment -> finalize/notes). The surrounding try/except/finally
-    owns Celery retry/error semantics, temp-file cleanup, and VRAM release, all
-    unchanged from the original inline implementation.
+    owns Celery retry and error semantics, temp-file cleanup, and VRAM release.
     """
     config_manager.reload()
 

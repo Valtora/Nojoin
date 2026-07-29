@@ -93,7 +93,7 @@ async def _enqueue_push_channel_refresh(connection_id: int) -> None:
     Runs in the worker so API paths (connect, calendar selection) stay fast and
     are not coupled to the provider's synchronous webhook validation. Queuing it
     is itself a blocking socket call, so both callers being request handlers,
-    the dispatch goes off the event loop too (ADR-0007).
+    the dispatch goes off the event loop too.
     """
     # Imported inside the function to keep this module importable by the worker,
     # which has no ASGI stack.

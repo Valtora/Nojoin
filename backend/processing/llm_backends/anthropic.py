@@ -59,7 +59,6 @@ class AnthropicLLMBackend(LLMBackend):
             # Anthropic Python SDK supports models.list()
             if hasattr(self.client, "models") and hasattr(self.client.models, "list"):
                 models = self.client.models.list()
-                # Filter for claude models
                 return sorted([m.id for m in models if "claude" in m.id])
             else:
                 return []

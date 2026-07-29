@@ -245,7 +245,6 @@ The team gathered to demonstrate the core features of the Nojoin platform, highl
         )
         session.add(chat_response)
 
-        # Mark user as having seen the demo
         target_user.has_seen_demo_recording = True
         session.add(target_user)
 
