@@ -194,6 +194,17 @@ class PathManager:
         Recursively scans the user data directory and enforces:
           - 0700 (owner read/write/execute) on all directories.
           - 0600 (owner read/write) on all files.
+
+        Symbolic links found in the tree are skipped rather than re-permissioned.
+        ``chmod`` dereferences, and ``os.walk`` yields a link-to-file under
+        ``files`` and a link-to-directory under ``dirs``, so a link persisted
+        inside the data directory would otherwise have its *target* set to
+        0600/0700 — anywhere on the filesystem. That is how issue #164 left the
+        bundled Codex binary at 0600 and unexecutable: the Codex CLI keeps
+        argv[0] dispatch links under ``CODEX_HOME/tmp/arg0`` pointing back at
+        itself inside the image, and ``CODEX_HOME`` lives on the persistent data
+        volume. Skipping is the only option here — Linux has no ``lchmod``, so
+        ``os.chmod(..., follow_symlinks=False)`` raises ``NotImplementedError``.
         """
         user_data_dir = self._user_data_directory
         if not user_data_dir.exists():
@@ -211,8 +222,12 @@ class PathManager:
 
         # Walk the directory structure recursively
         for root, dirs, files in os.walk(user_data_dir):
+            root_path = Path(root)
+            # Pruned in place so the walk neither descends into a symlinked
+            # directory nor chmods it below (which would follow the link).
+            dirs[:] = [d for d in dirs if not (root_path / d).is_symlink()]
             for d in dirs:
-                dir_path = Path(root) / d
+                dir_path = root_path / d
                 try:
                     dir_path.chmod(0o700)
                 except OSError as e:
@@ -220,7 +235,9 @@ class PathManager:
                         "Could not set permissions on directory %s: %s", dir_path, e
                     )
             for f in files:
-                file_path = Path(root) / f
+                file_path = root_path / f
+                if file_path.is_symlink():
+                    continue
                 try:
                     file_path.chmod(0o600)
                 except OSError as e:
