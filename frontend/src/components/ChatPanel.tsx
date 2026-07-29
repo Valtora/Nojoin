@@ -128,9 +128,11 @@ export default function ChatPanel({
     if (!inputValue.trim() || !recordingId || isStreaming) return;
 
     const userMsg: ChatMessage = {
-      id: Date.now(), // Temp ID
+      // Local-only id for optimistic rendering; the server assigns the real
+      // one when the message is persisted.
+      id: Date.now(),
       recording_id: recordingId,
-      user_id: 0, // Placeholder
+      user_id: 0,
       role: "user",
       content: inputValue,
       created_at: new Date().toISOString(),
@@ -144,7 +146,7 @@ export default function ChatPanel({
     // Create placeholder for assistant message
     const assistantMsgId = Date.now() + 1;
     const assistantMsg: ChatMessage = {
-      id: assistantMsgId, // Temp ID
+      id: assistantMsgId,
       recording_id: recordingId,
       user_id: 0,
       role: "assistant",

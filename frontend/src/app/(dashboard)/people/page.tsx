@@ -57,7 +57,6 @@ export default function PeoplePage() {
     useState(false);
   const { addNotification } = useNotificationStore();
 
-  // Fetch People
   const fetchPeople = useCallback(async () => {
     setIsLoading(true);
     try {

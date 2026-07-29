@@ -162,7 +162,6 @@ export const COLOR_PALETTE: ColorOption[] = [
   },
 ];
 
-// Helper function to get a color option by key
 export const getColorByKey = (key: string | null | undefined): ColorOption => {
   if (!key) return COLOR_PALETTE[0];
   return (

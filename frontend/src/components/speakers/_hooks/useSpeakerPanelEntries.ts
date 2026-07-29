@@ -36,9 +36,9 @@ export interface UseSpeakerPanelEntriesResult {
 
 /**
  * Derives the grouped speaker rows for {@link SpeakerPanel} from the raw
- * recording speakers, segments, and global speaker library. Extracted from
- * SpeakerPanel verbatim (FE-012) so the grouping/sorting logic is isolated and
- * independently reasoned about; output is unchanged.
+ * recording speakers, segments, and global speaker library. Kept separate from
+ * the component so the grouping and sorting logic can be reasoned about on its
+ * own.
  */
 export function useSpeakerPanelEntries(
   speakers: RecordingSpeaker[],

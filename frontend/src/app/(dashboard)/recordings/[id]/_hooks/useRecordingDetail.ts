@@ -78,9 +78,8 @@ interface UseRecordingDetailParams {
 
 /**
  * Owns the entire data-orchestration, live-state, transcript, notes and action
- * logic for the recording detail page. Extracted verbatim from the original
- * page component so the page itself can stay focused on rendering. Behaviour is
- * preserved exactly.
+ * logic for the recording detail page, so the page component itself stays
+ * focused on rendering.
  */
 export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [recording, setRecording] = useState<Recording | null>(null);

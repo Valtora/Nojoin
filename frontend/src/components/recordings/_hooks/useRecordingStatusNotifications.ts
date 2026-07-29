@@ -8,8 +8,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 /**
  * Watches a recordings list for status transitions and raises the matching
  * toast notifications (processing complete, notes generated/failed, transcript
- * ready). Extracted verbatim from {@link Sidebar} (FE-012); the transition
- * tracking refs and emitted messages are unchanged.
+ * ready), for {@link Sidebar}.
  */
 export function useRecordingStatusNotifications(
   recordings: Recording[],

@@ -45,9 +45,8 @@ export interface TranscriptSearch {
 
 /**
  * Owns the find/replace search state and match computation for
- * {@link TranscriptView} (FE-012). Lifted verbatim from the component so the
- * literal/regex/fuzzy match logic, the smart current-index management, and the
- * scroll-to-current-match behaviour are unchanged.
+ * {@link TranscriptView}: literal, regex and fuzzy matching, current-index
+ * management across result changes, and scroll-to-current-match.
  */
 export function useTranscriptSearch(
   options: UseTranscriptSearchOptions,
@@ -166,7 +165,8 @@ export function useTranscriptSearch(
       // If segments updated (e.g. replace), try to maintain relative position
       if (newMatches.length === 0) return -1;
       if (prevIndex >= newMatches.length) return newMatches.length - 1;
-      // If we just replaced the current match, the next one slides into this index (or close to it)
+      // After replacing the current match, the following one takes its index,
+      // so holding the index keeps the selection roughly in place.
       return prevIndex;
     });
 

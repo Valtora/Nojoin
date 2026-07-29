@@ -226,7 +226,6 @@ export function useMainNavTags() {
       newParentId = null;
     } else if (overIdString.startsWith("tag-")) {
       const overTagId = parseInt(overIdString.replace("tag-", ""));
-      // Don't do anything if dropped on itself
       if (activeTagId === overTagId) return;
 
       // Check for cycles: ensure overTagId is not a descendant of activeTagId
@@ -247,11 +246,9 @@ export function useMainNavTags() {
       return; // Dropped somewhere else
     }
 
-    // Find the active tag object
     const activeTag = tags.find((t) => t.id === activeTagId);
     if (!activeTag) return;
 
-    // Don't update if parent hasn't changed
     if (activeTag.parent_id === newParentId) return;
 
     // Optimistic update - local state uses undefined for no parent
@@ -268,7 +265,6 @@ export function useMainNavTags() {
       await updateTag(activeTagId, { parent_id: newParentId });
       window.dispatchEvent(new CustomEvent("tags-updated"));
 
-      // If moved to a new parent, expand that parent
       if (newParentId && !expandedTagIds.has(newParentId)) {
         toggleExpandedTag(newParentId);
       }

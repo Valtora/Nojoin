@@ -20,8 +20,8 @@ const areSetsEqual = (a: Set<string>, b: Set<string>): boolean =>
   a.size === b.size && [...a].every((value) => b.has(value));
 
 /**
- * Annotate segments with their original index and stable key. Extracted from
- * {@link TranscriptView} (FE-012); output is unchanged.
+ * Annotate segments with their original index and stable key, for
+ * {@link TranscriptView}.
  */
 export function indexSegments(
   segments: TranscriptSegment[],
@@ -35,8 +35,7 @@ export function indexSegments(
 
 /**
  * Group consecutive (time-overlapping or same-overlap-event) display segments
- * into render groups. Extracted verbatim from {@link TranscriptView} (FE-012)
- * so the grouping is unchanged.
+ * into render groups, for {@link TranscriptView}.
  */
 export function buildTranscriptGroups(
   displaySegments: IndexedTranscriptSegment[],

@@ -154,7 +154,6 @@ export const importAudio = async (
   options?: ImportAudioOptions,
 ): Promise<Recording> => {
   // Use chunked upload for all files to ensure reliability and bypass Cloudflare limits
-  // Chunk size: 10MB
   const CHUNK_SIZE = 10 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 

@@ -64,10 +64,9 @@ export interface AISettingsModels {
 
 /**
  * Owns the model discovery, validation, status, and language-registry data for
- * {@link AISettings} (FE-012). Lifted verbatim from the component so the
- * provider/Ollama-aware fetching, debounced effects, validation messaging, and
- * model deletion behaviour are unchanged. The `set*` setters are exposed so the
- * inline "Refresh" buttons keep their existing optimistic wiring.
+ * {@link AISettings}: provider- and Ollama-aware fetching, debounced effects,
+ * validation messaging, and model deletion. The `set*` setters are exposed so
+ * the inline "Refresh" buttons can drive their optimistic updates.
  */
 export function useAISettingsModels(
   options: UseAISettingsModelsOptions,

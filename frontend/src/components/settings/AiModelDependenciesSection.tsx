@@ -65,8 +65,7 @@ const DEPENDENCY_MODELS: {
   },
 ];
 
-/** Admin-only "Model dependencies" section. Extracted verbatim from
- * {@link AISettings} so behaviour is unchanged. */
+/** Admin-only "Model dependencies" section of {@link AISettings}. */
 export default function AiModelDependenciesSection({
   modelStatus,
   deleting,
