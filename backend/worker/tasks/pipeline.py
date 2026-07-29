@@ -897,6 +897,10 @@ def process_recording_task(
 
     try:
         recording.status = RecordingStatus.PROCESSING
+        # Stamp the task actually doing the work, not just the one the API dispatched.
+        # The startup sweep uses this to tell a live run from one whose worker died,
+        # and the worker's own re-queue path never set it.
+        recording.celery_task_id = self.request.id
         recording.processing_progress = 20
         if (
             recording.processing_started_at is None
@@ -1099,17 +1103,110 @@ def process_recording_task(
             _release_pipeline_vram()
 
 
+def _live_task_ids() -> set[str] | None:
+    """Ids of tasks currently running on any worker.
+
+    Returns None when that cannot be established, which is deliberately different
+    from an empty set: callers must not treat "nobody answered" as "nothing is
+    running", or restarting one worker would reclaim another's live work.
+    """
+    from backend.celery_app import celery_app
+
+    try:
+        active = celery_app.control.inspect(timeout=5.0).active()
+    except Exception as e:  # noqa: BLE001 -- boundary: broker may be unreachable
+        logger.warning("Could not inspect active Celery tasks: %s", e)
+        return None
+
+    if active is None:
+        logger.warning("No Celery worker answered the active-task inspection.")
+        return None
+
+    return {
+        task["id"]
+        for tasks in active.values()
+        for task in tasks
+        if isinstance(task, dict) and task.get("id")
+    }
+
+
+def _reclaim_orphaned_processing(session) -> list[Recording]:
+    """Return recordings left in PROCESSING by a worker that died mid-pipeline.
+
+    A recording only leaves PROCESSING when its task finishes, so one whose task is
+    no longer running is stranded: the startup sweep used to ignore it and the
+    reprocess endpoint refuses to touch a PROCESSING recording, leaving no way back
+    short of editing the database. Reclaiming needs proof the task is gone, so this
+    returns nothing when liveness cannot be established.
+    """
+    stuck = session.exec(
+        select(Recording).where(Recording.status == RecordingStatus.PROCESSING)
+    ).all()
+    if not stuck:
+        return []
+
+    live = _live_task_ids()
+    if live is None:
+        logger.warning(
+            "%s recording(s) are PROCESSING but liveness is unknown; leaving them "
+            "alone rather than risk reclaiming a running job.",
+            len(stuck),
+        )
+        return []
+
+    orphaned = [r for r in stuck if r.celery_task_id not in live]
+    for recording in orphaned:
+        logger.warning(
+            "Recording %s was left PROCESSING by task %s, which is no longer "
+            "running. Re-queueing.",
+            recording.id,
+            recording.celery_task_id or "<unrecorded>",
+        )
+        recording.status = RecordingStatus.QUEUED
+        recording.processing_step = "Queued after an interrupted run..."
+        session.add(recording)
+    if orphaned:
+        session.commit()
+    return orphaned
+
+
+def _sweeps_recordings(sender) -> bool:
+    """Whether this worker should run the startup sweep.
+
+    Every lane imports this module, so all three would otherwise sweep on startup
+    and dispatch each pending recording once per lane. Only the lane that consumes
+    the queue process_recording_task routes to can actually run the work, so it
+    does the sweep. When the consumed queues cannot be read, sweep anyway: a
+    duplicate run wastes time, but skipping leaves recordings stranded.
+    """
+    from backend.celery_app import GPU_QUEUE
+
+    try:
+        consume_from = getattr(sender.app.amqp.queues, "consume_from", None)
+    except Exception:  # noqa: BLE001 -- boundary: internal Celery shape may change
+        consume_from = None
+
+    if not consume_from:
+        logger.warning("Could not read this worker's queues; sweeping regardless.")
+        return True
+    return GPU_QUEUE in set(consume_from)
+
+
 @worker_ready.connect
 def check_queued_recordings(sender, **kwargs):
     """
-    On worker startup, check for any recordings that are stuck in QUEUED state
-    and re-queue them.
+    On worker startup, re-queue recordings left QUEUED, and reclaim any left
+    PROCESSING by a worker that died mid-pipeline.
     """
+    if not _sweeps_recordings(sender):
+        return
+
     logger.info("Checking for pending QUEUED recordings...")
     session = get_sync_session()
     try:
         statement = select(Recording).where(Recording.status == RecordingStatus.QUEUED)
-        recordings = session.exec(statement).all()
+        recordings = list(session.exec(statement).all())
+        recordings.extend(_reclaim_orphaned_processing(session))
 
         if not recordings:
             logger.info("No pending recordings found.")
