@@ -17,7 +17,11 @@ import { detectCaptureSupport } from "./featureDetect";
 import { CaptureLifecycle, sendPauseBeacon } from "./lifecycle";
 import { createCaptureMixer, type CaptureMixer } from "./mixer";
 import { pickCaptureSource, PickSourceError, type PickedCaptureSources } from "./pickSource";
-import { createBrowserRecorder, type BrowserRecorder } from "./recorder";
+import {
+  createBrowserRecorder,
+  type BrowserRecorder,
+  type RecorderStallInfo,
+} from "./recorder";
 import {
   buildCaptureSourceReportPayload,
   logCaptureSourceReport,
@@ -27,8 +31,10 @@ import {
 import {
   clearPausedCaptureContext,
   DEFAULT_CAPTURE_LEVELS,
+  type CaptureCoverageWarning,
   type CaptureSettings,
   type CaptureState,
+  type CaptureStopStage,
   type StartCaptureResponse,
   type StartCaptureResult,
   readCaptureSettings,
@@ -77,6 +83,46 @@ const wait = (ms: number) =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+/** Bound on each pre-finalize stop stage, so none of them can hang finalize. */
+const RECORDER_STOP_TIMEOUT_MS = 8_000;
+
+const UPLOAD_FLUSH_TIMEOUT_MS = 60_000;
+
+/**
+ * Coverage thresholds for the suspended-tab warning. Both must be exceeded, so
+ * the ordinary couple of seconds of trailing segment latency stays quiet.
+ */
+const COVERAGE_WARNING_MIN_MISSING_SECONDS = 60;
+
+const COVERAGE_WARNING_MIN_RATIO = 0.1;
+
+const COVERAGE_WARNING_INTERVAL_MS = 5 * 60_000;
+
+const withStageTimeout = async <T>(
+  stage: CaptureStopStage,
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T | null> => {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const expired = Symbol("expired");
+  const timeout = new Promise<typeof expired>((resolve) => {
+    timeoutId = setTimeout(() => resolve(expired), timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([operation, timeout]);
+    if (result === expired) {
+      console.warn(`[capture] stop stage "${stage}" timed out after ${timeoutMs}ms`);
+      return null;
+    }
+    return result;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
 
 const formatCaptureError = (error: unknown) => {
   if (error instanceof PickSourceError) {
@@ -138,6 +184,8 @@ export class CaptureController {
 
   private elapsedTimerStartedAt = 0;
 
+  private lastCoverageNotifiedAt = 0;
+
   constructor() {
     const pausedContext = readPausedCaptureContext();
     this.state = {
@@ -152,12 +200,15 @@ export class CaptureController {
       runtimeActive: false,
       settings: readCaptureSettings(),
       finalizeRetry: null,
+      stopStage: null,
+      coverageWarning: null,
     };
 
     this.lifecycle = new CaptureLifecycle({
       getRecordingId: () => this.state.recordingId,
       shouldGuardExit: () => Boolean(this.runtime),
       onGuardedExit: (request) => this.handleGuardedExit(request),
+      onPageResume: () => this.handlePageResume(),
     });
   }
 
@@ -262,10 +313,13 @@ export class CaptureController {
       throw error;
     }
 
+    this.lastCoverageNotifiedAt = 0;
     this.setState({
       recordingId: initResponse.id,
       lastSequence: -1,
       elapsedSeconds: 0,
+      coverageWarning: null,
+      stopStage: null,
     });
 
     let sources: PickedCaptureSources | null = null;
@@ -391,7 +445,14 @@ export class CaptureController {
       throw new Error("No paused recording is available to resume.");
     }
 
-    if (this.runtime && this.state.status === "paused") {
+    // Reusing the existing tracks is only valid while they are still live. After
+    // a failed stop the runtime survives with its media released, and resuming
+    // onto those dead tracks would record silence.
+    if (
+      this.runtime &&
+      !this.runtime.mediaReleased &&
+      this.state.status === "paused"
+    ) {
       const response = await resumeRecordingCapture(targetRecordingId);
       // A stalled uploader (for example after a network outage) still holds
       // the queued segments; recovering it retries them before new audio.
@@ -500,31 +561,68 @@ export class CaptureController {
     }
   };
 
-  stop = async (): Promise<Recording> => {
-    if (!this.state.recordingId) {
+  /**
+   * Stops capture and queues final processing.
+   *
+   * Valid whether or not a browser runtime is still attached: a recording whose
+   * runtime was torn down (tab reload, guarded exit) is finalized from its
+   * uploaded segments alone. The server accepts finalize for a PAUSED recording,
+   * so no resume round trip is needed first, which also removes the ordering
+   * race that could skip the resume and strand the recording (issue #166).
+   *
+   * Every pre-finalize stage is bounded. A stage that times out is logged and
+   * skipped rather than awaited forever: the server decides whether the segments
+   * are complete, and a retryable 409 beats an infinite hang with no finalize.
+   */
+  stop = async (recordingId?: RecordingId): Promise<Recording> => {
+    // An explicit id matters when the runtime is gone and this tab never held
+    // the capture: the paused recording is then known only from the server.
+    const targetRecordingId =
+      recordingId ?? this.state.recordingId ?? this.state.pausedRecording?.id;
+    if (!targetRecordingId) {
       throw new Error("No active recording is available to finalize.");
     }
 
-    const recordingId = this.state.recordingId;
-    const wasPaused = this.state.status === "paused";
+    const hadRuntime = Boolean(this.runtime);
     this.setState({ status: "finalizing", error: null, finalizeRetry: null });
-    if (wasPaused) {
-      await resumeRecordingCapture(recordingId);
-    }
 
     try {
-      if (this.runtime) {
-        await this.runtime.recorder.stop({ emitTail: true });
-        this.runtime.uploader.recover();
-        await this.runtime.uploader.waitForIdle();
+      const runtime = this.runtime;
+      if (runtime) {
+        this.setStopStage("stopping-recorder");
+        await withStageTimeout(
+          "stopping-recorder",
+          runtime.recorder.stop({ emitTail: true }),
+          RECORDER_STOP_TIMEOUT_MS,
+        );
+
+        this.setStopStage("flushing-uploads");
+        runtime.uploader.recover();
+        try {
+          await runtime.uploader.waitForIdle({
+            timeoutMs: UPLOAD_FLUSH_TIMEOUT_MS,
+          });
+        } catch (flushError: unknown) {
+          // Keep going: finalize refuses an incomplete upload with a retryable
+          // 409, which is a far better outcome than never calling it.
+          console.warn(
+            "[capture] stop stage \"flushing-uploads\" did not drain cleanly",
+            flushError,
+          );
+        }
+
+        this.setStopStage("releasing-media");
         // Every recorded segment is queued server-side at this point, so stop
         // the microphone/tab capture now instead of keeping the tracks (and
         // the browser recording indicator) live through the finalize retries.
         await this.releaseRuntimeMedia();
       }
-      const recording = await this.finalizeRecordingWhenReady(recordingId);
+
+      this.setStopStage("finalizing");
+      const recording = await this.finalizeRecordingWhenReady(targetRecordingId);
       clearPausedCaptureContext();
       await this.disposeRuntime();
+      this.reportCoverageOnStop(recording);
       this.setState({
         status: "idle",
         error: null,
@@ -535,6 +633,7 @@ export class CaptureController {
         runtimeActive: false,
         levels: DEFAULT_CAPTURE_LEVELS,
         finalizeRetry: null,
+        stopStage: null,
       });
       await this.refreshPausedRecording().catch(() => {});
       this.lifecycle.updateRecordingId(null);
@@ -542,9 +641,62 @@ export class CaptureController {
 
     } catch (error: unknown) {
       const message = formatCaptureError(error);
-      this.setState({ status: "error", error: message, finalizeRetry: null });
+      console.error(
+        `[capture] stop failed during stage "${this.state.stopStage}"`,
+        error,
+      );
+      // Never leave the controller in "finalizing": every transport control is
+      // disabled in that state, which previously bricked the UI with no way back.
+      // Settling on "paused" matches the server and keeps stop retryable.
+      await this.settleAfterFailedStop(targetRecordingId, hadRuntime, message);
       throw new Error(message);
     }
+  };
+
+  /**
+   * Returns the controller to a state the user can act from after a failed stop.
+   *
+   * The media tracks are released either way: the recorded audio is already
+   * server-side, and holding the microphone open through a failure just leaves
+   * the browser recording indicator lit with no way to clear it.
+   */
+  private settleAfterFailedStop = async (
+    recordingId: RecordingId,
+    hadRuntime: boolean,
+    message: string,
+  ) => {
+    try {
+      await this.releaseRuntimeMedia();
+    } catch (releaseError: unknown) {
+      console.warn("[capture] failed to release media after a failed stop", releaseError);
+    }
+
+    if (hadRuntime) {
+      writePausedCaptureContext({
+        recordingId,
+        lastSequence: this.state.lastSequence,
+        persistedAt: Date.now(),
+      });
+    }
+
+    // The runtime object is kept even though its media is gone, so a retried
+    // stop can still flush whatever the uploader is holding. runtimeActive goes
+    // false so the transport controls disable and resume re-acquires sources.
+    this.setState({
+      status: "paused",
+      error: message,
+      recordingId,
+      finalizeRetry: null,
+      stopStage: null,
+      runtimeActive: false,
+      levels: DEFAULT_CAPTURE_LEVELS,
+    });
+    await this.refreshPausedRecording().catch(() => {});
+  };
+
+  private setStopStage = (stage: CaptureStopStage) => {
+    console.info(`[capture] stop stage: ${stage}`);
+    this.setState({ stopStage: stage });
   };
 
   cancel = async (recordingId?: RecordingId) => {
@@ -570,6 +722,8 @@ export class CaptureController {
       pausedRecording: null,
       runtimeActive: false,
       levels: DEFAULT_CAPTURE_LEVELS,
+      coverageWarning: null,
+      stopStage: null,
     });
     this.lifecycle.updateRecordingId(null);
     await this.refreshPausedRecording().catch(() => {});
@@ -602,6 +756,7 @@ export class CaptureController {
             sequenceToElapsedSeconds(sequence),
           ),
         });
+        this.evaluateCoverage();
       },
       onStalled: async (error) => {
         await this.handleUploaderStalled(options.recordingId, error);
@@ -626,6 +781,9 @@ export class CaptureController {
       },
       onError: (error) => {
         this.setState({ status: "error", error: error.message });
+      },
+      onStall: (info) => {
+        this.handleRecorderStall(info);
       },
     });
 
@@ -729,6 +887,94 @@ export class CaptureController {
         error: formatCaptureError(pauseError),
       });
     }
+  };
+
+  /**
+   * Compares captured audio against wall-clock recording time.
+   *
+   * When the browser or the OS suspends the tab, the MediaRecorder stops
+   * receiving audio while the recorder still reports "recording" and the elapsed
+   * timer keeps counting. Measured at ~52% coverage across a 20s freeze, so the
+   * shortfall is real data loss and the only client-side signal is this gap.
+   */
+  private evaluateCoverage = () => {
+    if (this.state.status !== "recording") {
+      return;
+    }
+
+    const capturedSeconds = sequenceToElapsedSeconds(this.state.lastSequence);
+    const elapsedSeconds = this.state.elapsedSeconds;
+    const missingSeconds = Math.max(0, elapsedSeconds - capturedSeconds);
+    if (
+      elapsedSeconds <= 0 ||
+      missingSeconds < COVERAGE_WARNING_MIN_MISSING_SECONDS ||
+      missingSeconds / elapsedSeconds < COVERAGE_WARNING_MIN_RATIO
+    ) {
+      return;
+    }
+
+    const warning: CaptureCoverageWarning = {
+      capturedSeconds,
+      elapsedSeconds,
+      missingSeconds,
+    };
+    this.setState({ coverageWarning: warning });
+
+    const now = Date.now();
+    if (now - this.lastCoverageNotifiedAt < COVERAGE_WARNING_INTERVAL_MS) {
+      return;
+    }
+
+    this.lastCoverageNotifiedAt = now;
+    const missingMinutes = Math.round(missingSeconds / 60);
+    console.warn("[capture] captured audio is behind elapsed time", warning);
+    useNotificationStore.getState().addNotification({
+      type: "warning",
+      message:
+        `Nojoin has captured ${Math.round(capturedSeconds / 60)} of ` +
+        `${Math.round(elapsedSeconds / 60)} minutes. Around ${missingMinutes} ` +
+        "minutes are missing, which usually means this tab was suspended by the " +
+        "browser or the device slept. Keep the Nojoin tab open and the device awake.",
+    });
+  };
+
+  private reportCoverageOnStop = (recording: Recording) => {
+    const warning = this.state.coverageWarning;
+    if (!warning) {
+      return;
+    }
+
+    console.warn(
+      "[capture] recording finalized with missing audio",
+      recording.id,
+      warning,
+    );
+    useNotificationStore.getState().addNotification({
+      type: "warning",
+      message:
+        `This recording captured ${Math.round(warning.capturedSeconds / 60)} of ` +
+        `${Math.round(warning.elapsedSeconds / 60)} minutes of the session. The ` +
+        "missing audio was not recorded because the tab or device was suspended.",
+    });
+  };
+
+  private handlePageResume = () => {
+    if (!this.runtime) {
+      return;
+    }
+
+    // Advisory: the watchdog in the recorder is what actually restarts the
+    // segment chain. This only records that a thaw happened.
+    console.warn("[capture] page resumed from a frozen state during capture");
+    this.evaluateCoverage();
+  };
+
+  private handleRecorderStall = (info: RecorderStallInfo) => {
+    console.warn(
+      "[capture] recorder stalled; restarting the segment chain",
+      info,
+    );
+    this.evaluateCoverage();
   };
 
   private finalizeRecordingWhenReady = async (recordingId: RecordingId) => {

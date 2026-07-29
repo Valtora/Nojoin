@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   getPausedRecordings: vi.fn(),
   initRecording: vi.fn(),
   reportRecordingCaptureSources: vi.fn(),
+  resumeRecordingCapture: vi.fn(),
 }));
 
 const featureDetectMocks = vi.hoisted(() => ({
@@ -29,7 +30,7 @@ vi.mock("@/lib/api", () => ({
   isActiveRecordingConflictDetail: vi.fn(() => false),
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
   reportRecordingCaptureSources: apiMocks.reportRecordingCaptureSources,
-  resumeRecordingCapture: vi.fn(),
+  resumeRecordingCapture: apiMocks.resumeRecordingCapture,
 }));
 
 vi.mock("./featureDetect", () => ({
@@ -144,6 +145,12 @@ describe("capture controller", () => {
     apiMocks.initRecording.mockReset();
     apiMocks.reportRecordingCaptureSources.mockReset();
     apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    apiMocks.resumeRecordingCapture.mockReset();
+    apiMocks.resumeRecordingCapture.mockResolvedValue({
+      recording_id: "rec-1",
+      status: "UPLOADING",
+      last_sequence: 0,
+    });
     apiMocks.getPausedRecordings.mockResolvedValue([]);
     featureDetectMocks.detectCaptureSupport.mockReset();
     featureDetectMocks.detectCaptureSupport.mockReturnValue({
@@ -633,5 +640,202 @@ describe("capture controller", () => {
     await controller.stop();
 
     expect(mockTrack.removeEventListener).toHaveBeenCalledWith("ended", expect.any(Function));
+  });
+
+  it("finalizes a paused recording whose runtime is gone, without resuming first", async () => {
+    // The guarded-exit case from issue #166: the runtime was disposed, so the
+    // only route to processing is finalizing the uploaded segments directly.
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({
+      id: "rec-1",
+      status: "QUEUED",
+    });
+
+    const controller = new CaptureController() as any;
+    controller.state = {
+      ...controller.getState(),
+      status: "paused",
+      recordingId: "rec-1",
+      lastSequence: 41,
+    };
+    controller.runtime = null;
+
+    await expect(controller.stop()).resolves.toEqual({
+      id: "rec-1",
+      status: "QUEUED",
+    });
+
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1");
+    // Resuming would re-prompt the browser share picker for nothing, and the
+    // ordering race around it was what stranded the recording.
+    expect(apiMocks.resumeRecordingCapture).not.toHaveBeenCalled();
+    expect(controller.getState().status).toBe("idle");
+  });
+
+  it("finalizes a paused recording identified only by the server", async () => {
+    // A fresh tab has no sessionStorage context, so the id has to be passed in.
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({
+      id: "rec-9",
+      status: "QUEUED",
+    });
+
+    const controller = new CaptureController();
+
+    await expect(controller.stop("rec-9")).resolves.toEqual({
+      id: "rec-9",
+      status: "QUEUED",
+    });
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-9");
+  });
+
+  it("never leaves the controller stuck in finalizing when stop fails", async () => {
+    // "finalizing" disables every transport control, so settling there bricked
+    // the UI with no way back to Stop, Resume, or Discard.
+    apiMocks.finalizeRecordingCapture.mockRejectedValue(
+      buildConflictError("Recording is no longer accepting capture uploads"),
+    );
+
+    const controller = new CaptureController() as any;
+    controller.state = {
+      ...controller.getState(),
+      status: "recording",
+      recordingId: "rec-1",
+    };
+    controller.runtime = null;
+
+    await expect(controller.stop()).rejects.toThrow(
+      "Recording is no longer accepting capture uploads",
+    );
+
+    const state = controller.getState();
+    expect(state.status).toBe("paused");
+    expect(state.stopStage).toBeNull();
+    expect(state.recordingId).toBe("rec-1");
+  });
+
+  it("reports each stop stage in order", async () => {
+    const sources = {
+      mode: "microphone_only",
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "microphone_only",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: false,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Test meeting" });
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({
+      id: "rec-1",
+      status: "QUEUED",
+    });
+
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+
+    const stages: (string | null)[] = [];
+    controller.subscribe((state) => {
+      if (state.stopStage && stages[stages.length - 1] !== state.stopStage) {
+        stages.push(state.stopStage);
+      }
+    });
+
+    await controller.stop();
+
+    expect(stages).toEqual([
+      "stopping-recorder",
+      "flushing-uploads",
+      "releasing-media",
+      "finalizing",
+    ]);
+    expect(controller.getState().stopStage).toBeNull();
+  });
+
+  it("still finalizes when the uploader cannot drain", async () => {
+    // Bounded, not fatal: the server refuses an incomplete upload with a
+    // retryable 409, which beats hanging forever without calling finalize.
+    const sources = {
+      mode: "microphone_only",
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      captureReport: {
+        mode: "microphone_only",
+        requested_microphone_device_id: null,
+        requested_microphone_label: null,
+        available_microphones: [],
+        browser_microphone_track: null,
+        browser_display_audio_track: null,
+        browser_display_video_track: null,
+        shared_audio_available: false,
+        notes: [],
+      },
+      release: vi.fn(),
+    };
+
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Test meeting" });
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({
+      id: "rec-1",
+      status: "QUEUED",
+    });
+
+    const controller = new CaptureController() as any;
+    await controller.start("Test meeting");
+    controller.runtime.uploader.waitForIdle = vi.fn(async () => {
+      throw new Error("segment 12 never uploaded");
+    });
+
+    await expect(controller.stop()).resolves.toEqual({
+      id: "rec-1",
+      status: "QUEUED",
+    });
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1");
+  });
+
+  it("warns when captured audio falls behind elapsed recording time", async () => {
+    // Measured at ~52% coverage across a 20s tab freeze; the wall-clock timer
+    // keeps counting while nothing is being recorded.
+    const controller = new CaptureController() as any;
+    controller.state = {
+      ...controller.getState(),
+      status: "recording",
+      recordingId: "rec-1",
+      lastSequence: 1_266,
+      elapsedSeconds: 5_455,
+    };
+
+    controller.evaluateCoverage();
+
+    const warning = controller.getState().coverageWarning;
+    expect(warning).not.toBeNull();
+    expect(warning.capturedSeconds).toBe(2_534);
+    expect(warning.missingSeconds).toBe(2_921);
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "warning" }),
+    );
+  });
+
+  it("stays quiet when captured audio only trails by upload latency", async () => {
+    const controller = new CaptureController() as any;
+    controller.state = {
+      ...controller.getState(),
+      status: "recording",
+      recordingId: "rec-1",
+      lastSequence: 299,
+      elapsedSeconds: 604,
+    };
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning).toBeNull();
+    expect(notificationMocks.addNotification).not.toHaveBeenCalled();
   });
 });

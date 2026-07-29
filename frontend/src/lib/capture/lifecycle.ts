@@ -7,7 +7,15 @@ export interface CaptureLifecycleOptions {
   getRecordingId: () => RecordingId | null;
   shouldGuardExit: () => boolean;
   onGuardedExit: (request: GuardedExitRequest) => void | Promise<void>;
+  /**
+   * Fired when the page is thawed after the browser froze it. Advisory only:
+   * a frozen tab suspends timers and stops feeding the MediaRecorder, and this
+   * event is not reliably dispatched on every Chromium build, so capture
+   * liveness must not depend on it (issue #166).
+   */
+  onPageResume?: () => void;
   windowRef?: Window;
+  documentRef?: Document;
 }
 
 export class CaptureLifecycle {
@@ -17,7 +25,11 @@ export class CaptureLifecycle {
 
   private readonly onGuardedExit: CaptureLifecycleOptions["onGuardedExit"];
 
+  private readonly onPageResume?: CaptureLifecycleOptions["onPageResume"];
+
   private readonly windowRef: Window;
+
+  private readonly documentRef?: Document;
 
   private activeRecordingId: RecordingId | null = null;
 
@@ -31,7 +43,11 @@ export class CaptureLifecycle {
     this.getRecordingId = options.getRecordingId;
     this.shouldGuardExit = options.shouldGuardExit;
     this.onGuardedExit = options.onGuardedExit;
+    this.onPageResume = options.onPageResume;
     this.windowRef = options.windowRef ?? window;
+    this.documentRef =
+      options.documentRef ??
+      (typeof document === "undefined" ? undefined : document);
   }
 
   attach(initialRouteSignature: string) {
@@ -43,6 +59,7 @@ export class CaptureLifecycle {
     this.attached = true;
     this.windowRef.addEventListener("pagehide", this.handlePageHide);
     this.windowRef.addEventListener("beforeunload", this.handleBeforeUnload);
+    this.documentRef?.addEventListener("resume", this.handlePageResume);
   }
 
   detach() {
@@ -53,6 +70,7 @@ export class CaptureLifecycle {
     this.attached = false;
     this.windowRef.removeEventListener("pagehide", this.handlePageHide);
     this.windowRef.removeEventListener("beforeunload", this.handleBeforeUnload);
+    this.documentRef?.removeEventListener("resume", this.handlePageResume);
   }
 
   updateRecordingId(recordingId: RecordingId | null) {
@@ -81,6 +99,12 @@ export class CaptureLifecycle {
 
   private readonly handleBeforeUnload = () => {
     this.triggerGuardedExit("beforeunload", true);
+  };
+
+  // A thaw is not an exit: capture should carry on, but the gap it leaves in the
+  // audio needs reporting.
+  private readonly handlePageResume = () => {
+    this.onPageResume?.();
   };
 
   private triggerGuardedExit(

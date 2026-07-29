@@ -99,5 +99,7 @@ export function useCapture() {
     support: state.support,
     settings: state.settings,
     finalizeRetry: state.finalizeRetry,
+    stopStage: state.stopStage,
+    coverageWarning: state.coverageWarning,
   };
 }
