@@ -76,3 +76,14 @@ class Document(BaseDBModel, table=True):
         back_populates="document",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+# Registers DocumentPage on the SQLModel class registry, which is what lets the
+# string reference in the `pages` relationship above resolve.
+#
+# Not redundant with backend/models/registry.py: that module is imported by
+# init_db and the tests, but NOT by the API process, which reaches Document
+# through recording_public and would otherwise configure its mappers with
+# DocumentPage unknown. Safe from circularity because document_page imports
+# this module only under TYPE_CHECKING.
+from .document_page import DocumentPage  # noqa: E402,F401
