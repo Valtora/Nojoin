@@ -219,3 +219,74 @@ def test_no_backend_reports_a_reason_the_user_can_act_on(monkeypatch):
     assert backend is None
     assert reason and reason.endswith(".")
     assert "not linked to a user account" in reason
+
+
+# ---------------------------------------------------------------------------
+# Provider-chain forwarding
+# ---------------------------------------------------------------------------
+
+
+class _VisionBackend(LLMBackend):
+    def __init__(self, answer, result="described"):
+        self.answer = answer
+        self.result = result
+        self.calls = 0
+
+    def supports_vision(self):
+        return self.answer
+
+    def generate_text_from_images(self, prompt, images, timeout=120, max_tokens=8192):
+        self.calls += 1
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+def _chain(primary, secondary):
+    from backend.processing.llm_backends.factory import SecondaryLLMBackend
+
+    return SecondaryLLMBackend(primary, secondary)
+
+
+def test_the_provider_chain_forwards_image_calls_to_the_primary():
+    """Regression: SecondaryLLMBackend did not override this, so the call fell
+    through to LLMBackend's default, raised VisionUnsupportedError, and every
+    document downgraded even when the primary handled images fine."""
+    primary = _VisionBackend(None, "from primary")
+    chain = _chain(primary, _VisionBackend(None, "from secondary"))
+
+    assert chain.generate_text_from_images("prompt", []) == "from primary"
+    assert primary.calls == 1
+
+
+def test_a_primary_without_vision_falls_through_to_the_secondary():
+    primary = _VisionBackend(None, VisionUnsupportedError("no vision"))
+    secondary = _VisionBackend(None, "from secondary")
+    chain = _chain(primary, secondary)
+
+    assert chain.generate_text_from_images("prompt", []) == "from secondary"
+    assert secondary.calls == 1
+
+
+def test_both_failing_surfaces_the_unsupported_error_so_the_document_downgrades():
+    chain = _chain(
+        _VisionBackend(None, VisionUnsupportedError("primary has no vision")),
+        _VisionBackend(None, VisionUnsupportedError("secondary has no vision")),
+    )
+    with pytest.raises(VisionUnsupportedError):
+        chain.generate_text_from_images("prompt", [])
+
+
+@pytest.mark.parametrize(
+    "primary,secondary,expected",
+    [
+        (True, False, True),
+        (False, True, True),
+        (False, False, False),
+        (None, False, None),
+        (None, None, None),
+    ],
+)
+def test_chain_vision_capability_is_tri_state(primary, secondary, expected):
+    chain = _chain(_VisionBackend(primary), _VisionBackend(secondary))
+    assert chain.supports_vision() is expected

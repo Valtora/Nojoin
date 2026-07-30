@@ -169,6 +169,42 @@ class SecondaryLLMBackend(LLMBackend):
             "generate_text", prompt, timeout, max_tokens=max_tokens
         )
 
+    def generate_text_from_images(self, prompt, images, timeout=120, max_tokens=8192):
+        # Must be forwarded explicitly. Without this the call reaches
+        # LLMBackend's default, which raises VisionUnsupportedError, and every
+        # document downgrades to a structural parse even when the primary
+        # provider handles images perfectly well.
+        #
+        # The fallback is meaningful here rather than incidental: a primary that
+        # cannot accept images fails, the secondary is tried, and only if both
+        # fail does the primary's VisionUnsupportedError surface and downgrade
+        # the document once. That matches the provider chain the user is shown
+        # in Settings.
+        return self._call_with_secondary(
+            "generate_text_from_images",
+            prompt,
+            images,
+            timeout=timeout,
+            max_tokens=max_tokens,
+        )
+
+    def supports_vision(self):
+        """Whether either provider in the chain is known to accept images.
+
+        Tri-state, like the backends it wraps: a definite yes from either is a
+        yes, a definite no from both is a no, and anything else is unknown and
+        must be discovered by making the call.
+        """
+        answers = [
+            self._primary.supports_vision(),
+            self._secondary.supports_vision(),
+        ]
+        if any(answer is True for answer in answers):
+            return True
+        if all(answer is False for answer in answers):
+            return False
+        return None
+
     def generate_meeting_edge(self, request, prompt_template=None, timeout=60):
         return self._call_with_secondary(
             "generate_meeting_edge", request, prompt_template, timeout
