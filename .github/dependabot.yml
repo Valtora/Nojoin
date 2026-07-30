@@ -98,7 +98,24 @@ updates:
       docker-base-images:
         patterns:
           - "*"
-    # Held pin (see PR #43). Remove when torchaudio ships a 2.12.x release.
+    # Held pins (see PR #43). Remove an entry when its blocker clears.
     ignore:
+      # Remove when torchaudio ships a 2.12.x release.
       - dependency-name: "pytorch/pytorch"
         versions: [">=2.12.0"]
+      # The API image's Python minor is not independently choosable: it must match
+      # the worker image, which inherits 3.12 from the held PyTorch base, and the
+      # 3.12 that CI and mypy target. Without this hold Dependabot walked the API
+      # base from 3.12 to 3.14 unnoticed, leaving the interpreter serving every
+      # HTTP request the only one the test suite never ran on. Lift this only
+      # together with the PyTorch hold above, and move CI, mypy, the docs, and the
+      # worker in the same change. scripts/check_held_pins.py fails if they drift.
+      - dependency-name: "python"
+        versions: [">=3.13.0"]
+      # Node majors stay deliberate rather than automatic. The two Node bases are
+      # NOT interchangeable (see docker/Dockerfile.worker-io): the worker-io donor
+      # must be glibc to run inside the Ubuntu PyTorch base, while the frontend
+      # runs musl/Alpine standalone. A major bump changes the bundled npm and the
+      # Trivy surface of both, so it is reviewed by hand.
+      - dependency-name: "node"
+        versions: [">=27.0.0"]
