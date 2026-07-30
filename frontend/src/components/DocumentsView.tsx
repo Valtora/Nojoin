@@ -47,16 +47,15 @@ const isBusy = (doc: Document) =>
   doc.status === "PENDING" || doc.status === "PROCESSING";
 
 /**
- * A parse writes to the row on every page batch and stage change, so a long
- * silence means the worker died rather than that the work is slow. Showing this
- * matters: without it a killed parse looks identical to a running one forever.
- * Matches STALLED_PARSE_AFTER on the server, which is what actually permits the
- * re-parse this state invites.
+ * Whether the worker running this parse appears to have died.
+ *
+ * Taken from the server rather than computed here. updated_at is serialised
+ * without a timezone, so JavaScript parses it as local time and any browser
+ * outside UTC misjudges the age by its whole offset -- which showed every
+ * in-flight parse as stalled. The server also gates the re-parse endpoint on
+ * the same value, so the button can never disagree with the label beside it.
  */
-const STALLED_AFTER_MS = 10 * 60 * 1000;
-
-const looksStalled = (doc: Document) =>
-  isBusy(doc) && Date.now() - new Date(doc.updated_at).getTime() > STALLED_AFTER_MS;
+const looksStalled = (doc: Document) => isBusy(doc) && doc.is_stalled === true;
 
 function StatusCell({ doc }: { doc: Document }) {
   if (doc.status === "ERROR") {
@@ -94,12 +93,20 @@ function StatusCell({ doc }: { doc: Document }) {
     return (
       <div className="min-w-[9rem] space-y-1">
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-          <div
-            className={`h-full rounded-full bg-orange-500 ${pct === null ? "w-1/3 animate-pulse" : "transition-all duration-500"}`}
-            style={pct === null ? undefined : { width: `${pct}%` }}
-          />
+          {pct === null ? (
+            // No page count yet, so there is no honest percentage to show. An
+            // indeterminate sweep still says "working" rather than "stuck at
+            // zero", which is what a 0%-width bar reads as.
+            <div className="h-full w-1/3 animate-[documentParseSweep_1.4s_ease-in-out_infinite] rounded-full bg-orange-500" />
+          ) : (
+            <div
+              className="h-full rounded-full bg-orange-500 transition-all duration-500"
+              style={{ width: `${Math.max(pct, 4)}%` }}
+            />
+          )}
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+        <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-orange-500" />
           {doc.parse_stage ?? "Starting"}
           {total > 0 ? ` · ${done}/${total}` : null}
         </p>

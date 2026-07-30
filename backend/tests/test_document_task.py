@@ -150,8 +150,11 @@ def test_the_default_backend_reports_no_vision_and_no_capability_answer():
 def _document(status, minutes_since_write):
     from datetime import timedelta
 
-    from backend.api.v1.endpoints.documents import _parse_looks_stalled
-    from backend.models.document import Document, DocumentStatus
+    from backend.models.document import (
+        Document,
+        DocumentStatus,
+        parse_looks_stalled,
+    )
     from backend.utils.time import utc_now
 
     document = Document(
@@ -161,7 +164,7 @@ def _document(status, minutes_since_write):
         status=getattr(DocumentStatus, status),
     )
     document.updated_at = utc_now() - timedelta(minutes=minutes_since_write)
-    return _parse_looks_stalled(document)
+    return parse_looks_stalled(document)
 
 
 def test_a_running_parse_is_not_treated_as_stalled():
@@ -290,3 +293,43 @@ def test_both_failing_surfaces_the_unsupported_error_so_the_document_downgrades(
 def test_chain_vision_capability_is_tri_state(primary, secondary, expected):
     chain = _chain(_VisionBackend(primary), _VisionBackend(secondary))
     assert chain.supports_vision() is expected
+
+
+# ---------------------------------------------------------------------------
+# Stall reporting crosses to the client as a boolean
+# ---------------------------------------------------------------------------
+
+
+def test_serialized_documents_carry_a_server_computed_stall_flag():
+    """Regression: the client derived this from updated_at, which serialises
+    without a timezone. JavaScript parses such a string as local time, so any
+    browser outside UTC misjudged the age by its whole offset and showed every
+    running parse as stalled while the server refused the re-parse it invited."""
+    from datetime import timedelta
+
+    from backend.models.document import Document, DocumentStatus
+    from backend.models.recording_public import serialize_document
+    from backend.utils.time import utc_now
+
+    document = Document(
+        recording_id=1,
+        title="deck.pdf",
+        file_path="/data/documents/deck.pdf",
+        status=DocumentStatus.PROCESSING,
+    )
+    document.id = 1
+
+    document.updated_at = utc_now() - timedelta(seconds=30)
+    assert serialize_document(document, recording_public_id="x").is_stalled is False
+
+    document.updated_at = utc_now() - timedelta(minutes=45)
+    assert serialize_document(document, recording_public_id="x").is_stalled is True
+
+
+def test_the_endpoint_and_the_serializer_share_one_stall_definition():
+    """They gated on separate copies before, so the button could refuse a
+    re-parse the label was inviting."""
+    from backend.api.v1.endpoints import documents as documents_api
+    from backend.models.document import parse_looks_stalled
+
+    assert documents_api.parse_looks_stalled is parse_looks_stalled

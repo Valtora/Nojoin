@@ -1,10 +1,19 @@
+from datetime import timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import BigInteger, Column, ForeignKey, Text
 from sqlmodel import Field, Relationship
 
+from backend.utils.time import utc_now
+
 from .base import BaseDBModel
+
+# How long a PROCESSING document may go without a write before it is treated as
+# abandoned. Generous on purpose: the longest legitimate gap is a single batch
+# of vision calls, and a false positive only permits a redundant re-parse while
+# a false negative wedges the document permanently.
+STALLED_PARSE_AFTER = timedelta(minutes=10)
 
 if TYPE_CHECKING:
     from .context_chunk import ContextChunk
@@ -83,3 +92,21 @@ class Document(BaseDBModel, table=True):
         back_populates="document",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+def parse_looks_stalled(document: Document) -> bool:
+    """Whether a PROCESSING document's worker appears to have died.
+
+    Computed on the server and sent to the client as a boolean, never derived
+    in the browser. ``updated_at`` is stored and serialised without a timezone,
+    so JavaScript parses it as local time and any client outside UTC gets an age
+    wrong by its whole offset -- which showed every in-flight parse as stalled.
+    Server-side, this also cannot disagree with the re-parse endpoint, because
+    that endpoint gates on this same function.
+    """
+    if document.status != DocumentStatus.PROCESSING:
+        return False
+    last_write = document.updated_at or document.created_at
+    if last_write is None:
+        return True
+    return (utc_now() - last_write) > STALLED_PARSE_AFTER

@@ -7,7 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.models.calendar import CalendarDashboardDayCountRead, CalendarEvent
 from backend.models.chat import ChatMessage
-from backend.models.document import Document, DocumentParseMode, DocumentStatus
+from backend.models.document import (
+    Document,
+    DocumentParseMode,
+    DocumentStatus,
+    parse_looks_stalled,
+)
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
@@ -125,6 +130,10 @@ class DocumentPublicRead(PublicModel):
     pages_parsed: int = 0
     # Which phase a running parse is in, for display. None when not parsing.
     parse_stage: Optional[str] = None
+    # Computed server-side. The client must not derive this from updated_at:
+    # that timestamp carries no timezone, so a browser outside UTC misreads its
+    # age by the whole offset and shows every running parse as stalled.
+    is_stalled: bool = False
 
 
 class CalendarEventLinkRead(PublicModel):
@@ -277,6 +286,7 @@ def serialize_document(
         page_count=document.page_count,
         pages_parsed=document.pages_parsed,
         parse_stage=document.parse_stage,
+        is_stalled=parse_looks_stalled(document),
     )
 
 

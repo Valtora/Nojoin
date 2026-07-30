@@ -46,6 +46,12 @@ export interface Document {
    * still running, which reads as a hang.
    */
   parse_stage?: string | null;
+  /**
+   * Computed server-side. Never derive this in the browser from updated_at:
+   * that timestamp carries no timezone, so a client outside UTC misreads its
+   * age by the whole offset and shows every running parse as stalled.
+   */
+  is_stalled?: boolean;
   created_at: string;
   /** Bumped on every parse write, which is how a stalled parse is detected. */
   updated_at: string;
