@@ -195,6 +195,13 @@ def _index_page(session, document: Document, page: DocumentPage) -> int:
                     "page_number": page.page_number,
                     "page_title": page.title,
                     "document_title": document.title,
+                    # Provenance, so downstream prompts can say how the text was
+                    # produced. Without it a model reading a VLM transcription
+                    # reports the document as "text extraction only", because
+                    # all it ever receives is text.
+                    "parse_mode": page.parse_mode.value
+                    if hasattr(page.parse_mode, "value")
+                    else str(page.parse_mode),
                 },
             )
         )

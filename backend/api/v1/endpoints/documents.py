@@ -5,6 +5,7 @@ from typing import List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -69,10 +70,80 @@ async def list_documents(
     stmt = select(Document).where(Document.recording_id == recording.id)
     result = await db.execute(stmt)
     documents = result.scalars().all()
+
+    # Backfill sizes for documents that predate the column. Bounded to one
+    # recording's documents and done once, since the value then persists.
+    if any(_backfill_size(document) for document in list(documents)):
+        await db.commit()
+
     return [
         serialize_document(document, recording_public_id=recording.public_id)
         for document in documents
     ]
+
+
+def _backfill_size(document: Document) -> bool:
+    """Fill in a missing file size from the stored file. Returns True if set.
+
+    Only documents uploaded before the column existed lack one. Reading it from
+    disk is accurate rather than a guess: an uploaded document is written once
+    and never rewritten, so the file's size *is* its upload size.
+    """
+    if document.file_size_bytes is not None:
+        return False
+    try:
+        document.file_size_bytes = os.path.getsize(document.file_path)
+    except OSError:
+        # The file is gone. Leave it NULL, which renders as an em dash, rather
+        # than recording a zero that would read as an empty document.
+        return False
+    return True
+
+
+@router.get("/documents/{document_id}/download")
+async def download_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the original uploaded file.
+
+    Serves the stored file under its original title rather than the UUID it is
+    saved as, so a download is recognisable. Ownership is checked through the
+    recording, exactly as delete and re-parse do.
+    """
+    document = await db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    recording = await db.get(Recording, document.recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not document.file_path or not os.path.exists(document.file_path):
+        raise HTTPException(
+            status_code=410, detail="The original file is no longer available."
+        )
+
+    return FileResponse(
+        path=document.file_path,
+        # Sanitised: the title is user-supplied and ends up in a
+        # Content-Disposition header, where a quote or newline could inject one.
+        filename=_safe_download_name(document.title, document.file_path),
+        media_type=document.file_type or "application/octet-stream",
+    )
+
+
+def _safe_download_name(title: str, file_path: str) -> str:
+    """A filename safe to place in a Content-Disposition header."""
+    cleaned = "".join(
+        character
+        for character in (title or "")
+        if character.isprintable() and character not in '"\\/\r\n'
+    ).strip()
+    if not cleaned:
+        cleaned = f"document{os.path.splitext(file_path)[1] or ''}"
+    return cleaned
 
 
 def _parse_looks_stalled(document: Document) -> bool:

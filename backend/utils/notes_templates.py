@@ -433,12 +433,19 @@ def load_attached_documents(
     attached: list[AttachedDocument] = []
     for document in documents:
         pages = session.exec(
-            select(DocumentPage.page_number, DocumentPage.title, DocumentPage.content)
+            select(
+                DocumentPage.page_number,
+                DocumentPage.title,
+                DocumentPage.content,
+                DocumentPage.parse_mode,
+            )
             .where(DocumentPage.document_id == document.id)
             .order_by(DocumentPage.page_number)
         ).all()
         sections: list[str] = []
-        for page_number, page_title, content in pages:
+        modes: set[str] = set()
+        for page_number, page_title, content, parse_mode in pages:
+            modes.add(getattr(parse_mode, "value", str(parse_mode)))
             if not (content or "").strip():
                 continue
             label = f"Page {page_number}"
@@ -448,9 +455,28 @@ def load_attached_documents(
         if not sections:
             continue
         attached.append(
-            AttachedDocument(title=document.title, text="\n\n".join(sections))
+            AttachedDocument(
+                title=document.title,
+                text="\n\n".join(sections),
+                extracted_by=_describe_extraction(modes),
+            )
         )
     return attached
+
+
+def _describe_extraction(modes: set[str]) -> Optional[str]:
+    """Phrase the highest tier that produced any of a document's pages."""
+    if "VISUAL" in modes:
+        return (
+            "a vision model reading the rendered pages, so charts, diagrams and "
+            "images are described"
+        )
+    if "OCR" in modes:
+        return (
+            "local OCR of the page images, so wording is present but charts and "
+            "diagrams are not described"
+        )
+    return "the file's own text layer"
 
 
 def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input

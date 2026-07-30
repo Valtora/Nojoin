@@ -244,9 +244,20 @@ async def chat_with_meeting(
                         label = f"{label}, page {page}: {page_title}"
                     elif page:
                         label = f"{label}, page {page}"
+                    # State how the text was produced. Without this a model
+                    # reading a vision transcription reports the document as
+                    # "text extraction only" -- true of what it received, but
+                    # wrong about the document, and misleading to the user.
+                    origin = {
+                        "VISUAL": "a vision model reading the rendered page, so "
+                        "descriptions of charts, diagrams and images are included",
+                        "OCR": "local OCR of the page image, so wording is present "
+                        "but charts and diagrams are not described",
+                    }.get(meta.get("parse_mode"), "the file's own text layer")
                     context_sections.append(
                         f'<attached_document source="{rec_name}" '
-                        f'location="{escape_prompt_attribute(label)}">\n'
+                        f'location="{escape_prompt_attribute(label)}" '
+                        f'extracted_by="{origin}">\n'
                         f"{content}\n</attached_document>"
                     )
                 else:

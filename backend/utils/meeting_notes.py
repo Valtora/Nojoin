@@ -238,6 +238,10 @@ class AttachedDocument:
     title: str
     text: str
     truncated: bool = False
+    # How the text was produced, in the model's terms. Stated in the prompt so
+    # a model reading a vision transcription does not describe the document as
+    # text-only -- true of what it received, wrong about the document.
+    extracted_by: Optional[str] = None
 
 
 # Document text is untrusted input. It is uploaded by the user, but its contents
@@ -274,8 +278,14 @@ def build_documents_prompt_section(
     blocks: List[str] = [_DOCUMENT_SECTION_PREAMBLE]
     for document in usable:
         note = " (truncated)" if document.truncated else ""
+        origin = (
+            f' extracted_by="{escape_prompt_attribute(document.extracted_by)}"'
+            if document.extracted_by
+            else ""
+        )
         blocks.append(
-            f'<attached_document title="{escape_prompt_attribute(document.title)}"{note}>\n'
+            f'<attached_document title="{escape_prompt_attribute(document.title)}"'
+            f"{origin}{note}>\n"
             f"{document.text.strip()}\n"
             "</attached_document>"
         )

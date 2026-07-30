@@ -9,10 +9,11 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Download,
 } from "lucide-react";
 import type { RecordingId } from "@/types";
 import { Document, getDocuments, deleteDocument } from "@/lib/api";
-import { reparseDocument } from "@/lib/api/documents";
+import { downloadDocument, reparseDocument } from "@/lib/api/documents";
 import DocumentUploadModal from "./DocumentUploadModal";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
@@ -135,6 +136,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
     null,
   );
   const [reparsingId, setReparsingId] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const { addNotification } = useNotificationStore();
   const notifiedDocumentErrorsRef = useRef<Set<string>>(new Set());
 
@@ -187,6 +189,31 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       });
     });
   }, [addNotification, documents]);
+
+  const handleDownload = async (target: Document) => {
+    setDownloadingId(target.id);
+    try {
+      const blob = await downloadDocument(target.id);
+      // Object URL rather than a direct link: the endpoint needs the auth
+      // header the API client attaches, which an anchor href cannot carry.
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = target.title;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      console.error("Failed to download document", e);
+      addNotification({
+        type: "error",
+        message: getErrorMessage(e, "Failed to download the document."),
+      });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const handleReparse = async (target: Document) => {
     setReparsingId(target.id);
@@ -288,25 +315,25 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
           // Wide content scrolls inside its own container so the panel never
           // scrolls horizontally as a whole.
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] border-collapse text-left">
+            <table className="w-full min-w-[38rem] border-collapse text-left">
               <thead>
                 <tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:border-gray-800 dark:text-gray-400">
                   <th scope="col" className="px-4 py-2.5 font-semibold">
                     Name
                   </th>
-                  <th scope="col" className="w-20 px-3 py-2.5 font-semibold">
+                  <th scope="col" className="w-[4.5rem] px-2 py-2.5 font-semibold">
                     Format
                   </th>
-                  <th scope="col" className="w-24 px-3 py-2.5 font-semibold">
+                  <th scope="col" className="w-20 px-2 py-2.5 font-semibold">
                     Size
                   </th>
-                  <th scope="col" className="w-24 px-3 py-2.5 font-semibold">
+                  <th scope="col" className="w-16 px-2 py-2.5 font-semibold">
                     Pages
                   </th>
-                  <th scope="col" className="w-48 px-3 py-2.5 font-semibold">
+                  <th scope="col" className="w-44 px-2 py-2.5 font-semibold">
                     Status
                   </th>
-                  <th scope="col" className="w-24 px-3 py-2.5">
+                  <th scope="col" className="w-28 px-2 py-2.5">
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>
@@ -328,22 +355,34 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                         {new Date(doc.created_at).toLocaleDateString()}
                       </p>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3">
                       <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                         {formatOf(doc.title)}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
+                    <td className="px-2 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
                       {formatBytes(doc.file_size_bytes)}
                     </td>
-                    <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
+                    <td className="px-2 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
                       {doc.page_count ?? "—"}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3">
                       <StatusCell doc={doc} />
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex justify-end gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                    <td className="px-2 py-3">
+                      <div className="flex justify-end gap-0.5 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                        <button
+                          onClick={() => handleDownload(doc)}
+                          disabled={downloadingId === doc.id}
+                          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                          title="Download original file"
+                        >
+                          {downloadingId === doc.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
+                        </button>
                         <button
                           onClick={() => handleReparse(doc)}
                           disabled={reparsingId === doc.id || (isBusy(doc) && !looksStalled(doc))}

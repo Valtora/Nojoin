@@ -73,6 +73,7 @@ describe("api public surface", () => {
         "discardRecordingCapture",
         "disconnectCalendarConnection",
         "downloadBackupFile",
+        "downloadDocument",
         "exportAudio",
         "exportBackupAsync",
         "exportContent",

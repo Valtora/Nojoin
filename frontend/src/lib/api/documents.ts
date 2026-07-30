@@ -112,6 +112,20 @@ export const getVisionSupport = async (
   return response.data;
 };
 
+/**
+ * Fetch the original file as a blob.
+ *
+ * Goes through the API client rather than a bare anchor href so the request
+ * carries auth the same way every other call does; a plain link would hit the
+ * endpoint unauthenticated.
+ */
+export const downloadDocument = async (documentId: number): Promise<Blob> => {
+  const response = await api.get<Blob>(`/documents/${documentId}/download`, {
+    responseType: "blob",
+  });
+  return response.data;
+};
+
 export const deleteDocument = async (documentId: number): Promise<void> => {
   await api.delete(`/documents/${documentId}`);
 };
