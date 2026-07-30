@@ -49,10 +49,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
-    "baseline-browser-mapping": "^2.11.4",
+    "baseline-browser-mapping": "^2.11.7",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "typescript": "^6",
     "vitest": "^4.1.10"
