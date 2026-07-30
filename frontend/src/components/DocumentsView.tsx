@@ -8,11 +8,15 @@ import {
   AlertCircle,
   Loader2,
   File,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import type { RecordingId } from "@/types";
 import { Document, getDocuments, deleteDocument } from "@/lib/api";
+import { reparseDocument } from "@/lib/api/documents";
 import DocumentUploadModal from "./DocumentUploadModal";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { getErrorMessage } from "@/lib/errors";
 import ConfirmationModal from "./ConfirmationModal";
 
 interface DocumentsViewProps {
@@ -27,6 +31,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(
     null,
   );
+  const [reparsingId, setReparsingId] = useState<number | null>(null);
   const { addNotification } = useNotificationStore();
   const notifiedDocumentErrorsRef = useRef<Set<string>>(new Set());
 
@@ -86,6 +91,35 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       });
     });
   }, [addNotification, documents]);
+
+  const handleReparse = async (target: Document) => {
+    setReparsingId(target.id);
+    try {
+      const updated = await reparseDocument(target.id, { deepParse: true });
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === updated.id ? updated : d)),
+      );
+      // Clear the recorded error so a repeat failure notifies again rather
+      // than being swallowed as already-seen.
+      notifiedDocumentErrorsRef.current.forEach((signature) => {
+        if (signature.startsWith(`${target.id}:`)) {
+          notifiedDocumentErrorsRef.current.delete(signature);
+        }
+      });
+      addNotification({
+        type: "success",
+        message: `Parsing "${target.title}" again with visual analysis.`,
+      });
+    } catch (e: unknown) {
+      console.error("Failed to re-parse document", e);
+      addNotification({
+        type: "error",
+        message: getErrorMessage(e, "Failed to start parsing again."),
+      });
+    } finally {
+      setReparsingId(null);
+    }
+  };
 
   const handleDelete = async () => {
     if (!documentToDelete) return;
@@ -184,6 +218,22 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                   </div>
                   <div className="flex gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
                     <button
+                      onClick={() => handleReparse(doc)}
+                      disabled={
+                        reparsingId === doc.id ||
+                        doc.status === "PENDING" ||
+                        doc.status === "PROCESSING"
+                      }
+                      className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      title="Parse again with visual analysis"
+                    >
+                      {reparsingId === doc.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                    </button>
+                    <button
                       onClick={() => setDocumentToDelete(doc)}
                       className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                       title="Delete Document"
@@ -206,9 +256,40 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                     </h4>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                       {new Date(doc.created_at).toLocaleDateString()}
+                      {doc.status === "READY" && doc.page_count
+                        ? ` · ${doc.page_count} ${doc.page_count === 1 ? "page" : "pages"}`
+                        : null}
                     </p>
                   </div>
                 </div>
+
+                {/* Per-page progress. A visual parse can run for minutes, so a
+                    bare spinner would leave the user with no sense of movement. */}
+                {(doc.status === "PROCESSING" || doc.status === "PENDING") &&
+                  !!doc.page_count && (
+                    <div className="mb-1">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                        <div
+                          className="h-full rounded-full bg-orange-500 transition-all"
+                          style={{
+                            width: `${Math.min(100, Math.round((doc.pages_parsed / doc.page_count) * 100))}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {doc.pages_parsed} of {doc.page_count} pages
+                      </p>
+                    </div>
+                  )}
+
+                {/* Non-fatal downgrade: the document is usable, but was parsed
+                    without visual analysis and says why. */}
+                {doc.status === "READY" && doc.parse_warning && (
+                  <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 p-2 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    <p className="text-xs">{doc.parse_warning}</p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
