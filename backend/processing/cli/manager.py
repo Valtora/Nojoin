@@ -22,7 +22,7 @@ import queue
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, Sequence
 
 from sqlmodel import Session, select
 
@@ -38,6 +38,7 @@ from backend.processing.cli.env_scrub import scrubbed_environ, subscription_env_
 from backend.services.cli_oauth import codex_oauth, oauth
 from backend.services.cli_oauth.persistence import user_cli_dir
 from backend.utils.time import utc_now
+from backend.utils.vision import VisionImage
 
 logger = logging.getLogger(__name__)
 
@@ -189,20 +190,31 @@ class CliConversationManager:
         *,
         model: Optional[str] = None,
         timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        images: Optional[Sequence[VisionImage]] = None,
     ) -> str:
-        """Resolve a fresh token, run one non-streaming turn, return the text."""
+        """Resolve a fresh token, run one non-streaming turn, return the text.
+
+        ``images`` attaches one or more images to the turn. Both providers
+        support this without loosening the tools-off posture: Codex takes
+        ``--image <FILE>`` arguments, and Claude takes inline content blocks.
+        """
         access_token = self._resolve_access_token(user_id)
         try:
             if self._is_codex():
                 text, usage = asyncio.run(
                     self._codex().arun_single_turn(
-                        user_id, prompt, access_token, model=model, timeout=timeout
+                        user_id,
+                        prompt,
+                        access_token,
+                        model=model,
+                        timeout=timeout,
+                        images=images,
                     )
                 )
             else:
                 text, usage = asyncio.run(
                     self._arun_single_turn(
-                        user_id, prompt, access_token, model, timeout
+                        user_id, prompt, access_token, model, timeout, images
                     )
                 )
         except CliUsageLimitError as exc:
@@ -491,13 +503,14 @@ class CliConversationManager:
             include_partial_messages=include_partial_messages,
         )
 
-    async def _arun_single_turn(
+    async def _arun_single_turn(  # noqa: PLR0913 - cohesive SDK driver params
         self,
         user_id: int,
         prompt: str,
         access_token: str,
         model: Optional[str],
         timeout: int,
+        images: Optional[Sequence[VisionImage]] = None,
     ) -> tuple[str, _TurnUsage]:
         from claude_agent_sdk import (  # lazy: SDK only in worker-io
             AssistantMessage,
@@ -509,6 +522,14 @@ class CliConversationManager:
         )
 
         options = self._build_options(access_token, model, user_id)
+        # Images ride inline as content blocks through the SDK's streaming-input
+        # mode. This is deliberately NOT the "hand the CLI a file path" route:
+        # that would need the Read tool enabled and max_turns raised above one,
+        # undoing the tools-off, single-turn posture this manager exists to
+        # keep. Inline blocks leave allowed_tools=[] and max_turns=1 intact.
+        prompt_arg: Any = prompt
+        if images:
+            prompt_arg = _image_prompt_stream(prompt, images)
         parts: list[str] = []
         result_error: str | None = None
         rate_limit: tuple[Optional[datetime], Optional[str]] | None = None
@@ -519,7 +540,7 @@ class CliConversationManager:
                     # Drain the generator fully (no early break) so the SDK closes
                     # its subprocess and async generator cleanly; ResultMessage is
                     # terminal for a single-turn query.
-                    async for message in query(prompt=prompt, options=options):
+                    async for message in query(prompt=prompt_arg, options=options):
                         if isinstance(message, AssistantMessage):
                             parts.extend(_assistant_text(message, TextBlock))
                         elif isinstance(message, RateLimitEvent):
@@ -603,6 +624,33 @@ class CliConversationManager:
         except OSError:  # best-effort; exotic filesystems may reject chmod
             pass
         return str(base)
+
+
+async def _image_prompt_stream(prompt: str, images: Sequence[VisionImage]):
+    """One user message carrying images and text, in the CLI's stream-json shape.
+
+    The SDK passes these dicts through to the CLI verbatim, so the structure is
+    the Messages API wire format rather than anything SDK-specific. Text goes
+    last: the instruction refers to images the model has already read.
+    """
+    content: list[dict[str, Any]] = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": image.media_type,
+                "data": image.to_base64(),
+            },
+        }
+        for image in images
+    ]
+    content.append({"type": "text", "text": prompt})
+    yield {
+        "type": "user",
+        "message": {"role": "user", "content": content},
+        "parent_tool_use_id": None,
+        "session_id": "default",
+    }
 
 
 def _assistant_text(message, text_block_cls) -> list[str]:

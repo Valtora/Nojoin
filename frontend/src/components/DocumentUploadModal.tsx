@@ -2,8 +2,13 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, FileText, Loader2, CheckCircle } from 'lucide-react';
+import { X, Upload, FileText, Loader2, CheckCircle, Sparkles, AlertTriangle } from 'lucide-react';
 import { uploadDocument } from '@/lib/api';
+import {
+    DOCUMENT_SIZE_WARNING_BYTES,
+    SUPPORTED_DOCUMENT_FORMATS,
+    VISION_ONLY_DOCUMENT_FORMATS,
+} from '@/lib/api/documents';
 import { getErrorMessage } from '@/lib/errors';
 import type { RecordingId } from '@/types';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -30,22 +35,27 @@ const getFileExtension = (filename: string): string => {
     return lastDot !== -1 ? filename.substring(lastDot).toLowerCase() : '';
 };
 
+const supportedFormats = [...SUPPORTED_DOCUMENT_FORMATS];
+const visionOnlyFormats: readonly string[] = VISION_ONLY_DOCUMENT_FORMATS;
+const maxSizeMB = 250;
+
 export default function DocumentUploadModal({ isOpen, onClose, onSuccess, recordingId }: DocumentUploadModalProps) {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [uploadState, setUploadState] = useState<UploadState>('idle');
     const [isDragging, setIsDragging] = useState(false);
+    // Visual analysis is on by default: text-only extraction misses charts,
+    // diagrams and anything scanned, which is the common case for decks.
+    const [deepParse, setDeepParse] = useState(true);
     const { addNotification } = useNotificationStore();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropZoneRef = useRef<HTMLDivElement>(null);
 
-    const supportedFormats = ['.pdf', '.txt', '.md'];
-    const maxSizeMB = 100;
-
     const resetState = useCallback(() => {
         setSelectedFile(null);
         setUploadState('idle');
         setIsDragging(false);
+        setDeepParse(true);
     }, []);
 
     const handleClose = useCallback(() => {
@@ -56,7 +66,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
 
     const validateFile = (file: File): string | null => {
         const extension = getFileExtension(file.name);
-        if (!supportedFormats.includes(extension)) {
+        if (!supportedFormats.includes(extension as (typeof SUPPORTED_DOCUMENT_FORMATS)[number])) {
             return `Unsupported format "${extension}". Supported: ${supportedFormats.join(', ')}`;
         }
         if (file.size > maxSizeMB * 1024 * 1024) {
@@ -75,6 +85,11 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
 
         setSelectedFile(file);
         setUploadState('idle');
+        // An image has no text layer, so turning visual analysis off would
+        // leave nothing at all to index.
+        if (visionOnlyFormats.includes(getFileExtension(file.name))) {
+            setDeepParse(true);
+        }
     };
 
     const handleDragEnter = (e: React.DragEvent) => {
@@ -120,7 +135,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
         setUploadState('uploading');
 
         try {
-            await uploadDocument(recordingId, selectedFile);
+            await uploadDocument(recordingId, selectedFile, { deepParse });
             setUploadState('success');
 
             setTimeout(() => {
@@ -128,7 +143,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 handleClose();
             }, 1500);
 
-                } catch (error: unknown) {
+        } catch (error: unknown) {
             setUploadState('idle');
             addNotification({
                 type: 'error',
@@ -147,6 +162,11 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
 
     if (!isOpen) return null;
 
+    const isVisionOnly = selectedFile
+        ? visionOnlyFormats.includes(getFileExtension(selectedFile.name))
+        : false;
+    const isLargeFile = !!selectedFile && selectedFile.size > DOCUMENT_SIZE_WARNING_BYTES;
+
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg flex flex-col border border-gray-300 dark:border-gray-800">
@@ -163,7 +183,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 </div>
 
                 {/* Content */}
-                <div className="p-6 space-y-6">
+                <div className="p-6 space-y-5">
                     {/* Drop Zone */}
                     <div
                         ref={dropZoneRef}
@@ -175,10 +195,10 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                         className={`
               relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
               ${isDragging
-                                ? 'border-blue-500 bg-blue-100 dark:bg-blue-900/20'
+                                ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20'
                                 : selectedFile
                                     ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                                    : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-600'
+                                    : 'border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600'
                             }
               ${uploadState === 'uploading' ? 'pointer-events-none opacity-75' : ''}
             `}
@@ -213,14 +233,54 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                             <div className="space-y-2">
                                 <Upload className="w-12 h-12 mx-auto text-gray-400" />
                                 <p className="text-gray-600 dark:text-gray-400">
-                                    <span className="font-medium text-blue-500">Click to browse</span> or drag and drop
+                                    <span className="font-medium text-orange-600 dark:text-orange-400">Click to browse</span> or drag and drop
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                    PDF, TXT, MD up to 100MB
+                                    PDF, PowerPoint, Word, Excel, CSV, text, Markdown or images, up to {maxSizeMB}MB
                                 </p>
                             </div>
                         )}
                     </div>
+
+                    {/* Visual analysis */}
+                    <label
+                        className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${isVisionOnly
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-800/40'
+                            : 'cursor-pointer border-gray-200 hover:border-orange-300 dark:border-gray-800 dark:hover:border-orange-500/30'
+                            }`}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={deepParse}
+                            disabled={isVisionOnly || uploadState === 'uploading'}
+                            onChange={(e) => setDeepParse(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 accent-orange-600"
+                        />
+                        <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900 dark:text-white">
+                                <Sparkles className="h-4 w-4 text-orange-500" />
+                                Analyse visually with AI
+                            </span>
+                            <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                                {isVisionOnly
+                                    ? 'Required for images: there is no text to extract without it.'
+                                    : 'Reads charts, diagrams, tables and scanned pages that text extraction alone would miss. Uses your configured AI provider.'}
+                            </span>
+                        </span>
+                    </label>
+
+                    {/* Large-file cost warning */}
+                    {isLargeFile && deepParse && (
+                        <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                            <p className="text-xs">
+                                This file is {formatFileSize(selectedFile.size)}. With visual analysis on, every
+                                page is sent to your AI provider, so a document this size can take a while to
+                                parse and will use a noticeable amount of provider quota. Parsing runs in the
+                                background and you can keep working.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Success Message */}
                     {uploadState === 'success' && (
@@ -244,7 +304,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                     <button
                         onClick={handleUpload}
                         disabled={!selectedFile || uploadState === 'uploading' || uploadState === 'success'}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                         {uploadState === 'uploading' ? (
                             <>

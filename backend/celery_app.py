@@ -154,6 +154,12 @@ celery_app = Celery(
 GPU_QUEUE = "gpu"
 CPU_QUEUE = "cpu"
 IO_QUEUE = "io"
+# Document parsing gets its own lane rather than sharing io. A parse has no page
+# cap, so one large upload can hold a slot for a long time; on the io lane that
+# would sit alongside Meeting Edge, meeting chat and notes generation, and
+# degrade a live meeting. The lane runs the worker-io image (vision may route
+# through a subscription CLI, whose binaries ship only there).
+PARSE_QUEUE = "parse"
 
 # Explicit per-task routing. Anything unrouted falls back to the GPU lane
 # (`task_default_queue`), the safe default: a mis-routed GPU task still finds
@@ -192,7 +198,10 @@ TASK_ROUTES = {
     "backend.worker.tasks.generate_notes_structure_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.codex_device_login_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.refresh_codex_models_task": {"queue": IO_QUEUE},
-    "backend.worker.tasks.process_document_task": {"queue": IO_QUEUE},
+    # Parse lane: unbounded-duration document work, isolated from live meetings.
+    "backend.worker.tasks.process_document_task": {"queue": PARSE_QUEUE},
+    "backend.worker.tasks.rebuild_text_embeddings_task": {"queue": PARSE_QUEUE},
+    "backend.worker.tasks.rebuild_recording_index_task": {"queue": PARSE_QUEUE},
     "backend.worker.tasks.index_transcript_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.get_text_embedding_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.sync_calendar_connection_task": {"queue": IO_QUEUE},

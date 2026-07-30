@@ -227,7 +227,7 @@ deliberately prefer warmer repeated processing over idle VRAM across the board.
 
 To stop a long recording finalise from blocking every other user's live
 transcription, notes, chat, and calendar sync, worker tasks are split across
-three Celery queues, each drained by its own container:
+four Celery queues, each drained by its own container:
 
 - `worker-gpu` — GPU-bound inference (recording finalise, live ASR, speaker
   embeddings). Single-slot (`--pool=solo --concurrency=1`): with one GPU, heavy
@@ -238,6 +238,13 @@ three Celery queues, each drained by its own container:
 - `worker-io` — network-bound work: Meeting Edge, notes, chat embeddings,
   calendar sync, and cleanup (`--pool=prefork --concurrency=4`). No GPU. Also
   runs Celery Beat.
+- `worker-parse` — document parsing and RAG index rebuilds
+  (`--pool=prefork --concurrency=2`). No GPU. Runs the **`worker-io` image**,
+  not a separate one: visual parsing may route through a subscription CLI whose
+  binaries ship only there, so this lane adds a container but no extra build and
+  no extra image to scan. Separate from `worker-io` because a parse has no page
+  cap and one large upload can hold a slot for a long time; sharing the IO lane
+  would let that degrade Meeting Edge during a live meeting.
 
 Task-to-queue routing is defined in `backend/celery_app.py` (`TASK_ROUTES`);
 anything unrouted falls back to the GPU lane. Tune the `--concurrency` values in
@@ -245,9 +252,9 @@ anything unrouted falls back to the GPU lane. Tune the `--concurrency` values in
 memory), while the GPU lane should stay at `--concurrency=1` unless you have
 multiple GPUs, or a single card large enough to hold two concurrent pipelines.
 
-With three worker containers plus the API, several worker processes each keep a
+With four worker containers plus the API, several worker processes each keep a
 small database connection pool. The default PostgreSQL `max_connections` (100)
-comfortably covers the reference `3` / `4` lane sizing; if you scale the lanes
+comfortably covers the reference `3` / `4` / `2` lane sizing; if you scale the lanes
 much wider, raise `max_connections` to match.
 
 Change `--concurrency` freely, but treat `--pool` as load-bearing. `solo` and
@@ -745,6 +752,21 @@ The notes below describe one-time migrations that run automatically when you fir
 - Browser-capture cutover: the Windows desktop helper has been retired. Users start live recordings directly from the Nojoin web app in a supported browser. Existing recordings remain viewable and process through the same backend pipeline; any remaining native-helper installs are obsolete and should be removed from user machines.
 - Canonical-pipeline cutover (first upgrade only): if the database still contains pre-cutover recordings, the first upgrade across this cutover runs a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on that first boot. During the sweep, existing recordings are classified entirely on the backend: successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalised safely are marked for explicit reprocess instead of being edited in place. The supported rollback model for this cutover is code rollback only; canonical rows created during the migration are additive and are not converted back into legacy-only transcript state.
 - Live-pipeline lane-state migration: this adds ASR and diarisation fields to `recording_audio_window_manifests` and backfills them from legacy window status plus completed diarisation window results. No operator action is required beyond allowing Alembic to run during normal container startup, but take a database backup before upgrade and avoid downgrading after the migration unless you are prepared to restore from backup.
+- **RAG embedding cutover (destructive, one time).** The search and meeting-chat embedding model changes from `all-MiniLM-L6-v2` to `jina-embeddings-v2-small-en`. The old model truncated its input at roughly 256 tokens, so the tail of any real document page was never searchable; the new one has an 8192-token window, which lets a whole page be a single retrieval unit.
+
+  Vectors produced by two different models are not comparable at any width, so there is no migration path: the Alembic revision widens `context_chunks.embedding` from 384 to 512 dimensions and **deletes every existing row**. Semantic search and meeting chat return no results until the index is rebuilt.
+
+  Rebuilding is dispatched by `backend.worker.tasks.rebuild_text_embeddings_task`, which runs on the parse lane and re-indexes up to 50 recordings per call, skipping any already at the current version. It is idempotent, so it can be run repeatedly until it reports zero:
+
+  ```bash
+  docker compose exec worker-parse \
+    celery -A backend.celery_app.celery_app call \
+    backend.worker.tasks.rebuild_text_embeddings_task
+  ```
+
+  Re-indexing is local inference and costs nothing. Documents parsed before this release have no stored pages, so they are re-parsed structurally as part of the rebuild — never visually, so no AI provider quota is spent without being asked. Use **Parse again** on a document card to run visual analysis on one deliberately. Take a database backup before upgrading; the downgrade path is equally destructive, for the same reason.
+
+  The new model (roughly 120 MB) downloads to the model cache the first time a worker embeds anything, so the first rebuild call on an air-gapped host will fail until the cache is populated.
 
 ### Live Pipeline Readiness Notes
 

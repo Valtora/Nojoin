@@ -103,6 +103,8 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         # Save Notes
         transcript.notes = notes
         transcript.notes_status = "completed"
+        # Freshly generated notes reflect every READY document by definition.
+        transcript.notes_stale_documents = False
         transcript.error_message = None
         # Provenance: which template produced these notes, and its text at the
         # time, so a later edit or deletion cannot rewrite the record.
@@ -344,98 +346,6 @@ def infer_speakers_task(self, recording_id: int):
             _complete_speaker_inference_task(session, recording)
         except Exception as db_err:  # noqa: BLE001
             logger.error(f"Failed to revert recording status: {db_err}")
-
-
-@celery_app.task(
-    name="backend.worker.tasks.process_document_task", base=DatabaseTask, bind=True
-)
-def process_document_task(self, document_id: int):
-    """
-    Process an uploaded document: chunk text, embed, and store context chunks.
-    """
-    session = self.session
-    document = session.get(Document, document_id)
-    if not document:
-        logger.error(f"Document {document_id} not found.")
-        return
-
-    try:
-        document.status = DocumentStatus.PROCESSING
-        session.add(document)
-        session.commit()
-
-        # Read file content
-        content = ""
-        if document.file_path.endswith(".txt") or document.file_path.endswith(".md"):
-            with open(document.file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        elif document.file_path.endswith(".pdf"):
-            import fitz  # PyMuPDF
-
-            try:
-                doc = fitz.open(document.file_path)
-                for page in doc:
-                    content += page.get_text() + "\n\n"
-            except Exception as e:  # noqa: BLE001
-                logger.error(
-                    f"Failed to extract text from PDF {document.file_path}: {e}"
-                )
-                raise Exception(f"PDF extraction failed: {str(e)}")
-
-        if not content:
-            logger.warning(
-                f"File content empty or unsupported type: {document.file_path}"
-            )
-            pass
-
-        # Chunking Strategy (Simple overlapping sliding window)
-        CHUNK_SIZE = 500  # characters
-        OVERLAP = 50
-
-        chunks = []
-        if content:
-            start = 0
-            while start < len(content):
-                end = start + CHUNK_SIZE
-                chunk_text = content[start:end]
-                chunks.append(chunk_text)
-                start += CHUNK_SIZE - OVERLAP
-
-        if not chunks:
-            logger.warning(f"No chunks generated for document {document_id}")
-            document.status = DocumentStatus.READY
-            session.add(document)
-            session.commit()
-            return
-
-        # Embed chunks
-        from backend.processing.text_embedding import get_text_embedding_service
-
-        embedding_service = get_text_embedding_service()
-        vectors = embedding_service.embed(chunks)
-
-        # Store Chunks
-        for i, (text_chunk, vector) in enumerate(zip(chunks, vectors)):
-            db_chunk = ContextChunk(
-                recording_id=document.recording_id,
-                document_id=document.id,
-                content=text_chunk,
-                embedding=vector,
-                meta={"chunk_index": i, "source": "document"},
-            )
-            session.add(db_chunk)
-
-        document.status = DocumentStatus.READY
-        session.add(document)
-        session.commit()
-        logger.info(f"Processed document {document_id}: {len(chunks)} chunks created.")
-
-    except Exception as e:
-        logger.error(f"Failed to process document {document_id}: {e}", exc_info=True)
-        document.status = DocumentStatus.ERROR
-        document.error_message = str(e)
-        session.add(document)
-        session.commit()
 
 
 @celery_app.task(

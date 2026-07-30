@@ -33,6 +33,9 @@ describe("api public surface", () => {
     expect(runtimeNames).toMatchInlineSnapshot(`
       [
         "API_BASE_URL",
+        "DOCUMENT_SIZE_WARNING_BYTES",
+        "SUPPORTED_DOCUMENT_FORMATS",
+        "VISION_ONLY_DOCUMENT_FORMATS",
         "addPersonalDictionaryWord",
         "addSpellcheckIgnoredWord",
         "addTagToRecording",
@@ -70,6 +73,7 @@ describe("api public surface", () => {
         "discardRecordingCapture",
         "disconnectCalendarConnection",
         "downloadBackupFile",
+        "downloadDocument",
         "exportAudio",
         "exportBackupAsync",
         "exportContent",
@@ -125,6 +129,7 @@ describe("api public surface", () => {
         "getUserTasks",
         "getUsers",
         "getVersion",
+        "getVisionSupport",
         "importAudio",
         "importBackup",
         "inferSpeakers",
@@ -149,6 +154,7 @@ describe("api public surface", () => {
         "removeSpellcheckIgnoredWord",
         "removeTagFromRecording",
         "renameRecording",
+        "reparseDocument",
         "reportRecordingCaptureSources",
         "reprocessRecording",
         "resetNotesTemplate",

@@ -64,6 +64,7 @@ CREATE TABLE transcripts (
     notes_template_id INTEGER,
     notes_template_sections TEXT,
     notes_status VARCHAR(32) NOT NULL,
+    notes_stale_documents BOOLEAN DEFAULT 0,
     transcript_status VARCHAR(32) NOT NULL,
     error_message TEXT
 )
@@ -88,9 +89,11 @@ CREATE TABLE context_chunks (
     updated_at DATETIME NOT NULL,
     recording_id INTEGER NOT NULL,
     document_id INTEGER,
+    document_page_id INTEGER,
     content TEXT,
     embedding JSON,
-    meta JSON
+    meta JSON,
+    embedding_version INTEGER
 )
 """
 

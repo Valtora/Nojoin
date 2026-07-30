@@ -85,6 +85,7 @@ SCHEMA_STATEMENTS = [
         notes_template_id INTEGER,
         notes_template_sections TEXT,
         notes_status VARCHAR,
+        notes_stale_documents BOOLEAN DEFAULT 0,
         transcript_status VARCHAR,
         error_message TEXT
     )
@@ -177,9 +178,11 @@ SCHEMA_STATEMENTS = [
         id INTEGER PRIMARY KEY,
         recording_id INTEGER,
         document_id INTEGER,
+        document_page_id INTEGER,
         content TEXT,
         embedding JSON,
-        meta JSON
+        meta JSON,
+        embedding_version INTEGER
     )
     """,
 ]

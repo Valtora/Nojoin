@@ -28,6 +28,7 @@ from backend.utils.meeting_intelligence import (
 )
 from backend.utils.meeting_notes import MeetingEventContext, NotesPromptContext
 from backend.utils.speaker_name_suggestions import SpeakerInferenceResult
+from backend.utils.vision import VisionImage
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,30 @@ class CliLLMBackend(LLMBackend):
         max_tokens: int = 4096,
     ) -> str:
         return self._run(prompt)
+
+    def generate_text_from_images(
+        self,
+        prompt: str,
+        images: Sequence[VisionImage],
+        timeout: int = 120,
+        max_tokens: int = 8192,
+    ) -> str:
+        # Both subscription CLIs take images without any tool grant: Codex via
+        # `--image <FILE>`, Claude via inline content blocks on the streaming
+        # input. The manager picks the right one per provider.
+        return self._manager.run_single_turn(
+            self.user_id,
+            prompt,
+            model=self.model,
+            timeout=timeout,
+            images=images,
+        )
+
+    def supports_vision(self) -> Optional[bool]:
+        # Both CLIs accept images, but the model actually serving the
+        # subscription is chosen upstream and may not. None keeps the honest
+        # "attempt it and find out" behaviour of the hosted providers.
+        return None
 
     def generate_meeting_edge(
         self,

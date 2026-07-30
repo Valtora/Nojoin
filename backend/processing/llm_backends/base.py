@@ -39,6 +39,7 @@ from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
     append_user_notes_section,
+    build_documents_prompt_section,
     build_glossary_prompt_section,
     build_meeting_context_prompt_section,
     build_meeting_metadata_prompt_section,
@@ -51,6 +52,7 @@ from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     parse_speaker_inference_response,
 )
+from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +95,30 @@ def is_output_ceiling_error(exc: Exception) -> bool:
         marker in message
         for marker in ("greater than", "less than or equal", "maximum", "at most")
     )
+
+
+def is_vision_unsupported_error(exc: Exception) -> bool:
+    """Whether a provider error means "this model cannot accept images".
+
+    Every provider rejects image input with a 400 and its own wording, and none
+    of them expose a capability list worth querying up front. Matching the
+    message is unlovely but it is the only way to tell a model that lacks
+    vision from a transient failure -- and the two need opposite handling: one
+    downgrades the document to a structural parse permanently, the other is
+    worth retrying.
+    """
+    message = str(exc).lower()
+    markers = (
+        "does not support image",
+        "image input",
+        "image_url is not supported",
+        "not support vision",
+        "vision is not supported",
+        "invalid content type",
+        "unsupported content",
+        "multimodal",
+    )
+    return any(marker in message for marker in markers)
 
 
 class TruncatedNotesError(RuntimeError):
@@ -225,6 +251,39 @@ class LLMBackend:
         meeting notes from a single LLM call.
         """
         raise NotImplementedError
+
+    def supports_vision(self) -> Optional[bool]:
+        """Whether the configured model accepts images, if that is knowable.
+
+        ``None`` means "cannot be determined without trying", which is the
+        honest answer for every hosted provider: none of them publish a
+        queryable capability for a given model name, and hard-coding a list
+        would rot with each release. Ollama overrides this because it genuinely
+        can answer.
+
+        Callers must treat ``None`` as permission to attempt the call, not as a
+        refusal -- the real capability check is the first request, and
+        ``VisionUnsupportedError`` is how it reports back.
+        """
+        return None
+
+    def generate_text_from_images(
+        self,
+        prompt: str,
+        images: Sequence[VisionImage],
+        timeout: int = 120,
+        max_tokens: int = 8192,
+    ) -> str:
+        """One prompt plus one or more images in, raw text out.
+
+        Used by document parsing to transcribe a rendered page or describe a
+        figure. The default raises ``VisionUnsupportedError`` so a provider
+        that has not implemented it degrades the document to a structural parse
+        with a warning, rather than failing the upload outright.
+        """
+        raise VisionUnsupportedError(
+            f"{type(self).__name__} does not support image input."
+        )
 
     def generate_text(
         self,
@@ -436,6 +495,10 @@ class LLMBackend:
                 (
                     "# Meeting Context",
                     build_meeting_context_prompt_section(meeting_context),
+                ),
+                (
+                    "# Attached Documents",
+                    build_documents_prompt_section(context.documents),
                 ),
                 # Carries its own heading.
                 (

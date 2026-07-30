@@ -133,6 +133,7 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
     ),
     "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
     "documents": (_own("recording_id", "recordings"),),
+    "document_pages": (_own("document_id", "documents"),),
 }
 
 

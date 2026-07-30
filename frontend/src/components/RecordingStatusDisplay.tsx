@@ -8,6 +8,7 @@ import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 import AmbientWorkspace from "./AmbientWorkspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
+import LiveDocumentsPanel from "./LiveDocumentsPanel";
 import LiveMeetingControls from "./LiveMeetingControls";
 import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import MeetingEdgePanel from "./MeetingEdgePanel";
@@ -298,6 +299,7 @@ export default function RecordingStatusDisplay({
           disabled={notesAreLocked}
           disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
         />
+        <LiveDocumentsPanel recordingId={recording.id} />
       </div>
       </div>
     </AmbientWorkspace>

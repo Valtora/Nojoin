@@ -17,6 +17,7 @@ from backend.utils.meeting_notes import (
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
+from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ from backend.processing.llm_backends.base import (
     LLMBackend,
     TruncatedNotesError,
     _get_default_model_for_provider,
+    is_vision_unsupported_error,
     raise_if_output_truncated,
 )
 
@@ -254,6 +256,38 @@ class GeminiLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (text generation): {e}")
             raise RuntimeError(f"Gemini API error (text generation): {e}")
+
+    def generate_text_from_images(
+        self,
+        prompt: str,
+        images: Sequence[VisionImage],
+        timeout: int = 120,
+        max_tokens: int = 8192,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
+        from google.genai import types as genai_types
+
+        parts = [
+            genai_types.Part.from_bytes(data=image.data, mime_type=image.media_type)
+            for image in images
+        ]
+        parts.append(genai_types.Part.from_text(text=prompt))
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=parts,
+            )
+            return self._extract_text_from_response(response)
+        except Exception as e:  # noqa: BLE001
+            if is_vision_unsupported_error(e):
+                raise VisionUnsupportedError(
+                    f"The selected Gemini model ({self.model}) does not accept images."
+                ) from e
+            logger.error(f"Gemini API error (image generation): {e}")
+            raise RuntimeError(f"Gemini API error (image generation): {e}")
 
     def generate_meeting_edge(
         self,

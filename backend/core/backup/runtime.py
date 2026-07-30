@@ -27,6 +27,7 @@ from backend.models.calendar import (  # noqa: F401
 )
 from backend.models.chat import ChatMessage  # noqa: F401
 from backend.models.document import Document  # noqa: F401
+from backend.models.document_page import DocumentPage  # noqa: F401
 from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
@@ -59,6 +60,11 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("transcripts", Transcript),
     ("chat_messages", ChatMessage),
     ("documents", Document),
+    # Archived rather than rebuilt, unlike context_chunks. Re-embedding a page
+    # is free local inference, but re-parsing one can mean a paid vision call
+    # per page -- a restore that silently re-ran those would spend the user's
+    # provider quota to reproduce text the archive was already holding.
+    ("document_pages", DocumentPage),
 ]
 
 

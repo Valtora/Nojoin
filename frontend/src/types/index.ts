@@ -255,6 +255,12 @@ export interface Transcript extends BaseDBModel {
   meeting_edge_error_message?: string | null;
   speaker_name_suggestions?: SpeakerNameSuggestion[];
   notes_status?: string; // pending, generating, completed, error
+  /**
+   * A document finished parsing after these notes were generated, so they no
+   * longer reflect everything attached to the meeting. Prompts a regenerate;
+   * never triggers one, since that spends provider quota and overwrites edits.
+   */
+  notes_stale_documents?: boolean;
   transcript_status?: string; // pending, processing, completed, error
   error_message?: string;
 }

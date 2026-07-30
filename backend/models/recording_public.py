@@ -7,7 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.models.calendar import CalendarDashboardDayCountRead, CalendarEvent
 from backend.models.chat import ChatMessage
-from backend.models.document import Document, DocumentStatus
+from backend.models.document import (
+    Document,
+    DocumentParseMode,
+    DocumentStatus,
+    parse_looks_stalled,
+)
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
@@ -87,6 +92,9 @@ class TranscriptPublicRead(PublicModel):
         default_factory=list
     )
     notes_status: str = "pending"
+    # True when a document finished parsing after these notes were written,
+    # so they no longer reflect everything attached to the meeting.
+    notes_stale_documents: bool = False
     transcript_status: str = "pending"
     error_message: Optional[str] = None
 
@@ -109,8 +117,23 @@ class DocumentPublicRead(PublicModel):
     title: str
     file_path: str
     file_type: str
+    # NULL for documents uploaded before the column existed; the UI omits the
+    # size rather than stat()-ing a file that may since have changed.
+    file_size_bytes: Optional[int] = None
     status: DocumentStatus
     error_message: Optional[str] = None
+    # Parse state. `parse_warning` is non-fatal: the document is READY and
+    # searchable, but was parsed without visual analysis and says why.
+    parse_mode: DocumentParseMode = DocumentParseMode.VISUAL
+    parse_warning: Optional[str] = None
+    page_count: Optional[int] = None
+    pages_parsed: int = 0
+    # Which phase a running parse is in, for display. None when not parsing.
+    parse_stage: Optional[str] = None
+    # Computed server-side. The client must not derive this from updated_at:
+    # that timestamp carries no timezone, so a browser outside UTC misreads its
+    # age by the whole offset and shows every running parse as stalled.
+    is_stalled: bool = False
 
 
 class CalendarEventLinkRead(PublicModel):
@@ -218,6 +241,7 @@ def serialize_transcript(
             if isinstance(item, dict)
         ],
         notes_status=transcript.notes_status,
+        notes_stale_documents=bool(getattr(transcript, "notes_stale_documents", False)),
         transcript_status=transcript.transcript_status,
         error_message=transcript.error_message,
     )
@@ -254,8 +278,15 @@ def serialize_document(
         title=document.title,
         file_path=document.file_path,
         file_type=document.file_type,
+        file_size_bytes=document.file_size_bytes,
         status=document.status,
         error_message=document.error_message,
+        parse_mode=document.parse_mode,
+        parse_warning=document.parse_warning,
+        page_count=document.page_count,
+        pages_parsed=document.pages_parsed,
+        parse_stage=document.parse_stage,
+        is_stalled=parse_looks_stalled(document),
     )
 
 
