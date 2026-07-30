@@ -2,7 +2,7 @@ import logging
 import os
 from typing import Any, List, Union
 
-from .onnx_providers import verify_gpu_providers
+from .onnx_providers import gpu_is_present, verify_gpu_providers
 from .text_embedding_version import TEXT_EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
@@ -32,13 +32,28 @@ class TextEmbeddingService:
             try:
                 from fastembed import TextEmbedding
 
-                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                # Ask for CUDA only when a GPU is actually attached to this
+                # process. Requesting it on a CPU-only lane does not degrade
+                # gracefully: onnxruntime-gpu loads its CUDA provider library,
+                # finds no device, and takes the process down with SIGSEGV.
+                # A segfault cannot be caught, so the fallback below never runs
+                # and the Celery worker dies mid-task with WorkerLostError.
+                #
+                # This matters because text embedding runs on the io and parse
+                # lanes, neither of which is granted a GPU by compose --
+                # get_available_providers() is no help, since it reports what
+                # onnxruntime was compiled with rather than what is usable.
+                providers = ["CPUExecutionProvider"]
+                if gpu_is_present():
+                    providers.insert(0, "CUDAExecutionProvider")
+
                 self._model = TextEmbedding(
                     model_name=MODEL_NAME,
                     providers=providers,
                 )
-                # A TextEmbedding built with an unloadable CUDA provider still
-                # succeeds, on CPU, so the exception handler below never fires.
+                # Separate concern: with a GPU attached, CUDA can still be
+                # dropped for a missing shared library, and that silent CPU
+                # fallback is worth shouting about.
                 verify_gpu_providers(
                     self._model,
                     component=f"Text embedding model {MODEL_NAME}",
