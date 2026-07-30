@@ -7,7 +7,6 @@ import {
   Trash2,
   AlertCircle,
   Loader2,
-  File,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -21,6 +20,86 @@ import ConfirmationModal from "./ConfirmationModal";
 
 interface DocumentsViewProps {
   recordingId: RecordingId;
+}
+
+const POLL_INTERVAL_MS = 2000;
+
+const formatBytes = (bytes?: number | null): string => {
+  if (bytes === null || bytes === undefined) return "—";
+  if (bytes === 0) return "0 KB";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(
+    units.length - 1,
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+  );
+  const value = bytes / Math.pow(1024, index);
+  return `${value >= 10 || index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`;
+};
+
+/** Extension from the filename; the stored MIME type is client-supplied and unreliable. */
+const formatOf = (title: string): string => {
+  const dot = title.lastIndexOf(".");
+  return dot !== -1 ? title.slice(dot + 1).toUpperCase() : "—";
+};
+
+const isBusy = (doc: Document) =>
+  doc.status === "PENDING" || doc.status === "PROCESSING";
+
+function StatusCell({ doc }: { doc: Document }) {
+  if (doc.status === "ERROR") {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400"
+        title={doc.error_message ?? undefined}
+      >
+        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+        Failed
+      </span>
+    );
+  }
+
+  if (isBusy(doc)) {
+    // Percentage comes from pages, but the label comes from the stage: page
+    // counters reach "7 of 7" while indexing is still running, and without the
+    // stage that reads as a hang rather than as progress.
+    const total = doc.page_count ?? 0;
+    const done = Math.min(doc.pages_parsed, total || doc.pages_parsed);
+    const pct = total > 0 ? Math.round((done / total) * 100) : null;
+
+    return (
+      <div className="min-w-[9rem] space-y-1">
+        <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+          <div
+            className={`h-full rounded-full bg-orange-500 ${pct === null ? "w-1/3 animate-pulse" : "transition-all duration-500"}`}
+            style={pct === null ? undefined : { width: `${pct}%` }}
+          />
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {doc.parse_stage ?? "Starting"}
+          {total > 0 ? ` · ${done}/${total}` : null}
+        </p>
+      </div>
+    );
+  }
+
+  if (doc.parse_warning) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+        title={doc.parse_warning}
+      >
+        <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+        Text only
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-500" />
+      Ready
+    </span>
+  );
 }
 
 export default function DocumentsView({ recordingId }: DocumentsViewProps) {
@@ -41,8 +120,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       const docs = await getDocuments(recordingId);
       setDocuments(docs);
       setLoadFailed(false);
-
-        } catch (e: unknown) {
+    } catch (e: unknown) {
       console.error("Failed to load documents", e);
       setLoadFailed(true);
       addNotification({ type: "error", message: "Failed to load documents." });
@@ -57,19 +135,13 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
     }
   }, [recordingId, fetchDocuments]);
 
-  // Poll for status updates if any document is processing
+  // Poll while anything is in flight. Faster than the old 3s tick because the
+  // progress bar is now the primary signal that work is still moving.
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    const hasProcessing = documents.some(
-      (d) => d.status === "PENDING" || d.status === "PROCESSING",
-    );
-
-    if (hasProcessing) {
-      interval = setInterval(() => {
-        getDocuments(recordingId).then(setDocuments).catch(console.error);
-      }, 3000);
-    }
-
+    if (!documents.some(isBusy)) return;
+    const interval = setInterval(() => {
+      getDocuments(recordingId).then(setDocuments).catch(console.error);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [documents, recordingId]);
 
@@ -128,26 +200,11 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
       await deleteDocument(documentToDelete.id);
       addNotification({ type: "success", message: "Document deleted" });
       setDocuments((prev) => prev.filter((d) => d.id !== documentToDelete.id));
-
-        } catch (e: unknown) {
+    } catch (e: unknown) {
       console.error("Failed to delete document", e);
       addNotification({ type: "error", message: "Failed to delete document" });
     } finally {
       setDocumentToDelete(null);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "READY":
-        return "text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400";
-      case "ERROR":
-        return "text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400";
-      case "PROCESSING":
-      case "PENDING":
-        return "text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400";
-      default:
-        return "text-gray-600 bg-gray-50 dark:bg-gray-800 dark:text-gray-400";
     }
   };
 
@@ -167,7 +224,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -193,7 +250,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
               No documents yet
             </p>
             <p className="text-sm mt-1 mb-6">
-              Upload PDF, text, or markdown files for context.
+              Upload a PDF, deck, document, spreadsheet, or image for context.
             </p>
             <button
               onClick={() => setIsUploadModalOpen(true)}
@@ -204,94 +261,111 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:shadow-md transition-shadow relative group"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div
-                    className={`text-xs font-medium px-2 py-0.5 rounded-full ${getStatusColor(doc.status)}`}
+          // Wide content scrolls inside its own container so the panel never
+          // scrolls horizontally as a whole.
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[42rem] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                  <th scope="col" className="px-4 py-2.5 font-semibold">
+                    Name
+                  </th>
+                  <th scope="col" className="w-20 px-3 py-2.5 font-semibold">
+                    Format
+                  </th>
+                  <th scope="col" className="w-24 px-3 py-2.5 font-semibold">
+                    Size
+                  </th>
+                  <th scope="col" className="w-24 px-3 py-2.5 font-semibold">
+                    Pages
+                  </th>
+                  <th scope="col" className="w-48 px-3 py-2.5 font-semibold">
+                    Status
+                  </th>
+                  <th scope="col" className="w-24 px-3 py-2.5">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr
+                    key={doc.id}
+                    className="group border-b border-gray-100 transition-colors last:border-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
                   >
-                    {doc.status}
-                  </div>
-                  <div className="flex gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
-                    <button
-                      onClick={() => handleReparse(doc)}
-                      disabled={
-                        reparsingId === doc.id ||
-                        doc.status === "PENDING" ||
-                        doc.status === "PROCESSING"
-                      }
-                      className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
-                      title="Parse again with visual analysis"
-                    >
-                      {reparsingId === doc.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setDocumentToDelete(doc)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                      title="Delete Document"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                    <File className="w-6 h-6 text-gray-500 dark:text-gray-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4
-                      className="font-medium text-gray-900 dark:text-white truncate"
-                      title={doc.title}
-                    >
-                      {doc.title}
-                    </h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {new Date(doc.created_at).toLocaleDateString()}
-                      {doc.status === "READY" && doc.page_count
-                        ? ` · ${doc.page_count} ${doc.page_count === 1 ? "page" : "pages"}`
-                        : null}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Per-page progress. A visual parse can run for minutes, so a
-                    bare spinner would leave the user with no sense of movement. */}
-                {(doc.status === "PROCESSING" || doc.status === "PENDING") &&
-                  !!doc.page_count && (
-                    <div className="mb-1">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                        <div
-                          className="h-full rounded-full bg-orange-500 transition-all"
-                          style={{
-                            width: `${Math.min(100, Math.round((doc.pages_parsed / doc.page_count) * 100))}%`,
-                          }}
-                        />
+                    <td className="max-w-0 px-4 py-3">
+                      <p
+                        className="truncate text-sm font-medium text-gray-900 dark:text-white"
+                        title={doc.title}
+                      >
+                        {doc.title}
+                      </p>
+                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        {new Date(doc.created_at).toLocaleDateString()}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                        {formatOf(doc.title)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
+                      {formatBytes(doc.file_size_bytes)}
+                    </td>
+                    <td className="px-3 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-300">
+                      {doc.page_count ?? "—"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusCell doc={doc} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-end gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                        <button
+                          onClick={() => handleReparse(doc)}
+                          disabled={reparsingId === doc.id || isBusy(doc)}
+                          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-orange-50 hover:text-orange-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400 dark:hover:bg-orange-900/20"
+                          title="Parse again with visual analysis"
+                        >
+                          {reparsingId === doc.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setDocumentToDelete(doc)}
+                          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
+                          title="Delete document"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {doc.pages_parsed} of {doc.page_count} pages
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Warnings sit below the table rather than inside a cell: they are
+                sentences, and a row that grows to fit one breaks the scan. */}
+            {documents.some((doc) => doc.parse_warning) && (
+              <div className="space-y-2 p-4">
+                {documents
+                  .filter((doc) => doc.parse_warning)
+                  .map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                    >
+                      <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                      <p className="text-xs">
+                        <span className="font-medium">{doc.title}:</span>{" "}
+                        {doc.parse_warning}
                       </p>
                     </div>
-                  )}
-
-                {/* Non-fatal downgrade: the document is usable, but was parsed
-                    without visual analysis and says why. */}
-                {doc.status === "READY" && doc.parse_warning && (
-                  <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 p-2 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                    <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                    <p className="text-xs">{doc.parse_warning}</p>
-                  </div>
-                )}
+                  ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>

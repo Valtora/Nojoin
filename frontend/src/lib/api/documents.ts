@@ -27,6 +27,8 @@ export interface Document {
   title: string;
   file_path: string;
   file_type: string;
+  /** Null for documents uploaded before the column existed. */
+  file_size_bytes?: number | null;
   status: "PENDING" | "PROCESSING" | "READY" | "ERROR";
   error_message?: string;
   /** What was requested, not what happened; see parse_warning. */
@@ -38,6 +40,12 @@ export interface Document {
   parse_warning?: string | null;
   page_count?: number | null;
   pages_parsed: number;
+  /**
+   * Which phase a running parse is in, for display. Null when not parsing.
+   * Page counters alone are ambiguous: they reach "7 of 7" while indexing is
+   * still running, which reads as a hang.
+   */
+  parse_stage?: string | null;
   created_at: string;
 }
 

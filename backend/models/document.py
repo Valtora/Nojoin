@@ -46,6 +46,9 @@ class Document(BaseDBModel, table=True):
     title: str = Field(index=True)
     file_path: str = Field(unique=True)  # Path to the file on disk
     file_type: str = Field(default="text/plain")  # mime type
+    # Recorded at upload rather than stat()-ed on read: the documents list is a
+    # hot path and the file may have been removed from disk since.
+    file_size_bytes: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
 
     status: DocumentStatus = Field(default=DocumentStatus.PENDING)
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
@@ -62,6 +65,10 @@ class Document(BaseDBModel, table=True):
     # `page_count` is None until the format has been opened and counted.
     page_count: Optional[int] = Field(default=None)
     pages_parsed: int = Field(default=0)
+    # Which phase the parse is in. Page counts alone are ambiguous: they reach
+    # "7 of 7" while indexing is still running, which reads as a hang. Short
+    # enough to render verbatim in the UI.
+    parse_stage: Optional[str] = Field(default=None)
 
     # Relationships
     recording: "Recording" = Relationship(back_populates="documents")

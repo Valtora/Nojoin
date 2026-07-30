@@ -116,7 +116,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
         request, "upload_document", str(current_user.id), 2
     ):
         try:
-            await stream_and_validate_upload(
+            size_bytes = await stream_and_validate_upload(
                 file=file,
                 dest_path=file_path,
                 max_size=UPLOAD_LIMIT_DOCUMENT,
@@ -137,6 +137,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
         title=file.filename,
         file_path=file_path,
         file_type=file.content_type or "application/octet-stream",
+        file_size_bytes=size_bytes,
         status=DocumentStatus.PENDING,
         parse_mode=(
             DocumentParseMode.VISUAL if deep_parse else DocumentParseMode.STRUCTURAL

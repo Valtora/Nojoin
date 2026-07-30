@@ -99,9 +99,10 @@ export default function LiveDocumentsPanel({
                 {doc.status === "PENDING" || doc.status === "PROCESSING" ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {doc.parse_stage ?? "Starting"}
                     {doc.page_count
-                      ? `${doc.pages_parsed}/${doc.page_count}`
-                      : "Reading"}
+                      ? ` ${doc.pages_parsed}/${doc.page_count}`
+                      : null}
                   </>
                 ) : doc.status === "ERROR" ? (
                   <>

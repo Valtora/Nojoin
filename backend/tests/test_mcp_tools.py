@@ -195,12 +195,14 @@ SCHEMA_STATEMENTS = [
         title VARCHAR(255) NOT NULL,
         file_path VARCHAR(1024) NOT NULL,
         file_type VARCHAR(128) NOT NULL DEFAULT 'text/plain',
+        file_size_bytes INTEGER,
         status VARCHAR(32) NOT NULL DEFAULT 'READY',
         error_message TEXT,
         parse_mode VARCHAR(32) NOT NULL DEFAULT 'VISUAL',
         parse_warning TEXT,
         page_count INTEGER,
-        pages_parsed INTEGER NOT NULL DEFAULT 0
+        pages_parsed INTEGER NOT NULL DEFAULT 0,
+        parse_stage VARCHAR(64)
     )
     """,
     """

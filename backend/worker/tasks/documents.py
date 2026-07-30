@@ -46,6 +46,11 @@ VISION_FAN_OUT = 3
 # document with hundreds of pages while keeping the write count sane.
 PAGE_FLUSH_BATCH = 8
 
+# Stage labels, rendered verbatim in the UI. Kept short and in progress order.
+STAGE_READING = "Reading pages"
+STAGE_ANALYSING = "Analysing pages with AI"
+STAGE_INDEXING = "Indexing for search"
+
 _NO_VISION_WARNING = (
     "Parsed without visual analysis: {reason} Charts, diagrams and scanned "
     "pages may be missing. Re-parse this document after selecting a "
@@ -229,6 +234,7 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
 def _fail(session, document: Document, message: str) -> None:
     document.status = DocumentStatus.ERROR
     document.error_message = message
+    document.parse_stage = None
     session.add(document)
     session.commit()
 
@@ -352,6 +358,7 @@ def _parse_document(session, document: Document) -> None:
     is_rendered = is_rendered_page_format(document.file_path)
 
     document.page_count = source.page_count
+    document.parse_stage = STAGE_ANALYSING if use_vision else STAGE_READING
     session.add(document)
     session.commit()
 
@@ -385,6 +392,10 @@ def _parse_document(session, document: Document) -> None:
             "was available. Select a model that supports images, then re-parse."
         )
 
+    document.parse_stage = STAGE_INDEXING
+    session.add(document)
+    session.commit()
+
     total_chunks = 0
     for page in writer.stored:
         total_chunks += _index_page(session, document, page)
@@ -392,6 +403,7 @@ def _parse_document(session, document: Document) -> None:
 
     document.status = DocumentStatus.READY
     document.parse_warning = warning or writer.warning
+    document.parse_stage = None
     session.add(document)
     session.commit()
 

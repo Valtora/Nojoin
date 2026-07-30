@@ -112,6 +112,9 @@ class DocumentPublicRead(PublicModel):
     title: str
     file_path: str
     file_type: str
+    # NULL for documents uploaded before the column existed; the UI omits the
+    # size rather than stat()-ing a file that may since have changed.
+    file_size_bytes: Optional[int] = None
     status: DocumentStatus
     error_message: Optional[str] = None
     # Parse state. `parse_warning` is non-fatal: the document is READY and
@@ -120,6 +123,8 @@ class DocumentPublicRead(PublicModel):
     parse_warning: Optional[str] = None
     page_count: Optional[int] = None
     pages_parsed: int = 0
+    # Which phase a running parse is in, for display. None when not parsing.
+    parse_stage: Optional[str] = None
 
 
 class CalendarEventLinkRead(PublicModel):
@@ -264,12 +269,14 @@ def serialize_document(
         title=document.title,
         file_path=document.file_path,
         file_type=document.file_type,
+        file_size_bytes=document.file_size_bytes,
         status=document.status,
         error_message=document.error_message,
         parse_mode=document.parse_mode,
         parse_warning=document.parse_warning,
         page_count=document.page_count,
         pages_parsed=document.pages_parsed,
+        parse_stage=document.parse_stage,
     )
 
 
