@@ -18,12 +18,14 @@ from backend.utils.ollama_url_policy import validate_ollama_api_url
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
+from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
 from backend.processing.llm_backends.base import (
     JSON_CONTRACT_ERRORS,
     LLMBackend,
+    is_vision_unsupported_error,
     summarize_llm_response_shape,
 )
 
@@ -99,6 +101,73 @@ class OllamaLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (list models): {e}")
             return []
+
+    def supports_vision(self) -> Optional[bool]:
+        """Whether the selected Ollama model accepts images.
+
+        Ollama is the one provider that answers this honestly up front:
+        ``/api/show`` returns a ``capabilities`` list. That matters here because
+        a self-hosted user picks their own model and has no other way to learn
+        that document parsing will silently downgrade -- the cloud providers
+        offer no equivalent, so they report ``None`` and are discovered on the
+        first call instead.
+
+        Returns ``None`` when the server is unreachable or predates the
+        capabilities field, which the caller treats as "try it and see" rather
+        than as a refusal.
+        """
+        if not self.model:
+            return None
+        try:
+            resp = self._post("/api/show", json={"model": self.model}, timeout=10)
+            resp.raise_for_status()
+            capabilities = resp.json().get("capabilities")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Ollama capability probe failed for {self.model}: {e}")
+            return None
+        if not isinstance(capabilities, list):
+            return None
+        return "vision" in {str(c).lower() for c in capabilities}
+
+    def generate_text_from_images(
+        self,
+        prompt: str,
+        images: Sequence[VisionImage],
+        timeout: int = 120,
+        max_tokens: int = 8192,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
+        # Ollama takes images as bare base64 strings on the message, not as
+        # typed content blocks -- no media_type is sent or wanted.
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image.to_base64() for image in images],
+                }
+            ],
+            "stream": False,
+            "options": self._chat_options(temperature=0.0),
+        }
+        try:
+            resp = self._post("/api/chat", json=payload, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            self._raise_if_truncated(data)
+            return (data.get("message") or {}).get("content", "")
+        except Exception as e:  # noqa: BLE001
+            if is_vision_unsupported_error(e):
+                raise VisionUnsupportedError(
+                    f"The selected Ollama model ({self.model}) does not accept images. "
+                    "Choose a vision-capable model in Settings."
+                ) from e
+            logger.error(f"Ollama API error (image generation): {e}")
+            raise RuntimeError(f"Ollama API error (image generation): {e}")
 
     def infer_speaker_suggestions(
         self,

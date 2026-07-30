@@ -22,6 +22,7 @@ from backend.utils.meeting_notes import (
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
+from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ from backend.processing.llm_backends.base import (
     LLMBackend,
     TruncatedNotesError,
     _get_default_model_for_provider,
+    is_vision_unsupported_error,
     raise_if_output_truncated,
 )
 
@@ -254,6 +256,42 @@ class OpenAILLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"OpenAI API error (text generation): {e}")
             raise RuntimeError(f"OpenAI API error (text generation): {e}")
+
+    def generate_text_from_images(
+        self,
+        prompt: str,
+        images: Sequence[VisionImage],
+        timeout: int = 120,
+        max_tokens: int = 8192,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
+        content: list[dict] = [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.media_type};base64,{image.to_base64()}"
+                },
+            }
+            for image in images
+        ]
+        content.append({"type": "text", "text": prompt})
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": content}],
+                timeout=timeout,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:  # noqa: BLE001
+            if is_vision_unsupported_error(e):
+                raise VisionUnsupportedError(
+                    f"The selected OpenAI model ({self.model}) does not accept images."
+                ) from e
+            logger.error(f"OpenAI API error (image generation): {e}")
+            raise RuntimeError(f"OpenAI API error (image generation): {e}")
 
     def generate_meeting_edge(
         self,

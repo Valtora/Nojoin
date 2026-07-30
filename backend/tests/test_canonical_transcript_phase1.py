@@ -94,8 +94,10 @@ CREATE TABLE context_chunks (
     updated_at DATETIME NOT NULL,
     recording_id INTEGER NOT NULL,
     document_id INTEGER,
+    document_page_id INTEGER,
     content TEXT,
-    embedding JSON
+    embedding JSON,
+    embedding_version INTEGER
 )
 """
 

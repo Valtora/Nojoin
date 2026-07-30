@@ -23,6 +23,7 @@ from backend.utils.meeting_notes import (
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
 )
+from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ from backend.processing.llm_backends.base import (
     TruncatedNotesError,
     _get_default_model_for_provider,
     is_output_ceiling_error,
+    is_vision_unsupported_error,
     raise_if_output_truncated,
 )
 
@@ -304,6 +306,53 @@ class AnthropicLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (text generation): {e}")
             raise RuntimeError(f"Anthropic API error (text generation): {e}")
+
+    def generate_text_from_images(
+        self,
+        prompt: str,
+        images: Sequence[VisionImage],
+        timeout: int = 120,
+        max_tokens: int = 8192,
+    ) -> str:
+        if not self.model:
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
+        content: list[dict] = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image.media_type,
+                    "data": image.to_base64(),
+                },
+            }
+            for image in images
+        ]
+        # Text after the images: the instruction should be the last thing read,
+        # and the images are what it refers to.
+        content.append({"type": "text", "text": prompt})
+        try:
+            response = self._create_with_ceiling(
+                (max_tokens,),
+                model=self.model,
+                messages=[{"role": "user", "content": content}],
+                temperature=0.0,
+            )
+            return (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else str(response.content[0])
+            )
+        except TruncatedNotesError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            if is_vision_unsupported_error(e):
+                raise VisionUnsupportedError(
+                    f"The selected Anthropic model ({self.model}) does not accept images."
+                ) from e
+            logger.error(f"Anthropic API error (image generation): {e}")
+            raise RuntimeError(f"Anthropic API error (image generation): {e}")
 
     def generate_meeting_edge(
         self,

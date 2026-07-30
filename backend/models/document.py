@@ -8,6 +8,7 @@ from .base import BaseDBModel
 
 if TYPE_CHECKING:
     from .context_chunk import ContextChunk
+    from .document_page import DocumentPage
     from .recording import Recording
 
 
@@ -16,6 +17,21 @@ class DocumentStatus(str, Enum):
     PROCESSING = "PROCESSING"
     READY = "READY"
     ERROR = "ERROR"
+
+
+class DocumentParseMode(str, Enum):
+    """What the uploader asked for, not what happened.
+
+    ``VISUAL`` is the default: pages are rendered and sent to a vision-capable
+    model so charts, diagrams and scanned pages survive. ``STRUCTURAL`` is the
+    per-upload opt-out, and is also where a visual parse lands when no vision
+    model is reachable -- in that case the requested mode stays ``VISUAL`` and
+    ``parse_warning`` explains the downgrade, so the user can retry after
+    fixing their model rather than being told the document simply failed.
+    """
+
+    VISUAL = "VISUAL"
+    STRUCTURAL = "STRUCTURAL"
 
 
 class Document(BaseDBModel, table=True):
@@ -34,8 +50,28 @@ class Document(BaseDBModel, table=True):
     status: DocumentStatus = Field(default=DocumentStatus.PENDING)
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
 
+    # Requested parse mode. See DocumentParseMode: this is the request, and
+    # `pages.parse_mode` records what each page actually got.
+    parse_mode: DocumentParseMode = Field(default=DocumentParseMode.VISUAL)
+
+    # Non-fatal degradation, surfaced on the document card. A document with a
+    # warning is still READY and still searchable.
+    parse_warning: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Progress, so a long parse reports something better than a spinner.
+    # `page_count` is None until the format has been opened and counted.
+    page_count: Optional[int] = Field(default=None)
+    pages_parsed: int = Field(default=0)
+
     # Relationships
     recording: "Recording" = Relationship(back_populates="documents")
+    pages: List["DocumentPage"] = Relationship(
+        back_populates="document",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "order_by": "DocumentPage.page_number",
+        },
+    )
     chunks: List["ContextChunk"] = Relationship(
         back_populates="document",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},

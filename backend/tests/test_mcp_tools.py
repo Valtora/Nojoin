@@ -195,6 +195,23 @@ SCHEMA_STATEMENTS = [
         file_path VARCHAR(1024) NOT NULL,
         file_type VARCHAR(128) NOT NULL DEFAULT 'text/plain',
         status VARCHAR(32) NOT NULL DEFAULT 'READY',
+        error_message TEXT,
+        parse_mode VARCHAR(32) NOT NULL DEFAULT 'VISUAL',
+        parse_warning TEXT,
+        page_count INTEGER,
+        pages_parsed INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE document_pages (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        document_id INTEGER NOT NULL,
+        page_number INTEGER NOT NULL,
+        title VARCHAR(512),
+        content TEXT NOT NULL DEFAULT '',
+        parse_mode VARCHAR(32) NOT NULL DEFAULT 'STRUCTURAL',
         error_message TEXT
     )
     """,
@@ -205,9 +222,11 @@ SCHEMA_STATEMENTS = [
         updated_at DATETIME NOT NULL,
         recording_id INTEGER NOT NULL,
         document_id INTEGER,
+        document_page_id INTEGER,
         content TEXT NOT NULL,
         embedding BLOB,
-        meta JSON
+        meta JSON,
+        embedding_version INTEGER
     )
     """,
     """
@@ -717,13 +736,14 @@ async def test_import_people_rejects_empty_and_oversized_batches(
 # --- get_documents ---------------------------------------------------------
 
 
-async def seed_document(
+async def seed_document(  # noqa: PLR0913 - one argument per seeded column
     session_maker,
     *,
     document_id: int,
     recording_id: int,
     title: str,
-    chunks: list[str],
+    pages: list[str],
+    page_titles: list[str] | None = None,
 ) -> None:
     async with session_maker() as session:
         await session.execute(
@@ -731,10 +751,11 @@ async def seed_document(
                 """
                 INSERT INTO documents (
                     id, created_at, updated_at, recording_id, title,
-                    file_path, file_type, status
+                    file_path, file_type, status, parse_mode, pages_parsed,
+                    page_count
                 ) VALUES (
                     :id, :ts, :ts, :rec, :title,
-                    :path, 'text/plain', 'READY'
+                    :path, 'text/plain', 'READY', 'VISUAL', :count, :count
                 )
                 """
             ),
@@ -744,21 +765,26 @@ async def seed_document(
                 "rec": recording_id,
                 "title": title,
                 "path": f"/data/documents/{document_id}.txt",
+                "count": len(pages),
             },
         )
-        for index, content in enumerate(chunks):
+        for index, content in enumerate(pages):
             await session.execute(
                 text(
                     """
-                    INSERT INTO context_chunks (
-                        created_at, updated_at, recording_id, document_id, content
-                    ) VALUES (:ts, :ts, :rec, :doc, :content)
+                    INSERT INTO document_pages (
+                        created_at, updated_at, document_id, page_number,
+                        title, content, parse_mode
+                    ) VALUES (
+                        :ts, :ts, :doc, :page, :page_title, :content, 'STRUCTURAL'
+                    )
                     """
                 ),
                 {
                     "ts": TEST_TIMESTAMP,
-                    "rec": recording_id,
                     "doc": document_id,
+                    "page": index + 1,
+                    "page_title": (page_titles or [None] * len(pages))[index],
                     "content": content,
                 },
             )
@@ -766,7 +792,7 @@ async def seed_document(
 
 
 @pytest.mark.anyio
-async def test_get_documents_reconstructs_text_from_chunks(
+async def test_get_documents_assembles_text_from_pages(
     session_maker, test_user: User, mcp_context
 ):
     bind_mcp_identity(test_user)
@@ -776,15 +802,39 @@ async def test_get_documents_reconstructs_text_from_chunks(
         document_id=5,
         recording_id=1,
         title="Agenda",
-        chunks=["Part one. ", "Part two."],
+        pages=["Part one.", "Part two."],
+        page_titles=[None, "Budget"],
     )
 
     docs = await get_documents(public_id)
 
     assert len(docs) == 1
     assert docs[0]["title"] == "Agenda"
-    assert docs[0]["text"] == "Part one. Part two."
+    # Pages are labelled and joined in order. The old implementation
+    # concatenated overlapping chunks, which repeated text at every boundary.
+    assert docs[0]["text"] == "[Page 1]\nPart one.\n\n[Page 2: Budget]\nPart two."
+    assert docs[0]["page_count"] == 2
     assert docs[0]["text_truncated"] is False
+
+
+@pytest.mark.anyio
+async def test_get_documents_skips_pages_with_no_content(
+    session_maker, test_user: User, mcp_context
+):
+    """A blank slide is normal and must not leave an empty labelled section."""
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_document(
+        session_maker,
+        document_id=6,
+        recording_id=1,
+        title="Deck",
+        pages=["Real content.", "   ", "More content."],
+    )
+
+    docs = await get_documents(public_id)
+
+    assert docs[0]["text"] == "[Page 1]\nReal content.\n\n[Page 3]\nMore content."
 
 
 @pytest.mark.anyio
@@ -792,19 +842,21 @@ async def test_get_documents_truncates_long_text(
     session_maker, test_user: User, mcp_context, monkeypatch
 ):
     bind_mcp_identity(test_user)
-    monkeypatch.setattr(mcp_server, "_DOCUMENT_TEXT_CHAR_LIMIT", 10)
+    monkeypatch.setattr(mcp_server, "_DOCUMENT_TEXT_CHAR_LIMIT", 18)
     public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
     await seed_document(
         session_maker,
         document_id=5,
         recording_id=1,
         title="Long",
-        chunks=["0123456789ABCDEF"],
+        pages=["0123456789ABCDEF"],
     )
 
     docs = await get_documents(public_id)
 
-    assert docs[0]["text"] == "0123456789"
+    # "[Page 1]\n" is 9 characters, so an 18-character budget keeps the label
+    # and the first nine characters of the body.
+    assert docs[0]["text"] == "[Page 1]\n012345678"
     assert docs[0]["text_truncated"] is True
 
 

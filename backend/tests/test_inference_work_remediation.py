@@ -177,9 +177,11 @@ SCHEMA_STATEMENTS = [
         id INTEGER PRIMARY KEY,
         recording_id INTEGER,
         document_id INTEGER,
+        document_page_id INTEGER,
         content TEXT,
         embedding JSON,
-        meta JSON
+        meta JSON,
+        embedding_version INTEGER
     )
     """,
 ]

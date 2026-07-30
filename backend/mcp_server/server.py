@@ -561,16 +561,16 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     """Get the documents attached to a recording, with their extracted text.
 
     These are the files uploaded to a meeting to ground its chat and notes.
-    Text is reconstructed from the same chunks the meeting chat searches and
-    is truncated per document beyond a size limit.
+    Text is assembled from the document's parsed pages and is truncated per
+    document beyond a size limit.
 
     Args:
         recording_id: The recording's string id from list_recordings.
     """
     from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
-    from backend.models.context_chunk import ContextChunk
     from backend.models.document import Document
+    from backend.models.document_page import DocumentPage
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
@@ -584,14 +584,26 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
 
         payload: list[dict[str, Any]] = []
         for document in documents:
-            # Select only content: loading whole ContextChunk rows would pull
-            # the 384-dim embedding vector we never use here.
-            chunk_result = await db.execute(
-                select(ContextChunk.content)
-                .where(ContextChunk.document_id == document.id)
-                .order_by(ContextChunk.id)
+            # Read the pages, not the chunks. Chunks used to be reassembled
+            # with "".join(), which re-emitted the 50-character overlap at
+            # every boundary and put a stutter into the middle of sentences.
+            # Pages hold the text once, in order, with no overlap by design.
+            page_result = await db.execute(
+                select(
+                    DocumentPage.page_number, DocumentPage.title, DocumentPage.content
+                )
+                .where(DocumentPage.document_id == document.id)
+                .order_by(DocumentPage.page_number)
             )
-            text = "".join(chunk_result.scalars())
+            sections: list[str] = []
+            for page_number, title, content in page_result.all():
+                if not (content or "").strip():
+                    continue
+                heading = f"[Page {page_number}]"
+                if title:
+                    heading = f"[Page {page_number}: {title}]"
+                sections.append(f"{heading}\n{content}")
+            text = "\n\n".join(sections)
             truncated = len(text) > _DOCUMENT_TEXT_CHAR_LIMIT
             payload.append(
                 {
@@ -603,6 +615,8 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
                         if hasattr(document.status, "value")
                         else document.status
                     ),
+                    "page_count": document.page_count,
+                    "parse_warning": document.parse_warning,
                     "text": text[:_DOCUMENT_TEXT_CHAR_LIMIT],
                     "text_truncated": truncated,
                 }

@@ -29,8 +29,9 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Iterator, Optional, Sequence
 
 # Intra-package imports of the manager's shared inference types/helpers. Safe from
 # a cycle because the manager only imports this module lazily (inside a method),
@@ -42,6 +43,7 @@ from backend.processing.cli.manager import (
     _usage_limit_error,
 )
 from backend.services.cli_oauth.persistence import user_cli_dir
+from backend.utils.vision import VisionImage
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +73,7 @@ class CodexExecDriver:
     def __init__(self, provider: str) -> None:
         self._provider = provider
 
-    async def arun_single_turn(
+    async def arun_single_turn(  # noqa: PLR0913 - cohesive driver params
         self,
         user_id: int,
         prompt: str,
@@ -79,6 +81,7 @@ class CodexExecDriver:
         *,
         model: Optional[str] = None,
         timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        images: Optional[Sequence[VisionImage]] = None,
     ) -> tuple[str, _TurnUsage]:
         codex_home = self._prepare_dir(user_id, "codex")
         workdir = self._prepare_dir(user_id, "codex-work")
@@ -88,9 +91,10 @@ class CodexExecDriver:
         # Clear any prior turn's output so a failed write can't read as success.
         last_message.unlink(missing_ok=True)
 
-        args = self._exec_args(model, workdir, last_message)
-        env = codex_child_env(str(codex_home))
-        return_code, stdout, stderr = await self._run(args, prompt, env, timeout)
+        with self._staged_images(workdir, images) as image_paths:
+            args = self._exec_args(model, workdir, last_message, image_paths)
+            env = codex_child_env(str(codex_home))
+            return_code, stdout, stderr = await self._run(args, prompt, env, timeout)
         if return_code != 0:
             raise self._classify_error(stderr)
 
@@ -99,6 +103,36 @@ class CodexExecDriver:
         if not text:
             raise CliOAuthUnavailableError("Codex inference returned no text.")
         return text, _TurnUsage(usage=_usage_from_jsonl(stdout))
+
+    @contextmanager
+    def _staged_images(
+        self, workdir: Path, images: Optional[Sequence[VisionImage]]
+    ) -> Iterator[list[Path]]:
+        """Materialise images inside the caller's per-user workdir, then remove them.
+
+        ``codex exec -i`` reads the file itself, so the bytes have to exist on
+        disk. They are staged in the per-user work directory rather than passed
+        from the shared documents directory: the sandbox is already scoped
+        there, and it keeps one user's parse from ever naming another user's
+        upload path.
+        """
+        if not images:
+            yield []
+            return
+        staged: list[Path] = []
+        try:
+            for index, image in enumerate(images):
+                suffix = ".jpg" if "jpeg" in image.media_type else ".png"
+                path = workdir / f"page-{index}{suffix}"
+                path.write_bytes(image.data)
+                staged.append(path)
+            yield staged
+        finally:
+            for path in staged:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:  # pragma: no cover - best effort cleanup
+                    pass
 
     async def astream_single_turn(  # noqa: PLR0913 - cohesive driver params
         self,
@@ -126,7 +160,11 @@ class CodexExecDriver:
     # ---- subprocess helpers ----
 
     def _exec_args(
-        self, model: Optional[str], workdir: Path, last_message: Path
+        self,
+        model: Optional[str],
+        workdir: Path,
+        last_message: Path,
+        image_paths: Optional[Sequence[Path]] = None,
     ) -> list[str]:
         args = [
             CODEX_PATH,
@@ -144,6 +182,11 @@ class CodexExecDriver:
         ]
         if model:
             args += ["-m", model]
+        # `-i` attaches images to the initial prompt. Codex reads the files
+        # itself, outside the agent loop, so this needs no tool grant and the
+        # read-only sandbox posture above is unchanged.
+        for image_path in image_paths or ():
+            args += ["-i", str(image_path)]
         args += ["-"]  # read the prompt from stdin
         return args
 

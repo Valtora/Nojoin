@@ -3,12 +3,15 @@ import os
 from typing import Any, List, Union
 
 from .onnx_providers import verify_gpu_providers
+from .text_embedding_version import TEXT_EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 
-# Model configuration
-# Default embedding model
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+# Model configuration. The name and its version stamp live together in
+# text_embedding_version so the API image -- which has no fastembed -- can
+# still reason about which stored vectors are comparable without importing
+# this module.
+MODEL_NAME = TEXT_EMBEDDING_MODEL
 
 os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 
