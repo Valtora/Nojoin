@@ -59,30 +59,42 @@ _NO_VISION_WARNING = (
 
 
 def _resolve_backend_for_document(session, document: Document):
-    """The LLM backend to use for this document's owner, or None.
+    """``(backend, reason)`` for this document's owner.
 
-    Returns None when the owner has no usable AI configuration at all, which is
-    a normal state for a fresh install and downgrades the parse rather than
-    failing it.
+    ``backend`` is None when visual analysis cannot run, and ``reason`` says
+    why, in the user's terms. The two are returned together because the reason
+    is shown on the document card: reporting "no AI provider is configured" for
+    an internal fault sends the user to fix settings that were never wrong.
     """
     recording = session.get(Recording, document.recording_id)  # noqa: F405
     if recording is None or recording.user_id is None:
-        return None
+        return None, "this document is not linked to a user account."
 
     user = session.get(User, recording.user_id)  # noqa: F405
     user_settings = (user.settings if user else None) or {}
     llm_config = resolve_llm_config(  # noqa: F405
         session, user_settings, user_id=recording.user_id
     )
-    if llm_config.missing_configuration_message():
-        return None
+    missing = llm_config.missing_configuration_message()
+    if missing:
+        return None, "no AI provider is configured for this account."
+
+    # Imported explicitly rather than taken from the `constants` wildcard: that
+    # module imports this factory inside a function, so it never enters the star
+    # namespace and the reference resolved to a NameError at runtime. Every
+    # document then downgraded to a structural parse, whatever the provider.
+    from backend.processing.llm_services import get_llm_backend_with_secondary
+
     try:
-        return get_llm_backend_with_secondary(  # noqa: F405
-            llm_config, purpose="document_parsing"
+        return (
+            get_llm_backend_with_secondary(llm_config, purpose="document_parsing"),
+            None,
         )
     except Exception as e:  # noqa: BLE001 - a bad config must not fail the parse
-        logger.warning("Could not build an LLM backend for document parsing: %s", e)
-        return None
+        logger.warning(
+            "Could not build an LLM backend for document parsing: %s", e, exc_info=True
+        )
+        return None, "the AI provider could not be reached. Check the server logs."
 
 
 def _existing_page_numbers(session, document_id: int) -> set[int]:
@@ -338,15 +350,9 @@ def _resolve_vision(session, document: Document):
     """(backend, use_vision, warning) for this document's requested parse mode."""
     if document.parse_mode != DocumentParseMode.VISUAL:
         return None, False, None
-    backend = _resolve_backend_for_document(session, document)
+    backend, reason = _resolve_backend_for_document(session, document)
     if backend is None:
-        return (
-            None,
-            False,
-            _NO_VISION_WARNING.format(
-                reason="no AI provider is configured for this account."
-            ),
-        )
+        return None, False, _NO_VISION_WARNING.format(reason=reason)
     return backend, True, None
 
 

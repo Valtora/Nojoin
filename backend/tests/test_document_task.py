@@ -178,3 +178,44 @@ def test_a_long_silent_parse_is_treated_as_stalled():
 def test_a_finished_document_is_never_stalled():
     for status in ("READY", "ERROR", "PENDING"):
         assert _document(status, 999) is False
+
+
+# ---------------------------------------------------------------------------
+# Backend resolution
+# ---------------------------------------------------------------------------
+
+
+def test_the_llm_factory_is_importable_from_the_task_module():
+    """Regression: the factory was reached through `from .constants import *`,
+    but constants imports it inside a function, so it never entered the star
+    namespace. Every document silently downgraded to a structural parse with a
+    warning blaming the user's provider settings."""
+    import backend.worker.tasks.documents as documents_task
+
+    source = documents_task._resolve_backend_for_document.__code__
+    referenced = set(source.co_names)
+    assert "get_llm_backend_with_secondary" in referenced
+
+    # The name must resolve for real, not just appear in the source.
+    from backend.processing.llm_services import (  # noqa: F401
+        get_llm_backend_with_secondary,
+    )
+
+
+def test_no_backend_reports_a_reason_the_user_can_act_on(monkeypatch):
+    """The reason is rendered on the document card, so an internal fault must
+    not read as "no AI provider is configured" and send the user to settings
+    that were never wrong."""
+    import backend.worker.tasks.documents as documents_task
+
+    class _Session:
+        def get(self, model, pk):
+            return None
+
+    class _Doc:
+        recording_id = 1
+
+    backend, reason = documents_task._resolve_backend_for_document(_Session(), _Doc())
+    assert backend is None
+    assert reason and reason.endswith(".")
+    assert "not linked to a user account" in reason
