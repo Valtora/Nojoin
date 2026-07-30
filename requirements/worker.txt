@@ -22,6 +22,10 @@ PyMuPDF==1.28.0
 python-pptx==1.0.2
 python-docx==1.2.0
 openpyxl==3.1.5
+# Thin wrapper over the tesseract binary installed in docker/Dockerfile.worker.
+# Pure Python with no compiled dependencies, so it cannot disturb the
+# onnxruntime-gpu pin the way an ONNX-based OCR package would.
+pytesseract==0.3.13
 
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks==0.4.0

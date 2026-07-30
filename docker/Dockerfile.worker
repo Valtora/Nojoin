@@ -67,6 +67,15 @@ RUN apt-get update && \
     libpq5 \
     libjemalloc2 \
     gosu \
+    # Local OCR for document parsing: the middle tier between a vision model
+    # and a format's own text layer, so a scanned page is readable with no AI
+    # provider configured. The system binary rather than an ONNX OCR package on
+    # purpose -- those depend on onnxruntime, which the pip step above
+    # deliberately replaces with onnxruntime-gpu, and reintroducing the CPU
+    # build alongside it is the exact conflict that replacement prevents.
+    # -eng only; other language packs are ~4 MB each and unused.
+    tesseract-ocr \
+    tesseract-ocr-eng \
     && \
     # The worker runs Celery and never invokes uv; remove the base image's uv
     # binaries so their bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) is absent

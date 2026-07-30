@@ -29,6 +29,7 @@ from backend.processing.documents import (
     is_vision_only_format,
     open_document,
 )
+from backend.processing.documents.ocr import ocr_images, ocr_is_available
 from backend.processing.documents.vision import merge_page_content, transcribe_page
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
 from backend.utils.vision import VisionUnsupportedError
@@ -51,10 +52,24 @@ STAGE_READING = "Reading pages"
 STAGE_ANALYSING = "Analysing pages with AI"
 STAGE_INDEXING = "Indexing for search"
 
+# A page whose own text layer is at least this long is left alone by OCR. OCR
+# transcribes glyphs and is strictly worse than a real text layer, so it is only
+# worth running where that layer is thin or absent -- a scanned page, or a slide
+# that is one big screenshot.
+OCR_TEXT_LAYER_THRESHOLD = 200
+
 _NO_VISION_WARNING = (
     "Parsed without visual analysis: {reason} Charts, diagrams and scanned "
     "pages may be missing. Re-parse this document after selecting a "
     "vision-capable model."
+)
+
+# Appended when local OCR carried pages the vision tier could not. Worth saying
+# separately: the text is there, so the document is genuinely usable, but what
+# OCR cannot give is any description of a chart or a diagram.
+_OCR_USED_NOTE = (
+    " Text was recovered from the page images using local OCR, so wording is "
+    "searchable, but charts and diagrams are not described."
 )
 
 
@@ -277,6 +292,7 @@ class _PageWriter:
         self._already_parsed = already_parsed
         self.use_vision = use_vision
         self.warning: Optional[str] = None
+        self.used_ocr = False
         self.stored: List[DocumentPage] = []
 
     def _transcriptions(self, batch: List) -> dict[int, str]:
@@ -296,25 +312,56 @@ class _PageWriter:
             )
             return {}
 
+    def _ocr_fallback(self, page_source) -> Optional[str]:
+        """Local OCR for a page the vision tier did not produce text for.
+
+        Only worth running when the page has images and its own text layer is
+        thin: OCR transcribes glyphs, so on a page that already has a good text
+        layer it can only be worse. This is what makes a scanned document
+        readable with no AI provider configured at all.
+        """
+        if not page_source.images:
+            return None
+        if len((page_source.text or "").strip()) >= OCR_TEXT_LAYER_THRESHOLD:
+            return None
+        return ocr_images(page_source.images)
+
     def flush(self, batch: List) -> None:
         if not batch:
             return
         transcriptions = self._transcriptions(batch)
 
         for page_source in batch:
-            was_visual = page_source.page_number in transcriptions
+            vision_text = transcriptions.get(page_source.page_number)
+            mode = PageParseMode.STRUCTURAL
+
+            if vision_text:
+                mode = PageParseMode.VISUAL
+                content = merge_page_content(
+                    page_source, vision_text, is_rendered_page=self._is_rendered
+                )
+            else:
+                # Tier two. Reached when vision is off, unavailable, or declined
+                # this page; a page that OCR also cannot read keeps whatever
+                # structural text the format gave it.
+                ocr_text = self._ocr_fallback(page_source)
+                if ocr_text:
+                    mode = PageParseMode.OCR
+                    self.used_ocr = True
+                content = merge_page_content(
+                    page_source,
+                    ocr_text,
+                    # Never let OCR replace a text layer: it is strictly worse
+                    # at text, and only ever additive.
+                    is_rendered_page=False,
+                )
+
             page = DocumentPage(
                 document_id=self._document.id,
                 page_number=page_source.page_number,
                 title=page_source.title,
-                content=merge_page_content(
-                    page_source,
-                    transcriptions.get(page_source.page_number),
-                    is_rendered_page=self._is_rendered,
-                ),
-                parse_mode=(
-                    PageParseMode.VISUAL if was_visual else PageParseMode.STRUCTURAL
-                ),
+                content=content,
+                parse_mode=mode,
             )
             self._session.add(page)
             self.stored.append(page)
@@ -393,10 +440,14 @@ def _parse_document(session, document: Document) -> None:
     if is_vision_only_format(document.file_path) and not any(
         (page.content or "").strip() for page in writer.stored
     ):
-        raise RuntimeError(
-            "This image could not be read because no vision-capable AI model "
-            "was available. Select a model that supports images, then re-parse."
+        detail = (
+            "no vision-capable AI model was available and local OCR is not "
+            "installed on this server."
+            if not ocr_is_available()
+            else "no vision-capable AI model was available, and local OCR found "
+            "no readable text in it."
         )
+        raise RuntimeError(f"This image could not be read: {detail}")
 
     document.parse_stage = STAGE_INDEXING
     session.add(document)
@@ -408,7 +459,10 @@ def _parse_document(session, document: Document) -> None:
     session.commit()
 
     document.status = DocumentStatus.READY
-    document.parse_warning = warning or writer.warning
+    parse_warning = warning or writer.warning
+    if parse_warning and writer.used_ocr:
+        parse_warning += _OCR_USED_NOTE
+    document.parse_warning = parse_warning
     document.parse_stage = None
     session.add(document)
     session.commit()

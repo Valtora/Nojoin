@@ -238,7 +238,8 @@ Text extraction alone misses most of what a slide deck or a scanned report actua
 - Turn it off per upload for a document that is genuinely plain text, or to avoid using AI provider quota. The file is still parsed, just without visual analysis.
 - It cannot be turned off for image uploads, which have no text to extract without it.
 - Your model must accept images. Every current hosted model from Anthropic, OpenAI, and Google does. If you use **Ollama**, you must select a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI**; a text-only model cannot read images and Nojoin will fall back to text extraction.
-- If visual analysis is unavailable, the document still parses and becomes searchable, and its card explains what was skipped and why. Use **Parse again** on the document card once a suitable model is configured.
+- If visual analysis is unavailable, Nojoin falls back to local OCR before giving up. OCR runs on your own server, costs nothing, and sends nothing anywhere, so a scanned page stays searchable even with no AI configured at all. What it cannot do is describe a chart or a diagram, only transcribe the words, and the document card says so when it was used.
+- If neither is available the document still parses from its own text layer, and the card explains what was skipped. Use **Parse again** on the document card once a suitable model is configured.
 
 PowerPoint, Word, and Excel files are read structurally as well as visually. This recovers speaker notes, table cells, and the exact underlying values of native charts, none of which a purely visual read would capture reliably. For a deck built mostly from SmartArt or hand-drawn diagrams, exporting it to PDF before uploading gives better results, because every page is then rendered in full.
 

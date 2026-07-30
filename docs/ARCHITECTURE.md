@@ -66,6 +66,14 @@ figures for Office formats. For a rendered page the model's output replaces the
 text layer, having been given it and asked to improve on it; for a figure it
 supplements the structural content, which the model never saw.
 
+Parsing degrades through three tiers rather than two. Visual analysis is the
+richest; below it sits local OCR (tesseract, in the worker image), which
+transcribes glyphs with no provider involved and makes a scanned page searchable
+on an install with no AI configured; below that is the format's own text layer.
+OCR is skipped on any page whose text layer is already substantial, since it is
+strictly worse at text than a real text layer, and it only ever supplements that
+layer rather than replacing it. Each page records which tier produced it.
+
 Pages are written as each completes, so a worker restart resumes from the first
 missing page instead of repeating vision calls that were already paid for.
 Vision requests fan out a few at a time. A provider that cannot accept images

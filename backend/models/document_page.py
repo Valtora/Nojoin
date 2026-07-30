@@ -16,9 +16,14 @@ class PageParseMode(str, Enum):
     Recorded per page rather than per document because escalation is decided
     page by page: a deck can have twelve structurally-parsed slides and three
     that went to the vision model, and the document card reports both.
+
+    Ordered by fidelity. ``VISUAL`` reads charts, diagrams and photographs;
+    ``OCR`` transcribes glyphs only, but runs locally with no provider; and
+    ``STRUCTURAL`` is the format's own text layer.
     """
 
     STRUCTURAL = "STRUCTURAL"
+    OCR = "OCR"
     VISUAL = "VISUAL"
 
 
