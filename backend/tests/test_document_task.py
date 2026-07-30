@@ -140,3 +140,41 @@ def test_the_default_backend_reports_no_vision_and_no_capability_answer():
     assert backend.supports_vision() is None
     with pytest.raises(VisionUnsupportedError):
         backend.generate_text_from_images("prompt", [])
+
+
+# ---------------------------------------------------------------------------
+# Stalled-parse recovery
+# ---------------------------------------------------------------------------
+
+
+def _document(status, minutes_since_write):
+    from datetime import timedelta
+
+    from backend.api.v1.endpoints.documents import _parse_looks_stalled
+    from backend.models.document import Document, DocumentStatus
+    from backend.utils.time import utc_now
+
+    document = Document(
+        recording_id=1,
+        title="deck.pdf",
+        file_path="/data/documents/deck.pdf",
+        status=getattr(DocumentStatus, status),
+    )
+    document.updated_at = utc_now() - timedelta(minutes=minutes_since_write)
+    return _parse_looks_stalled(document)
+
+
+def test_a_running_parse_is_not_treated_as_stalled():
+    assert _document("PROCESSING", 1) is False
+
+
+def test_a_long_silent_parse_is_treated_as_stalled():
+    """A worker that dies -- OOM, restart, segfault -- leaves the row PROCESSING
+    forever. Without this the document is unrecoverable from the UI, which is a
+    worse failure than the duplicate parse the guard prevents."""
+    assert _document("PROCESSING", 30) is True
+
+
+def test_a_finished_document_is_never_stalled():
+    for status in ("READY", "ERROR", "PENDING"):
+        assert _document(status, 999) is False

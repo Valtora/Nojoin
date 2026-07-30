@@ -47,6 +47,8 @@ export interface Document {
    */
   parse_stage?: string | null;
   created_at: string;
+  /** Bumped on every parse write, which is how a stalled parse is detected. */
+  updated_at: string;
 }
 
 export interface VisionSupport {

@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import timedelta
 from typing import List
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from backend.processing.documents import SUPPORTED_EXTENSIONS
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.time import utc_now
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_DOCUMENT,
     ensure_disk_headroom,
@@ -26,6 +28,12 @@ from backend.utils.upload_limit import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# How long a PROCESSING document may go without a write before it is treated as
+# abandoned. Generous on purpose: the longest legitimate gap is a single batch
+# of vision calls, and a false positive only permits a redundant re-parse while
+# a false negative wedges the document permanently.
+STALLED_PARSE_AFTER = timedelta(minutes=10)
 
 
 async def _get_owned_recording(
@@ -65,6 +73,22 @@ async def list_documents(
         serialize_document(document, recording_public_id=recording.public_id)
         for document in documents
     ]
+
+
+def _parse_looks_stalled(document: Document) -> bool:
+    """Whether a PROCESSING document's worker appears to have died.
+
+    Heuristic, and deliberately generous: a parse writes to the row on every
+    page batch and at every stage change, so silence for this long means the
+    task is gone rather than slow. Set well above the slowest realistic gap
+    between writes, which is one batch of vision calls.
+    """
+    if document.status != DocumentStatus.PROCESSING:
+        return False
+    last_write = document.updated_at or document.created_at
+    if last_write is None:
+        return True
+    return (utc_now() - last_write) > STALLED_PARSE_AFTER
 
 
 def _content_length(request: Request) -> int | None:
@@ -178,7 +202,14 @@ async def reparse_document(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if document.status == DocumentStatus.PROCESSING:
+    # A live parse touches the row on every page batch, so a PROCESSING
+    # document that has not been written to in a long time is one whose worker
+    # died -- an OOM kill, a restart, a segfault. Refusing those outright left
+    # the document permanently unrecoverable from the UI, which is a worse
+    # failure than the duplicate parse the guard exists to prevent.
+    if document.status == DocumentStatus.PROCESSING and not _parse_looks_stalled(
+        document
+    ):
         raise HTTPException(
             status_code=409,
             detail="This document is already being parsed.",

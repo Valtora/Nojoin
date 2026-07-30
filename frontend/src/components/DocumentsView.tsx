@@ -45,6 +45,18 @@ const formatOf = (title: string): string => {
 const isBusy = (doc: Document) =>
   doc.status === "PENDING" || doc.status === "PROCESSING";
 
+/**
+ * A parse writes to the row on every page batch and stage change, so a long
+ * silence means the worker died rather than that the work is slow. Showing this
+ * matters: without it a killed parse looks identical to a running one forever.
+ * Matches STALLED_PARSE_AFTER on the server, which is what actually permits the
+ * re-parse this state invites.
+ */
+const STALLED_AFTER_MS = 10 * 60 * 1000;
+
+const looksStalled = (doc: Document) =>
+  isBusy(doc) && Date.now() - new Date(doc.updated_at).getTime() > STALLED_AFTER_MS;
+
 function StatusCell({ doc }: { doc: Document }) {
   if (doc.status === "ERROR") {
     return (
@@ -54,6 +66,18 @@ function StatusCell({ doc }: { doc: Document }) {
       >
         <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
         Failed
+      </span>
+    );
+  }
+
+  if (looksStalled(doc)) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+        title="No progress recorded for over ten minutes. Use Parse again to restart it."
+      >
+        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+        Stalled
       </span>
     );
   }
@@ -322,7 +346,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                       <div className="flex justify-end gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                         <button
                           onClick={() => handleReparse(doc)}
-                          disabled={reparsingId === doc.id || isBusy(doc)}
+                          disabled={reparsingId === doc.id || (isBusy(doc) && !looksStalled(doc))}
                           className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-orange-50 hover:text-orange-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400 dark:hover:bg-orange-900/20"
                           title="Parse again with visual analysis"
                         >
