@@ -144,7 +144,11 @@ def test_upload_limit_constants():
     # Make sure defaults are set
     assert UPLOAD_LIMIT_SEGMENT == 15 * 1024 * 1024
     assert UPLOAD_LIMIT_LEGACY_RECORDING == 250 * 1024 * 1024
-    assert UPLOAD_LIMIT_DOCUMENT == 20 * 1024 * 1024
+    # Raised from 20 MB when visual parsing arrived: parsing is page-by-page
+    # with no page cap, so the old ceiling rejected scanned reports and large
+    # decks the parser handles fine. The free-disk pre-flight, not this number,
+    # is what protects the volume.
+    assert UPLOAD_LIMIT_DOCUMENT == 250 * 1024 * 1024
     # Deliberately generous: an Original-quality archive stores audio without
     # re-encoding, so a backup this server produces can be far larger than a compressed
     # one, and a tighter cap would make our own exports non-restorable.

@@ -3,21 +3,26 @@ import os
 from typing import List
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
-from backend.models.document import Document, DocumentStatus
+from backend.models.document import Document, DocumentParseMode, DocumentStatus
 from backend.models.recording import Recording
 from backend.models.recording_public import DocumentPublicRead, serialize_document
 from backend.models.user import User
+from backend.processing.documents import SUPPORTED_EXTENSIONS
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
-from backend.utils.upload_limit import UPLOAD_LIMIT_DOCUMENT, stream_and_validate_upload
+from backend.utils.upload_limit import (
+    UPLOAD_LIMIT_DOCUMENT,
+    ensure_disk_headroom,
+    stream_and_validate_upload,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -62,28 +67,48 @@ async def list_documents(
     ]
 
 
+def _content_length(request: Request) -> int | None:
+    raw = request.headers.get("content-length")
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
+
+
 @router.post("/recordings/{recording_id}/documents", response_model=DocumentPublicRead)
-async def upload_document(
+async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameters
     request: Request,
     recording_id: str,
     file: UploadFile = File(...),
+    deep_parse: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Upload a document (PDF, TXT, MD) to be included in the context.
+    """Upload a document to be included in the meeting's context.
+
+    ``deep_parse`` defaults to true: pages are sent to a vision-capable model so
+    charts, diagrams and scanned pages survive. Setting it false restricts the
+    parse to structural extraction, which costs nothing and calls no provider.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # Validate file type by extension.
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    if file_ext not in [".pdf", ".txt", ".md"]:
+    file_ext = os.path.splitext(file.filename or "")[1].lower()
+    if file_ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported file type. Only PDF, TXT, and Markdown are supported.",
+            detail=(
+                "Unsupported file type. Supported formats: "
+                + ", ".join(
+                    sorted(ext.lstrip(".").upper() for ext in SUPPORTED_EXTENSIONS)
+                )
+                + "."
+            ),
         )
 
-    # Save file
+    # Refuse before writing anything if the volume cannot take it. The size cap
+    # alone is not enough: many uploads under the cap can still fill a disk.
+    ensure_disk_headroom(DOCUMENTS_DIR, _content_length(request))
+
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = os.path.join(DOCUMENTS_DIR, unique_filename)
 
@@ -107,13 +132,15 @@ async def upload_document(
                 exc=e,
             )
 
-    # Create Document entry
     document = Document(
         recording_id=recording.id,
         title=file.filename,
         file_path=file_path,
         file_type=file.content_type or "application/octet-stream",
         status=DocumentStatus.PENDING,
+        parse_mode=(
+            DocumentParseMode.VISUAL if deep_parse else DocumentParseMode.STRUCTURAL
+        ),
     )
     db.add(document)
     await db.commit()
@@ -121,6 +148,60 @@ async def upload_document(
 
     task = await dispatch_task(
         "backend.worker.tasks.process_document_task", args=[document.id]
+    )
+    from backend.models.task import register_task_ownership
+
+    await register_task_ownership(db, task.id, current_user.id)
+
+    return serialize_document(document, recording_public_id=recording.public_id)
+
+
+@router.post("/documents/{document_id}/reparse", response_model=DocumentPublicRead)
+async def reparse_document(
+    document_id: int,
+    deep_parse: bool = True,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Parse an already-uploaded document again, discarding the previous result.
+
+    The escape hatch for a document parsed before a vision model was configured,
+    or one whose visual parse was downgraded. Always a full re-parse rather than
+    a resume, since the point is to redo work the stored pages already hold.
+    """
+    document = await db.get(Document, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    recording = await db.get(Recording, document.recording_id)
+    if not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if document.status == DocumentStatus.PROCESSING:
+        raise HTTPException(
+            status_code=409,
+            detail="This document is already being parsed.",
+        )
+
+    if not os.path.exists(document.file_path):
+        raise HTTPException(
+            status_code=410,
+            detail="The original file is no longer available, so it cannot be parsed again.",
+        )
+
+    document.parse_mode = (
+        DocumentParseMode.VISUAL if deep_parse else DocumentParseMode.STRUCTURAL
+    )
+    document.status = DocumentStatus.PENDING
+    document.error_message = None
+    document.parse_warning = None
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+
+    task = await dispatch_task(
+        "backend.worker.tasks.process_document_task",
+        args=[document.id, True],
     )
     from backend.models.task import register_task_ownership
 

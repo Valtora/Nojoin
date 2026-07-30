@@ -3,6 +3,7 @@ from .catch_up_diarization import *
 from .chat import *
 from .cli_login import *
 from .constants import *
+from .documents import *
 from .embeddings import *
 from .intelligence import *
 from .meeting_edge_stage import *

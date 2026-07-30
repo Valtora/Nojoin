@@ -85,6 +85,7 @@ SCHEMA_STATEMENTS = [
         notes_template_id INTEGER,
         notes_template_sections TEXT,
         notes_status VARCHAR,
+        notes_stale_documents BOOLEAN DEFAULT 0,
         transcript_status VARCHAR,
         error_message TEXT
     )

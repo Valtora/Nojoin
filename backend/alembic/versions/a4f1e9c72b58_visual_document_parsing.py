@@ -96,6 +96,18 @@ def upgrade() -> None:
         sa.Column("pages_parsed", sa.Integer(), nullable=False, server_default="0"),
     )
 
+    # Notes staleness. Documents now feed notes generation, so a document that
+    # finishes parsing after the notes were written leaves them incomplete.
+    op.add_column(
+        "transcripts",
+        sa.Column(
+            "notes_stale_documents",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.false(),
+        ),
+    )
+
     # --- embedding cutover ---
     # Purge before altering: a 384-dimension value cannot be cast to a
     # 512-dimension one, so the ALTER only succeeds on an empty column, and
@@ -173,6 +185,7 @@ def downgrade() -> None:
     )
     op.drop_column("context_chunks", "document_page_id")
 
+    op.drop_column("transcripts", "notes_stale_documents")
     op.drop_column("documents", "pages_parsed")
     op.drop_column("documents", "page_count")
     op.drop_column("documents", "parse_warning")

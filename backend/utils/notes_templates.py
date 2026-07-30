@@ -19,6 +19,7 @@ generated.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Sequence
@@ -30,6 +31,7 @@ from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.utils.meeting_notes import (
     DEFAULT_NOTES_SECTIONS,
     NOTES_SECTIONS_VERSION,
+    AttachedDocument,
     MeetingMetadata,
     NotesPromptContext,
     format_duration_for_prompt,
@@ -37,6 +39,8 @@ from backend.utils.meeting_notes import (
     resolve_recording_speaker_name,
 )
 from backend.utils.timezones import utc_naive_to_timezone
+
+logger = logging.getLogger(__name__)
 
 MAX_NOTES_TEMPLATE_NAME_LENGTH = 80
 MAX_NOTES_TEMPLATE_DESCRIPTION_LENGTH = 200
@@ -402,6 +406,53 @@ def build_meeting_metadata(
     )
 
 
+def load_attached_documents(
+    session: Session, recording_id: int
+) -> list[AttachedDocument]:
+    """Parsed text of a recording's READY documents, oldest first.
+
+    Read from ``document_pages`` rather than from the RAG chunks: chunks exist
+    to be searched, and reassembling them repeats content at every boundary.
+
+    Uncapped, deliberately. The transcript has never been truncated on its way
+    into a notes prompt, and a document the user attached is no less relevant
+    than the conversation about it. A model with too small a context will say
+    so -- Ollama's num_ctx error is explicit -- which is better than notes that
+    silently omit half the agenda.
+    """
+    from backend.models.document import Document, DocumentStatus
+    from backend.models.document_page import DocumentPage
+
+    documents = session.exec(
+        select(Document)
+        .where(Document.recording_id == recording_id)
+        .where(Document.status == DocumentStatus.READY)
+        .order_by(Document.created_at)
+    ).all()
+
+    attached: list[AttachedDocument] = []
+    for document in documents:
+        pages = session.exec(
+            select(DocumentPage.page_number, DocumentPage.title, DocumentPage.content)
+            .where(DocumentPage.document_id == document.id)
+            .order_by(DocumentPage.page_number)
+        ).all()
+        sections: list[str] = []
+        for page_number, page_title, content in pages:
+            if not (content or "").strip():
+                continue
+            label = f"Page {page_number}"
+            if page_title:
+                label = f"{label}: {page_title}"
+            sections.append(f"[{label}]\n{content.strip()}")
+        if not sections:
+            continue
+        attached.append(
+            AttachedDocument(title=document.title, text="\n\n".join(sections))
+        )
+    return attached
+
+
 def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input
     session: Session,
     *,
@@ -422,6 +473,16 @@ def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input
         user_id=user_id,
         explicit_template_id=explicit_template_id,
     )
+    documents: list[AttachedDocument] = []
+    recording_id = getattr(recording, "id", None)
+    if recording_id is not None:
+        try:
+            documents = load_attached_documents(session, recording_id)
+        except Exception:  # noqa: BLE001 - notes must survive a document read failure
+            logger.exception(
+                "Failed to load attached documents for recording %s", recording_id
+            )
+
     context = NotesPromptContext(
         # Only a genuinely custom structure is sent; the built-in one is left as
         # None so the assembled prompt stays byte-identical to the shipped one.
@@ -432,6 +493,7 @@ def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input
             speakers,
             timezone_name=(settings or {}).get("timezone"),
         ),
+        documents=documents or None,
     )
     return context, template
 

@@ -8,9 +8,11 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_notes import (
+    AttachedDocument,
     MeetingEventContext,
     MeetingMetadata,
     append_user_notes_section,
+    build_documents_prompt_section,
     build_glossary_prompt_section,
     build_meeting_context_prompt_section,
     build_meeting_metadata_prompt_section,
@@ -89,6 +91,9 @@ class AutomaticMeetingIntelligenceRequest:
     notes_sections: str | None = None
     glossary: str | None = None
     meeting_metadata: MeetingMetadata | None = None
+    # Parsed text of the meeting's attached documents, rendered inside
+    # untrusted-content delimiters. See build_documents_prompt_section.
+    documents: Sequence["AttachedDocument"] | None = None
 
     @property
     def uses_custom_notes_sections(self) -> bool:
@@ -294,6 +299,10 @@ def build_automatic_meeting_intelligence_prompt(
             (
                 "# Meeting Context",
                 build_meeting_context_prompt_section(request.meeting_context),
+            ),
+            (
+                "# Attached Documents",
+                build_documents_prompt_section(request.documents),
             ),
             # Carries its own heading.
             (

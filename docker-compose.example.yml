@@ -246,6 +246,27 @@ services:
         "--pool=prefork", "--concurrency=4", "--loglevel=info",
       ]
 
+  # Document parsing, isolated from every other lane. A parse has no page cap,
+  # so one large upload can hold a worker slot for a long time; on the io lane
+  # that would sit alongside Meeting Edge and meeting chat and degrade a live
+  # meeting. Reuses the worker-io IMAGE (no extra build, no extra image to scan)
+  # because visual parsing may route through a subscription CLI, whose binaries
+  # ship only there. No -B: worker-io owns the beat schedule.
+  worker-parse:
+    <<: *worker-base
+    container_name: nojoin-worker-parse
+    image: ghcr.io/valtora/nojoin-worker-io:latest
+    depends_on:
+      worker-io:
+        condition: service_started
+    environment: *worker-environment
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "parse",
+        "--pool=prefork", "--concurrency=2", "--loglevel=info",
+      ]
+
   frontend:
     container_name: nojoin-frontend
     image: ghcr.io/valtora/nojoin-frontend:latest

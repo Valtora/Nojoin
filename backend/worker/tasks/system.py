@@ -359,17 +359,13 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
         )
 
     # 2. Rebuild the RAG index for the transcript and every attached document.
+    # Re-index, do not re-parse: document_pages is archived, so the parsed text
+    # comes back with the backup. Re-running the parser would spend a vision
+    # call per page to reproduce content the archive already restored.
     try:
         celery_app.send_task(
-            "backend.worker.tasks.index_transcript_task", args=[recording_id]
+            "backend.worker.tasks.rebuild_recording_index_task", args=[recording_id]
         )
-        document_ids = session.exec(
-            select(Document.id).where(Document.recording_id == recording_id)
-        ).all()
-        for document_id in document_ids:
-            celery_app.send_task(
-                "backend.worker.tasks.process_document_task", args=[document_id]
-            )
     except Exception as e:  # noqa: BLE001
         logger.error(
             "Failed to queue indexing for restored recording %s: %s", recording_id, e

@@ -39,6 +39,7 @@ from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
     append_user_notes_section,
+    build_documents_prompt_section,
     build_glossary_prompt_section,
     build_meeting_context_prompt_section,
     build_meeting_metadata_prompt_section,
@@ -494,6 +495,10 @@ class LLMBackend:
                 (
                     "# Meeting Context",
                     build_meeting_context_prompt_section(meeting_context),
+                ),
+                (
+                    "# Attached Documents",
+                    build_documents_prompt_section(context.documents),
                 ),
                 # Carries its own heading.
                 (
