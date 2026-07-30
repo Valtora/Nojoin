@@ -122,13 +122,27 @@ def _existing_page_numbers(session, document_id: int) -> set[int]:
     return set(rows)
 
 
-def _transcribe_batch(backend, pages, *, is_rendered: bool) -> dict[int, str]:
+def _transcribe_batch(
+    backend,
+    pages,
+    *,
+    is_rendered: bool,
+    on_page_done=None,
+) -> dict[int, str]:
     """Vision-transcribe a batch of pages concurrently.
 
     Returns page number to Markdown for the ones that succeeded. A page that
     fails is simply absent, and falls back to its structural text --
     ``VisionUnsupportedError`` is re-raised because it condemns every remaining
     page, not just this one.
+
+    ``on_page_done`` is called with each page's number as its call settles,
+    successfully or not, which is what makes progress granular: pages are
+    persisted in batches, so without this the counter would jump from 0 to the
+    whole batch at once.
+    It is invoked from the ``as_completed`` loop, which runs in the calling
+    thread, so a callback may safely touch the database session -- the worker
+    threads never do.
     """
     results: dict[int, str] = {}
     if not pages:
@@ -154,6 +168,9 @@ def _transcribe_batch(backend, pages, *, is_rendered: bool) -> dict[int, str]:
                     "Vision transcription failed for page %s: %s", page.page_number, e
                 )
                 continue
+            finally:
+                if on_page_done is not None:
+                    on_page_done(page.page_number)
             if text:
                 results[page.page_number] = text
 
@@ -301,15 +318,44 @@ class _PageWriter:
         self.warning: Optional[str] = None
         self.used_ocr = False
         self.stored: List[DocumentPage] = []
+        # Progress within the batch in flight, counted against a baseline taken
+        # before the batch begins. A set of page numbers rather than a tally:
+        # a page reports either from the vision callback or at persist time, and
+        # counting it against `stored` as well would double it.
+        self._batch_base = already_parsed
+        self._settled: set[int] = set()
+
+    def _report_progress(self) -> None:
+        """Publish the page count reached so far.
+
+        Assigned from a baseline plus a set of settled page numbers, both exact,
+        so a page cannot be counted twice and a retried batch cannot drift the
+        total. Committing per page is affordable: the row update is trivial next
+        to the vision call it is reporting on.
+        """
+        self._document.pages_parsed = self._batch_base + len(self._settled)
+        self._session.add(self._document)
+        self._session.commit()
+
+    def _page_settled(self, page_number: int) -> None:
+        # Idempotent, and silent on a repeat: a page already reported by the
+        # vision callback passes through the persist loop as well, and writing
+        # the same figure again would double the commits for no new information.
+        if page_number in self._settled:
+            return
+        self._settled.add(page_number)
+        self._report_progress()
 
     def _transcriptions(self, batch: List) -> dict[int, str]:
         if not self.use_vision:
             return {}
+        submitted = [page for page in batch if page.images]
         try:
             return _transcribe_batch(
                 self._backend,
-                [page for page in batch if page.images],
+                submitted,
                 is_rendered=self._is_rendered,
+                on_page_done=self._page_settled,
             )
         except VisionUnsupportedError as exc:
             self.use_vision = False
@@ -336,6 +382,8 @@ class _PageWriter:
     def flush(self, batch: List) -> None:
         if not batch:
             return
+        self._batch_base = self._already_parsed + len(self.stored)
+        self._settled = set()
         transcriptions = self._transcriptions(batch)
 
         for page_source in batch:
@@ -373,9 +421,11 @@ class _PageWriter:
             self._session.add(page)
             self.stored.append(page)
 
-        self._document.pages_parsed = self._already_parsed + len(self.stored)
-        self._session.add(self._document)
-        self._session.commit()
+            # A page already settled by the vision callback is a no-op here,
+            # since the set makes the report idempotent. OCR pages report for
+            # the first time at this point, which matters: OCR runs in this loop
+            # and can take seconds per page.
+            self._page_settled(page_source.page_number)
 
 
 def _flag_notes_stale(session, document: Document) -> None:

@@ -333,3 +333,125 @@ def test_the_endpoint_and_the_serializer_share_one_stall_definition():
     from backend.models.document import parse_looks_stalled
 
     assert documents_api.parse_looks_stalled is parse_looks_stalled
+
+
+# ---------------------------------------------------------------------------
+# Progress granularity
+# ---------------------------------------------------------------------------
+
+
+class _RecordingSession:
+    """Captures pages_parsed at each commit, which is what the UI polls."""
+
+    def __init__(self):
+        self.snapshots: list[int] = []
+        self._pending = None
+
+    def add(self, obj):
+        if hasattr(obj, "pages_parsed"):
+            self._pending = obj
+
+    def commit(self):
+        if self._pending is not None:
+            self.snapshots.append(self._pending.pages_parsed)
+
+
+def _progress_writer(monkeypatch, *, use_vision, transcriptions=None, ocr=None):
+    import backend.worker.tasks.documents as documents_task
+
+    monkeypatch.setattr(documents_task, "ocr_images", lambda _images: ocr)
+    if transcriptions is not None:
+
+        def _fake_batch(backend, pages, *, is_rendered, on_page_done=None):
+            # Mirror the real contract: settle one page at a time, by number.
+            for page in pages:
+                if on_page_done is not None:
+                    on_page_done(page.page_number)
+            return transcriptions
+
+        monkeypatch.setattr(documents_task, "_transcribe_batch", _fake_batch)
+
+    class _Doc:
+        id = 1
+        pages_parsed = 0
+
+    session = _RecordingSession()
+    writer = documents_task._PageWriter(
+        session,
+        _Doc(),
+        backend=object(),
+        use_vision=use_vision,
+        is_rendered=True,
+        already_parsed=0,
+    )
+    return writer, session
+
+
+def test_progress_is_reported_per_page_not_per_batch(monkeypatch):
+    """The whole batch used to persist in one write, so a seven-page document
+    went straight from 0 to 7 with nothing in between."""
+    pages = [_page(n) for n in range(1, 8)]
+    writer, session = _progress_writer(
+        monkeypatch,
+        use_vision=True,
+        transcriptions={n: f"page {n}" for n in range(1, 8)},
+    )
+
+    writer.flush(pages)
+
+    # One report per page, in order, and no redundant repeat at the end.
+    assert session.snapshots == [1, 2, 3, 4, 5, 6, 7]
+    assert writer._document.pages_parsed == 7
+
+
+def test_progress_never_goes_backwards_or_exceeds_the_batch(monkeypatch):
+    pages = [_page(n) for n in range(1, 6)]
+    writer, session = _progress_writer(
+        monkeypatch,
+        use_vision=True,
+        transcriptions={n: f"page {n}" for n in range(1, 6)},
+    )
+
+    writer.flush(pages)
+
+    assert session.snapshots == sorted(session.snapshots)
+    assert max(session.snapshots) == len(pages)
+
+
+def test_pages_that_skip_the_vision_tier_still_report_progress(monkeypatch):
+    """Structural and OCR pages never reach the vision callback, so without
+    their own report a text-only document would show no movement at all."""
+    pages = [_page(n, with_image=False) for n in range(1, 5)]
+    writer, session = _progress_writer(monkeypatch, use_vision=False)
+
+    writer.flush(pages)
+
+    assert session.snapshots == [1, 2, 3, 4]
+
+
+def test_a_page_is_never_counted_twice(monkeypatch):
+    """One page with an image and one without: the first reports through the
+    vision callback, the second at persist. Counting both paths for the same
+    page would overshoot the page count and break the percentage."""
+    pages = [_page(1), _page(2, with_image=False)]
+    writer, session = _progress_writer(
+        monkeypatch, use_vision=True, transcriptions={1: "page 1"}
+    )
+
+    writer.flush(pages)
+
+    assert max(session.snapshots) == 2
+    assert writer._document.pages_parsed == 2
+
+
+def test_progress_accumulates_across_batches(monkeypatch):
+    writer, session = _progress_writer(
+        monkeypatch, use_vision=True, transcriptions={1: "a", 2: "b"}
+    )
+
+    writer.flush([_page(1), _page(2)])
+    first = writer._document.pages_parsed
+    writer.flush([_page(1), _page(2)])
+
+    assert first == 2
+    assert writer._document.pages_parsed == 4
