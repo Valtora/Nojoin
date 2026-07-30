@@ -222,8 +222,27 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 - **Notes** are stored with the recording and can be edited after processing.
 - **Generate Notes** runs a notes-only AI pass when AI is configured.
 - **Meeting Chat** answers questions from the transcript, notes, and linked documents.
-- **Documents** can be uploaded to support meeting context and later search.
+- **Documents** can be uploaded to support meeting context, meeting notes, and later search.
 - **Search** spans recordings, transcript text, notes, tags, and document content where available.
+
+### Attaching Documents
+
+Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or from the Documents panel that appears below the live transcript while a meeting is still recording or processing.
+
+Timing matters. Meeting notes are generated once, at the end of processing, and they use every document that has finished parsing by then. A document attached during the meeting is normally ready in time to be included on the first pass. A document attached afterwards cannot be, so the Notes tab shows a banner offering to regenerate. Regenerating is never automatic: it uses your AI provider and overwrites any edits you have made to the notes.
+
+#### Visual Analysis
+
+Text extraction alone misses most of what a slide deck or a scanned report actually carries. **Analyse visually with AI** is therefore on by default: each page is sent to your configured AI model, which transcribes the text, reconstructs tables, and describes charts and diagrams including their values.
+
+- Turn it off per upload for a document that is genuinely plain text, or to avoid using AI provider quota. The file is still parsed, just without visual analysis.
+- It cannot be turned off for image uploads, which have no text to extract without it.
+- Your model must accept images. Every current hosted model from Anthropic, OpenAI, and Google does. If you use **Ollama**, you must select a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI**; a text-only model cannot read images and Nojoin will fall back to text extraction.
+- If visual analysis is unavailable, the document still parses and becomes searchable, and its card explains what was skipped and why. Use **Parse again** on the document card once a suitable model is configured.
+
+PowerPoint, Word, and Excel files are read structurally as well as visually. This recovers speaker notes, table cells, and the exact underlying values of native charts, none of which a purely visual read would capture reliably. For a deck built mostly from SmartArt or hand-drawn diagrams, exporting it to PDF before uploading gives better results, because every page is then rendered in full.
+
+There is no page limit. A large document simply takes longer and uses more provider quota, and files above 20 MB say so before you confirm. Parsing runs in the background on its own worker, so it never delays a live meeting, and progress is shown per page on the document card.
 
 ### Choosing How Notes Are Structured
 

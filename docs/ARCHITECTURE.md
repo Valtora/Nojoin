@@ -31,16 +31,55 @@ The bounds are set from measurement rather than taste. Before they existed, a di
 
 Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's own subscription using that provider's CLI in the `worker-io` lane. Two providers are supported: a Claude Pro/Max subscription driven by the Claude Agent SDK, and a ChatGPT subscription driven by the OpenAI Codex CLI. CLI OAuth degrades cleanly through the server's default provider chain, trying the primary provider first and the secondary after it, and is never load-bearing — the subscription path is unsanctioned by both providers and can be broken or enforced against without notice, so nothing is allowed to depend on it. See [SECURITY.md](SECURITY.md) for the trust boundary and the accepted risk.
 
-Celery work is split across three resource lanes so a long recording finalise
+Celery work is split across four resource lanes so a long recording finalise
 never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
-embeddings), a CPU lane (ffmpeg transcode, proxies, backups), and an IO/LLM lane
-(Meeting Edge, notes, chat, calendar sync) that also runs Celery Beat. Routing
+embeddings), a CPU lane (ffmpeg transcode, proxies, backups), an IO/LLM lane
+(Meeting Edge, notes, chat, calendar sync) that also runs Celery Beat, and a
+parse lane (document parsing and RAG index rebuilds). Routing
 lives in `backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md)
 for pool sizing. To avoid reloading the live ASR model between segments, the GPU
 lane keeps it resident while a capture is uploading and releases it when idle.
 During finalise the meeting-intelligence step (notes, title, speaker suggestions)
 is handed to the IO lane for non-local providers, so a network-bound LLM call
 never occupies the GPU worker; local Ollama runs it inline.
+
+Document parsing has its own lane because it is unbounded: there is no page
+cap, so one large upload can hold a worker slot for a long time. On the IO lane
+that would sit beside Meeting Edge and meeting chat and degrade a live meeting.
+The lane runs the `worker-io` **image** rather than a new one, since visual
+parsing may route through a subscription CLI whose binaries ship only there, so
+it adds a container but no build and no image to scan.
+
+### Document Parsing
+
+An uploaded document is parsed into `document_pages`, one row per page, slide,
+sheet, or heading-bounded section. Every format gets a structural pass first:
+PDF text with reading-order sorting and table detection via PyMuPDF, and for
+Office formats the underlying XML, which yields slide titles, table cells,
+speaker notes, and the exact values behind native charts. That last point is why
+no headless-office renderer is needed — a rendered chart would have to be
+estimated from pixels, while the file itself holds the numbers.
+
+When visual analysis is requested (the default), each page's images are sent to
+the user's configured model: a rendered page for PDFs and images, the embedded
+figures for Office formats. For a rendered page the model's output replaces the
+text layer, having been given it and asked to improve on it; for a figure it
+supplements the structural content, which the model never saw.
+
+Pages are written as each completes, so a worker restart resumes from the first
+missing page instead of repeating vision calls that were already paid for.
+Vision requests fan out a few at a time. A provider that cannot accept images
+raises `VisionUnsupportedError`, which downgrades the whole document to a
+structural parse once and records a warning, rather than failing every page in
+turn; an image upload has no text layer to fall back on, so that case is a real
+error instead of an empty success.
+
+Parsed pages feed three consumers: the RAG index (one chunk per page, split only
+when a page exceeds the embedding window), the meeting-notes prompt, and the MCP
+`get_documents` tool. Document text is untrusted input, and visual parsing
+widens that — a model transcribing a page reproduces any instruction printed on
+it — so both prompt sinks fence it in `<attached_document>` delimiters with an
+explicit data-not-instructions rule.
 
 ### Web Client
 
