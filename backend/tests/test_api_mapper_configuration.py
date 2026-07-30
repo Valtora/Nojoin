@@ -1,18 +1,22 @@
-"""Every model referenced by a relationship must register with its own module.
+"""The ORM mapper graph must configure from every real entry point.
 
-Most test modules import ``backend.models.registry``, which registers every
-model and therefore hides a missing registration. Several real entry points do
-not import it -- ``backend/startup_canonical_cutover.py`` reaches models through
-``User`` alone, and the API process reaches them through ``recording_public`` --
-so a model that is only reachable via the registry passes the entire suite and
-then fails at container start with:
+Relationships name their targets by string, so SQLAlchemy resolves them only
+once every class exists. Most test modules import ``backend.models.registry``,
+which registers everything and therefore hides a missing registration -- the
+whole suite can pass while production fails at start with:
 
     expression 'DocumentPage.page_number' failed to locate a name
 
-The rule this enforces: importing a model module must also register every model
-its own relationships name by string. Each case runs in a subprocess because the
-SQLAlchemy class registry is process-global, so any earlier import in this
-process would mask the failure.
+That is not hypothetical: it is what shipped, twice, once for ``DocumentPage``
+and once for ``ContextChunk``.
+
+``backend.core.db`` is the chokepoint that fixes it. Every entry point imports
+it (nothing touches the database without it) and no model imports it back, so it
+registers the full graph exactly once with no cycle. These tests assert that
+property directly rather than enumerating relationships, which would rot.
+
+Each case runs in a subprocess because the SQLAlchemy class registry is
+process-global: an import performed by any earlier test would mask the result.
 """
 
 from __future__ import annotations
@@ -22,48 +26,67 @@ import sys
 
 import pytest
 
-# (module to import, class names its relationships reference by string)
-RELATIONSHIP_CLOSURES = [
-    ("backend.models.document", ["Document", "DocumentPage"]),
-    ("backend.models.context_chunk", ["ContextChunk"]),
-    ("backend.models.recording", ["Recording"]),
+# Modules that reach the database, each reproducing a real entry point's imports.
+ENTRY_POINTS = [
+    # The chokepoint itself, imported alone.
+    "backend.core.db",
+    # The API process.
+    "backend.api.v1.api",
+    # The container's startup script, which reaches models through User alone.
+    "backend.startup_canonical_cutover",
+    # The Celery workers.
+    "backend.worker.tasks",
 ]
 
 _SCRIPT = """
 import importlib, sys
-from sqlmodel import SQLModel
+from sqlalchemy.orm import configure_mappers
 
 importlib.import_module({module!r})
-
-assert "backend.models.registry" not in sys.modules, (
-    "importing {module} must not pull in the registry; that would make this "
-    "check vacuous"
-)
-
-registered = set()
-for mapper in SQLModel._sa_registry.mappers:
-    registered.add(mapper.class_.__name__)
-
-missing = [name for name in {names!r} if name not in registered]
-if missing:
-    raise SystemExit("missing from the class registry: " + ", ".join(missing))
+configure_mappers()
 print("OK")
 """
 
 
-@pytest.mark.parametrize(
-    "module,names", RELATIONSHIP_CLOSURES, ids=[m for m, _ in RELATIONSHIP_CLOSURES]
-)
-def test_importing_a_model_registers_its_relationship_targets(module, names):
+@pytest.mark.parametrize("module", ENTRY_POINTS)
+def test_entry_point_can_configure_every_mapper(module):
     result = subprocess.run(
-        [sys.executable, "-c", _SCRIPT.format(module=module, names=names)],
+        [sys.executable, "-c", _SCRIPT.format(module=module)],
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=300,
     )
     assert result.returncode == 0, (
-        f"Importing {module} on its own left part of its relationship graph "
-        "unregistered, so any entry point that does not import "
-        "backend/models/registry.py will fail to configure mappers.\n\n"
-        + (result.stderr or result.stdout)[-2000:]
+        f"Importing {module} left part of the ORM graph unregistered, so this "
+        "entry point cannot configure its mappers. Every model module must be "
+        "reachable from backend/models/registry.py, which backend/core/db.py "
+        "imports.\n\n" + (result.stderr or result.stdout)[-2500:]
     )
+    assert "OK" in result.stdout
+
+
+def test_importing_core_db_alone_registers_the_document_graph():
+    """The specific closure that broke in production, pinned by name.
+
+    A parametrised smoke test would still pass if these classes were quietly
+    dropped from the registry and nothing yet referenced them.
+    """
+    script = """
+import sys
+from sqlmodel import SQLModel
+import backend.core.db  # noqa: F401
+
+registered = {mapper.class_.__name__ for mapper in SQLModel._sa_registry.mappers}
+missing = [
+    name
+    for name in ("Document", "DocumentPage", "ContextChunk", "Recording", "Transcript")
+    if name not in registered
+]
+if missing:
+    raise SystemExit("missing from the class registry: " + ", ".join(missing))
+print("OK")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=300
+    )
+    assert result.returncode == 0, (result.stderr or result.stdout)[-2000:]

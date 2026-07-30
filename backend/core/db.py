@@ -53,3 +53,18 @@ def get_sync_session() -> Session:
     Creates a synchronous session for use in Celery workers.
     """
     return Session(sync_engine)
+
+
+# Register every ORM model on the SQLModel class registry.
+#
+# Relationships name their targets by string, so SQLAlchemy resolves them only
+# once all the classes exist. Leaving that to each entry point's own imports is
+# what produced "expression 'DocumentPage.page_number' failed to locate a name"
+# at container start: registry.py was imported by init_db, alembic and the
+# tests, but not by the API or startup_canonical_cutover, so the whole test
+# suite passed while production could not configure its mappers.
+#
+# This module is the one chokepoint every entry point already goes through --
+# nothing touches the database without it -- and no model imports it back, so
+# there is no cycle. Kept at the bottom so the engines above are built first.
+from backend.models import registry  # noqa: E402,F401
