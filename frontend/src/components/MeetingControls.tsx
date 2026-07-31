@@ -151,19 +151,13 @@ export default function MeetingControls({
   if (variant === "dashboard") {
     return (
       <div className="density-surface border border-action-border bg-surface-card shadow-card">
-        <div className="flex flex-col gap-5">
-          <div className="mt-2 flex items-start gap-3">
-            <div className="rounded-2xl bg-action-tint p-2 text-action-text">
-              <Mic className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="density-heading-section text-2xl font-semibold text-foreground">
-                Meet Now
-              </h2>
-              <p className="mt-1 text-sm text-contrast-helper">
-                Click Start Meeting to begin browser capture from this dashboard card.
-              </p>
-            </div>
+        <div className="flex flex-col gap-4">
+          {/* The sentence that used to sit here explained that the button below
+              starts a meeting, which the button already says. It was onboarding
+              text on a card seen every day. */}
+          <div className="flex items-center gap-3">
+            <Mic className="h-5 w-5 shrink-0 text-action-text" />
+            <h2 className="text-base font-semibold text-foreground">Meet Now</h2>
           </div>
 
           {unsupported ? (

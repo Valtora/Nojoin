@@ -82,25 +82,21 @@ export default function DashboardTasksPanel() {
 
   return (
     <div className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
-      <div className="space-y-2">
-        <div className="mt-2 flex items-start gap-3">
-          <div className="rounded-2xl bg-action-tint p-2 text-action-text">
-            <Check className="h-5 w-5" />
-          </div>
-          <h2 className="density-heading-section text-2xl font-semibold text-foreground">
-            Task List
-          </h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold text-action-text">
-            {openTasks.length} open
+      {/* One row: glyph, title, counts. This was an icon chip, a text-2xl
+          heading and a separate pill row stacked vertically, which spent about
+          140px before the first task. The counts belong beside the title
+          rather than under it, because they qualify it. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Check className="h-5 w-5 shrink-0 text-action-text" />
+        <h2 className="text-base font-semibold text-foreground">Task List</h2>
+        <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-2.5 py-0.5 text-xs font-semibold text-action-text">
+          {openTasks.length} open
+        </span>
+        {completedTasks.length > 0 && (
+          <span className="inline-flex items-center gap-2 rounded-full border border-control-border px-2.5 py-0.5 text-xs font-semibold text-contrast-muted">
+            {completedTasks.length} completed
           </span>
-          {completedTasks.length > 0 && (
-            <span className="inline-flex items-center gap-2 rounded-full border border-control-border bg-surface-card px-3 py-1 text-xs font-semibold text-contrast-muted">
-              {completedTasks.length} completed
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
       {isComposerOpen ? (
