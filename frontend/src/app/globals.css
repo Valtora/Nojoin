@@ -35,7 +35,7 @@
      both jobs in both themes. A fill is judged by the label on it, and text
      is judged by the surface under it, and in dark mode those pull in
      opposite directions: an orange dark enough for a white label is too dark
-     to read as text on a near-black page. They coincide in light mode and
+     to read as text on the dark page. They coincide in light mode and
      diverge in dark, which is the whole reason the split exists.
 
      --focus-ring is the one member allowed to stay lighter: it is never a
@@ -53,7 +53,7 @@
   --action-text-hover: #9a3412;
   /* Destructive actions, shaped like the action family so the two behave the
      same way. Red-600 is the one step that carries a white label at 4.5:1 and
-     still separates from both a white page and a near-black one, so unlike the
+     still separates from both a white page and a dark one, so unlike the
      brand the fill needs no per-theme value; only the text form splits. */
   --danger: #dc2626;
   --danger-hover: #b91c1c;
@@ -160,18 +160,27 @@
      composite UI inside a card (meters, consoles) and steps the same way. */
   --surface-page: #f8fafc;
   --surface-card: #ffffff;
-  --surface-card-border: rgba(203, 213, 225, 0.75);
-  --surface-divider: rgba(203, 213, 225, 0.55);
+  /* The hairlines are deliberately close to the house floor of 1.15:1. A border
+     heavy enough to read as a line turns a page of cards into a wireframe; the
+     job here is only to close the shape, with the 4% shadow doing the lifting. */
+  --surface-card-border: rgba(203, 213, 225, 0.58);
+  --surface-divider: rgba(203, 213, 225, 0.42);
   --surface-card-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04);
   --surface-inset: rgba(241, 245, 249, 0.75);
 }
 
 .dark {
-  --background: #0a0a0a;
-  --surface-page: #0a0a0a;
-  --surface-card: #141414;
-  --surface-card-border: rgba(75, 85, 99, 0.55);
-  --surface-divider: rgba(75, 85, 99, 0.35);
+  /* A soft charcoal rather than near-black. The near-black this started from
+     was legible but severe, and it left no room beneath the page for anything
+     to recede into. Every surface moves together so the stack keeps its
+     spacing: page, card, float. Note that --action against the lifted card is
+     3.15:1, which clears the 3:1 a resting fill owes with very little to
+     spare, so the card must not lighten further without re-pitching the fill. */
+  --background: #161616;
+  --surface-page: #161616;
+  --surface-card: #202020;
+  --surface-card-border: rgba(75, 85, 99, 0.38);
+  --surface-divider: rgba(75, 85, 99, 0.25);
   --surface-card-shadow: none;
   --surface-inset: rgba(255, 255, 255, 0.03);
   --foreground: #ededed;
@@ -187,16 +196,16 @@
   --settings-tab-active-border: var(--action-border);
   --settings-tab-active-text: var(--action-tint-fg);
   --settings-tab-idle-text: #e5e7eb;
-  --settings-tab-idle-hover: rgba(31, 41, 55, 0.9);
+  --settings-tab-idle-hover: rgba(255, 255, 255, 0.07);
 
   /* Action (brand), dark. The fill and its white label are unchanged from
      light, so the primary button is one button in both themes rather than two.
-     Accent text is where the themes part: orange-700 as text on a near-black
-     page is 3.82:1, so --action-text lifts to orange-400 for 8.75:1.
+     Accent text is where the themes part: orange-700 as text on the charcoal
+     page is 3.49:1, so --action-text lifts to orange-400 for 8.00:1.
 
      Hover and active darken here as they do in light. That takes the fill
      below 3:1 against the page, which is acceptable: the resting fill is what
-     has to be identifiable as a control, and it is (3.82:1). A hover state on
+     has to be identifiable as a control, and it is (3.49:1). A hover state on
      an already-identified control is not carrying that burden, and its white
      label stays well clear at 7.31:1. */
   --action: #c2410c;
@@ -216,17 +225,27 @@
   --focus-ring: #fb923c;
 
   --control-bg: var(--surface-card);
-  --control-border: #6b7280;
+  /* Lifted half a step with the surfaces. A control's boundary is the only
+     thing identifying it as a control, so it owes 3:1, and grey-500 fell to
+     2.97:1 against the lightened float once the modal surface moved. It is the
+     one border in dark mode that gets heavier while the decorative ones soften,
+     which is exactly the distinction the two tokens exist to make. */
+  --control-border: #7a8290;
   --control-placeholder: #9ca3af;
   --control-disabled-bg: rgba(255, 255, 255, 0.04);
   --control-disabled-border: #3f4653;
   --control-disabled-fg: #8b93a1;
 
-  --rail-bg: #0b1220;
-  --rail-border: rgba(148, 163, 184, 0.18);
+  /* Neutral charcoal chrome, not navy. The navy read as chrome because it sat
+     above a near-black page; against a charcoal page it would have sunk below
+     it and become the darkest thing on screen. Rather than re-pitch a blue that
+     no longer has a black to contrast with, the rail takes the same neutral as
+     everything else and separates by lightness alone, one step above the page. */
+  --rail-bg: #242424;
+  --rail-border: rgba(255, 255, 255, 0.12);
   --rail-fg: #e5e7eb;
-  --rail-fg-muted: #a8b3c4;
-  --rail-item-hover: #141d2e;
+  --rail-fg-muted: #a1a1aa;
+  --rail-item-hover: #2e2e2e;
   --rail-item-active: var(--action-tint);
   --rail-item-active-fg: var(--action-tint-fg);
 
@@ -251,12 +270,12 @@
 
   --scrim: rgba(0, 0, 0, 0.66);
   /* A float is lighter than a card in dark mode rather than the same colour.
-     The page is already near-black, so a scrim cannot darken behind a modal
+     The page is already dark, so a scrim cannot darken behind a modal
      the way it does in light mode; the separation has to come from the panel
      rising instead. This is not a third level of the surface stack, which is
      still two deep: an overlay sits on a different axis to the page and card
      it covers. */
-  --surface-float: #1e1e1e;
+  --surface-float: #2a2a2a;
   --surface-float-border: rgba(148, 163, 184, 0.22);
   --float-shadow: 0 10px 24px -6px rgb(0 0 0 / 0.6), 0 4px 10px -4px rgb(0 0 0 / 0.5);
 }

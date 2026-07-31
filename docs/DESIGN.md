@@ -17,10 +17,10 @@ only inside the logo image assets.
    card ever contains another card.
 2. **Light separates by shadow, dark separates by lightness.** Light mode adds a 4%-alpha resting
    shadow (`--surface-card-shadow`); dark mode resolves that token to `none`, because a shadow
-   against a near-black page reads as a smudge rather than as elevation.
+   against a dark page reads as a smudge rather than as elevation.
 3. **Floats are the one exception.** Anything rendered over other content, meaning modals,
    dropdowns, popovers, tooltips and toasts, carries `--float-shadow` in *both* themes. It has to:
-   in dark mode a scrim cannot darken a page that is already near-black, so the panel rises
+   in dark mode a scrim cannot darken a page that is already dark, so the panel rises
    instead. Floats also get their own surface token, `--surface-float`, which is lighter than a
    card in dark mode. This is not a third level of the surface stack; an overlay sits on a
    different axis to the page and card it covers.
@@ -75,7 +75,7 @@ change the restyle makes to the interface.
 **`--action` and `--action-text` are separate tokens.** One colour cannot do both jobs, because a
 fill is judged by the label on it while text is judged by the surface under it, and in dark mode
 those pull in opposite directions: the orange-700 that carries a white label at 5.18:1 reads as
-text on a near-black page at only 3.82:1. They coincide in light mode and diverge in dark, which is
+text on the dark page at only 3.49:1. They coincide in light mode and diverge in dark, which is
 the entire reason the split exists. Use `--action` for something filled, `--action-text` for
 something written.
 
@@ -85,7 +85,7 @@ colour. It answers to the 3:1 non-text threshold instead.
 ### Danger
 
 Shaped like the action family so the two behave the same way. Red-600 is the one step that carries
-a white label at 4.83:1 and still separates from both a white page and a near-black one, so unlike
+a white label at 4.83:1 and still separates from both a white page and a dark one, so unlike
 the brand the fill needs no per-theme value.
 
 | Token | Light | Dark |
@@ -118,14 +118,22 @@ light-mode equivalent, because grey text loses legibility faster on a dark backg
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--surface-page` | `#f8fafc` | `#0a0a0a` |
-| `--surface-card` | `#ffffff` | `#141414` |
-| `--surface-card-border` | `rgba(203, 213, 225, 0.75)` | `rgba(75, 85, 99, 0.55)` |
-| `--surface-divider` | `rgba(203, 213, 225, 0.55)` | `rgba(75, 85, 99, 0.35)` |
+| `--surface-page` | `#f8fafc` | `#161616` |
+| `--surface-card` | `#ffffff` | `#202020` |
+| `--surface-card-border` | `rgba(203, 213, 225, 0.58)` | `rgba(75, 85, 99, 0.38)` |
+| `--surface-divider` | `rgba(203, 213, 225, 0.42)` | `rgba(75, 85, 99, 0.25)` |
 | `--surface-card-shadow` | `0 1px 2px 0 rgb(15 23 42 / 0.04)` | `none` |
 | `--surface-inset` | `rgba(241, 245, 249, 0.75)` | `rgba(255, 255, 255, 0.03)` |
-| `--surface-float` | `#ffffff` | `#1e1e1e` |
+| `--surface-float` | `#ffffff` | `#2a2a2a` |
 | `--surface-float-border` | `rgba(203, 213, 225, 0.9)` | `rgba(148, 163, 184, 0.22)` |
+
+The dark canvas is a soft charcoal rather than a near-black, and the hairlines sit close to the
+1.15:1 house floor in both themes. Both are deliberate: a border heavy enough to read as a line
+turns a page of cards into a wireframe, and the 4% shadow, not the border, is what lifts a card in
+light mode.
+
+The three surfaces have to move together, because `--action` clears the 3:1 a resting fill owes by
+only 3.15:1 against the dark card. Lightening the card alone would fail the audit.
 
 ### Controls
 
@@ -137,7 +145,7 @@ both would force every hairline in the product to the heavier value.
 | Token | Light | Dark |
 | --- | --- | --- |
 | `--control-bg` | `--surface-card` | `--surface-card` |
-| `--control-border` | `#7d8b9e` | `#6b7280` |
+| `--control-border` | `#7d8b9e` | `#7a8290` |
 | `--control-placeholder` | `#6b7280` | `#9ca3af` |
 | `--control-disabled-bg` | `#f1f5f9` | `rgba(255, 255, 255, 0.04)` |
 | `--control-disabled-border` | `#cbd5e1` | `#3f4653` |
@@ -145,16 +153,16 @@ both would force every hairline in the product to the heavier value.
 
 ### Rails
 
-Navigation chrome has its own surface: a warm cream in light against the cool page tint, and a deep
-navy in dark, so a rail reads as chrome rather than as another card.
+Navigation chrome has its own surface: a warm cream in light against the cool page tint, and a
+charcoal one step above the page in dark, so a rail reads as chrome rather than as another card.
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--rail-bg` | `#f7f2e9` | `#0b1220` |
-| `--rail-border` | `#e2d9c8` | `rgba(148, 163, 184, 0.18)` |
+| `--rail-bg` | `#f7f2e9` | `#242424` |
+| `--rail-border` | `#e2d9c8` | `rgba(255, 255, 255, 0.12)` |
 | `--rail-fg` | `#1f2937` | `#e5e7eb` |
-| `--rail-fg-muted` | `#57534e` | `#a8b3c4` |
-| `--rail-item-hover` | `#efe7d8` | `#141d2e` |
+| `--rail-fg-muted` | `#57534e` | `#a1a1aa` |
+| `--rail-item-hover` | `#efe7d8` | `#2e2e2e` |
 | `--rail-item-active` | `--action-tint` | `--action-tint` |
 | `--rail-item-active-fg` | `--action-tint-fg` | `--action-tint-fg` |
 
