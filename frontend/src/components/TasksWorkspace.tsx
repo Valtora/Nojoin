@@ -123,7 +123,7 @@ function TagSelector({
 
   if (tags.length === 0) {
     return (
-      <p className="rounded-2xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+      <p className="rounded-2xl border border-dashed border-control-border px-4 py-3 text-sm text-contrast-helper">
         No tags yet. Create tags from the sidebar to reuse them on tasks and recordings.
       </p>
     );
@@ -149,7 +149,7 @@ function TagSelector({
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
               isSelected
                 ? `${color.bg} ${color.border} ${color.text}`
-                : "border-gray-200 bg-white text-gray-600 hover:border-orange-200 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+                : "border-surface-border bg-surface-card text-contrast-helper hover:border-action-border hover:text-action-text"
             }`}
           >
             <span className={`h-2 w-2 rounded-full ${color.dot}`} />
@@ -174,14 +174,14 @@ function RecordingSelector({
 
   if (recordings.length === 0) {
     return (
-      <p className="rounded-2xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+      <p className="rounded-2xl border border-dashed border-control-border px-4 py-3 text-sm text-contrast-helper">
         No recordings available to link yet.
       </p>
     );
   }
 
   return (
-    <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-gray-200 bg-white/75 p-2 dark:border-gray-700 dark:bg-gray-950/60">
+    <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-surface-border bg-surface-card p-2">
       {recordings.map((recording) => {
         const isSelected = selected.has(recording.id);
 
@@ -198,8 +198,8 @@ function RecordingSelector({
             }}
             className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${
               isSelected
-                ? "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-200"
-                : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-900"
+                ? "bg-action-tint text-action-text"
+                : "text-contrast-muted hover:bg-surface-inset"
             }`}
           >
             <FileAudio className="h-3.5 w-3.5 shrink-0" />
@@ -225,14 +225,14 @@ function DeadlinePickerButton({
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-200 bg-white text-orange-600 outline-none transition-colors hover:border-orange-400 hover:bg-orange-50 hover:text-orange-700 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-orange-300 dark:hover:border-orange-500/40 dark:hover:bg-orange-500/10 dark:hover:text-orange-200"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-action-border bg-surface-card text-action-text outline-none transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text focus:border-action focus:ring-2 focus:ring-action"
         aria-label={formatted ? `Edit deadline, ${formatted}` : "Set deadline"}
         title={formatted ? `Edit deadline: ${formatted}` : "Set deadline"}
       >
         <Calendar className="block h-4 w-4 shrink-0" />
       </button>
       {formatted && (
-        <span className="min-w-0 truncate text-sm font-semibold text-gray-700 dark:text-gray-200">
+        <span className="min-w-0 truncate text-sm font-semibold text-contrast-muted">
           {formatted}
         </span>
       )}
@@ -471,19 +471,19 @@ export default function TasksWorkspace() {
       contentClassName="workspace-shell workspace-shell-wide"
       paddingClassName="workspace-pad-y"
     >
-      <section className="density-surface density-surface-lg border border-white/60 bg-white/85 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/65 dark:shadow-black/20">
+      <section className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-float backdrop-blur">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="density-heading-page text-4xl font-semibold tracking-tight text-gray-950 dark:text-white">
+            <h1 className="density-heading-page text-4xl font-semibold tracking-tight text-foreground">
               Manage Tasks
             </h1>
-            <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+            <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-contrast-helper">
               Capture follow-ups, add shared recording tags, archive stale work, and restore archived tasks when they become relevant again.
             </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900">
+            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-surface-border bg-surface-inset p-1">
               {(["open", "completed", "archived"] as TaskView[]).map((item) => (
                 <button
                   key={item}
@@ -491,8 +491,8 @@ export default function TasksWorkspace() {
                   onClick={() => setView(item)}
                   className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-colors ${
                     view === item
-                      ? "bg-white text-orange-700 shadow-sm dark:bg-gray-800 dark:text-orange-300"
-                      : "text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
+                      ? "bg-surface-card text-action-text shadow-card"
+                      : "text-contrast-helper hover:text-foreground"
                   }`}
                 >
                   {item}
@@ -503,7 +503,7 @@ export default function TasksWorkspace() {
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="density-control-lg inline-flex h-[var(--control-height-lg)] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-orange-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-orange-700"
+                className="density-control-lg inline-flex h-[var(--control-height-lg)] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-action px-5 text-sm font-semibold text-foreground transition-colors hover:bg-action"
               >
                 <Plus className="h-4 w-4" />
                 Create Task
@@ -515,7 +515,7 @@ export default function TasksWorkspace() {
         {isCreateOpen && (
           <form
             onSubmit={handleCreateTask}
-            className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-orange-100 bg-orange-50/50 p-4 dark:border-orange-500/15 dark:bg-orange-500/5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)]"
+            className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-action-border bg-action-tint p-4"
           >
             <div className="flex flex-col gap-3">
               <input
@@ -524,7 +524,7 @@ export default function TasksWorkspace() {
                   setDraft((current) => ({ ...current, title: event.target.value }))
                 }
                 placeholder="Task title"
-                className="h-12 w-full rounded-2xl border border-orange-200 bg-white px-4 text-sm font-semibold text-gray-950 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+                className="h-12 w-full rounded-2xl border border-action-border bg-surface-card px-4 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-contrast-icon-muted focus:border-action focus:ring-2 focus:ring-action"
               />
               <textarea
                 value={draft.body}
@@ -532,7 +532,7 @@ export default function TasksWorkspace() {
                   setDraft((current) => ({ ...current, body: event.target.value }))
                 }
                 placeholder="Add context, notes, or acceptance criteria"
-                className="min-h-48 flex-1 resize-none rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                className="min-h-48 flex-1 resize-none rounded-2xl border border-action-border bg-surface-card px-4 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-contrast-icon-muted focus:border-action focus:ring-2 focus:ring-action"
               />
             </div>
 
@@ -563,7 +563,7 @@ export default function TasksWorkspace() {
                     setIsCreateOpen(false);
                   }}
                   disabled={submitting}
-                  className="inline-flex items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                  className="inline-flex items-center justify-center rounded-2xl border border-surface-border bg-surface-card px-4 py-3 text-sm font-semibold text-contrast-muted transition-colors hover:border-control-border disabled:cursor-not-allowed disabled:opacity-60"
                   aria-label="Cancel task creation"
                 >
                   <X className="h-4 w-4" />
@@ -571,7 +571,7 @@ export default function TasksWorkspace() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-action disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -588,12 +588,12 @@ export default function TasksWorkspace() {
 
       <section className="grid gap-4">
         {loading ? (
-          <div className="density-surface-subtle border border-gray-200 bg-white/85 p-6 text-sm text-gray-600 shadow-lg shadow-orange-950/5 dark:border-gray-700 dark:bg-gray-950/65 dark:text-gray-300">
+          <div className="density-surface-subtle border border-surface-border bg-surface-card p-6 text-sm text-contrast-helper shadow-float">
             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
             Loading tasks...
           </div>
         ) : visibleTasks.length === 0 ? (
-          <div className="density-surface-subtle border border-dashed border-gray-300 bg-white/70 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-950/50 dark:text-gray-300">
+          <div className="density-surface-subtle border border-dashed border-control-border bg-surface-card p-8 text-center text-sm text-contrast-helper">
             No {view} tasks.
           </div>
         ) : (
@@ -606,7 +606,7 @@ export default function TasksWorkspace() {
             return (
               <article
                 key={task.id}
-                className="density-surface-subtle border border-gray-200 bg-white/85 p-5 shadow-lg shadow-orange-950/5 dark:border-gray-700 dark:bg-gray-950/65 dark:shadow-black/20"
+                className="density-surface-subtle border border-surface-border bg-surface-card p-5 shadow-float"
               >
                 {isEditing ? (
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.45fr)]">
@@ -619,7 +619,7 @@ export default function TasksWorkspace() {
                             title: event.target.value,
                           }))
                         }
-                        className="h-11 w-full rounded-2xl border border-orange-200 bg-white px-4 text-sm font-semibold text-gray-950 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        className="h-11 w-full rounded-2xl border border-action-border bg-surface-card px-4 text-sm font-semibold text-foreground outline-none focus:border-action focus:ring-2 focus:ring-action"
                       />
                       <textarea
                         value={editDraft.body}
@@ -630,7 +630,7 @@ export default function TasksWorkspace() {
                           }))
                         }
                         rows={4}
-                        className="w-full resize-none rounded-2xl border border-orange-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                        className="w-full resize-none rounded-2xl border border-action-border bg-surface-card px-4 py-3 text-sm text-foreground outline-none focus:border-action focus:ring-2 focus:ring-action"
                       />
                     </div>
                     <div className="space-y-4">
@@ -660,7 +660,7 @@ export default function TasksWorkspace() {
                           type="button"
                           onClick={() => void saveEdit(task)}
                           disabled={isBusy}
-                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-60"
+                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-action disabled:opacity-60"
                         >
                           {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                           Save
@@ -668,7 +668,7 @@ export default function TasksWorkspace() {
                         <button
                           type="button"
                           onClick={cancelEdit}
-                          className="inline-flex items-center justify-center rounded-2xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:text-gray-200"
+                          className="inline-flex items-center justify-center rounded-2xl border border-surface-border px-4 py-2.5 text-sm font-semibold text-contrast-muted hover:border-control-border"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -679,36 +679,36 @@ export default function TasksWorkspace() {
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-semibold text-gray-950 dark:text-white">
+                        <h2 className="text-lg font-semibold text-foreground">
                           {task.title}
                         </h2>
                         {task.completed_at && !task.archived_at && (
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                          <span className="rounded-full border border-status-success-border bg-status-success-bg px-2.5 py-1 text-xs font-semibold text-status-success-fg">
                             Completed
                           </span>
                         )}
                         {task.archived_at && (
-                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                          <span className="rounded-full border border-status-warning-border bg-status-warning-bg px-2.5 py-1 text-xs font-semibold text-status-warning-fg">
                             Archived
                           </span>
                         )}
                       </div>
 
                       {task.body && (
-                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-600 dark:text-gray-300">
+                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-contrast-helper">
                           {task.body}
                         </p>
                       )}
 
                       <div className="mt-4 flex flex-wrap items-center gap-2">
                         {dueLabel && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                          <span className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-inset px-3 py-1 text-xs font-semibold text-contrast-muted">
                             <Clock className="h-3.5 w-3.5" />
                             {dueLabel}
                           </span>
                         )}
                         {archivedLabel && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                          <span className="inline-flex items-center gap-2 rounded-full border border-status-warning-border bg-status-warning-bg px-3 py-1 text-xs font-semibold text-status-warning-fg">
                             <Archive className="h-3.5 w-3.5" />
                             {archivedLabel}
                           </span>
@@ -729,7 +729,7 @@ export default function TasksWorkspace() {
                           <Link
                             key={recording.id}
                             href={`/recordings/${recording.id}`}
-                            className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 transition-colors hover:border-sky-300 hover:text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:border-sky-400/40 dark:hover:text-sky-200"
+                            className="inline-flex items-center gap-2 rounded-full border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
                           >
                             <FileAudio className="h-3.5 w-3.5" />
                             {recording.name}
@@ -743,7 +743,7 @@ export default function TasksWorkspace() {
                         type="button"
                         onClick={() => beginEdit(task)}
                         disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-orange-200 hover:text-orange-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-action-border hover:text-action-text disabled:opacity-60"
                       >
                         <Pencil className="h-4 w-4" />
                         Edit
@@ -761,7 +761,7 @@ export default function TasksWorkspace() {
                             )
                           }
                           disabled={isBusy}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-emerald-200 hover:text-emerald-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-emerald-500/30 dark:hover:text-emerald-300"
+                          className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-success-border hover:text-status-success-fg disabled:opacity-60"
                         >
                           {task.completed_at ? (
                             <RotateCcw className="h-4 w-4" />
@@ -783,7 +783,7 @@ export default function TasksWorkspace() {
                           )
                         }
                         disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-amber-200 hover:text-amber-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-amber-500/30 dark:hover:text-amber-300"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-warning-border hover:text-status-warning-fg disabled:opacity-60"
                       >
                         {task.archived_at ? (
                           <ArchiveRestore className="h-4 w-4" />
@@ -796,7 +796,7 @@ export default function TasksWorkspace() {
                         type="button"
                         onClick={() => void handleDeleteTask(task)}
                         disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:border-rose-200 hover:text-rose-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-rose-500/30 dark:hover:text-rose-300"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-danger-border hover:text-status-danger-fg disabled:opacity-60"
                       >
                         {isBusy ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

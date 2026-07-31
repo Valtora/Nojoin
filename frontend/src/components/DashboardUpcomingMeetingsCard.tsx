@@ -67,24 +67,24 @@ export default function DashboardUpcomingMeetingsCard() {
   } = useCalendarDashboard();
 
   return (
-    <div className="density-surface border border-orange-100 bg-white shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
+    <div className="density-surface border border-action-border bg-surface-card shadow-float backdrop-blur">
       <div className="mt-2 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+          <div className="rounded-2xl bg-action-tint p-2 text-action-text">
             <CalendarRange className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="density-heading-section text-2xl font-semibold text-gray-950 dark:text-white">
+            <h2 className="density-heading-section text-2xl font-semibold text-foreground">
               Calendar
             </h2>
             <p
-              className="mt-1 text-sm text-gray-600 dark:text-gray-300"
+              className="mt-1 text-sm text-contrast-helper"
               suppressHydrationWarning
             >
               {formatTimeZoneDate(now, activeTimeZone, "EEEE, d MMMM yyyy")}
             </p>
             {nextEventHelper && (
-              <p className="mt-1 text-xs font-medium text-orange-700 dark:text-orange-300">
+              <p className="mt-1 text-xs font-medium text-action-text">
                 {nextEventHelper}
               </p>
             )}
@@ -93,40 +93,40 @@ export default function DashboardUpcomingMeetingsCard() {
 
         <div className="pt-1 text-right">
           <div
-            className="text-2xl font-semibold tracking-tight text-gray-950 dark:text-white"
+            className="text-2xl font-semibold tracking-tight text-foreground"
             suppressHydrationWarning
           >
             {formatTimeZoneDate(now, activeTimeZone, "HH:mm")}
           </div>
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <div className="mt-1 text-xs text-contrast-helper">
             {activeTimeZone}
           </div>
         </div>
       </div>
 
-      <div className="density-surface-subtle mt-6 border border-gray-200 bg-white p-4 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
+      <div className="density-surface-subtle mt-6 border border-surface-border bg-surface-card p-4 shadow-inner">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-contrast-helper">
               {isViewingCurrentMonth ? "This month" : "Viewing"}
             </div>
             <div
-              className="mt-1 text-lg font-semibold text-gray-950 dark:text-white"
+              className="mt-1 text-lg font-semibold text-foreground"
               suppressHydrationWarning
             >
               {viewedMonthLabel}
             </div>
           </div>
 
-          <div className="inline-flex items-center rounded-full border border-gray-200 bg-white/85 p-1 text-sm shadow-sm dark:border-white/10 dark:bg-white/5">
+          <div className="inline-flex items-center rounded-full border border-surface-border bg-surface-card p-1 text-sm shadow-card">
             <button
               type="button"
               onClick={() => setViewMode("month")}
               aria-pressed={viewMode === "month"}
               className={`inline-flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
                 viewMode === "month"
-                  ? "bg-orange-600 text-white shadow-sm shadow-orange-600/20"
-                  : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                  ? "bg-action text-foreground shadow-card"
+                  : "text-contrast-helper hover:text-foreground"
               }`}
             >
               <LayoutGrid className="h-4 w-4" />
@@ -138,8 +138,8 @@ export default function DashboardUpcomingMeetingsCard() {
               aria-pressed={viewMode === "agenda"}
               className={`inline-flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
                 viewMode === "agenda"
-                  ? "bg-orange-600 text-white shadow-sm shadow-orange-600/20"
-                  : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                  ? "bg-action text-foreground shadow-card"
+                  : "text-contrast-helper hover:text-foreground"
               }`}
             >
               <List className="h-4 w-4" />
@@ -149,7 +149,7 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="min-h-6 text-sm font-medium text-gray-500 dark:text-gray-400">
+          <div className="min-h-6 text-sm font-medium text-contrast-helper">
             {calendarLoading ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -172,7 +172,7 @@ export default function DashboardUpcomingMeetingsCard() {
               type="button"
               onClick={handleJumpToToday}
               disabled={isViewingToday}
-              className="inline-flex h-10 items-center justify-center rounded-full border border-gray-200 bg-white/85 px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-default disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+              className="inline-flex h-10 items-center justify-center rounded-full border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-card transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text disabled:cursor-default disabled:opacity-60"
             >
               Today
             </button>
@@ -180,7 +180,7 @@ export default function DashboardUpcomingMeetingsCard() {
               type="button"
               onClick={handlePreviousMonth}
               aria-label={`View ${format(addMonths(viewedMonth, -1), "MMMM yyyy")}`}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/85 text-gray-600 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-surface-border bg-surface-card text-contrast-helper shadow-card transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -188,7 +188,7 @@ export default function DashboardUpcomingMeetingsCard() {
               type="button"
               onClick={handleNextMonth}
               aria-label={`View ${format(addMonths(viewedMonth, 1), "MMMM yyyy")}`}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/85 text-gray-600 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-surface-border bg-surface-card text-contrast-helper shadow-card transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -196,12 +196,12 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
 
         {viewMode === "month" ? (
-          <div className="density-surface-panel mt-5 border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/70">
+          <div className="density-surface-panel mt-5 border border-surface-border bg-surface-card p-4">
             <div className="grid grid-cols-7 gap-2 text-center">
               {WEEK_DAYS.map((day) => (
                 <div
                   key={day}
-                  className="text-xs font-medium text-gray-400 dark:text-gray-500"
+                  className="text-xs font-medium text-contrast-icon-muted"
                 >
                   {day}
                 </div>
@@ -217,13 +217,13 @@ export default function DashboardUpcomingMeetingsCard() {
                 const dayClasses = `flex min-h-[3.5rem] flex-col items-center justify-center rounded-2xl px-1 py-2 text-sm font-medium transition-colors ${
                   isCurrentDay
                     ? inCurrentMonth
-                      ? "bg-orange-600 text-white shadow-lg shadow-orange-600/25"
-                      : "border border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200"
+                      ? "bg-action text-foreground shadow-float"
+                      : "border border-action-border bg-action-tint text-action-text"
                     : isSelectedDay && inCurrentMonth
-                      ? "border border-orange-300 bg-orange-50 text-orange-700 shadow-sm shadow-orange-600/10 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-200"
+                      ? "border border-action-border bg-action-tint text-action-text shadow-card"
                       : inCurrentMonth
-                        ? "bg-gray-950/[0.04] text-gray-700 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:bg-white/5 dark:text-gray-200 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-200"
-                        : "text-gray-300 dark:text-gray-600"
+                        ? "bg-surface-inset text-contrast-muted hover:border-action-border hover:bg-action-tint hover:text-action-text"
+                        : "text-contrast-icon-muted"
                 }`;
 
                 return (
@@ -242,7 +242,7 @@ export default function DashboardUpcomingMeetingsCard() {
                             return (
                               <span
                                 key={`${day.toISOString()}-dot-${index}`}
-                                className={`h-1.5 w-1.5 rounded-full border border-white/60 dark:border-gray-950/40 ${dot.className}`}
+                                className={`h-1.5 w-1.5 rounded-full border border-surface-border ${dot.className}`}
                                 style={dot.style}
                               />
                             );
@@ -250,8 +250,8 @@ export default function DashboardUpcomingMeetingsCard() {
                           {extraDots > 0 && (
                             <span className={`text-[10px] font-semibold ${
                               isCurrentDay
-                                ? "text-white/90"
-                                : "text-orange-600 dark:text-orange-300"
+                                ? "text-foreground"
+                                : "text-action-text"
                             }`}>
                               +{extraDots}
                             </span>
@@ -272,12 +272,12 @@ export default function DashboardUpcomingMeetingsCard() {
             </div>
           </div>
         ) : (
-          <div className="density-surface-panel mt-5 border border-gray-200 bg-white p-5 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70">
-            <div className="text-sm font-semibold text-gray-950 dark:text-white">
+          <div className="density-surface-panel mt-5 border border-surface-border bg-surface-card p-5 shadow-inner">
+            <div className="text-sm font-semibold text-foreground">
               Agenda
             </div>
             {calendarLoading ? (
-              <div className="mt-3 inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+              <div className="mt-3 inline-flex items-center gap-2 text-sm text-contrast-helper">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading agenda...
               </div>
@@ -287,7 +287,7 @@ export default function DashboardUpcomingMeetingsCard() {
                   <button
                     type="button"
                     onClick={handleTogglePastAgendaItems}
-                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:border-orange-500/20 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+                    className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-card px-3 py-1.5 text-xs font-medium text-contrast-helper shadow-card transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
                   >
                     <History className="h-3.5 w-3.5" />
                     {agendaShowsPastItems
@@ -311,7 +311,7 @@ export default function DashboardUpcomingMeetingsCard() {
                   )
                 ))}
                 {!agendaShowsPastItems && agendaUpcomingItems.length === 0 && (
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-contrast-helper">
                     <span suppressHydrationWarning>
                       No upcoming events in {viewedMonthLabel}.
                     </span>
@@ -319,7 +319,7 @@ export default function DashboardUpcomingMeetingsCard() {
                 )}
               </div>
             ) : (
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+              <p className="mt-2 text-sm text-contrast-helper">
                 <span suppressHydrationWarning>{footerText}</span>
               </p>
             )}
@@ -328,7 +328,7 @@ export default function DashboardUpcomingMeetingsCard() {
       </div>
 
       {viewMode === "month" && (
-        <div className="density-surface-panel mt-4 border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-inner shadow-orange-950/5 dark:border-gray-700/70 dark:bg-gray-800/70 dark:text-gray-300">
+        <div className="density-surface-panel mt-4 border border-surface-border bg-surface-card p-4 text-sm text-contrast-helper shadow-inner">
           {calendarLoading ? (
             <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -337,10 +337,10 @@ export default function DashboardUpcomingMeetingsCard() {
           ) : selectedDay && selectedDayLabel && monthHasContent ? (
             <div>
               <div>
-                <div className="text-sm font-semibold text-gray-950 dark:text-white">
+                <div className="text-sm font-semibold text-foreground">
                   {selectedDayLabel}
                 </div>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-xs text-contrast-helper">
                   {selectedDayState === "today"
                     ? "Live day view"
                     : "Day agenda"} in {activeTimeZone}
@@ -350,7 +350,7 @@ export default function DashboardUpcomingMeetingsCard() {
                 <div className="mt-4 space-y-4">
                   {selectedDayTimeline?.allDayEvents.length ? (
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-contrast-helper">
                         All-day events
                       </div>
                       <div className="mt-3 space-y-3">
@@ -363,7 +363,7 @@ export default function DashboardUpcomingMeetingsCard() {
 
                   {selectedDayTimeline?.timedEvents.length ? (
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-contrast-helper">
                         Timed agenda
                       </div>
 
@@ -371,7 +371,7 @@ export default function DashboardUpcomingMeetingsCard() {
                         {selectedDayTimeline.timedEvents.map((event, index) => (
                           <div key={event.event.id} className="space-y-3">
                             {mobileNowDividerIndex === index && (
-                              <div className="h-px w-full bg-orange-400/80 dark:bg-orange-400/50" />
+                              <div className="h-px w-full bg-action" />
                             )}
                             <DayTimelineEventCard
                               event={event.event}
@@ -382,7 +382,7 @@ export default function DashboardUpcomingMeetingsCard() {
                           </div>
                         ))}
                         {mobileNowDividerIndex === selectedDayTimeline.timedEvents.length && (
-                          <div className="h-px w-full bg-orange-400/80 dark:bg-orange-400/50" />
+                          <div className="h-px w-full bg-action" />
                         )}
                       </div>
 
@@ -395,19 +395,19 @@ export default function DashboardUpcomingMeetingsCard() {
                             ).map((hour, index) => (
                               <div
                                 key={`timeline-label-${hour}`}
-                                className="absolute right-0 pr-1 text-xs font-medium text-gray-400 dark:text-gray-500"
+                                className="absolute right-0 pr-1 text-xs font-medium text-contrast-icon-muted"
                                 style={{ top: `${index * TIMELINE_HOUR_HEIGHT}px` }}
                               >
                                 {formatHourLabel(hour)}
                               </div>
                             ))}
-                            <div className="absolute bottom-0 right-0 pr-1 text-xs font-medium text-gray-400 dark:text-gray-500">
+                            <div className="absolute bottom-0 right-0 pr-1 text-xs font-medium text-contrast-icon-muted">
                               {formatHourLabel(selectedDayTimeline.endHour)}
                             </div>
                           </div>
 
                           <div
-                            className="density-surface-panel relative overflow-hidden border border-gray-200 bg-white px-2 dark:border-gray-700/70 dark:bg-gray-800/80"
+                            className="density-surface-panel relative overflow-hidden border border-surface-border bg-surface-card px-2"
                             style={{ height: `${selectedDayTimeline.height}px` }}
                           >
                             {Array.from(
@@ -416,15 +416,15 @@ export default function DashboardUpcomingMeetingsCard() {
                             ).map((hour, index) => (
                               <div
                                 key={`timeline-line-${hour}`}
-                                className="absolute inset-x-0 border-t border-gray-200/80 dark:border-white/10"
+                                className="absolute inset-x-0 border-t border-surface-border"
                                 style={{ top: `${index * TIMELINE_HOUR_HEIGHT}px` }}
                               />
                             ))}
-                            <div className="absolute inset-x-0 bottom-0 border-t border-gray-200/80 dark:border-white/10" />
+                            <div className="absolute inset-x-0 bottom-0 border-t border-surface-border" />
 
                             {selectedDayTimeline.nowOffset !== null && (
                               <div
-                                className="absolute inset-x-0 z-20 border-t-2 border-orange-500"
+                                className="absolute inset-x-0 z-20 border-t-2 border-action"
                                 style={{ top: `${selectedDayTimeline.nowOffset}px` }}
                               />
                             )}
@@ -457,14 +457,14 @@ export default function DashboardUpcomingMeetingsCard() {
                       </div>
                     </div>
                   ) : selectedDayEvents.length ? (
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                    <p className="text-sm text-contrast-helper">
                       No timed events on {format(selectedDay, "EEE d MMM")}.
                     </p>
                   ) : null}
 
                   {selectedDayRecordings.length ? (
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-orange-700 dark:text-orange-300">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-action-text">
                         Recorded meetings
                       </div>
                       <div className="mt-3 space-y-3">
@@ -481,7 +481,7 @@ export default function DashboardUpcomingMeetingsCard() {
                   ) : null}
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                <p className="mt-2 text-sm text-contrast-helper">
                   No events or meetings on {format(selectedDay, "EEE d MMM")}.
                 </p>
               )}

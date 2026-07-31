@@ -52,14 +52,14 @@ export function LinkedRecordingsMeta({
   const singleRecording = recordings.length === 1 ? recordings[0] : null;
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-      <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 font-medium text-gray-700 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-200">
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-contrast-helper">
+      <span className="inline-flex items-center rounded-full border border-surface-border bg-surface-inset px-2.5 py-1 font-medium text-contrast-muted">
         {recordings.length === 1 ? "Recording linked" : `${recordings.length} recordings linked`}
       </span>
       {singleRecording ? (
         <Link
           href={`/recordings/${singleRecording.id}`}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-gray-700 transition-colors hover:text-gray-950 dark:text-gray-200 dark:hover:text-white"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-contrast-muted transition-colors hover:text-foreground"
         >
           Open recording
           <ArrowRight className="h-3 w-3" />
@@ -86,12 +86,12 @@ export function DashboardRecordingCard({
   return (
     <Link
       href={`/recordings/${recording.id}`}
-      className="group block rounded-[1.5rem] border border-orange-200/80 bg-white px-4 py-4 shadow-sm shadow-orange-950/5 transition-colors hover:border-orange-300 hover:bg-orange-50/40 dark:border-orange-500/20 dark:bg-gray-800/70 dark:hover:border-orange-400/30 dark:hover:bg-orange-500/10"
+      className="group block rounded-[1.5rem] border border-action-border bg-surface-card px-4 py-4 shadow-card transition-colors hover:border-action-border hover:bg-action-tint"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start gap-2">
-            <div className="min-w-0 flex-1 text-base font-semibold text-gray-950 dark:text-white">
+            <div className="min-w-0 flex-1 text-base font-semibold text-foreground">
               <span className="line-clamp-2">{recording.name}</span>
             </div>
             {hasTags ? (
@@ -102,7 +102,7 @@ export function DashboardRecordingCard({
                   return (
                     <span
                       key={tag.id}
-                      className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-900 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200"
+                      className="inline-flex items-center rounded-full border border-action-border bg-action-tint px-2 py-0.5 text-[11px] font-semibold text-action-text"
                     >
                       <span
                         className={`mr-1.5 h-1.5 w-1.5 rounded-full ${colour.dot}`}
@@ -116,21 +116,21 @@ export function DashboardRecordingCard({
           </div>
 
           {hasSpeakers ? (
-            <div className="mt-3 inline-flex max-w-full items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
-              <Users className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+            <div className="mt-3 inline-flex max-w-full items-start gap-2 text-sm text-contrast-helper">
+              <Users className="mt-0.5 h-4 w-4 shrink-0 text-action-text" />
               <span className="line-clamp-2">{recording.speaker_names.join(", ")}</span>
             </div>
           ) : null}
 
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600 dark:text-gray-300">
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-contrast-helper">
             {showDate ? (
               <span className="inline-flex items-center gap-1.5">
-                <Calendar className="h-4 w-4 text-orange-600 dark:text-orange-300" />
+                <Calendar className="h-4 w-4 text-action-text" />
                 {formatTimeZoneDate(startedAt, timeZone, "EEE d MMM")}
               </span>
             ) : null}
             <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-4 w-4 text-orange-600 dark:text-orange-300" />
+              <Clock className="h-4 w-4 text-action-text" />
               {formatRecordingTime(recording, timeZone)}
             </span>
             <span>{formatRecordingDuration(recording.duration_seconds)}</span>
@@ -142,7 +142,7 @@ export function DashboardRecordingCard({
           </div>
         </div>
 
-        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-orange-700 transition-colors group-hover:text-orange-800 dark:text-orange-300 dark:group-hover:text-orange-200">
+        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-action-text transition-colors group-hover:text-action-text">
           Open
           <ArrowRight className="h-4 w-4" />
         </span>
@@ -159,18 +159,18 @@ export function DayTimelineAllDayChip({
   const calendarColour = getCalendarColourPresentation(event.calendar_colour);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700/70 dark:bg-gray-800/80">
+    <div className="relative overflow-hidden rounded-2xl border border-surface-border bg-surface-card px-4 py-3 shadow-card">
       <span
         className={`absolute inset-y-0 left-0 w-1.5 ${calendarColour.className}`}
         style={calendarColour.style}
       />
       <div className="pl-2">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-contrast-helper">
           <span>All day</span>
           <span>•</span>
           <span>{event.calendar_name}</span>
         </div>
-        <div className="mt-1 line-clamp-2 text-sm font-semibold text-gray-950 dark:text-white">
+        <div className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
           {event.title}
         </div>
         <LinkedRecordingsMeta recordings={event.linked_recordings} />
@@ -247,10 +247,10 @@ export function DayTimelineEventCard({
       meetingUrl &&
       (layout === "stacked" || timelineDensity === "comfortable"),
   );
-  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-white text-left shadow-sm transition-colors hover:border-orange-200 hover:bg-orange-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 dark:bg-gray-900/95 dark:hover:border-orange-400/30 dark:hover:bg-orange-500/10 ${
+  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-surface-card text-left shadow-card transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
     isLive
-      ? "border-orange-300 shadow-orange-600/15 dark:border-orange-400/40"
-      : "border-gray-200 dark:border-gray-700/70"
+      ? "border-action-border"
+      : "border-surface-border"
   } ${
     isPast ? "opacity-70" : ""
   } ${
@@ -265,25 +265,25 @@ export function DayTimelineEventCard({
         style={calendarColour.style}
       />
       {layout === "timeline" && continuesBefore && (
-        <ChevronsUp className="pointer-events-none absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 text-gray-400 dark:text-gray-500" />
+        <ChevronsUp className="pointer-events-none absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 text-contrast-icon-muted" />
       )}
       {layout === "timeline" && continuesAfter && (
-        <ChevronsDown className="pointer-events-none absolute bottom-0 left-1/2 h-3 w-3 -translate-x-1/2 text-gray-400 dark:text-gray-500" />
+        <ChevronsDown className="pointer-events-none absolute bottom-0 left-1/2 h-3 w-3 -translate-x-1/2 text-contrast-icon-muted" />
       )}
       <div className={`h-full pl-4 pr-3 ${paddingClass}`}>
         <div className={`flex items-start justify-between gap-3 ${showJoinPill ? "pr-12" : ""}`}>
           <div className="min-w-0">
             {showTimeRow && (
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-contrast-helper">
                 <span>{formatAgendaTime(event, timeZone)}</span>
                 {showLiveBadge && (
-                  <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] text-orange-700 dark:bg-orange-500/15 dark:text-orange-200">
+                  <span className="rounded-full bg-action-tint px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] text-action-text">
                     Live now
                   </span>
                 )}
               </div>
             )}
-            <div className={`font-semibold text-gray-950 dark:text-white ${titleClass}`}>
+            <div className={`font-semibold text-foreground ${titleClass}`}>
               {event.title}
             </div>
           </div>
@@ -297,11 +297,11 @@ export function DayTimelineEventCard({
                       : `${event.linked_recordings.length} linked recordings`
                   }
                 >
-                  <Mic className={`${linkIndicatorClass} text-orange-600 dark:text-orange-300`} />
+                  <Mic className={`${linkIndicatorClass} text-action-tint-fg`} />
                 </span>
               )}
               {hasLink && (
-                <ExternalLink className={`${linkIndicatorClass} text-gray-400 dark:text-gray-500`} />
+                <ExternalLink className={`${linkIndicatorClass} text-contrast-icon-muted`} />
               )}
               <span
                 className={`${dotSizeClass} rounded-full ${calendarColour.className}`}
@@ -314,17 +314,17 @@ export function DayTimelineEventCard({
         {(showCalendarName || showPlainLocation) && (
           <>
             {showCalendarName && (
-              <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+              <div className="mt-2 text-xs text-contrast-helper">
                 {event.calendar_name}
               </div>
             )}
 
             {showPlainLocation && locationText && (
               <div
-                className="mt-2 flex min-w-0 items-center gap-2 text-xs text-gray-600 dark:text-gray-300"
+                className="mt-2 flex min-w-0 items-center gap-2 text-xs text-contrast-helper"
                 title={locationText}
               >
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-300" />
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-action-text" />
                 <span className="truncate">{locationText}</span>
               </div>
             )}
@@ -348,7 +348,7 @@ export function DayTimelineEventCard({
           href={meetingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-orange-600 px-2.5 py-0.5 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-orange-700"
+          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-action px-2.5 py-0.5 text-[10px] font-semibold text-foreground shadow-card transition-colors hover:bg-action"
         >
           <Video className="h-3 w-3" />
           Join
@@ -391,16 +391,16 @@ export function AgendaEventCard({
   const locationHost = getUrlHost(locationText);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700/70 dark:bg-gray-800/80">
-      <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-contrast-helper">
         <span>{formatAgendaDate(event, timeZone)}</span>
         <span>•</span>
         <span>{formatAgendaTime(event, timeZone)}</span>
       </div>
-      <div className="mt-2 text-base font-semibold text-gray-950 dark:text-white">
+      <div className="mt-2 text-base font-semibold text-foreground">
         {event.title}
       </div>
-      <div className="mt-1 inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+      <div className="mt-1 inline-flex items-center gap-2 text-sm text-contrast-helper">
         <span
           className={`h-2.5 w-2.5 rounded-full ${calendarColour.className}`}
           style={calendarColour.style}
@@ -408,7 +408,7 @@ export function AgendaEventCard({
         {event.calendar_name}
       </div>
       {(showLocation || showMeetingUrl) && (
-        <div className="mt-3 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+        <div className="mt-3 space-y-2 text-sm text-contrast-helper">
           {showLocation && locationText && (
             locationIsUrl ? (
               <a
@@ -416,16 +416,16 @@ export function AgendaEventCard({
                 target="_blank"
                 rel="noopener noreferrer"
                 title={locationText}
-                className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
+                className="inline-flex items-start gap-2 text-contrast-helper transition-colors hover:text-foreground hover:underline"
               >
-                <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+                <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-contrast-icon-muted" />
                 <span className="min-w-0 break-words">
                   Open link{locationHost ? ` (${locationHost})` : ""}
                 </span>
               </a>
             ) : (
               <div className="inline-flex items-start gap-2">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-action-text" />
                 <span>{locationText}</span>
               </div>
             )
@@ -437,9 +437,9 @@ export function AgendaEventCard({
               target="_blank"
               rel="noopener noreferrer"
               title={meetingUrl}
-              className="inline-flex items-start gap-2 text-gray-600 transition-colors hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-white"
+              className="inline-flex items-start gap-2 text-contrast-helper transition-colors hover:text-foreground hover:underline"
             >
-              <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
+              <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-contrast-icon-muted" />
               <span className="min-w-0 break-words">
                 Join meeting{meetingHost ? ` (${meetingHost})` : ""}
               </span>
