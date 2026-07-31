@@ -209,7 +209,7 @@ export default function UsersTab() {
         </div>
         <button
           onClick={toggleCreateForm}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-action-hover"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover"
         >
           <UserPlus className="w-4 h-4" />
           Add User
@@ -279,7 +279,7 @@ export default function UsersTab() {
               </button>
               <button
                 type="submit"
-                className="rounded-xl bg-action px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-action-hover"
+                className="rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover"
               >
                 Create User
               </button>
@@ -491,7 +491,7 @@ export default function UsersTab() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium text-foreground bg-action hover:bg-action-hover rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-action-on bg-action hover:bg-action-hover rounded-md transition-colors"
                 >
                   Save Changes
                 </button>

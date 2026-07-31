@@ -311,7 +311,7 @@ export default function ChatPanel({
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
                   msg.role === "user"
-                    ? "bg-action text-foreground rounded-tr-none"
+                    ? "bg-action text-action-on rounded-tr-none"
                     : "bg-surface-card border border-surface-border text-foreground rounded-tl-none"
                 }`}
               >
@@ -404,7 +404,7 @@ export default function ChatPanel({
               <button
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim()}
-                className="p-2 bg-action text-foreground rounded-lg hover:bg-action disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 <Send className="w-4 h-4" />
               </button>

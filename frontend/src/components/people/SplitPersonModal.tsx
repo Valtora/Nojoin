@@ -351,7 +351,7 @@ export default function SplitPersonModal({
                              w-8 h-8 rounded-full flex items-center justify-center transition-all
                              ${
                                isPlaying
-                                 ? "bg-action text-foreground shadow-md scale-105"
+                                 ? "bg-action text-action-on shadow-md scale-105"
                                  : "bg-surface-inset text-contrast-helper hover:bg-action-tint hover:text-action-text"
                              }
                            `}

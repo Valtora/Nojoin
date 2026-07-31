@@ -467,7 +467,7 @@ export default function NotesView({
               <button
                 onClick={() => onGenerateNotes()}
                 disabled={isGenerating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-foreground text-sm rounded-l-md hover:bg-action disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Generate Notes with AI"
               >
                 {isGenerating ? (
@@ -674,7 +674,7 @@ export default function NotesView({
                 <button
                   onClick={handleFindReplaceSubmit}
                   disabled={!findText || isSubmitting}
-                  className="px-3 py-1.5 bg-action text-foreground text-sm rounded-md hover:bg-action disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card"
+                  className="px-3 py-1.5 bg-action text-action-on text-sm rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card"
                 >
                   Replace All
                 </button>
@@ -705,7 +705,7 @@ export default function NotesView({
             <button
               onClick={() => onGenerateNotes()}
               disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-action text-foreground rounded-md hover:bg-action disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isGenerating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

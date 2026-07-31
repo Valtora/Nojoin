@@ -355,7 +355,7 @@ export default function CalendarProviderSettings() {
                     type="button"
                     onClick={() => handleSave(provider.provider)}
                     disabled={isSaving}
-                    className="inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-action disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-50"
                   >
                     {isSaving ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

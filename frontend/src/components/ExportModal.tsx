@@ -418,7 +418,7 @@ export default function ExportModal({
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-action text-foreground rounded-md hover:bg-action-hover transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover transition-colors"
           >
             <Download className="w-4 h-4" />
             Export

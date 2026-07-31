@@ -275,7 +275,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
         </h3>
         <button
           onClick={() => setIsUploadModalOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 bg-action text-foreground text-sm rounded-lg hover:bg-action transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 bg-action text-action-on text-sm rounded-lg hover:bg-action-hover transition-colors"
         >
           <Upload className="w-4 h-4" />
           Upload
@@ -312,7 +312,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             </p>
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-action text-foreground font-medium rounded-lg hover:bg-action transition-colors shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on font-medium rounded-lg hover:bg-action-hover transition-colors shadow-sm"
             >
               <Upload className="w-4 h-4" />
               Upload Document

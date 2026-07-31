@@ -348,7 +348,7 @@ export function DayTimelineEventCard({
           href={meetingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-action px-2.5 py-0.5 text-[10px] font-semibold text-foreground shadow-card transition-colors hover:bg-action"
+          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-action px-2.5 py-0.5 text-[10px] font-semibold text-action-on shadow-card transition-colors hover:bg-action-hover"
         >
           <Video className="h-3 w-3" />
           Join

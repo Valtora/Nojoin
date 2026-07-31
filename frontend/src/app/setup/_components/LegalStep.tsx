@@ -91,7 +91,7 @@ export default function LegalStep({
 
       <button
         onClick={onAccept}
-        className="w-full bg-action hover:bg-action-hover text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+        className="w-full bg-action hover:bg-action-hover text-action-on font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
       >
         I Accept &amp; Continue <ArrowRight className="w-4 h-4" />
       </button>

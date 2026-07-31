@@ -186,7 +186,7 @@ export default function MeetingControls({
               disabled={meetingSurfaceState.buttonDisabled}
               title={meetingSurfaceState.buttonTooltip}
               aria-label={meetingSurfaceState.buttonLabel}
-              className="density-control-lg flex items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-action disabled:cursor-not-allowed disabled:bg-action-tint"
+              className="density-control-lg flex items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
             >
               <Mic className="h-4 w-4" />
               {meetingSurfaceState.buttonLabel}
@@ -221,7 +221,7 @@ export default function MeetingControls({
             disabled={meetingSurfaceState.buttonDisabled}
             title={meetingSurfaceState.buttonTooltip}
             aria-label={meetingSurfaceState.buttonLabel}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-action px-4 py-2 font-medium text-foreground transition-colors hover:bg-action disabled:cursor-not-allowed disabled:bg-action-tint"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-action px-4 py-2 font-medium text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
           >
             <Mic className="h-4 w-4" />
             {meetingSurfaceState.buttonLabel}

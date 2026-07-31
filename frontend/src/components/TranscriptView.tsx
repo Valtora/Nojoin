@@ -750,7 +750,7 @@ export default function TranscriptView({
                 <button
                   onClick={handleFindReplaceSubmit}
                   disabled={!findText || isSubmitting}
-                  className="whitespace-nowrap rounded-md bg-action px-2.5 py-1.5 text-xs text-foreground shadow-card hover:bg-action disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                  className="whitespace-nowrap rounded-md bg-action px-2.5 py-1.5 text-xs text-action-on shadow-card hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   <span className="sm:hidden">All</span>
                   <span className="hidden sm:inline">Replace All</span>
@@ -825,7 +825,7 @@ export default function TranscriptView({
                     className={`p-2 md:p-1.5 rounded-full transition-colors shadow-card ${
                       isGroupActive
                         ? "bg-status-success-bg text-foreground hover:bg-status-success-bg"
-                        : "bg-surface-inset text-contrast-helper hover:bg-action hover:text-foreground"
+                        : "bg-surface-inset text-contrast-helper hover:bg-action hover:text-action-on"
                     }`}
                     title={
                       isGroupActive && isPlaying ? "Pause segment" : "Play segment"

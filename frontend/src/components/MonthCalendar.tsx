@@ -81,7 +81,7 @@ export default function MonthCalendar({
               onClick={() => onSelectDay(dayKey)}
               className={`relative aspect-square flex items-center justify-center rounded text-xs transition-colors ${
                 isSelected
-                  ? "bg-action text-foreground font-semibold"
+                  ? "bg-action text-action-on font-semibold"
                   : inMonth
                     ? "text-contrast-muted hover:bg-action-tint"
                     : "text-contrast-icon-muted hover:bg-surface-inset"

@@ -33,7 +33,7 @@ export default function CompleteStep({
 
           <button
             onClick={onComplete}
-            className="w-full bg-action hover:bg-action-hover text-white font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
+            className="w-full bg-action hover:bg-action-hover text-action-on font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
           >
             Complete Setup <ArrowRight className="w-5 h-5" />
           </button>
@@ -72,7 +72,7 @@ export default function CompleteStep({
           {error && (
             <button
               onClick={onComplete}
-              className="w-full bg-action hover:bg-action-hover text-white font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
+              className="w-full bg-action hover:bg-action-hover text-action-on font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
             >
               Continue to Dashboard <ArrowRight className="w-5 h-5" />
             </button>

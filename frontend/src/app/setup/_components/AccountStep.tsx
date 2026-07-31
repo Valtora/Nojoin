@@ -130,7 +130,7 @@ export default function AccountStep({
 
       <button
         type="submit"
-        className="w-full mt-6 bg-action hover:bg-action-hover text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+        className="w-full mt-6 bg-action hover:bg-action-hover text-action-on font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
       >
         Next Step <ArrowRight className="w-4 h-4" />
       </button>

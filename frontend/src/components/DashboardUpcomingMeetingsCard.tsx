@@ -125,7 +125,7 @@ export default function DashboardUpcomingMeetingsCard() {
               aria-pressed={viewMode === "month"}
               className={`inline-flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
                 viewMode === "month"
-                  ? "bg-action text-foreground shadow-card"
+                  ? "bg-action text-action-on shadow-card"
                   : "text-contrast-helper hover:text-foreground"
               }`}
             >
@@ -138,7 +138,7 @@ export default function DashboardUpcomingMeetingsCard() {
               aria-pressed={viewMode === "agenda"}
               className={`inline-flex items-center gap-2 rounded-full px-3 py-2 font-medium transition-colors ${
                 viewMode === "agenda"
-                  ? "bg-action text-foreground shadow-card"
+                  ? "bg-action text-action-on shadow-card"
                   : "text-contrast-helper hover:text-foreground"
               }`}
             >
@@ -217,7 +217,7 @@ export default function DashboardUpcomingMeetingsCard() {
                 const dayClasses = `flex min-h-[3.5rem] flex-col items-center justify-center rounded-2xl px-1 py-2 text-sm font-medium transition-colors ${
                   isCurrentDay
                     ? inCurrentMonth
-                      ? "bg-action text-foreground shadow-float"
+                      ? "bg-action text-action-on shadow-float"
                       : "border border-action-border bg-action-tint text-action-text"
                     : isSelectedDay && inCurrentMonth
                       ? "border border-action-border bg-action-tint text-action-text shadow-card"

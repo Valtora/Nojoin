@@ -521,7 +521,7 @@ interface TagNode extends PeopleTag {
                         type="button"
                         onClick={handleMergeClick}
                         disabled={!mergeTarget || isSubmitting}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-action text-foreground rounded-lg hover:bg-action-hover transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSubmitting ? "Merging..." : "Confirm Merge"}
                         <ArrowRight className="w-4 h-4" />
@@ -563,7 +563,7 @@ interface TagNode extends PeopleTag {
                 <button
                   type="button"
                   onClick={() => setShowTagInput(!showTagInput)}
-                  className="text-xs text-action-text hover:text-action-text flex items-center gap-1"
+                  className="text-xs text-action-text hover:text-action-text-hover flex items-center gap-1"
                 >
                   <Plus className="w-3 h-3" /> New Tag
                 </button>
@@ -587,7 +587,7 @@ interface TagNode extends PeopleTag {
                   <button
                     type="button"
                     onClick={handleCreateTag}
-                    className="px-3 py-1.5 text-sm bg-action text-foreground rounded-md hover:bg-action-hover"
+                    className="px-3 py-1.5 text-sm bg-action text-action-on rounded-md hover:bg-action-hover"
                   >
                     Add
                   </button>
@@ -636,7 +636,7 @@ interface TagNode extends PeopleTag {
             type="submit"
             form="person-form"
             disabled={isSubmitting}
-            className="px-4 py-2 text-sm font-medium text-foreground bg-action hover:bg-action-hover rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-action-on bg-action hover:bg-action-hover rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? "Saving..." : "Save Person"}
           </button>

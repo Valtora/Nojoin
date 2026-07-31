@@ -228,7 +228,7 @@ export default function NotesTemplateEditorModal({
               type="button"
               onClick={handleGenerate}
               disabled={readOnly || generating || !brief.trim()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-foreground hover:bg-action transition-colors disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-action-on hover:bg-action-hover transition-colors disabled:opacity-60"
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -354,7 +354,7 @@ export default function NotesTemplateEditorModal({
             <button
               onClick={handleSave}
               disabled={saving || overLimit || !name.trim() || !sections.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-foreground hover:bg-action transition-colors disabled:opacity-60"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-action-on hover:bg-action-hover transition-colors disabled:opacity-60"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Save

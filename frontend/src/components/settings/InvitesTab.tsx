@@ -336,7 +336,7 @@ export default function InvitesTab() {
                 <button
                   onClick={handleCreate}
                   disabled={creating}
-                  className="px-4 py-2 text-sm font-medium text-foreground bg-action hover:bg-action-hover rounded-md transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium text-action-on bg-action hover:bg-action-hover rounded-md transition-colors disabled:opacity-50"
                 >
                   {creating ? "Creating..." : "Create Invite"}
                 </button>

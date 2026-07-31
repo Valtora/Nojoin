@@ -76,7 +76,7 @@ export default function NotesTemplatePicker({
         disabled={disabled}
         title="Generate with a different structure"
         aria-label="Choose notes structure"
-        className="flex items-center px-2 bg-action text-foreground text-sm rounded-r-md border-l border-action hover:bg-action disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center px-2 bg-action text-action-on text-sm rounded-r-md border-l border-action hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         <ChevronDown className="w-4 h-4" />
       </button>

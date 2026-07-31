@@ -85,7 +85,7 @@ export function EventDetailsPopoverContent({
           target="_blank"
           rel="noopener noreferrer"
           title={meetingUrl}
-          className="mt-3 inline-flex items-center gap-2 rounded-full bg-action px-3.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-action"
+          className="mt-3 inline-flex items-center gap-2 rounded-full bg-action px-3.5 py-1.5 text-xs font-semibold text-action-on transition-colors hover:bg-action-hover"
         >
           <Video className="h-3.5 w-3.5" />
           Join meeting{meetingHost ? ` (${meetingHost})` : ""}

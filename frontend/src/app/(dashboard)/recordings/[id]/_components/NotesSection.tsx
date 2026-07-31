@@ -60,7 +60,7 @@ export default function NotesSection({
           <button
             type="button"
             onClick={() => void onGenerateNotes()}
-            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-status-warning-bg px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-status-warning-bg"
+            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-status-warning-bg px-3 py-1.5 text-xs font-semibold text-status-warning-fg transition-colors hover:bg-status-warning-bg"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Regenerate

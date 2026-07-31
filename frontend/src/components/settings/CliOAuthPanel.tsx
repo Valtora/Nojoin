@@ -371,7 +371,7 @@ function ProviderConnectRow({
           type="button"
           onClick={beginFlow}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-action-on text-sm font-semibold disabled:opacity-50"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -421,7 +421,7 @@ function ProviderConnectRow({
                     href={device.verificationUriComplete || device.verificationUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold no-underline"
+                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-action-on text-sm font-semibold no-underline"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Open the {meta.vendor} sign-in page
@@ -448,7 +448,7 @@ function ProviderConnectRow({
                       href={authorizeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold no-underline"
+                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-action-on text-sm font-semibold no-underline"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Grant access on {meta.vendor}
@@ -499,7 +499,7 @@ function ProviderConnectRow({
                   type="button"
                   onClick={handleComplete}
                   disabled={busy || code.trim().length === 0}
-                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-action-on text-sm font-semibold disabled:opacity-50"
                 >
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   Connect

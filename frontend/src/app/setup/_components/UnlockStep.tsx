@@ -71,7 +71,7 @@ export default function UnlockStep({
       <button
         type="submit"
         disabled={unlocking}
-        className="w-full mt-4 bg-action hover:bg-action-hover text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+        className="w-full mt-4 bg-action hover:bg-action-hover text-action-on font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
       >
         {unlocking ? (
           <>
@@ -86,7 +86,7 @@ export default function UnlockStep({
         Already set up?{" "}
         <Link
           href="/login"
-          className="font-medium text-action-text hover:text-action-text"
+          className="font-medium text-action-text hover:text-action-text-hover"
         >
           Back to sign in
         </Link>

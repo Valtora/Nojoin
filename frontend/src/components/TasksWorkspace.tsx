@@ -225,7 +225,7 @@ function DeadlinePickerButton({
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-action-border bg-surface-card text-action-text outline-none transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text focus:border-action focus:ring-2 focus:ring-action"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-action-border bg-surface-card text-action-text outline-none transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text-hover focus:border-action focus:ring-2 focus:ring-action"
         aria-label={formatted ? `Edit deadline, ${formatted}` : "Set deadline"}
         title={formatted ? `Edit deadline: ${formatted}` : "Set deadline"}
       >
@@ -503,7 +503,7 @@ export default function TasksWorkspace() {
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="density-control-lg inline-flex h-[var(--control-height-lg)] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-action px-5 text-sm font-semibold text-foreground transition-colors hover:bg-action"
+                className="density-control-lg inline-flex h-[var(--control-height-lg)] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-action px-5 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover"
               >
                 <Plus className="h-4 w-4" />
                 Create Task
@@ -571,7 +571,7 @@ export default function TasksWorkspace() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-action disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -660,7 +660,7 @@ export default function TasksWorkspace() {
                           type="button"
                           onClick={() => void saveEdit(task)}
                           disabled={isBusy}
-                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-action disabled:opacity-60"
+                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-2.5 text-sm font-semibold text-action-on hover:bg-action-hover disabled:opacity-60"
                         >
                           {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                           Save

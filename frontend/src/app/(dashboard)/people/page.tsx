@@ -309,14 +309,14 @@ export default function PeoplePage() {
                   <TagIcon className="w-5 h-5" />
                   Tags
                   {selectedTagIds.length > 0 && (
-                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-foreground bg-action rounded-full">
+                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-action-on bg-action rounded-full">
                       {selectedTagIds.length}
                     </span>
                   )}
                 </button>
                 <button
                   onClick={handleAddNew}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-foreground rounded-lg hover:bg-action transition-colors shadow-sm font-medium"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-sm font-medium"
                 >
                   <Plus className="w-5 h-5" />
                   Add Person

@@ -70,7 +70,7 @@ export default function LiveDocumentsPanel({
         <button
           type="button"
           onClick={() => setIsUploadOpen(true)}
-          className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-action"
+          className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover"
         >
           <Upload className="h-4 w-4" />
           Upload

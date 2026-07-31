@@ -22,7 +22,7 @@ const DEPLOYMENT_GUIDE_URL =
   "https://github.com/Valtora/Nojoin/blob/main/docs/DEPLOYMENT.md";
 
 const PRIMARY_ACTION_STYLES =
-  "inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-action";
+  "inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover";
 
 const SECONDARY_ACTION_STYLES =
   "inline-flex items-center gap-2 rounded-xl border border-control-border bg-surface-card px-4 py-2 text-sm font-medium text-contrast-muted transition hover:bg-surface-inset";
@@ -75,7 +75,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
         href={match[2]}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-action-text underline decoration-action underline-offset-2 hover:text-action-text"
+        className="text-action-text underline decoration-action underline-offset-2 hover:text-action-text-hover"
       >
         {match[1]}
       </a>,
@@ -406,7 +406,7 @@ export default function UpdatesSettings({
               href={DEPLOYMENT_GUIDE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-medium text-action-text hover:text-action-text"
+              className="inline-flex items-center gap-2 text-sm font-medium text-action-text hover:text-action-text-hover"
             >
               <ExternalLink className="h-4 w-4" />
               Read the deployment guide

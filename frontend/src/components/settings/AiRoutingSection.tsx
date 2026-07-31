@@ -391,7 +391,7 @@ function RoutingCard({
           className={cn(
             "flex h-5 w-5 items-center justify-center rounded-full border",
             selected
-              ? "border-action bg-action text-foreground"
+              ? "border-action bg-action text-action-on"
               : "border-control-border",
           )}
         >

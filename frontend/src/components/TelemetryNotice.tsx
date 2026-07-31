@@ -105,7 +105,7 @@ export default function TelemetryNotice() {
               type="button"
               disabled={busy}
               onClick={() => void decide(true)}
-              className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-action disabled:opacity-60"
+              className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60"
             >
               Keep it on
             </button>

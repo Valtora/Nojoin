@@ -261,7 +261,7 @@ export default function AudioPlayer({
           <div className="flex items-center justify-between gap-3">
             <button
               onClick={togglePlay}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-action text-foreground shadow-card transition-colors hover:bg-action"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-action text-action-on shadow-card transition-colors hover:bg-action-hover"
             >
               {isPlaying ? (
                 <Pause className="h-5 w-5 fill-current" />
@@ -310,7 +310,7 @@ export default function AudioPlayer({
           {/* Play/Pause Button */}
           <button
             onClick={togglePlay}
-            className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-action text-foreground hover:bg-action transition-colors shadow-card shrink-0 order-1"
+            className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-action text-action-on hover:bg-action-hover transition-colors shadow-card shrink-0 order-1"
           >
             {isPlaying ? (
               <Pause className="w-5 h-5 fill-current" />
