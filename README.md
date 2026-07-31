@@ -110,7 +110,6 @@ Notes:
 - [Security Policy](docs/SECURITY.md)
 - [Anonymous Usage Data](docs/TELEMETRY.md)
 - [Legal Disclaimer](docs/LEGAL.md)
-- [Screenshots](docs/SCREENSHOTS.md)
 
 ## Project Status
 

@@ -106,7 +106,7 @@ Additional scope rules:
 
 Documentation is owned alongside the code it describes. Any change to behaviour, setup, deployment, or support must update the relevant guide in the same pull request:
 
-- Product or UI behaviour: `docs/USAGE.md`, and `docs/SCREENSHOTS.md` if a captured screen changes.
+- Product or UI behaviour: `docs/USAGE.md`, and the screenshots in `README.md` if a captured screen changes.
 - Browser capture behaviour: `docs/CAPTURE.md`.
 - Local setup or development workflow: `docs/DEVELOPMENT.md` and this file.
 - Deployment, configuration, or upgrade behaviour: `docs/DEPLOYMENT.md`.
