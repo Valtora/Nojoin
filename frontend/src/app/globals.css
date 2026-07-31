@@ -45,6 +45,10 @@
   --action-hover: #9a3412;
   --action-active: #7c2d12;
   --action-on: #ffffff;
+  /* Secondary text on an action fill, for a subtitle under a heading. Shared
+     across themes because the fill is, and it clears 4.5:1 with little room to
+     spare, so it must not be lightened further. */
+  --action-on-muted: #ffedd5;
   --action-text: #c2410c;
   --action-text-hover: #9a3412;
   /* Destructive actions, shaped like the action family so the two behave the
@@ -306,6 +310,7 @@ html[data-ui-density="compact"] {
   --color-action-hover: var(--action-hover);
   --color-action-active: var(--action-active);
   --color-action-on: var(--action-on);
+  --color-action-on-muted: var(--action-on-muted);
   --color-action-text: var(--action-text);
   --color-action-text-hover: var(--action-text-hover);
   --color-action-tint: var(--action-tint);

@@ -43,6 +43,7 @@ import ContextMenu from "./ContextMenu";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 
+import IconButton from "./ui/IconButton";
 import NavItem from "./mainNav/NavItem";
 import TagItem from "./mainNav/TagItem";
 import { TagWithChildren, useMainNavTags } from "./mainNav/useMainNavTags";
@@ -263,17 +264,17 @@ export default function MainNav() {
       {/* Mobile Overlay */}
       {isMobileNavOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
+          className="lg:hidden fixed inset-0 bg-scrim z-[var(--z-dropdown)] transition-opacity"
           onClick={() => setMobileNavOpen(false)}
         />
       )}
 
       <aside
         id="main-nav"
-        className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.20),_transparent_45%),linear-gradient(180deg,_#fff7ed_0%,_#fffbf5_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.14),_transparent_45%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_100%)] flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-50 transition-all duration-300 lg:sticky lg:top-0 lg:h-screen ${
+        className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] transition-all duration-300 lg:sticky lg:top-0 lg:h-dvh ${
           isMobileNavOpen
-            ? "fixed inset-y-2 left-2 translate-x-0 rounded-[1.75rem] shadow-2xl lg:inset-auto lg:left-0 lg:rounded-none lg:shadow-none"
-            : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-[1.75rem] lg:relative lg:inset-auto lg:left-0 lg:translate-x-0 lg:rounded-none lg:shadow-none"
+            ? "fixed inset-y-2 left-2 translate-x-0 rounded-surface-subtle shadow-float lg:inset-auto lg:left-0 lg:rounded-none lg:shadow-none"
+            : "fixed inset-y-2 left-2 -translate-x-[calc(100%+1rem)] rounded-surface-subtle lg:relative lg:inset-auto lg:left-0 lg:translate-x-0 lg:rounded-none lg:shadow-none"
         }`}
         style={{
           width: isDesktop
@@ -284,7 +285,7 @@ export default function MainNav() {
         }}
       >
         {/* Header with collapse toggle */}
-        <div className="p-3 flex items-center justify-between border-b border-orange-100/80 dark:border-gray-800/80">
+        <div className="p-3 flex items-center justify-between border-b border-rail-border">
           {!collapsed && (
             <div className="flex-1 text-center flex items-center justify-center gap-2">
               <Image
@@ -294,32 +295,30 @@ export default function MainNav() {
                 height={48}
                 className="object-contain shrink-0"
               />
-              <span className="font-semibold text-orange-600 text-2xl">
+              <span className="font-semibold text-action-text text-2xl">
                 Nojoin
               </span>
             </div>
           )}
           <div className="flex items-center">
             {/* Close button for mobile */}
-            <button
+            <IconButton
               onClick={() => setMobileNavOpen(false)}
-              className="lg:hidden p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
+              size="sm"
+              icon={<X aria-hidden="true" />}
+              className="lg:hidden text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
               title="Close Menu"
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
+              aria-label="Close menu"
+            />
             {/* Desktop collapse toggle */}
-            <button
+            <IconButton
               onClick={toggleNavCollapse}
-              className="hidden lg:block p-1.5 rounded-lg hover:bg-orange-200/70 dark:hover:bg-gray-800/80 transition-colors"
+              size="sm"
+              icon={collapsed ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
+              className="hidden lg:inline-flex text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
               title={collapsed ? "Expand" : "Collapse"}
-            >
-              {collapsed ? (
-                <ChevronRight className="w-4 h-4" />
-              ) : (
-                <ChevronLeft className="w-4 h-4" />
-              )}
-            </button>
+              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            />
           </div>
         </div>
 
@@ -379,7 +378,7 @@ export default function MainNav() {
         </nav>
 
         {/* Divider */}
-        <div className="mx-3 border-t border-gray-300 dark:border-gray-800" />
+        <div className="mx-3 border-t border-rail-border" />
 
         {/* Tags Section */}
         <DndContext
@@ -390,11 +389,11 @@ export default function MainNav() {
         >
           <div
             ref={setRootNodeRef}
-            className={`min-h-0 flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? "border-orange-300 bg-orange-50/50 dark:border-orange-700 dark:bg-orange-900/10" : ""}`}
+            className={`min-h-0 flex-1 overflow-y-auto p-2 border-2 border-transparent rounded-lg transition-all ${isOverRoot ? "border-action-border bg-action-tint" : ""}`}
           >
             {!collapsed && (
               <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <span className="text-xs font-semibold uppercase text-rail-fg-muted flex items-center gap-1">
                   <TagIcon className="w-3 h-3" />
                   Tags
                 </span>
@@ -404,7 +403,7 @@ export default function MainNav() {
                       e.stopPropagation();
                       handleExpandAllTags();
                     }}
-                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    className="p-1 rounded hover:bg-rail-item-hover transition-colors text-rail-fg-muted hover:text-rail-fg"
                     title="Expand All"
                   >
                     <ChevronsDown className="w-3 h-3" />
@@ -414,7 +413,7 @@ export default function MainNav() {
                       e.stopPropagation();
                       setExpandedTagIds([]);
                     }}
-                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    className="p-1 rounded hover:bg-rail-item-hover transition-colors text-rail-fg-muted hover:text-rail-fg"
                     title="Collapse All"
                   >
                     <ChevronsUp className="w-3 h-3" />
@@ -424,7 +423,7 @@ export default function MainNav() {
                       e.stopPropagation();
                       setIsAddingTag(true);
                     }}
-                    className="p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                    className="p-1 rounded hover:bg-rail-item-hover transition-colors text-rail-fg-muted hover:text-rail-fg"
                     title="Add tag"
                   >
                     <Plus className="w-3 h-3" />
@@ -435,7 +434,7 @@ export default function MainNav() {
 
             {collapsed && (
               <div className="flex justify-center py-2">
-                <TagIcon className="w-4 h-4 text-gray-500" />
+                <TagIcon className="w-4 h-4 text-rail-fg-muted" />
               </div>
             )}
 
@@ -460,7 +459,7 @@ export default function MainNav() {
                   }}
                   placeholder="Tag name..."
                   autoFocus
-                  className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                  className="w-full px-2 py-1 text-sm bg-control-bg text-foreground border border-control-border rounded focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
                 />
               </div>
             )}
@@ -469,7 +468,7 @@ export default function MainNav() {
             <div className="space-y-0.5">{renderTagTree(tagTree)}</div>
 
             {tags.length === 0 && !collapsed && (
-              <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+              <p className="px-3 py-2 text-xs text-rail-fg-muted">
                 No tags yet. Create one to organize your recordings.
               </p>
             )}
@@ -521,7 +520,7 @@ export default function MainNav() {
               {
                 label: "Delete",
                 className:
-                  "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
+                  "text-danger-text hover:bg-status-danger-bg",
                 onClick: () => {
                   handleDeleteTag(contextMenu.tagId);
                   setContextMenu(null);
@@ -532,7 +531,7 @@ export default function MainNav() {
         )}
 
         {/* Divider */}
-        <div className="mx-3 border-t border-gray-300 dark:border-gray-800" />
+        <div className="mx-3 border-t border-rail-border" />
 
         {/* Action Buttons */}
         <div className="p-2 space-y-1">
@@ -570,10 +569,10 @@ export default function MainNav() {
         {/* Resize Handle - Hidden on Mobile */}
         {!collapsed && (
           <div
-            className="absolute right-0 top-0 bottom-0 hidden w-1 cursor-col-resize touch-none hover:bg-orange-500/50 active:bg-orange-500 lg:block"
+            className="absolute right-0 top-0 bottom-0 hidden w-1 cursor-col-resize touch-none hover:bg-action active:bg-action-hover lg:block"
             onPointerDown={handleResizePointerDown}
           >
-            <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 group-hover:bg-orange-500 transition-colors" />
+            <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-rail-border group-hover:bg-action transition-colors" />
           </div>
         )}
       </aside>

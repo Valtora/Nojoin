@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LifeBuoy, Waves } from "lucide-react";
 
-import AmbientWorkspace from "./AmbientWorkspace";
+import Workspace from "./Workspace";
 import { useNavigationStore } from "@/lib/store";
 
 const LANDING_COPY = {
@@ -35,7 +35,7 @@ export default function RecordingsLanding() {
   const copy = LANDING_COPY[currentView];
 
   return (
-    <AmbientWorkspace
+    <Workspace
       contentClassName="workspace-shell workspace-shell-feature"
       paddingClassName="workspace-pad-y"
     >
@@ -69,6 +69,6 @@ export default function RecordingsLanding() {
           </div>
         </div>
       </section>
-    </AmbientWorkspace>
+    </Workspace>
   );
 }

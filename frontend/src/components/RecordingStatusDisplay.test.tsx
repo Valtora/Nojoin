@@ -12,7 +12,7 @@ vi.mock("@/lib/api/transcript", () => ({
     getTranscriptUtterances(...args),
 }));
 
-vi.mock("./AmbientWorkspace", () => ({
+vi.mock("./Workspace", () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 

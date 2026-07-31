@@ -12,15 +12,15 @@ export default function LegalStep({
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+        <h2 className="text-xl font-semibold text-foreground">
           Legal Disclaimer
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-contrast-helper">
           Please review and accept the terms of use
         </p>
       </div>
 
-      <div className="prose prose-sm dark:prose-invert max-w-none bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 max-h-64 overflow-y-auto">
+      <div className="prose prose-sm dark:prose-invert max-w-none bg-surface-inset p-4 rounded-lg border border-surface-border max-h-64 overflow-y-auto">
         <h3 className="text-base font-semibold mt-0">
           1. Compliance with Laws
         </h3>
@@ -57,19 +57,19 @@ export default function LegalStep({
         </p>
       </div>
 
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+      <div className="rounded-lg border border-surface-border p-4">
         <label className="flex items-start gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={enableTelemetry}
             onChange={(e) => onEnableTelemetryChange(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-orange-600 focus:ring-orange-600"
+            className="mt-1 h-4 w-4 rounded border-control-border text-action accent-action focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
           />
           <span className="text-sm">
-            <span className="font-medium text-gray-900 dark:text-white">
+            <span className="font-medium text-foreground">
               Share anonymous usage data
             </span>
-            <span className="block text-gray-500 dark:text-gray-400 mt-1">
+            <span className="block text-contrast-helper mt-1">
               Sends one anonymous ping a day with a random install ID, your
               Nojoin version, how many users and recordings this server has, and
               which features are switched on. It never includes your recordings,
@@ -81,7 +81,7 @@ export default function LegalStep({
               href="https://www.nojoin.co.uk/docs/TELEMETRY"
               target="_blank"
               rel="noopener noreferrer"
-              className="block mt-1 text-orange-600 hover:text-orange-700 dark:text-orange-500"
+              className="block mt-1 text-action-text hover:text-action-text-hover"
             >
               Read exactly what is collected
             </a>
@@ -91,7 +91,7 @@ export default function LegalStep({
 
       <button
         onClick={onAccept}
-        className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+        className="w-full bg-action hover:bg-action-hover text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
       >
         I Accept &amp; Continue <ArrowRight className="w-4 h-4" />
       </button>

@@ -1,13 +1,13 @@
 "use client";
 
-import AmbientWorkspace from "./AmbientWorkspace";
+import Workspace from "./Workspace";
 import DashboardTasksPanel from "./DashboardTasksPanel";
 import DashboardUpcomingMeetingsCard from "./DashboardUpcomingMeetingsCard";
 import MeetingControls from "./MeetingControls";
 
 export default function DashboardHome() {
   return (
-    <AmbientWorkspace
+    <Workspace
       contentClassName="workspace-shell workspace-shell-wide"
       paddingClassName="workspace-pad-y"
     >
@@ -31,6 +31,6 @@ export default function DashboardHome() {
           </div>
         </div>
       </section>
-    </AmbientWorkspace>
+    </Workspace>
   );
 }

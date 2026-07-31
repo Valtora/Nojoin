@@ -64,7 +64,7 @@ function redirectHost(redirectUri: string): string | null {
 }
 
 const inputClasses =
-  "appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors";
+  "appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors";
 
 function AuthorizeContent() {
   const searchParams = useSearchParams();
@@ -171,21 +171,21 @@ function AuthorizeContent() {
     : [];
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-950 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-3xl shadow-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         <div className="px-8 pt-10 pb-8">
           {loading && (
             <div className="flex justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-orange-600" />
+              <Loader2 className="h-6 w-6 animate-spin text-action-text" />
             </div>
           )}
 
           {!loading && error && !info && (
             <div className="text-center space-y-4 py-6">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-500/10">
-                <Plug className="h-6 w-6 text-red-500" />
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-surface-panel bg-status-danger-bg">
+                <Plug className="h-6 w-6 text-danger-text" />
               </div>
-              <p className="text-sm text-gray-700 dark:text-gray-300">{error}</p>
+              <p className="text-sm text-contrast-muted">{error}</p>
             </div>
           )}
 
@@ -193,7 +193,7 @@ function AuthorizeContent() {
             <>
               {/* App-to-app connection header */}
               <div className="flex items-center justify-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
+                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel border border-surface-border bg-surface-card shadow-card overflow-hidden">
                   {clientLogo ? (
                     <Image
                       src={clientLogo}
@@ -203,11 +203,11 @@ function AuthorizeContent() {
                       className="object-cover"
                     />
                   ) : (
-                    <Plug className="h-7 w-7 text-gray-500 dark:text-gray-400" />
+                    <Plug className="h-7 w-7 text-contrast-icon-muted" />
                   )}
                 </div>
-                <Link2 className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+                <Link2 className="h-4 w-4 text-contrast-icon-muted" />
+                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel border border-surface-border bg-surface-card shadow-card">
                   <Image
                     src="/assets/NojoinLogo.png"
                     alt="Nojoin logo"
@@ -219,29 +219,29 @@ function AuthorizeContent() {
               </div>
 
               <div className="mt-6 text-center">
-                <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                <h1 className="text-xl font-semibold text-foreground">
                   Connect {info.client_name} to Nojoin
                 </h1>
-                <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mt-1.5 text-sm text-contrast-helper">
                   {info.client_name} will be able to:
                 </p>
               </div>
 
               {/* Capability list */}
-              <ul className="mt-5 divide-y divide-gray-100 dark:divide-gray-800 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/40">
+              <ul className="mt-5 divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
                 {capabilities.map(({ icon: Icon, label }) => (
                   <li
                     key={label}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200"
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-contrast-muted"
                   >
-                    <Icon className="h-4 w-4 shrink-0 text-orange-600" />
+                    <Icon className="h-4 w-4 shrink-0 text-action-text" />
                     <span>{label}</span>
                   </li>
                 ))}
               </ul>
 
-              <p className="mt-3 flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-green-600 dark:text-green-500" />
+              <p className="mt-3 flex items-start gap-2 text-xs text-contrast-helper">
+                <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-status-success-fg" />
                 {isReadOnly ? (
                   <>
                     Read-only access. {info.client_name} cannot change or
@@ -258,7 +258,7 @@ function AuthorizeContent() {
 
               {error && (
                 <p
-                  className="mt-4 text-sm text-red-500 text-center"
+                  className="mt-4 text-sm text-danger-text text-center"
                   role="alert"
                 >
                   {error}
@@ -267,12 +267,12 @@ function AuthorizeContent() {
 
               {!signedInUsername ? (
                 <form className="mt-6 space-y-4" onSubmit={handleSignIn}>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white text-center">
+                  <p className="text-sm font-medium text-foreground text-center">
                     Sign in to continue
                   </p>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <UserIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                      <UserIcon className="h-5 w-5 text-contrast-icon-muted" />
                     </div>
                     <input
                       id="oauth-username"
@@ -289,7 +289,7 @@ function AuthorizeContent() {
                   </div>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                      <Lock className="h-5 w-5 text-contrast-icon-muted" />
                     </div>
                     <input
                       id="oauth-password"
@@ -306,7 +306,7 @@ function AuthorizeContent() {
                   <button
                     type="submit"
                     disabled={signingIn}
-                    className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 dark:focus:ring-offset-gray-900 active:translate-y-px disabled:opacity-60 transition-all"
+                    className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
                   >
                     {signingIn && <Loader2 className="h-4 w-4 animate-spin" />}
                     {signingIn ? "Signing in..." : "Sign in"}
@@ -314,13 +314,13 @@ function AuthorizeContent() {
                 </form>
               ) : (
                 <div className="mt-6 space-y-5">
-                  <div className="flex items-center justify-center gap-2.5 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-2.5">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-500/15 text-xs font-semibold text-orange-700 dark:text-orange-400">
+                  <div className="flex items-center justify-center gap-2.5 rounded-lg border border-surface-border px-4 py-2.5">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-action-tint text-xs font-semibold text-action-tint-fg">
                       {signedInUsername.charAt(0).toUpperCase()}
                     </span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                    <span className="text-sm text-contrast-helper">
                       Signed in as{" "}
-                      <span className="font-medium text-gray-900 dark:text-white">
+                      <span className="font-medium text-foreground">
                         {signedInUsername}
                       </span>
                     </span>
@@ -330,7 +330,7 @@ function AuthorizeContent() {
                       type="button"
                       disabled={submitting}
                       onClick={() => handleDecision(false)}
-                      className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 dark:focus:ring-offset-gray-900 active:translate-y-px disabled:opacity-60 transition-all"
+                      className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
                     >
                       Deny
                     </button>
@@ -338,7 +338,7 @@ function AuthorizeContent() {
                       type="button"
                       disabled={submitting}
                       onClick={() => handleDecision(true)}
-                      className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 dark:focus:ring-offset-gray-900 active:translate-y-px disabled:opacity-60 transition-all"
+                      className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
                     >
                       {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                       {submitting ? "Connecting..." : "Allow"}
@@ -351,17 +351,17 @@ function AuthorizeContent() {
         </div>
 
         {!loading && info && (
-          <div className="border-t border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-900/60 px-8 py-4 space-y-1 text-center">
+          <div className="border-t border-surface-divider bg-surface-inset px-8 py-4 space-y-1 text-center">
             {returnHost && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-contrast-helper">
                 You will be returned to{" "}
-                <span className="font-medium text-gray-700 dark:text-gray-300">
+                <span className="font-medium text-contrast-muted">
                   {returnHost}
                 </span>
                 .
               </p>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-contrast-icon-muted">
               You can revoke this connection at any time in Settings &rsaquo;
               Connected Apps.
             </p>
@@ -369,7 +369,7 @@ function AuthorizeContent() {
         )}
       </div>
 
-      <p className="mt-6 text-xs text-gray-400 dark:text-gray-600">
+      <p className="mt-6 text-xs text-contrast-icon-muted">
         Secured by your Nojoin server
       </p>
     </div>
@@ -380,8 +380,8 @@ export default function OAuthAuthorizePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-          <Loader2 className="h-6 w-6 animate-spin text-orange-600" />
+        <div className="min-h-dvh flex items-center justify-center bg-surface-page">
+          <Loader2 className="h-6 w-6 animate-spin text-action-text" />
         </div>
       }
     >

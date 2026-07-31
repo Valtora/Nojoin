@@ -85,6 +85,7 @@ const PAIRINGS = [
   // resting fill answers to 3:1 as a component boundary; hover and active do
   // not, because by then the control has already been identified.
   { label: "action label on action fill", fg: "action-on", bg: ["action"], min: AA_TEXT },
+  { label: "action muted label on action fill", fg: "action-on-muted", bg: ["action"], min: AA_TEXT },
   { label: "action label on hover fill", fg: "action-on", bg: ["action-hover"], min: AA_TEXT },
   { label: "action label on active fill", fg: "action-on", bg: ["action-active"], min: AA_TEXT },
   { label: "action fill vs page", fg: "action", bg: ["surface-page"], min: AA_NON_TEXT },

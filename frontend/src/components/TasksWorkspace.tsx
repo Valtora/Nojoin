@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 
-import AmbientWorkspace from "./AmbientWorkspace";
+import Workspace from "./Workspace";
 import {
   createUserTask,
   deleteUserTask,
@@ -467,7 +467,7 @@ export default function TasksWorkspace() {
   };
 
   return (
-    <AmbientWorkspace
+    <Workspace
       contentClassName="workspace-shell workspace-shell-wide"
       paddingClassName="workspace-pad-y"
     >
@@ -820,6 +820,6 @@ export default function TasksWorkspace() {
         onClose={() => setDeadlineTarget(null)}
         onSave={handleSaveDeadline}
       />
-    </AmbientWorkspace>
+    </Workspace>
   );
 }

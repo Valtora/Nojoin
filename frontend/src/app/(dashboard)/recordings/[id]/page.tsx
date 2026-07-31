@@ -167,7 +167,7 @@ export default function RecordingPage({ params }: PageProps) {
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {isInFlightRecording ? (
-          <div className="h-full flex-1 min-w-0 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.34),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.26),_transparent_36%),linear-gradient(180deg,_#ffedd5_0%,_#fff7ed_45%,_#ffe4c4_100%)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(251,146,60,0.22),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.18),_transparent_34%),linear-gradient(180deg,_#0b1220_0%,_#0a0f1c_50%,_#0b1220_100%)]">
+          <div className="h-full flex-1 min-w-0 overflow-y-auto bg-surface-page">
             <RecordingStatusDisplay
               recording={recording}
               onSaveProcessingNotes={handleProcessingNotesChange}

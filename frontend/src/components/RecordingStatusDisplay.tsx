@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
-import AmbientWorkspace from "./AmbientWorkspace";
+import Workspace from "./Workspace";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveDocumentsPanel from "./LiveDocumentsPanel";
 import LiveMeetingControls from "./LiveMeetingControls";
@@ -133,7 +133,7 @@ export default function RecordingStatusDisplay({
         : Math.max(20, recording.processing_progress || 20);
 
   return (
-    <AmbientWorkspace
+    <Workspace
       wrapperClassName="flex-1 overflow-visible"
       backgroundClassName="bg-transparent"
       contentClassName="workspace-shell workspace-shell-feature"
@@ -153,7 +153,7 @@ export default function RecordingStatusDisplay({
         </div>
       ) : null}
 
-      {/* AmbientWorkspace's workspace-shell supplies the flex gap between its
+      {/* Workspace's workspace-shell supplies the flex gap between its
           children, but everything here is nested one level inside this wrapper,
           so that gap applied to the wrapper alone and the capture card sat flush
           against the panel column below it. Restate it here so the card and the
@@ -302,6 +302,6 @@ export default function RecordingStatusDisplay({
         <LiveDocumentsPanel recordingId={recording.id} />
       </div>
       </div>
-    </AmbientWorkspace>
+    </Workspace>
   );
 }
