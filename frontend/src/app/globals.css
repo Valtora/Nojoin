@@ -631,58 +631,65 @@ html {
   }
 }
 
-/* React Datepicker Dark Mode Overrides */
-.dark .react-datepicker {
-  background-color: #1f2937; /* gray-800 */
-  color: #f3f4f6; /* gray-100 */
-  border-color: #374151; /* gray-700 */
+/* React Datepicker.
+   The library ships its own DOM and its own class names, so it is themed by
+   overriding those rather than by composing utilities. Every value is a token,
+   which is why there is no longer a separate .dark block: the tokens change
+   with the theme and these rules do not have to. */
+.react-datepicker {
+  background-color: var(--surface-float);
+  color: var(--foreground);
+  border-color: var(--surface-float-border);
+  font-family: inherit;
 }
 
-.dark .react-datepicker__header {
-  background-color: #111827; /* gray-900 */
-  border-bottom-color: #374151; /* gray-700 */
+.react-datepicker__header {
+  background-color: var(--surface-inset);
+  border-bottom-color: var(--surface-divider);
 }
 
-.dark .react-datepicker__current-month,
-.dark .react-datepicker__day-name,
-.dark .react-datepicker-time__header {
-  color: #f3f4f6; /* gray-100 */
+.react-datepicker__current-month,
+.react-datepicker__day-name,
+.react-datepicker-time__header {
+  color: var(--foreground);
 }
 
-.dark .react-datepicker__day {
-  color: #e5e7eb; /* gray-200 */
+.react-datepicker__day {
+  color: var(--contrast-muted);
 }
 
-.dark .react-datepicker__day:hover {
-  background-color: #374151; /* gray-700 */
+.react-datepicker__day:hover {
+  background-color: var(--action-tint);
+  color: var(--action-tint-fg);
 }
 
-.dark .react-datepicker__day--selected,
-.dark .react-datepicker__day--keyboard-selected {
-  background-color: #f97316; /* orange-500 */
-  color: white;
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background-color: var(--action);
+  color: var(--action-on);
 }
 
-.dark .react-datepicker__time-container {
-  border-left-color: #374151; /* gray-700 */
-  background-color: #1f2937; /* gray-800 */
+.react-datepicker__time-container {
+  border-left-color: var(--surface-divider);
+  background-color: var(--surface-float);
 }
 
-.dark .react-datepicker__time {
-  background-color: #1f2937; /* gray-800 */
-  color: #f3f4f6; /* gray-100 */
+.react-datepicker__time {
+  background-color: var(--surface-float);
+  color: var(--foreground);
 }
 
-.dark .react-datepicker__time-list-item:hover {
-  background-color: #374151 !important; /* gray-700 */
+.react-datepicker__time-list-item:hover {
+  background-color: var(--action-tint) !important;
 }
 
-.dark .react-datepicker__time-list-item--selected {
-  background-color: #f97316 !important; /* orange-500 */
+.react-datepicker__time-list-item--selected {
+  background-color: var(--action) !important;
+  color: var(--action-on) !important;
 }
 
-.dark .react-datepicker__navigation-icon::before {
-  border-color: #9ca3af; /* gray-400 */
+.react-datepicker__navigation-icon::before {
+  border-color: var(--contrast-icon-muted);
 }
 
 .task-deadline-calendar.react-datepicker {
@@ -738,7 +745,7 @@ html {
   height: 2rem;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--contrast-helper);
 }
 
 .task-deadline-calendar .react-datepicker__day--today {
@@ -764,20 +771,10 @@ html {
   margin: 0;
 }
 
-.dark .task-deadline-calendar .task-deadline-weekday {
-  color: #9ca3af;
-}
-
-.dark .task-deadline-calendar .react-datepicker__month,
-.dark .task-deadline-calendar .react-datepicker__week,
-.dark .task-deadline-calendar .react-datepicker__day-names {
+.task-deadline-calendar .react-datepicker__month,
+.task-deadline-calendar .react-datepicker__week,
+.task-deadline-calendar .react-datepicker__day-names {
   background: transparent;
-}
-
-.dark .task-deadline-calendar .react-datepicker__day--keyboard-selected,
-.dark .task-deadline-calendar .react-datepicker__day--selected {
-  background-color: #ea580c !important;
-  color: #fff7ed !important;
 }
 
 .dark .task-deadline-calendar input[type="time"] {
@@ -786,7 +783,7 @@ html {
 
 /* Spell check error decoration */
 .spellcheck-error {
-  text-decoration: underline wavy red;
+  text-decoration: underline wavy var(--danger);
   text-decoration-skip-ink: none;
   text-underline-offset: 2px;
 }
@@ -812,7 +809,7 @@ html {
 
 .ProseMirror th,
 .ProseMirror td {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--contrast-border);
   padding: 0.5rem 0.75rem;
   vertical-align: top;
   text-align: left;
@@ -821,7 +818,7 @@ html {
 }
 
 .ProseMirror th {
-  background-color: #f3f4f6;
+  background-color: var(--surface-inset);
   font-weight: 600;
 }
 
@@ -830,21 +827,12 @@ html {
   margin: 0;
 }
 
-.dark .ProseMirror th,
-.dark .ProseMirror td {
-  border-color: #4b5563;
-}
-
-.dark .ProseMirror th {
-  background-color: #374151;
-}
-
 /* Cell selection and column resizing (prosemirror-tables) */
 .ProseMirror .selectedCell::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(234, 88, 12, 0.16);
+  background: var(--action-tint);
   pointer-events: none;
 }
 
@@ -854,7 +842,7 @@ html {
   top: 0;
   bottom: 0;
   width: 4px;
-  background-color: #ea580c;
+  background-color: var(--action);
   pointer-events: none;
 }
 
