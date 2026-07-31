@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import {
-  X,
   Split,
   AlertCircle,
   Play,
@@ -12,6 +10,8 @@ import {
   UserPlus,
   Volume2,
 } from "lucide-react";
+import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 import { GlobalSpeaker, RecordingId, SpeakerSegment } from "@/types";
 import {
   getSpeakerSegments,
@@ -220,34 +220,53 @@ export default function SplitPersonModal({
     }
   };
 
-  if (!isOpen || !mounted || (!speaker && !localSpeaker)) return null;
+  if (!mounted || (!speaker && !localSpeaker)) return null;
   const currentName = speaker ? speaker.name : localSpeaker?.name;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
-      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-surface-border">
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-surface-border bg-surface-inset z-10 flex justify-between items-start">
-          <div>
-            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-              <Split className="w-6 h-6 text-action-text" />
-              Split / Unmerge Speaker
-            </h2>
-            <p className="mt-1 text-sm text-contrast-helper">
-              Select clips that belong to a <b>different person</b> to separate
-              them from {currentName}.
-            </p>
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="xl"
+      className="max-h-[90dvh]"
+      title={
+        <span>
+          <span className="flex items-center gap-2 text-xl font-bold">
+            <Split aria-hidden="true" className="h-6 w-6 text-action-text" />
+            Split / Unmerge Speaker
+          </span>
+          <span className="mt-1 block text-sm font-normal text-contrast-helper">
+            Select clips that belong to a <b>different person</b> to separate
+            them from {currentName}.
+          </span>
+        </span>
+      }
+      footer={
+        success ? null : (
+          <div className="flex w-full items-center justify-between">
+            <div className="text-sm text-contrast-helper">
+              <span className="font-medium text-foreground">{selectedCount}</span>{" "}
+              segments selected to move
+            </div>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSplit}
+                disabled={
+                  isSubmitting || selectedCount === 0 || !newSpeakerName.trim()
+                }
+                loading={isSubmitting}
+              >
+                {isSubmitting ? "Processing..." : "Create & Move"}
+              </Button>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 -mr-2 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-full hover:bg-surface-inset transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-surface-inset">
+        )
+      }
+    >
           {success ? (
             <div className="flex flex-col items-center justify-center h-full py-12 animate-in fade-in zoom-in duration-300">
               <div className="w-20 h-20 bg-status-success-bg rounded-full flex items-center justify-center mb-6 shadow-sm">
@@ -374,48 +393,6 @@ export default function SplitPersonModal({
               </div>
             </>
           )}
-        </div>
-
-        {/* Footer */}
-        {!success && (
-          <div className="px-6 py-4 bg-surface-card border-t border-surface-border flex justify-between items-center z-20">
-            <div className="text-sm text-contrast-helper">
-              <span className="font-medium text-foreground text-contrast-icon-muted">
-                {selectedCount}
-              </span>{" "}
-              segments selected to move
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground hover:text-contrast-icon-muted"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSplit}
-                disabled={
-                  isSubmitting || selectedCount === 0 || !newSpeakerName.trim()
-                }
-                className={`
-                   px-6 py-2 text-sm font-medium text-white rounded-lg flex items-center gap-2 shadow-sm transition-all
-                   ${
-                     isSubmitting ||
-                     selectedCount === 0 ||
-                     !newSpeakerName.trim()
-                       ? "bg-surface-card cursor-not-allowed"
-                       : "bg-action hover:bg-action-hover hover:shadow-md hover:-translate-y-px"
-                   }
-                 `}
-              >
-                {isSubmitting ? "Processing..." : "Create & Move"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

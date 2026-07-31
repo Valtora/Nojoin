@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { X, Plus, Users, Fingerprint, ArrowRight } from "lucide-react";
+import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 import { GlobalSpeaker, PeopleTag } from "@/types";
 import ColorPicker from "@/components/ColorPicker";
 import { getPeopleTags, createPeopleTag } from "@/lib/api";
@@ -266,26 +268,30 @@ interface TagNode extends PeopleTag {
           s.name.toLowerCase().includes(speakerSearch.toLowerCase()),
         );
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
-      <div className="bg-surface-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-border flex justify-between items-center bg-surface-inset/50">
-          <h2 className="text-xl font-semibold text-foreground">
-            {person ? "Edit Person" : "Add Person"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-surface-inset rounded-full transition-colors"
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      className="max-h-[90dvh]"
+      title={person ? "Edit Person" : "Add Person"}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="person-form"
+            variant="primary"
+            disabled={isSubmitting}
+            loading={isSubmitting}
           >
-            <X className="w-5 h-5 text-contrast-helper" />
-          </button>
-        </div>
-
-        {/* Scrollable Content */}
-        <div className="p-6 overflow-y-auto flex-1">
+            {isSubmitting ? "Saving..." : "Save Person"}
+          </Button>
+        </>
+      }
+    >
           <form id="person-form" onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -621,27 +627,6 @@ interface TagNode extends PeopleTag {
               />
             </div>
           </form>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-surface-border flex justify-end gap-3 bg-surface-inset/50">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-contrast-muted hover:bg-surface-inset rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="person-form"
-            disabled={isSubmitting}
-            className="px-4 py-2 text-sm font-medium text-action-on bg-action hover:bg-action-hover rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting ? "Saving..." : "Save Person"}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

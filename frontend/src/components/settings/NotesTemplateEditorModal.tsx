@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { X, Loader2, Eye, RotateCcw, Sparkles } from "lucide-react";
+import { Loader2, Eye, RotateCcw, Sparkles } from "lucide-react";
+import Button from "../ui/Button";
+import Modal from "../ui/Modal";
 import {
   NotesTemplate,
   generateNotesStructure,
@@ -171,7 +172,7 @@ export default function NotesTemplateEditorModal({
     }
   };
 
-  if (!isOpen || !mounted) return null;
+  if (!mounted) return null;
 
   const overLimit = sections.length > maxSectionsLength;
 
@@ -179,33 +180,46 @@ export default function NotesTemplateEditorModal({
   //, and an element with a backdrop-filter becomes the containing
   // block for fixed-position descendants -- so an in-place modal would size
   // itself to the settings card and overlap the sections around it.
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-scrim">
-      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-[1400px] h-[92vh] overflow-hidden border border-surface-border flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border shrink-0">
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">
-              {readOnly
-                ? template?.name
-                : template
-                  ? "Edit Notes Structure"
-                  : "New Notes Structure"}
-            </h2>
-            <p className="mt-0.5 text-xs contrast-helper">
-              Describe what you want, edit the structure, then check the prompt
-              it produces.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="contrast-helper hover:text-foreground"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="flex-1 min-h-0 grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] overflow-y-auto lg:overflow-hidden">
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="xl"
+      className="!max-w-[1400px] h-[92dvh]"
+      title={
+        <span>
+          <span className="block text-xl">
+            {readOnly
+              ? template?.name
+              : template
+                ? "Edit Notes Structure"
+                : "New Notes Structure"}
+          </span>
+          <span className="mt-0.5 block text-xs font-normal text-contrast-helper">
+            Describe what you want, edit the structure, then check the prompt
+            it produces.
+          </span>
+        </span>
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {readOnly ? "Close" : "Cancel"}
+          </Button>
+          {!readOnly && (
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={saving || overLimit || !name.trim() || !sections.trim()}
+              loading={saving}
+            >
+              Save
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="grid h-full min-h-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
           {/* Generate */}
           <div className="flex flex-col min-h-0 gap-3">
             <div>
@@ -341,28 +355,7 @@ export default function NotesTemplateEditorModal({
                 "Select Preview to see the exact prompt this structure produces, using a short sample transcript. No AI request is made."}
             </pre>
           </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-border shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg contrast-helper hover:text-foreground"
-          >
-            {readOnly ? "Close" : "Cancel"}
-          </button>
-          {!readOnly && (
-            <button
-              onClick={handleSave}
-              disabled={saving || overLimit || !name.trim() || !sections.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-action-on hover:bg-action-hover transition-colors disabled:opacity-60"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Save
-            </button>
-          )}
-        </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

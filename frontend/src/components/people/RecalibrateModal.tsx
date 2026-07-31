@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import {
-  X,
   Fingerprint,
   RefreshCw,
   AlertCircle,
@@ -15,6 +13,8 @@ import {
   Volume2,
   Telescope,
 } from "lucide-react";
+import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 import { GlobalSpeaker, SpeakerSegment } from "@/types";
 import {
   getSpeakerSegments,
@@ -201,41 +201,70 @@ export default function RecalibrateModal({
     }
   };
 
-  if (!isOpen || !mounted || !speaker) return null;
+  if (!mounted || !speaker) return null;
 
-  return createPortal(
+  return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
-        <div className="bg-surface-card rounded-2xl shadow-float w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-surface-border">
-          {/* Header - Fixed */}
-          <div className="px-6 py-5 border-b border-surface-border bg-surface-inset z-10 flex justify-between items-start">
-            <div>
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-                <RefreshCw className="w-6 h-6 text-status-info-fg" />
-                Voiceprint Trainer
-              </h2>
-              <p className="mt-1 text-sm text-contrast-helper">
-                Only approve{" "}
-                <span className="font-semibold text-foreground text-contrast-icon-muted">
-                  clear, isolated speech
-                </span>{" "}
-                samples. Aim for{" "}
-                <span className="font-semibold text-status-info-fg">
-                  3-5 samples
-                </span>{" "}
-                to create a &quot;Gold Standard&quot; voiceprint.
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 -mr-2 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-full hover:bg-surface-inset transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+      <Modal
+        open={isOpen}
+        onClose={onClose}
+        size="xl"
+        className="max-h-[90dvh]"
+        title={
+          <span>
+            <span className="flex items-center gap-2 text-xl font-bold">
+              <RefreshCw aria-hidden="true" className="h-6 w-6 text-status-info-fg" />
+              Voiceprint Trainer
+            </span>
+            <span className="mt-1 block text-sm font-normal text-contrast-helper">
+              Only approve{" "}
+              <span className="font-semibold text-foreground">clear, isolated speech</span>{" "}
+              samples. Aim for{" "}
+              <span className="font-semibold text-status-info-fg">3-5 samples</span>{" "}
+              to create a &quot;Gold Standard&quot; voiceprint.
+            </span>
+          </span>
+        }
+        footer={
+          success ? null : (
+            <div className="flex w-full items-center justify-between gap-4">
+              <div className="flex flex-col items-start gap-1">
+                <div className="text-sm text-contrast-helper">
+                  <span className="font-medium text-foreground">{activeCount}</span>{" "}
+                  samples selected
+                </div>
 
-          {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-surface-inset">
+                {/* Entry point for unmerge (split) */}
+                <button
+                  onClick={() => setIsSplitModalOpen(true)}
+                  className="text-xs font-medium text-status-info-fg hover:underline"
+                >
+                  Not this person? Split into new speaker...
+                </button>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setSegmentStates({})}
+                  disabled={Object.keys(segmentStates).length === 0}
+                >
+                  Reset
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleRecalibrate}
+                  disabled={isSubmitting || activeCount < 1}
+                  loading={isSubmitting}
+                  iconLeft={<Fingerprint aria-hidden="true" className="h-4 w-4" />}
+                >
+                  {isSubmitting ? "Training..." : "Recalibrate"}
+                </Button>
+              </div>
+            </div>
+          )
+        }
+      >
             {success ? (
               <div className="flex flex-col items-center justify-center h-full py-12 animate-in fade-in zoom-in duration-300">
                 <div className="w-20 h-20 bg-status-success-bg rounded-full flex items-center justify-center mb-6 shadow-card">
@@ -402,66 +431,8 @@ export default function RecalibrateModal({
                 })}
               </div>
             )}
-          </div>
+      </Modal>
 
-          {/* Footer Actions */}
-          {!success && (
-            <div className="px-6 py-4 bg-surface-card border-t border-surface-border flex justify-between items-center z-20">
-              <div className="flex flex-col items-start gap-1">
-                <div className="text-sm text-contrast-helper">
-                  <span className="font-medium text-foreground text-contrast-icon-muted">
-                    {activeCount}
-                  </span>{" "}
-                  samples selected
-                </div>
-
-                {/* Entry Point for Unmerge (Split) */}
-                <button
-                  onClick={() => setIsSplitModalOpen(true)}
-                  className="text-xs text-status-info-fg hover:underline hover:text-status-info-fg font-medium"
-                >
-                  Not this person? Split into new speaker...
-                </button>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setSegmentStates({});
-                  }}
-                  disabled={Object.keys(segmentStates).length === 0}
-                  className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground hover:text-contrast-icon-muted disabled:opacity-50"
-                >
-                  Reset
-                </button>
-                <button
-                  onClick={handleRecalibrate}
-                  disabled={isSubmitting || activeCount < 1}
-                  className={`
-                   px-6 py-2 text-sm font-medium text-white rounded-lg flex items-center gap-2 shadow-card transition-all
-                   ${
-                     isSubmitting || activeCount < 1
-                       ? "bg-surface-card cursor-not-allowed"
-                       : "bg-status-info-bg hover:bg-status-info-bg hover:shadow-card hover:-translate-y-px"
-                   }
-                 `}
-                >
-                  {isSubmitting ? (
-                    "Training..."
-                  ) : (
-                    <>
-                      <Fingerprint className="w-4 h-4" />
-                      Recalibrate
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Split Modal */}
       {isSplitModalOpen && (
         <SplitPersonModal
           isOpen={isSplitModalOpen}
@@ -474,7 +445,6 @@ export default function RecalibrateModal({
           }}
         />
       )}
-    </>,
-    document.body,
+    </>
   );
 }
