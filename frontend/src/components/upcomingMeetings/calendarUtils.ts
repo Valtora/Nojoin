@@ -9,7 +9,7 @@ import {
   startOfDay,
 } from "date-fns";
 
-import { COLOR_PALETTE } from "@/lib/constants";
+import { COLOR_PALETTE, getColorByKey } from "@/lib/constants";
 import { formatTimeZoneDate, toTimeZoneDate } from "@/lib/timezone";
 import {
   CalendarDashboardEvent,
@@ -80,7 +80,10 @@ export function getCalendarColourPresentation(colour: string | null | undefined)
     return { className: "", style: { backgroundColor: colour } };
   }
 
-  return { className: "bg-orange-500", style: undefined };
+  // An uncoloured calendar falls back to the palette's orange dot. Read it from
+  // the palette rather than repeating its literal, because these are the user's
+  // colour choices rather than theme decisions and the two must not drift.
+  return { className: getColorByKey("orange").dot, style: undefined };
 }
 
 export function getDayMarkerColours(
@@ -226,11 +229,11 @@ export function formatRecordingDuration(
 export function getRecordingStatusClasses(status: RecordingStatus): string {
   switch (status) {
     case RecordingStatus.ERROR:
-      return "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200";
+      return "border-status-danger-border bg-status-danger-bg text-status-danger-fg";
     case RecordingStatus.CANCELLED:
-      return "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-200";
+      return "border-status-neutral-border bg-status-neutral-bg text-status-neutral-fg";
     default:
-      return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200";
+      return "border-status-warning-border bg-status-warning-bg text-status-warning-fg";
   }
 }
 

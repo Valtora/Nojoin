@@ -71,7 +71,7 @@ export default function ColorPicker({
       )}
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]">
+        <div className="absolute z-[var(--z-dropdown)] mt-2 p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]">
           <div className="grid grid-cols-6 gap-2">
             {COLOR_PALETTE.map((color) => (
               <button
@@ -141,7 +141,7 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
 
       {isOpen && (
         <div
-          className="absolute left-0 top-full mt-1 z-50 p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
+          className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="grid grid-cols-6 gap-2">

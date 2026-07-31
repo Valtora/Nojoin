@@ -29,7 +29,7 @@ export default function NotificationToast() {
   if (!mounted) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
+    <div className="fixed bottom-4 right-4 z-[var(--z-toast)] flex flex-col gap-2 max-w-md w-full pointer-events-none">
       {activeNotifications.map((notification) => (
         <div
           key={notification.id}

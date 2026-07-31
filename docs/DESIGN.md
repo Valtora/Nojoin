@@ -2,9 +2,10 @@
 
 The web client's visual language is defined once, as CSS custom properties in
 [frontend/src/app/globals.css](../frontend/src/app/globals.css), and consumed through Tailwind
-utility classes and a small set of primitive components. This document records the tokens, the
-primitives, and the rules that govern them, so a change to the interface can be checked against an
-intended system rather than against whatever the surrounding component happened to do.
+utility classes and a small set of primitive components. The marketing site runs the same system on
+its own dark canvas; see [The marketing site](#the-marketing-site) below. This document records the
+tokens, the primitives, and the rules that govern them, so a change to the interface can be checked
+against an intended system rather than against whatever the surrounding component happened to do.
 
 ## The flat canon
 
@@ -255,9 +256,10 @@ Lucide is the sole icon system.
 
 The contrast target is strict WCAG 2.2 AA, and it is enforced rather than reviewed.
 [frontend/scripts/check-contrast.mjs](../frontend/scripts/check-contrast.mjs) parses the token
-blocks out of `globals.css`, resolves `var()` indirection, composites translucent values over their
-backdrop stack, and measures a declared list of pairings in both themes. It runs as
-`npm run check:contrast` and as a step in the `Frontend lint` CI job.
+blocks out of `globals.css` and out of the marketing site's `style.scss`, resolves `var()`
+indirection, composites translucent values over their backdrop stack, and measures a declared list
+of pairings across all three themes. It runs as `npm run check:contrast` and as a step in the
+`Frontend lint` CI job, which is why `assets/css/**` is one of that job's trigger paths.
 
 Contrast is a property of a pair, not of a colour, and that relationship lives nowhere in CSS.
 Declaring the pairs in the script is what makes them reviewable. **A pairing that cannot be
@@ -280,6 +282,25 @@ Playwright gate, so keyboard reachability and screen-reader behaviour are verifi
 changing the interface. The primitives carry what can be carried structurally: required labels on
 `IconButton`, `aria-invalid` and `aria-describedby` wiring in `Input` and `Select`, `aria-busy` on
 a loading button, and a real focus trap in `Modal`.
+
+## The marketing site
+
+The Jekyll site at [assets/css/style.scss](../assets/css/style.scss) runs the same system on a dark
+canvas, using the app's dark-theme values under the app's token names. It is deliberately
+self-contained: the Cayman theme is not imported, because its layout is already replaced by
+[_layouts/default.html](../_layouts/default.html) and its stylesheet carries a gradient page header.
+
+Three things differ, and only because the site has different furniture:
+
+- It has no floating elements, so it has no shadows at all. The float exception has nothing to
+  apply to.
+- Its chrome takes the rail tokens, so the header a visitor sees before signing in is the same
+  colour as the nav rail they see afterwards.
+- It owns a `--code-*` family for syntax highlighting, which the app has no equivalent of. Those
+  are tokens rather than literals in the rouge selectors precisely so the audit can measure them.
+
+Its radii are one step tighter as well, at 20/16/12px, scaled by the same factor that took the
+app's surface radius from 2rem to 1.25rem.
 
 ## Related documentation
 

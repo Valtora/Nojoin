@@ -187,7 +187,7 @@ export default function RecordingPage({ params }: PageProps) {
             <div className="min-h-0 flex-1">{mainContent}</div>
 
             {!isMobileChatOpen && (
-              <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-40">
+              <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-[var(--z-sticky)]">
                 <button
                   onClick={() => setIsMobileChatOpen(true)}
                   className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-action text-action-on shadow-float transition-colors hover:bg-action-hover"

@@ -107,7 +107,7 @@ export default function RecordingHeader({
           </div>
 
           {isMobileHeaderActionsOpen && (
-            <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-40 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-action-border bg-action-tint p-2.5 shadow-float">
+            <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-action-border bg-action-tint p-2.5 shadow-float">
               {renderMobileHeaderActions()}
             </div>
           )}

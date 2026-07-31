@@ -75,7 +75,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-50 flex flex-col gap-1">
+          <div className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
             <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 border-b border-surface-border">
               {hovered
                 ? `Insert ${hovered.rows} x ${hovered.cols} table`

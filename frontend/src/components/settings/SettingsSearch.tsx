@@ -138,7 +138,7 @@ export default function SettingsSearch({
         <div
           id="settings-search-results"
           role="listbox"
-          className="settings-card absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto p-1"
+          className="settings-card absolute left-0 right-0 top-full z-[var(--z-dropdown)] mt-2 max-h-80 overflow-y-auto p-1"
         >
           {results.length === 0 ? (
             <p className="px-3 py-4 text-sm contrast-helper">

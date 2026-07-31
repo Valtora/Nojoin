@@ -176,7 +176,7 @@ export default function AiTranscriptionSection({
                 aria-label="Show available Whisper models"
               >
                 <HelpCircle className="w-4 h-4 text-contrast-helper cursor-help" />
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden max-w-[calc(100vw-2rem)] w-80 p-4 bg-surface-card text-foreground text-xs rounded-lg shadow-float z-50 pointer-events-none group-hover:block group-focus:block">
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden max-w-[calc(100vw-2rem)] w-80 p-4 bg-surface-card text-foreground text-xs rounded-lg shadow-float z-[var(--z-dropdown)] pointer-events-none group-hover:block group-focus:block">
                   <div className="font-bold mb-2 text-sm">Available Models</div>
                   <div className="grid grid-cols-4 gap-2 border-b border-control-border pb-2 mb-2 font-semibold text-left">
                     <div>Size</div>

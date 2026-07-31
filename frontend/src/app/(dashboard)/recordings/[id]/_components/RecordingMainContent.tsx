@@ -140,7 +140,7 @@ export default function RecordingMainContent({
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
       {isMobile ? (
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:hidden">
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[var(--z-sticky)] flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:hidden">
           <button
             onClick={onBack}
             className="pointer-events-auto inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card"

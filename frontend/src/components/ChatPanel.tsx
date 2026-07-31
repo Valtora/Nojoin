@@ -343,7 +343,7 @@ export default function ChatPanel({
 
       <div className="p-4 border-t border-surface-border bg-surface-card relative">
         {!availability.available && (
-          <div className="absolute inset-0 bg-surface-card-[1px] z-20 flex items-center justify-center p-4 text-center">
+          <div className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
             <div className="text-sm text-contrast-helper font-medium">
               {availability.reason === "subscription_disconnected" ? (
                 // AI routing is per-user, so this link is right for admins and

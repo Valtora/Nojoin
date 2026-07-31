@@ -82,7 +82,7 @@ export default function NotesTemplatePicker({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1 w-64 rounded-md border border-surface-border bg-surface-card shadow-float py-1">
+        <div className="absolute right-0 z-[var(--z-dropdown)] mt-1 w-64 rounded-md border border-surface-border bg-surface-card shadow-float py-1">
           <p className="px-3 py-1.5 text-[11px] uppercase tracking-wide contrast-helper">
             Generate with structure
           </p>

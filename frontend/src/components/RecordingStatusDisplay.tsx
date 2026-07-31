@@ -139,7 +139,7 @@ export default function RecordingStatusDisplay({
       contentClassName="workspace-shell workspace-shell-feature"
     >
       {showMobileBackButton && onBack ? (
-        <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-40 lg:hidden">
+        <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[var(--z-sticky)] lg:hidden">
           <button
             type="button"
             onClick={onBack}

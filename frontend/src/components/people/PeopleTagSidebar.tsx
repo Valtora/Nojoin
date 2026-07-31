@@ -41,7 +41,7 @@ interface PeopleTagSidebarProps {
 // Inline pane on desktop; off-canvas drawer on mobile so the People table gets
 // the full width of a phone screen.
 const SIDEBAR_SHELL =
-  "fixed inset-y-0 left-0 z-50 flex h-full w-[min(20rem,85vw)] shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-card transition-transform duration-300 lg:static lg:z-auto lg:w-64 lg:translate-x-0 lg:shadow-none";
+  "fixed inset-y-0 left-0 z-[var(--z-modal)] flex h-full w-[min(20rem,85vw)] shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-card transition-transform duration-300 lg:static lg:z-auto lg:w-64 lg:translate-x-0 lg:shadow-none";
 
 export function PeopleTagSidebar({
   selectedTagIds,

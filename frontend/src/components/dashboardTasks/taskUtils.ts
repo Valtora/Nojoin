@@ -5,7 +5,7 @@ export const DAY_IN_MS = 24 * 60 * 60 * 1000;
 export const HOUR_IN_MS = 60 * 60 * 1000;
 
 export const DEADLINE_TRIGGER_CLASS =
-  "inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-dashed border-gray-300 bg-white/90 px-3 py-1 text-xs font-medium text-gray-700 shadow-none transition-colors hover:border-orange-300 hover:text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-200 dark:focus:ring-offset-gray-950";
+  "inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-dashed border-contrast-border bg-surface-card px-3 py-1 text-xs font-medium text-contrast-muted transition-colors duration-150 hover:border-action-border hover:text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
 export function parseTaskDeadline(value: string): Date | null {
   const parsed = new Date(value);
@@ -74,7 +74,7 @@ export function getTimeRemainingState(
             ? `Overdue by ${overdueHours}${overdueHours === 1 ? "hr" : "hrs"}`
             : "Overdue",
       className:
-        "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300",
+        "border-status-danger-border bg-status-danger-bg text-status-danger-fg",
     };
   }
 
@@ -84,7 +84,7 @@ export function getTimeRemainingState(
     return {
       label: `Due in ${daysRemaining}d`,
       className:
-        "border-gray-300 bg-gray-100 text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200",
+        "border-status-neutral-border bg-status-neutral-bg text-status-neutral-fg",
     };
   }
 
@@ -96,7 +96,7 @@ export function getTimeRemainingState(
         ? `Due in ${hoursRemaining}${hoursRemaining === 1 ? "hr" : "hrs"}`
         : "Due in <1h",
     className:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300",
+      "border-status-warning-border bg-status-warning-bg text-status-warning-fg",
   };
 }
 

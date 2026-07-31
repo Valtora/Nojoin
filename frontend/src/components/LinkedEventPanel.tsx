@@ -126,7 +126,7 @@ export default function LinkedEventPanel({
       )}
 
       {isPickerOpen && (
-        <div className={`absolute z-20 mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-white shadow-float ${dropdownWidthClass}`}>
+        <div className={`absolute z-[var(--z-dropdown)] mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-surface-float shadow-float ${dropdownWidthClass}`}>
           {isLoading ? (
             <div className="px-3 py-3 text-sm text-contrast-helper">
               Loading calendar events...

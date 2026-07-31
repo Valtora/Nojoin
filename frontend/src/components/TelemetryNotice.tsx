@@ -87,7 +87,7 @@ export default function TelemetryNotice() {
   }
 
   return (
-    <div className="sticky bottom-0 z-40 mx-4 mb-4 rounded-2xl border border-action-border bg-action-tint p-4 shadow-float">
+    <div className="sticky bottom-0 z-[var(--z-sticky)] mx-4 mb-4 rounded-2xl border border-action-border bg-action-tint p-4 shadow-float">
       <div className="flex items-start gap-3">
         <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 text-action-text" />
         <div className="flex-1 text-sm">

@@ -56,6 +56,10 @@ jobs:
               - 'pyproject.toml'
             frontend:
               - 'frontend/**'
+              # The marketing stylesheet is audited by frontend/scripts/check-contrast.mjs,
+              # which reads its token block as a third theme. Without this path the
+              # site could drift off the shared palette without the gate ever running.
+              - 'assets/css/**'
             scripts:
               - 'scripts/**'
             deployment:
