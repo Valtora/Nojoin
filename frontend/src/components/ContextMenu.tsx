@@ -72,7 +72,7 @@ export default function ContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-999999 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 overflow-hidden"
+      className="fixed z-[var(--z-popover)] w-48 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 overflow-hidden"
       style={style}
     >
       {items.map((item, index) => (
@@ -82,11 +82,11 @@ export default function ContextMenu({
             item.onClick();
             onClose();
           }}
-          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors flex items-center gap-2 ${
+          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-surface-inset active:bg-action-tint transition-colors flex items-center gap-2 ${
             index !== items.length - 1
-              ? "border-b border-gray-100 dark:border-gray-700"
+              ? "border-b border-surface-divider"
               : ""
-          } ${item.className || "text-gray-700 dark:text-gray-200"}`}
+          } ${item.className || "text-contrast-muted"}`}
         >
           {item.label}
         </button>

@@ -148,6 +148,10 @@
   --z-sticky: 30;
   --z-dropdown: 40;
   --z-modal: 50;
+  /* Above the modal deliberately: a context menu or a popover can be opened
+     from inside an open dialog, and at --z-dropdown it would render behind the
+     dialog that spawned it. */
+  --z-popover: 55;
   --z-toast: 60;
   --z-tour: 10001;
   /* Settings surface stack. Exactly two levels: the page, and one card on it.
