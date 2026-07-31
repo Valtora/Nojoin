@@ -45,6 +45,8 @@ function EdgeSection({
   meta,
   tone = "inset",
   defaultOpen = true,
+  open,
+  onToggle,
   children,
 }: {
   title: string;
@@ -52,9 +54,16 @@ function EdgeSection({
   meta?: ReactNode;
   tone?: "inset" | "tint";
   defaultOpen?: boolean;
+  /** Controlled state, for sections that fold together. */
+  open?: boolean;
+  onToggle?: () => void;
   children: ReactNode;
 }) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const isOpen = open ?? uncontrolledOpen;
+  const setIsOpen = onToggle
+    ? () => onToggle()
+    : () => setUncontrolledOpen((value) => !value);
 
   return (
     <div
@@ -64,7 +73,7 @@ function EdgeSection({
     >
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={setIsOpen}
         aria-expanded={isOpen}
         className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
       >
@@ -99,6 +108,11 @@ function MeetingEdgePanel({
   const [draftFocus, setDraftFocus] = useState(normalisedFocus);
   const [focusSaveState, setFocusSaveState] = useState<SaveState>("idle");
   const [draftContextLevel, setDraftContextLevel] = useState(resolvedContextLevel);
+  const [isGuidanceOpen, setIsGuidanceOpen] = useState(true);
+  const toggleGuidance = useCallback(
+    () => setIsGuidanceOpen((open) => !open),
+    [],
+  );
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftFocusRef = useRef(normalisedFocus);
   const lastSavedRef = useRef(normalisedFocus);
@@ -281,10 +295,16 @@ function MeetingEdgePanel({
               about the window. On `xl:` these split at a 1280px viewport even
               when the panel itself was 400px, which is what wrapped these
               lists to three words a line. */}
+          {/* These two fold together. They are grid siblings, so collapsing one
+              alone leaves its cell hollow while the other still sets the row
+              height: the space is not recovered, it just moves. They are also
+              one thought, read across rather than down. */}
           <div className="grid gap-4 @min-[34rem]:grid-cols-2">
             <EdgeSection
               title="Questions to Ask"
               icon={<MessageSquareQuote className="h-4 w-4 shrink-0 text-action-text" />}
+              open={isGuidanceOpen}
+              onToggle={toggleGuidance}
             >
               <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
                 {questions.length > 0 ? (
@@ -304,6 +324,8 @@ function MeetingEdgePanel({
             <EdgeSection
               title="Points to Raise"
               icon={<Lightbulb className="h-4 w-4 shrink-0 text-action-text" />}
+              open={isGuidanceOpen}
+              onToggle={toggleGuidance}
             >
               <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
                 {points.length > 0 ? (

@@ -45,14 +45,14 @@ describe("MeetingEdgePanel", () => {
     });
   });
 
-  it("folds a guidance section away without losing its content", () => {
+  it("folds questions and points together, from either header", () => {
     render(
       <MeetingEdgePanel
         onSaveFocus={vi.fn().mockResolvedValue(undefined)}
         payload={{
           summary: "A summary.",
           questions: ["Which index is being used?"],
-          points: [],
+          points: ["The comparison is price-action based."],
           concepts: [],
         }}
       />,
@@ -60,12 +60,22 @@ describe("MeetingEdgePanel", () => {
 
     expect(screen.getByText("Which index is being used?")).toBeInTheDocument();
 
+    // They are grid siblings: collapsing one alone would leave its cell hollow
+    // while the other still set the row height, so the space would move rather
+    // than be recovered.
     fireEvent.click(screen.getByRole("button", { name: /Questions to Ask/ }));
     expect(
       screen.queryByText("Which index is being used?"),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("The comparison is price-action based."),
+    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Questions to Ask/ }));
+    // And either header brings both back.
+    fireEvent.click(screen.getByRole("button", { name: /Points to Raise/ }));
     expect(screen.getByText("Which index is being used?")).toBeInTheDocument();
+    expect(
+      screen.getByText("The comparison is price-action based."),
+    ).toBeInTheDocument();
   });
 });
