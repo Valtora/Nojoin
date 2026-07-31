@@ -56,10 +56,16 @@ export default function DashboardHome() {
           340px: at 54rem two columns are ~420px each, and at 74rem three are
           ~340px each.
 
-          The third column only exists when something fills it. The task list
-          lives there when it does, and folds back beside the agenda when it
-          does not, so the absence of recordings is a two-column layout rather
-          than a column holding one lonely module.
+          Columns group by subject. The calendar owns the first: the month grid
+          with the agenda under it, since they are two views of one subsystem.
+          The task list has the second to itself, so it grows to the full height
+          of the page. Capture owns the third, with whatever it produced under
+          it: Meet Now, anything still processing, then recent recordings.
+
+          The third column only exists when something fills it. Capture folds
+          back into the second when there are no recordings at all, so a fresh
+          account gets a two-column layout rather than a column holding one
+          lonely button.
 
           `items-stretch` is what removes the dead corner this layout used to
           have: with `items-start` each column ended wherever its content did,
@@ -76,49 +82,54 @@ export default function DashboardHome() {
           this the modules would come out grouped by desktop column. */}
       {/* The grid takes the height the window has left, so the columns reach the
           bottom of the viewport instead of stopping short and leaving a dead
-          band under them. `min-height` rather than `flex-grow`, because content
-          taller than the window has to push past it rather than be clipped.
+          band under them.
 
-          The 64rem ceiling is the one arbitrary number here. Without it a very
-          tall display stretches whichever module is flexible, and a quiet day
-          would give you a 1300px empty agenda. Above the ceiling the leftover
-          sits under the grid, where it reads as page rather than as a card that
-          failed to fill. */}
+          It is `grow` the whole way down rather than a percentage height. A
+          percentage needs the parent's height to be *definite*, and this chain
+          hands height down through flex-grow from a container that is
+          `height: auto` with `min-height: 100%`; a percentage against that
+          computes to zero and the declaration silently does nothing. Flex
+          growth has no such requirement, because it distributes free space
+          during layout rather than resolving against a declared size. `grow`
+          rather than `flex-1` specifically: growth only, never shrink, so
+          content taller than the window pushes past instead of being squeezed.
+
+          Filling is uncapped, which is a deliberate trade rather than an
+          oversight. Every way of capping it breaks something else: a max-height
+          on the grid leaves the box shorter than its own content once a column
+          is genuinely long, and a max-height on the modules makes one column's
+          cards end above the others, which is the dead corner this layout
+          exists to remove. If a very tall display ever makes an empty module
+          look silly, cap that module rather than the grid. */}
       <div className="@container flex grow flex-col">
         <section
-          className={`flex flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:min-h-[min(100%,64rem)] @min-[54rem]:grid-cols-[minmax(0,1.1fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch ${
+          className={`flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1.1fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch ${
             hasThirdColumn
               ? "@min-[74rem]:grid-cols-[minmax(0,1.25fr)_minmax(18rem,1fr)_minmax(16rem,0.85fr)]"
               : ""
           }`}
         >
-          {/* `row-span-2`, not `row-end-[-1]`. A negative grid line counts back
-              from the end of the *explicit* grid, and this grid declares no
-              rows at all, so `-1` resolves to line 1 and the span silently
-              collapses to a single row. That left the month grid ending level
-              with the agenda and a dead corner underneath it, which is the
-              exact defect this layout exists to remove. At three columns the
-              second row is gone, so the span goes back to one. */}
+          {/* The calendar column. `row-span-2`, not `row-end-[-1]`: a negative
+              grid line counts back from the end of the *explicit* grid, and
+              this grid declares no rows at all, so `-1` resolves to line 1 and
+              the span silently collapses to a single row. At three columns the
+              second row is gone, so the span goes back to one.
+
+              The `order` values are the phone sequence, which runs agenda then
+              month grid. On a desktop the grid leads and the agenda sits under
+              it, so this column overrides them. The two sequences are
+              independent by design; that is what the modules being direct grid
+              children buys. */}
           <div
-            id="dashboard-upcoming-meetings"
-            className={`order-6 flex min-w-0 flex-col @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 ${
+            className={`contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] ${
               hasThirdColumn ? "@min-[74rem]:row-span-1" : ""
             }`}
           >
-            <MonthGridCard calendar={calendar} />
-          </div>
-
-          {/* The `order` values are the phone sequence. This column is the one
-              place they need overriding, because on a desktop the task list
-              sits above the agenda while on a phone the agenda comes first. The
-              two orders are independent by design; that is the whole point of
-              the modules being direct grid children. */}
-          <div className="contents @min-[54rem]:col-start-2 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
             <div
-              id="dashboard-task-cards"
-              className="order-4 flex min-h-0 flex-1 flex-col @min-[54rem]:order-1"
+              id="dashboard-upcoming-meetings"
+              className="order-6 flex min-w-0 flex-col @min-[54rem]:order-1"
             >
-              <DashboardTasksPanel />
+              <MonthGridCard calendar={calendar} />
             </div>
 
             <div
@@ -129,9 +140,22 @@ export default function DashboardHome() {
             </div>
           </div>
 
+          {/* The task list has its column to itself, so it runs the full height
+              of the page. At two columns it sits under capture instead. */}
           <div
-            className={`contents @min-[54rem]:col-start-2 @min-[54rem]:row-start-2 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] ${
-              hasThirdColumn ? "@min-[74rem]:col-start-3 @min-[74rem]:row-start-1" : ""
+            id="dashboard-task-cards"
+            className={`order-4 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-2 ${
+              hasThirdColumn ? "@min-[74rem]:row-start-1" : ""
+            }`}
+          >
+            <DashboardTasksPanel />
+          </div>
+
+          {/* Capture, and what it produced. Meet Now keeps its natural height;
+              recent recordings takes everything below it. */}
+          <div
+            className={`contents @min-[54rem]:col-start-2 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] ${
+              hasThirdColumn ? "@min-[74rem]:col-start-3" : ""
             }`}
           >
             <div id="dashboard-meeting-controls" className="order-1">

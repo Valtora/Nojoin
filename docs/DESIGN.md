@@ -246,8 +246,16 @@ The dashboard's grid uses three breakpoints, chosen so that a column is never na
 | 54rem to 74rem | 2 | 1.1 / 1 |
 | 74rem and above | 3 | 1.25 / 1 / 0.85 |
 
-Columns are deliberately unequal. The month grid needs the most, because a day cell holds a number
-and up to four markers; the list column needs the least, because a row is a title and a badge.
+Columns are deliberately unequal, and they group by subject rather than by size. The calendar owns
+the first, with the month grid and the agenda under it, because they are two views of one
+subsystem; it is also the widest, since a day cell holds a number and up to four markers. The task
+list has the second to itself, so it runs the full height of the page. Capture owns the third, with
+what it produced under it: Meet Now, anything processing, then recent recordings. The list column
+is the narrowest, because a row there is a title and a badge.
+
+Each column pairs modules that keep their natural height with exactly one that absorbs the
+remainder. Meet Now and the month grid stay the size they need; the agenda, the task list and
+recent recordings take whatever is left.
 
 **These are container queries against the workspace, not media queries against the viewport**, and
 that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
@@ -274,12 +282,18 @@ Three rules follow from that grid:
 - **A column that nothing fills does not exist.** The third column appears only when a module occupies
   it; when it is empty its occupants fold back into the second column, so the result is a two-column
   layout rather than an empty gutter.
-- **The grid takes the height the window has left, up to a ceiling.** `min-height: min(100%, 64rem)`,
-  so the columns reach the bottom of a short window instead of leaving a dead band under them, and
-  content taller than the window pushes past rather than being clipped. `min-height` rather than
-  `flex-grow` for exactly that reason. The ceiling exists because an uncapped fill on a very tall
-  display stretches whichever module is flexible, and a quiet day would produce a 1300px empty
-  agenda; above it the leftover sits under the grid, where it reads as page.
+- **The grid takes the height the window has left**, so the columns reach the bottom of the window
+  instead of leaving a dead band under them. This is `grow` the whole way down from the workspace,
+  *not* a percentage height: a percentage needs the parent's height to be definite, and this chain
+  hands height down through `flex-grow` from a container that is `height: auto` with
+  `min-height: 100%`. A percentage against that computes to zero and the declaration silently does
+  nothing, which is a failure with no symptom other than the layout not happening. `grow` rather
+  than `flex-1`, so a column taller than the window pushes past rather than being squeezed.
+- **The fill is uncapped, deliberately.** Every way of capping it breaks something: a max-height on
+  the grid leaves the box shorter than its own content once a column is genuinely long, and a
+  max-height on the modules makes one column's cards end above the others, which is the dead corner
+  this layout exists to remove. If a tall display ever makes an empty module look silly, cap that
+  module.
 
 Modules are direct children of the grid, not children of per-column wrappers. Wrappers still exist
 for stacking, but they take `display: contents` at one column, which drops them out of the box tree so
