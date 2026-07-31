@@ -27,7 +27,7 @@ Resolved with the maintainer before this plan was written. They are fixed inputs
 | 7 | The calendar's Month/Agenda toggle is **removed**. The month grid and the agenda become separate modules; the day view under the grid folds into the agenda module. |
 | 8 | Columns are **equal height**; a module that overflows scrolls inside itself. The page still scrolls. |
 | 9 | A module with nothing to show **does not render**, with calendar, Meet Now and tasks as an always-present floor. |
-| 10 | The **49 card-on-card nesting sites are all fixed**, not just the worst. |
+| 10 | **Card-on-card nesting is fixed everywhere it occurs**, not just at the worst offenders. See §4.4 for the corrected measurement: the figure quoted when this was decided was wrong. |
 | 11 | Card headers collapse to **one compact row**; the explanatory descriptions are dropped. |
 | 12 | On a phone the order is **action first**: Meet Now, processing, agenda, tasks, recents, month grid last. |
 | 13 | Recent recordings **accepts the full-list fetch** and slices client-side. No backend change. |
@@ -101,8 +101,18 @@ The rule already in DESIGN.md, now enforced: two levels, and no card inside a ca
 | Second | `bg-surface-card` + border + `shadow-card` | `bg-surface-inset`, no border, no shadow |
 | Third | `bg-surface-card` + border + `shadow-card` | no surface at all: spacing and a divider |
 
-49 sites across roughly 15 files. The densest are `TasksWorkspace` (17 card surfaces),
-`DashboardUpcomingMeetingsCard` (12) and `settings/SystemTab` (10).
+**Corrected measurement.** The "49 sites across 15 files" quoted when this was scoped counted every
+class string containing both `bg-surface-card` and `shadow-card`, which includes buttons, pills and
+inputs. Those use the card fill as a control background and are not surfaces in the stack.
+
+Measured against the canon's actual test, a *container* with a solid card fill and a hairline
+border: **77 card containers across 38 files, of which 20 hold more than one.** A file with two
+sibling cards is correct; only nesting is a defect, so each of the 20 is judged individually rather
+than swept. Worst first: `DashboardUpcomingMeetingsCard` (7), `MeetingEdgePanel` (6),
+`TasksWorkspace` (5), `ChatPanel` (4), `dashboardTasks/TaskRow` (4).
+
+`DashboardUpcomingMeetingsCard` is **not** fixed in this phase. Phase D rewrites it to split the
+month grid from the agenda, so un-nesting markup here would only be deleting it twice.
 
 ### 4.5 Card headers
 
@@ -127,9 +137,11 @@ Each phase is one reviewable commit or a small set, gated by `npm run lint`, `np
   `RecordingStatusDisplay`, so the invariant is real and merely names the wrong second surface.
 - No module changes yet, so the diff is small and the effect is visible immediately.
 
-### Phase B: nesting sweep
+### Phase B: nesting
 
-- All 49 sites, per §4.4, surface by surface.
+- The 20 multi-card files of §4.4, each judged individually: sibling cards are left alone, nested
+  ones are flattened to the pattern above.
+- Excludes `DashboardUpcomingMeetingsCard`, which Phase D rewrites.
 - Verified per surface rather than as one sweep, because this is the phase most likely to change
   something that was deliberate.
 
