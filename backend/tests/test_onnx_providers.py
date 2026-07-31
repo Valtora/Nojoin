@@ -184,6 +184,68 @@ def test_asr_engine_picks_fp32_on_gpu_and_int8_on_cpu(monkeypatch):
         assert captured["quantization"] == expected
 
 
+def test_asr_engine_requests_cuda_only_when_a_gpu_is_present(monkeypatch):
+    """Requesting CUDA with no device attached segfaults the process.
+
+    onnxruntime-gpu loads its CUDA provider library, finds no device, and dies with
+    SIGSEGV. A native fault cannot be caught, so this has to be prevented rather
+    than handled. The CPU-only deployment in docs/DEPLOYMENT.md runs the GPU lane
+    on this image with no device, which is that shape exactly.
+    """
+    import sys
+    import types
+
+    from backend.processing.engines import onnx_asr_engine
+
+    captured: dict = {}
+    stub = types.ModuleType("onnx_asr")
+    stub.load_model = lambda onnx_id, **kw: captured.update(kw) or ModelStub()
+    monkeypatch.setitem(sys.modules, "onnx_asr", stub)
+
+    class Engine(onnx_asr_engine.OnnxAsrEngine):
+        name = "canary"
+        config_key = "canary_model"
+        default_model_id = "nemo-canary-1b-v2"
+        onnx_id_map: dict = {}
+
+    monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda: False)
+    engine = Engine()
+    engine._model_cache = {}
+    engine._get_model({})
+    assert captured["providers"] == [CPU_PROVIDER]
+
+    monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda: True)
+    engine._model_cache = {}
+    engine._get_model({})
+    assert captured["providers"] == [CUDA_PROVIDER, CPU_PROVIDER]
+
+
+def test_text_embedding_requests_cuda_only_when_a_gpu_is_present(monkeypatch):
+    """Same native crash, on the lane that actually hit it in the field.
+
+    Text embedding runs on the io and parse lanes, neither of which compose grants
+    a GPU, so an unconditional CUDA request killed every indexing task there and
+    left context_chunks empty while the recording still read as processed.
+    """
+    import sys
+    import types
+
+    from backend.processing import text_embedding
+
+    captured: dict = {}
+    stub = types.ModuleType("fastembed")
+    stub.TextEmbedding = lambda **kw: captured.update(kw) or ModelStub()
+    monkeypatch.setitem(sys.modules, "fastembed", stub)
+
+    monkeypatch.setattr(text_embedding, "gpu_is_present", lambda: False)
+    text_embedding.TextEmbeddingService()
+    assert captured["providers"] == [CPU_PROVIDER]
+
+    monkeypatch.setattr(text_embedding, "gpu_is_present", lambda: True)
+    text_embedding.TextEmbeddingService()
+    assert captured["providers"] == [CUDA_PROVIDER, CPU_PROVIDER]
+
+
 def test_window_cap_tightens_on_gpu_and_respects_test_overrides(monkeypatch):
     """fp32 attention activations blow an 8GB card at the CPU-sized window."""
     from backend.processing.engines import onnx_asr_engine as e
