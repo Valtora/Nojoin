@@ -12,7 +12,7 @@ import { InlineColorPicker } from "../ColorPicker";
 // one guide column of this width, so the indent and the rails stay in lock-step.
 const INDENT = 18;
 
-const RAIL_CLASS = "bg-gray-300 dark:bg-gray-700";
+const RAIL_CLASS = "bg-rail-border";
 
 /**
  * Renders the tree guide lines for a tag row.
@@ -147,14 +147,14 @@ export default function TagItem({
         title={hasChildren ? `${tag.name} (${childCount})` : tag.name}
         className={`
           w-full flex justify-center py-2 rounded-lg transition-all
-          ${isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50 dark:hover:bg-gray-800/50"}
+          ${isSelected ? "bg-rail-item-active text-rail-item-active-fg" : "text-rail-fg hover:bg-rail-item-hover"}
         `}
       >
         <span className="relative inline-flex">
           <span className={`w-3 h-3 rounded-full ${color.dot}`} />
           {hasChildren && (
             <span
-              className="absolute -top-1.5 -right-2 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-gray-200 px-1 text-[9px] font-medium leading-none text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+              className="absolute -top-1.5 -right-2 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-status-neutral-bg px-1 text-[9px] font-medium leading-none text-status-neutral-fg"
               title={`${childCount} sub-tag${childCount === 1 ? "" : "s"}`}
             >
               {childCount}
@@ -171,9 +171,9 @@ export default function TagItem({
       {...listeners}
       className={`
         group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer relative select-none touch-none
-        ${isSelected ? "bg-gray-100 dark:bg-gray-800" : "hover:bg-gray-50 dark:hover:bg-gray-800/50"}
+        ${isSelected ? "bg-rail-item-active text-rail-item-active-fg" : "text-rail-fg hover:bg-rail-item-hover"}
         ${isDragging ? "opacity-50" : ""}
-        ${isOver ? "bg-orange-50 dark:bg-orange-900/10 ring-2 ring-orange-400 dark:ring-orange-600" : ""}
+        ${isOver ? "bg-action-tint ring-2 ring-action-border" : ""}
       `}
       onClick={() => {
         if (!isEditing) onToggle();
@@ -189,7 +189,7 @@ export default function TagItem({
             e.stopPropagation();
             onToggleExpand();
           }}
-          className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          className="flex h-4 w-4 shrink-0 items-center justify-center text-rail-fg-muted hover:text-rail-fg transition-colors"
           title={isExpanded ? "Collapse" : "Expand"}
           onPointerDown={(e) => e.stopPropagation()}
         >
@@ -217,7 +217,7 @@ export default function TagItem({
           }}
           onBlur={handleSubmit}
           autoFocus
-          className="flex-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 focus:ring-1 focus:ring-orange-500 focus:outline-none select-text"
+          className="flex-1 text-sm bg-control-bg text-foreground border border-control-border rounded px-1 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring select-text"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         />
@@ -234,13 +234,13 @@ export default function TagItem({
         </span>
       )}
       {!isEditing && (
-        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
           <button
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
               onAddChild();
             }}
-            className="p-1 hover:text-orange-500 transition-all"
+            className="p-1 hover:text-action-text transition-colors"
             title="Add sub-tag"
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -252,7 +252,7 @@ export default function TagItem({
               e.stopPropagation();
               onDelete();
             }}
-            className="p-1 hover:text-red-500 transition-all"
+            className="p-1 hover:text-danger-text transition-colors"
             title="Delete tag"
             onPointerDown={(e) => e.stopPropagation()}
           >

@@ -74,14 +74,14 @@ export default function ConnectedAppsSettings() {
   return (
     <SettingsCard
       id="integrations-connected-apps"
-      title="Connected apps"
+      title="Connected Apps"
       description="Assistants connected through the Nojoin MCP connector. They can read your meeting library and, when granted, add or update people in your People library."
     >
       {apps === null ? (
         <SettingsBlock>
           <div className="flex justify-center py-2">
             <Loader2
-              className="h-5 w-5 animate-spin text-orange-600"
+              className="h-5 w-5 animate-spin text-action-text"
               aria-hidden="true"
             />
           </div>
@@ -91,7 +91,7 @@ export default function ConnectedAppsSettings() {
           <p className="text-sm contrast-helper">
             No apps are connected. Add Nojoin as a custom connector from a
             supported assistant using{" "}
-            <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-800">
+            <code className="rounded bg-surface-inset px-1 py-0.5 text-xs">
               {typeof window !== "undefined" ? window.location.origin : ""}/mcp
             </code>
             .

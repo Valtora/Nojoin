@@ -51,14 +51,14 @@ export default function SetupPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-200 dark:bg-gray-900">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+      <div className="min-h-dvh flex items-center justify-center bg-surface-page">
+        <Loader2 className="w-8 h-8 animate-spin text-action-text" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-200 dark:bg-gray-900 p-4">
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page p-4">
       <ConfirmationModal
         isOpen={showSkipLLMModal}
         onClose={() => setShowSkipLLMModal(false)}
@@ -69,11 +69,11 @@ export default function SetupPage() {
         isDangerous={true}
       />
 
-      <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
+      <div className="w-full max-w-md bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         {/* Header */}
-        <div className="bg-orange-600 p-6 text-center">
+        <div className="bg-action p-6 text-center">
           <div className="flex justify-center mb-4">
-            <div className="bg-white p-3 rounded-full shadow-lg">
+            <div className="bg-action-on p-3 rounded-full">
               <Image
                 src="/assets/NojoinLogo.png"
                 alt="Nojoin"
@@ -83,17 +83,17 @@ export default function SetupPage() {
               />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-white">Welcome to Nojoin</h1>
-          <p className="text-orange-100 mt-2">Initial System Setup</p>
+          <h1 className="text-2xl font-bold text-action-on">Welcome to Nojoin</h1>
+          <p className="text-action-on-muted mt-2">Initial System Setup</p>
         </div>
 
         {/* Progress Steps (hidden on the unlock gate) */}
         {step > 0 && (
-          <div className="flex border-b border-gray-200 dark:border-gray-700">
+          <div className="flex border-b border-surface-divider">
             {[1, 2, 3, 4, 5].map((s) => (
               <div
                 key={s}
-                className={`flex-1 h-1 ${s <= step ? "bg-orange-600" : "bg-gray-200 dark:bg-gray-700"}`}
+                className={`flex-1 h-1 ${s <= step ? "bg-action" : "bg-surface-inset"}`}
               />
             ))}
           </div>
@@ -105,21 +105,21 @@ export default function SetupPage() {
               id="setup-error"
               role="alert"
               aria-live="polite"
-              className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3"
+              className="mb-6 p-4 bg-status-danger-bg border border-status-danger-border rounded-lg flex items-start gap-3"
             >
-              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <AlertTriangle className="w-5 h-5 text-status-danger-fg shrink-0 mt-0.5" />
+              <p className="text-sm text-status-danger-fg">{error}</p>
             </div>
           )}
 
           {ffmpegMissing && (
-            <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+            <div className="mb-6 p-4 bg-status-warning-bg border border-status-warning-border rounded-lg flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-status-warning-fg shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
+                <p className="text-sm font-medium text-status-warning-fg">
                   FFmpeg not detected
                 </p>
-                <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-1">
+                <p className="text-sm text-status-warning-fg mt-1">
                   FFmpeg/FFprobe were not found in your system PATH. Audio
                   processing features will not work correctly. Please install
                   FFmpeg and restart the application.

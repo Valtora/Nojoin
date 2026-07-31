@@ -73,17 +73,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-4">
-        <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-6 rounded-lg max-w-md text-center">
+      <div className="min-h-screen flex items-center justify-center bg-surface-card text-foreground p-4">
+        <div className="bg-status-danger-bg border border-status-danger-border text-status-danger-fg p-6 rounded-lg max-w-md text-center">
           <h2 className="text-xl font-bold mb-2">Connection Error</h2>
           <p className="mb-4">{error}</p>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-contrast-icon-muted">
             Please ensure the backend server is running and accessible at <br/>
-            <code className="bg-black/30 px-1 rounded">https://localhost:14443/api/v1</code>
+            <code className="bg-surface-inset px-1 rounded">https://localhost:14443/api/v1</code>
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white text-sm font-medium"
+            className="mt-4 px-4 py-2 bg-status-danger-bg hover:bg-status-danger-bg rounded text-foreground text-sm font-medium"
           >
             Retry
           </button>

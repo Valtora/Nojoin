@@ -69,44 +69,44 @@ const STATUS_STYLES: Record<
 > = {
   ok: {
     badge:
-      "bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-300",
-    dot: "bg-green-500",
-    iconSurface: "bg-green-100 dark:bg-green-500/10",
-    iconColor: "text-green-600 dark:text-green-300",
+      "bg-status-success-bg text-status-success-fg",
+    dot: "bg-status-success-bg",
+    iconSurface: "bg-status-success-bg",
+    iconColor: "text-status-success-fg",
   },
   warning: {
     badge:
-      "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300",
-    dot: "bg-amber-500",
-    iconSurface: "bg-amber-100 dark:bg-amber-500/10",
-    iconColor: "text-amber-600 dark:text-amber-300",
+      "bg-status-warning-bg text-status-warning-fg",
+    dot: "bg-status-warning-bg",
+    iconSurface: "bg-status-warning-bg",
+    iconColor: "text-status-warning-fg",
   },
   error: {
-    badge: "bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-300",
-    dot: "bg-red-500",
-    iconSurface: "bg-red-100 dark:bg-red-500/10",
-    iconColor: "text-red-600 dark:text-red-300",
+    badge: "bg-status-danger-bg text-status-danger-fg",
+    dot: "bg-status-danger-bg",
+    iconSurface: "bg-status-danger-bg",
+    iconColor: "text-status-danger-fg",
   },
   disabled: {
     badge:
-      "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-    dot: "bg-gray-500",
-    iconSurface: "bg-gray-100 dark:bg-gray-800",
-    iconColor: "text-gray-600 dark:text-gray-300",
+      "bg-surface-inset text-contrast-muted",
+    dot: "bg-surface-card",
+    iconSurface: "bg-surface-inset",
+    iconColor: "text-contrast-helper",
   },
   info: {
     badge:
-      "bg-blue-100 text-blue-800 dark:bg-blue-500/10 dark:text-blue-300",
-    dot: "bg-blue-500",
-    iconSurface: "bg-blue-100 dark:bg-blue-500/10",
-    iconColor: "text-blue-600 dark:text-blue-300",
+      "bg-status-info-bg text-status-info-fg",
+    dot: "bg-status-info-bg",
+    iconSurface: "bg-status-info-bg",
+    iconColor: "text-status-info-fg",
   },
   unknown: {
     badge:
-      "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-    dot: "bg-gray-500",
-    iconSurface: "bg-gray-100 dark:bg-gray-800",
-    iconColor: "text-gray-600 dark:text-gray-300",
+      "bg-surface-inset text-contrast-muted",
+    dot: "bg-surface-card",
+    iconSurface: "bg-surface-inset",
+    iconColor: "text-contrast-helper",
   },
 };
 
@@ -230,23 +230,23 @@ const LogLine = memo(function LogLine({
   // Determine Level and Color
   // Default to INFO (Green) as requested for "LOG" level
   let level = "INFO";
-  let levelColor = "text-green-500";
+  let levelColor = "text-status-success-fg";
   const upperContent = content.toUpperCase();
 
   // Check for specific levels (overrides default INFO)
   if (upperContent.includes("WARN") || upperContent.includes("WRN")) {
     level = "WARN";
-    levelColor = "text-yellow-500";
+    levelColor = "text-status-warning-fg";
   } else if (
     upperContent.includes("ERR") ||
     upperContent.includes("FAIL") ||
     upperContent.includes("CRIT")
   ) {
     level = "ERROR";
-    levelColor = "text-red-500";
+    levelColor = "text-status-danger-fg";
   } else if (upperContent.includes("DBG") || upperContent.includes("DEBUG")) {
     level = "DEBUG";
-    levelColor = "text-blue-500";
+    levelColor = "text-status-info-fg";
   }
 
   // 4. Strip redundant level prefixes to avoid duplication (e.g. "INFO: ...")
@@ -269,10 +269,10 @@ const LogLine = memo(function LogLine({
   }
 
   return (
-    <div className="flex gap-3 hover:bg-gray-800/50 py-0.5 px-2 -mx-2 rounded">
+    <div className="flex gap-3 hover:bg-surface-card py-0.5 px-2 -mx-2 rounded">
       {showTimestamps && (
         <span
-          className="text-gray-500 shrink-0 select-none w-[68px] font-mono"
+          className="text-contrast-helper shrink-0 select-none w-[68px] font-mono"
           title={timestamp}
         >
           {timeDisplay}
@@ -281,7 +281,7 @@ const LogLine = memo(function LogLine({
 
       {/* Container Name */}
       <span
-        className="text-gray-600 shrink-0 select-none w-[110px] truncate text-right"
+        className="text-contrast-helper shrink-0 select-none w-[110px] truncate text-right"
         title={container}
       >
         {container}
@@ -567,7 +567,7 @@ export default function SystemTab() {
   return (
     <SettingsCard
       id="system-logs"
-      title="Service health and logs"
+      title="Service Health and Logs"
       description="Live operational output from the Nojoin services."
     >
       <SettingsBlock contentClassName="animate-in fade-in duration-500 space-y-4">
@@ -612,7 +612,7 @@ export default function SystemTab() {
         <div className="settings-inset rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              <div className="text-sm font-semibold text-foreground">
                 Model preparation in progress
               </div>
               <p className="mt-1 text-xs contrast-helper">
@@ -620,7 +620,7 @@ export default function SystemTab() {
                   "Model assets are still being prepared for the pipeline."}
               </p>
             </div>
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+            <div className="flex items-center gap-2 text-sm font-medium text-contrast-muted">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>
                 {typeof adminHealth.download.progress === "number"
@@ -629,9 +629,9 @@ export default function SystemTab() {
               </span>
             </div>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+          <div className="h-2 overflow-hidden rounded-full bg-surface-inset">
             <div
-              className="h-full rounded-full bg-orange-500 transition-all"
+              className="h-full rounded-full bg-action transition-all"
               style={{
                 width: `${Math.min(adminHealth.download.progress ?? 10, 100)}%`,
               }}
@@ -654,7 +654,7 @@ export default function SystemTab() {
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] contrast-helper">
                       {title}
                     </div>
-                    <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
+                    <div className="mt-1 text-sm font-semibold text-foreground">
                       {check.label}
                     </div>
                   </div>
@@ -680,7 +680,7 @@ export default function SystemTab() {
                     {meta.map((item) => (
                       <span
                         key={item}
-                        className="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-900"
+                        className="rounded-full bg-surface-inset px-2.5 py-1"
                       >
                         {item}
                       </span>
@@ -691,7 +691,7 @@ export default function SystemTab() {
                 <p className="text-sm contrast-helper">{check.detail}</p>
 
                 {check.action && (
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                  <p className="text-xs font-medium text-contrast-muted">
                     {check.action}
                   </p>
                 )}
@@ -701,15 +701,15 @@ export default function SystemTab() {
         </div>
       )}
 
-      <div className="bg-[#0d1117] rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[600px]">
+      <div className="bg-[#0d1117] rounded-lg border border-control-border shadow-float overflow-hidden flex flex-col h-[600px]">
           {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-gray-800">
+          <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-control-border">
             {/* Container Select */}
             <div className="relative">
               <select
                 value={selectedContainer}
                 onChange={(e) => setSelectedContainer(e.target.value)}
-                className="appearance-none bg-[#0d1117] text-gray-300 text-xs font-medium px-3 py-1.5 pr-8 rounded border border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none w-40"
+                className="appearance-none bg-[#0d1117] text-contrast-icon-muted text-xs font-medium px-3 py-1.5 pr-8 rounded border border-control-border focus:border-status-info-border focus:ring-1 focus:ring-status-info-border outline-none w-40"
               >
                 {containers.map((c) => (
                   <option key={c} value={c}>
@@ -720,7 +720,7 @@ export default function SystemTab() {
               {/* Status Dot Overlay */}
               <div className="absolute right-7 top-1/2 -translate-y-1/2 pointer-events-none">
                 <span
-                  className={`block w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-gray-500"}`}
+                  className={`block w-2 h-2 rounded-full ${isConnected ? "bg-status-success-bg" : "bg-surface-card"}`}
                 />
               </div>
             </div>
@@ -730,7 +730,7 @@ export default function SystemTab() {
               <select
                 value={logLevel}
                 onChange={(e) => setLogLevel(e.target.value)}
-                className="appearance-none bg-[#0d1117] text-gray-300 text-xs font-medium px-3 py-1.5 pr-6 rounded border border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none w-20 text-center"
+                className="appearance-none bg-[#0d1117] text-contrast-icon-muted text-xs font-medium px-3 py-1.5 pr-6 rounded border border-control-border focus:border-status-info-border focus:ring-1 focus:ring-status-info-border outline-none w-20 text-center"
               >
                 {logLevels.map((l) => (
                   <option key={l} value={l}>
@@ -744,7 +744,7 @@ export default function SystemTab() {
               <input
                 type="text"
                 placeholder="Enter a regex pattern to filter logs by..."
-                className="w-full bg-[#0d1117] text-gray-300 text-xs px-3 py-1.5 rounded border border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none placeholder-gray-600 font-mono"
+                className="w-full bg-[#0d1117] text-contrast-icon-muted text-xs px-3 py-1.5 rounded border border-control-border focus:border-status-info-border focus:ring-1 focus:ring-status-info-border outline-none placeholder:text-control-placeholder font-mono"
                 value={logFilter}
                 onChange={(e) => setLogFilter(e.target.value)}
               />
@@ -754,7 +754,7 @@ export default function SystemTab() {
             <button
               onClick={() => setAutoScroll(!autoScroll)}
               title={autoScroll ? "Pause Auto-scroll" : "Resume Auto-scroll"}
-              className={`p-1.5 rounded transition-colors ${autoScroll ? "text-green-500 hover:bg-gray-700" : "text-gray-300 hover:text-white hover:bg-gray-700"}`}
+              className={`p-1.5 rounded transition-colors ${autoScroll ? "text-status-success-fg hover:bg-surface-card" : "text-contrast-icon-muted hover:text-foreground hover:bg-surface-card"}`}
             >
               {autoScroll ? (
                 <Pause className="w-4 h-4" />
@@ -765,13 +765,13 @@ export default function SystemTab() {
             <button
               onClick={() => setLogs([])}
               title="Clear Logs"
-              className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 text-contrast-icon-muted hover:text-foreground hover:bg-surface-card rounded transition-colors"
             >
               <Trash2 className="w-4 h-4" />
             </button>
             <Popover className="relative">
               <Popover.Button
-                className="p-1.5 text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors outline-none"
+                className="p-1.5 text-contrast-icon-muted hover:text-foreground hover:bg-surface-card rounded transition-colors outline-none"
                 title="Log Settings"
               >
                 <Settings className="w-4 h-4" />
@@ -786,34 +786,34 @@ export default function SystemTab() {
                 leaveFrom="transform opacity-100 scale-100"
                 leaveTo="transform opacity-0 scale-95"
               >
-                <Popover.Panel className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[#1c2128] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none border border-gray-700 p-1">
+                <Popover.Panel className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[#1c2128] shadow-float ring-1 ring-surface-border ring-opacity-5 focus:outline-none border border-control-border p-1">
                   <div className="p-1 space-y-1">
                     <button
                       onClick={toggleLogShowTimestamps}
-                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-contrast-icon-muted hover:bg-surface-card hover:text-foreground"
                     >
                       <span>Show Timestamps</span>
                       {logShowTimestamps && (
-                        <Check className="h-4 w-4 text-orange-500" />
+                        <Check className="h-4 w-4 text-action-text" />
                       )}
                     </button>
                     <button
                       onClick={toggleLogWordWrap}
-                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-contrast-icon-muted hover:bg-surface-card hover:text-foreground"
                     >
                       <span>Word Wrap</span>
                       {logWordWrap && (
-                        <Check className="h-4 w-4 text-orange-500" />
+                        <Check className="h-4 w-4 text-action-text" />
                       )}
                     </button>
                   </div>
                 </Popover.Panel>
               </Transition>
             </Popover>
-            <div className="w-px h-4 bg-gray-700 mx-1"></div>
+            <div className="w-px h-4 bg-surface-card mx-1"></div>
             <button
               onClick={handleDownloadLogs}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-300 text-xs font-medium rounded border border-gray-600 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-contrast-icon-muted text-xs font-medium rounded border border-control-border transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               Download
@@ -824,7 +824,7 @@ export default function SystemTab() {
           <div
             ref={scrollRef}
             onScroll={handleLogScroll}
-            className="flex-1 overflow-y-auto overscroll-contain p-4 font-mono text-[11px] leading-relaxed text-gray-300 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
+            className="flex-1 overflow-y-auto overscroll-contain p-4 font-mono text-[11px] leading-relaxed text-contrast-icon-muted scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
           >
             {filteredLogs.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center opacity-30 select-none">
@@ -844,7 +844,7 @@ export default function SystemTab() {
           </div>
 
           {/* Status Footer */}
-          <div className="px-3 py-1 bg-[#161b22] border-t border-gray-800 flex items-center justify-between text-[10px] text-gray-500 font-mono">
+          <div className="px-3 py-1 bg-[#161b22] border-t border-control-border flex items-center justify-between text-[10px] text-contrast-helper font-mono">
             <span>{isConnected ? "Connected" : "Disconnected"}</span>
             <span>{filteredLogs.length} lines</span>
           </div>

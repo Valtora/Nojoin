@@ -160,14 +160,14 @@ export default function BatchActionBar({
 
   return (
     <>
-      <div className="absolute bottom-4 left-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
+      <div className="absolute bottom-4 left-4 right-4 bg-surface-card rounded-lg shadow-float border border-surface-border p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
         <div className="flex items-center gap-3">
-          <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-1 rounded-md text-xs font-medium">
+          <span className="bg-action-tint text-action-text px-2 py-1 rounded-md text-xs font-medium">
             {selectedRecordingIds.length} selected
           </span>
           <button
             onClick={clearSelection}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            className="text-contrast-helper hover:text-contrast-muted"
           >
             <X className="w-4 h-4" />
           </button>
@@ -175,10 +175,10 @@ export default function BatchActionBar({
 
         <div className="flex items-center gap-2">
           {/* Tag Actions */}
-          <div className="flex gap-1 border-r border-gray-200 dark:border-gray-700 pr-2 mr-1">
+          <div className="flex gap-1 border-r border-surface-border pr-2 mr-1">
             <button
               onClick={() => setTagModal({ isOpen: true, mode: "add" })}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+              className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
               title="Add Tag"
             >
               <Tag className="w-4 h-4" />
@@ -190,14 +190,14 @@ export default function BatchActionBar({
             <>
               <button
                 onClick={handleArchive}
-                className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
                 title="Archive"
               >
                 <Archive className="w-4 h-4" />
               </button>
               <button
                 onClick={handleSoftDelete}
-                className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md"
+                className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
                 title="Delete"
               >
                 <Trash2 className="w-4 h-4" />
@@ -209,14 +209,14 @@ export default function BatchActionBar({
             <>
               <button
                 onClick={handleRestore}
-                className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
                 title="Restore"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
               <button
                 onClick={handleSoftDelete}
-                className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md"
+                className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
                 title="Delete"
               >
                 <Trash2 className="w-4 h-4" />
@@ -228,14 +228,14 @@ export default function BatchActionBar({
             <>
               <button
                 onClick={handleRestore}
-                className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
                 title="Restore"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
               <button
                 onClick={handlePermanentDelete}
-                className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md"
+                className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
                 title="Permanently Delete"
               >
                 <Trash2 className="w-4 h-4" />

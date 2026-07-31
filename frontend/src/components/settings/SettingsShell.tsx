@@ -66,7 +66,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
   return (
     <div className="settings-page flex h-full flex-col">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-4 py-3 contrast-border md:px-6">
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h1 className="text-lg font-semibold text-foreground">
           Settings
         </h1>
         <VersionTag />

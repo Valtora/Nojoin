@@ -49,11 +49,11 @@ const GainSlider = ({
       step={GAIN_STEP}
       value={value}
       onChange={(event) => onChange(Number(event.target.value))}
-      className="w-full accent-orange-500"
+      className="w-full accent-action"
     />
     <div className="flex items-center justify-between text-xs contrast-helper">
       <span>Quieter</span>
-      <span className="font-semibold text-gray-700 dark:text-gray-200">
+      <span className="font-semibold text-contrast-muted">
         {formatGainLabel(value)}
       </span>
       <span>Louder</span>
@@ -72,16 +72,16 @@ const MeterBar = ({
 }) => {
   const backgroundClass =
     tone === "orange"
-      ? "bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300"
-      : "bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-300";
+      ? "bg-action"
+      : "bg-status-success-fg";
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-contrast-helper">
         <span>{label}</span>
         <span>{value}%</span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+      <div className="h-3 overflow-hidden rounded-full bg-surface-inset">
         <div
           className={`h-full rounded-full transition-[width] duration-75 ${backgroundClass}`}
           style={{ width: `${value}%` }}

@@ -9,7 +9,7 @@ import {
   startOfDay,
 } from "date-fns";
 
-import { COLOR_PALETTE } from "@/lib/constants";
+import { COLOR_PALETTE, getColorByKey } from "@/lib/constants";
 import { formatTimeZoneDate, toTimeZoneDate } from "@/lib/timezone";
 import {
   CalendarDashboardEvent,
@@ -19,7 +19,14 @@ import {
 } from "@/types";
 
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-export type CalendarViewMode = "month" | "agenda";
+/**
+ * What the agenda module is showing. This replaced a Month/Agenda toggle that
+ * made the grid and the agenda compete for one slot: both are now permanent
+ * modules, and the only thing left to choose is whether the agenda is scoped to
+ * one day or to the whole viewed month. The month grid is that control, so
+ * there is no toggle button.
+ */
+export type AgendaMode = "day" | "month";
 export const MAX_VISIBLE_DOTS = 4;
 export const DEFAULT_TIMELINE_START_HOUR = 7;
 export const DEFAULT_TIMELINE_END_HOUR = 21;
@@ -80,7 +87,10 @@ export function getCalendarColourPresentation(colour: string | null | undefined)
     return { className: "", style: { backgroundColor: colour } };
   }
 
-  return { className: "bg-orange-500", style: undefined };
+  // An uncoloured calendar falls back to the palette's orange dot. Read it from
+  // the palette rather than repeating its literal, because these are the user's
+  // colour choices rather than theme decisions and the two must not drift.
+  return { className: getColorByKey("orange").dot, style: undefined };
 }
 
 export function getDayMarkerColours(
@@ -226,11 +236,11 @@ export function formatRecordingDuration(
 export function getRecordingStatusClasses(status: RecordingStatus): string {
   switch (status) {
     case RecordingStatus.ERROR:
-      return "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200";
+      return "border-status-danger-border bg-status-danger-bg text-status-danger-fg";
     case RecordingStatus.CANCELLED:
-      return "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-200";
+      return "border-status-neutral-border bg-status-neutral-bg text-status-neutral-fg";
     default:
-      return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200";
+      return "border-status-warning-border bg-status-warning-bg text-status-warning-fg";
   }
 }
 

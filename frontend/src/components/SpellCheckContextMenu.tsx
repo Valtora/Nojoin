@@ -70,7 +70,7 @@ export default function SpellCheckContextMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-999999 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 overflow-visible"
+      className="fixed z-[var(--z-popover)] w-48 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 overflow-visible"
       style={style}
     >
       <div
@@ -81,10 +81,10 @@ export default function SpellCheckContextMenu({
         <button
           onClick={() => setShowSuggestions(!showSuggestions)}
           disabled={!hasSuggestions}
-          className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between border-b border-gray-100 dark:border-gray-700 ${
+          className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between border-b border-surface-divider ${
             hasSuggestions
-              ? "hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 text-gray-700 dark:text-gray-200"
-              : "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+              ? "hover:bg-surface-inset active:bg-action-tint text-contrast-muted"
+              : "text-contrast-icon-muted cursor-not-allowed"
           }`}
         >
           Suggestions
@@ -98,7 +98,7 @@ export default function SpellCheckContextMenu({
         {/* Suggestion submenu flyout */}
         {showSuggestions && hasSuggestions && (
           <div
-            className="absolute left-full top-0 ml-1 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-999999"
+            className="absolute left-full top-0 ml-1 w-44 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 z-[var(--z-popover)]"
             onMouseEnter={handleSuggestionsEnter}
             onMouseLeave={handleSuggestionsLeave}
           >
@@ -109,9 +109,9 @@ export default function SpellCheckContextMenu({
                   onCorrect(suggestion);
                   onClose();
                 }}
-                className={`w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors ${
+                className={`w-full text-left px-4 py-2 text-sm text-contrast-muted hover:bg-surface-inset active:bg-action-tint transition-colors ${
                   index !== suggestions.length - 1
-                    ? "border-b border-gray-100 dark:border-gray-700"
+                    ? "border-b border-surface-divider"
                     : ""
                 }`}
               >
@@ -128,7 +128,7 @@ export default function SpellCheckContextMenu({
           onAddToDictionary();
           onClose();
         }}
-        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors border-b border-gray-100 dark:border-gray-700"
+        className="w-full text-left px-4 py-2.5 text-sm text-contrast-muted hover:bg-surface-inset active:bg-action-tint transition-colors border-b border-surface-divider"
       >
         Add to Dictionary
       </button>
@@ -139,7 +139,7 @@ export default function SpellCheckContextMenu({
           onIgnore();
           onClose();
         }}
-        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors"
+        className="w-full text-left px-4 py-2.5 text-sm text-contrast-muted hover:bg-surface-inset active:bg-action-tint transition-colors"
       >
         Ignore
       </button>

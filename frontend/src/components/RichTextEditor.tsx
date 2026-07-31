@@ -42,7 +42,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
         autolink: true,
         linkOnPaste: true,
         HTMLAttributes: {
-          class: 'text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer',
+          class: 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer',
           target: '_blank',
           rel: 'noopener noreferrer',
         },
@@ -93,7 +93,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
   }
 
   return (
-    <div className="h-full w-full bg-white dark:bg-gray-800 overflow-y-auto">
+    <div className="h-full w-full bg-surface-card overflow-y-auto">
       <EditorContent editor={editor} className="h-full" />
     </div>
   );

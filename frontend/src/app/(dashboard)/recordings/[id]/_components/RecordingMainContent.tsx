@@ -85,8 +85,8 @@ interface RecordingMainContentProps {
 const tabClassName = (active: boolean) =>
   `flex min-w-0 items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
     active
-      ? "border-orange-500 text-orange-600 dark:text-orange-400 bg-white dark:bg-gray-800"
-      : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+      ? "border-action text-action-text bg-surface-card"
+      : "border-transparent text-contrast-helper hover:text-foreground hover:bg-surface-inset"
   }`;
 
 export default function RecordingMainContent({
@@ -140,10 +140,10 @@ export default function RecordingMainContent({
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
       {isMobile ? (
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:hidden">
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[var(--z-sticky)] flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:hidden">
           <button
             onClick={onBack}
-            className="pointer-events-auto inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl border border-gray-200 bg-white/90 px-4 text-sm font-medium text-gray-700 shadow-lg shadow-black/10 backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:shadow-black/30"
+            className="pointer-events-auto inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card"
             title="Back to Recordings"
             aria-label="Back to Recordings"
           >
@@ -153,7 +153,7 @@ export default function RecordingMainContent({
 
           <button
             onClick={() => setIsMobileHeaderActionsOpen((current) => !current)}
-            className={`pointer-events-auto inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-lg shadow-black/10 backdrop-blur-sm transition-colors dark:shadow-black/30 ${isMobileHeaderActionsOpen ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300" : "border-gray-200 bg-white/90 text-gray-700 hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+            className={`pointer-events-auto inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-float transition-colors dark: ${isMobileHeaderActionsOpen ? "border-action-border bg-action-tint text-action-text" : "border-surface-border bg-surface-card text-contrast-muted hover:bg-surface-card"}`}
             title={
               isMobileHeaderActionsOpen
                 ? "Hide meeting actions"
@@ -190,9 +190,9 @@ export default function RecordingMainContent({
 
       {/* Panel Tabs. The Speakers tab is mobile-only; on desktop the speaker
           panel lives in the side column. */}
-      <div className="shrink-0 bg-gray-50 dark:bg-gray-900">
+      <div className="shrink-0 bg-surface-inset">
         <div
-          className={`grid ${isMobile ? "grid-cols-4" : "grid-cols-3"} border-b-2 border-gray-200 dark:border-gray-700`}
+          className={`grid ${isMobile ? "grid-cols-4" : "grid-cols-3"} border-b-2 border-surface-border`}
         >
           <button
             id="tab-transcript"
@@ -228,7 +228,7 @@ export default function RecordingMainContent({
       </div>
 
       {/* Panel Content */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden min-h-0 h-full relative">
+      <div className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
         <TranscriptSection
           active={activePanel === "transcript"}
           recording={recording}

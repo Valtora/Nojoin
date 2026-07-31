@@ -60,10 +60,10 @@ export default function TableMenu({ editor }: TableMenuProps) {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+        className={`p-2 rounded hover:bg-surface-inset transition-colors ${
           isInTable || isOpen
-            ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400"
-            : "text-gray-600 dark:text-gray-400"
+            ? "bg-surface-inset text-action-text"
+            : "text-contrast-helper"
         }`}
         title="Table"
         aria-label="Table"
@@ -74,9 +74,9 @@ export default function TableMenu({ editor }: TableMenuProps) {
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-50 flex flex-col gap-1">
-            <div className="text-xs font-semibold text-gray-400 px-2 py-1 border-b border-gray-100 dark:border-gray-700">
+          <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setIsOpen(false)} />
+          <div className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+            <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 border-b border-surface-border">
               {hovered
                 ? `Insert ${hovered.rows} x ${hovered.cols} table`
                 : "Insert Table"}
@@ -103,8 +103,8 @@ export default function TableMenu({ editor }: TableMenuProps) {
                     aria-label={`Insert ${row} by ${col} table`}
                     className={`h-full w-full rounded-sm border transition-colors ${
                       active
-                        ? "bg-orange-500 border-orange-600"
-                        : "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                        ? "bg-action border-action"
+                        : "bg-surface-inset border-control-border"
                     }`}
                   />
                 );
@@ -113,7 +113,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
 
             {isInTable && (
               <>
-                <div className="text-xs font-semibold text-gray-400 px-2 py-1 border-t border-gray-100 dark:border-gray-700">
+                <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 border-t border-surface-border">
                   Edit Table
                 </div>
 
@@ -183,10 +183,10 @@ function TableAction({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+      className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-surface-inset transition-colors ${
         destructive
-          ? "text-red-600 dark:text-red-400"
-          : "text-gray-700 dark:text-gray-200"
+          ? "text-status-danger-fg"
+          : "text-contrast-muted"
       }`}
     >
       {icon}

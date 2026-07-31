@@ -27,10 +27,10 @@ export default function UnlockStep({
       autoComplete="off"
     >
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+        <h2 className="text-xl font-semibold text-foreground">
           First-Run Setup
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+        <p className="text-sm text-contrast-helper mt-2">
           Unlock the setup wizard to initialise this Nojoin deployment
         </p>
       </div>
@@ -38,13 +38,13 @@ export default function UnlockStep({
       <div>
         <label
           htmlFor="setup-unlock-password"
-          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          className="block text-sm font-medium text-contrast-muted mb-1"
         >
           First-run setup password
         </label>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+            <Lock className="h-5 w-5 text-contrast-helper" />
           </div>
           <input
             id="setup-unlock-password"
@@ -58,11 +58,11 @@ export default function UnlockStep({
             aria-invalid={Boolean(error)}
             required
             onChange={onBootstrapPasswordChange}
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
             placeholder="Enter first-run setup password"
           />
         </div>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        <p className="mt-2 text-xs text-contrast-helper">
           This is the FIRST_RUN_PASSWORD value from your deployment environment
           (.env). It is only used to initialise a new Nojoin system.
         </p>
@@ -71,7 +71,7 @@ export default function UnlockStep({
       <button
         type="submit"
         disabled={unlocking}
-        className="w-full mt-4 bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+        className="w-full mt-4 bg-action hover:bg-action-hover text-action-on font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
       >
         {unlocking ? (
           <>
@@ -82,11 +82,11 @@ export default function UnlockStep({
         )}
       </button>
 
-      <p className="text-center text-sm text-gray-600 dark:text-gray-300 mt-2">
+      <p className="text-center text-sm text-contrast-helper mt-2">
         Already set up?{" "}
         <Link
           href="/login"
-          className="font-medium text-orange-600 hover:text-orange-500"
+          className="font-medium text-action-text hover:text-action-text-hover"
         >
           Back to sign in
         </Link>

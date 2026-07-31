@@ -226,13 +226,13 @@ export default function BackupRestore() {
   return (
     <SettingsCard
       id="backup-export"
-      title="Backup and restore"
+      title="Backup and Restore"
       description="Export application data as a restorable archive, and recover it transactionally."
     >
       <SettingsBlock contentClassName="space-y-6">
         {/* Export Section */}
-        <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
-          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+        <div className="pb-6 border-b border-surface-border">
+          <h4 className="text-sm font-medium text-foreground mb-2">
             Export Backup
           </h4>
           <p className="text-sm contrast-helper mb-4">
@@ -240,17 +240,17 @@ export default function BackupRestore() {
             settings, tasks from the Task List, people voiceprints, and calendar
             data.
             <br />
-            <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
+            <span className="text-xs text-action-text font-medium">
               AI and Hugging Face keys stay redacted. Calendar provider
               credentials and connected calendar tokens are included so calendar
               integrations restore correctly. Treat backup files as sensitive.
             </span>
           </p>
           {exportTaskId ? (
-            <div className="rounded-lg border border-orange-200 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-900/10 p-4">
+            <div className="rounded-lg border border-action-border bg-action-tint p-4">
               <div className="flex items-center gap-3 mb-2">
-                <Loader2 className="w-4 h-4 animate-spin text-orange-600 dark:text-orange-400 shrink-0" />
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <Loader2 className="w-4 h-4 animate-spin text-action-text shrink-0" />
+                <span className="text-sm font-medium text-foreground">
                   {exportProgress?.status ?? "Preparing backup..."}
                 </span>
               </div>
@@ -259,15 +259,15 @@ export default function BackupRestore() {
                   indeterminate shimmer otherwise. Either way the panel proves work is
                   happening, which is what the silent version could not do. */}
               {exportPercent !== null ? (
-                <div className="h-2 w-full rounded-full bg-orange-100 dark:bg-orange-900/30 overflow-hidden">
+                <div className="h-2 w-full rounded-full bg-action-tint overflow-hidden">
                   <div
-                    className="h-full bg-orange-600 transition-all duration-500"
+                    className="h-full bg-action transition-all duration-500"
                     style={{ width: `${exportPercent}%` }}
                   />
                 </div>
               ) : (
-                <div className="h-2 w-full rounded-full bg-orange-100 dark:bg-orange-900/30 overflow-hidden">
-                  <div className="h-full w-1/3 bg-orange-600 animate-pulse" />
+                <div className="h-2 w-full rounded-full bg-action-tint overflow-hidden">
+                  <div className="h-full w-1/3 bg-action animate-pulse" />
                 </div>
               )}
 
@@ -280,7 +280,7 @@ export default function BackupRestore() {
           ) : (
             <button
               onClick={handleExportClick}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-card text-action-on bg-action hover:bg-action-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-action disabled:opacity-50 transition-colors"
             >
               <Download className="w-4 h-4 mr-2" />
               Download Backup
@@ -290,7 +290,7 @@ export default function BackupRestore() {
 
         {/* Import Section */}
         <div>
-          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+          <h4 className="text-sm font-medium text-foreground mb-2">
             Import Backup
           </h4>
           <p className="text-sm contrast-helper mb-4">
@@ -310,10 +310,10 @@ export default function BackupRestore() {
                   relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
                   ${
                     isDragging
-                      ? "border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                      ? "border-action bg-action-tint"
                       : selectedFile
-                        ? "border-green-500 bg-green-50 dark:bg-green-900/20"
-                        : "border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600"
+                        ? "border-status-success-border bg-status-success-bg"
+                        : "border-control-border hover:border-action-border"
                   }
                   ${importing ? "pointer-events-none opacity-75" : ""}
                 `}
@@ -331,11 +331,11 @@ export default function BackupRestore() {
 
               {selectedFile ? (
                 <div className="space-y-2">
-                  <FileArchive className="w-12 h-12 mx-auto text-green-500" />
-                  <p className="font-medium text-gray-900 dark:text-white truncate max-w-xs mx-auto">
+                  <FileArchive className="w-12 h-12 mx-auto text-status-success-fg" />
+                  <p className="font-medium text-foreground truncate max-w-xs mx-auto">
                     {selectedFile.name}
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-contrast-helper">
                     {formatFileSize(selectedFile.size)}
                   </p>
                   {!importing && (
@@ -344,7 +344,7 @@ export default function BackupRestore() {
                         e.stopPropagation();
                         handleRemoveFile();
                       }}
-                      className="text-sm text-red-500 hover:text-red-600 underline flex items-center justify-center gap-1 mx-auto"
+                      className="text-sm text-status-danger-fg hover:text-status-danger-fg underline flex items-center justify-center gap-1 mx-auto"
                     >
                       <Trash2 className="w-3 h-3" /> Remove
                     </button>
@@ -352,9 +352,9 @@ export default function BackupRestore() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Upload className="w-12 h-12 mx-auto text-gray-500 dark:text-gray-400" />
-                  <p className="text-gray-700 dark:text-gray-300">
-                    <span className="font-medium text-orange-500">
+                  <Upload className="w-12 h-12 mx-auto text-contrast-helper" />
+                  <p className="text-contrast-muted">
+                    <span className="font-medium text-action-text">
                       Click to browse
                     </span>{" "}
                     or drag and drop
@@ -368,18 +368,18 @@ export default function BackupRestore() {
             {importing && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700 dark:text-gray-300">
+                  <span className="text-contrast-muted">
                     {uploadProgress < 100
                       ? "Uploading..."
                       : "Processing on server (Do not close)..."}
                   </span>
-                  <span className="text-gray-900 dark:text-white font-medium">
+                  <span className="text-foreground font-medium">
                     {uploadProgress}%
                   </span>
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div className="w-full bg-surface-inset rounded-full h-2">
                   <div
-                    className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? "bg-green-500 animate-pulse" : "bg-orange-500"}`}
+                    className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? "bg-status-success-bg animate-pulse" : "bg-action"}`}
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
@@ -394,7 +394,7 @@ export default function BackupRestore() {
             <button
               onClick={handleRestoreClick}
               disabled={!isValidZip || importing}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-card text-action-on bg-action hover:bg-action-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-action disabled:opacity-50 transition-colors"
             >
               {importing ? (
                 <>
@@ -413,7 +413,7 @@ export default function BackupRestore() {
 
         {message && (
           <div
-            className={`p-4 rounded-md ${message.type === "success" ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300" : "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300"}`}
+            className={`p-4 rounded-md ${message.type === "success" ? "bg-status-success-bg text-status-success-fg" : "bg-status-danger-bg text-status-danger-fg"}`}
           >
             <div className="flex">
               {message.type === "success" ? (
@@ -427,24 +427,24 @@ export default function BackupRestore() {
         )}
 
         {skipReport && (
-          <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <div className="rounded-md border border-status-warning-border bg-status-warning-bg p-4">
             <div className="flex items-start justify-between gap-3 mb-3">
-              <h5 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                Records that could not be restored
+              <h5 className="text-sm font-semibold text-status-warning-fg">
+                Records That Could Not Be Restored
               </h5>
               <button
                 onClick={() => {
                   setSkipReport(null);
                   window.location.reload();
                 }}
-                className="text-xs font-medium text-amber-900 dark:text-amber-200 underline shrink-0"
+                className="text-xs font-medium text-status-warning-fg underline shrink-0"
               >
                 Dismiss and refresh
               </button>
             </div>
             <ul className="space-y-2">
               {Object.entries(skipReport).map(([table, reasons]) => (
-                <li key={table} className="text-xs text-amber-900 dark:text-amber-200">
+                <li key={table} className="text-xs text-status-warning-fg">
                   <span className="font-medium">
                     {TABLE_LABELS[table] ?? table}
                   </span>

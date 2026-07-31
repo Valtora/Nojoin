@@ -55,17 +55,18 @@ Once the installation credentials exist:
 4. Return to Nojoin and choose which calendars to sync.
 5. Optionally apply per-calendar colour overrides.
 
-Connected calendars then feed the dashboard month view, agenda view, and next-event surface. Unlinked Nojoin recordings also appear on the dashboard calendar as first-class historical items.
+Connected calendars then feed the dashboard month grid, the agenda, and the next-event surface. Unlinked Nojoin recordings also appear on the dashboard calendar as first-class historical items.
 
 ## Dashboard Behaviour
 
 When calendar sync is configured:
 
-- The dashboard month view shows dots on days with synced events and on days that contain unlinked Nojoin recordings.
+- The dashboard month grid shows dots on days with synced events and on days that contain unlinked Nojoin recordings.
 - Unlinked Nojoin recordings use the Nojoin orange accent so they remain visually distinct from Google or Microsoft calendar sources.
-- The agenda view is month-scoped and shows both calendar events and unlinked historical recordings for the viewed month.
+- The month grid and the agenda are separate dashboard modules sharing one month summary request, and both are visible at once.
+- The agenda is month-scoped and shows both calendar events and unlinked historical recordings for the viewed month.
 - In the current month, the agenda lists upcoming items first and collapses past items behind a `Show past events` control; past months render fully expanded.
-- Selecting a day in month view opens a day agenda, and selecting today shows a live now marker against timed events.
+- The agenda opens scoped to today. Selecting a day in the month grid scopes it to that day, `Whole month` returns it to the full month, and a day agenda for today shows a live now marker against timed events.
 - Clicking a timed event on the day timeline opens a details popover with the full event metadata, join link, and linked recordings; live events additionally show a `Join` button on the bubble.
 - Timeline bubbles size their metadata to the event duration: shorter events show fewer detail rows, and events spanning midnight are marked with dashed edges and chevrons.
 - The `Today` action jumps back to the current month and date context.

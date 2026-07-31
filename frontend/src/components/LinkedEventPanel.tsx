@@ -92,7 +92,7 @@ export default function LinkedEventPanel({
   return (
     <div className="relative" ref={containerRef}>
       {linkedEvent ? (
-        <div className={`${basePillClass} border-gray-300 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200`}>
+        <div className={`${basePillClass} border-control-border bg-surface-inset text-contrast-muted`}>
           <Calendar className="w-3.5 h-3.5 shrink-0" />
           <span className={`truncate ${compact ? "max-w-[10rem]" : "max-w-[16rem]"}`}>{linkedEvent.title}</span>
           {formatEventTime(linkedEvent) && (
@@ -109,7 +109,7 @@ export default function LinkedEventPanel({
             onClick={() => handleSelect(null)}
             disabled={isSubmitting}
             title="Unlink calendar event"
-            className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none disabled:opacity-40"
+            className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-surface-inset focus:outline-none disabled:opacity-40"
           >
             <X className="w-3 h-3" />
           </button>
@@ -118,7 +118,7 @@ export default function LinkedEventPanel({
         <button
           onClick={openPicker}
           disabled={isSubmitting}
-          className={`${basePillClass} border-dashed border-gray-300 text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 disabled:opacity-40 dark:border-gray-600 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-gray-200`}
+          className={`${basePillClass} border-dashed border-control-border text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted disabled:opacity-40 dark:hover:border-action-border`}
         >
           <CalendarPlus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Link calendar event
@@ -126,13 +126,13 @@ export default function LinkedEventPanel({
       )}
 
       {isPickerOpen && (
-        <div className={`absolute z-20 mt-2 max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 ${dropdownWidthClass}`}>
+        <div className={`absolute z-[var(--z-dropdown)] mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-surface-float shadow-float ${dropdownWidthClass}`}>
           {isLoading ? (
-            <div className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+            <div className="px-3 py-3 text-sm text-contrast-helper">
               Loading calendar events...
             </div>
           ) : candidates.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+            <div className="px-3 py-3 text-sm text-contrast-helper">
               No nearby calendar events found.
             </div>
           ) : (
@@ -142,13 +142,13 @@ export default function LinkedEventPanel({
                   <button
                     onClick={() => handleSelect(candidate.id)}
                     disabled={isSubmitting}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none disabled:opacity-40"
+                    className="w-full text-left px-3 py-2 hover:bg-surface-inset focus:outline-none disabled:opacity-40"
                   >
-                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                    <span className="block text-sm font-medium text-foreground truncate">
                       {candidate.title}
                     </span>
                     {formatEventTime(candidate) && (
-                      <span className="block text-xs text-gray-500 dark:text-gray-400">
+                      <span className="block text-xs text-contrast-helper">
                         {formatEventTime(candidate)}
                       </span>
                     )}

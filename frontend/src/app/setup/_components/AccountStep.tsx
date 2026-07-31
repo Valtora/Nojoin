@@ -33,16 +33,16 @@ export default function AccountStep({
       autoComplete="on"
     >
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+        <h2 className="text-xl font-semibold text-foreground">
           Create Admin Account
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-contrast-helper">
           Set up your administrator credentials
         </p>
       </div>
 
       <div>
-        <label htmlFor="setup-admin-username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label htmlFor="setup-admin-username" className="block text-sm font-medium text-contrast-muted mb-1">
           Username
         </label>
         <input
@@ -59,13 +59,13 @@ export default function AccountStep({
           required
           value={formData.username}
           onChange={onInputChange}
-          className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+          className="w-full px-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
           placeholder="admin"
         />
       </div>
 
       <div>
-        <label htmlFor="setup-admin-new-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label htmlFor="setup-admin-new-password" className="block text-sm font-medium text-contrast-muted mb-1">
           Password
         </label>
         <input
@@ -80,13 +80,13 @@ export default function AccountStep({
           minLength={8}
           value={formData.password}
           onChange={onInputChange}
-          className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+          className="w-full px-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
           placeholder="••••••••"
         />
       </div>
 
       <div>
-        <label htmlFor="setup-admin-confirm-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label htmlFor="setup-admin-confirm-password" className="block text-sm font-medium text-contrast-muted mb-1">
           Confirm Password
         </label>
         <input
@@ -101,14 +101,14 @@ export default function AccountStep({
           minLength={8}
           value={formData.confirmPassword}
           onChange={onInputChange}
-          className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none"
+          className="w-full px-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
           placeholder="••••••••"
         />
       </div>
 
       <label
         htmlFor="setup-include-demo-recording"
-        className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 cursor-pointer"
+        className="flex items-start gap-3 p-3 rounded-lg border border-surface-border bg-surface-inset/40 cursor-pointer"
       >
         <input
           id="setup-include-demo-recording"
@@ -116,11 +116,11 @@ export default function AccountStep({
           name="setup-include-demo-recording"
           checked={includeDemoRecording}
           onChange={(e) => onIncludeDemoRecordingChange(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-orange-600 focus:ring-orange-500"
+          className="mt-0.5 h-4 w-4 rounded border-control-border text-action-text focus-visible:outline-focus-ring"
         />
-        <span className="text-sm text-gray-700 dark:text-gray-300">
+        <span className="text-sm text-contrast-muted">
           Include a sample meeting
-          <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          <span className="block text-xs text-contrast-helper mt-0.5">
             Adds a short &quot;Welcome to Nojoin&quot; recording so you can
             explore transcripts, notes, and speakers. You can remove or
             recreate it later in Settings &gt; Help.
@@ -130,7 +130,7 @@ export default function AccountStep({
 
       <button
         type="submit"
-        className="w-full mt-6 bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+        className="w-full mt-6 bg-action hover:bg-action-hover text-action-on font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
       >
         Next Step <ArrowRight className="w-4 h-4" />
       </button>

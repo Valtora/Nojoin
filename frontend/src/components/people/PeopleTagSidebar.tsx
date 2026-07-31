@@ -41,7 +41,7 @@ interface PeopleTagSidebarProps {
 // Inline pane on desktop; off-canvas drawer on mobile so the People table gets
 // the full width of a phone screen.
 const SIDEBAR_SHELL =
-  "fixed inset-y-0 left-0 z-50 flex h-full w-[min(20rem,85vw)] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900 lg:static lg:z-auto lg:w-64 lg:translate-x-0 lg:shadow-none";
+  "fixed inset-y-0 left-0 z-[var(--z-modal)] flex h-full w-[min(20rem,85vw)] shrink-0 flex-col overflow-hidden border-r border-surface-border bg-surface-card transition-transform duration-300 lg:static lg:z-auto lg:w-64 lg:translate-x-0 lg:shadow-none";
 
 export function PeopleTagSidebar({
   selectedTagIds,
@@ -182,7 +182,7 @@ export function PeopleTagSidebar({
   }, [tagTree, searchQuery]);
 
   const mobileTransform = mobileOpen
-    ? "translate-x-0 shadow-2xl lg:shadow-none"
+    ? "translate-x-0 shadow-float lg:shadow-none"
     : "-translate-x-full";
 
   if (isLoading) {
@@ -190,14 +190,14 @@ export function PeopleTagSidebar({
       <>
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            className="fixed inset-0 z-[var(--z-dropdown)] bg-scrim lg:hidden"
             onClick={onMobileClose}
           />
         )}
         <div
           className={`${SIDEBAR_SHELL} ${mobileTransform} items-center justify-center`}
         >
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-action"></div>
         </div>
       </>
     );
@@ -207,21 +207,21 @@ export function PeopleTagSidebar({
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-[var(--z-dropdown)] bg-scrim lg:hidden"
           onClick={onMobileClose}
         />
       )}
       <div className={`${SIDEBAR_SHELL} ${mobileTransform}`}>
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 space-y-4">
+        <div className="p-4 border-b border-surface-border space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-2">
+            <h2 className="text-[11px] font-bold text-contrast-helper uppercase tracking-wider flex items-center gap-2">
               <TagIcon className="w-3.5 h-3.5" />
               People Tags
             </h2>
             <div className="flex items-center gap-1">
               <button
                 onClick={onMobileClose}
-                className="lg:hidden p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="lg:hidden p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
                 title="Close"
                 aria-label="Close tag filters"
               >
@@ -232,21 +232,21 @@ export function PeopleTagSidebar({
                   const allIds = tags.map((t) => t.id);
                   setExpandedTagIds(new Set(allIds));
                 }}
-                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
                 title="Expand All"
               >
                 <ChevronsDown className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setExpandedTagIds(new Set())}
-                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
                 title="Collapse All"
               >
                 <ChevronsUp className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setIsAddingRoot(true)}
-                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-orange-500 dark:hover:text-orange-400"
+                className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-action-text"
                 title="Add Tag"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -255,13 +255,13 @@ export function PeopleTagSidebar({
           </div>
 
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-contrast-icon-muted" />
             <input
               type="text"
               placeholder="Search tags..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border-none rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-surface-inset border-none rounded-lg focus:ring-2 focus:ring-action outline-none transition-all"
             />
           </div>
         </div>
@@ -271,7 +271,7 @@ export function PeopleTagSidebar({
             <div className="mb-2 px-2 flex items-center gap-1">
               <input
                 autoFocus
-                className="flex-1 px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-orange-500 rounded outline-none"
+                className="flex-1 px-2 py-1 text-sm bg-surface-card border border-action rounded outline-none"
                 placeholder="Root tag name..."
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
@@ -282,7 +282,7 @@ export function PeopleTagSidebar({
               />
               <button
                 onClick={() => handleAddTag(newTagName)}
-                className="p-1.5 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded"
+                className="p-1.5 text-action-text hover:bg-action-tint rounded"
               >
                 <Check className="w-4 h-4" />
               </button>
@@ -314,8 +314,8 @@ export function PeopleTagSidebar({
 
           {filteredTree.length === 0 && !isAddingRoot && (
             <div className="text-center py-8">
-              <TagIcon className="w-8 h-8 text-gray-300 dark:text-gray-700 mx-auto mb-2" />
-              <p className="text-xs text-gray-500 dark:text-gray-500">
+              <TagIcon className="w-8 h-8 text-contrast-icon-muted mx-auto mb-2" />
+              <p className="text-xs text-contrast-helper">
                 No tags found
               </p>
             </div>
@@ -323,10 +323,10 @@ export function PeopleTagSidebar({
         </div>
 
         {selectedTagIds.length > 0 && (
-          <div className="p-2 border-t border-gray-200 dark:border-gray-800">
+          <div className="p-2 border-t border-surface-border">
             <button
               onClick={onClearFilters}
-              className="w-full px-3 py-1.5 text-xs font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30 rounded-lg flex items-center justify-center gap-2 border border-orange-200 dark:border-orange-900/50 transition-colors"
+              className="w-full px-3 py-1.5 text-xs font-medium text-action-text hover:bg-action-tint rounded-lg flex items-center justify-center gap-2 border border-action-border transition-colors"
             >
               <X className="w-3.5 h-3.5" /> Clear active filters (
               {selectedTagIds.length})
@@ -396,8 +396,8 @@ function TagNode({
       <div
         className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border border-transparent transition-all cursor-pointer relative select-none ${
           isSelected
-            ? "bg-gray-100 dark:bg-gray-800"
-            : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            ? "bg-surface-inset"
+            : "hover:bg-surface-inset"
         }`}
         style={{ marginLeft: `${level * 12}px` }}
       >
@@ -414,7 +414,7 @@ function TagNode({
           {isEditing ? (
             <input
               autoFocus
-              className="flex-1 bg-white dark:bg-gray-800 border border-orange-500 rounded px-1 py-0.5 text-sm"
+              className="flex-1 bg-surface-card border border-action rounded px-1 py-0.5 text-sm"
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               onClick={(e) => e.stopPropagation()}
@@ -447,7 +447,7 @@ function TagNode({
                 e.stopPropagation();
                 onEditStart(tag.id, tag.name);
               }}
-              className="p-1.5 hover:text-orange-500 transition-all"
+              className="p-1.5 hover:text-action-text transition-all"
               title="Rename"
               aria-label={`Rename ${tag.name}`}
             >
@@ -459,7 +459,7 @@ function TagNode({
                 e.stopPropagation();
                 onAddSubStart(tag.id);
               }}
-              className="p-1.5 hover:text-orange-500 transition-all"
+              className="p-1.5 hover:text-action-text transition-all"
               title="Add sub-tag"
               aria-label={`Add sub-tag to ${tag.name}`}
             >
@@ -472,7 +472,7 @@ function TagNode({
                   e.stopPropagation();
                   toggleExpand(tag.id);
                 }}
-                className="p-1.5 hover:text-gray-600 dark:hover:text-gray-300 transition-all"
+                className="p-1.5 hover:text-contrast-helper transition-all"
                 title={isExpanded ? "Collapse" : "Expand"}
                 aria-label={
                   isExpanded ? `Collapse ${tag.name}` : `Expand ${tag.name}`
@@ -491,7 +491,7 @@ function TagNode({
                 e.stopPropagation();
                 onDelete(tag);
               }}
-              className="p-1.5 hover:text-red-500 transition-all"
+              className="p-1.5 hover:text-status-danger-fg transition-all"
               title="Delete"
               aria-label={`Delete ${tag.name}`}
             >
@@ -508,7 +508,7 @@ function TagNode({
         >
           <input
             autoFocus
-            className="flex-1 px-2 py-0.5 text-xs bg-white dark:bg-gray-800 border border-orange-500 rounded outline-none"
+            className="flex-1 px-2 py-0.5 text-xs bg-surface-card border border-action rounded outline-none"
             placeholder="New sub-tag..."
             value={subValue}
             onChange={(e) => setSubValue(e.target.value)}
@@ -524,7 +524,7 @@ function TagNode({
               onAddSubSave(subValue, tag.id);
               setSubValue("");
             }}
-            className="p-1 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded"
+            className="p-1 text-action-text hover:bg-action-tint rounded"
           >
             <Check className="w-3.5 h-3.5" />
           </button>

@@ -1,31 +1,24 @@
-/* Light theme (default) */
-:root {
-  --driver-popover-bg: #ffffff;
-  --driver-popover-text: #374151; /* gray-700 */
-  --driver-popover-title-text: #111827; /* gray-900 */
-  --driver-popover-close-color: #9ca3af; /* gray-400 */
-}
-
-/* Dark theme */
+/* driver.js renders its own DOM outside React, so the tour is themed by
+   overriding its variables here rather than by composing utilities. The values
+   are the same tokens the rest of the product uses, so the tour follows a theme
+   change without this file knowing anything about themes. */
+:root,
 .dark {
-  --driver-popover-bg: #1f2937; /* gray-800 */
-  --driver-popover-text: #d1d5db; /* gray-300 */
-  --driver-popover-title-text: #f9fafb; /* gray-50 */
-  --driver-popover-close-color: #9ca3af; /* gray-400 */
+  --driver-popover-bg: var(--surface-float);
+  --driver-popover-text: var(--contrast-muted);
+  --driver-popover-title-text: var(--foreground);
+  --driver-popover-close-color: var(--contrast-icon-muted);
 }
 
 /* Driver.js overrides */
 .driver-popover.driverjs-theme {
   background-color: var(--driver-popover-bg);
   color: var(--driver-popover-text);
-  border-radius: 0.75rem; /* rounded-xl */
+  border-radius: var(--surface-radius-panel);
   padding: 1.25rem;
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  border: 1px solid transparent;
-}
-
-.dark .driver-popover.driverjs-theme {
-  border-color: #374151; /* gray-700 */
+  /* The tour popover is a float, so it keeps a shadow in both themes. */
+  box-shadow: var(--float-shadow);
+  border: 1px solid var(--surface-float-border);
 }
 
 .driver-popover.driverjs-theme .driver-popover-title {
@@ -47,8 +40,8 @@
 .driver-popover.driverjs-theme button {
   flex: 1;
   text-align: center;
-  background-color: #ea580c; /* orange-600 */
-  color: #ffffff;
+  background-color: var(--action);
+  color: var(--action-on);
   border: none;
   text-shadow: none;
   font-size: 0.875rem; /* text-sm */
@@ -60,7 +53,7 @@
 }
 
 .driver-popover.driverjs-theme button:hover {
-  background-color: #c2410c; /* orange-700 */
+  background-color: var(--action-hover);
 }
 
 /* Previous/Next button container */
@@ -71,8 +64,8 @@
 
 /* Close button */
 .driver-popover.driverjs-theme .driver-popover-close-btn {
-  color: #000000; /* Black for light mode */
-  transition: all 0.2s;
+  color: var(--foreground);
+  transition: background-color 0.2s;
   width: 24px;
   height: 24px;
   min-width: 24px;
@@ -83,7 +76,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--surface-inset);
   position: absolute;
   top: 1rem;
   right: 1rem;
@@ -91,17 +84,9 @@
   outline: none;
 }
 
-.dark .driver-popover.driverjs-theme .driver-popover-close-btn {
-  color: #ffffff; /* White for dark mode */
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
 .driver-popover.driverjs-theme .driver-popover-close-btn:hover {
-  background-color: rgba(0, 0, 0, 0.1);
-}
-
-.dark .driver-popover.driverjs-theme .driver-popover-close-btn:hover {
-  background-color: rgba(255, 255, 255, 0.2);
+  background-color: var(--action-tint);
+  color: var(--action-tint-fg);
 }
 
 /* Footer spacing */

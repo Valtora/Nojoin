@@ -173,7 +173,7 @@ export default function CalendarProviderSettings() {
   return (
     <SettingsCard
       id="integrations-calendar-providers"
-      title="Calendar provider credentials"
+      title="Calendar Provider Credentials"
       description="The installation's OAuth app credentials for Google and Microsoft. Nobody else pastes these values; everyone else only clicks Connect and completes the provider's own sign-in."
     >
       {loading ? (
@@ -195,7 +195,7 @@ export default function CalendarProviderSettings() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-base font-semibold text-gray-900 dark:text-white">
+                    <div className="text-base font-semibold text-foreground">
                       {provider.display_name}
                     </div>
                     <div className="mt-1 text-xs contrast-helper">
@@ -208,7 +208,7 @@ export default function CalendarProviderSettings() {
                         <div>
                           Register redirect URI:
                         </div>
-                        <div className="break-all rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                        <div className="break-all rounded bg-surface-inset px-2 py-1 font-mono text-[11px] text-contrast-muted">
                           {provider.redirect_uri}
                         </div>
                         <div>
@@ -219,7 +219,7 @@ export default function CalendarProviderSettings() {
                       </div>
                     )}
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+                  <label className="flex items-center gap-2 text-xs font-medium text-contrast-helper">
                     <input
                       type="checkbox"
                       checked={form.enabled}
@@ -228,7 +228,7 @@ export default function CalendarProviderSettings() {
                           enabled: event.target.checked,
                         })
                       }
-                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      className="h-4 w-4 rounded border-control-border text-action-text focus:ring-action"
                     />
                     Enabled
                   </label>
@@ -249,7 +249,7 @@ export default function CalendarProviderSettings() {
                         client_id: event.target.value,
                       })
                     }
-                    className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-orange-500 text-gray-900 dark:text-white"
+                    className="w-full bg-surface-card border border-control-border rounded px-3 py-2 focus:outline-none focus:border-action text-foreground"
                     placeholder={provider.provider === "microsoft"
                       ? "Paste the Application (client) ID"
                       : "Paste the OAuth client ID"}
@@ -269,7 +269,7 @@ export default function CalendarProviderSettings() {
                           tenant_id: event.target.value,
                         })
                       }
-                      className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-orange-500 text-gray-900 dark:text-white"
+                      className="w-full bg-surface-card border border-control-border rounded px-3 py-2 focus:outline-none focus:border-action text-foreground"
                       placeholder="common"
                     />
                   </SettingsRow>
@@ -291,7 +291,7 @@ export default function CalendarProviderSettings() {
                         clear_client_secret: false,
                       })
                     }
-                    className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:border-orange-500 text-gray-900 dark:text-white"
+                    className="w-full bg-surface-card border border-control-border rounded px-3 py-2 focus:outline-none focus:border-action text-foreground"
                     placeholder={provider.provider === "microsoft"
                       ? provider.has_client_secret
                         ? "Stored. Enter a new value to replace it."
@@ -312,7 +312,7 @@ export default function CalendarProviderSettings() {
                         client_secret: event.target.checked ? "" : form.client_secret,
                       })
                     }
-                    className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    className="h-4 w-4 rounded border-control-border text-action-text focus:ring-action"
                   />
                   Clear saved secret on next save
                 </label>
@@ -327,7 +327,7 @@ export default function CalendarProviderSettings() {
                           push_enabled: event.target.checked,
                         })
                       }
-                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      className="h-4 w-4 rounded border-control-border text-action-text focus:ring-action"
                     />
                     Enable live sync (push notifications)
                   </label>
@@ -343,7 +343,7 @@ export default function CalendarProviderSettings() {
                           ? "Verify this notification URL's domain in Google Cloud, then Nojoin registers the watch channels:"
                           : "Nojoin registers this notification URL automatically:"}
                       </div>
-                      <div className="break-all rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      <div className="break-all rounded bg-surface-inset px-2 py-1 font-mono text-[11px] text-contrast-muted">
                         {provider.push_notification_url}
                       </div>
                     </>
@@ -355,7 +355,7 @@ export default function CalendarProviderSettings() {
                     type="button"
                     onClick={() => handleSave(provider.provider)}
                     disabled={isSaving}
-                    className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-50"
                   >
                     {isSaving ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

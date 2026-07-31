@@ -5,17 +5,17 @@ import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 const icons = {
-  success: <CheckCircle className="w-5 h-5 text-green-500" />,
-  error: <AlertCircle className="w-5 h-5 text-red-500" />,
-  warning: <AlertTriangle className="w-5 h-5 text-yellow-500" />,
-  info: <Info className="w-5 h-5 text-blue-500" />,
+  success: <CheckCircle className="w-5 h-5 text-status-success-fg" />,
+  error: <AlertCircle className="w-5 h-5 text-status-danger-fg" />,
+  warning: <AlertTriangle className="w-5 h-5 text-status-warning-fg" />,
+  info: <Info className="w-5 h-5 text-status-info-fg" />,
 };
 
 const bgColors = {
-  success: 'bg-green-100 dark:bg-green-950 border-green-200 dark:border-green-800',
-  error: 'bg-red-100 dark:bg-red-950 border-red-200 dark:border-red-800',
-  warning: 'bg-yellow-100 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800',
-  info: 'bg-blue-100 dark:bg-blue-950 border-blue-200 dark:border-blue-800',
+  success: 'bg-status-success-bg border-status-success-border',
+  error: 'bg-status-danger-bg border-status-danger-border',
+  warning: 'bg-status-warning-bg border-status-warning-border',
+  info: 'bg-status-info-bg border-status-info-border',
 };
 
 export default function NotificationToast() {
@@ -29,13 +29,13 @@ export default function NotificationToast() {
   if (!mounted) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
+    <div className="fixed bottom-4 right-4 z-[var(--z-toast)] flex flex-col gap-2 max-w-md w-full pointer-events-none">
       {activeNotifications.map((notification) => (
         <div
           key={notification.id}
           className={`
             pointer-events-auto
-            flex items-start gap-3 p-4 rounded-lg border shadow-lg
+            flex items-start gap-3 p-4 rounded-lg border shadow-float
             ${bgColors[notification.type]}
           `}
         >
@@ -43,13 +43,13 @@ export default function NotificationToast() {
             {icons[notification.type]}
           </div>
           <div className="flex-1">
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            <p className="text-sm font-medium text-foreground">
               {notification.message}
             </p>
           </div>
           <button
             onClick={() => dismissToast(notification.id)}
-            className="flex-shrink-0 p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+            className="flex-shrink-0 p-1 text-contrast-helper hover:text-contrast-muted transition-colors"
           >
             <X className="w-5 h-5" />
           </button>

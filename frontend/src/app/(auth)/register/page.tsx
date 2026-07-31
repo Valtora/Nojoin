@@ -79,15 +79,15 @@ function RegisterForm() {
 
   if (isValidating) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+      <div className="min-h-dvh flex items-center justify-center bg-surface-page">
+        <Loader2 className="w-8 h-8 animate-spin text-action-text" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 p-10 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700">
+    <div className="min-h-dvh flex items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -97,16 +97,16 @@ function RegisterForm() {
               height={68}
               className="object-contain"
             />
-            <h2 className="text-3xl font-bold text-orange-600">
+            <h2 className="text-3xl font-bold text-action-text">
               Nojoin
             </h2>
           </div>
-          <h2 className="mt-4 text-center text-2xl font-bold text-gray-900 dark:text-white">
+          <h2 className="mt-4 text-center text-2xl font-bold text-foreground">
             Create your account
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-2 text-center text-sm text-contrast-helper">
             Or{' '}
-            <Link href="/login" className="font-medium text-orange-600 hover:text-orange-500">
+            <Link href="/login" className="font-medium text-action-text hover:text-action-text-hover">
               sign in to your existing account
             </Link>
           </p>
@@ -126,7 +126,7 @@ function RegisterForm() {
                 Username
               </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                <User className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <input
                 id="register-username"
@@ -139,7 +139,7 @@ function RegisterForm() {
                 aria-describedby={error ? 'register-error' : undefined}
                 aria-invalid={Boolean(error)}
                 required
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Username"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -151,7 +151,7 @@ function RegisterForm() {
                 Password
               </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <input
                 id="register-new-password"
@@ -162,7 +162,7 @@ function RegisterForm() {
                 aria-invalid={Boolean(error)}
                 required
                 minLength={8}
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -174,7 +174,7 @@ function RegisterForm() {
                 Confirm password
               </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <input
                 id="register-confirm-password"
@@ -185,7 +185,7 @@ function RegisterForm() {
                 aria-invalid={Boolean(error)}
                 required
                 minLength={8}
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Confirm Password"
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
@@ -200,7 +200,7 @@ function RegisterForm() {
           */}
           {!inviteCode && (
              <div>
-                <label htmlFor="invite-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="invite-code" className="block text-sm font-medium text-contrast-muted mb-1">
                   Invite Code
                 </label>
                 <input
@@ -211,7 +211,7 @@ function RegisterForm() {
                   autoCorrect="off"
                   spellCheck={false}
                   required
-                  className="appearance-none block w-full px-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
+                  className="appearance-none block w-full px-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                   placeholder="Enter your invite code"
                   value={formData.invite_code}
                   onChange={(e) => setFormData({ ...formData, invite_code: e.target.value })}
@@ -224,7 +224,7 @@ function RegisterForm() {
               id="register-error"
               role="alert"
               aria-live="polite"
-              className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40"
+              className="text-status-danger-fg text-sm text-center bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
             >
               {error}
             </div>
@@ -234,7 +234,7 @@ function RegisterForm() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-orange-600/20"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -251,7 +251,7 @@ function RegisterForm() {
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>}>
+    <Suspense fallback={<div className="min-h-dvh flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-action-text" /></div>}>
       <RegisterForm />
     </Suspense>
   );

@@ -66,8 +66,8 @@ export const SearchExtension = Extension.create<Record<string, never>, SearchSto
                             matches.forEach((match, index) => {
                                 const isCurrent = index === currentIndex;
                                 const className = isCurrent
-                                    ? 'bg-orange-400 text-white'
-                                    : 'bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-gray-100';
+                                    ? 'bg-action text-action-on'
+                                    : 'bg-status-warning-bg text-status-warning-fg';
 
                                 decorations.push(
                                     Decoration.inline(match.startIndex, match.startIndex + match.length, {

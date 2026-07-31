@@ -17,15 +17,15 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingId } from "@/types";
 
 /**
- * Shared action model for the per-recording menu actions used by both the
- * sidebar list (`Sidebar.tsx`) and the recordings-grid card (`RecordingCard.tsx`).
+ * Shared action model for the per-recording actions used by the sidebar list
+ * (`Sidebar.tsx`) and the live view (`RecordingStatusDisplay.tsx`).
  *
- * Both surfaces previously duplicated the asynchronous action bodies (rename,
+ * The surfaces previously duplicated the asynchronous action bodies (rename,
  * infer speakers, cancel, delete, archive, restore, permanent delete) verbatim.
- * DEVELOPMENT.md records that the two menus must stay behaviourally
- * synchronised; this hook is the single source of truth for that behaviour so
- * the duplication cannot drift. {@link RECORDING_ACTION_IDS} pins the shared
- * action set so tests can assert both consumers expose the same actions.
+ * DEVELOPMENT.md records that they must stay behaviourally synchronised; this
+ * hook is the single source of truth for that behaviour so the duplication
+ * cannot drift. {@link RECORDING_ACTION_IDS} pins the shared action set so
+ * tests can assert every consumer draws from the same one.
  *
  * The handlers are behaviour-preserving. Each only performs the API call,
  * user-facing notification, and error logging that the two components shared

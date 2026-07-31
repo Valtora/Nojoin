@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, RefreshCw, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle } from "lucide-react";
+import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
+import Select from "@/components/ui/Select";
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { reprocessRecording } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -106,143 +109,94 @@ export default function ReprocessDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={isSubmitting ? undefined : onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Reprocess at higher quality
-          </h2>
-          <button
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-4">
-          {/* Engine select */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Transcription engine
-            </label>
-            <select
-              value={backend}
-              onChange={(e) =>
-                setBackend(e.target.value as TranscriptionBackend)
-              }
-              disabled={isSubmitting}
-              className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
-            >
-              <option value="whisper">Whisper</option>
-              <option value="parakeet">Parakeet (NVIDIA)</option>
-              <option value="canary">Canary 1B (NVIDIA)</option>
-            </select>
-          </div>
-
-          {/* Model selection */}
-          {backend === "whisper" ? (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Whisper Model Size
-              </label>
-              <select
-                value={whisperModelSize}
-                onChange={(e) => setWhisperModelSize(e.target.value)}
-                disabled={isSubmitting}
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50"
-              >
-                {WHISPER_MODEL_SIZES.map((size) => (
-                  <option key={size} value={size}>
-                    {size.charAt(0).toUpperCase() + size.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : backend === "canary" ? (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Canary Model
-              </label>
-              <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
-                <div className="flex-1">
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    {CANARY_MODEL}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Model used for transcription.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Parakeet Model
-              </label>
-              <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
-                <div className="flex-1">
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    {PARAKEET_MODEL}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Model used for transcription.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Speaker cap */}
-          <SpeakerCapField
-            value={maxSpeakers}
-            onCommit={setMaxSpeakers}
-            disabled={isSubmitting}
-            idPrefix="reprocess-speaker-cap"
-          />
-
-          {/* Destructive warning */}
-          <div className="flex gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-amber-800 dark:text-amber-200">
-              Reprocessing replaces the current transcript, speaker labels and
-              meeting notes for this recording. Any manual edits to those will
-              be lost. Manual processing notes, tags and documents are kept.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-          <button
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
-          >
+    <Modal
+      open
+      onClose={onClose}
+      // Reprocessing is destructive and cannot be interrupted once dispatched,
+      // so the dialog stops accepting a dismissal while the request is away.
+      dismissible={!isSubmitting}
+      size="sm"
+      title="Reprocess at higher quality"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={handleConfirm}
             disabled={isSubmitting}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors disabled:opacity-50"
+            loading={isSubmitting}
+            iconLeft={<RefreshCw aria-hidden="true" className="w-4 h-4" />}
           >
-            <RefreshCw
-              className={`w-4 h-4 ${isSubmitting ? "animate-spin" : ""}`}
-            />
             {isSubmitting ? "Reprocessing..." : "Reprocess"}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {/* Engine select */}
+        <Select
+          label="Transcription engine"
+          value={backend}
+          onChange={(e) => setBackend(e.target.value as TranscriptionBackend)}
+          disabled={isSubmitting}
+        >
+          <option value="whisper">Whisper</option>
+          <option value="parakeet">Parakeet (NVIDIA)</option>
+          <option value="canary">Canary 1B (NVIDIA)</option>
+        </Select>
+
+        {/* Model selection */}
+        {backend === "whisper" ? (
+          <Select
+            label="Whisper Model Size"
+            value={whisperModelSize}
+            onChange={(e) => setWhisperModelSize(e.target.value)}
+            disabled={isSubmitting}
+          >
+            {WHISPER_MODEL_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size.charAt(0).toUpperCase() + size.slice(1)}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <div>
+            <label className="mb-2 block text-sm font-medium text-contrast-muted">
+              {backend === "canary" ? "Canary Model" : "Parakeet Model"}
+            </label>
+            <div className="flex items-center gap-4 rounded-lg border border-surface-border bg-surface-inset p-4">
+              <div className="flex-1">
+                <div className="font-semibold text-foreground">
+                  {backend === "canary" ? CANARY_MODEL : PARAKEET_MODEL}
+                </div>
+                <p className="mt-1 text-xs text-contrast-helper">
+                  Model used for transcription.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Speaker cap */}
+        <SpeakerCapField
+          value={maxSpeakers}
+          onCommit={setMaxSpeakers}
+          disabled={isSubmitting}
+          idPrefix="reprocess-speaker-cap"
+        />
+
+        {/* Destructive warning */}
+        <div className="flex gap-3 rounded-lg border border-status-warning-border bg-status-warning-bg p-4">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-status-warning-fg" />
+          <p className="text-sm text-status-warning-fg">
+            Reprocessing replaces the current transcript, speaker labels and
+            meeting notes for this recording. Any manual edits to those will
+            be lost. Manual processing notes, tags and documents are kept.
+          </p>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -33,7 +33,7 @@ export default function CaptureProcessingSettings() {
   return (
     <>
       <SettingsCard
-        title="Browser processing"
+        title="Browser Processing"
         description="What the browser does to microphone audio before Nojoin receives it."
       >
         <SettingsBlock>
@@ -91,7 +91,7 @@ export default function CaptureProcessingSettings() {
 
       <SettingsCard
         id="recording-quiet-reminders"
-        title="Quiet-audio reminders"
+        title="Quiet-Audio Reminders"
         description="Browser-local prompts warning that a recording captured little or no sound."
       >
         <SettingsRow

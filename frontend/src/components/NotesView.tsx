@@ -291,7 +291,7 @@ export default function NotesView({
     if (matches.length > 0 && currentMatchIndex !== -1) {
       const scrollToMatch = () => {
         const currentMatchElement =
-          editor.view.dom.querySelector(".bg-orange-400");
+          editor.view.dom.querySelector(".bg-action");
         if (currentMatchElement) {
           currentMatchElement.scrollIntoView({
             behavior: "smooth",
@@ -390,7 +390,7 @@ export default function NotesView({
   return (
     <div id="meeting-notes" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="bg-gray-300 dark:bg-gray-900/95 border-b-2 border-gray-400 dark:border-gray-700 shadow-md z-10 flex flex-col">
+      <div className="bg-surface-card border-b-2 border-control-border shadow-card z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
         <div className="px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
           {/* Formatting Toolbar */}
@@ -400,7 +400,7 @@ export default function NotesView({
                 <button
                   onClick={() => editor.chain().focus().toggleBold().run()}
                   disabled={!editor.can().chain().focus().toggleBold().run()}
-                  className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive("bold") ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400" : "text-gray-600 dark:text-gray-400"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bold") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Bold"
                 >
                   <Bold className="w-4 h-4" />
@@ -408,7 +408,7 @@ export default function NotesView({
                 <button
                   onClick={() => editor.chain().focus().toggleItalic().run()}
                   disabled={!editor.can().chain().focus().toggleItalic().run()}
-                  className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive("italic") ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400" : "text-gray-600 dark:text-gray-400"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("italic") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Italic"
                 >
                   <Italic className="w-4 h-4" />
@@ -418,17 +418,17 @@ export default function NotesView({
                   disabled={
                     !editor.can().chain().focus().toggleUnderline().run()
                   }
-                  className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive("underline") ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400" : "text-gray-600 dark:text-gray-400"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("underline") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Underline"
                 >
                   <UnderlineIcon className="w-4 h-4" />
                 </button>
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-4 bg-surface-card mx-1" />
                 <button
                   onClick={() =>
                     editor.chain().focus().toggleBulletList().run()
                   }
-                  className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive("bulletList") ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400" : "text-gray-600 dark:text-gray-400"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bulletList") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Bullet List"
                 >
                   <List className="w-4 h-4" />
@@ -437,19 +437,19 @@ export default function NotesView({
                   onClick={() =>
                     editor.chain().focus().toggleOrderedList().run()
                   }
-                  className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive("orderedList") ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400" : "text-gray-600 dark:text-gray-400"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("orderedList") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Numbered List"
                 >
                   <ListOrdered className="w-4 h-4" />
                 </button>
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-4 bg-surface-card mx-1" />
                 <button
                   onClick={() => {
                     const previousUrl = editor.getAttributes("link").href;
                     setLinkModalUrl(previousUrl || "");
                     setIsLinkModalOpen(true);
                   }}
-                  className={`p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${editor.isActive("link") ? "bg-gray-200 dark:bg-gray-700 text-orange-600 dark:text-orange-400" : "text-gray-600 dark:text-gray-400"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("link") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Link"
                 >
                   <LinkIcon className="w-4 h-4" />
@@ -467,7 +467,7 @@ export default function NotesView({
               <button
                 onClick={() => onGenerateNotes()}
                 disabled={isGenerating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-l-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Generate Notes with AI"
               >
                 {isGenerating ? (
@@ -485,11 +485,11 @@ export default function NotesView({
                 onSelect={(templateId) => onGenerateNotes(templateId)}
               />
             </div>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+            <div className="w-px h-4 bg-surface-card mx-1" />
             <button
               onClick={onUndo}
               disabled={!canUndo}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
@@ -497,15 +497,15 @@ export default function NotesView({
             <button
               onClick={onRedo}
               disabled={!canRedo}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Redo"
             >
               <Redo2 className="w-4 h-4" />
             </button>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+            <div className="w-px h-4 bg-surface-card mx-1" />
             <button
               onClick={onExport}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors"
               title="Export Notes"
             >
               <Download className="w-4 h-4" />
@@ -516,7 +516,7 @@ export default function NotesView({
                 setShowSearch(newState);
                 if (!newState) setShowReplace(false);
               }}
-              className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500"}`}
+              className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
               title="Search"
             >
               <Search className="w-4 h-4" />
@@ -531,7 +531,7 @@ export default function NotesView({
                   setShowSearch(true);
                 }
               }}
-              className={`p-2 rounded-md transition-colors ${showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-500"}`}
+              className={`p-2 rounded-md transition-colors ${showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
               title="Find & Replace"
             >
               <ArrowRightLeft className="w-4 h-4" />
@@ -541,9 +541,9 @@ export default function NotesView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="px-3 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-gray-400/30 dark:border-gray-700/50 pt-3">
+          <div className="px-3 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-control-border pt-3">
             <div className="relative min-w-40 flex-[1_1_11rem]">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <input
                 placeholder="Find..."
                 value={findText}
@@ -554,23 +554,23 @@ export default function NotesView({
                     else nextMatch();
                   }
                 }}
-                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none min-w-0"
+                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 autoFocus
               />
               {matches.length > 0 && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap bg-white/50 dark:bg-black/50 backdrop-blur-sm rounded px-1">
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
                   <span>
                     {currentMatchIndex + 1} of {matches.length}
                   </span>
                   <button
                     onClick={prevMatch}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronUp className="w-3 h-3" />
                   </button>
                   <button
                     onClick={nextMatch}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -579,12 +579,12 @@ export default function NotesView({
             </div>
             {showReplace && (
               <div className="relative min-w-40 flex-[1_1_11rem]">
-                <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
                 <input
                   placeholder="Replace..."
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
-                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none min-w-0"
+                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 />
               </div>
             )}
@@ -594,7 +594,7 @@ export default function NotesView({
                 <div className="relative">
                   <button
                     onClick={() => setShowSettings(!showSettings)}
-                    className={`p-1.5 rounded-md transition-colors ${showSettings ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700"}`}
+                    className={`p-1.5 rounded-md transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-contrast-muted"}`}
                     title="Advanced Search Settings"
                   >
                     <Settings className="w-4 h-4" />
@@ -604,25 +604,25 @@ export default function NotesView({
                   {showSettings && (
                     <>
                       <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
-                      <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-50 flex flex-col gap-1">
-                        <div className="text-xs font-semibold text-gray-400 px-2 py-1 mb-1 border-b border-gray-100 dark:border-gray-700">
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+                        <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                           Search Options
                         </div>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={caseSensitive}
                             onChange={(e) => setCaseSensitive(e.target.checked)}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-200">
+                          <span className="text-sm text-contrast-muted">
                             Case Sensitive
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={isFuzzy}
@@ -630,13 +630,13 @@ export default function NotesView({
                               setIsFuzzy(e.target.checked);
                               if (e.target.checked) setUseRegex(false);
                             }}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-200">
+                          <span className="text-sm text-contrast-muted">
                             Fuzzy Match
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={useRegex}
@@ -644,9 +644,9 @@ export default function NotesView({
                               setUseRegex(e.target.checked);
                               if (e.target.checked) setIsFuzzy(false);
                             }}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-200">
+                          <span className="text-sm text-contrast-muted">
                             Regex
                           </span>
                         </label>
@@ -655,26 +655,26 @@ export default function NotesView({
                   )}
                 </div>
 
-                <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-4 bg-surface-card mx-1" />
 
                 <button
                   onClick={nextMatch}
                   disabled={matches.length === 0}
-                  className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                  className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
                 >
                   Find Next
                 </button>
                 <button
                   onClick={handleReplaceCurrent}
                   disabled={matches.length === 0 || isSubmitting}
-                  className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm border border-gray-200 dark:border-gray-700"
+                  className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
                 >
                   Replace
                 </button>
                 <button
                   onClick={handleFindReplaceSubmit}
                   disabled={!findText || isSubmitting}
-                  className="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                  className="px-3 py-1.5 bg-action text-action-on text-sm rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card"
                 >
                   Replace All
                 </button>
@@ -695,7 +695,7 @@ export default function NotesView({
             />
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400">
+          <div className="flex flex-col items-center justify-center h-full text-center text-contrast-helper">
             <Sparkles className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-lg mb-2">No meeting notes yet</p>
             <p className="text-sm mb-4">
@@ -705,7 +705,7 @@ export default function NotesView({
             <button
               onClick={() => onGenerateNotes()}
               disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isGenerating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

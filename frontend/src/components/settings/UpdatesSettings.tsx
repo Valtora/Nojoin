@@ -22,10 +22,10 @@ const DEPLOYMENT_GUIDE_URL =
   "https://github.com/Valtora/Nojoin/blob/main/docs/DEPLOYMENT.md";
 
 const PRIMARY_ACTION_STYLES =
-  "inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-700";
+  "inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover";
 
 const SECONDARY_ACTION_STYLES =
-  "inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
+  "inline-flex items-center gap-2 rounded-xl border border-control-border bg-surface-card px-4 py-2 text-sm font-medium text-contrast-muted transition hover:bg-surface-inset";
 
 interface UpdatesSettingsProps {
   searchQuery?: string;
@@ -75,7 +75,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
         href={match[2]}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-orange-600 underline decoration-orange-300 underline-offset-2 hover:text-orange-700 dark:text-orange-400 dark:decoration-orange-700 dark:hover:text-orange-300"
+        className="text-action-text underline decoration-action underline-offset-2 hover:text-action-text-hover"
       >
         {match[1]}
       </a>,
@@ -116,7 +116,7 @@ function ReleaseNotes({ body, releaseVersion }: { body: string | null; releaseVe
     elements.push(
       <p
         key={`${releaseVersion}-paragraph-${elementIndex}`}
-        className="text-sm leading-6 text-gray-700 dark:text-gray-300"
+        className="text-sm leading-6 text-contrast-muted"
       >
         {renderInlineMarkdown(text, `${releaseVersion}-paragraph-${elementIndex}`)}
       </p>,
@@ -133,7 +133,7 @@ function ReleaseNotes({ body, releaseVersion }: { body: string | null; releaseVe
     elements.push(
       <ul
         key={`${releaseVersion}-list-${elementIndex}`}
-        className="space-y-2 pl-5 text-sm text-gray-700 list-disc dark:text-gray-300"
+        className="space-y-2 pl-5 text-sm text-contrast-muted list-disc"
       >
         {listBuffer.map((item, itemIndex) => (
           <li key={`${releaseVersion}-list-${elementIndex}-${itemIndex}`}>
@@ -163,7 +163,7 @@ function ReleaseNotes({ body, releaseVersion }: { body: string | null; releaseVe
       elements.push(
         <h5
           key={`${releaseVersion}-heading-${elementIndex}`}
-          className="text-sm font-semibold uppercase tracking-wide text-gray-900 dark:text-white"
+          className="text-sm font-semibold uppercase tracking-wide text-foreground"
         >
           {title}
         </h5>,
@@ -318,7 +318,7 @@ export default function UpdatesSettings({
   return (
     <div className="space-y-8">
       <SettingsCard
-        title="Release overview"
+        title="Release Overview"
         description="Track the installed version, the latest stable release, and the published release links."
         headerAside={
           <button
@@ -337,10 +337,10 @@ export default function UpdatesSettings({
                 <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                   Installed version
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+                <p className="mt-2 text-2xl font-semibold text-foreground">
                   {versionInfo.current_version}
                 </p>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                <p className="mt-2 text-sm text-contrast-helper">
                   {getStatusCopy(versionInfo)}
                 </p>
               </SettingsBlock>
@@ -349,10 +349,10 @@ export default function UpdatesSettings({
                 <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                   Latest stable release
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+                <p className="mt-2 text-2xl font-semibold text-foreground">
                   {versionInfo.latest_version || "Unavailable"}
                 </p>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                <p className="mt-2 text-sm text-contrast-helper">
                   {formatPublishedRelative(versionInfo.latest_published_at)}
                 </p>
               </SettingsBlock>
@@ -360,10 +360,10 @@ export default function UpdatesSettings({
 
             <SettingsBlock className="space-y-4">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-helper">
                   Release links
                 </div>
-                <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                <p className="mt-2 text-sm leading-6 text-contrast-helper">
                   Open the published release pages, compare versions, and review deployment guidance for upgrading your installation.
                 </p>
               </div>
@@ -392,21 +392,21 @@ export default function UpdatesSettings({
           </div>
 
           <SettingsBlock inset className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
-              <ArrowUpCircle className="h-4 w-4 text-orange-500" />
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <ArrowUpCircle className="h-4 w-4 text-action-text" />
               Server update guidance
             </div>
-            <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+            <p className="text-sm leading-6 text-contrast-helper">
               Most hosted installations update by pulling the published container images and restarting the stack. If you build from source instead, rebuild locally rather than pulling from GHCR.
             </p>
-            <div className="rounded-2xl bg-gray-950 p-4 text-sm text-gray-100 dark:bg-black">
+            <div className="rounded-2xl bg-surface-card p-4 text-sm text-contrast-icon-muted">
               <code>docker compose pull && docker compose up -d</code>
             </div>
             <a
               href={DEPLOYMENT_GUIDE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-medium text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+              className="inline-flex items-center gap-2 text-sm font-medium text-action-text hover:text-action-text-hover"
             >
               <ExternalLink className="h-4 w-4" />
               Read the deployment guide
@@ -416,7 +416,7 @@ export default function UpdatesSettings({
       </SettingsCard>
 
       <SettingsCard
-        title="Latest release snapshot"
+        title="Latest Release Snapshot"
         description="The latest stable release metadata is sourced from GitHub Releases."
         badge={
           <SettingsStatusBadge tone={getUpdateStatusTone(versionInfo.update_status)}>
@@ -430,7 +430,7 @@ export default function UpdatesSettings({
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <h5 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    <h5 className="text-xl font-semibold text-foreground">
                       {latestRelease.tag_name}
                     </h5>
                     <SettingsStatusBadge tone="neutral">
@@ -442,7 +442,7 @@ export default function UpdatesSettings({
                       </SettingsStatusBadge>
                     )}
                   </div>
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  <p className="mt-2 text-sm text-contrast-helper">
                     Published {formatPublishedRelative(latestRelease.published_at)}.
                   </p>
                 </div>
@@ -477,7 +477,7 @@ export default function UpdatesSettings({
       </SettingsCard>
 
       <SettingsCard
-        title="Release history"
+        title="Release History"
         description="Recent Nojoin releases published on GitHub."
       >
         {versionInfo.releases.length > 0 ? (
@@ -491,7 +491,7 @@ export default function UpdatesSettings({
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        <h5 className="text-lg font-semibold text-foreground">
                           {release.tag_name}
                         </h5>
                         {isInstalled && (

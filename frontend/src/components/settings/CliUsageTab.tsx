@@ -35,10 +35,10 @@ type QuotaTone = "success" | "warning" | "error" | "neutral";
 
 const TONE_CLASS: Record<QuotaTone, string> = {
   success:
-    "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300",
-  warning: "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300",
-  error: "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300",
-  neutral: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+    "bg-status-success-bg text-status-success-fg",
+  warning: "bg-status-warning-bg text-status-warning-fg",
+  error: "bg-status-danger-bg text-status-danger-fg",
+  neutral: "bg-surface-inset text-foreground",
 };
 
 /**
@@ -117,7 +117,7 @@ export default function CliUsageTab() {
   return (
     <SettingsCard
       id="ai-providers-usage"
-      title="Usage and quota"
+      title="Usage and Quota"
       description="Per-user subscription token usage and rate-limit status, across Claude and ChatGPT."
     >
       <SettingsBlock contentClassName="space-y-4">
@@ -130,7 +130,7 @@ export default function CliUsageTab() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-helper" />
           <input
             value={search}
             onChange={(e) => {
@@ -138,13 +138,13 @@ export default function CliUsageTab() {
               setPage(1);
             }}
             placeholder="Search users..."
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+            className="w-full pl-9 pr-4 py-2 text-sm border border-control-border rounded-xl bg-surface-card text-foreground focus:ring-2 focus:ring-action focus:border-transparent"
           />
         </div>
         <button
           onClick={fetchUsage}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 dark:border-gray-700 px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 transition hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-control-border px-4 py-2 text-sm font-semibold text-contrast-muted transition hover:bg-surface-inset disabled:opacity-50"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -153,8 +153,8 @@ export default function CliUsageTab() {
 
       <SettingsBlock className="px-0 pb-0 sm:px-0" contentClassName="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap">
-            <thead className="bg-gray-100 dark:bg-gray-900/80 text-gray-800 dark:text-gray-100 uppercase font-medium">
+          <table className="w-full text-left text-sm text-foreground whitespace-nowrap">
+            <thead className="bg-surface-inset text-foreground uppercase font-medium">
               <tr>
                 <th className="px-4 py-3">User</th>
                 <th className="px-4 py-3 text-right">Last 7 days</th>
@@ -164,7 +164,7 @@ export default function CliUsageTab() {
                 <th className="px-4 py-3">Quota status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-300 dark:divide-gray-600">
+            <tbody className="divide-y divide-control-border">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="p-4 text-center">
@@ -175,7 +175,7 @@ export default function CliUsageTab() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="p-6 text-center text-gray-500 dark:text-gray-400"
+                    className="p-6 text-center text-contrast-helper"
                   >
                     No CLI subscription usage recorded yet.
                   </td>
@@ -187,14 +187,14 @@ export default function CliUsageTab() {
                   return (
                     <tr
                       key={row.user_id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                      className="hover:bg-surface-inset"
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900 dark:text-white">
+                        <div className="font-medium text-foreground">
                           {row.username}
                         </div>
                         {lastUsed && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                          <div className="text-xs text-contrast-helper">
                             Last used {lastUsed.toLocaleDateString()}
                           </div>
                         )}
@@ -225,7 +225,7 @@ export default function CliUsageTab() {
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3">
+        <div className="flex items-center justify-between border-t border-surface-border px-4 py-3">
           <div className="text-sm contrast-helper">
             Showing {rows.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0} to{" "}
             {Math.min(page * PAGE_SIZE, total)} of {total} users
@@ -234,14 +234,14 @@ export default function CliUsageTab() {
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="p-1 rounded text-contrast-muted hover:bg-surface-inset disabled:opacity-50"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="p-1 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="p-1 rounded text-contrast-muted hover:bg-surface-inset disabled:opacity-50"
             >
               <ChevronRight className="w-5 h-5" />
             </button>

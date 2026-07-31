@@ -77,7 +77,7 @@ describe("LiveMeetingControls speaker cap", () => {
 
   it("defaults to auto-detect", () => {
     render(<LiveMeetingControls size="full" />);
-    const input = screen.getByLabelText(/maximum speakers/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
     expect(input.value).toBe("");
     expect(updateRecordingMaxSpeakers).not.toHaveBeenCalled();
   });
@@ -86,7 +86,7 @@ describe("LiveMeetingControls speaker cap", () => {
     updateRecordingMaxSpeakers.mockResolvedValue({});
     render(<LiveMeetingControls size="full" />);
 
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     fireEvent.change(input, { target: { value: "2" } });
     fireEvent.blur(input);
 
@@ -99,7 +99,7 @@ describe("LiveMeetingControls speaker cap", () => {
     updateRecordingMaxSpeakers.mockResolvedValue({});
     render(<LiveMeetingControls size="full" />);
 
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     fireEvent.change(input, { target: { value: "3" } });
     fireEvent.blur(input);
     await waitFor(() =>
@@ -117,7 +117,7 @@ describe("LiveMeetingControls speaker cap", () => {
     updateRecordingMaxSpeakers.mockRejectedValue(new Error("Network down"));
     render(<LiveMeetingControls size="full" />);
 
-    const input = screen.getByLabelText(/maximum speakers/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "4" } });
     fireEvent.blur(input);
 

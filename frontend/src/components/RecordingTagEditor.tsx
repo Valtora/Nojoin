@@ -44,7 +44,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
           return (
             <span
               key={tag.id || tag.name}
-              className={`inline-flex items-center rounded-full border bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-gray-300"}`}
+              className={`inline-flex items-center rounded-full border bg-surface-inset text-contrast-muted ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
               title={parentName ? `Parent: ${parentName}` : undefined}
             >
               <span className={`w-2 h-2 rounded-full mr-2 ${color.dot}`} />
@@ -52,7 +52,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
               {tag.name}
               <button
                 onClick={() => handleRemoveTag(tag.name)}
-                className="ml-2 inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-black/10 dark:hover:bg-white/10 focus:outline-none"
+                className="ml-2 inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-surface-inset focus:outline-none"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -63,7 +63,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
 
         <button
           onClick={() => setIsModalOpen(true)}
-          className={`inline-flex items-center rounded-full border border-dashed text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-600 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:text-gray-200 ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-gray-300"}`}
+          className={`inline-flex items-center rounded-full border border-dashed text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted dark:hover:border-action-border ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
         >
           <Plus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Add Tag

@@ -61,17 +61,17 @@ export default function ColorPicker({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 bg-surface-card border border-control-border rounded-lg hover:bg-surface-inset transition-colors"
         >
-          <span className={`w-4 h-4 rounded-full ${selectedColorOption?.dot || 'bg-gray-400'}`} />
-          <span className="text-sm text-gray-700 dark:text-gray-300">
+          <span className={`w-4 h-4 rounded-full ${selectedColorOption?.dot || 'bg-surface-card'}`} />
+          <span className="text-sm text-contrast-muted">
             {selectedColorOption?.name || 'Select color'}
           </span>
         </button>
       )}
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 p-3 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 min-w-[280px]">
+        <div className="absolute z-[var(--z-dropdown)] mt-2 p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]">
           <div className="grid grid-cols-6 gap-2">
             {COLOR_PALETTE.map((color) => (
               <button
@@ -82,13 +82,13 @@ export default function ColorPicker({
                 className={`
                   w-8 h-8 rounded-lg flex items-center justify-center transition-all
                   ${color.dot}
-                  hover:scale-110 hover:shadow-md
-                  focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500
-                  ${selectedColor === color.key ? 'ring-2 ring-offset-2 ring-gray-900 dark:ring-white' : ''}
+                  hover:scale-110 hover:shadow-card
+                  focus:outline-none focus:ring-2 focus:ring-offset-2 focus-visible:outline-focus-ring
+                  ${selectedColor === color.key ? 'ring-2 ring-offset-2 ring-control-border' : ''}
                 `}
               >
                 {selectedColor === color.key && (
-                  <Check className="w-4 h-4 text-white drop-shadow-md" />
+                  <Check className="w-4 h-4 text-foreground drop-shadow-md" />
                 )}
               </button>
             ))}
@@ -135,13 +135,13 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className={`w-3 h-3 rounded-full ${selectedColorOption?.dot || 'bg-gray-400'} hover:ring-2 hover:ring-offset-1 hover:ring-gray-400 transition-all`}
+        className={`w-3 h-3 rounded-full ${selectedColorOption?.dot || 'bg-surface-card'} hover:ring-2 hover:ring-offset-1 hover:ring-control-border transition-all`}
         title="Change color"
       />
 
       {isOpen && (
         <div
-          className="absolute left-0 top-full mt-1 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 min-w-max"
+          className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="grid grid-cols-6 gap-2">
@@ -159,11 +159,11 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
                   w-5 h-5 rounded flex items-center justify-center transition-all
                   ${color.dot}
                   hover:brightness-110
-                  ${selectedColor === color.key ? 'ring-1 ring-offset-1 ring-gray-900 dark:ring-white' : ''}
+                  ${selectedColor === color.key ? 'ring-1 ring-offset-1 ring-control-border' : ''}
                 `}
               >
                 {selectedColor === color.key && (
-                  <Check className="w-3 h-3 text-white drop-shadow-md" />
+                  <Check className="w-3 h-3 text-foreground drop-shadow-md" />
                 )}
               </button>
             ))}

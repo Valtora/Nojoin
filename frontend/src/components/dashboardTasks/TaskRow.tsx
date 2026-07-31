@@ -58,7 +58,7 @@ function TaskActionButtons({
         type="button"
         onClick={() => void handleArchiveTask(task)}
         disabled={isBusy}
-        className="inline-flex h-12 w-12 items-center justify-center rounded-l-2xl text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-700 dark:text-gray-400 dark:hover:bg-amber-500/10 dark:hover:text-amber-300"
+        className="inline-flex h-12 w-12 items-center justify-center rounded-l-2xl text-contrast-helper transition-colors hover:bg-status-warning-bg hover:text-status-warning-fg"
         aria-label={`Archive ${task.title}`}
       >
         <Archive className="h-5 w-5" />
@@ -67,7 +67,7 @@ function TaskActionButtons({
         type="button"
         onClick={() => void handleDeleteTask(task.id)}
         disabled={isBusy}
-        className="inline-flex h-12 w-12 items-center justify-center rounded-r-2xl text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+        className="inline-flex h-12 w-12 items-center justify-center rounded-r-2xl text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg"
         aria-label={`Delete ${task.title}`}
       >
         <Trash2 className="h-5 w-5" />
@@ -115,7 +115,7 @@ function TaskEditForm({
       />
 
       {isBusy && (
-        <Loader2 className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-orange-600 dark:text-orange-300" />
+        <Loader2 className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-action-text" />
       )}
     </form>
   );
@@ -149,16 +149,16 @@ export default function TaskRow(props: TaskRowProps) {
     const timeRemainingState = getTimeRemainingState(task, now);
 
     return (
-      <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border border-gray-200 bg-gradient-to-br from-white via-white to-orange-50/50 px-4 py-4 shadow-sm shadow-orange-950/5 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 dark:border-gray-700/70 dark:from-gray-900/80 dark:via-gray-900/70 dark:to-orange-500/10">
+      <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
         <button
           type="button"
           onClick={() => void handleToggleTask(task)}
           disabled={isBusy}
-          className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-gray-300 bg-white text-gray-400 transition-colors hover:border-orange-400 hover:bg-orange-50 hover:text-orange-600 dark:border-gray-700 dark:bg-gray-950/60 dark:text-gray-500 dark:hover:border-orange-500/30 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+          className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-control-border bg-surface-card text-contrast-icon-muted transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
           aria-label={`Mark ${task.title} complete`}
         >
           {isBusy ? (
-            <Loader2 className="h-4 w-4 animate-spin text-orange-600 dark:text-orange-300" />
+            <Loader2 className="h-4 w-4 animate-spin text-action-text" />
           ) : (
             <Check className="h-4 w-4" />
           )}
@@ -174,12 +174,12 @@ export default function TaskRow(props: TaskRowProps) {
               editingInputRef={editingInputRef}
               commitEditingTask={commitEditingTask}
               handleEditingKeyDown={handleEditingKeyDown}
-              inputClassName="h-10 w-full border-0 border-b border-orange-200 bg-transparent px-0 pr-8 text-sm font-semibold text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 dark:border-orange-500/20 dark:text-white dark:placeholder:text-gray-500"
+              inputClassName="h-10 w-full border-0 border-b border-action-border bg-transparent px-0 pr-8 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-contrast-icon-muted focus:border-action"
             />
           ) : (
             <p
               onDoubleClick={() => void handleBeginEditingTask(task)}
-              className="cursor-text text-sm font-semibold text-gray-900 dark:text-white"
+              className="cursor-text text-sm font-semibold text-foreground"
               title="Double-click to edit"
             >
               {task.title}
@@ -207,7 +207,7 @@ export default function TaskRow(props: TaskRowProps) {
               className={
                 `${DEADLINE_TRIGGER_CLASS} ` +
                 (deadline
-                  ? "border-solid border-orange-200 bg-orange-50/90 text-orange-900 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-100"
+                  ? "border-solid border-action-border bg-action-tint text-action-text"
                   : "")
               }
               aria-label={`${deadline ? "Edit" : "Add"} deadline for ${task.title}`}
@@ -225,19 +225,19 @@ export default function TaskRow(props: TaskRowProps) {
           isBusy={isBusy}
           handleArchiveTask={handleArchiveTask}
           handleDeleteTask={handleDeleteTask}
-          wrapperClassName="density-surface-panel col-span-2 justify-self-end flex shrink-0 self-center border border-transparent bg-white/80 sm:col-span-1 dark:bg-white/5"
+          wrapperClassName="density-surface-panel col-span-2 justify-self-end flex shrink-0 self-center border border-transparent bg-surface-card sm:col-span-1"
         />
       </div>
     );
   }
 
   return (
-    <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border border-gray-200 bg-white/80 px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 dark:border-gray-700 dark:bg-gray-900/60">
+    <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
       <button
         type="button"
         onClick={() => void handleToggleTask(task)}
         disabled={isBusy}
-        className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-emerald-200 bg-emerald-100 text-emerald-700 transition-colors hover:border-emerald-300 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+        className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-status-success-border bg-status-success-bg text-status-success-fg transition-colors hover:border-status-success-border"
         aria-label={`Mark ${task.title} incomplete`}
       >
         {isBusy ? (
@@ -257,12 +257,12 @@ export default function TaskRow(props: TaskRowProps) {
             editingInputRef={editingInputRef}
             commitEditingTask={commitEditingTask}
             handleEditingKeyDown={handleEditingKeyDown}
-            inputClassName="h-10 w-full border-0 border-b border-orange-200 bg-transparent px-0 pr-8 text-sm font-semibold text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 dark:border-orange-500/20 dark:text-gray-200 dark:placeholder:text-gray-500"
+            inputClassName="h-10 w-full border-0 border-b border-action-border bg-transparent px-0 pr-8 text-sm font-semibold text-contrast-muted outline-none transition-colors placeholder:text-contrast-icon-muted focus:border-action"
           />
         ) : (
           <p
             onDoubleClick={() => void handleBeginEditingTask(task)}
-            className="cursor-text text-sm font-medium text-gray-600 line-through dark:text-gray-300"
+            className="cursor-text text-sm font-medium text-contrast-helper line-through"
             title="Double-click to edit"
           >
             {task.title}
@@ -280,7 +280,7 @@ export default function TaskRow(props: TaskRowProps) {
                 void handleOpenDeadlineModal(task, event.currentTarget)
               }
               disabled={isBusy}
-              className={`${DEADLINE_TRIGGER_CLASS} border-solid border-orange-200 bg-orange-50/90 text-orange-900 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-100`}
+              className={`${DEADLINE_TRIGGER_CLASS} border-solid border-action-border bg-action-tint text-action-tint-fg`}
               aria-label={`Edit deadline for ${task.title}`}
             >
               <span className="truncate">
@@ -297,7 +297,7 @@ export default function TaskRow(props: TaskRowProps) {
         isBusy={isBusy}
         handleArchiveTask={handleArchiveTask}
         handleDeleteTask={handleDeleteTask}
-        wrapperClassName="col-span-2 justify-self-end flex shrink-0 self-center rounded-2xl border border-transparent bg-white/80 sm:col-span-1 dark:bg-white/5"
+        wrapperClassName="col-span-2 justify-self-end flex shrink-0 self-center rounded-2xl border border-transparent bg-surface-card sm:col-span-1"
       />
     </div>
   );

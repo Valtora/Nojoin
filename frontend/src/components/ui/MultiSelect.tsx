@@ -56,15 +56,18 @@ export default function MultiSelect({
     return (
         <div className={`relative ${className}`} ref={containerRef}>
             <div
-                className="flex min-h-[42px] w-full flex-wrap items-center gap-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm ring-offset-background cursor-pointer hover:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500 focus-within:ring-offset-2"
+                className="flex min-h-[42px] w-full cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-control-border bg-control-bg px-3 py-2 text-sm text-foreground hover:border-action focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-focus-ring"
                 onClick={() => setIsOpen(!isOpen)}
             >
                 {selectedOptions.length > 0 ? (
                     selectedOptions.map((option) => (
                         <span
                             key={option.value}
+                            // A tag's colour is user data rather than a theme value, so it stays
+                            // inline. The label is white because these are saturated mid-tones;
+                            // an unrestricted picker cannot guarantee a ratio either way.
                             className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-white"
-                            style={{ backgroundColor: option.color || '#f97316' }} // Default orange-500
+                            style={{ backgroundColor: option.color || 'var(--action)' }}
                         >
                             {option.label}
                             <button
@@ -78,17 +81,17 @@ export default function MultiSelect({
                         </span>
                     ))
                 ) : (
-                    <span className="text-gray-500 dark:text-gray-400">{placeholder}</span>
+                    <span className="text-control-placeholder">{placeholder}</span>
                 )}
                 <div className="ml-auto flex items-center">
-                    <ChevronDown className={`h-4 w-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    <ChevronDown className={`h-4 w-4 text-contrast-icon-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
             </div>
 
             {isOpen && (
-                <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-1 shadow-lg animate-in fade-in zoom-in-95">
+                <div className="absolute z-[var(--z-dropdown)] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
                     {options.length === 0 ? (
-                        <div className="p-2 text-center text-sm text-gray-500">No options available</div>
+                        <div className="p-2 text-center text-sm text-contrast-helper">No options available</div>
                     ) : (
                         options.map((option) => {
                             const isSelected = selected.includes(option.value);
@@ -96,13 +99,13 @@ export default function MultiSelect({
                                 <div
                                     key={option.value}
                                     className={`relative flex cursor-pointer select-none items-center rounded-lg px-2 py-2 text-sm outline-none transition-colors ${isSelected
-                                            ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100'
-                                            : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100'
+                                            ? 'bg-action-tint text-action-tint-fg'
+                                            : 'text-foreground hover:bg-surface-inset'
                                         }`}
                                     onClick={() => handleSelect(option.value)}
                                 >
-                                    <div className="mr-2 flex h-4 w-4 items-center justify-center rounded border border-gray-300 dark:border-gray-600">
-                                        {isSelected && <Check className="h-3 w-3 text-orange-600 dark:text-orange-400" />}
+                                    <div className="mr-2 flex h-4 w-4 items-center justify-center rounded border border-control-border">
+                                        {isSelected && <Check className="h-3 w-3 text-action-text" />}
                                     </div>
                                     <span className="flex-1 truncate">{option.label}</span>
                                     {option.color && (

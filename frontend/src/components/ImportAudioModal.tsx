@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Upload, FileAudio, Loader2, CheckCircle, Calendar, FileText } from 'lucide-react';
+import { Upload, FileAudio, CheckCircle, Calendar, FileText } from 'lucide-react';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Modal from '@/components/ui/Modal';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
 import { importAudio, getSupportedAudioFormats } from '@/lib/api';
 import SpeakerCapField from '@/components/SpeakerCapField';
@@ -176,191 +178,175 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     }
   };
 
-  if (!isOpen || !mounted) return null;
+  if (!mounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto flex flex-col border border-gray-300 dark:border-gray-800">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Audio</h2>
-          <button
+  return (
+    <Modal
+      open={isOpen}
+      onClose={handleClose}
+      // An upload in flight cannot be cancelled, so the dialog stops accepting
+      // a dismissal until it resolves.
+      dismissible={uploadState !== 'uploading'}
+      size="md"
+      title="Import Audio"
+      className="max-h-[calc(100dvh-2rem)]"
+      footer={
+        <>
+          <Button
+            variant="ghost"
             onClick={handleClose}
             disabled={uploadState === 'uploading'}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Drop Zone */}
-          <div
-            ref={dropZoneRef}
-            onClick={() => uploadState !== 'uploading' && fileInputRef.current?.click()}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            className={`
-              relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-              ${isDragging
-                ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/20'
-                : selectedFile
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-300 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-600'
-              }
-              ${uploadState === 'uploading' ? 'pointer-events-none opacity-75' : ''}
-            `}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={supportedFormats.join(',')}
-              onChange={handleFileInputChange}
-              className="hidden"
-            />
-
-            {selectedFile ? (
-              <div className="space-y-2">
-                <FileAudio className="w-12 h-12 mx-auto text-green-500" />
-                <p className="font-medium text-gray-900 dark:text-white truncate max-w-xs mx-auto">
-                  {selectedFile.name}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {formatFileSize(selectedFile.size)}
-                </p>
-                {uploadState !== 'uploading' && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
-                    className="text-sm text-red-500 hover:text-red-600 underline"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Upload className="w-12 h-12 mx-auto text-gray-400" />
-                <p className="text-gray-600 dark:text-gray-400">
-                  <span className="font-medium text-orange-500">Click to browse</span> or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">
-                  {supportedFormats.map(f => f.toUpperCase().replace('.', '')).join(', ')}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Upload Progress */}
-          {uploadState === 'uploading' && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-400">Uploading...</span>
-                <span className="text-gray-900 dark:text-white font-medium">{uploadProgress}%</span>
-              </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-orange-500 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Success Message */}
-          {uploadState === 'success' && (
-            <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg">
-              <CheckCircle className="w-5 h-5 shrink-0" />
-              <span>Audio imported successfully! Processing will begin shortly.</span>
-            </div>
-          )}
-
-          {/* Optional Metadata */}
-          {selectedFile && uploadState !== 'success' && (
-            <div className="space-y-4 pt-2 border-t border-gray-200 dark:border-gray-800">
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Optional Details
-              </h3>
-
-              {/* Meeting Name */}
-              <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  <FileText className="w-4 h-4" />
-                  Meeting Name
-                </label>
-                <input
-                  type="text"
-                  value={meetingName}
-                  onChange={(e) => setMeetingName(e.target.value)}
-                  placeholder="Enter a custom name..."
-                  disabled={uploadState === 'uploading'}
-                  className="w-full p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-50"
-                />
-              </div>
-
-              {/* Recording Date */}
-              <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  <Calendar className="w-4 h-4" />
-                  Recording Date (optional)
-                </label>
-                <div className="w-full">
-                  <ModernDatePicker
-                    selected={recordedAt}
-                    onChange={(date) => setRecordedAt(date)}
-                    showTimeSelect
-                    dateFormat="MMMM d, yyyy h:mm aa"
-                    placeholderText="Select date and time"
-                    disabled={uploadState === 'uploading'}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  If not set, the current time will be used.
-                </p>
-              </div>
-
-              {/* Speaker cap */}
-              <SpeakerCapField
-                value={maxSpeakers}
-                onCommit={setMaxSpeakers}
-                disabled={uploadState === 'uploading'}
-                idPrefix="import-speaker-cap"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-6 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
-          <button
-            onClick={handleClose}
-            disabled={uploadState === 'uploading'}
-            className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg disabled:opacity-50"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={handleImport}
             disabled={!selectedFile || uploadState === 'uploading' || uploadState === 'success'}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            loading={uploadState === 'uploading'}
+            iconLeft={<Upload aria-hidden="true" className="w-4 h-4" />}
           >
-            {uploadState === 'uploading' ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4" />
-                Import Audio
-              </>
-            )}
-          </button>
+            {uploadState === 'uploading' ? 'Uploading...' : 'Import Audio'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-6">
+        {/* Drop Zone */}
+        <div
+          ref={dropZoneRef}
+          onClick={() => uploadState !== 'uploading' && fileInputRef.current?.click()}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className={`
+              relative cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors
+              ${isDragging
+              ? 'border-action bg-action-tint'
+              : selectedFile
+                ? 'border-status-success-border bg-status-success-bg'
+                : 'border-control-border hover:border-action-border'
+            }
+              ${uploadState === 'uploading' ? 'pointer-events-none opacity-75' : ''}
+            `}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={supportedFormats.join(',')}
+            onChange={handleFileInputChange}
+            className="hidden"
+          />
+
+          {selectedFile ? (
+            <div className="space-y-2">
+              <FileAudio aria-hidden="true" className="mx-auto h-12 w-12 text-status-success-fg" />
+              <p className="mx-auto max-w-xs truncate font-medium text-foreground">
+                {selectedFile.name}
+              </p>
+              <p className="text-sm text-contrast-helper">
+                {formatFileSize(selectedFile.size)}
+              </p>
+              {uploadState !== 'uploading' && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
+                  className="text-sm text-danger-text underline hover:text-danger-text-hover"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Upload aria-hidden="true" className="mx-auto h-12 w-12 text-contrast-icon-muted" />
+              <p className="text-contrast-helper">
+                <span className="font-medium text-action-text">Click to browse</span> or drag and drop
+              </p>
+              <p className="text-xs text-contrast-helper">
+                {supportedFormats.map(f => f.toUpperCase().replace('.', '')).join(', ')}
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* Upload Progress */}
+        {uploadState === 'uploading' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-contrast-helper">Uploading...</span>
+              <span className="font-medium text-foreground">{uploadProgress}%</span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-surface-inset">
+              <div
+                className="h-2 rounded-full bg-action transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Success Message */}
+        {uploadState === 'success' && (
+          <div className="flex items-center gap-2 rounded-lg bg-status-success-bg p-3 text-status-success-fg">
+            <CheckCircle aria-hidden="true" className="h-5 w-5 shrink-0" />
+            <span>Audio imported successfully! Processing will begin shortly.</span>
+          </div>
+        )}
+
+        {/* Optional Metadata */}
+        {selectedFile && uploadState !== 'success' && (
+          <div className="space-y-4 border-t border-surface-divider pt-2">
+            <h3 className="text-sm font-medium text-contrast-muted">
+              Optional Details
+            </h3>
+
+            {/* Meeting Name */}
+            <Input
+              type="text"
+              label={
+                <span className="flex items-center gap-2">
+                  <FileText aria-hidden="true" className="w-4 h-4" />
+                  Meeting Name
+                </span>
+              }
+              value={meetingName}
+              onChange={(e) => setMeetingName(e.target.value)}
+              placeholder="Enter a custom name..."
+              disabled={uploadState === 'uploading'}
+            />
+
+            {/* Recording Date */}
+            <div>
+              <label className="mb-1 flex items-center gap-2 text-sm text-contrast-helper">
+                <Calendar aria-hidden="true" className="w-4 h-4" />
+                Recording Date (optional)
+              </label>
+              <div className="w-full">
+                <ModernDatePicker
+                  selected={recordedAt}
+                  onChange={(date) => setRecordedAt(date)}
+                  showTimeSelect
+                  dateFormat="MMMM d, yyyy h:mm aa"
+                  placeholderText="Select date and time"
+                  disabled={uploadState === 'uploading'}
+                />
+              </div>
+              <p className="mt-1 text-xs text-contrast-helper">
+                If not set, the current time will be used.
+              </p>
+            </div>
+
+            {/* Speaker cap */}
+            <SpeakerCapField
+              value={maxSpeakers}
+              onCommit={setMaxSpeakers}
+              disabled={uploadState === 'uploading'}
+              idPrefix="import-speaker-cap"
+            />
+          </div>
+        )}
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }

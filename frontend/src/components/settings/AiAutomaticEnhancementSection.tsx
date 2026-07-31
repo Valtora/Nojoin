@@ -18,15 +18,15 @@ export default function AiAutomaticEnhancementSection({
 }: AiAutomaticEnhancementSectionProps) {
   return (
     <SettingsCard
-      title="Automatic enhancement"
+      title="Automatic Enhancement"
       description="Control how AI-generated titles are written for your meetings and summaries."
     >
       <SettingsBlock
         className="flex items-start gap-3"
       >
         <div className="flex-1">
-          <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-            <Cpu className="h-4 w-4 text-orange-500" />
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Cpu className="h-4 w-4 text-action-text" />
             Prefer short titles
           </div>
           <p className="mt-2 text-xs contrast-helper">

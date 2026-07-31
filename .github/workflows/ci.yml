@@ -56,6 +56,10 @@ jobs:
               - 'pyproject.toml'
             frontend:
               - 'frontend/**'
+              # The marketing stylesheet is audited by frontend/scripts/check-contrast.mjs,
+              # which reads its token block as a third theme. Without this path the
+              # site could drift off the shared palette without the gate ever running.
+              - 'assets/css/**'
             scripts:
               - 'scripts/**'
             deployment:
@@ -202,6 +206,14 @@ jobs:
       - name: Run frontend lint
         working-directory: frontend
         run: npm run lint
+
+      # Contrast is a property of a token pair, so nothing in lint or the type
+      # checker can see a regression here. This reads the tokens out of
+      # globals.css and fails the job on any pairing that drops below its
+      # threshold.
+      - name: Check token contrast
+        working-directory: frontend
+        run: npm run check:contrast
 
   frontend-unit-tests:
     name: Frontend unit tests

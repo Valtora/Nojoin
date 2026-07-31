@@ -9,10 +9,16 @@
  *
  * Import these rather than writing control classes by hand, so a change to the
  * focus ring or the disabled state lands everywhere at once.
+ *
+ * The recipes deliberately mirror the `Input` and `Button` primitives token for
+ * token, so a settings field and a field anywhere else cannot drift apart. They
+ * exist as strings rather than as components only because settings pages apply
+ * them to elements they render themselves, including native selects and
+ * textareas the primitives do not wrap.
  */
 
 const CONTROL_BASE =
-  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors placeholder:text-gray-500 focus:border-transparent focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-400";
+  "w-full rounded-lg border border-control-border bg-control-bg px-3 py-2 text-sm text-foreground transition-colors duration-150 placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:border-control-disabled-border disabled:bg-control-disabled-bg disabled:text-control-disabled-fg";
 
 export const SETTINGS_INPUT_CLASS = CONTROL_BASE;
 
@@ -20,11 +26,11 @@ export const SETTINGS_SELECT_CLASS = CONTROL_BASE;
 
 export const SETTINGS_TEXTAREA_CLASS = `${CONTROL_BASE} min-h-28 resize-y leading-6`;
 
-export const SETTINGS_BUTTON_PRIMARY =
-  "inline-flex items-center justify-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-orange-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-orange-300 dark:focus-visible:ring-offset-gray-950 dark:disabled:bg-orange-900/40";
+const BUTTON_BASE =
+  "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60";
 
-export const SETTINGS_BUTTON_SECONDARY =
-  "inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800";
+export const SETTINGS_BUTTON_PRIMARY = `${BUTTON_BASE} border border-transparent bg-action text-action-on hover:bg-action-hover active:bg-action-active`;
 
-export const SETTINGS_BUTTON_DANGER =
-  "inline-flex items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/40 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-500/10";
+export const SETTINGS_BUTTON_SECONDARY = `${BUTTON_BASE} border border-control-border bg-surface-card font-medium text-foreground hover:bg-surface-inset active:bg-surface-inset`;
+
+export const SETTINGS_BUTTON_DANGER = `${BUTTON_BASE} border border-danger-text bg-surface-card font-medium text-danger-text hover:bg-surface-inset active:bg-surface-inset`;

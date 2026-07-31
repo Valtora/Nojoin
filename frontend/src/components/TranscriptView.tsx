@@ -393,7 +393,7 @@ export default function TranscriptView({
     const hasPendingRemoteUpdate =
       typeof segment.id === "string" && pendingRemoteUtteranceIdSet.has(segment.id);
     const bubbleColor = isActive
-      ? "border-2 border-green-500 dark:border-green-400 bg-green-100 dark:bg-green-900/20"
+      ? "border-2 border-status-success-border bg-status-success-bg"
       : getSpeakerColor(segment.speaker);
     const speakerColorKey = speakerColors[segment.speaker] || "gray";
     const speakerColor = getColorByKey(speakerColorKey);
@@ -420,7 +420,7 @@ export default function TranscriptView({
                 if (e.key === "Escape") setEditingSpeaker(null);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="text-sm font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="text-sm font-bold text-status-info-fg bg-surface-card border border-status-info-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-info-border"
             />
           ) : isEditingSegmentSpeaker ? (
              <input
@@ -431,7 +431,7 @@ export default function TranscriptView({
               onBlur={() => handleSegmentSpeakerSubmit(segment)}
               onKeyDown={(e) => handleKeyDown(e, "segmentSpeaker", segment)}
               onClick={(e) => e.stopPropagation()}
-              className="text-sm font-bold text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 border border-green-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="text-sm font-bold text-status-success-fg bg-surface-card border border-status-success-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-success-border"
             />
           ) : (
             <div className="relative">
@@ -457,11 +457,11 @@ export default function TranscriptView({
                 }}
                 disabled={isSegmentReadOnly}
                 className={`text-base font-bold transition-colors text-left ${
-                  isProvisional ? speakerColor.text : "text-gray-700 dark:text-gray-300"
+                  isProvisional ? speakerColor.text : "text-contrast-muted"
                 } ${
                   isSegmentReadOnly
                     ? "cursor-default"
-                    : "hover:text-orange-700 dark:hover:text-orange-400"
+                    : "hover:text-action-text"
                 }`}
                 title={
                   isSegmentReadOnly
@@ -491,22 +491,22 @@ export default function TranscriptView({
 
           <div className="flex flex-wrap items-center gap-1">
             {segment.text_manually_edited && (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-500/20 dark:bg-slate-500/10 dark:text-slate-300">
+              <span className="rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-contrast-muted">
                 Manual text
               </span>
             )}
             {isSpeakerLowConfidence && (
-              <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+              <span className="rounded-full border border-status-danger-border bg-status-danger-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger-fg">
                 Low confidence
               </span>
             )}
             {isRecentlyUpdated && !isEditingText && !isEditingSegmentSpeaker && (
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+              <span className="rounded-full border border-status-success-border bg-status-success-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-success-fg">
                 Revised
               </span>
             )}
             {hasPendingRemoteUpdate && (
-              <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300">
+              <span className="rounded-full border border-status-info-border bg-status-info-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-info-fg">
                 Pending update
               </span>
             )}
@@ -517,10 +517,10 @@ export default function TranscriptView({
         <div
           id={`segment-${segmentId}`}
           className={`p-3 rounded-2xl rounded-tl-none w-full transition-colors border ${bubbleColor} ${
-            isEditingText ? "ring-2 ring-blue-500" : ""
+            isEditingText ? "ring-2 ring-status-info-border" : ""
           } ${
             isProvisional
-              ? "border-dashed border-2 shadow-sm"
+              ? "border-dashed border-2 shadow-card"
               : ""
           }`}
         >
@@ -531,15 +531,15 @@ export default function TranscriptView({
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={() => handleTextSubmit(segment)}
               onKeyDown={(e) => handleKeyDown(e, "text", segment)}
-              className="w-full bg-transparent resize-none outline-none text-gray-900 dark:text-white leading-relaxed"
+              className="w-full bg-transparent resize-none outline-none text-foreground leading-relaxed"
               rows={Math.max(2, Math.ceil(editValue.length / 80))}
             />
           ) : (
             <p
-              className={`leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-200 ${
+              className={`leading-relaxed whitespace-pre-wrap text-contrast-muted ${
                 isSegmentReadOnly
                   ? ""
-                  : "cursor-text hover:text-gray-900 dark:hover:text-white"
+                  : "cursor-text hover:text-foreground"
               }`}
               onClick={(e) => handleTextClick(segment, segmentId, e)}
               title={isSegmentReadOnly ? undefined : "Click to edit text"}
@@ -555,14 +555,14 @@ export default function TranscriptView({
   return (
     <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="z-10 flex flex-col border-b-2 border-gray-200 bg-gray-50 shadow-sm dark:border-gray-700 dark:bg-gray-900/95">
+      <div className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
         {/* Row 1: Header & Global Actions */}
         <div className="flex items-center justify-end overflow-x-auto px-2 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3">
           <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               onClick={onUndo}
               disabled={!canUndo}
-              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 sm:p-2"
+              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
@@ -570,17 +570,17 @@ export default function TranscriptView({
             <button
               onClick={onRedo}
               disabled={!canRedo}
-              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 sm:p-2"
+              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
               title="Redo"
             >
               <Redo2 className="w-4 h-4" />
             </button>
-            <div className="mx-0.5 h-4 w-px bg-gray-300 dark:bg-gray-700 sm:mx-1" />
+            <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
             <button
               onClick={onExport}
               disabled={exportDisabled}
               aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
-              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 sm:p-2"
+              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted sm:p-2"
               title={exportTitle}
             >
               <Download className="w-4 h-4" />
@@ -591,7 +591,7 @@ export default function TranscriptView({
                 setShowSearch(newState);
                 if (!newState) setShowReplace(false);
               }}
-              className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showSearch && !showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 hover:text-orange-500 dark:hover:bg-gray-800"}`}
+              className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showSearch && !showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
               title="Search"
             >
               <Search className="w-4 h-4" />
@@ -606,7 +606,7 @@ export default function TranscriptView({
                   setShowSearch(true);
                 }
               }}
-              className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showReplace ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 hover:text-orange-500 dark:hover:bg-gray-800"}`}
+              className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
               title="Find & Replace"
             >
               <ArrowRightLeft className="w-4 h-4" />
@@ -616,9 +616,9 @@ export default function TranscriptView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-gray-400/30 px-2 pb-2 pt-2 duration-200 dark:border-gray-700/50 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
+          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <input
                 placeholder="Find..."
                 value={findText}
@@ -629,23 +629,23 @@ export default function TranscriptView({
                     else nextMatch();
                   }
                 }}
-                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none min-w-0"
+                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 autoFocus
               />
               {matches.length > 0 && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500 whitespace-nowrap bg-white/50 dark:bg-black/50 backdrop-blur-sm rounded px-1">
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
                   <span>
                     {currentMatchIndex + 1} of {matches.length}
                   </span>
                   <button
                     onClick={prevMatch}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronUp className="w-3 h-3" />
                   </button>
                   <button
                     onClick={nextMatch}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -654,12 +654,12 @@ export default function TranscriptView({
             </div>
             {showReplace && (
               <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
-                <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
                 <input
                   placeholder="Replace..."
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
-                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none min-w-0"
+                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 />
               </div>
             )}
@@ -669,7 +669,7 @@ export default function TranscriptView({
                 <div className="relative">
                   <button
                     onClick={() => setShowSettings(!showSettings)}
-                    className={`rounded-md p-1.5 transition-colors ${showSettings ? "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800"}`}
+                    className={`rounded-md p-1.5 transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-contrast-muted"}`}
                     title="Advanced Search Settings"
                   >
                     <Settings className="w-4 h-4" />
@@ -679,25 +679,25 @@ export default function TranscriptView({
                   {showSettings && (
                     <>
                       <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
-                      <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-50 flex flex-col gap-1">
-                        <div className="text-xs font-semibold text-gray-400 px-2 py-1 mb-1 border-b border-gray-100 dark:border-gray-700">
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+                        <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                           Search Options
                         </div>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={caseSensitive}
                             onChange={(e) => setCaseSensitive(e.target.checked)}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-200">
+                          <span className="text-sm text-contrast-muted">
                             Case Sensitive
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={isFuzzy}
@@ -705,13 +705,13 @@ export default function TranscriptView({
                               setIsFuzzy(e.target.checked);
                               if (e.target.checked) setUseRegex(false);
                             }}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-200">
+                          <span className="text-sm text-contrast-muted">
                             Fuzzy Match
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={useRegex}
@@ -719,9 +719,9 @@ export default function TranscriptView({
                               setUseRegex(e.target.checked);
                               if (e.target.checked) setIsFuzzy(false);
                             }}
-                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
                           />
-                          <span className="text-sm text-gray-700 dark:text-gray-200">
+                          <span className="text-sm text-contrast-muted">
                             Regex
                           </span>
                         </label>
@@ -730,12 +730,12 @@ export default function TranscriptView({
                   )}
                 </div>
 
-                <div className="mx-0.5 h-4 w-px bg-gray-300 dark:bg-gray-700 sm:mx-1" />
+                <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
 
                 <button
                   onClick={nextMatch}
                   disabled={matches.length === 0}
-                  className="whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-xs text-gray-700 shadow-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:px-3 sm:text-sm"
+                  className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   <span className="sm:hidden">Next</span>
                   <span className="hidden sm:inline">Find Next</span>
@@ -743,14 +743,14 @@ export default function TranscriptView({
                 <button
                   onClick={handleReplaceCurrent}
                   disabled={matches.length === 0 || isSubmitting}
-                  className="whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-xs text-gray-700 shadow-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:px-3 sm:text-sm"
+                  className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   Replace
                 </button>
                 <button
                   onClick={handleFindReplaceSubmit}
                   disabled={!findText || isSubmitting}
-                  className="whitespace-nowrap rounded-md bg-orange-600 px-2.5 py-1.5 text-xs text-white shadow-sm hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                  className="whitespace-nowrap rounded-md bg-action px-2.5 py-1.5 text-xs text-action-on shadow-card hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   <span className="sm:hidden">All</span>
                   <span className="hidden sm:inline">Replace All</span>
@@ -770,14 +770,14 @@ export default function TranscriptView({
         {trackGroups.length === 0 ? (
           <div className="flex h-full min-h-[220px] items-center justify-center px-4">
             <div className="flex max-w-sm flex-col items-center text-center">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-action-border bg-action-tint text-action-text">
                 <Radio className="h-4 w-4" />
               </div>
-              <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+              <div className="text-sm font-semibold text-foreground">
                 {emptyStateTitle}
               </div>
               {emptyStateDescription && (
-                <div className="mt-1 text-sm leading-5 text-gray-500 dark:text-gray-400">
+                <div className="mt-1 text-sm leading-5 text-contrast-helper">
                   {emptyStateDescription}
                 </div>
               )}
@@ -809,7 +809,7 @@ export default function TranscriptView({
             >
               {/* Timestamp & Play Control */}
               <div className="flex flex-col items-end min-w-16 md:min-w-[60px] pt-1 mt-1">
-                <span className="text-sm text-gray-400 font-mono mb-1">
+                <span className="text-sm text-contrast-icon-muted font-mono mb-1">
                   {formatTime(group.start)}
                 </span>
                 {!disableSegmentPlayback && (
@@ -822,10 +822,10 @@ export default function TranscriptView({
                         onPlaySegment(group.start, group.end);
                       }
                     }}
-                    className={`p-2 md:p-1.5 rounded-full transition-colors shadow-sm ${
+                    className={`p-2 md:p-1.5 rounded-full transition-colors shadow-card ${
                       isGroupActive
-                        ? "bg-green-500 text-white hover:bg-green-600"
-                        : "bg-gray-100 text-gray-500 hover:bg-orange-600 hover:text-white dark:bg-gray-800 dark:text-gray-400"
+                        ? "bg-status-success-bg text-foreground hover:bg-status-success-bg"
+                        : "bg-surface-inset text-contrast-helper hover:bg-action hover:text-action-on"
                     }`}
                     title={
                       isGroupActive && isPlaying ? "Pause segment" : "Play segment"
@@ -843,7 +843,7 @@ export default function TranscriptView({
               {/* Content */}
               <div className="flex-1 min-w-0">
                 {involvedSpeakers.length > 1 ? (
-                  <div className="grid gap-3 md:gap-4 w-full border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/20 p-3 md:p-4 rounded-xl shadow-[inset_0_1px_4px_rgba(0,0,0,0.02)] dark:shadow-[inset_0_1px_4px_rgba(0,0,0,0.2)] md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
+                  <div className="grid gap-3 md:gap-4 w-full border border-surface-border bg-surface-inset p-3 md:p-4 rounded-xl  md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
                      {involvedSpeakers.map(speaker => {
                          const speakerItems = group.items.filter(item => item.segment.speaker === speaker);
                      const laneColorKey = speakerColors[speaker] || "gray";
@@ -855,9 +855,9 @@ export default function TranscriptView({
                              <div
                                key={speaker}
                                data-testid={`overlap-lane-${speaker}`}
-                               className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-white/70 dark:bg-gray-900/40`}
+                               className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-surface-card`}
                              >
-                         <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${laneColor.text} border-b border-black/5 dark:border-white/5`}>
+                         <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${laneColor.text} border-b border-surface-divider`}>
                            {speakerMap[speaker] || speaker}
                          </div>
                                  <div
@@ -868,9 +868,9 @@ export default function TranscriptView({
                                  {speakerItems.length > 0 ? (
                                      speakerItems.map(item => renderSegmentContent(item))
                                  ) : (
-                                     <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-gray-300 dark:border-gray-700/50 rounded-xl bg-white/30 dark:bg-black/10">
+                                     <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
                                          <div className="flex flex-col items-center gap-0.5 opacity-60">
-                                             <div className="font-semibold text-gray-500 dark:text-gray-400 text-sm">{speakerMap[speaker] || speaker}</div>
+                                             <div className="font-semibold text-contrast-helper text-sm">{speakerMap[speaker] || speaker}</div>
                                              <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>
                                          </div>
                                      </div>

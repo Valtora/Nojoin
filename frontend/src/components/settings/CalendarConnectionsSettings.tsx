@@ -85,7 +85,7 @@ function getCalendarColourIndicator(colour: string | null | undefined) {
     return { className: "", style: { backgroundColor: colour } };
   }
 
-  return { className: "bg-orange-500", style: undefined };
+  return { className: "bg-action", style: undefined };
 }
 
 
@@ -300,7 +300,7 @@ export default function CalendarConnectionsSettings() {
   return (
     <SettingsCard
       id="integrations-calendars"
-      title="Calendar connections"
+      title="Calendar Connections"
       description="Connect Gmail or Outlook calendars, approve access in the provider's own consent screen, then choose which calendars Nojoin syncs for this account."
     >
       {loading ? (
@@ -363,7 +363,7 @@ export default function CalendarConnectionsSettings() {
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+                          <span className="inline-flex rounded-full bg-action-tint px-2.5 py-1 text-xs font-medium text-action-text">
                             {PROVIDER_LABELS[connection.provider]}
                           </span>
                           <span className="text-xs contrast-helper">
@@ -371,7 +371,7 @@ export default function CalendarConnectionsSettings() {
                           </span>
                           {connection.push_active && (
                             <span
-                              className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-500/10 dark:text-green-300"
+                              className="inline-flex items-center gap-1 rounded-full bg-status-success-bg px-2 py-0.5 text-[11px] font-medium text-status-success-fg"
                               title="Live sync active: changes arrive by push notification"
                             >
                               <Zap className="h-3 w-3" />
@@ -379,14 +379,14 @@ export default function CalendarConnectionsSettings() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-2 text-base font-semibold text-gray-900 dark:text-white">
+                        <div className="mt-2 text-base font-semibold text-foreground">
                           {connection.email || connection.display_name || "Connected account"}
                         </div>
-                        <div className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                        <div className="mt-1 text-sm text-contrast-helper">
                           {connection.selected_calendar_count} selected calendar{connection.selected_calendar_count === 1 ? "" : "s"}
                         </div>
                         {connection.sync_error && (
-                          <div className="mt-2 flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-900 dark:border-orange-500/30 dark:bg-orange-900/20 dark:text-orange-100">
+                          <div className="mt-2 flex items-start gap-2 rounded-md border border-action-border bg-action-tint px-3 py-2 text-xs text-action-text">
                             <ShieldAlert className="mt-0.5 w-4 h-4 shrink-0" />
                             <span>{connection.sync_error}</span>
                           </div>
@@ -398,7 +398,7 @@ export default function CalendarConnectionsSettings() {
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleManualSync(connection.id)}
-                          className="inline-flex items-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 transition-colors hover:border-orange-400 hover:text-orange-700 dark:hover:text-orange-300 disabled:opacity-50"
+                          className="inline-flex items-center gap-2 rounded-md border border-control-border bg-surface-card px-3 py-2 text-sm font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:opacity-50"
                         >
                           {busyKey === `sync:${connection.id}` ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -411,7 +411,7 @@ export default function CalendarConnectionsSettings() {
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleDisconnect(connection.id)}
-                          className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:bg-gray-800 dark:text-red-300 dark:hover:bg-red-500/10"
+                          className="inline-flex items-center gap-2 rounded-md border border-status-danger-border bg-surface-card px-3 py-2 text-sm font-medium text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:opacity-50"
                         >
                           {busyKey === `disconnect:${connection.id}` ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -429,18 +429,18 @@ export default function CalendarConnectionsSettings() {
                           key={calendar.id}
                           className={`rounded-xl border px-4 py-4 transition-all ${
                             calendar.is_selected
-                              ? "border-orange-300 bg-orange-50/80 shadow-sm shadow-orange-900/5 hover:border-orange-400 hover:bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10 dark:hover:border-orange-400/40 dark:hover:bg-orange-500/12"
-                              : "border-gray-200 bg-white/80 hover:border-orange-200 hover:bg-orange-50/70 dark:border-gray-700 dark:bg-gray-800/80 dark:hover:border-orange-500/20 dark:hover:bg-gray-800"
+                              ? "border-action-border bg-action-tint shadow-card hover:border-action-border hover:bg-action-tint"
+                              : "border-surface-border bg-surface-card hover:border-action-border hover:bg-action-tint"
                           }`}
                         >
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-gray-900 dark:text-white">
+                              <div className="flex items-center gap-2 text-foreground">
                                 <span className="truncate text-sm font-semibold">
                                   {calendar.name}
                                 </span>
                                 {calendar.is_primary && (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-action-tint px-2 py-0.5 text-[11px] font-medium text-action-text">
                                     <CheckCircle2 className="h-3 w-3" />
                                     Primary
                                   </span>
@@ -455,7 +455,7 @@ export default function CalendarConnectionsSettings() {
 
                             <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                               {busyKey === `colour:${calendar.id}` ? (
-                                <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                <div className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-helper">
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                   Saving
                                 </div>
@@ -474,7 +474,7 @@ export default function CalendarConnectionsSettings() {
                                       calendar.colour,
                                     );
                                     return (
-                                      <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-orange-500/30 dark:hover:text-orange-300">
+                                      <div className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text">
                                         <span
                                           className={`h-3 w-3 rounded-full ${indicator.className}`}
                                           style={indicator.style}
@@ -498,7 +498,7 @@ export default function CalendarConnectionsSettings() {
                                       null,
                                     )
                                   }
-                                  className="rounded-full border border-gray-200 px-2.5 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-gray-700 dark:text-gray-300 dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+                                  className="rounded-full border border-surface-border px-2.5 py-2 text-xs font-medium text-contrast-helper transition-colors hover:border-action-border hover:text-action-text"
                                 >
                                   Auto
                                 </button>

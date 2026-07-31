@@ -19,7 +19,7 @@ import {
 } from "./aiSettingsModels";
 
 const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50";
+  "w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
 
 interface MeetingEdgeSectionProps {
   settings: Settings;
@@ -69,7 +69,7 @@ export default function MeetingEdgeSection({
           {isAdmin ? (
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                <div className="text-sm font-medium text-foreground">
                   Enable Meeting Edge
                 </div>
                 <p className="mt-1 text-xs contrast-helper">
@@ -98,14 +98,14 @@ export default function MeetingEdgeSection({
 
           {isAdmin && (
             <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+              <label className="text-sm font-medium text-contrast-muted mb-2 flex items-center gap-2">
                 <Tooltip
                   content="Optional separate model for live Meeting Edge guidance. Leave blank to reuse the main server model."
                   position="right"
                 >
                   <span className="flex items-center gap-1 cursor-help">
                     Meeting Edge model{" "}
-                    <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                    <HelpCircle className="w-3 h-3 text-contrast-helper" />
                   </span>
                 </Tooltip>
                 <SettingsStatusBadge tone="neutral">Admin-wide</SettingsStatusBadge>
@@ -131,21 +131,21 @@ export default function MeetingEdgeSection({
             </div>
           )}
 
-          <div className="rounded-xl border border-orange-200/70 bg-orange-50/45 p-4 dark:border-orange-500/20 dark:bg-orange-500/5">
+          <div className="rounded-xl border border-action-border bg-action-tint p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
                   Technical context
                   <span className="text-[11px] font-semibold uppercase tracking-[0.14em] contrast-helper">
                     Your preference
                   </span>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                <p className="mt-1 text-xs leading-5 text-contrast-helper">
                   Control how readily Meeting Edge explains terms in the Technical
                   Context section.
                 </p>
               </div>
-              <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:border-orange-500/20 dark:bg-gray-900 dark:text-orange-300">
+              <span className="inline-flex items-center rounded-full border border-action-border bg-surface-card px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
                 {selectedOption.label || `Level ${selectedOption.value}`}
               </span>
             </div>
@@ -164,16 +164,16 @@ export default function MeetingEdgeSection({
               }
               disabled={!enabled}
               aria-label="Meeting Edge Technical Context sensitivity"
-              className="mt-4 w-full accent-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 w-full accent-action disabled:cursor-not-allowed disabled:opacity-50"
             />
 
-            <div className="mt-3 grid grid-cols-5 gap-2 text-center text-[11px] font-medium text-gray-500 dark:text-gray-400">
+            <div className="mt-3 grid grid-cols-5 gap-2 text-center text-[11px] font-medium text-contrast-helper">
               {MEETING_EDGE_CONTEXT_OPTIONS.map((option) => (
                 <span key={option.value}>{option.label}</span>
               ))}
             </div>
 
-            <p className="mt-3 text-xs leading-5 text-gray-600 dark:text-gray-300">
+            <p className="mt-3 text-xs leading-5 text-contrast-helper">
               {selectedOption.description}
             </p>
           </div>

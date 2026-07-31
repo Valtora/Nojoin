@@ -76,20 +76,20 @@ export default function NotesTemplatePicker({
         disabled={disabled}
         title="Generate with a different structure"
         aria-label="Choose notes structure"
-        className="flex items-center px-2 bg-orange-600 text-white text-sm rounded-r-md border-l border-orange-500/60 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center px-2 bg-action text-action-on text-sm rounded-r-md border-l border-action hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         <ChevronDown className="w-4 h-4" />
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-1 w-64 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1">
+        <div className="absolute right-0 z-[var(--z-dropdown)] mt-1 w-64 rounded-md border border-surface-border bg-surface-card shadow-float py-1">
           <p className="px-3 py-1.5 text-[11px] uppercase tracking-wide contrast-helper">
             Generate with structure
           </p>
           <button
             type="button"
             onClick={() => handleSelect(null)}
-            className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-contrast-muted hover:bg-surface-inset"
           >
             <span className="min-w-0">
               <span className="block truncate">{builtinName}</span>
@@ -100,7 +100,7 @@ export default function NotesTemplatePicker({
               )}
             </span>
             {activeTemplateId === null && (
-              <Check className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />
+              <Check className="w-4 h-4 text-action-text shrink-0 mt-0.5" />
             )}
           </button>
           {templates === null ? (
@@ -111,7 +111,7 @@ export default function NotesTemplatePicker({
                 key={template.id}
                 type="button"
                 onClick={() => handleSelect(template.id)}
-                className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="w-full flex items-start justify-between gap-2 px-3 py-2 text-sm text-left text-contrast-muted hover:bg-surface-inset"
               >
                 <span className="min-w-0">
                   <span className="block truncate">{template.name}</span>
@@ -122,7 +122,7 @@ export default function NotesTemplatePicker({
                   )}
                 </span>
                 {activeTemplateId === template.id && (
-                  <Check className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />
+                  <Check className="w-4 h-4 text-action-text shrink-0 mt-0.5" />
                 )}
               </button>
             ))

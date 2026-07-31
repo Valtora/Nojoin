@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start -p 14141",
     "lint": "eslint",
+    "check:contrast": "node scripts/check-contrast.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -82,20 +82,20 @@ export default function AiModelDependenciesSection({
 
   return (
     <SettingsCard
-      title="Model dependencies"
+      title="Model Dependencies"
       description="Inspect and manage local AI model assets on the server."
     >
       <SettingsBlock className="space-y-6">
         {preparationRunning && (
-          <div className="rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-              <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+          <div className="rounded-lg border border-action-border bg-action-tint p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Loader2 className="w-4 h-4 animate-spin text-action-text" />
               Preparing models
               <span className="ml-auto tabular-nums">{progressPercent}%</span>
             </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-orange-100 dark:bg-orange-900/60">
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-action-tint">
               <div
-                className="h-full rounded-full bg-orange-600 transition-all duration-500"
+                className="h-full rounded-full bg-action transition-all duration-500"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -106,15 +106,15 @@ export default function AiModelDependenciesSection({
           </div>
         )}
 
-        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="bg-surface-inset p-4 rounded-lg border border-surface-border">
           <div className="space-y-3">
             {DEPENDENCY_MODELS.map((model) => (
               <div
                 key={model.id}
-                className="flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm"
+                className="flex justify-between items-center p-3 bg-surface-card rounded-lg border border-surface-border shadow-card"
               >
                 <div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                  <div className="text-sm font-medium text-foreground">
                     {model.label}
                   </div>
                   <div className="text-xs contrast-helper">{model.desc}</div>
@@ -137,7 +137,7 @@ export default function AiModelDependenciesSection({
                           !isAdmin ||
                           modelStatus?.[model.id]?.source === "bundled"
                         }
-                        className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md disabled:opacity-50"
+                        className="text-contrast-helper hover:text-status-danger-fg transition-colors p-1.5 hover:bg-surface-inset rounded-md disabled:opacity-50"
                         title={
                           modelStatus?.[model.id]?.source === "bundled"
                             ? "Bundled repo asset"
@@ -160,7 +160,7 @@ export default function AiModelDependenciesSection({
                         <button
                           onClick={() => void startPreparation(model.target)}
                           disabled={!isAdmin || preparationRunning}
-                          className="flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                          className="flex items-center gap-1.5 rounded-md border border-control-border px-2.5 py-1.5 text-xs font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-50"
                           title={
                             preparationRunning
                               ? "A model preparation is already running"
@@ -174,7 +174,7 @@ export default function AiModelDependenciesSection({
                       {modelStatus?.[model.id]?.checked_paths &&
                         modelStatus[model.id].checked_paths.length > 0 && (
                           <span
-                            className="mt-1 max-w-[200px] truncate cursor-help text-[10px] text-gray-500 dark:text-gray-400"
+                            className="mt-1 max-w-[200px] truncate cursor-help text-[10px] text-contrast-helper"
                             title={`Checked paths:\n${modelStatus[model.id].checked_paths.join("\n")}`}
                           >
                             Hover for debug info
@@ -187,7 +187,7 @@ export default function AiModelDependenciesSection({
             ))}
           </div>
 
-          <p className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 text-center text-xs contrast-helper">
+          <p className="mt-6 pt-4 border-t border-surface-border text-center text-xs contrast-helper">
             Required default models are prepared on first run. After that,
             changing the transcription model asks whether to download it now,
             and a missing model can be fetched here at any time. Anything left

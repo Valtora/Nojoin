@@ -87,6 +87,7 @@ pytest
 
 cd frontend
 npm run lint
+npm run check:contrast
 npm run test
 npm run build
 
@@ -148,13 +149,14 @@ The release pipeline is instead self-gating through the workflow's own `needs:` 
 ## Verification By Change Scope
 
 - Backend or worker code: run `pytest`.
-- Frontend code: run `npm run lint`, `npm run test`, and `npm run build`.
+- Frontend code: run `npm run lint`, `npm run check:contrast`, `npm run test`, and `npm run build`.
+- Design token changes in `frontend/src/app/globals.css`: `npm run check:contrast` measures the declared pairings in both themes and fails on any that drops below its threshold. Adding a token that participates in a foreground/background relationship means adding that pairing to `frontend/scripts/check-contrast.mjs`; see [DESIGN.md](DESIGN.md#accessibility) for the thresholds and what they apply to.
 - Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behaviour, selected microphone behaviour, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
 - Documentation-only changes: run `python3 scripts/validate_docs.py`.
 - Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision. Also run `python3 scripts/check_migrations.py` against a throwaway Postgres — `validate_alembic.py` only proves the revision graph resolves, and a migration that is well-formed can still abort on real data.
 - Deployment or release workflow changes: run the backend, frontend, docs, and Alembic validation set together before opening the pull request.
 - Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behaviour changes.
-- Recording context-menu changes: update both `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx`, then run the full frontend lint, test, and build set.
+- Recording action changes: add them to `frontend/src/components/recordings/_hooks/useRecordingActions.ts` rather than to a surface, then run the full frontend lint, test, and build set.
 
 ## Compose Files
 
@@ -475,9 +477,11 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 - **Strict TypeScript**: Avoid the use of `any` types. Ensure TS interfaces in `frontend/src/types/index.ts` are updated first when adding settings or model fields.
 
 ### UI Duplication Rules
-- **Context Menus warning**: When modifying the context menu options for recording cards/rows, you **must** update both of the following files to prevent UI divergence:
-  - [frontend/src/components/RecordingCard.tsx](../frontend/src/components/RecordingCard.tsx) (handles the recording grid view).
-  - [frontend/src/components/Sidebar.tsx](../frontend/src/components/Sidebar.tsx) (handles the sidebar recording list view).
+- **Recording actions**: rename, reprocess, archive, discard and the rest are defined once, in
+  [frontend/src/components/recordings/_hooks/useRecordingActions.ts](../frontend/src/components/recordings/_hooks/useRecordingActions.ts). Surfaces consume that hook rather than defining their own, and
+  `sharedRecordingActions.test.ts` fails if one stops doing so. The surfaces today are
+  [Sidebar.tsx](../frontend/src/components/Sidebar.tsx) (the recordings rail) and
+  [RecordingStatusDisplay.tsx](../frontend/src/components/RecordingStatusDisplay.tsx) (the live view).
 
 ## Release Workflow and Version Detection
 

@@ -81,26 +81,22 @@ export default function DashboardTasksPanel() {
   );
 
   return (
-    <div className="density-surface border border-orange-100 bg-white shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
-      <div className="space-y-2">
-        <div className="mt-2 flex items-start gap-3">
-          <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
-            <Check className="h-5 w-5" />
-          </div>
-          <h2 className="density-heading-section text-2xl font-semibold text-gray-950 dark:text-white">
-            Task List
-          </h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
-            {openTasks.length} open
+    <div className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
+      {/* One row: glyph, title, counts. This was an icon chip, a text-2xl
+          heading and a separate pill row stacked vertically, which spent about
+          140px before the first task. The counts belong beside the title
+          rather than under it, because they qualify it. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Check className="h-5 w-5 shrink-0 text-action-text" />
+        <h2 className="text-base font-semibold text-foreground">Task List</h2>
+        <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-2.5 py-0.5 text-xs font-semibold text-action-text">
+          {openTasks.length} open
+        </span>
+        {completedTasks.length > 0 && (
+          <span className="inline-flex items-center gap-2 rounded-full border border-control-border px-2.5 py-0.5 text-xs font-semibold text-contrast-muted">
+            {completedTasks.length} completed
           </span>
-          {completedTasks.length > 0 && (
-            <span className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-white/5 dark:text-gray-200">
-              {completedTasks.length} completed
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
       {isComposerOpen ? (
@@ -113,26 +109,30 @@ export default function DashboardTasksPanel() {
             onKeyDown={handleComposerKeyDown}
             placeholder="Add a task and press Enter"
             disabled={submitting}
-            className="h-12 w-full border-0 border-b border-orange-200 bg-transparent px-1 pr-10 text-base text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-orange-500 dark:border-orange-500/20 dark:text-gray-100 dark:placeholder:text-gray-500"
+            className="h-12 w-full border-0 border-b border-action-border bg-transparent px-1 pr-10 text-base text-foreground outline-none transition-colors placeholder:text-contrast-icon-muted focus:border-action"
           />
 
           {submitting && (
-            <Loader2 className="pointer-events-none absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-orange-600 dark:text-orange-300" />
+            <Loader2 className="pointer-events-none absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-action-text" />
           )}
         </form>
       ) : (
         <button
           type="button"
           onClick={() => void handleOpenComposer()}
-          className="mt-6 w-full border-0 border-b border-gray-300 px-1 py-3 text-left text-sm text-gray-700 transition-colors hover:border-orange-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-200 dark:hover:border-orange-500/40 dark:hover:text-white"
+          className="mt-6 w-full border-0 border-b border-control-border px-1 py-3 text-left text-sm text-contrast-muted transition-colors hover:border-action-border hover:text-foreground"
         >
           Add a task...
         </button>
       )}
 
-      <div className="mt-6 space-y-6">
+      {/* The list is what gives when the column is taller than this card's
+          content: it takes the slack, and scrolls inside itself once there is
+          more of it than the column has room for. Everything above it keeps
+          its natural height, so the header and composer never scroll away. */}
+      <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
         {loading ? (
-          <div className="density-surface-panel flex items-center gap-3 border border-gray-200 bg-white/90 px-4 py-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
+          <div className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your tasks...
           </div>
@@ -148,11 +148,11 @@ export default function DashboardTasksPanel() {
               <div
                 className={`space-y-3 ${
                   openTasks.length > 0
-                    ? "border-t border-gray-200 pt-6 dark:border-gray-700"
+                    ? "border-t border-surface-border pt-6"
                     : ""
                 }`}
               >
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-600 dark:text-gray-300">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-contrast-helper">
                   Completed
                 </div>
 

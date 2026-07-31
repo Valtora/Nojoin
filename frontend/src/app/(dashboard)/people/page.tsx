@@ -277,7 +277,7 @@ export default function PeoplePage() {
   };
 
   return (
-    <div className="flex h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    <div className="flex h-full bg-surface-inset overflow-hidden">
       {/* Sidebar */}
       <PeopleTagSidebar
         selectedTagIds={selectedTagIds}
@@ -289,34 +289,37 @@ export default function PeoplePage() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">
+          {/* The people table is a dense surface: extra width shows more of it
+              rather than lengthening a line of prose. This was a hard-coded
+              max-w-7xl, which also opted the page out of the density setting. */}
+          <div className="mx-auto w-full max-w-[var(--workspace-max-width-dense)] space-y-6">
             {/* Header Action */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-3">
-                  <Users className="w-8 h-8 text-orange-500" />
+                <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+                  <Users className="w-8 h-8 text-action-text" />
                   People Library
                 </h1>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-sm text-contrast-helper">
                   Manage your contacts, speakers, and their associated details.
                 </p>
               </div>
               <div className="flex items-center gap-2 self-stretch sm:self-auto">
                 <button
                   onClick={() => setIsTagDrawerOpen(true)}
-                  className="lg:hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-orange-300 transition-colors shadow-sm font-medium"
+                  className="lg:hidden flex items-center gap-2 px-3 py-2 bg-surface-card text-contrast-muted border border-surface-border rounded-lg hover:border-action-border transition-colors shadow-card font-medium"
                 >
                   <TagIcon className="w-5 h-5" />
                   Tags
                   {selectedTagIds.length > 0 && (
-                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-white bg-orange-600 rounded-full">
+                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-action-on bg-action rounded-full">
                       {selectedTagIds.length}
                     </span>
                   )}
                 </button>
                 <button
                   onClick={handleAddNew}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm font-medium"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-card font-medium"
                 >
                   <Plus className="w-5 h-5" />
                   Add Person
@@ -329,26 +332,26 @@ export default function PeoplePage() {
 
             {/* Batch Action Toolbar */}
             {selectedIds.size > 0 && (
-              <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+              <div className="mb-4 p-3 bg-action-tint border border-action-border rounded-lg flex items-center justify-between animate-in fade-in slide-in-from-top-2">
                 <div className="flex items-center gap-3">
-                  <div className="bg-orange-100 dark:bg-orange-900/50 p-1.5 rounded-md">
-                    <CheckSquare className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  <div className="bg-action-tint p-1.5 rounded-md">
+                    <CheckSquare className="w-5 h-5 text-action-text" />
                   </div>
-                  <span className="font-medium text-orange-900 dark:text-orange-100">
+                  <span className="font-medium text-action-text">
                     {selectedIds.size} people selected
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSelectedIds(new Set())}
-                    className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-800 rounded-md transition-colors"
+                    className="px-3 py-1.5 text-sm text-contrast-helper hover:text-foreground hover:bg-surface-card rounded-md transition-colors"
                   >
                     Clear Selection
                   </button>
-                  <div className="h-6 w-px bg-orange-200 dark:bg-orange-800 mx-1"></div>
+                  <div className="h-6 w-px bg-action-tint mx-1"></div>
                   <button
                     onClick={() => setIsBatchEditOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:border-orange-300 rounded-md shadow-sm transition-all"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-surface-card text-contrast-muted border border-surface-border hover:border-action-border rounded-md shadow-card transition-all"
                   >
                     <Edit2 className="w-4 h-4" />
                     Edit
@@ -356,7 +359,7 @@ export default function PeoplePage() {
                   <button
                     onClick={handleBatchDelete}
                     disabled={isBatchDeleting}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-red-600 text-white hover:bg-red-700 rounded-md shadow-sm transition-colors"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-status-danger-bg text-foreground hover:bg-status-danger-bg rounded-md shadow-card transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete

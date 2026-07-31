@@ -37,7 +37,7 @@ export default function GlossarySection({
       <SettingsBlock className="space-y-6">
         {isAdmin && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-contrast-muted mb-2">
               Install glossary
             </label>
             <textarea
@@ -51,7 +51,7 @@ export default function GlossarySection({
               rows={6}
               spellCheck={false}
               placeholder={PLACEHOLDER}
-              className="w-full p-3 font-mono text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+              className="w-full p-3 font-mono text-xs rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
             />
             <p className="mt-2 text-xs contrast-helper">
               Shared by everyone on this installation. One term per line, as
@@ -61,7 +61,7 @@ export default function GlossarySection({
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-contrast-muted mb-2">
             My glossary
           </label>
           <textarea
@@ -72,7 +72,7 @@ export default function GlossarySection({
             rows={6}
             spellCheck={false}
             placeholder={PLACEHOLDER}
-            className="w-full p-3 font-mono text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+            className="w-full p-3 font-mono text-xs rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
           />
           <p className="mt-2 text-xs contrast-helper">
             Added to the install glossary rather than replacing it. If both define

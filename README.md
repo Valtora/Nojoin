@@ -12,11 +12,11 @@
     </p>
 </div>
 
-<img width="1638" height="1237" alt="dark" src="https://github.com/user-attachments/assets/b7fd2d7a-a67a-4394-bcb3-fd63afb928dc" />
+<img width="2560" height="1440" alt="dark" src="https://github.com/user-attachments/assets/cf1ad2db-f806-4fbb-9a57-acbcfe4e00a9" />
 
 ---
 
-<img width="1638" height="1237" alt="light" src="https://github.com/user-attachments/assets/ffdd8c20-5a0f-4f30-8cb7-57291883498e" />
+<img width="2560" height="1440" alt="light" src="https://github.com/user-attachments/assets/760392cd-4409-48e6-88e1-a14bc4bff880" />
 
 ---
 
@@ -110,7 +110,6 @@ Notes:
 - [Security Policy](docs/SECURITY.md)
 - [Anonymous Usage Data](docs/TELEMETRY.md)
 - [Legal Disclaimer](docs/LEGAL.md)
-- [Screenshots](docs/SCREENSHOTS.md)
 
 ## Project Status
 

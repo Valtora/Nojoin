@@ -42,7 +42,7 @@ Tick the checks you ran for the areas you touched (see `CONTRIBUTING.md`).
 
 ## Manual verification
 
-Describe what you tested manually. Capture-related changes require browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour. Recording context-menu changes must keep `RecordingCard.tsx` and `Sidebar.tsx` in sync.
+Describe what you tested manually. Capture-related changes require browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour. Recording action changes must go through the shared `useRecordingActions` hook.
 
 ## Screenshots (if relevant)
 

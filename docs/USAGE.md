@@ -31,16 +31,27 @@ The root route is the operational home surface for Nojoin.
 It brings together:
 
 - **Meet Now** card for live browser capture.
-- **Calendar context** through month and agenda views, including recorded meeting history.
+- **Calendar** month grid, showing which days carry events or recorded meetings.
+- **Agenda**, showing what is happening on the selected day or across the viewed month.
 - **Task List** for quick personal follow-up capture.
+- **Processing**, listing whatever the pipeline is still working on. It appears only while
+  something is in flight.
+- **Recent Meetings**, the latest ones with a click through to the detail view. It fills the height
+  of its column and scrolls, and appears only once you have recordings.
+
+The first four always render. The last two appear when they have something to report, so a new
+account sees a dashboard rather than a page of empty boxes. The dashboard adds a second and then a
+third column as space allows, measured against the workspace itself, so collapsing the navigation
+rail can gain you a column at the same window size.
 
 On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout.
 
 ### Calendar Surface
 
-- Switch between month and agenda views.
+- The month grid and the agenda are separate modules and are both visible at once; there is no view toggle.
+- The agenda opens on today. Selecting a day in the month grid scopes the agenda to that day, and **Whole month** in the agenda header returns it to the full month.
 - Use **Today** to jump back to the current date context.
-- In month view, selecting a day opens a day agenda, and selecting today shows a live now marker against timed events.
+- A day agenda for today shows a live now marker against timed events.
 - Unlinked Nojoin recordings appear on the dashboard calendar as orange meeting items, while Google or Microsoft calendar sources keep their own colours.
 - Recorded meeting cards surface tags, speakers, and timestamps directly inside the selected-day agenda.
 - The agenda view is month-scoped and includes both synced calendar events and unlinked Nojoin meeting history for the viewed month.
@@ -104,6 +115,10 @@ If you close the browser share picker with **Cancel**, Nojoin silently returns t
 Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is useful for microphone or in-room speakerphone capture only.
 
 While recording, Nojoin shows recording state, duration, upload state, a live waveform, a live transcript panel, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
+
+The recording workspace lays these out so that on a wide display everything is visible at once rather than down a long scroll. The capture controls sit in a toolbar across the top, carrying the meeting's working name, the transport, **Upload** for attaching a document, and the speaker limit. Below it are two columns: the live transcript with your notes under it on the left, and Meeting Edge on the right. It collapses to a single stack on smaller screens. When you press **Stop**, the transcript becomes pipeline progress and the rest of the layout stays where it is.
+
+Documents you attach are listed under your notes. The panel appears only once something is attached, since uploading is done from the toolbar.
 
 On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu button on the main dashboard surfaces. The active recording workspace and processed recording detail view both provide a native back control so you can return to the recordings list without relying on the browser's history buttons. Mobile Meeting Chat also includes its own back action to return to the meeting workspace.
 

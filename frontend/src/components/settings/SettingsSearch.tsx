@@ -131,14 +131,14 @@ export default function SettingsSearch({
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-500 focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-400"
+        className="w-full rounded-lg border border-control-border bg-surface-card py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-contrast-helper focus:border-transparent focus:ring-2 focus:ring-action"
       />
 
       {showResults && (
         <div
           id="settings-search-results"
           role="listbox"
-          className="settings-card absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto p-1"
+          className="settings-card absolute left-0 right-0 top-full z-[var(--z-dropdown)] mt-2 max-h-80 overflow-y-auto p-1"
         >
           {results.length === 0 ? (
             <p className="px-3 py-4 text-sm contrast-helper">
@@ -159,11 +159,11 @@ export default function SettingsSearch({
                   className={cn(
                     "block w-full rounded-lg px-3 py-2 text-left transition-colors",
                     index === activeIndex
-                      ? "bg-orange-50 dark:bg-orange-500/10"
-                      : "hover:bg-gray-50 dark:hover:bg-gray-900/60",
+                      ? "bg-action-tint"
+                      : "hover:bg-surface-inset",
                   )}
                 >
-                  <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">
+                  <span className="block truncate text-sm font-medium text-foreground">
                     {result.entry.label}
                   </span>
                   <span className="mt-0.5 block truncate text-xs contrast-helper">

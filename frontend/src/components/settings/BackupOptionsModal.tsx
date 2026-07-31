@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { X, Download, AlertTriangle, FileAudio } from "lucide-react";
-import { createPortal } from "react-dom";
+import { Download, AlertTriangle, FileAudio } from "lucide-react";
 import { exportBackupAsync, type ArchiveQuality } from "@/lib/api";
 import { useBackupStore } from "@/lib/backupStore";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { Switch } from "@/components/ui/Switch";
+
+import Button from "../ui/Button";
+import Modal from "../ui/Modal";
 
 interface BackupOptionsModalProps {
   isOpen: boolean;
@@ -20,8 +23,6 @@ export default function BackupOptionsModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const { setTaskId } = useBackupStore();
   const { addNotification } = useNotificationStore();
-
-  if (!isOpen) return null;
 
   const handleExport = async () => {
     try {
@@ -52,177 +53,143 @@ export default function BackupOptionsModal({
     }
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div
-        className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto border border-gray-300 dark:border-gray-800 p-6 relative animate-in fade-in zoom-in-95 duration-200"
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+  const qualityClass = (selected: boolean) =>
+    `flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+      selected
+        ? "border-action bg-action-tint"
+        : "border-surface-border hover:bg-surface-inset"
+    }`;
 
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-            <Download className="w-6 h-6 text-orange-600 dark:text-orange-400" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-              Create Backup
-            </h2>
-            <p className="text-sm contrast-helper">
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      title={
+        <span className="flex items-center gap-3">
+          <span className="rounded-lg bg-action-tint p-3">
+            <Download aria-hidden="true" className="h-6 w-6 text-action-tint-fg" />
+          </span>
+          <span>
+            <span className="block text-xl">Create Backup</span>
+            <span className="block text-sm font-normal text-contrast-helper">
               Export your data and recordings
+            </span>
+          </span>
+        </span>
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleExport}
+            loading={isProcessing}
+            iconLeft={<Download aria-hidden="true" className="h-4 w-4" />}
+          >
+            {isProcessing ? "Starting..." : "Create Backup"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-6">
+        <div className="flex items-start gap-4 rounded-lg border border-surface-border bg-surface-inset p-4">
+          <div className="mt-1">
+            <FileAudio aria-hidden="true" className="h-5 w-5 text-contrast-icon-muted" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="include-audio"
+                className="cursor-pointer font-medium text-foreground"
+              >
+                Include Audio Files
+              </label>
+              {/* Was a hand-rolled peer-checked toggle with its own palette
+                  classes; the Switch primitive is the same control tokenised. */}
+              <Switch
+                id="include-audio"
+                checked={includeAudio}
+                onCheckedChange={setIncludeAudio}
+              />
+            </div>
+            <p className="text-sm text-contrast-helper">
+              Include original audio recordings in the backup archive.
             </p>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-800">
-            <div className="mt-1">
-              <FileAudio className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between">
-                <label
-                  htmlFor="include-audio"
-                  className="font-medium text-gray-900 dark:text-gray-200 cursor-pointer"
-                >
-                  Include Audio Files
-                </label>
-                <div
-                  className="relative inline-flex items-center cursor-pointer"
-                  onClick={() => setIncludeAudio(!includeAudio)}
-                >
-                  <input
-                    type="checkbox"
-                    id="include-audio"
-                    className="sr-only peer"
-                    checked={includeAudio}
-                    onChange={(e) => setIncludeAudio(e.target.checked)}
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
+        {includeAudio && (
+          <div className="rounded-lg border border-surface-border p-4">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">
+              Audio Quality
+            </h3>
+            <div className="space-y-3">
+              <label className={qualityClass(archiveQuality === "compressed")}>
+                <input
+                  type="radio"
+                  name="archive_quality"
+                  className="mt-1 accent-action"
+                  checked={archiveQuality === "compressed"}
+                  onChange={() => setArchiveQuality("compressed")}
+                />
+                <div>
+                  <span className="block text-sm font-medium text-foreground">
+                    Compressed
+                  </span>
+                  <span className="mt-1 block text-xs text-contrast-helper">
+                    Re-encodes audio to Opus for a much smaller archive. Ideal
+                    for routine backups you only need to listen to.
+                  </span>
                 </div>
-              </div>
-              <p className="text-sm contrast-helper">
-                Include original audio recordings in the backup archive.
-              </p>
+              </label>
+
+              <label className={qualityClass(archiveQuality === "original")}>
+                <input
+                  type="radio"
+                  name="archive_quality"
+                  className="mt-1 accent-action"
+                  checked={archiveQuality === "original"}
+                  onChange={() => setArchiveQuality("original")}
+                />
+                <div>
+                  <span className="block text-sm font-medium text-foreground">
+                    Original
+                  </span>
+                  <span className="mt-1 block text-xs text-contrast-helper">
+                    Stores audio exactly as recorded. A much larger archive,
+                    but restored meetings can be reprocessed without any
+                    quality loss.
+                  </span>
+                </div>
+              </label>
             </div>
           </div>
+        )}
 
-          {includeAudio && (
-            <div className="rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                Audio Quality
-              </h3>
-              <div className="space-y-3">
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    archiveQuality === "compressed"
-                      ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
-                      : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="archive_quality"
-                    className="mt-1"
-                    checked={archiveQuality === "compressed"}
-                    onChange={() => setArchiveQuality("compressed")}
-                  />
-                  <div>
-                    <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
-                      Compressed
-                    </span>
-                    <span className="block mt-1 text-xs contrast-helper">
-                      Re-encodes audio to Opus for a much smaller archive. Ideal
-                      for routine backups you only need to listen to.
-                    </span>
-                  </div>
-                </label>
-
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    archiveQuality === "original"
-                      ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
-                      : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="archive_quality"
-                    className="mt-1"
-                    checked={archiveQuality === "original"}
-                    onChange={() => setArchiveQuality("original")}
-                  />
-                  <div>
-                    <span className="block text-sm font-medium text-gray-900 dark:text-gray-100">
-                      Original
-                    </span>
-                    <span className="block mt-1 text-xs contrast-helper">
-                      Stores audio exactly as recorded. A much larger archive,
-                      but restored meetings can be reprocessed without any
-                      quality loss.
-                    </span>
-                  </div>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {!includeAudio && (
-            <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded-lg text-sm">
-              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-              <p>
-                Excluding audio files will create a much smaller backup, but
-                restored meetings will <strong>not be playable</strong>.
-                Metadata, transcripts, and notes will still be preserved.
-              </p>
-            </div>
-          )}
-
-          <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded-lg text-sm">
-            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+        {!includeAudio && (
+          <div className="flex items-start gap-3 rounded-lg bg-status-warning-bg p-4 text-sm text-status-warning-fg">
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
-              Backup archives include restorable calendar OAuth credentials and
-              connection tokens so dashboard calendar data can be recovered.
-              AI and Hugging Face keys remain redacted. Store the archive like a
-              secrets file.
+              Excluding audio files will create a much smaller backup, but
+              restored meetings will <strong>not be playable</strong>.
+              Metadata, transcripts, and notes will still be preserved.
             </p>
           </div>
+        )}
 
-          <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-800">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleExport}
-              disabled={isProcessing}
-              className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isProcessing ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Create Backup
-                </>
-              )}
-            </button>
-          </div>
+        <div className="flex items-start gap-3 rounded-lg bg-status-warning-bg p-4 text-sm text-status-warning-fg">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
+          <p>
+            Backup archives include restorable calendar OAuth credentials and
+            connection tokens so dashboard calendar data can be recovered.
+            AI and Hugging Face keys remain redacted. Store the archive like a
+            secrets file.
+          </p>
         </div>
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

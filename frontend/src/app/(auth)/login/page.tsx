@@ -78,8 +78,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 p-10 bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700">
+    <div className="min-h-dvh flex items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -89,7 +89,7 @@ export default function LoginPage() {
               height={68}
               className="object-contain"
             />
-            <h2 className="text-3xl font-bold text-orange-600">Nojoin</h2>
+            <h2 className="text-3xl font-bold text-action-text">Nojoin</h2>
           </div>
         </div>
         <form
@@ -106,7 +106,7 @@ export default function LoginPage() {
                 Username
               </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                <User className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <input
                 id="login-username"
@@ -119,7 +119,7 @@ export default function LoginPage() {
                 aria-describedby={error ? "login-error" : undefined}
                 aria-invalid={Boolean(error)}
                 required
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -130,7 +130,7 @@ export default function LoginPage() {
                 Password
               </label>
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+                <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
               <input
                 id="login-current-password"
@@ -140,7 +140,7 @@ export default function LoginPage() {
                 aria-describedby={error ? "login-error" : undefined}
                 aria-invalid={Boolean(error)}
                 required
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-700 rounded-lg placeholder-gray-400 text-gray-900 dark:text-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent sm:text-sm transition-colors"
+                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -153,7 +153,7 @@ export default function LoginPage() {
               id="login-error"
               role="alert"
               aria-live="polite"
-              className="text-red-700 dark:text-red-300 text-sm text-center bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-900/40"
+              className="text-status-danger-fg text-sm text-center bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
             >
               {error}
             </div>
@@ -163,7 +163,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md"
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? "Signing in..." : "Sign in"}
             </button>

@@ -140,13 +140,13 @@ export default function SpeakerPanel({
   return (
     <aside
       id="speaker-panel"
-      className="shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full overflow-y-auto"
+      className="shrink-0 border-l border-surface-border bg-surface-inset h-full overflow-y-auto"
     >
       {/* Header with batch voiceprint action */}
 
       <div className="p-2 space-y-2 mt-2">
         {speakerEntries.length === 0 ? (
-          <div className="p-4 text-sm text-gray-500 dark:text-gray-400 text-center italic">
+          <div className="p-4 text-sm text-contrast-helper text-center italic">
             No speakers detected.
           </div>
         ) : (
@@ -164,13 +164,13 @@ export default function SpeakerPanel({
               return (
                 <div
                   key={entry.key}
-                  className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800"
+                  className="p-3 rounded-lg bg-action-tint border border-action-border"
                 >
-                  <p className="text-xs font-semibold text-orange-800 dark:text-orange-200 mb-2">
+                  <p className="text-xs font-semibold text-action-text mb-2">
                     Merge {entry.displayName} into:
                   </p>
                   <select
-                    className="w-full text-sm p-1 mb-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                    className="w-full text-sm p-1 mb-2 rounded border border-control-border bg-surface-card"
                     value={mergeTargetLabel}
                     onChange={(e) => setMergeTargetLabel(e.target.value)}
                   >
@@ -188,13 +188,13 @@ export default function SpeakerPanel({
                     <button
                       onClick={handleMergeSubmit}
                       disabled={!mergeTargetLabel}
-                      className="flex-1 px-2 py-1 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 disabled:opacity-50"
+                      className="flex-1 px-2 py-1 bg-action text-action-on text-xs rounded hover:bg-action-hover disabled:opacity-50"
                     >
                       Confirm
                     </button>
                     <button
                       onClick={() => setMergingSpeaker(null)}
-                      className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                      className="px-2 py-1 bg-surface-inset text-contrast-muted text-xs rounded hover:bg-surface-card"
                     >
                       Cancel
                     </button>
@@ -218,18 +218,18 @@ export default function SpeakerPanel({
             return (
               <div
                 key={entry.key}
-                className="relative group p-3 rounded-lg bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-700 transition-colors shadow-sm"
+                className="relative group p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-card"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative shrink-0">
                       <div className="relative">
-                        <div className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
+                        <div className="w-8 h-8 rounded-full border border-control-border flex items-center justify-center bg-surface-inset">
                           {entry.hasVoiceprint ? (
-                            <UserCheck className="w-4 h-4 opacity-70 text-blue-600 dark:text-blue-400" />
+                            <UserCheck className="w-4 h-4 opacity-70 text-status-info-fg" />
                           ) : (
-                            <User className="w-4 h-4 opacity-50 text-gray-500 dark:text-gray-400" />
+                            <User className="w-4 h-4 opacity-50 text-contrast-helper" />
                           )}
                         </div>
                         <div className="absolute -bottom-1 -right-1">
@@ -245,8 +245,8 @@ export default function SpeakerPanel({
                       </div>
                       {/* Extracting indicator */}
                       {extractingVoiceprint === speaker.diarization_label && (
-                        <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
-                          <Loader2 className="w-2 h-2 text-white animate-spin" />
+                        <div className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 bg-status-info-bg rounded-full flex items-center justify-center border-2 border-surface-border">
+                          <Loader2 className="w-2 h-2 text-foreground animate-spin" />
                         </div>
                       )}
                     </div>
@@ -262,19 +262,19 @@ export default function SpeakerPanel({
                             if (e.key === "Enter") handleRenameSubmit();
                             if (e.key === "Escape") setRenamingSpeaker(null);
                           }}
-                          className="w-full text-sm font-medium bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none"
+                          className="w-full text-sm font-medium bg-surface-card border border-status-info-border rounded px-1 focus:outline-none"
                         />
                       ) : (
                         <>
                           <p
-                            className="text-sm font-medium text-gray-900 dark:text-white truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
+                            className="text-sm font-medium text-foreground truncate cursor-pointer hover:text-status-info-fg"
                             title="Double-click to rename"
                             onDoubleClick={() => handleRenameStart(entry)}
                           >
                             {entry.displayName}
                           </p>
                           {entry.members.length > 1 && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            <p className="text-xs text-contrast-helper truncate">
                               {entry.members.length} linked labels
                             </p>
                           )}
@@ -286,8 +286,8 @@ export default function SpeakerPanel({
                   <button
                     className={`p-1.5 rounded-full transition-colors ${
                       isSpeakerActive && isPlaying
-                        ? "text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30"
-                        : "text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                        ? "text-status-info-fg bg-status-info-bg"
+                        : "text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg"
                     }`}
                     title={
                       isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"
@@ -304,7 +304,7 @@ export default function SpeakerPanel({
                   </button>
                   {isSpeakerActive && isPlaying && (
                     <button
-                      className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full transition-colors"
+                      className="p-1.5 text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg rounded-full transition-colors"
                       title="Next Snippet"
                       onClick={() => handleNextSnippet(entry.labels)}
                     >
@@ -361,7 +361,7 @@ export default function SpeakerPanel({
               label: "Delete",
               onClick: () => handleDeleteClick(contextMenu.speaker),
               className:
-                "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
+                "text-status-danger-fg hover:bg-status-danger-bg",
             },
           ]}
         />

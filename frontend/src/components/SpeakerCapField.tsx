@@ -128,16 +128,19 @@ export default function SpeakerCapField({
   const canIncrement = !disabled && steppedSpeakerCap(value, 1) !== undefined;
 
   const stepButtonClass =
-    "flex shrink-0 items-center justify-center px-2.5 text-gray-500 transition-colors hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:text-orange-300";
+    "flex shrink-0 items-center justify-center px-2.5 text-contrast-helper transition-colors hover:text-action-text disabled:cursor-not-allowed disabled:opacity-40";
 
   const stepper = (
     <div
-      className={`flex items-stretch overflow-hidden rounded-xl border bg-white transition-colors focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-400 dark:bg-gray-950/60 ${
+      className={`flex items-stretch overflow-hidden rounded-xl border bg-control-bg transition-colors focus-within:border-action focus-within:ring-1 focus-within:ring-focus-ring ${
         compact ? "h-8" : "h-9"
-      } ${inline ? "w-[9.5rem]" : "w-full"} ${
+        // Wide enough for the "Auto-detect" placeholder plus both step buttons.
+        // At 9.5rem the two buttons and the input's padding left about 104px for
+        // a label that needs more, so the final letter was clipped.
+      } ${inline ? "w-[11.5rem]" : "w-full"} ${
         invalid
-          ? "border-red-400 dark:border-red-500/50"
-          : "border-gray-300 dark:border-gray-700"
+          ? "border-status-danger-border"
+          : "border-control-border"
       } ${disabled ? "opacity-50" : ""}`}
     >
       <button
@@ -184,7 +187,7 @@ export default function SpeakerCapField({
         }}
         // The native spinner is unstyleable and looks foreign in both themes;
         // the flanking buttons replace it. Arrow keys still step the value.
-        className="w-full min-w-0 border-0 bg-transparent px-1 text-center text-sm text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed dark:text-gray-100 dark:placeholder:text-gray-500 [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none"
+        className="w-full min-w-0 border-0 bg-transparent px-1 text-center text-sm text-foreground outline-none placeholder:text-contrast-icon-muted disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none"
       />
       <button
         type="button"
@@ -201,29 +204,34 @@ export default function SpeakerCapField({
 
   if (inline) {
     return (
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <label
           htmlFor={inputId}
-          className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400"
+          className="flex items-center gap-1.5 text-xs font-medium text-contrast-helper"
         >
           <Users className="h-3.5 w-3.5" aria-hidden="true" />
-          Maximum speakers
+          Max Speakers
         </label>
         {stepper}
-        <span
-          className="text-gray-400 dark:text-gray-500"
-          title={hintText}
-          aria-hidden="true"
-        >
-          <Info className="h-3.5 w-3.5" />
-        </span>
+        {/* The rail's copy of this control drops the hint icon. It wrapped onto
+            a line of its own there, so a tooltip nobody hovers cost a whole row
+            above the recordings list. The workspace toolbar keeps it. */}
+        {compact ? null : (
+          <span
+            className="text-contrast-icon-muted"
+            title={hintText}
+            aria-hidden="true"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        )}
         {/* Present for screen readers and for the invalid case, where a tooltip
             alone would leave a rejected entry unexplained. */}
         <p
           id={hintId}
           className={
             invalid
-              ? "w-full text-right text-[11px] leading-snug text-red-600 dark:text-red-400"
+              ? "w-full text-right text-[11px] leading-snug text-status-danger-fg"
               : "sr-only"
           }
         >
@@ -237,18 +245,18 @@ export default function SpeakerCapField({
     <div className={compact ? "space-y-1" : "space-y-1.5"}>
       <label
         htmlFor={inputId}
-        className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400"
+        className="flex items-center gap-1.5 text-xs font-medium text-contrast-helper"
       >
         <Users className="h-3.5 w-3.5" aria-hidden="true" />
-        Maximum speakers
-        <span className="font-normal text-gray-500 dark:text-gray-500">
+        Max Speakers
+        <span className="font-normal text-contrast-helper">
           (optional)
         </span>
       </label>
       {stepper}
       <p
         id={hintId}
-        className="text-[11px] leading-snug text-gray-500 dark:text-gray-500"
+        className="text-[11px] leading-snug text-contrast-helper"
       >
         {hintText}
       </p>

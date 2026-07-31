@@ -35,23 +35,23 @@ export default function MonthCalendar({
   });
 
   return (
-    <div className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2">
+    <div className="rounded-lg border border-control-border bg-surface-card p-2">
       <div className="flex items-center justify-between mb-2">
         <button
           type="button"
           onClick={() => onMonthChange(startOfMonth(addMonths(month, -1)))}
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+          className="p-1 rounded hover:bg-surface-inset text-contrast-helper"
           aria-label="Previous month"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+        <span className="text-xs font-medium text-contrast-muted">
           {format(month, "MMMM yyyy")}
         </span>
         <button
           type="button"
           onClick={() => onMonthChange(startOfMonth(addMonths(month, 1)))}
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+          className="p-1 rounded hover:bg-surface-inset text-contrast-helper"
           aria-label="Next month"
         >
           <ChevronRight className="h-4 w-4" />
@@ -62,7 +62,7 @@ export default function MonthCalendar({
         {WEEKDAY_LABELS.map((label) => (
           <div
             key={label}
-            className="text-center text-[10px] font-medium text-gray-400 dark:text-gray-500 py-0.5"
+            className="text-center text-[10px] font-medium text-contrast-icon-muted py-0.5"
           >
             {label}
           </div>
@@ -81,17 +81,17 @@ export default function MonthCalendar({
               onClick={() => onSelectDay(dayKey)}
               className={`relative aspect-square flex items-center justify-center rounded text-xs transition-colors ${
                 isSelected
-                  ? "bg-orange-500 text-white font-semibold"
+                  ? "bg-action text-action-on font-semibold"
                   : inMonth
-                    ? "text-gray-700 dark:text-gray-200 hover:bg-orange-100 dark:hover:bg-orange-900/30"
-                    : "text-gray-300 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    ? "text-contrast-muted hover:bg-action-tint"
+                    : "text-contrast-icon-muted hover:bg-surface-inset"
               }`}
             >
               {format(day, "d")}
               {isMarked && (
                 <span
                   className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full ${
-                    isSelected ? "bg-white" : "bg-orange-500"
+                    isSelected ? "bg-surface-card" : "bg-action"
                   }`}
                 />
               )}

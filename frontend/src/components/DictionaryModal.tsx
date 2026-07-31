@@ -1,9 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { createPortal } from "react-dom";
-import { X, Search, Plus, Pencil, Trash2, BookOpen } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, BookOpen } from "lucide-react";
 import { spellCheckService } from "@/lib/spellCheckService";
+
+import Button from "./ui/Button";
+import IconButton from "./ui/IconButton";
+import Input from "./ui/Input";
+import Modal from "./ui/Modal";
 
 interface DictionaryModalProps {
   isOpen: boolean;
@@ -87,165 +91,149 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
     setWords([]);
   };
 
-  if (!isOpen || !mounted) return null;
+  if (!mounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg flex flex-col border border-gray-300 dark:border-gray-800 max-h-[calc(100dvh-2rem)]">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-orange-500" />
-            Custom Dictionary
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Search and Add */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 space-y-3 shrink-0">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search words..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-            />
-          </div>
-
-          {isAdding ? (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newWord}
-                onChange={(e) => setNewWord(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAdd();
-                  if (e.key === "Escape") { setIsAdding(false); setNewWord(""); }
-                }}
-                placeholder="Enter new word..."
-                autoFocus
-                className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-              />
-              <button
-                onClick={handleAdd}
-                disabled={!newWord.trim()}
-                className="px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => { setIsAdding(false); setNewWord(""); }}
-                className="px-3 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsAdding(true)}
-              className="flex items-center gap-2 text-sm text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Word
-            </button>
-          )}
-        </div>
-
-        {/* Word List */}
-        <div className="flex-1 overflow-y-auto min-h-0">
-          {filteredWords.length === 0 ? (
-            <div className="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-              {words.length === 0
-                ? "Your custom dictionary is empty. Words added via the spell check context menu will appear here."
-                : "No words match your search."}
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-              {filteredWords.map((word) => (
-                <li key={word} className="group">
-                  {editingWord === word ? (
-                    <div className="flex items-center gap-2 px-4 py-2">
-                      <input
-                        type="text"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleEditSave();
-                          if (e.key === "Escape") setEditingWord(null);
-                        }}
-                        autoFocus
-                        className="flex-1 px-2 py-1 rounded border border-orange-400 dark:border-orange-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      />
-                      <button
-                        onClick={handleEditSave}
-                        className="text-sm text-orange-600 hover:text-orange-700 font-medium"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingWord(null)}
-                        className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                      <span className="text-sm text-gray-900 dark:text-white">{word}</span>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => handleEditStart(word)}
-                          className="p-1.5 text-gray-400 hover:text-orange-500 rounded transition-colors"
-                          title="Edit"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(word)}
-                          className="p-1.5 text-gray-400 hover:text-red-500 rounded transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-800 flex justify-between items-center shrink-0">
-          <span className="text-xs text-gray-500">
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      className="max-h-[calc(100dvh-2rem)]"
+      title={
+        <span className="flex items-center gap-2">
+          <BookOpen aria-hidden="true" className="w-5 h-5 text-action-text" />
+          Custom Dictionary
+        </span>
+      }
+      footer={
+        <div className="flex w-full items-center justify-between">
+          <span className="text-xs text-contrast-helper">
             {words.length} {words.length === 1 ? "word" : "words"}
           </span>
           <div className="flex gap-2">
-            <button
+            <Button
+              size="sm"
+              variant="danger"
               onClick={handleClear}
               disabled={words.length === 0}
-              className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Clear All
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-            >
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>
               Close
-            </button>
+            </Button>
           </div>
         </div>
+      }
+    >
+      {/* Search and Add */}
+      <div className="space-y-3 pb-3">
+        <Input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search words..."
+          aria-label="Search words"
+          iconLeft={<Search aria-hidden="true" />}
+        />
+
+        {isAdding ? (
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              value={newWord}
+              onChange={(e) => setNewWord(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAdd();
+                if (e.key === "Escape") { setIsAdding(false); setNewWord(""); }
+              }}
+              placeholder="Enter new word..."
+              aria-label="New word"
+              autoFocus
+            />
+            <Button variant="primary" onClick={handleAdd} disabled={!newWord.trim()}>
+              Add
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => { setIsAdding(false); setNewWord(""); }}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsAdding(true)}
+            className="text-action-text"
+            iconLeft={<Plus aria-hidden="true" className="w-4 h-4" />}
+          >
+            Add Word
+          </Button>
+        )}
       </div>
-    </div>,
-    document.body
+
+      {/* Word List */}
+      <div className="-mx-5 border-t border-surface-divider">
+        {filteredWords.length === 0 ? (
+          <div className="p-6 text-center text-sm text-contrast-helper">
+            {words.length === 0
+              ? "Your custom dictionary is empty. Words added via the spell check context menu will appear here."
+              : "No words match your search."}
+          </div>
+        ) : (
+          <ul className="divide-y divide-surface-divider">
+            {filteredWords.map((word) => (
+              <li key={word} className="group">
+                {editingWord === word ? (
+                  <div className="flex items-center gap-2 px-4 py-2">
+                    <Input
+                      type="text"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleEditSave();
+                        if (e.key === "Escape") setEditingWord(null);
+                      }}
+                      aria-label={`Rename ${word}`}
+                      autoFocus
+                    />
+                    <Button size="sm" variant="ghost" onClick={handleEditSave} className="text-action-text">
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingWord(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between px-4 py-2.5 transition-colors hover:bg-surface-inset">
+                    <span className="text-sm text-foreground">{word}</span>
+                    {/* Shown outright on touch, hover-revealed on desktop. */}
+                    <div className="flex items-center gap-1 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
+                      <IconButton
+                        size="sm"
+                        onClick={() => handleEditStart(word)}
+                        aria-label={`Edit ${word}`}
+                        title="Edit"
+                        icon={<Pencil aria-hidden="true" />}
+                      />
+                      <IconButton
+                        size="sm"
+                        variant="danger"
+                        onClick={() => handleDelete(word)}
+                        aria-label={`Delete ${word}`}
+                        title="Delete"
+                        icon={<Trash2 aria-hidden="true" />}
+                      />
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Modal>
   );
 }

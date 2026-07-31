@@ -99,10 +99,10 @@ export default function TelemetrySection() {
   if (loading) {
     return (
       <SettingsCard
-        title="Anonymous usage data"
+        title="Anonymous Usage Data"
         description="Loading the current setting."
       >
-        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+        <Loader2 className="h-4 w-4 animate-spin text-contrast-icon-muted" />
       </SettingsCard>
     );
   }
@@ -113,7 +113,7 @@ export default function TelemetrySection() {
 
   return (
     <SettingsCard
-      title="Anonymous usage data"
+      title="Anonymous Usage Data"
       description="Helps decide what to build next by counting deployments and feature use. Never includes recordings, transcripts, notes, names, or keys, and the data is never sold."
     >
       {status.managed_by_env && (
@@ -160,10 +160,10 @@ export default function TelemetrySection() {
         <dl className="space-y-2 text-sm">
           {COLLECTED_FIELDS.map((entry) => (
             <div key={entry.group} className="sm:flex sm:gap-3">
-              <dt className="min-w-32 font-medium text-gray-700 dark:text-gray-300">
+              <dt className="min-w-32 font-medium text-contrast-muted">
                 {entry.group}
               </dt>
-              <dd className="text-gray-500 dark:text-gray-400">{entry.fields}</dd>
+              <dd className="text-contrast-helper">{entry.fields}</dd>
             </div>
           ))}
         </dl>
@@ -172,20 +172,20 @@ export default function TelemetrySection() {
       <SettingsBlock>
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-gray-500 dark:text-gray-400">Install ID</dt>
-            <dd className="font-mono text-xs break-all text-gray-800 dark:text-gray-200">
+            <dt className="text-contrast-helper">Install ID</dt>
+            <dd className="font-mono text-xs break-all text-foreground">
               {status.install_id}
             </dd>
           </div>
           <div>
-            <dt className="text-gray-500 dark:text-gray-400">Last sent</dt>
-            <dd className="text-gray-800 dark:text-gray-200">
+            <dt className="text-contrast-helper">Last sent</dt>
+            <dd className="text-foreground">
               {formatTimestamp(status.last_sent_at)}
             </dd>
           </div>
           <div className="sm:col-span-2">
-            <dt className="text-gray-500 dark:text-gray-400">Endpoint</dt>
-            <dd className="font-mono text-xs break-all text-gray-800 dark:text-gray-200">
+            <dt className="text-contrast-helper">Endpoint</dt>
+            <dd className="font-mono text-xs break-all text-foreground">
               {status.endpoint}
             </dd>
           </div>
@@ -193,7 +193,7 @@ export default function TelemetrySection() {
       </SettingsBlock>
 
       <SettingsBlock>
-        <p className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <p className="flex items-start gap-2 text-xs text-contrast-helper">
           <BarChart3 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
             The collector that receives these pings is open source in the{" "}

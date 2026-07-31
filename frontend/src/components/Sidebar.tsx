@@ -81,7 +81,7 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
           className="cursor-help"
           title="Meeting is in queue to be processed..."
         >
-          <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+          <Loader2 className="w-3 h-3 text-status-info-fg animate-spin" />
         </span>
       );
     case RecordingStatus.PROCESSING:
@@ -90,17 +90,17 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
           className="cursor-help"
           title="Processing: transcription, diarization, voiceprints. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing."
         >
-          <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+          <Loader2 className="w-3 h-3 text-status-info-fg animate-spin" />
         </span>
       );
     case RecordingStatus.UPLOADING:
-      return <UploadCloud className="w-3 h-3 text-orange-500 animate-pulse" />;
+      return <UploadCloud className="w-3 h-3 text-action-text animate-pulse" />;
     case RecordingStatus.PAUSED:
-      return <Pause className="w-3 h-3 text-amber-500" />;
+      return <Pause className="w-3 h-3 text-status-warning-fg" />;
     case RecordingStatus.ERROR:
-      return <AlertCircle className="w-3 h-3 text-red-500" />;
+      return <AlertCircle className="w-3 h-3 text-danger-text" />;
     default:
-      return <HelpCircle className="w-3 h-3 text-gray-500" />;
+      return <HelpCircle className="w-3 h-3 text-rail-fg-muted" />;
   }
 };
 
@@ -531,7 +531,7 @@ export default function Sidebar() {
               {
                 label: "Discard Recording",
                 onClick: () => handleDiscard(recording.id),
-                className: "text-red-600 dark:text-red-400",
+                className: "text-danger-text",
               },
             ]
           : []),
@@ -560,7 +560,7 @@ export default function Sidebar() {
         {
           label: "Delete",
           className:
-            "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
+            "text-danger-text hover:bg-status-danger-bg",
           onClick: () => handleSoftDelete(recording.id),
         },
       );
@@ -573,7 +573,7 @@ export default function Sidebar() {
         {
           label: "Delete",
           className:
-            "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
+            "text-danger-text hover:bg-status-danger-bg",
           onClick: () => handleSoftDelete(recording.id),
         },
       );
@@ -586,7 +586,7 @@ export default function Sidebar() {
         {
           label: "Delete Permanently",
           className:
-            "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20",
+            "text-danger-text hover:bg-status-danger-bg",
           onClick: () => handlePermanentDelete(recording.id),
         },
       );
@@ -633,7 +633,7 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-orange-100 dark:border-gray-800/80 bg-[radial-gradient(circle_at_top_right,_rgba(249,115,22,0.16),_transparent_45%),linear-gradient(180deg,_#fffaf0_0%,_#fff7ed_100%)] dark:bg-[radial-gradient(circle_at_top_right,_rgba(251,146,60,0.10),_transparent_40%),linear-gradient(180deg,_#0a0f1c_0%,_#0b1220_100%)] flex flex-col h-full relative transition-opacity ${
+      className={`shrink-0 border-r border-rail-border bg-rail flex flex-col h-full relative transition-opacity ${
         isRecordingView ? "hidden lg:flex" : "w-full lg:flex"
       }`}
       style={mounted && isDesktopLayout ? { width: `${resolvedSidebarWidth}px` } : {}}
@@ -646,13 +646,13 @@ export default function Sidebar() {
       )}
 
       {/* Header */}
-      <div className="p-4 border-b border-orange-100/80 dark:border-gray-800/80">
+      <div className="p-4 border-b border-rail-border">
         <div className="mb-3 flex items-center gap-3 lg:hidden">
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rail-fg-muted">
               Library
             </div>
-            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <div className="text-sm font-semibold text-rail-fg">
               {currentViewLabel}
             </div>
           </div>
@@ -660,7 +660,7 @@ export default function Sidebar() {
 
         {selectionMode ? (
           <div className="flex items-center justify-between mb-2 px-1">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-rail-fg-muted">
               {selectedRecordingIds.length} selected
             </span>
             <button
@@ -674,7 +674,7 @@ export default function Sidebar() {
                   selectAllRecordings(filteredRecordings.map((r) => r.id));
                 }
               }}
-              className="text-xs text-orange-600 hover:underline"
+              className="text-xs text-action-text hover:underline"
             >
               {selectedRecordingIds.length === filteredRecordings.length &&
               filteredRecordings.length > 0
@@ -685,17 +685,17 @@ export default function Sidebar() {
         ) : (
           <div className="space-y-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <input
                 type="text"
                 placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100"
+                className="w-full pl-9 pr-4 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
               />
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${showFilters ? "text-orange-500" : "text-gray-400"}`}
+                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
               >
                 <Filter className="w-4 h-4" />
               </button>
@@ -714,17 +714,17 @@ export default function Sidebar() {
               return (
                 <div
                   key={tagId}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs group hover:border-orange-300 dark:hover:border-orange-700 transition-colors"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
                 >
                   <span
                     className={`w-2 h-2 rounded-full ${color.dot} shrink-0`}
                   />
-                  <span className="text-gray-700 dark:text-gray-200 font-medium">
+                  <span className="text-status-neutral-fg font-medium">
                     {tag.name}
                   </span>
                   <button
                     onClick={() => toggleTagFilter(tagId)}
-                    className="ml-0.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                    className="ml-0.5 text-contrast-icon-muted hover:text-danger-text transition-colors"
                     title={`Remove ${tag.name} filter`}
                   >
                     <X className="w-3 h-3" />
@@ -734,7 +734,7 @@ export default function Sidebar() {
             })}
             <button
               onClick={clearTagFilters}
-              className="px-2.5 py-1 rounded-full text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-800 transition-colors"
+              className="px-2.5 py-1 rounded-full text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
               title="Clear all tag filters"
             >
               Clear All
@@ -743,27 +743,27 @@ export default function Sidebar() {
         )}
 
         {showFilters && !selectionMode && (
-          <div className="p-3 bg-white dark:bg-gray-900/50 rounded-lg border border-gray-300 dark:border-gray-700 space-y-3 text-sm shadow-sm mt-2">
+          <div className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-500">
+              <label className="text-xs font-medium text-rail-fg-muted">
                 Date Filter
               </label>
               <div className="flex gap-2 mb-2">
                 <button
                   onClick={() => setDateMode("range")}
-                  className={`text-xs px-2 py-1 rounded ${dateMode === "range" ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" : "bg-gray-200 dark:bg-gray-800"}`}
+                  className={`text-xs px-2 py-1 rounded ${dateMode === "range" ? "bg-action-tint text-action-tint-fg" : "bg-status-neutral-bg text-status-neutral-fg"}`}
                 >
                   Range
                 </button>
                 <button
                   onClick={() => setDateMode("after")}
-                  className={`text-xs px-2 py-1 rounded ${dateMode === "after" ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" : "bg-gray-200 dark:bg-gray-800"}`}
+                  className={`text-xs px-2 py-1 rounded ${dateMode === "after" ? "bg-action-tint text-action-tint-fg" : "bg-status-neutral-bg text-status-neutral-fg"}`}
                 >
                   After
                 </button>
                 <button
                   onClick={() => setDateMode("before")}
-                  className={`text-xs px-2 py-1 rounded ${dateMode === "before" ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" : "bg-gray-200 dark:bg-gray-800"}`}
+                  className={`text-xs px-2 py-1 rounded ${dateMode === "before" ? "bg-action-tint text-action-tint-fg" : "bg-status-neutral-bg text-status-neutral-fg"}`}
                 >
                   Before
                 </button>
@@ -780,7 +780,7 @@ export default function Sidebar() {
                         start: e.target.value,
                       }))
                     }
-                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs"
+                    className="w-full px-2 py-1 bg-control-bg text-foreground border border-control-border rounded text-xs"
                     placeholder="Start Date"
                   />
                 )}
@@ -791,7 +791,7 @@ export default function Sidebar() {
                     onChange={(e) =>
                       setDateRange((prev) => ({ ...prev, end: e.target.value }))
                     }
-                    className="w-full px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs"
+                    className="w-full px-2 py-1 bg-control-bg text-foreground border border-control-border rounded text-xs"
                     placeholder="End Date"
                   />
                 )}
@@ -811,7 +811,7 @@ export default function Sidebar() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-500">
+              <label className="text-xs font-medium text-rail-fg-muted">
                 Speakers
               </label>
               <div className="flex flex-wrap gap-1">
@@ -827,15 +827,15 @@ export default function Sidebar() {
                     }}
                     className={`px-2 py-1 rounded-full text-xs border ${
                       selectedSpeakers.includes(speaker.id)
-                        ? "bg-orange-100 border-orange-200 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400"
-                        : "bg-white border-gray-200 text-gray-600 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
+                        ? "bg-action-tint border-action-border text-action-tint-fg"
+                        : "bg-surface-card border-surface-border text-contrast-helper"
                     }`}
                   >
                     {speaker.name}
                   </button>
                 ))}
                 {globalSpeakers.length === 0 && (
-                  <span className="text-xs text-gray-400">No speakers yet</span>
+                  <span className="text-xs text-contrast-icon-muted">No speakers yet</span>
                 )}
               </div>
             </div>
@@ -849,7 +849,7 @@ export default function Sidebar() {
                   setSelectedSpeakers([]);
                   clearTagFilters();
                 }}
-                className="text-xs text-red-500 hover:underline flex items-center gap-1"
+                className="text-xs text-danger-text hover:underline flex items-center gap-1"
               >
                 <X className="w-3 h-3" /> Clear Filters
               </button>
@@ -861,7 +861,7 @@ export default function Sidebar() {
       {/* Recording List */}
       <div className="p-2 space-y-2">
         {filteredRecordings.length === 0 && (
-          <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
+          <div className="text-center p-4 text-rail-fg-muted text-sm">
             <p>{getEmptyMessage().main}</p>
             <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
           </div>
@@ -878,7 +878,7 @@ export default function Sidebar() {
           return (
             <div key={recording.id} className="relative group">
               {isRenaming ? (
-                <div className="p-3 rounded-lg border bg-white dark:bg-gray-900 border-orange-500">
+                <div className="p-3 rounded-lg border bg-surface-card border-action">
                   <input
                     autoFocus
                     type="text"
@@ -905,21 +905,21 @@ export default function Sidebar() {
                     onContextMenu={(e) => handleContextMenu(e, recording)}
                     className={`block p-3 rounded-lg border transition-all ${
                       isActive && !selectionMode
-                        ? "bg-orange-100 dark:bg-orange-900/20 border-orange-500 dark:border-orange-500"
+                        ? "bg-action-tint border-action"
                         : isSelected
-                          ? "bg-orange-50 dark:bg-orange-950/40 border-orange-400 dark:border-orange-500"
-                          : "bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-800 hover:border-orange-500 hover:bg-orange-100 dark:hover:border-orange-700 dark:hover:bg-gray-800"
+                          ? "bg-action-tint border-action-border"
+                          : "bg-surface-card border-surface-border hover:border-action-border hover:bg-action-tint"
                     } ${
                       isSelected
-                        ? "ring-2 ring-orange-500 ring-offset-2 ring-offset-[#fff7ed] dark:ring-offset-[#0b1220] shadow-md"
-                        : "shadow-sm"
+                        ? "ring-2 ring-focus-ring ring-offset-2 ring-offset-rail"
+                        : ""
                     }`}
                   >
                     <div className="flex justify-between items-start mb-1">
                       <div className="flex items-center gap-2 min-w-0">
                         {(selectionMode || isSelected) && (
                           <div
-                            className={`shrink-0 ${isSelected ? "text-orange-600 dark:text-orange-400" : "text-gray-300 dark:text-gray-600"}`}
+                            className={`shrink-0 ${isSelected ? "text-action-text" : "text-contrast-icon-muted"}`}
                           >
                             {isSelected ? (
                               <CheckSquare className="w-4 h-4" />
@@ -929,7 +929,7 @@ export default function Sidebar() {
                           </div>
                         )}
                         <h3
-                          className={`text-sm font-semibold truncate ${isActive && !selectionMode ? "text-orange-700 dark:text-orange-400" : "text-gray-900 dark:text-gray-100"}`}
+                          className={`text-sm font-semibold truncate ${isActive && !selectionMode ? "text-action-text" : "text-foreground"}`}
                           title="Double-click to rename"
                           onDoubleClick={(e) => {
                             e.preventDefault();
@@ -944,16 +944,16 @@ export default function Sidebar() {
                     </div>
 
                     <div
-                      className={`flex items-center text-xs text-gray-500 dark:text-gray-400 gap-2 ${selectionMode || isSelected ? "pl-6" : ""}`}
+                      className={`flex items-center text-xs text-contrast-helper gap-2 ${selectionMode || isSelected ? "pl-6" : ""}`}
                     >
                       <span>{formatDate(recording.created_at)}</span>
-                      <span className="text-gray-300 dark:text-gray-700">
+                      <span className="text-contrast-icon-muted">
                         |
                       </span>
                       <span>
                         {formatTime(startDate)} - {formatTime(endDate)}
                       </span>
-                      <span className="text-gray-300 dark:text-gray-700">
+                      <span className="text-contrast-icon-muted">
                         |
                       </span>
                       <span>
@@ -1029,10 +1029,10 @@ export default function Sidebar() {
 
       {/* Resize Handle - Hidden on Mobile */}
       <div
-        className="absolute right-0 top-0 bottom-0 z-10 hidden w-1 cursor-col-resize touch-none hover:bg-orange-500/50 active:bg-orange-500 lg:block"
+        className="absolute right-0 top-0 bottom-0 z-[var(--z-sticky)] hidden w-1 cursor-col-resize touch-none hover:bg-action active:bg-action-hover lg:block"
         onPointerDown={handleResizePointerDown}
       >
-        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-gray-400 dark:bg-gray-600 hover:bg-orange-500 transition-colors" />
+        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-rail-border hover:bg-action transition-colors" />
       </div>
     </aside>
   );

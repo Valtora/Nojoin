@@ -11,6 +11,10 @@ import {
 import { sanitizeIntegerString } from "@/lib/validation";
 import { Plus, Trash2, Copy, Users, Clock, XCircle } from "lucide-react";
 import ConfirmationModal from "../ConfirmationModal";
+import Button from "../ui/Button";
+import Input from "../ui/Input";
+import Modal from "../ui/Modal";
+import Select from "../ui/Select";
 import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
@@ -187,14 +191,14 @@ export default function InvitesTab() {
                   <span
                     className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                       inv.role === UserRole.ADMIN
-                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                        : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                        ? "bg-status-info-bg text-status-info-fg"
+                        : "bg-status-info-bg text-status-info-fg"
                     }`}
                   >
                     {inv.role}
                   </span>
                   {inv.is_revoked && (
-                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-status-danger-bg text-status-danger-fg">
                       Revoked
                     </span>
                   )}
@@ -202,7 +206,7 @@ export default function InvitesTab() {
                 {!inv.is_revoked ? (
                   <button
                     onClick={() => handleRevokeClick(inv.id)}
-                    className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-contrast-helper hover:text-danger-text transition-colors"
                     title="Revoke"
                   >
                     <XCircle className="w-4 h-4" />
@@ -210,7 +214,7 @@ export default function InvitesTab() {
                 ) : (
                   <button
                     onClick={() => handleDeleteClick(inv.id)}
-                    className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-contrast-helper hover:text-danger-text transition-colors"
                     title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -218,15 +222,15 @@ export default function InvitesTab() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 mb-4 rounded-2xl border border-gray-200/80 bg-gray-50/85 p-2 dark:border-gray-800 dark:bg-gray-900/70">
+              <div className="flex items-center gap-2 mb-4 rounded-2xl border border-surface-border bg-surface-inset p-2">
                 <input
                   readOnly
                   value={inv.link}
-                  className="flex-1 bg-transparent text-sm text-gray-600 dark:text-gray-300 outline-none truncate"
+                  className="flex-1 bg-transparent text-sm text-contrast-helper outline-none truncate"
                 />
                 <button
                   onClick={() => copyLink(inv.link)}
-                  className="text-gray-500 hover:text-orange-600"
+                  className="text-contrast-helper hover:text-action-text"
                 >
                   <Copy className="w-4 h-4" />
                 </button>
@@ -251,7 +255,7 @@ export default function InvitesTab() {
               </div>
 
               {inv.users.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <div className="mt-4 pt-3 border-t border-surface-border">
                   <p className="text-xs font-medium contrast-helper mb-1">
                     Joined Users:
                   </p>
@@ -259,7 +263,7 @@ export default function InvitesTab() {
                     {inv.users.map((u) => (
                       <span
                         key={u}
-                        className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300"
+                        className="text-xs px-1.5 py-0.5 bg-surface-inset rounded text-contrast-helper"
                       >
                         {u}
                       </span>
@@ -273,78 +277,60 @@ export default function InvitesTab() {
       )}
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-9999 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Create Invitation
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Role
-                </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                >
-                  <option value={UserRole.USER}>User</option>
-                  <option value={UserRole.ADMIN}>Admin</option>
-                </select>
-              </div>
+      <Modal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        size="sm"
+        title="Create Invitation"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreate}
+              disabled={creating}
+              loading={creating}
+            >
+              {creating ? "Creating..." : "Create Invite"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select
+            label="Role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            <option value={UserRole.USER}>User</option>
+            <option value={UserRole.ADMIN}>Admin</option>
+          </Select>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Expires In (Days)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={expiresIn.toString()}
-                  onChange={(e) => {
-                    const val = sanitizeIntegerString(e.target.value, 1, 365);
-                    setExpiresIn(Number(val));
-                  }}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-              </div>
+          <Input
+            label="Expires In (Days)"
+            type="text"
+            inputMode="numeric"
+            value={expiresIn.toString()}
+            onChange={(e) => {
+              const val = sanitizeIntegerString(e.target.value, 1, 365);
+              setExpiresIn(Number(val));
+            }}
+          />
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Max Uses
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={maxUses.toString()}
-                  onChange={(e) => {
-                    const val = sanitizeIntegerString(e.target.value, 1, 100);
-                    setMaxUses(Number(val));
-                  }}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={creating}
-                  className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors disabled:opacity-50"
-                >
-                  {creating ? "Creating..." : "Create Invite"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <Input
+            label="Max Uses"
+            type="text"
+            inputMode="numeric"
+            value={maxUses.toString()}
+            onChange={(e) => {
+              const val = sanitizeIntegerString(e.target.value, 1, 100);
+              setMaxUses(Number(val));
+            }}
+          />
         </div>
-      )}
+      </Modal>
 
       </SettingsBlock>
 

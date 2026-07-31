@@ -32,13 +32,14 @@ export default function NavItem({
       disabled={disabled}
       title={collapsed ? label : undefined}
       className={`
-        w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
+        w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors duration-150
+        focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring
         ${
           isActive
-            ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
+            ? "bg-rail-item-active text-rail-item-active-fg"
             : disabled
-              ? "text-gray-400 dark:text-gray-600"
-              : "text-gray-700 dark:text-gray-300 hover:bg-white/70 hover:text-orange-800 dark:hover:bg-gray-800/70"
+              ? "text-rail-fg-muted"
+              : "text-rail-fg hover:bg-rail-item-hover"
         }
         ${disabled ? "cursor-not-allowed opacity-60" : ""}
         ${collapsed ? "justify-center" : ""}
@@ -51,7 +52,7 @@ export default function NavItem({
             {label}
           </span>
           {badge !== undefined && badge > 0 && (
-            <span className="text-xs bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-status-neutral-bg text-status-neutral-fg px-1.5 py-0.5 rounded-full">
               {badge}
             </span>
           )}

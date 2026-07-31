@@ -40,12 +40,12 @@ const STATUS_CONFIG = {
   error: {
     icon: AlertCircle,
     defaultMessage: "Changes could not be saved",
-    className: "text-red-600 dark:text-red-300",
+    className: "text-status-danger-fg",
   },
   blocked: {
     icon: Shield,
     defaultMessage: "Password change required",
-    className: "text-orange-700 dark:text-orange-300",
+    className: "text-action-text",
   },
 } as const;
 
