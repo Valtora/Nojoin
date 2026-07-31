@@ -174,17 +174,26 @@ export default function MeetingControls({
           ) : null}
 
           {!hasLiveRecording ? (
-            <button
-              type="button"
-              onClick={handlePrimaryAction}
-              disabled={meetingSurfaceState.buttonDisabled}
-              title={meetingSurfaceState.buttonTooltip}
-              aria-label={meetingSurfaceState.buttonLabel}
-              className="density-control-lg flex items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
-            >
-              <Mic className="h-4 w-4" />
-              {meetingSurfaceState.buttonLabel}
-            </button>
+            // The label is sized from the button's own width rather than fixed
+            // at `text-sm`, because this button is as wide as whichever column
+            // it lands in: full bleed on a phone, a third of an ultrawide
+            // otherwise. `@container` here rather than higher up so the query
+            // resolves against the button rather than against the dashboard
+            // grid, and the icon is sized in `em` so it tracks the label
+            // instead of needing its own scale.
+            <div className="@container">
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                disabled={meetingSurfaceState.buttonDisabled}
+                title={meetingSurfaceState.buttonTooltip}
+                aria-label={meetingSurfaceState.buttonLabel}
+                className="density-control-lg flex w-full items-center justify-center gap-[0.6em] rounded-2xl bg-action px-4 py-3 text-[clamp(0.875rem,4.5cqw,1.75rem)] font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
+              >
+                <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
+                {meetingSurfaceState.buttonLabel}
+              </button>
+            </div>
           ) : (
             <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
           )}

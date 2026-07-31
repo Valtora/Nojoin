@@ -250,12 +250,12 @@ Columns are deliberately unequal, and they group by subject rather than by size.
 the first, with the month grid and the agenda under it, because they are two views of one
 subsystem; it is also the widest, since a day cell holds a number and up to four markers. The task
 list has the second to itself, so it runs the full height of the page. Capture owns the third, with
-what it produced under it: Meet Now, anything processing, then recent recordings. The list column
+what it produced under it: Meet Now, anything processing, then Recent Meetings. The list column
 is the narrowest, because a row there is a title and a badge.
 
 Each column pairs modules that keep their natural height with exactly one that absorbs the
 remainder. Meet Now and the month grid stay the size they need; the agenda, the task list and
-recent recordings take whatever is left.
+Recent Meetings take whatever is left.
 
 **These are container queries against the workspace, not media queries against the viewport**, and
 that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
@@ -300,7 +300,7 @@ for stacking, but they take `display: contents` at one column, which drops them 
 that every module becomes a direct child of one flex column and `order-*` can sequence them freely.
 A wrapper cannot reorder across its own boundary, so without this the phone order is forced to match
 the desktop columns. On a phone the order is action first: capture, then anything processing, then
-the agenda, tasks, recent recordings, and the month grid last. The desktop stack inside a column is
+the agenda, tasks, Recent Meetings, and the month grid last. The desktop stack inside a column is
 a separate sequence, set with a container-query `order` override where the two disagree, which is
 what keeps a phone opening on the record button while a desktop leads its middle column with the
 task list.

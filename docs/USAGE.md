@@ -36,8 +36,8 @@ It brings together:
 - **Task List** for quick personal follow-up capture.
 - **Processing**, listing whatever the pipeline is still working on. It appears only while
   something is in flight.
-- **Recent recordings**, the latest few with a click through to the detail view. It appears only
-  once you have recordings.
+- **Recent Meetings**, the latest ones with a click through to the detail view. It fills the height
+  of its column and scrolls, and appears only once you have recordings.
 
 The first four always render. The last two appear when they have something to report, so a new
 account sees a dashboard rather than a page of empty boxes. The dashboard adds a second and then a

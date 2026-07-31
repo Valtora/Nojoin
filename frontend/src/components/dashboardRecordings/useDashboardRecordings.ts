@@ -5,8 +5,15 @@ import { useCallback, useEffect, useState } from "react";
 import { getRecordings } from "@/lib/api";
 import { Recording, RecordingStatus } from "@/types";
 
-/** How many recordings the recents module shows before it stops. */
-const RECENT_LIMIT = 5;
+/**
+ * How many recordings the recents module offers.
+ *
+ * This is a ceiling rather than a count. The module scrolls inside itself and
+ * takes the full height of its column, so how many are actually visible is a
+ * property of the window rather than of this number; it exists only so that a
+ * library of thousands does not render thousands of rows into a scroll area.
+ */
+const RECENT_LIMIT = 20;
 
 /** Statuses that mean the pipeline is still working on a recording. */
 const IN_FLIGHT: ReadonlySet<RecordingStatus> = new Set([

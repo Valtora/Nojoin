@@ -28,7 +28,7 @@ describe("useDashboardRecordings", () => {
     getRecordings.mockReset();
   });
 
-  it("returns the newest recordings first, capped at five", async () => {
+  it("returns the newest recordings first", async () => {
     getRecordings.mockResolvedValue([
       recording({ id: "1", created_at: "2026-07-01T10:00:00Z" }),
       recording({ id: "2", created_at: "2026-07-06T10:00:00Z" }),
@@ -41,7 +41,34 @@ describe("useDashboardRecordings", () => {
     const { result } = renderHook(() => useDashboardRecordings());
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.recent.map((r) => r.id)).toEqual(["2", "4", "6", "3", "5"]);
+    expect(result.current.recent.map((r) => r.id)).toEqual([
+      "2",
+      "4",
+      "6",
+      "3",
+      "5",
+      "1",
+    ]);
+  });
+
+  it("stops at twenty, so a large library does not render into a scroll area", async () => {
+    // The module scrolls inside itself and takes the height of its column, so
+    // the ceiling is a guard against a library of thousands rather than a
+    // decision about how many are visible.
+    getRecordings.mockResolvedValue(
+      Array.from({ length: 30 }, (_, index) =>
+        recording({
+          id: String(index),
+          created_at: `2026-07-${String(index + 1).padStart(2, "0")}T10:00:00Z`,
+        }),
+      ),
+    );
+
+    const { result } = renderHook(() => useDashboardRecordings());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.recent).toHaveLength(20);
+    expect(result.current.recent[0].id).toBe("29");
   });
 
   it("excludes archived and deleted recordings", async () => {

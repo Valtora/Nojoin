@@ -5,7 +5,7 @@ import { Mic } from "lucide-react";
 
 import { StatusBadge } from "@/components/ui/Badge";
 import { formatTimeZoneDate } from "@/lib/timezone";
-import { Recording } from "@/types";
+import { Recording, RecordingStatus } from "@/types";
 
 interface RecentRecordingsCardProps {
   recordings: Recording[];
@@ -37,7 +37,7 @@ export default function RecentRecordingsCard({
     <div className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center gap-3">
         <Mic className="h-5 w-5 shrink-0 text-action-text" />
-        <h2 className="text-base font-semibold text-foreground">Recent recordings</h2>
+        <h2 className="text-base font-semibold text-foreground">Recent Meetings</h2>
       </div>
 
       <ul className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto">
@@ -63,7 +63,13 @@ export default function RecentRecordingsCard({
                     {duration ? ` · ${duration}` : ""}
                   </span>
                 </span>
-                <StatusBadge status={recording.status} size="sm" />
+                {/* A processed recording carries no badge. "Ready" was on every
+                    row of a list where ready is the normal state, so it said
+                    nothing and cost the name its width. A badge here now means
+                    something went wrong. */}
+                {recording.status !== RecordingStatus.PROCESSED && (
+                  <StatusBadge status={recording.status} size="sm" />
+                )}
               </Link>
             </li>
           );
