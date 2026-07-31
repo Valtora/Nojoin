@@ -1,13 +1,8 @@
 import React, { forwardRef } from 'react';
 import DatePicker, { DatePickerProps } from 'react-datepicker';
 import { Calendar } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 
-// Utility for merging tailwind classes
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { cn } from '@/lib/cn';
 
 interface ModernDatePickerProps extends Omit<DatePickerProps, 'onChange' | 'selectsRange' | 'selectsMultiple'> {
   onChange: (date: Date | null) => void;
@@ -29,13 +24,15 @@ const CustomInput = forwardRef<HTMLButtonElement, CustomInputProps>(
       onClick={onClick}
       ref={ref}
       className={cn(
-        "flex h-10 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:ring-offset-gray-950 dark:placeholder:text-gray-400 dark:focus:ring-orange-500",
-        !value && "text-gray-500 dark:text-gray-400",
+        "flex h-10 w-full items-center justify-between rounded-lg border border-control-border bg-control-bg px-3 py-2 text-sm text-foreground",
+        "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring",
+        "disabled:cursor-not-allowed disabled:border-control-disabled-border disabled:bg-control-disabled-bg disabled:text-control-disabled-fg",
+        !value && "text-control-placeholder",
         className
       )}
     >
       <span className="truncate">{value || placeholder || "Select date"}</span>
-      <Calendar className="ml-2 h-4 w-4 opacity-50" />
+      <Calendar aria-hidden="true" className="ml-2 h-4 w-4 text-contrast-icon-muted" />
     </button>
   )
 );
@@ -55,7 +52,7 @@ export default function ModernDatePicker({
   return (
     <div className={cn("w-full", className)}>
       {label && (
-        <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label className="mb-1.5 block text-sm font-medium text-contrast-muted">
           {label}
         </label>
       )}
@@ -66,20 +63,23 @@ export default function ModernDatePicker({
           onChange={(date: Date | null) => onChange(date)}
           customInput={<CustomInput placeholder={placeholderText} className={inputClassName} />}
           wrapperClassName="w-full"
-          calendarClassName="!bg-white dark:!bg-gray-800 !border-gray-200 dark:!border-gray-700 !font-sans !text-gray-900 dark:!text-gray-100 !rounded-lg !shadow-lg"
+          // react-datepicker renders its own DOM, so the calendar is themed by
+          // overriding its classes here and in the vendor block in globals.css
+          // rather than by composing tokens the way the rest of the UI does.
+          calendarClassName="!bg-surface-float !border-surface-float-border !font-sans !text-foreground !rounded-lg !shadow-float"
           dayClassName={(date) =>
             cn(
-              "hover:!bg-orange-100 dark:hover:!bg-orange-900/30 !rounded-md",
+              "!rounded-md hover:!bg-action-tint",
               selected && date.getTime() === selected.getTime()
-                ? "!bg-orange-600 !text-white hover:!bg-orange-700"
-                : "dark:!text-gray-100"
+                ? "!bg-action !text-action-on hover:!bg-action-hover"
+                : "!text-foreground"
             )
           }
           placeholderText={placeholderText}
           {...props}
         />
       </div>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-danger-text">{error}</p>}
     </div>
   );
 }

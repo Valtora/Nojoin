@@ -96,6 +96,17 @@ const PAIRINGS = [
   { label: "tint text on tint (on card)", fg: "action-tint-fg", bg: ["surface-page", "surface-card", "action-tint"], min: AA_TEXT },
   { label: "tint text on hover tint (on card)", fg: "action-tint-fg", bg: ["surface-page", "surface-card", "action-tint-hover"], min: AA_TEXT },
   { label: "action border vs card", fg: "action-border", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+
+  // Danger family, held to the same rules as the action family.
+  { label: "danger label on danger fill", fg: "danger-on", bg: ["danger"], min: AA_TEXT },
+  { label: "danger label on hover fill", fg: "danger-on", bg: ["danger-hover"], min: AA_TEXT },
+  { label: "danger label on active fill", fg: "danger-on", bg: ["danger-active"], min: AA_TEXT },
+  { label: "danger fill vs page", fg: "danger", bg: ["surface-page"], min: AA_NON_TEXT },
+  { label: "danger fill vs card", fg: "danger", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+  { label: "danger text on card", fg: "danger-text", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "danger text on page", fg: "danger-text", bg: ["surface-page"], min: AA_TEXT },
+  { label: "danger text on float", fg: "danger-text", bg: ["surface-float"], min: AA_TEXT },
+  { label: "danger text hover on card", fg: "danger-text-hover", bg: ["surface-page", "surface-card"], min: AA_TEXT },
   { label: "focus ring vs page", fg: "focus-ring", bg: ["surface-page"], min: AA_NON_TEXT },
   { label: "focus ring vs card", fg: "focus-ring", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
 
@@ -107,6 +118,8 @@ const PAIRINGS = [
   { label: "control border vs float", fg: "control-border", bg: ["surface-float"], min: AA_NON_TEXT },
   { label: "focus ring vs float", fg: "focus-ring", bg: ["surface-float"], min: AA_NON_TEXT },
   { label: "float border vs float", fg: "surface-float-border", bg: ["surface-float"], min: HAIRLINE },
+  { label: "tooltip text on tooltip", fg: "tooltip-fg", bg: ["tooltip-bg"], min: AA_TEXT },
+  { label: "tooltip vs card", fg: "tooltip-bg", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
 
   // Rails. Their own surface, so nothing here is measured against the page.
   { label: "rail text on rail", fg: "rail-fg", bg: ["rail-bg"], min: AA_TEXT },

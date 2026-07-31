@@ -47,6 +47,17 @@
   --action-on: #ffffff;
   --action-text: #c2410c;
   --action-text-hover: #9a3412;
+  /* Destructive actions, shaped like the action family so the two behave the
+     same way. Red-600 is the one step that carries a white label at 4.5:1 and
+     still separates from both a white page and a near-black one, so unlike the
+     brand the fill needs no per-theme value; only the text form splits. */
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --danger-active: #991b1b;
+  --danger-on: #ffffff;
+  --danger-text: #b91c1c;
+  --danger-text-hover: #991b1b;
+
   --action-tint: #ffedd5;
   --action-tint-hover: #fed7aa;
   --action-tint-fg: #9a3412;
@@ -101,6 +112,12 @@
      used anywhere in this system. The float shadow is the single documented
      exception to "no shadows in dark mode", because a floating element has
      to separate from whatever it covers regardless of theme. */
+  /* Tooltips invert against the theme rather than sitting on the float surface.
+     A white tooltip on a white card reads as part of the page; the inversion is
+     what makes a transient hint look transient. */
+  --tooltip-bg: #1f2937;
+  --tooltip-fg: #f9fafb;
+
   --scrim: rgba(15, 23, 42, 0.55);
   --surface-float: #ffffff;
   --surface-float-border: rgba(203, 213, 225, 0.9);
@@ -180,6 +197,10 @@
   --action-on: #ffffff;
   --action-text: #fb923c;
   --action-text-hover: #fdba74;
+
+  /* Only the text form of danger changes theme; the fill is shared. */
+  --danger-text: #f87171;
+  --danger-text-hover: #fca5a5;
   --action-tint: rgba(249, 115, 22, 0.18);
   --action-tint-hover: rgba(249, 115, 22, 0.26);
   --action-tint-fg: #fed7aa;
@@ -216,6 +237,9 @@
   --status-danger-bg: rgba(239, 68, 68, 0.14);
   --status-danger-fg: #fecaca;
   --status-danger-border: rgba(239, 68, 68, 0.32);
+
+  --tooltip-bg: #e5e7eb;
+  --tooltip-fg: #111827;
 
   --scrim: rgba(0, 0, 0, 0.66);
   /* A float is lighter than a card in dark mode rather than the same colour.
@@ -290,6 +314,13 @@ html[data-ui-density="compact"] {
   --color-action-border: var(--action-border);
   --color-focus-ring: var(--focus-ring);
 
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-active: var(--danger-active);
+  --color-danger-on: var(--danger-on);
+  --color-danger-text: var(--danger-text);
+  --color-danger-text-hover: var(--danger-text-hover);
+
   --color-rail: var(--rail-bg);
   --color-rail-border: var(--rail-border);
   --color-rail-fg: var(--rail-fg);
@@ -315,6 +346,8 @@ html[data-ui-density="compact"] {
   --color-status-danger-border: var(--status-danger-border);
 
   --color-scrim: var(--scrim);
+  --color-tooltip-bg: var(--tooltip-bg);
+  --color-tooltip-fg: var(--tooltip-fg);
 
   --radius-surface: var(--surface-radius);
   --radius-surface-subtle: var(--surface-radius-subtle);
