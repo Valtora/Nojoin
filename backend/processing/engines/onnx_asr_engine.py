@@ -234,13 +234,25 @@ class OnnxAsrEngine(TranscriptionEngine):
         if onnx_id not in self._model_cache:
             import onnx_asr
 
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            on_gpu = gpu_is_present()
+            # Ask for CUDA only where a GPU is actually attached. Requesting it
+            # without one does not degrade gracefully: onnxruntime-gpu loads its
+            # CUDA provider library, finds no device, and takes the process down
+            # with SIGSEGV. That is a native fault rather than an exception, so no
+            # handler here can catch it and fall back.
+            #
+            # The GPU lane normally has a device, but the CPU-only deployment in
+            # docs/DEPLOYMENT.md drops the compose `deploy` block while keeping the
+            # same onnxruntime-gpu image, which is exactly the crashing shape.
+            providers = ["CPUExecutionProvider"]
+            if on_gpu:
+                providers.insert(0, "CUDAExecutionProvider")
             # int8 is a CPU optimisation and defeats CUDA: onnxruntime has no CUDA
             # kernels for most quantized ops, so it claims the session and then hands
             # nearly every node back to CPU, inserting a memcpy at each handoff (1046
             # of them for canary-1b). Load the fp32 weights where a GPU is present,
             # which cuts that to 66 and keeps the graph on the card.
-            quantization = None if gpu_is_present() else "int8"
+            quantization = None if on_gpu else "int8"
             logger.info(
                 f"Loading {self.name} model: {onnx_id} "
                 f"(quantization={quantization or 'none'})"
