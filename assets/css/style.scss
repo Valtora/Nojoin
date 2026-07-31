@@ -595,8 +595,12 @@ samp {
   font-weight: 700;
 }
 
+// The short single-paragraph sections that close the home page. Anonymous usage
+// data was added to the README after this list was written and had been reading
+// as loose body copy between two callouts ever since.
 .markdown-body h2#project-status,
 .markdown-body h2#contributing,
+.markdown-body h2#anonymous-usage-data,
 .markdown-body h2#security,
 .markdown-body h2#licence,
 .markdown-body h2#legal,
@@ -606,6 +610,7 @@ samp {
 
 .markdown-body h2#project-status + p,
 .markdown-body h2#contributing + p,
+.markdown-body h2#anonymous-usage-data + p,
 .markdown-body h2#security + p,
 .markdown-body h2#licence + p,
 .markdown-body h2#legal + p,
