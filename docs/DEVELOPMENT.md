@@ -29,7 +29,9 @@ Windows:
 
 ### Frontend
 
-- Node.js 20 or newer
+- Node.js 22 or newer. CI, the release workflow, and `frontend/Dockerfile` all
+  build on Node 26; 22 is the floor because jsdom (the Vitest DOM environment)
+  requires it, so `npm run test` fails on anything older.
 - npm
 
 ### Browser Capture
@@ -92,9 +94,8 @@ cd ..
 python3 scripts/validate_docs.py
 python3 scripts/validate_alembic.py
 
-# Only when telemetry/ changed. Node 20 is enough for these; wrangler itself
-# needs Node 22, but the ingest's decision surface is deliberately free of
-# Worker runtime APIs so it tests on plain Node.
+# Only when telemetry/ changed. The ingest's decision surface is deliberately
+# free of Worker runtime APIs, so it tests on plain Node without wrangler.
 cd telemetry
 npm ci
 npm run typecheck
