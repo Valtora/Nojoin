@@ -21,11 +21,91 @@
      sits outside the framed area rather than across its rounded corners. Keep
      this at or above the 10px scrollbar width set below. */
   --live-transcript-gutter: 1rem;
-  --settings-tab-active-bg: #ffedd5;
-  --settings-tab-active-border: #fdba74;
-  --settings-tab-active-text: #9a3412;
+  --settings-tab-active-bg: var(--action-tint);
+  --settings-tab-active-border: var(--action-border);
+  --settings-tab-active-text: var(--action-tint-fg);
   --settings-tab-idle-text: #1f2937;
   --settings-tab-idle-hover: #f3f4f6;
+
+  /* Action (brand). The fill is orange-700 rather than orange-600 because
+     white on orange-600 is 3.56:1, short of the 4.5:1 this project holds
+     itself to for all text including button labels.
+
+     --action and --action-text are separate because one colour cannot do
+     both jobs in both themes. A fill is judged by the label on it, and text
+     is judged by the surface under it, and in dark mode those pull in
+     opposite directions: an orange dark enough for a white label is too dark
+     to read as text on a near-black page. They coincide in light mode and
+     diverge in dark, which is the whole reason the split exists.
+
+     --focus-ring is the one member allowed to stay lighter: it is never a
+     text colour, so it answers to the 3:1 non-text threshold instead, which
+     orange-600 clears against the page, a card, and the rail. */
+  --action: #c2410c;
+  --action-hover: #9a3412;
+  --action-active: #7c2d12;
+  --action-on: #ffffff;
+  --action-text: #c2410c;
+  --action-text-hover: #9a3412;
+  --action-tint: #ffedd5;
+  --action-tint-hover: #fed7aa;
+  --action-tint-fg: #9a3412;
+  --action-border: #fdba74;
+  --focus-ring: #ea580c;
+
+  /* Form controls. --control-border is separate from --contrast-border because
+     the two answer to different rules: a control's boundary is the only thing
+     identifying it as a control, so it owes 3:1, whereas a divider or a card
+     edge is decoration and a hairline is the point. Reusing one token for both
+     would force every hairline in the product to the heavier value. */
+  --control-bg: var(--surface-card);
+  --control-border: #7d8b9e;
+  --control-placeholder: #6b7280;
+  --control-disabled-bg: #f1f5f9;
+  --control-disabled-border: #cbd5e1;
+  --control-disabled-fg: #64748b;
+
+  /* Navigation rails. A warm cream against the cool page tint, so the rail
+     reads as chrome rather than as another card. */
+  --rail-bg: #f7f2e9;
+  --rail-border: #e2d9c8;
+  --rail-fg: #1f2937;
+  --rail-fg-muted: #57534e;
+  --rail-item-hover: #efe7d8;
+  --rail-item-active: var(--action-tint);
+  --rail-item-active-fg: var(--action-tint-fg);
+
+  /* Status tones. Five tones rather than five recording states: the states
+     collapse onto these (queued/processing/generating -> info, paused and
+     uploading -> warning, processed -> success, error/cancelled -> danger),
+     which is also the set SettingsStatusBadge already carries. Light keeps
+     tint-background with dark text; dark inverts to a translucent fill with
+     light text, composited over the card before it is measured. */
+  --status-neutral-bg: #f9fafb;
+  --status-neutral-fg: #374151;
+  --status-neutral-border: #e5e7eb;
+  --status-info-bg: #eff6ff;
+  --status-info-fg: #1e40af;
+  --status-info-border: #bfdbfe;
+  --status-success-bg: #f0fdf4;
+  --status-success-fg: #166534;
+  --status-success-border: #bbf7d0;
+  --status-warning-bg: #fffbeb;
+  --status-warning-fg: #92400e;
+  --status-warning-border: #fde68a;
+  --status-danger-bg: #fef2f2;
+  --status-danger-fg: #991b1b;
+  --status-danger-border: #fecaca;
+
+  /* Overlays and floats. The scrim is a plain dim: no backdrop-filter is
+     used anywhere in this system. The float shadow is the single documented
+     exception to "no shadows in dark mode", because a floating element has
+     to separate from whatever it covers regardless of theme. */
+  --scrim: rgba(15, 23, 42, 0.55);
+  --surface-float: #ffffff;
+  --surface-float-border: rgba(203, 213, 225, 0.9);
+  --float-shadow: 0 10px 24px -6px rgb(15 23 42 / 0.18), 0 4px 10px -4px rgb(15 23 42 / 0.12);
+
   --workspace-gap: 1.5rem;
   --workspace-padding-x: 1rem;
   --workspace-padding-x-md: 2rem;
@@ -34,12 +114,21 @@
   --workspace-max-width: 72rem;
   --workspace-max-width-wide: 80rem;
   --workspace-max-width-feature: 64rem;
-  --surface-radius: 2rem;
-  --surface-radius-subtle: 1.75rem;
-  --surface-radius-panel: 1.5rem;
+  --surface-radius: 1.25rem;
+  --surface-radius-subtle: 1.125rem;
+  --surface-radius-panel: 1rem;
   --surface-padding: 1.5rem;
   --surface-padding-lg: 2rem;
   --control-height-lg: 3.625rem;
+  /* Stacking order, fixed once. Everything that overlays something else takes
+     its z-index from here through a primitive, which is what keeps the app
+     from drifting back to the z-40-through-z-999999 spread it had before.
+     The tour sits highest because driver.js draws its own overlay at 10000. */
+  --z-sticky: 30;
+  --z-dropdown: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --z-tour: 10001;
   /* Settings surface stack. Exactly two levels: the page, and one card on it.
      Nothing nests further, so these must stay monotonic — a card is always a
      step away from the page, never back towards it. --surface-inset is for
@@ -69,11 +158,75 @@
   --scrollbar-thumb: rgba(100, 116, 139, 0.52);
   --scrollbar-thumb-hover: rgba(251, 146, 60, 0.68);
   --scrollbar-track: transparent;
-  --settings-tab-active-bg: rgba(249, 115, 22, 0.18);
-  --settings-tab-active-border: rgba(251, 146, 60, 0.35);
-  --settings-tab-active-text: #fed7aa;
+  --settings-tab-active-bg: var(--action-tint);
+  --settings-tab-active-border: var(--action-border);
+  --settings-tab-active-text: var(--action-tint-fg);
   --settings-tab-idle-text: #e5e7eb;
   --settings-tab-idle-hover: rgba(31, 41, 55, 0.9);
+
+  /* Action (brand), dark. The fill and its white label are unchanged from
+     light, so the primary button is one button in both themes rather than two.
+     Accent text is where the themes part: orange-700 as text on a near-black
+     page is 3.82:1, so --action-text lifts to orange-400 for 8.75:1.
+
+     Hover and active darken here as they do in light. That takes the fill
+     below 3:1 against the page, which is acceptable: the resting fill is what
+     has to be identifiable as a control, and it is (3.82:1). A hover state on
+     an already-identified control is not carrying that burden, and its white
+     label stays well clear at 7.31:1. */
+  --action: #c2410c;
+  --action-hover: #9a3412;
+  --action-active: #7c2d12;
+  --action-on: #ffffff;
+  --action-text: #fb923c;
+  --action-text-hover: #fdba74;
+  --action-tint: rgba(249, 115, 22, 0.18);
+  --action-tint-hover: rgba(249, 115, 22, 0.26);
+  --action-tint-fg: #fed7aa;
+  --action-border: rgba(251, 146, 60, 0.35);
+  --focus-ring: #fb923c;
+
+  --control-bg: var(--surface-card);
+  --control-border: #6b7280;
+  --control-placeholder: #9ca3af;
+  --control-disabled-bg: rgba(255, 255, 255, 0.04);
+  --control-disabled-border: #3f4653;
+  --control-disabled-fg: #8b93a1;
+
+  --rail-bg: #0b1220;
+  --rail-border: rgba(148, 163, 184, 0.18);
+  --rail-fg: #e5e7eb;
+  --rail-fg-muted: #a8b3c4;
+  --rail-item-hover: #141d2e;
+  --rail-item-active: var(--action-tint);
+  --rail-item-active-fg: var(--action-tint-fg);
+
+  --status-neutral-bg: rgba(148, 163, 184, 0.12);
+  --status-neutral-fg: #e5e7eb;
+  --status-neutral-border: rgba(148, 163, 184, 0.28);
+  --status-info-bg: rgba(59, 130, 246, 0.14);
+  --status-info-fg: #bfdbfe;
+  --status-info-border: rgba(59, 130, 246, 0.32);
+  --status-success-bg: rgba(34, 197, 94, 0.14);
+  --status-success-fg: #bbf7d0;
+  --status-success-border: rgba(34, 197, 94, 0.32);
+  --status-warning-bg: rgba(245, 158, 11, 0.14);
+  --status-warning-fg: #fde68a;
+  --status-warning-border: rgba(245, 158, 11, 0.32);
+  --status-danger-bg: rgba(239, 68, 68, 0.14);
+  --status-danger-fg: #fecaca;
+  --status-danger-border: rgba(239, 68, 68, 0.32);
+
+  --scrim: rgba(0, 0, 0, 0.66);
+  /* A float is lighter than a card in dark mode rather than the same colour.
+     The page is already near-black, so a scrim cannot darken behind a modal
+     the way it does in light mode; the separation has to come from the panel
+     rising instead. This is not a third level of the surface stack, which is
+     still two deep: an overlay sits on a different axis to the page and card
+     it covers. */
+  --surface-float: #1e1e1e;
+  --surface-float-border: rgba(148, 163, 184, 0.22);
+  --float-shadow: 0 10px 24px -6px rgb(0 0 0 / 0.6), 0 4px 10px -4px rgb(0 0 0 / 0.5);
 }
 
 html[data-ui-density="compact"] {
@@ -86,19 +239,89 @@ html[data-ui-density="compact"] {
   --workspace-max-width: 68rem;
   --workspace-max-width-wide: 74rem;
   --workspace-max-width-feature: 60rem;
-  --surface-radius: 1.5rem;
-  --surface-radius-subtle: 1.375rem;
-  --surface-radius-panel: 1.25rem;
+  --surface-radius: 1rem;
+  --surface-radius-subtle: 0.9375rem;
+  --surface-radius-panel: 0.875rem;
   --surface-padding: 1.25rem;
   --surface-padding-lg: 1.5rem;
   --control-height-lg: 3.25rem;
 }
 
+/* Tailwind v4 has no config file, so this block is where a raw value above
+   becomes a utility. Everything is referenced through var() rather than
+   copied, which is what makes bg-action, text-status-info-fg and the rest
+   follow the theme without a single dark: branch in a component. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-surface-page: var(--surface-page);
+  --color-surface-card: var(--surface-card);
+  --color-surface-border: var(--surface-card-border);
+  --color-surface-divider: var(--surface-divider);
+  --color-surface-inset: var(--surface-inset);
+  --color-surface-float: var(--surface-float);
+  --color-surface-float-border: var(--surface-float-border);
+
+  --color-control-bg: var(--control-bg);
+  --color-control-border: var(--control-border);
+  --color-control-placeholder: var(--control-placeholder);
+  --color-control-disabled-bg: var(--control-disabled-bg);
+  --color-control-disabled-border: var(--control-disabled-border);
+  --color-control-disabled-fg: var(--control-disabled-fg);
+
+  --color-contrast-muted: var(--contrast-muted);
+  --color-contrast-helper: var(--contrast-helper);
+  --color-contrast-icon-muted: var(--contrast-icon-muted);
+  --color-contrast-border: var(--contrast-border);
+  --color-contrast-border-strong: var(--contrast-border-strong);
+
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
+  --color-action-active: var(--action-active);
+  --color-action-on: var(--action-on);
+  --color-action-text: var(--action-text);
+  --color-action-text-hover: var(--action-text-hover);
+  --color-action-tint: var(--action-tint);
+  --color-action-tint-hover: var(--action-tint-hover);
+  --color-action-tint-fg: var(--action-tint-fg);
+  --color-action-border: var(--action-border);
+  --color-focus-ring: var(--focus-ring);
+
+  --color-rail: var(--rail-bg);
+  --color-rail-border: var(--rail-border);
+  --color-rail-fg: var(--rail-fg);
+  --color-rail-fg-muted: var(--rail-fg-muted);
+  --color-rail-item-hover: var(--rail-item-hover);
+  --color-rail-item-active: var(--rail-item-active);
+  --color-rail-item-active-fg: var(--rail-item-active-fg);
+
+  --color-status-neutral-bg: var(--status-neutral-bg);
+  --color-status-neutral-fg: var(--status-neutral-fg);
+  --color-status-neutral-border: var(--status-neutral-border);
+  --color-status-info-bg: var(--status-info-bg);
+  --color-status-info-fg: var(--status-info-fg);
+  --color-status-info-border: var(--status-info-border);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-fg: var(--status-success-fg);
+  --color-status-success-border: var(--status-success-border);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-fg: var(--status-warning-fg);
+  --color-status-warning-border: var(--status-warning-border);
+  --color-status-danger-bg: var(--status-danger-bg);
+  --color-status-danger-fg: var(--status-danger-fg);
+  --color-status-danger-border: var(--status-danger-border);
+
+  --color-scrim: var(--scrim);
+
+  --radius-surface: var(--surface-radius);
+  --radius-surface-subtle: var(--surface-radius-subtle);
+  --radius-surface-panel: var(--surface-radius-panel);
+
+  --shadow-card: var(--surface-card-shadow);
+  --shadow-float: var(--float-shadow);
 }
 
 body {

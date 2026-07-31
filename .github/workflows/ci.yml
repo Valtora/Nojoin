@@ -203,6 +203,14 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      # Contrast is a property of a token pair, so nothing in lint or the type
+      # checker can see a regression here. This reads the tokens out of
+      # globals.css and fails the job on any pairing that drops below its
+      # threshold.
+      - name: Check token contrast
+        working-directory: frontend
+        run: npm run check:contrast
+
   frontend-unit-tests:
     name: Frontend unit tests
     needs: detect-changes
