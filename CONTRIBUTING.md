@@ -98,7 +98,7 @@ Run the checks for every area you touched before opening a pull request. Capture
 
 Additional scope rules:
 
-- Recording context-menu changes must keep `frontend/src/components/RecordingCard.tsx` and `frontend/src/components/Sidebar.tsx` in sync.
+- Recording action changes must go through `frontend/src/components/recordings/_hooks/useRecordingActions.ts` rather than being defined locally, so the rail and the live view cannot diverge.
 - Security-sensitive changes must preserve the documented auth and token boundaries in `docs/SECURITY.md` and update that guide in the same pull request when behaviour changes.
 - API changes must keep backend response schemas (`backend/models/*_public.py` and related Pydantic models) and the corresponding frontend interfaces in `frontend/src/types/index.ts` synchronised in the same pull request.
 
@@ -159,7 +159,7 @@ Sensitive scopes carry an additional review obligation that the maintainer (or, 
 
 - **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head and never delete or rename a committed revision. Confirm `Alembic validation` is green.
 - **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
-- **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and keep `RecordingCard.tsx` and `Sidebar.tsx` context menus in sync.
+- **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 - **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
 
 ### Branch Protection (maintainer-action-pending)

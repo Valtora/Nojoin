@@ -289,7 +289,10 @@ export default function PeoplePage() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">
+          {/* The people table is a dense surface: extra width shows more of it
+              rather than lengthening a line of prose. This was a hard-coded
+              max-w-7xl, which also opted the page out of the density setting. */}
+          <div className="mx-auto w-full max-w-[var(--workspace-max-width-dense)] space-y-6">
             {/* Header Action */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>

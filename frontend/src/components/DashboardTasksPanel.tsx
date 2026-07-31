@@ -81,7 +81,7 @@ export default function DashboardTasksPanel() {
   );
 
   return (
-    <div className="density-surface border border-action-border bg-surface-card shadow-card">
+    <div className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
       <div className="space-y-2">
         <div className="mt-2 flex items-start gap-3">
           <div className="rounded-2xl bg-action-tint p-2 text-action-text">
@@ -130,7 +130,11 @@ export default function DashboardTasksPanel() {
         </button>
       )}
 
-      <div className="mt-6 space-y-6">
+      {/* The list is what gives when the column is taller than this card's
+          content: it takes the slack, and scrolls inside itself once there is
+          more of it than the column has room for. Everything above it keeps
+          its natural height, so the header and composer never scroll away. */}
+      <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
         {loading ? (
           <div className="density-surface-panel flex items-center gap-3 border border-surface-border bg-surface-card px-4 py-4 text-sm text-contrast-muted">
             <Loader2 className="h-4 w-4 animate-spin" />

@@ -135,6 +135,13 @@
   --workspace-max-width: 72rem;
   --workspace-max-width-wide: 80rem;
   --workspace-max-width-feature: 64rem;
+  /* Dense surfaces: grids and tables, where width buys more visible data rather
+     than longer lines of prose. They stop growing at 120rem and spend anything
+     beyond it on another column, because a 2400px-wide row is hard to track
+     across while three 600px columns are not. Prose surfaces keep the caps
+     above, since the reading-length argument that justifies those does not
+     apply to a table. */
+  --workspace-max-width-dense: 120rem;
   --surface-radius: 1.25rem;
   --surface-radius-subtle: 1.125rem;
   --surface-radius-panel: 1rem;
@@ -290,6 +297,7 @@ html[data-ui-density="compact"] {
   --workspace-max-width: 68rem;
   --workspace-max-width-wide: 74rem;
   --workspace-max-width-feature: 60rem;
+  --workspace-max-width-dense: 112rem;
   --surface-radius: 1rem;
   --surface-radius-subtle: 0.9375rem;
   --surface-radius-panel: 0.875rem;
@@ -591,6 +599,10 @@ html {
 
   .workspace-shell-feature {
     max-width: var(--workspace-max-width-feature);
+  }
+
+  .workspace-shell-dense {
+    max-width: var(--workspace-max-width-dense);
   }
 
   .workspace-pad-x {

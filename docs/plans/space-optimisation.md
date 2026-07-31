@@ -20,7 +20,7 @@ Resolved with the maintainer before this plan was written. They are fixed inputs
 | --- | --- |
 | 1 | Width policy is **per surface type**. Dense surfaces grow; prose surfaces keep a reading-width cap. |
 | 2 | Dense surfaces cap at **120rem** and spend further width on **more columns, not wider ones**. |
-| 3 | The dense set is **dashboard, recordings, people**. Tasks stays at 80rem. Recording detail stays full-bleed. |
+| 3 | The dense set is **dashboard and people**. Tasks stays at 80rem, recording detail stays full-bleed, and `/recordings` is out (see decision 15). |
 | 4 | All four viewport classes are in scope: ultrawide, 1920, laptop 1440-1536, tablet and phone. |
 | 5 | The nav rail is unchanged: still ~340px, still resizable, still collapsible. |
 | 6 | The dashboard gains **recent recordings**, **processing in flight**, and a standalone **agenda**. No counts strip. |
@@ -32,6 +32,8 @@ Resolved with the maintainer before this plan was written. They are fixed inputs
 | 12 | On a phone the order is **action first**: Meet Now, processing, agenda, tasks, recents, month grid last. |
 | 13 | Recent recordings **accepts the full-list fetch** and slices client-side. No backend change. |
 | 14 | Same branch as the restyle, merged once. This plan is deleted at merge; the durable rules go to DESIGN.md. |
+| 15 | **`/recordings` is left alone.** The rail-to-detail flow is untouched and the landing panel stays. Extra width would have nothing to fill: the list lives in the fixed-width rail, and the main area is prose. A grid or table there is a feature rather than a space optimisation, and is explicitly not in this branch. |
+| 16 | **`RecordingCard.tsx` is deleted.** 375 lines, complete, tested and re-tokenised, imported by nothing in the entire git history. It was built for the recordings grid that decision 15 declines to build. `BatchActionBar.tsx` stays: it looked orphaned in a truncated search and is in fact live, driving batch selection in the recordings rail. |
 
 ## 3. Non-goals
 
@@ -52,7 +54,7 @@ The existing caps are unchanged, so no prose surface moves:
 
 | Token | Comfortable | Compact | Used by |
 | --- | --- | --- | --- |
-| `--workspace-max-width-dense` (new) | 120rem | 112rem | dashboard, recordings, people |
+| `--workspace-max-width-dense` (new) | 120rem | 112rem | dashboard, people |
 | `--workspace-max-width-wide` | 80rem | 74rem | tasks |
 | `--workspace-max-width` | 72rem | 68rem | the default |
 | `--workspace-max-width-feature` | 64rem | 60rem | auth, setup, consent, landing |
@@ -116,8 +118,13 @@ Each phase is one reviewable commit or a small set, gated by `npm run lint`, `np
 ### Phase A: width and column foundation
 
 - `--workspace-max-width-dense` and `.workspace-shell-dense` in `globals.css`, both densities.
-- Point the dashboard, recordings landing and people page at the dense shell.
+- Point the dashboard and the people page at the dense shell. The people page uses a hard-coded
+  `max-w-7xl` rather than the workspace shell, so it moves onto the token in the same change.
 - Dashboard grid moves to three breakpoints with `items-stretch`.
+- Delete the orphaned component of decision 16, and correct the five places in the docs that
+  tell contributors to keep a non-existent grid view in sync. The shared-action invariant test is
+  rewritten rather than removed: the hook has two live consumers, `Sidebar` and
+  `RecordingStatusDisplay`, so the invariant is real and merely names the wrong second surface.
 - No module changes yet, so the diff is small and the effect is visible immediately.
 
 ### Phase B: nesting sweep
