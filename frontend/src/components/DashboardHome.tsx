@@ -81,9 +81,18 @@ export default function DashboardHome() {
               : ""
           }`}
         >
+          {/* `row-span-2`, not `row-end-[-1]`. A negative grid line counts back
+              from the end of the *explicit* grid, and this grid declares no
+              rows at all, so `-1` resolves to line 1 and the span silently
+              collapses to a single row. That left the month grid ending level
+              with the agenda and a dead corner underneath it, which is the
+              exact defect this layout exists to remove. At three columns the
+              second row is gone, so the span goes back to one. */}
           <div
             id="dashboard-upcoming-meetings"
-            className="order-6 flex min-w-0 flex-col @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-end-[-1]"
+            className={`order-6 flex min-w-0 flex-col @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 ${
+              hasThirdColumn ? "@min-[74rem]:row-span-1" : ""
+            }`}
           >
             <MonthGridCard calendar={calendar} />
           </div>
