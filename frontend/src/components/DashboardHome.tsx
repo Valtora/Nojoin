@@ -1,39 +1,66 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+import { getBrowserTimeZone } from "@/lib/timezone";
+
 import Workspace from "./Workspace";
 import DashboardTasksPanel from "./DashboardTasksPanel";
 import DashboardUpcomingMeetingsCard from "./DashboardUpcomingMeetingsCard";
 import MeetingControls from "./MeetingControls";
+import ProcessingCard from "./dashboardRecordings/ProcessingCard";
+import RecentRecordingsCard from "./dashboardRecordings/RecentRecordingsCard";
+import { useDashboardRecordings } from "./dashboardRecordings/useDashboardRecordings";
 
 export default function DashboardHome() {
+  const { recent, processing } = useDashboardRecordings();
+  const [timeZone, setTimeZone] = useState("UTC");
+
+  // Resolved after mount rather than during render, because the server has no
+  // browser time zone and a mismatch would hydrate differently.
+  useEffect(() => {
+    setTimeZone(getBrowserTimeZone());
+  }, []);
+
+  // A module with nothing to say does not render. The calendar, Meet Now and
+  // the task list are the floor, so a new account sees a dashboard rather than
+  // a wall of empty boxes, and an active one fills the grid.
+  const showRecents = recent.length > 0;
+  const showProcessing = processing.length > 0;
+  const hasThirdColumn = showRecents || showProcessing;
+
   return (
     <Workspace
       contentClassName="workspace-shell workspace-shell-dense"
       paddingClassName="workspace-pad-y"
     >
-      {/* Two columns from xl, one below it. The breakpoint stays at xl rather
-          than dropping to lg because these are viewport widths and the
-          workspace sits beside a ~340px rail: at a 1024px viewport the content
-          area is about 620px, which is under the 20rem the second column asks
-          for, and the grid would overflow rather than fit.
+      {/* Two columns from xl, three from 1600px, one below. The breakpoints are
+          viewport widths and the workspace sits beside a ~340px rail, so the
+          content area is always narrower than the number in the class: at a
+          1024px viewport it is about 620px, which is why the second column
+          waits for xl rather than lg, and the third waits for 1600 rather than
+          2xl.
 
-          The third column arrives with the modules that fill it; declaring it
-          now would only add an empty column, which is worse than the gutter it
-          replaces.
+          The third column only exists when something fills it, so its absence
+          is a two-column layout rather than an empty gutter.
 
           `items-stretch` is what removes the dead corner this layout used to
           have: with `items-start` each column ended wherever its content did,
           so the shorter one left an empty L-shape down the page. Stretching
           makes the columns end level, and a module that overflows scrolls
-          inside itself rather than pushing the grid taller. */}
-      <section className="flex flex-col gap-[var(--workspace-gap)] xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] xl:items-stretch">
-        <div
-          id="dashboard-upcoming-meetings"
-          className="flex min-w-0 flex-col xl:col-start-1 xl:row-start-1"
-        >
-          <DashboardUpcomingMeetingsCard />
-        </div>
+          inside itself rather than pushing the grid taller.
 
+          Column order in the DOM is deliberate: the capture card comes first so
+          a phone, which flattens this to one column, opens on the action rather
+          than on a month grid. Desktop puts the calendar back on the left
+          through explicit column placement. */}
+      <section
+        className={`flex flex-col gap-[var(--workspace-gap)] xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] xl:items-stretch ${
+          hasThirdColumn
+            ? "min-[1600px]:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.8fr)_minmax(20rem,0.8fr)]"
+            : ""
+        }`}
+      >
         <div className="flex min-w-0 flex-col gap-[var(--workspace-gap)] xl:col-start-2 xl:row-start-1">
           <div id="dashboard-meeting-controls">
             <MeetingControls
@@ -47,6 +74,29 @@ export default function DashboardHome() {
           <div id="dashboard-task-cards" className="flex min-h-0 flex-1 flex-col">
             <DashboardTasksPanel />
           </div>
+        </div>
+
+        {hasThirdColumn && (
+          <div className="flex min-w-0 flex-col gap-[var(--workspace-gap)] xl:col-start-2 xl:row-start-2 min-[1600px]:col-start-3 min-[1600px]:row-start-1">
+            {showProcessing && (
+              <div id="dashboard-processing">
+                <ProcessingCard recordings={processing} />
+              </div>
+            )}
+
+            {showRecents && (
+              <div id="dashboard-recent-recordings" className="flex min-h-0 flex-1 flex-col">
+                <RecentRecordingsCard recordings={recent} timeZone={timeZone} />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div
+          id="dashboard-upcoming-meetings"
+          className="flex min-w-0 flex-col xl:col-start-1 xl:row-start-1 xl:row-end-[-1]"
+        >
+          <DashboardUpcomingMeetingsCard />
         </div>
       </section>
     </Workspace>
