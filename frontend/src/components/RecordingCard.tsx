@@ -64,7 +64,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
     case RecordingStatus.QUEUED:
       return (
         <span
-          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-info-bg text-status-info-fg"
+          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-info-bg text-status-info-fg cursor-help"
           title="Meeting is in queue to be processed..."
         >
           <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -88,7 +88,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
       }
       return (
         <span
-          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-info-bg text-status-info-fg"
+          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-info-bg text-status-info-fg cursor-help"
           title="Processing audio: transcription, diarization, and voiceprint extraction. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing if you prefer manual speaker management."
         >
           <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -228,7 +228,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         <div className="block">
           <div
             id={isDemo ? "demo-recording-card" : undefined}
-            className="bg-surface-card shadow hover:shadow-card transition-shadow p-4 border border-surface-border relative"
+            className="bg-surface-card rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-surface-border relative group"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
@@ -247,12 +247,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                className="text-lg font-semibold text-foreground border rounded px-1 focus:outline-none flex-1 mr-4"
+                className="text-lg font-semibold text-foreground bg-surface-card border border-status-info-border rounded px-1 focus:outline-none flex-1 mr-4"
               />
               <StatusBadge recording={recording} />
             </div>
 
-            <div className="flex items-center text-sm text-contrast-helper">
+            <div className="flex items-center text-sm text-contrast-helper space-x-4">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
                 {formatDate(recording.created_at, recording)}
@@ -268,12 +268,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         <Link href={`/recordings/${recording.id}`} className="block">
           <div
             id={isDemo ? "demo-recording-card" : undefined}
-            className="bg-surface-card shadow hover:shadow-card transition-shadow p-4 border border-surface-border relative"
+            className="bg-surface-card rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-surface-border relative group"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
               <h3
-                className="text-lg font-semibold text-foreground pr-4 flex-1 hover:text-status-info-fg"
+                className="text-lg font-semibold text-foreground truncate pr-4 flex-1 hover:text-status-info-fg"
                 title="Double-click to rename"
                 onDoubleClick={handleRenameStart}
               >
@@ -282,7 +282,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
               <StatusBadge recording={recording} />
             </div>
 
-            <div className="flex items-center text-sm text-contrast-helper">
+            <div className="flex items-center text-sm text-contrast-helper space-x-4">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
                 {formatDate(recording.created_at, recording)}

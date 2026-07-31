@@ -41,7 +41,7 @@ export default function SettingsCard({
       <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:p-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+            <h2 className="text-base font-semibold text-foreground">
               {title}
             </h2>
             {badge}

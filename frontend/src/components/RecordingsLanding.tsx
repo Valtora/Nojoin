@@ -49,7 +49,7 @@ export default function RecordingsLanding() {
             Recordings Workspace
           </div>
 
-          <h1 className="density-heading-page mt-4 text-3xl font-semibold tracking-tight text-foreground">
+          <h1 className="density-heading-page mt-4 text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
             {copy.title}
           </h1>
 

@@ -222,7 +222,7 @@ export default function DashboardUpcomingMeetingsCard() {
                     : isSelectedDay && inCurrentMonth
                       ? "border border-action-border bg-action-tint text-action-text shadow-card"
                       : inCurrentMonth
-                        ? "bg-surface-inset text-contrast-muted hover:border-action-border hover:bg-action-tint hover:text-action-text"
+                        ? "bg-surface-inset text-contrast-muted hover:border-action-border hover:bg-action-tint hover:text-action-text bg-surface-card"
                         : "text-contrast-icon-muted"
                 }`;
 
@@ -242,7 +242,7 @@ export default function DashboardUpcomingMeetingsCard() {
                             return (
                               <span
                                 key={`${day.toISOString()}-dot-${index}`}
-                                className={`h-1.5 w-1.5 rounded-full border border-surface-border ${dot.className}`}
+                                className={`h-1.5 w-1.5 rounded-full border border-surface-border/40 ${dot.className}`}
                                 style={dot.style}
                               />
                             );

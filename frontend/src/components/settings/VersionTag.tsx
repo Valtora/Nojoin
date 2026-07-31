@@ -32,9 +32,9 @@ export default function VersionTag() {
     return (
       <div className="flex items-center gap-3 text-sm font-medium contrast-helper">
         <span>{versionInfo.current_version} ({currentLabel})</span>
-        <span className="w-px h-4 bg-gray-300 dark:bg-gray-600"></span>
+        <span className="w-px h-4 bg-surface-card"></span>
         <span
-          className="cursor-pointer hover:underline hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          className="cursor-pointer hover:underline hover:text-contrast-muted transition-colors"
           onClick={() =>
             versionInfo.release_url &&
             window.open(versionInfo.release_url, "_blank")

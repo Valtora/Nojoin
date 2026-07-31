@@ -33,7 +33,7 @@ export function EventDetailsPopoverContent({
   const locationHost = getUrlHost(locationText);
 
   return (
-    <div className="w-72 rounded-surface-panel border border-surface-float-border bg-surface-float p-4 text-left shadow-float">
+    <div className="w-72 rounded-surface-panel border border-surface-float-border bg-surface-float p-4 text-left shadow-float sm:w-80">
       <div className="flex items-start justify-between gap-3">
         <div className="text-sm font-semibold text-foreground">
           {event.title}

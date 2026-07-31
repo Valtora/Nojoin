@@ -34,7 +34,7 @@ export default function AiLanguageSection({
     >
       <SettingsBlock className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-contrast-muted mb-2">
             Transcription language
           </label>
           <select
@@ -49,7 +49,7 @@ export default function AiLanguageSection({
               !languageRegistry ||
               transcriptionLanguageCapability?.forced_language === false
             }
-            className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-60"
+            className="w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-60"
           >
             {!languageRegistry && (
               <option value="auto">Loading languages...</option>
@@ -67,7 +67,7 @@ export default function AiLanguageSection({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-contrast-muted mb-2">
             Notes generation language
           </label>
           <select
@@ -79,7 +79,7 @@ export default function AiLanguageSection({
               })
             }
             disabled={!languageRegistry}
-            className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-60"
+            className="w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-60"
           >
             {!languageRegistry && (
               <option value="english">Loading languages...</option>
@@ -98,7 +98,7 @@ export default function AiLanguageSection({
 
         {(settings.notes_language || "english") === "custom" && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-contrast-muted mb-2">
               Custom notes language or style instruction
             </label>
             <input
@@ -112,7 +112,7 @@ export default function AiLanguageSection({
               }
               maxLength={languageRegistry?.custom_instruction_max_length || 300}
               placeholder="e.g. Formal Canadian French with concise executive-style headings"
-              className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+              className="w-full p-3 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
             />
             <p className="mt-2 text-xs contrast-helper">
               Required for Custom. This can control language, regional

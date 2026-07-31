@@ -173,7 +173,7 @@ export default function VoiceprintModal({
 
           {/* Link to matched speaker (if match exists) */}
           {extractResult.matched_speaker && (
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'link_existing' && selectedGlobalSpeakerId === extractResult.matched_speaker.id ? 'border-blue-500 bg-status-info-bg' : 'border-surface-border hover:border-blue-300'}`}>
+            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'link_existing' && selectedGlobalSpeakerId === extractResult.matched_speaker.id ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
               <input
                 type="radio"
                 name="action"
@@ -195,7 +195,7 @@ export default function VoiceprintModal({
           )}
 
           {/* Create new global speaker */}
-          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'create_new' ? 'border-blue-500 bg-status-info-bg' : 'border-surface-border hover:border-blue-300'}`}>
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'create_new' ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
             <input
               type="radio"
               name="action"
@@ -215,7 +215,7 @@ export default function VoiceprintModal({
                   placeholder="Enter speaker name..."
                   value={newSpeakerName}
                   onChange={(e) => setNewSpeakerName(e.target.value)}
-                  className="mt-2 w-full px-3 py-1.5 text-sm border border-control-border rounded bg-control-bg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-2 w-full px-3 py-1.5 text-sm border border-control-border rounded bg-control-bg focus:outline-none focus:ring-2 focus:ring-status-info-border"
                   autoFocus
                 />
               )}
@@ -223,7 +223,7 @@ export default function VoiceprintModal({
           </label>
 
           {/* Force link to different speaker */}
-          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'force_link' ? 'border-blue-500 bg-status-info-bg' : 'border-surface-border hover:border-blue-300'}`}>
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'force_link' ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
             <input
               type="radio"
               name="action"
@@ -241,7 +241,7 @@ export default function VoiceprintModal({
                 <select
                   value={selectedGlobalSpeakerId ?? ''}
                   onChange={(e) => setSelectedGlobalSpeakerId(Number(e.target.value))}
-                  className="mt-2 w-full px-3 py-1.5 text-sm border border-control-border rounded bg-control-bg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-2 w-full px-3 py-1.5 text-sm border border-control-border rounded bg-control-bg focus:outline-none focus:ring-2 focus:ring-status-info-border"
                 >
                   <option value="">Select a speaker...</option>
                   {globalSpeakers.map((gs) => (
@@ -255,7 +255,7 @@ export default function VoiceprintModal({
           </label>
 
           {/* Keep local only */}
-          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'local_only' ? 'border-blue-500 bg-status-info-bg' : 'border-surface-border hover:border-blue-300'}`}>
+          <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'local_only' ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
             <input
               type="radio"
               name="action"
@@ -299,7 +299,7 @@ export default function VoiceprintModal({
         {/* Progress bar */}
         <div className="w-full h-1 bg-surface-inset rounded-full overflow-hidden">
           <div
-            className="h-full bg-blue-500 transition-all duration-300"
+            className="h-full bg-status-info-bg transition-all duration-300"
             style={{ width: `${((currentBatchIndex + 1) / successfulResults.length) * 100}%` }}
           />
         </div>
@@ -324,7 +324,7 @@ export default function VoiceprintModal({
               }
             }}
             disabled={!currentResult.matched_speaker}
-            className="px-3 py-2 text-sm rounded-lg border border-green-500 text-status-success-fg hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 text-sm rounded-lg border border-status-success-border text-status-success-fg hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {currentResult.matched_speaker ? `Link to ${currentResult.matched_speaker.name}` : 'No match'}
           </button>
@@ -409,7 +409,7 @@ export default function VoiceprintModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-contrast-icon-muted hover:text-contrast-helper dark:hover:text-gray-300 rounded-lg hover:bg-surface-inset"
+            className="p-2 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-lg hover:bg-surface-inset"
           >
             <X className="w-5 h-5" />
           </button>
@@ -431,14 +431,14 @@ export default function VoiceprintModal({
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border bg-surface-inset/50">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-contrast-helper hover:text-gray-800 dark:hover:text-gray-200"
+            className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground"
           >
             Cancel
           </button>
           <button
             onClick={isBatchMode ? handleBatchSubmit : handleSingleSubmit}
             disabled={isSubmitting || isSubmitDisabled()}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 text-sm bg-status-info-bg text-foreground rounded-lg hover:bg-status-info-bg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             {isBatchMode ? 'Apply All' : 'Apply'}

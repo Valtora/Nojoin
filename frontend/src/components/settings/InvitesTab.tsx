@@ -187,14 +187,14 @@ export default function InvitesTab() {
                   <span
                     className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                       inv.role === UserRole.ADMIN
-                        ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                        : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                        ? "bg-status-info-bg text-status-info-fg"
+                        : "bg-status-info-bg text-status-info-fg"
                     }`}
                   >
                     {inv.role}
                   </span>
                   {inv.is_revoked && (
-                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-status-danger-bg text-status-danger-fg">
                       Revoked
                     </span>
                   )}
@@ -218,7 +218,7 @@ export default function InvitesTab() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 mb-4 rounded-2xl border border-gray-200/80 bg-gray-50/85 p-2 dark:border-gray-800 dark:bg-gray-900/70">
+              <div className="flex items-center gap-2 mb-4 rounded-2xl border border-surface-border bg-surface-inset p-2">
                 <input
                   readOnly
                   value={inv.link}
@@ -259,7 +259,7 @@ export default function InvitesTab() {
                     {inv.users.map((u) => (
                       <span
                         key={u}
-                        className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-contrast-helper"
+                        className="text-xs px-1.5 py-0.5 bg-surface-inset rounded text-contrast-helper"
                       >
                         {u}
                       </span>
@@ -336,7 +336,7 @@ export default function InvitesTab() {
                 <button
                   onClick={handleCreate}
                   disabled={creating}
-                  className="px-4 py-2 text-sm font-medium text-white bg-action hover:bg-action-hover rounded-md transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium text-foreground bg-action hover:bg-action-hover rounded-md transition-colors disabled:opacity-50"
                 >
                   {creating ? "Creating..." : "Create Invite"}
                 </button>

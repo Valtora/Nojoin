@@ -51,7 +51,7 @@ export default function ExportModal({
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-contrast-icon-muted hover:text-contrast-helper dark:hover:text-gray-200 rounded-md hover:bg-surface-inset transition-colors"
+            className="p-1 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-md hover:bg-surface-inset transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -69,8 +69,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 selected === "transcript"
-                  ? "border-orange-500 bg-action-tint"
-                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-action bg-action-tint"
+                  : "border-surface-border hover:border-control-border"
               }`}
             >
               <input
@@ -84,8 +84,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "transcript"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
@@ -101,12 +101,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "transcript"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {selected === "transcript" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -117,8 +117,8 @@ export default function ExportModal({
                 !hasNotes
                   ? "opacity-50 cursor-not-allowed border-surface-border"
                   : selected === "notes"
-                    ? "border-orange-500 bg-action-tint cursor-pointer"
-                    : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer"
+                    ? "border-action bg-action-tint cursor-pointer"
+                    : "border-surface-border hover:border-control-border cursor-pointer"
               }`}
             >
               <input
@@ -133,8 +133,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "notes"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <StickyNote className="w-5 h-5" />
@@ -152,12 +152,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "notes"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {selected === "notes" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -168,8 +168,8 @@ export default function ExportModal({
                 !hasNotes
                   ? "opacity-50 cursor-not-allowed border-surface-border"
                   : selected === "both"
-                    ? "border-orange-500 bg-action-tint cursor-pointer"
-                    : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer"
+                    ? "border-action bg-action-tint cursor-pointer"
+                    : "border-surface-border hover:border-control-border cursor-pointer"
               }`}
             >
               <input
@@ -184,8 +184,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "both"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <Files className="w-5 h-5" />
@@ -203,12 +203,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "both"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {selected === "both" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -217,8 +217,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 selected === "audio"
-                  ? "border-orange-500 bg-action-tint"
-                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-action bg-action-tint"
+                  : "border-surface-border hover:border-control-border"
               }`}
             >
               <input
@@ -232,8 +232,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "audio"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <Music className="w-5 h-5" />
@@ -249,12 +249,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "audio"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {selected === "audio" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -272,8 +272,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "txt"
-                  ? "border-orange-500 bg-action-tint"
-                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-action bg-action-tint"
+                  : "border-surface-border hover:border-control-border"
               }`}
             >
               <input
@@ -287,8 +287,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   format === "txt"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
@@ -304,12 +304,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   format === "txt"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {format === "txt" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -317,8 +317,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "pdf"
-                  ? "border-orange-500 bg-action-tint"
-                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-action bg-action-tint"
+                  : "border-surface-border hover:border-control-border"
               }`}
             >
               <input
@@ -332,8 +332,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   format === "pdf"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
@@ -349,12 +349,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   format === "pdf"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {format === "pdf" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -362,8 +362,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "docx"
-                  ? "border-orange-500 bg-action-tint"
-                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-action bg-action-tint"
+                  : "border-surface-border hover:border-control-border"
               }`}
             >
               <input
@@ -377,8 +377,8 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   format === "docx"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
-                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
+                    ? "bg-action-tint text-action-text"
+                    : "bg-surface-inset text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
@@ -394,12 +394,12 @@ export default function ExportModal({
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   format === "docx"
-                    ? "border-orange-500 bg-orange-500"
+                    ? "border-action bg-action"
                     : "border-control-border"
                 }`}
               >
                 {format === "docx" && (
-                  <div className="w-2 h-2 rounded-full bg-white" />
+                  <div className="w-2 h-2 rounded-full bg-surface-card" />
                 )}
               </div>
             </label>
@@ -412,13 +412,13 @@ export default function ExportModal({
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border bg-surface-inset">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-contrast-helper hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            className="px-4 py-2 text-contrast-helper hover:text-foreground transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-action text-white rounded-md hover:bg-action-hover transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-action text-foreground rounded-md hover:bg-action-hover transition-colors"
           >
             <Download className="w-4 h-4" />
             Export

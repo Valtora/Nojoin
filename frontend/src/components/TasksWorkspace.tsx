@@ -515,7 +515,7 @@ export default function TasksWorkspace() {
         {isCreateOpen && (
           <form
             onSubmit={handleCreateTask}
-            className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-action-border bg-action-tint p-4"
+            className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-action-border bg-action-tint p-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)]"
           >
             <div className="flex flex-col gap-3">
               <input

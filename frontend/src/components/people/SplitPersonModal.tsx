@@ -227,10 +227,10 @@ export default function SplitPersonModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
       <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-surface-border">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-surface-border bg-gray-50/80 dark:bg-gray-900/80 z-10 flex justify-between items-start">
+        <div className="px-6 py-5 border-b border-surface-border bg-surface-inset z-10 flex justify-between items-start">
           <div>
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-              <Split className="w-6 h-6 text-action-text dark:text-orange-500" />
+              <Split className="w-6 h-6 text-action-text" />
               Split / Unmerge Speaker
             </h2>
             <p className="mt-1 text-sm text-contrast-helper">
@@ -240,14 +240,14 @@ export default function SplitPersonModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 -mr-2 text-contrast-icon-muted hover:text-contrast-helper dark:hover:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+            className="p-2 -mr-2 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-full hover:bg-surface-inset transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-gray-50 dark:bg-black/20">
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-surface-inset">
           {success ? (
             <div className="flex flex-col items-center justify-center h-full py-12 animate-in fade-in zoom-in duration-300">
               <div className="w-20 h-20 bg-status-success-bg rounded-full flex items-center justify-center mb-6 shadow-sm">
@@ -265,21 +265,21 @@ export default function SplitPersonModal({
                   onComplete();
                   onClose();
                 }}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg transition-transform hover:scale-[1.02]"
+                className="px-6 py-3 bg-status-info-bg hover:bg-status-info-bg text-foreground rounded-xl shadow-lg transition-transform hover:scale-[1.02]"
               >
                 Done
               </button>
             </div>
           ) : isLoading ? (
             <div className="flex flex-col items-center justify-center h-64">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-600 mb-4"></div>
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-action mb-4"></div>
               <p className="text-contrast-helper animate-pulse">
                 Finding audio segments...
               </p>
             </div>
           ) : segments.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
-              <AlertCircle className="w-12 h-12 text-gray-300 mb-3" />
+              <AlertCircle className="w-12 h-12 text-contrast-icon-muted mb-3" />
               <p className="text-contrast-helper font-medium">
                 No sufficient audio segments found for this speaker.
               </p>
@@ -296,7 +296,7 @@ export default function SplitPersonModal({
                     <UserPlus className="absolute left-3 top-2.5 w-5 h-5 text-contrast-icon-muted" />
                     <input
                       type="text"
-                      className="w-full pl-10 pr-4 py-2 bg-surface-inset border border-surface-border rounded-lg focus:outline-hidden focus:ring-2 focus-visible:outline-focus-ring dark:focus:ring-orange-400 focus:border-transparent transition-all"
+                      className="w-full pl-10 pr-4 py-2 bg-surface-inset border border-surface-border rounded-lg focus:outline-hidden focus:ring-2 focus-visible:outline-focus-ring focus:ring-action-border focus:border-transparent transition-all"
                       placeholder="e.g. Jane Doe"
                       value={newSpeakerName}
                       onChange={(e) => setNewSpeakerName(e.target.value)}
@@ -319,20 +319,20 @@ export default function SplitPersonModal({
                         relative group flex flex-col rounded-xl border-2 transition-all duration-200 overflow-hidden cursor-pointer
                         ${
                           isSelected
-                            ? "border-orange-500 bg-action-tint shadow-md ring-1 ring-orange-500/20"
-                            : "bg-surface-card border-transparent shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600"
+                            ? "border-action bg-action-tint shadow-md ring-1 ring-action"
+                            : "bg-surface-card border-transparent shadow-sm hover:shadow-md hover:border-control-border"
                         }
                       `}
                     >
                       <div className="p-4 flex-1">
                         <div className="mb-3 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/50 dark:bg-black/20 text-xs font-medium text-contrast-helper">
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-card text-xs font-medium text-contrast-helper">
                             <Volume2 className="w-3 h-3" />
                             {(seg.end - seg.start).toFixed(1)}s
                           </div>
                           {isSelected && (
-                            <div className="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center animate-in zoom-in duration-200">
-                              <Check className="w-3 h-3 text-white" />
+                            <div className="w-5 h-5 bg-action rounded-full flex items-center justify-center animate-in zoom-in duration-200">
+                              <Check className="w-3 h-3 text-foreground" />
                             </div>
                           )}
                         </div>
@@ -341,7 +341,7 @@ export default function SplitPersonModal({
                         </p>
                       </div>
 
-                      <div className="p-3 border-t border-gray-100 dark:border-gray-700/50 flex items-center justify-between">
+                      <div className="p-3 border-t border-surface-border flex items-center justify-between">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -351,8 +351,8 @@ export default function SplitPersonModal({
                              w-8 h-8 rounded-full flex items-center justify-center transition-all
                              ${
                                isPlaying
-                                 ? "bg-action text-white shadow-md scale-105"
-                                 : "bg-gray-100 dark:bg-gray-700 text-contrast-helper hover:bg-orange-100 dark:hover:bg-orange-900/30 hover:text-action-text"
+                                 ? "bg-action text-foreground shadow-md scale-105"
+                                 : "bg-surface-inset text-contrast-helper hover:bg-action-tint hover:text-action-text"
                              }
                            `}
                         >
@@ -380,7 +380,7 @@ export default function SplitPersonModal({
         {!success && (
           <div className="px-6 py-4 bg-surface-card border-t border-surface-border flex justify-between items-center z-20">
             <div className="text-sm text-contrast-helper">
-              <span className="font-medium text-foreground dark:text-gray-200">
+              <span className="font-medium text-foreground text-contrast-icon-muted">
                 {selectedCount}
               </span>{" "}
               segments selected to move
@@ -389,7 +389,7 @@ export default function SplitPersonModal({
             <div className="flex gap-3">
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground dark:hover:text-gray-200"
+                className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground hover:text-contrast-icon-muted"
               >
                 Cancel
               </button>
@@ -404,7 +404,7 @@ export default function SplitPersonModal({
                      isSubmitting ||
                      selectedCount === 0 ||
                      !newSpeakerName.trim()
-                       ? "bg-gray-300 dark:bg-gray-700 cursor-not-allowed"
+                       ? "bg-surface-card cursor-not-allowed"
                        : "bg-action hover:bg-action-hover hover:shadow-md hover:-translate-y-px"
                    }
                  `}

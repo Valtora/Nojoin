@@ -291,7 +291,7 @@ export default function NotesView({
     if (matches.length > 0 && currentMatchIndex !== -1) {
       const scrollToMatch = () => {
         const currentMatchElement =
-          editor.view.dom.querySelector(".bg-orange-400");
+          editor.view.dom.querySelector(".bg-action");
         if (currentMatchElement) {
           currentMatchElement.scrollIntoView({
             behavior: "smooth",
@@ -390,7 +390,7 @@ export default function NotesView({
   return (
     <div id="meeting-notes" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="bg-surface-card border-control-border shadow-card flex flex-col">
+      <div className="bg-surface-card border-b-2 border-control-border shadow-card z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
         <div className="px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
           {/* Formatting Toolbar */}
@@ -400,7 +400,7 @@ export default function NotesView({
                 <button
                   onClick={() => editor.chain().focus().toggleBold().run()}
                   disabled={!editor.can().chain().focus().toggleBold().run()}
-                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bold") ? "bg-surface-inset" : "text-contrast-helper"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bold") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Bold"
                 >
                   <Bold className="w-4 h-4" />
@@ -408,7 +408,7 @@ export default function NotesView({
                 <button
                   onClick={() => editor.chain().focus().toggleItalic().run()}
                   disabled={!editor.can().chain().focus().toggleItalic().run()}
-                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("italic") ? "bg-surface-inset" : "text-contrast-helper"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("italic") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Italic"
                 >
                   <Italic className="w-4 h-4" />
@@ -418,17 +418,17 @@ export default function NotesView({
                   disabled={
                     !editor.can().chain().focus().toggleUnderline().run()
                   }
-                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("underline") ? "bg-surface-inset" : "text-contrast-helper"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("underline") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Underline"
                 >
                   <UnderlineIcon className="w-4 h-4" />
                 </button>
-                <div className="w-px h-4 bg-surface-card" />
+                <div className="w-px h-4 bg-surface-card mx-1" />
                 <button
                   onClick={() =>
                     editor.chain().focus().toggleBulletList().run()
                   }
-                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bulletList") ? "bg-surface-inset" : "text-contrast-helper"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bulletList") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Bullet List"
                 >
                   <List className="w-4 h-4" />
@@ -437,19 +437,19 @@ export default function NotesView({
                   onClick={() =>
                     editor.chain().focus().toggleOrderedList().run()
                   }
-                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("orderedList") ? "bg-surface-inset" : "text-contrast-helper"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("orderedList") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Numbered List"
                 >
                   <ListOrdered className="w-4 h-4" />
                 </button>
-                <div className="w-px h-4 bg-surface-card" />
+                <div className="w-px h-4 bg-surface-card mx-1" />
                 <button
                   onClick={() => {
                     const previousUrl = editor.getAttributes("link").href;
                     setLinkModalUrl(previousUrl || "");
                     setIsLinkModalOpen(true);
                   }}
-                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("link") ? "bg-surface-inset" : "text-contrast-helper"}`}
+                  className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("link") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Link"
                 >
                   <LinkIcon className="w-4 h-4" />
@@ -485,11 +485,11 @@ export default function NotesView({
                 onSelect={(templateId) => onGenerateNotes(templateId)}
               />
             </div>
-            <div className="w-px h-4 bg-surface-card" />
+            <div className="w-px h-4 bg-surface-card mx-1" />
             <button
               onClick={onUndo}
               disabled={!canUndo}
-              className="p-2 text-contrast-helper hover:text-contrast-muted transition-colors disabled:opacity-30"
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
@@ -497,15 +497,15 @@ export default function NotesView({
             <button
               onClick={onRedo}
               disabled={!canRedo}
-              className="p-2 text-contrast-helper hover:text-contrast-muted transition-colors disabled:opacity-30"
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Redo"
             >
               <Redo2 className="w-4 h-4" />
             </button>
-            <div className="w-px h-4 bg-surface-card" />
+            <div className="w-px h-4 bg-surface-card mx-1" />
             <button
               onClick={onExport}
-              className="p-2 text-contrast-helper hover:text-contrast-muted transition-colors"
+              className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors"
               title="Export Notes"
             >
               <Download className="w-4 h-4" />
@@ -516,7 +516,7 @@ export default function NotesView({
                 setShowSearch(newState);
                 if (!newState) setShowReplace(false);
               }}
-              className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset"}`}
+              className={`p-2 rounded-md transition-colors ${showSearch && !showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
               title="Search"
             >
               <Search className="w-4 h-4" />
@@ -531,7 +531,7 @@ export default function NotesView({
                   setShowSearch(true);
                 }
               }}
-              className={`p-2 rounded-md transition-colors ${showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset"}`}
+              className={`p-2 rounded-md transition-colors ${showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
               title="Find & Replace"
             >
               <ArrowRightLeft className="w-4 h-4" />
@@ -541,7 +541,7 @@ export default function NotesView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="px-3 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-control-border">
+          <div className="px-3 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-control-border pt-3">
             <div className="relative min-w-40 flex-[1_1_11rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <input
@@ -554,7 +554,7 @@ export default function NotesView({
                     else nextMatch();
                   }
                 }}
-                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border focus:ring-2 outline-none min-w-0"
+                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 autoFocus
               />
               {matches.length > 0 && (
@@ -564,13 +564,13 @@ export default function NotesView({
                   </span>
                   <button
                     onClick={prevMatch}
-                    className="p-1 hover:bg-surface-inset"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronUp className="w-3 h-3" />
                   </button>
                   <button
                     onClick={nextMatch}
-                    className="p-1 hover:bg-surface-inset"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -584,7 +584,7 @@ export default function NotesView({
                   placeholder="Replace..."
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
-                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border focus:ring-2 outline-none min-w-0"
+                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 />
               </div>
             )}
@@ -594,7 +594,7 @@ export default function NotesView({
                 <div className="relative">
                   <button
                     onClick={() => setShowSettings(!showSettings)}
-                    className={`p-1.5 rounded-md transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset"}`}
+                    className={`p-1.5 rounded-md transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-contrast-muted"}`}
                     title="Advanced Search Settings"
                   >
                     <Settings className="w-4 h-4" />
@@ -607,11 +607,11 @@ export default function NotesView({
                         className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
-                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card shadow-float border border-surface-border p-2 flex flex-col gap-1">
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-50 flex flex-col gap-1">
                         <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                           Search Options
                         </div>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={caseSensitive}
@@ -622,7 +622,7 @@ export default function NotesView({
                             Case Sensitive
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={isFuzzy}
@@ -636,7 +636,7 @@ export default function NotesView({
                             Fuzzy Match
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={useRegex}
@@ -655,19 +655,19 @@ export default function NotesView({
                   )}
                 </div>
 
-                <div className="w-px h-4 bg-surface-card" />
+                <div className="w-px h-4 bg-surface-card mx-1" />
 
                 <button
                   onClick={nextMatch}
                   disabled={matches.length === 0}
-                  className="px-3 py-1.5 bg-surface-inset text-sm hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed shadow-card border border-surface-border"
+                  className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
                 >
                   Find Next
                 </button>
                 <button
                   onClick={handleReplaceCurrent}
                   disabled={matches.length === 0 || isSubmitting}
-                  className="px-3 py-1.5 bg-surface-inset text-sm hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed shadow-card border border-surface-border"
+                  className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
                 >
                   Replace
                 </button>

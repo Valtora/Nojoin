@@ -145,7 +145,7 @@ export default function AudioPlayer({
     !isDemo;
   const shellClassName = compact
     ? "w-full rounded-2xl border border-control-border bg-surface-card px-3 py-2.5 shadow-card"
-    : "w-full bg-surface-card border-control-border rounded-lg md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-card";
+    : "w-full bg-surface-card border border-control-border rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-card";
   const compactMockContent = (
     <div className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
       <div className="flex items-center justify-between gap-3">
@@ -190,7 +190,7 @@ export default function AudioPlayer({
             <div className="w-full h-2.5 bg-surface-inset rounded-full"></div>
           </div>
           {/* Mock Controls Group */}
-          <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border md:order-3">
+          <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border order-2 md:order-3">
              <div className="w-8 h-4 bg-surface-inset rounded"></div>
              <div className="w-5 h-5 bg-surface-inset rounded-full"></div>
           </div>
@@ -226,7 +226,7 @@ export default function AudioPlayer({
             <div className="w-full h-2.5 bg-surface-inset rounded-full"></div>
           </div>
            {/* Mock Controls Group */}
-           <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border md:order-3">
+           <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border order-2 md:order-3">
              <div className="w-8 h-4 bg-surface-inset rounded"></div>
              <div className="w-5 h-5 bg-surface-inset rounded-full"></div>
           </div>
@@ -332,17 +332,17 @@ export default function AudioPlayer({
                 max={duration || 100}
                 value={Math.min(currentTime, duration || 100)}
                 onChange={handleSeek}
-                className="w-full h-2.5 bg-surface-inset appearance-none cursor-pointer accent-action"
+                className="w-full h-2.5 bg-surface-inset rounded-full appearance-none cursor-pointer accent-action"
               />
             </div>
           </div>
 
           {/* Controls Group */}
-          <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border md:order-3">
+          <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border order-2 md:order-3">
             {/* Speed Toggle */}
             <button
               onClick={changePlaybackRate}
-              className="text-xs font-bold text-contrast-helper w-8 text-center"
+              className="text-xs font-bold text-contrast-helper hover:text-action-text w-8 text-center"
               title="Playback Speed"
             >
               {playbackRate}x
@@ -368,7 +368,7 @@ export default function AudioPlayer({
                   step={0.1}
                   value={isMuted ? 0 : volume}
                   onChange={handleVolumeChange}
-                  className="w-20 h-1 bg-surface-inset appearance-none cursor-pointer accent-control-border"
+                  className="w-20 h-1 bg-surface-inset rounded-lg appearance-none cursor-pointer accent-control-border"
                 />
               </div>
             </div>

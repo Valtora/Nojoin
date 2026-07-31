@@ -104,7 +104,7 @@ export default function RecordingFloatingBadge() {
 
   return (
     <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 shadow-float dark:">
+      <div className="flex items-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 shadow-float">
         <button
           type="button"
           onClick={handleNavigate}

@@ -20,7 +20,7 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
         openOnClick: true,
         autolink: true,
         HTMLAttributes: {
-          class: 'text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 cursor-pointer',
+          class: 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer',
           target: '_blank',
           rel: 'noopener noreferrer',
         },

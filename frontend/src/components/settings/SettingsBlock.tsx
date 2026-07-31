@@ -47,7 +47,7 @@ export default function SettingsBlock({
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">
             {label && (
-              <span className="text-sm font-medium text-gray-900 dark:text-white">
+              <span className="text-sm font-medium text-foreground">
                 {label}
               </span>
             )}

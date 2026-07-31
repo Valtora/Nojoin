@@ -100,7 +100,7 @@ export default function TranscriptSection({
         <div className="flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
           {recording.transcript?.text ? (
             <>
-              <div className="p-4 rounded-lg bg-surface-inset border-surface-border max-w-md">
+              <div className="p-4 rounded-lg bg-surface-inset border border-surface-border max-w-md">
                 <p className="text-lg font-medium text-contrast-muted">
                   {recording.transcript.text.replace(/[\[\]]/g, "")}
                 </p>
@@ -111,7 +111,7 @@ export default function TranscriptSection({
               </p>
             </>
           ) : (
-            <p className="text-contrast-helper">
+            <p className="text-contrast-helper italic">
               No transcript available yet.
             </p>
           )}

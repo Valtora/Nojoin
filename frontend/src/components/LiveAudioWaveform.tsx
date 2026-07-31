@@ -46,8 +46,8 @@ function WaveformTrack({
 }) {
   const range = dynamicMax - dynamicMin;
   return (
-    <div className="rounded-3xl border border-surface-border bg-surface-card p-4 shadow-card dark:">
-      <div className="flex h-24 items-end gap-px sm:gap-1 overflow-hidden rounded-surface-panel bg-surface-inset px-2 py-3 dark:from-orange-500/10 dark:via-gray-950 dark:to-gray-950">
+    <div className="rounded-3xl border border-surface-border bg-surface-card p-4 shadow-float">
+      <div className="flex h-24 items-end gap-px sm:gap-1 overflow-hidden rounded-surface-panel bg-surface-inset px-2 py-3">
         {history.map((sample, index) => {
           const scaled = range > 0 ? Math.max(0, Math.min(100, ((sample - dynamicMin) / range) * 100)) : 0;
           return (

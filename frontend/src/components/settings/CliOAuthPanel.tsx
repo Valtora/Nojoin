@@ -314,15 +314,15 @@ function ProviderConnectRow({
         </div>
         <div className="shrink-0">
           {usageLimited ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-status-warning-bg text-status-warning-fg">
               Usage limited
             </span>
           ) : connected ? (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-status-success-bg text-status-success-fg">
               <Check className="w-3 h-3" /> Connected
             </span>
           ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-contrast-helper dark:bg-gray-800 dark:text-gray-400">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-surface-inset text-contrast-helper text-contrast-icon-muted">
               Not connected
             </span>
           )}
@@ -352,7 +352,7 @@ function ProviderConnectRow({
           type="button"
           onClick={handleDisconnect}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-status-danger-border text-status-danger-fg text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-status-danger-border text-status-danger-fg text-sm font-medium hover:bg-status-danger-bg disabled:opacity-50"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -371,7 +371,7 @@ function ProviderConnectRow({
           type="button"
           onClick={beginFlow}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold disabled:opacity-50"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -396,7 +396,7 @@ function ProviderConnectRow({
                   setDevice(null);
                   setFlowKind(null);
                 }}
-                className="text-contrast-icon-muted hover:text-foreground dark:hover:text-white"
+                className="text-contrast-icon-muted hover:text-foreground"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
@@ -421,7 +421,7 @@ function ProviderConnectRow({
                     href={device.verificationUriComplete || device.verificationUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold no-underline"
+                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold no-underline"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Open the {meta.vendor} sign-in page
@@ -448,7 +448,7 @@ function ProviderConnectRow({
                       href={authorizeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold no-underline"
+                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold no-underline"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Grant access on {meta.vendor}
@@ -499,7 +499,7 @@ function ProviderConnectRow({
                   type="button"
                   onClick={handleComplete}
                   disabled={busy || code.trim().length === 0}
-                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-foreground text-sm font-semibold disabled:opacity-50"
                 >
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   Connect

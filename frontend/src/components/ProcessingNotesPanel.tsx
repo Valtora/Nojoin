@@ -192,10 +192,10 @@ function ProcessingNotesPanel({
           onBlur={handleBlur}
           placeholder="Type quick reminders, decisions, or action items here..."
           disabled={disabled}
-          className={`density-surface-panel min-h-[18rem] w-full resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-gray-800 outline-none transition dark:border-orange-500/20 dark:bg-gray-900 dark:text-gray-100 ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
+          className={`density-surface-panel min-h-[18rem] w-full resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
         />
         {disabled ? (
-          <div className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center ">
+          <div className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center">
             <div>
               <div className="text-sm font-semibold text-foreground">
                 Notes are temporarily locked

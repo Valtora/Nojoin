@@ -87,14 +87,14 @@ export default function TelemetryNotice() {
   }
 
   return (
-    <div className="sticky bottom-0 z-40 mx-4 mb-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 shadow-lg dark:border-orange-500/30 dark:bg-orange-950/60">
+    <div className="sticky bottom-0 z-40 mx-4 mb-4 rounded-2xl border border-action-border bg-action-tint p-4 shadow-lg">
       <div className="flex items-start gap-3">
-        <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 text-orange-600 dark:text-orange-400" />
+        <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 text-action-text" />
         <div className="flex-1 text-sm">
-          <p className="font-semibold text-gray-900 dark:text-white">
+          <p className="font-semibold text-foreground">
             Nojoin can now share anonymous usage data
           </p>
-          <p className="mt-1 text-gray-600 dark:text-gray-300">
+          <p className="mt-1 text-contrast-helper">
             One anonymous ping a day: a random install ID, your version, how many
             users and recordings this server has, and which features are on. It
             never includes recordings, transcripts, notes, names, or API keys,
@@ -105,7 +105,7 @@ export default function TelemetryNotice() {
               type="button"
               disabled={busy}
               onClick={() => void decide(true)}
-              className="rounded-lg bg-orange-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:opacity-60"
+              className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-action disabled:opacity-60"
             >
               Keep it on
             </button>
@@ -113,7 +113,7 @@ export default function TelemetryNotice() {
               type="button"
               disabled={busy}
               onClick={() => void decide(false)}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="rounded-lg border border-control-border bg-surface-card px-3 py-1.5 text-sm font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-60"
             >
               Turn it off
             </button>
@@ -121,7 +121,7 @@ export default function TelemetryNotice() {
               href="https://www.nojoin.co.uk/docs/TELEMETRY"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-1 text-sm text-orange-700 underline-offset-2 hover:underline dark:text-orange-400"
+              className="px-1 text-sm text-action-text underline-offset-2 hover:underline"
             >
               What is collected
             </a>
@@ -131,7 +131,7 @@ export default function TelemetryNotice() {
           type="button"
           aria-label="Dismiss for now"
           onClick={() => setVisible(false)}
-          className="rounded-md p-1 text-gray-500 transition-colors hover:bg-orange-100 hover:text-gray-700 dark:hover:bg-orange-900/40 dark:hover:text-gray-200"
+          className="rounded-md p-1 text-contrast-helper transition-colors hover:bg-action-tint hover:text-contrast-muted"
         >
           <X className="h-4 w-4" />
         </button>

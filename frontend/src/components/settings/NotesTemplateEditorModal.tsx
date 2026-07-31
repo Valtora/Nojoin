@@ -198,7 +198,7 @@ export default function NotesTemplateEditorModal({
           </div>
           <button
             onClick={onClose}
-            className="contrast-helper hover:text-foreground dark:hover:text-white"
+            className="contrast-helper hover:text-foreground"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -228,7 +228,7 @@ export default function NotesTemplateEditorModal({
               type="button"
               onClick={handleGenerate}
               disabled={readOnly || generating || !brief.trim()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-orange-500 text-white hover:bg-action transition-colors disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-foreground hover:bg-action transition-colors disabled:opacity-60"
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -308,7 +308,7 @@ export default function NotesTemplateEditorModal({
               <button
                 type="button"
                 onClick={() => setSections(builtinSections)}
-                className="inline-flex items-center gap-2 text-sm contrast-helper hover:text-foreground dark:hover:text-white shrink-0"
+                className="inline-flex items-center gap-2 text-sm contrast-helper hover:text-foreground shrink-0"
               >
                 <RotateCcw className="w-4 h-4" />
                 Reset to the Nojoin default
@@ -346,7 +346,7 @@ export default function NotesTemplateEditorModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-border shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg contrast-helper hover:text-foreground dark:hover:text-white"
+            className="px-4 py-2 text-sm rounded-lg contrast-helper hover:text-foreground"
           >
             {readOnly ? "Close" : "Cancel"}
           </button>
@@ -354,7 +354,7 @@ export default function NotesTemplateEditorModal({
             <button
               onClick={handleSave}
               disabled={saving || overLimit || !name.trim() || !sections.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-orange-500 text-white hover:bg-action transition-colors disabled:opacity-60"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-foreground hover:bg-action transition-colors disabled:opacity-60"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Save

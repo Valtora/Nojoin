@@ -140,13 +140,13 @@ export default function SpeakerPanel({
   return (
     <aside
       id="speaker-panel"
-      className="shrink-0 border-l border-surface-border h-full"
+      className="shrink-0 border-l border-surface-border bg-surface-inset h-full overflow-y-auto"
     >
       {/* Header with batch voiceprint action */}
 
       <div className="p-2 space-y-2 mt-2">
         {speakerEntries.length === 0 ? (
-          <div className="p-4 text-sm text-contrast-helper italic">
+          <div className="p-4 text-sm text-contrast-helper text-center italic">
             No speakers detected.
           </div>
         ) : (
@@ -164,13 +164,13 @@ export default function SpeakerPanel({
               return (
                 <div
                   key={entry.key}
-                  className="p-3 rounded-lg bg-action-tint border-action-border"
+                  className="p-3 rounded-lg bg-action-tint border border-action-border"
                 >
-                  <p className="text-xs font-semibold text-action-text">
+                  <p className="text-xs font-semibold text-action-text mb-2">
                     Merge {entry.displayName} into:
                   </p>
                   <select
-                    className="w-full text-sm p-1 mb-2 rounded border border-control-border"
+                    className="w-full text-sm p-1 mb-2 rounded border border-control-border bg-surface-card"
                     value={mergeTargetLabel}
                     onChange={(e) => setMergeTargetLabel(e.target.value)}
                   >
@@ -194,7 +194,7 @@ export default function SpeakerPanel({
                     </button>
                     <button
                       onClick={() => setMergingSpeaker(null)}
-                      className="px-2 py-1 bg-surface-inset text-xs hover:bg-surface-card"
+                      className="px-2 py-1 bg-surface-inset text-contrast-muted text-xs rounded hover:bg-surface-card"
                     >
                       Cancel
                     </button>
@@ -218,14 +218,14 @@ export default function SpeakerPanel({
             return (
               <div
                 key={entry.key}
-                className="relative group p-3 rounded-lg bg-surface-card border-control-border hover:border-status-info-border shadow-card"
+                className="relative group p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-sm"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative shrink-0">
                       <div className="relative">
-                        <div className="w-8 h-8 rounded-full border border-control-border items-center justify-center bg-surface-inset">
+                        <div className="w-8 h-8 rounded-full border border-control-border flex items-center justify-center bg-surface-inset">
                           {entry.hasVoiceprint ? (
                             <UserCheck className="w-4 h-4 opacity-70 text-status-info-fg" />
                           ) : (
@@ -262,19 +262,19 @@ export default function SpeakerPanel({
                             if (e.key === "Enter") handleRenameSubmit();
                             if (e.key === "Escape") setRenamingSpeaker(null);
                           }}
-                          className="w-full text-sm font-medium bg-surface-card border-status-info-border rounded px-1 focus:outline-none"
+                          className="w-full text-sm font-medium bg-surface-card border border-status-info-border rounded px-1 focus:outline-none"
                         />
                       ) : (
                         <>
                           <p
-                            className="text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg"
+                            className="text-sm font-medium text-foreground truncate cursor-pointer hover:text-status-info-fg"
                             title="Double-click to rename"
                             onDoubleClick={() => handleRenameStart(entry)}
                           >
                             {entry.displayName}
                           </p>
                           {entry.members.length > 1 && (
-                            <p className="text-xs text-contrast-helper">
+                            <p className="text-xs text-contrast-helper truncate">
                               {entry.members.length} linked labels
                             </p>
                           )}
@@ -287,7 +287,7 @@ export default function SpeakerPanel({
                     className={`p-1.5 rounded-full transition-colors ${
                       isSpeakerActive && isPlaying
                         ? "text-status-info-fg bg-status-info-bg"
-                        : "text-contrast-icon-muted hover:text-status-info-fg"
+                        : "text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg"
                     }`}
                     title={
                       isSpeakerActive && isPlaying ? "Pause" : "Preview Voice"
@@ -304,7 +304,7 @@ export default function SpeakerPanel({
                   </button>
                   {isSpeakerActive && isPlaying && (
                     <button
-                      className="p-1.5 text-contrast-icon-muted hover:text-status-info-fg rounded-full"
+                      className="p-1.5 text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg rounded-full transition-colors"
                       title="Next Snippet"
                       onClick={() => handleNextSnippet(entry.labels)}
                     >
@@ -361,7 +361,7 @@ export default function SpeakerPanel({
               label: "Delete",
               onClick: () => handleDeleteClick(contextMenu.speaker),
               className:
-                "text-status-danger-fg",
+                "text-status-danger-fg hover:bg-status-danger-bg",
             },
           ]}
         />

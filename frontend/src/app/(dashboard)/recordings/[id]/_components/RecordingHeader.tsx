@@ -95,7 +95,7 @@ export default function RecordingHeader({
                 />
               ) : (
                 <h1
-                  className="mt-1 flex cursor-pointer items-start gap-2 text-lg font-bold text-foreground hover:text-action-text"
+                  className="mt-1 flex cursor-pointer items-start gap-2 text-lg font-bold text-foreground hover:text-action-text group"
                   onClick={() => setIsEditingTitle(true)}
                   title="Click to rename"
                 >
@@ -129,11 +129,11 @@ export default function RecordingHeader({
                     setTitleValue(recording?.name || "");
                   }
                 }}
-                className="density-heading-section mb-2 w-full border-b-2 border-action bg-transparent text-xl font-bold text-foreground focus:outline-none"
+                className="density-heading-section mb-2 w-full border-b-2 border-action bg-transparent text-xl font-bold text-foreground focus:outline-none md:text-2xl"
               />
             ) : (
               <h1
-                className="density-heading-section group mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-foreground hover:text-action-text"
+                className="density-heading-section group mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-foreground hover:text-action-text md:text-2xl"
                 onClick={() => setIsEditingTitle(true)}
                 title="Click to rename"
               >

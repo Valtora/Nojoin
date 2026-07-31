@@ -53,7 +53,7 @@ export default function SettingsRow({
       <div className={cn("min-w-0", !stacked && "sm:max-w-md")}>
         <div className="flex flex-wrap items-center gap-2">
           {icon}
-          <span className="text-sm font-medium text-gray-900 dark:text-white">
+          <span className="text-sm font-medium text-foreground">
             {label}
           </span>
           {badge}

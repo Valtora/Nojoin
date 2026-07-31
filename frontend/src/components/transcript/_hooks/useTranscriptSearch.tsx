@@ -214,7 +214,7 @@ export function useTranscriptSearch(
       parts.push(
         <mark
           key={`${segmentId}-${match.startIndex}`}
-          className={`${isCurrent ? "bg-orange-400 text-white" : "bg-yellow-200 dark:bg-yellow-900 text-gray-900 dark:text-gray-100"} rounded-sm px-0.5`}
+          className={`${isCurrent ? "bg-action text-foreground" : "bg-status-warning-bg text-foreground"} rounded-sm px-0.5`}
         >
           {text.substring(match.startIndex, match.startIndex + match.length)}
         </mark>,

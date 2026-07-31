@@ -9,7 +9,7 @@ import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 
 const ACTION_BUTTON_STYLES =
-  "inline-flex items-center gap-2 self-start rounded-xl bg-orange-100 px-3 py-2 text-sm font-medium text-orange-700 transition hover:bg-orange-200 disabled:opacity-50 dark:bg-orange-900/20 dark:text-orange-400 dark:hover:bg-orange-900/30 sm:self-auto";
+  "inline-flex items-center gap-2 self-start rounded-xl bg-action-tint px-3 py-2 text-sm font-medium text-action-text transition hover:bg-action-tint disabled:opacity-50 sm:self-auto";
 
 interface HelpSettingsProps {
   userId: number | null;
@@ -89,8 +89,8 @@ export default function HelpSettings({
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
-              <h4 className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-                <PlayCircle className="h-4 w-4 text-orange-500" />
+              <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <PlayCircle className="h-4 w-4 text-action-text" />
                 Restart Welcome Tour
               </h4>
               <p className="mt-1 text-xs contrast-helper">
@@ -111,8 +111,8 @@ export default function HelpSettings({
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
-              <h4 className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-                <RefreshCw className="h-4 w-4 text-orange-500" />
+              <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <RefreshCw className="h-4 w-4 text-action-text" />
                 Re-create Demo Meeting
               </h4>
               <p className="mt-1 text-xs contrast-helper">
@@ -141,8 +141,8 @@ export default function HelpSettings({
             className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
-              <h4 className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-                <Bug className="h-4 w-4 text-orange-500" />
+              <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Bug className="h-4 w-4 text-action-text" />
                 Report an Issue
               </h4>
               <p className="mt-1 text-xs contrast-helper">

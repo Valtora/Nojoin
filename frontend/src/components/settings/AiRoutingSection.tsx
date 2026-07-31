@@ -17,7 +17,7 @@ import { isServerProviderConfigured } from "@/lib/aiAvailability";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50";
+  "w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
 
 const PROVIDER_LABEL: Record<CliProvider, string> = {
   claude_code: "Claude",
@@ -236,7 +236,7 @@ export default function AiRoutingSection({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <label className="block text-sm font-medium text-contrast-muted">
                     Model for your subscription
                   </label>
                   <button
@@ -248,7 +248,7 @@ export default function AiRoutingSection({
                         ? "Re-query your Codex CLI for its current models"
                         : "Reload the model list"
                     }
-                    className="inline-flex items-center gap-1.5 text-xs contrast-helper hover:text-gray-900 dark:hover:text-white disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 text-xs contrast-helper hover:text-foreground disabled:opacity-60"
                   >
                     <RefreshCw
                       className={`h-3.5 w-3.5 ${refreshingModels ? "animate-spin" : ""}`}
@@ -273,7 +273,7 @@ export default function AiRoutingSection({
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-contrast-muted mb-2">
                   Meeting Edge model for your subscription
                 </label>
                 <select
@@ -330,9 +330,9 @@ export default function AiRoutingSection({
             className="flex items-center justify-between gap-3"
           >
             <div>
-              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              <div className="text-sm font-semibold text-foreground">
                 Server provider:{" "}
-                <span className="capitalize text-orange-600 dark:text-orange-400">
+                <span className="capitalize text-action-text">
                   {activeServerProvider}
                 </span>
               </div>
@@ -376,13 +376,13 @@ function RoutingCard({
       className={cn(
         "flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all",
         selected
-          ? "border-orange-500 bg-orange-50/60 shadow-sm dark:border-orange-500/50 dark:bg-orange-500/10"
-          : "settings-inset border-transparent hover:border-gray-300 dark:hover:border-gray-600",
+          ? "border-action bg-action-tint shadow-sm"
+          : "settings-inset border-transparent hover:border-control-border",
       )}
     >
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
-          <span className={selected ? "text-orange-500" : "contrast-icon-muted"}>
+        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <span className={selected ? "text-action-text" : "contrast-icon-muted"}>
             {icon}
           </span>
           {title}
@@ -391,8 +391,8 @@ function RoutingCard({
           className={cn(
             "flex h-5 w-5 items-center justify-center rounded-full border",
             selected
-              ? "border-orange-500 bg-orange-500 text-white"
-              : "border-gray-300 dark:border-gray-600",
+              ? "border-action bg-action text-foreground"
+              : "border-control-border",
           )}
         >
           {selected && <Check className="h-3 w-3" />}

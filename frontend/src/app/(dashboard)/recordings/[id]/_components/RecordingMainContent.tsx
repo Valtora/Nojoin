@@ -85,8 +85,8 @@ interface RecordingMainContentProps {
 const tabClassName = (active: boolean) =>
   `flex min-w-0 items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
     active
-      ? "border-action text-action-text"
-      : "border-transparent text-contrast-helper hover:bg-surface-inset"
+      ? "border-action text-action-text bg-surface-card"
+      : "border-transparent text-contrast-helper hover:text-foreground hover:bg-surface-inset"
   }`;
 
 export default function RecordingMainContent({
@@ -228,7 +228,7 @@ export default function RecordingMainContent({
       </div>
 
       {/* Panel Content */}
-      <div className="flex-1 flex flex-col bg-surface-card min-h-0 h-full relative">
+      <div className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
         <TranscriptSection
           active={activePanel === "transcript"}
           recording={recording}

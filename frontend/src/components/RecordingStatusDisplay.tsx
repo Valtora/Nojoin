@@ -143,7 +143,7 @@ export default function RecordingStatusDisplay({
           <button
             type="button"
             onClick={onBack}
-            className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card dark:"
+            className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card"
             title="Back to Recordings"
             aria-label="Back to Recordings"
           >
@@ -182,10 +182,10 @@ export default function RecordingStatusDisplay({
                   {isActiveRecording ? "Live Capture" : "Meeting Processing"}
                 </span>
                 <div>
-                  <h2 className="density-heading-page text-3xl font-semibold tracking-tight text-foreground">
+                  <h2 className="density-heading-page text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
                     {heading}
                   </h2>
-                  <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-contrast-helper">
+                  <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-contrast-helper md:text-base">
                     {subheading}
                   </p>
                 </div>
@@ -244,7 +244,7 @@ export default function RecordingStatusDisplay({
                     </div>
                   ) : null}
 
-                  <div className="density-surface-panel border border-surface-border bg-surface-card p-4 ">
+                  <div className="density-surface-panel border border-surface-border bg-surface-card p-4">
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                       Recording Length
                     </div>

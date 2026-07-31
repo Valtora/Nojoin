@@ -53,7 +53,7 @@ export default function SettingsAdvanced({
         onClick={() => setOpen((previous) => !previous)}
         aria-expanded={open}
         aria-controls={contentId}
-        className="settings-card flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 sm:px-6 dark:hover:bg-gray-900/60"
+        className="settings-card flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-action sm:px-6"
       >
         <span className="flex items-center gap-2">
           <ChevronRight
@@ -63,13 +63,13 @@ export default function SettingsAdvanced({
             )}
             aria-hidden="true"
           />
-          <span className="text-sm font-medium text-gray-900 dark:text-white">
+          <span className="text-sm font-medium text-foreground">
             Advanced
           </span>
         </span>
 
         {changedCount > 0 && (
-          <span className="text-xs font-medium text-orange-700 dark:text-orange-300">
+          <span className="text-xs font-medium text-action-text">
             {changedCount} changed
           </span>
         )}

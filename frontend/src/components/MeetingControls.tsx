@@ -150,7 +150,7 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     return (
-      <div className="density-surface border border-action-border bg-surface-card shadow-float">
+      <div className="density-surface border border-action-border bg-surface-card shadow-card">
         <div className="flex flex-col gap-5">
           <div className="mt-2 flex items-start gap-3">
             <div className="rounded-2xl bg-action-tint p-2 text-action-text">

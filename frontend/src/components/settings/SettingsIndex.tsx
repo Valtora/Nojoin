@@ -79,14 +79,14 @@ export default function SettingsIndex() {
                   <li key={category.id}>
                     <Link
                       href={settingsCategoryHref(category.id)}
-                      className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/60"
+                      className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-surface-inset"
                     >
                       <Icon
                         className="h-5 w-5 shrink-0 contrast-icon-muted"
                         aria-hidden="true"
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium text-gray-900 dark:text-white">
+                        <span className="block text-sm font-medium text-foreground">
                           {category.label}
                         </span>
                         <span className="mt-0.5 block text-xs leading-5 contrast-helper">

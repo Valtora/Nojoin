@@ -267,9 +267,9 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface-card">
-      <div className="p-4 border-b border-surface-border justify-between items-center">
-        <h3 className="font-semibold text-foreground items-center gap-2">
+    <div className="flex flex-col h-full bg-surface-card relative">
+      <div className="p-4 border-b border-surface-border flex justify-between items-center">
+        <h3 className="font-semibold text-foreground flex items-center gap-2">
           <FileText className="w-4 h-4 text-action-text" />
           Attached Documents
         </h3>
@@ -312,7 +312,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             </p>
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-action text-foreground font-medium rounded-lg hover:bg-action transition-colors shadow-card"
+              className="flex items-center gap-2 px-4 py-2 bg-action text-foreground font-medium rounded-lg hover:bg-action transition-colors shadow-sm"
             >
               <Upload className="w-4 h-4" />
               Upload Document

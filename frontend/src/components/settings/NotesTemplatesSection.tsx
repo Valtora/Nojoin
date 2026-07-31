@@ -183,13 +183,13 @@ export default function NotesTemplatesSection({
                 onClick={() => handleSelectDefault(null)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${
                   selectedId === null
-                    ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                    ? "border-action bg-action-tint"
+                    : "border-surface-border hover:border-control-border"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    <p className="text-sm font-medium text-foreground">
                       {data?.builtin.name ?? "Nojoin default"}
                     </p>
                     <p className="text-xs contrast-helper mt-0.5">
@@ -200,7 +200,7 @@ export default function NotesTemplatesSection({
                     </p>
                   </div>
                   {selectedId === null && (
-                    <Check className="w-4 h-4 text-orange-500 shrink-0" />
+                    <Check className="w-4 h-4 text-action-text shrink-0" />
                   )}
                 </div>
               </button>
@@ -210,8 +210,8 @@ export default function NotesTemplatesSection({
                   key={template.id}
                   className={`p-3 rounded-lg border transition-colors ${
                     selectedId === template.id
-                      ? "border-orange-500 bg-orange-50 dark:bg-orange-500/10"
-                      : "border-gray-200 dark:border-gray-700"
+                      ? "border-action bg-action-tint"
+                      : "border-surface-border"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -220,15 +220,15 @@ export default function NotesTemplatesSection({
                       onClick={() => handleSelectDefault(template.id)}
                       className="text-left flex-1"
                     >
-                      <p className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-foreground flex items-center gap-2 flex-wrap">
                         {template.name}
                         {template.scope === "install" && (
-                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 contrast-helper">
+                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-inset contrast-helper">
                             Install
                           </span>
                         )}
                         {template.is_install_default && (
-                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 contrast-helper">
+                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-inset contrast-helper">
                             Install default
                           </span>
                         )}
@@ -239,7 +239,7 @@ export default function NotesTemplatesSection({
                         </p>
                       )}
                       {template.is_stale && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                        <p className="text-xs text-status-warning-fg mt-1 flex items-center gap-1">
                           <AlertCircle className="w-3.5 h-3.5" />
                           The Nojoin default has improved since this was copied.
                         </p>
@@ -248,13 +248,13 @@ export default function NotesTemplatesSection({
 
                     <div className="flex items-center gap-1 shrink-0">
                       {selectedId === template.id && (
-                        <Check className="w-4 h-4 text-orange-500 mr-1" />
+                        <Check className="w-4 h-4 text-action-text mr-1" />
                       )}
                       <button
                         type="button"
                         onClick={() => setEditing(template)}
                         title={template.is_editable ? "Edit" : "View"}
-                        className="p-1.5 rounded contrast-helper hover:text-gray-900 dark:hover:text-white"
+                        className="p-1.5 rounded contrast-helper hover:text-foreground"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
@@ -262,7 +262,7 @@ export default function NotesTemplatesSection({
                         type="button"
                         onClick={() => handleCopy(template)}
                         title="Copy to my structures"
-                        className="p-1.5 rounded contrast-helper hover:text-gray-900 dark:hover:text-white"
+                        className="p-1.5 rounded contrast-helper hover:text-foreground"
                       >
                         <Copy className="w-4 h-4" />
                       </button>
@@ -271,7 +271,7 @@ export default function NotesTemplatesSection({
                           type="button"
                           onClick={() => handleDelete(template)}
                           title="Delete"
-                          className="p-1.5 rounded contrast-helper hover:text-red-500"
+                          className="p-1.5 rounded contrast-helper hover:text-status-danger-fg"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -283,7 +283,7 @@ export default function NotesTemplatesSection({
                     <button
                       type="button"
                       onClick={() => handleReset(template)}
-                      className="mt-2 text-xs text-orange-600 dark:text-orange-400 hover:underline"
+                      className="mt-2 text-xs text-action-text hover:underline"
                     >
                       Reset to the current default
                     </button>
@@ -298,7 +298,7 @@ export default function NotesTemplatesSection({
                           template.is_install_default ? null : template.id,
                         )
                       }
-                      className="mt-2 text-xs contrast-helper hover:text-gray-900 dark:hover:text-white disabled:opacity-60"
+                      className="mt-2 text-xs contrast-helper hover:text-foreground disabled:opacity-60"
                     >
                       {template.is_install_default
                         ? "Remove as install default"
@@ -316,7 +316,7 @@ export default function NotesTemplatesSection({
                   setCreatingScope("personal");
                   setCreating(true);
                 }}
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-surface-inset text-foreground hover:bg-surface-inset transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 New structure
@@ -328,7 +328,7 @@ export default function NotesTemplatesSection({
                     setCreatingScope("install");
                     setCreating(true);
                   }}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-surface-inset text-foreground hover:bg-surface-inset transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   New install structure

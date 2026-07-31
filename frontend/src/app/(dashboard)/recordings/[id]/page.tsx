@@ -203,7 +203,7 @@ export default function RecordingPage({ params }: PageProps) {
             {isMobileChatOpen && (
               <div className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
                 <header className="flex shrink-0 items-center justify-between border-b-2 border-surface-border bg-surface-inset px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-                  <h2 className="text-lg font-semibold text-foreground items-center gap-2">
+                  <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-action-text" />
                     Meeting Chat
                   </h2>
@@ -234,10 +234,10 @@ export default function RecordingPage({ params }: PageProps) {
             </Panel>
 
             <PanelResizeHandle
-              className="bg-surface-inset border-control-border w-2 transition-colors flex justify-center group"
+              className="bg-surface-inset border-l border-control-border w-2 hover:bg-action transition-colors flex items-center justify-center group"
               onDragging={setIsPanelResizing}
             >
-              <div className="h-8 w-1 bg-surface-card group-hover:bg-surface-card transition-colors" />
+              <div className="h-8 w-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
             </PanelResizeHandle>
 
             {/* Sidebar: Stacked Speaker and Chat panels */}
@@ -269,10 +269,10 @@ export default function RecordingPage({ params }: PageProps) {
                 </Panel>
 
                 <PanelResizeHandle
-                  className="bg-surface-inset border-control-border h-2 transition-colors flex justify-center group"
+                  className="bg-surface-inset border-t border-control-border h-2 hover:bg-action transition-colors flex items-center justify-center group"
                   onDragging={setIsPanelResizing}
                 >
-                  <div className="w-8 h-1 bg-surface-card group-hover:bg-surface-card transition-colors" />
+                  <div className="w-8 h-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
                 </PanelResizeHandle>
 
                 <Panel defaultSize={compactChatPanelHeight} minSize={18}>

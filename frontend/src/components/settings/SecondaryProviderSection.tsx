@@ -19,7 +19,7 @@ import {
 } from "./aiSettingsModels";
 
 const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-50";
+  "w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
 
 interface SecondaryProviderSectionProps {
   settings: Settings;
@@ -53,11 +53,11 @@ export default function SecondaryProviderSection({
       >
         <SettingsCallout tone="neutral" className="space-y-4">
           No fallback provider is configured. Set{" "}
-          <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
+          <code className="bg-surface-inset px-1 py-0.5 rounded">
             SECONDARY_LLM_PROVIDER
           </code>{" "}
           in the server&apos;s{" "}
-          <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
+          <code className="bg-surface-inset px-1 py-0.5 rounded">
             .env
           </code>{" "}
           file to enable automatic fallback for all AI features when the primary
@@ -100,21 +100,21 @@ export default function SecondaryProviderSection({
     >
       <div className="space-y-4">
         <SettingsBlock className="space-y-6">
-          <div className="p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="p-4 bg-surface-inset border border-surface-border rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <div className="text-sm font-semibold text-foreground flex items-center gap-2">
                 Secondary AI provider:{" "}
-                <span className="capitalize text-orange-600 dark:text-orange-400">
+                <span className="capitalize text-action-text">
                   {sp}
                 </span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-contrast-helper mt-1">
                 Configured via{" "}
-                <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
+                <code className="bg-surface-inset px-1 py-0.5 rounded">
                   SECONDARY_LLM_PROVIDER
                 </code>{" "}
                 in the server&apos;s{" "}
-                <code className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
+                <code className="bg-surface-inset px-1 py-0.5 rounded">
                   .env
                 </code>{" "}
                 file.
@@ -128,7 +128,7 @@ export default function SecondaryProviderSection({
           {isOllama && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-contrast-muted mb-2">
                   Secondary Ollama API URL
                 </label>
                 <div className="relative">
@@ -144,13 +144,13 @@ export default function SecondaryProviderSection({
                         secondary_ollama_api_url: e.target.value,
                       })
                     }
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-surface-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
                   />
-                  <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-contrast-muted mb-2">
                   Secondary Ollama context window
                 </label>
                 <input
@@ -169,27 +169,27 @@ export default function SecondaryProviderSection({
                       ),
                     })
                   }
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  className="w-full px-4 py-2.5 rounded-lg border border-surface-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex justify-between">
+            <label className="text-sm font-medium text-contrast-muted mb-2 flex justify-between">
               <Tooltip
                 content="The model for the fallback provider. Used when the primary is unavailable."
                 position="right"
               >
                 <span className="flex items-center gap-1 cursor-help">
                   Model{" "}
-                  <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                  <HelpCircle className="w-3 h-3 text-contrast-helper" />
                 </span>
               </Tooltip>
               <button
                 onClick={refreshModels}
                 disabled={models.secondaryFetchingModels}
-                className="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1 disabled:opacity-50"
+                className="text-xs text-action-text hover:text-action-text flex items-center gap-1 disabled:opacity-50"
               >
                 <RefreshCw
                   className={`w-3 h-3 ${models.secondaryFetchingModels ? "animate-spin" : ""}`}
@@ -215,14 +215,14 @@ export default function SecondaryProviderSection({
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+            <label className="text-sm font-medium text-contrast-muted mb-2 flex items-center gap-1">
               <Tooltip
                 content="Optional separate model for Meeting Edge when using the fallback provider. Leave blank to reuse the fallback model."
                 position="right"
               >
                 <span className="flex items-center gap-1 cursor-help">
                   Meeting Edge model{" "}
-                  <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                  <HelpCircle className="w-3 h-3 text-contrast-helper" />
                 </span>
               </Tooltip>
             </label>
@@ -246,7 +246,7 @@ export default function SecondaryProviderSection({
               <button
                 onClick={() => models.handleValidate(sp || "gemini")}
                 disabled={Boolean(models.validating)}
-                className="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-semibold"
+                className="px-4 py-2.5 bg-surface-inset text-foreground border border-control-border rounded-lg hover:bg-surface-inset transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-semibold"
               >
                 {models.validating === sp ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -257,7 +257,7 @@ export default function SecondaryProviderSection({
               </button>
               {models.validationMsg && models.validationMsg.provider === sp && (
                 <p
-                  className={`mt-2 text-sm font-semibold ${models.validationMsg.type === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                  className={`mt-2 text-sm font-semibold ${models.validationMsg.type === "success" ? "text-status-success-fg" : "text-status-danger-fg"}`}
                 >
                   {models.validationMsg.msg}
                 </p>

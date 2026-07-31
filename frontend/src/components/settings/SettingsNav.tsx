@@ -67,7 +67,7 @@ export default function SettingsNav({
                         className={cn(
                           "h-4 w-4 shrink-0",
                           isActive
-                            ? "text-orange-800 dark:text-orange-200"
+                            ? "text-action-text"
                             : "contrast-icon-muted",
                         )}
                         aria-hidden="true"
@@ -77,7 +77,7 @@ export default function SettingsNav({
 
                     {matching?.has(category.id) && (
                       <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-action"
                         aria-label="Matches your search"
                       />
                     )}

@@ -393,7 +393,7 @@ export default function TranscriptView({
     const hasPendingRemoteUpdate =
       typeof segment.id === "string" && pendingRemoteUtteranceIdSet.has(segment.id);
     const bubbleColor = isActive
-      ? "border-2 border-status-success-border"
+      ? "border-2 border-status-success-border bg-status-success-bg"
       : getSpeakerColor(segment.speaker);
     const speakerColorKey = speakerColors[segment.speaker] || "gray";
     const speakerColor = getColorByKey(speakerColorKey);
@@ -420,7 +420,7 @@ export default function TranscriptView({
                 if (e.key === "Escape") setEditingSpeaker(null);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="text-sm font-bold text-status-info-fg border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-info-border"
+              className="text-sm font-bold text-status-info-fg bg-surface-card border border-status-info-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-info-border"
             />
           ) : isEditingSegmentSpeaker ? (
              <input
@@ -431,7 +431,7 @@ export default function TranscriptView({
               onBlur={() => handleSegmentSpeakerSubmit(segment)}
               onKeyDown={(e) => handleKeyDown(e, "segmentSpeaker", segment)}
               onClick={(e) => e.stopPropagation()}
-              className="text-sm font-bold text-status-success-fg border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-success-border"
+              className="text-sm font-bold text-status-success-fg bg-surface-card border border-status-success-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-success-border"
             />
           ) : (
             <div className="relative">
@@ -531,7 +531,7 @@ export default function TranscriptView({
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={() => handleTextSubmit(segment)}
               onKeyDown={(e) => handleKeyDown(e, "text", segment)}
-              className="w-full bg-transparent resize-none outline-none text-foreground"
+              className="w-full bg-transparent resize-none outline-none text-foreground leading-relaxed"
               rows={Math.max(2, Math.ceil(editValue.length / 80))}
             />
           ) : (
@@ -562,7 +562,7 @@ export default function TranscriptView({
             <button
               onClick={onUndo}
               disabled={!canUndo}
-              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30"
+              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
@@ -570,17 +570,17 @@ export default function TranscriptView({
             <button
               onClick={onRedo}
               disabled={!canRedo}
-              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30"
+              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
               title="Redo"
             >
               <Redo2 className="w-4 h-4" />
             </button>
-            <div className="mx-0.5 h-4 w-px bg-surface-card" />
+            <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
             <button
               onClick={onExport}
               disabled={exportDisabled}
               aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
-              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted"
+              className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted sm:p-2"
               title={exportTitle}
             >
               <Download className="w-4 h-4" />
@@ -616,7 +616,7 @@ export default function TranscriptView({
 
         {/* Row 2: Search & Replace Controls */}
         {(showSearch || showReplace) && (
-          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
+          <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <input
@@ -629,7 +629,7 @@ export default function TranscriptView({
                     else nextMatch();
                   }
                 }}
-                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border focus:ring-2 outline-none min-w-0"
+                className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 autoFocus
               />
               {matches.length > 0 && (
@@ -639,13 +639,13 @@ export default function TranscriptView({
                   </span>
                   <button
                     onClick={prevMatch}
-                    className="p-1 hover:bg-surface-inset"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronUp className="w-3 h-3" />
                   </button>
                   <button
                     onClick={nextMatch}
-                    className="p-1 hover:bg-surface-inset"
+                    className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -659,7 +659,7 @@ export default function TranscriptView({
                   placeholder="Replace..."
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
-                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border focus:ring-2 outline-none min-w-0"
+                  className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
                 />
               </div>
             )}
@@ -682,11 +682,11 @@ export default function TranscriptView({
                         className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
-                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card shadow-float border border-surface-border p-2 flex flex-col gap-1">
+                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-50 flex flex-col gap-1">
                         <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                           Search Options
                         </div>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={caseSensitive}
@@ -697,7 +697,7 @@ export default function TranscriptView({
                             Case Sensitive
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={isFuzzy}
@@ -711,7 +711,7 @@ export default function TranscriptView({
                             Fuzzy Match
                           </span>
                         </label>
-                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset cursor-pointer">
+                        <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
                           <input
                             type="checkbox"
                             checked={useRegex}
@@ -730,12 +730,12 @@ export default function TranscriptView({
                   )}
                 </div>
 
-                <div className="mx-0.5 h-4 w-px bg-surface-card" />
+                <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
 
                 <button
                   onClick={nextMatch}
                   disabled={matches.length === 0}
-                  className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50"
+                  className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   <span className="sm:hidden">Next</span>
                   <span className="hidden sm:inline">Find Next</span>
@@ -743,7 +743,7 @@ export default function TranscriptView({
                 <button
                   onClick={handleReplaceCurrent}
                   disabled={matches.length === 0 || isSubmitting}
-                  className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50"
+                  className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   Replace
                 </button>
@@ -843,7 +843,7 @@ export default function TranscriptView({
               {/* Content */}
               <div className="flex-1 min-w-0">
                 {involvedSpeakers.length > 1 ? (
-                  <div className="grid gap-3 md:gap-4 w-full border border-surface-border p-3 rounded-xl  md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
+                  <div className="grid gap-3 md:gap-4 w-full border border-surface-border bg-surface-inset p-3 md:p-4 rounded-xl  md:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
                      {involvedSpeakers.map(speaker => {
                          const speakerItems = group.items.filter(item => item.segment.speaker === speaker);
                      const laneColorKey = speakerColors[speaker] || "gray";
@@ -868,9 +868,9 @@ export default function TranscriptView({
                                  {speakerItems.length > 0 ? (
                                      speakerItems.map(item => renderSegmentContent(item))
                                  ) : (
-                                     <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border bg-surface-card">
+                                     <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
                                          <div className="flex flex-col items-center gap-0.5 opacity-60">
-                                             <div className="font-semibold text-contrast-helper">{speakerMap[speaker] || speaker}</div>
+                                             <div className="font-semibold text-contrast-helper text-sm">{speakerMap[speaker] || speaker}</div>
                                              <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>
                                          </div>
                                      </div>

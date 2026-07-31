@@ -96,14 +96,14 @@ export default function AiTranscriptionSection({
     >
       <SettingsBlock className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-contrast-muted mb-2">
             <Tooltip
               content="Select the transcription engine used for speech to text."
               position="right"
             >
               <span className="flex items-center gap-1 cursor-help">
                 Transcription engine{" "}
-                <HelpCircle className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                <HelpCircle className="w-3 h-3 text-contrast-helper" />
               </span>
             </Tooltip>
           </label>
@@ -126,7 +126,7 @@ export default function AiTranscriptionSection({
               );
             }}
             disabled={!isAdmin}
-            className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+            className="w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
           >
             <option value="whisper">Whisper</option>
             <option value="parakeet">Parakeet (NVIDIA)</option>
@@ -135,12 +135,12 @@ export default function AiTranscriptionSection({
         </div>
         {(settings.transcription_backend || "whisper") === "parakeet" ? (
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-contrast-muted mb-2">
               Parakeet Model
             </label>
-            <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-4 p-4 rounded-lg bg-surface-inset border border-surface-border">
               <div className="flex-1">
-                <div className="font-semibold text-gray-900 dark:text-white">
+                <div className="font-semibold text-foreground">
                   {settings.parakeet_model || "parakeet-tdt-0.6b-v3"}
                 </div>
                 <p className="mt-1 text-xs contrast-helper">
@@ -152,12 +152,12 @@ export default function AiTranscriptionSection({
           </div>
         ) : (settings.transcription_backend || "whisper") === "canary" ? (
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-contrast-muted mb-2">
               Canary Model
             </label>
-            <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-4 p-4 rounded-lg bg-surface-inset border border-surface-border">
               <div className="flex-1">
-                <div className="font-semibold text-gray-900 dark:text-white">
+                <div className="font-semibold text-foreground">
                   {settings.canary_model || "nemo-canary-1b-v2"}
                 </div>
                 <p className="mt-1 text-xs contrast-helper">
@@ -168,17 +168,17 @@ export default function AiTranscriptionSection({
           </div>
         ) : (
           <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+            <label className="text-sm font-medium text-contrast-muted mb-2 flex items-center gap-2">
               Whisper Model Size
               <button
                 type="button"
                 className="group relative inline-flex"
                 aria-label="Show available Whisper models"
               >
-                <HelpCircle className="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" />
-                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden max-w-[calc(100vw-2rem)] w-80 p-4 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none group-hover:block group-focus:block">
+                <HelpCircle className="w-4 h-4 text-contrast-helper cursor-help" />
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden max-w-[calc(100vw-2rem)] w-80 p-4 bg-surface-card text-foreground text-xs rounded-lg shadow-xl z-50 pointer-events-none group-hover:block group-focus:block">
                   <div className="font-bold mb-2 text-sm">Available Models</div>
-                  <div className="grid grid-cols-4 gap-2 border-b border-gray-700 pb-2 mb-2 font-semibold text-left">
+                  <div className="grid grid-cols-4 gap-2 border-b border-control-border pb-2 mb-2 font-semibold text-left">
                     <div>Size</div>
                     <div>Params</div>
                     <div>VRAM</div>
@@ -189,15 +189,15 @@ export default function AiTranscriptionSection({
                       key={m.id}
                       className="grid grid-cols-4 gap-2 mb-1 text-left"
                     >
-                      <div className="col-span-1 font-medium text-orange-400">
+                      <div className="col-span-1 font-medium text-action-text">
                         {m.label}
                       </div>
-                      <div className="col-span-1 text-gray-300">{m.params}</div>
-                      <div className="col-span-1 text-gray-300">{m.vram}</div>
-                      <div className="col-span-1 text-gray-300">{m.speed}</div>
+                      <div className="col-span-1 text-contrast-icon-muted">{m.params}</div>
+                      <div className="col-span-1 text-contrast-icon-muted">{m.vram}</div>
+                      <div className="col-span-1 text-contrast-icon-muted">{m.speed}</div>
                     </div>
                   ))}
-                  <div className="mt-2 text-gray-300 italic">
+                  <div className="mt-2 text-contrast-icon-muted italic">
                     Turbo is the recommended default for best balance of speed
                     and accuracy.
                   </div>
@@ -205,15 +205,15 @@ export default function AiTranscriptionSection({
               </button>
             </label>
 
-            <div className="flex items-center gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-4 p-4 rounded-lg bg-surface-inset border border-surface-border">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900 dark:text-white">
+                  <span className="font-semibold text-foreground">
                     {WHISPER_MODELS.find(
                       (m) => m.id === (settings.whisper_model_size || "turbo"),
                     )?.label || settings.whisper_model_size}
                   </span>
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-contrast-helper">
                     (
                     {
                       WHISPER_MODELS.find(
@@ -231,7 +231,7 @@ export default function AiTranscriptionSection({
               <button
                 onClick={() => setShowWhisperModal(true)}
                 disabled={!isAdmin}
-                className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
+                className="px-4 py-2 bg-surface-card border border-control-border text-contrast-muted rounded-lg hover:bg-surface-inset transition-colors shadow-sm disabled:opacity-50"
               >
                 Change Model
               </button>

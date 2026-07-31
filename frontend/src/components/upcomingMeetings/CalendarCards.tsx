@@ -247,7 +247,7 @@ export function DayTimelineEventCard({
       meetingUrl &&
       (layout === "stacked" || timelineDensity === "comfortable"),
   );
-  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-surface-card text-left shadow-card transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-white text-left shadow-card transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
     isLive
       ? "border-action-border"
       : "border-surface-border"

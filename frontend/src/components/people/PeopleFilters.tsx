@@ -25,7 +25,7 @@ export function PeopleFilters({ onSearch }: PeopleFiltersProps) {
           placeholder="Search people by name, email, company..."
           value={search}
           onChange={handleSearch}
-          className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-orange-500 outline-none transition-colors"
+          className="w-full px-4 py-2 rounded-lg border border-surface-border bg-surface-card focus:ring-2 focus:ring-action outline-none transition-colors"
         />
       </div>
     </div>

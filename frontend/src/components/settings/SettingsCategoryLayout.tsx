@@ -58,7 +58,7 @@ export default function SettingsCategoryLayout({
     <div className="p-4 md:p-6 lg:p-8">
       <Link
         href={SETTINGS_ROOT}
-        className="mb-4 -ml-1 inline-flex items-center gap-1 rounded-lg px-1 py-1 text-sm font-medium contrast-helper transition-colors hover:text-orange-600 lg:hidden dark:hover:text-orange-400"
+        className="mb-4 -ml-1 inline-flex items-center gap-1 rounded-lg px-1 py-1 text-sm font-medium contrast-helper transition-colors hover:text-action-text lg:hidden"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         Settings
@@ -71,7 +71,7 @@ export default function SettingsCategoryLayout({
         )}
       >
         <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+          <h1 className="text-xl font-semibold text-foreground">
             {category.label}
           </h1>
           <p className="mt-1 text-sm leading-6 contrast-helper">

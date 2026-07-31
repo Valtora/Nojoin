@@ -233,7 +233,7 @@ export default function GeneralSettings({
                 <Popover className="relative block">
                   {({ open, close }) => (
                     <>
-                      <Popover.Button className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-400 bg-white px-3 py-2 text-left text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+                      <Popover.Button className="flex w-full items-center justify-between gap-3 rounded-lg border border-control-border bg-surface-card px-3 py-2 text-left text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-action focus:border-transparent">
                         <div className="min-w-0">
                           <span className="block truncate text-sm font-medium">
                             {selectedTimeZone}
@@ -243,7 +243,7 @@ export default function GeneralSettings({
                           </span>
                         </div>
                         <ChevronDown
-                          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400 ${open ? "rotate-180" : ""}`}
+                          className={`h-4 w-4 shrink-0 text-contrast-helper transition-transform ${open ? "rotate-180" : ""}`}
                         />
                       </Popover.Button>
 
@@ -256,10 +256,10 @@ export default function GeneralSettings({
                         leaveFrom="transform opacity-100 scale-100"
                         leaveTo="transform opacity-0 scale-95"
                       >
-                        <Popover.Panel className="absolute left-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
-                          <div className="border-b border-gray-200 p-3 dark:border-gray-800">
+                        <Popover.Panel className="absolute left-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-surface-border bg-surface-card shadow-float">
+                          <div className="border-b border-surface-border p-3">
                             <div className="relative">
-                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-contrast-icon-muted" />
                               <input
                                 type="text"
                                 value={timezoneSearch}
@@ -268,7 +268,7 @@ export default function GeneralSettings({
                                 }
                                 placeholder="Filter timezones"
                                 autoFocus
-                                className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none transition-colors focus:border-transparent focus:ring-2 focus:ring-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                                className="w-full rounded-lg border border-control-border bg-surface-card py-2 pl-9 pr-3 text-sm text-foreground outline-none transition-colors focus:border-transparent focus:ring-2 focus:ring-action"
                               />
                             </div>
                           </div>
@@ -288,8 +288,8 @@ export default function GeneralSettings({
                                     key={timeZone}
                                     className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
                                       isSelected
-                                        ? "border-orange-500 bg-orange-50 dark:bg-orange-900/10"
-                                        : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
+                                        ? "border-action bg-action-tint"
+                                        : "border-transparent hover:bg-surface-inset"
                                     }`}
                                   >
                                     <input
@@ -301,27 +301,27 @@ export default function GeneralSettings({
                                         handleTimeZoneSelect(timeZone);
                                         close();
                                       }}
-                                      className="h-4 w-4 shrink-0 accent-orange-600"
+                                      className="h-4 w-4 shrink-0 accent-action"
                                     />
                                     <div className="min-w-0 flex-1">
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                        <span className="text-sm font-medium text-foreground">
                                           {timeZone}
                                         </span>
                                         {timeZone === DEFAULT_TIME_ZONE && (
-                                          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                          <span className="rounded-full bg-surface-inset px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-contrast-muted">
                                             UTC
                                           </span>
                                         )}
                                         {isBrowserDetected && (
-                                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-orange-700 dark:bg-orange-900/20 dark:text-orange-200">
+                                          <span className="rounded-full bg-action-tint px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-action-text">
                                             Browser detected
                                           </span>
                                         )}
                                       </div>
                                     </div>
                                     {isSelected && (
-                                      <Check className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+                                      <Check className="h-4 w-4 shrink-0 text-action-text" />
                                     )}
                                   </label>
                                 );
