@@ -2,8 +2,9 @@
 /**
  * Token contrast audit.
  *
- * Reads the design tokens straight out of globals.css and measures the pairings
- * declared below against WCAG 2.2 AA. It exists because contrast is a property
+ * Reads the design tokens straight out of globals.css and the marketing site's
+ * style.scss, and measures the pairings declared below against WCAG 2.2 AA. It
+ * exists because contrast is a property
  * of a pair, not of a colour: a token can only be judged against the thing it is
  * actually drawn on, and that relationship lives nowhere in CSS. Declaring the
  * pairs here makes them reviewable, and makes a regression a failed build rather
@@ -23,6 +24,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const GLOBALS = resolve(ROOT, "src/app/globals.css");
+/**
+ * The Jekyll marketing site. It is a `.scss` file, but its tokens are real CSS
+ * custom properties on `:root` rather than Sass variables, so the same parser
+ * reads it. Auditing it here rather than by eye is what stops the site drifting
+ * off the app's palette again, which is how it acquired its own orange.
+ */
+const MARKETING = resolve(ROOT, "../assets/css/style.scss");
 
 /**
  * Thresholds.
@@ -165,6 +173,63 @@ const PAIRINGS = [
 ];
 
 /**
+ * The marketing site's pairings.
+ *
+ * It runs one theme on a dark canvas, and it reuses the app's token names with
+ * the app's dark values, so these read like the dark half of the list above.
+ * What differs is the furniture: there are no modals, no form controls and no
+ * status pills on a marketing page, and there is a syntax highlighter, which the
+ * app has no equivalent of.
+ */
+const MARKETING_PAIRINGS = [
+  // The page and its one content card.
+  { label: "heading on card", fg: "foreground", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "body text on card", fg: "contrast-helper", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "lead text on inset", fg: "contrast-muted", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+  { label: "body text on inset", fg: "contrast-helper", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+  { label: "inline code on card", fg: "foreground", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "card border vs page", fg: "surface-card-border", bg: ["surface-page"], min: HAIRLINE },
+  { label: "inset border vs card", fg: "surface-card-border", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "divider vs card", fg: "surface-divider", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+
+  // Links and the accent. The wordmark is large text, so it answers to 3:1.
+  { label: "link on card", fg: "action-text", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "link hover on card", fg: "action-text-hover", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "link on inset", fg: "action-text", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+  { label: "wordmark on hero", fg: "action-text", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_LARGE },
+  { label: "step number on action fill", fg: "action-on", bg: ["action"], min: AA_TEXT },
+  // The quick-start step counter is a filled square with a numeral in it, and
+  // the numeral is what conveys the step, at 5.18:1. The square is decoration
+  // and answers to the hairline floor rather than to 3:1, on the same reasoning
+  // that exempts a status pill's fill: nothing is identified by the block of
+  // colour. Holding it to 3:1 would force the brand orange lighter on a surface
+  // no control ever sits on.
+  { label: "step counter fill vs inset", fg: "action", bg: ["surface-page", "surface-card", "surface-inset"], min: HAIRLINE },
+  { label: "quote text on tint", fg: "contrast-helper", bg: ["surface-page", "surface-card", "action-tint"], min: AA_TEXT },
+  { label: "quote bar vs card", fg: "action-text", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+  { label: "focus ring vs card", fg: "focus-ring", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+
+  // Site chrome, on the app's rail surface.
+  { label: "brand text on header", fg: "rail-fg", bg: ["rail-bg"], min: AA_TEXT },
+  { label: "nav link on header", fg: "rail-fg-muted", bg: ["rail-bg"], min: AA_TEXT },
+  { label: "nav link on hovered item", fg: "rail-fg", bg: ["rail-bg", "rail-item-hover"], min: AA_TEXT },
+  { label: "header border vs page", fg: "rail-border", bg: ["surface-page"], min: HAIRLINE },
+  { label: "focus ring vs header", fg: "focus-ring", bg: ["rail-bg"], min: AA_NON_TEXT },
+
+  // Footer text sits directly on the page, outside the card.
+  { label: "footer text on page", fg: "contrast-icon-muted", bg: ["surface-page"], min: AA_TEXT },
+  { label: "footer link hover on page", fg: "foreground", bg: ["surface-page"], min: AA_TEXT },
+
+  // Syntax highlighting. Every token is read as code, so all of it is text.
+  ...["fg", "comment", "keyword", "name", "string", "punct"].map((part) => ({
+    label: `code ${part} on code surface`,
+    fg: `code-${part}`,
+    bg: ["surface-page", "surface-card", "surface-inset"],
+    min: AA_TEXT,
+  })),
+];
+
+/**
  * Overlay separation.
  *
  * The scrim itself is not measurable as a contrast requirement: WCAG says
@@ -292,21 +357,34 @@ function flattenStack(stack, theme, base) {
 const css = await readFile(GLOBALS, "utf8");
 const light = parseBlock(css, ":root");
 const dark = parseBlock(css, ".dark");
+const marketing = parseBlock(await readFile(MARKETING, "utf8"), ":root");
 
+/**
+ * `base` is the fallback a token resolves against when the block does not
+ * declare it. The app's `.dark` block only declares what changes, so it falls
+ * back to `:root`; the marketing block is self-contained and falls back to
+ * itself, which means a token it forgets to declare is an error rather than a
+ * silent borrow of an app value that is not in its stylesheet.
+ *
+ * `floats` is off for marketing because the site has no floating elements: it
+ * carries no modals, so it carries no shadows at all.
+ */
 const themes = [
-  { name: "light", tokens: light },
-  { name: "dark", tokens: dark },
+  { name: "light", tokens: light, base: light, pairings: PAIRINGS, floats: true },
+  { name: "dark", tokens: dark, base: light, pairings: PAIRINGS, floats: true },
+  { name: "marketing", tokens: marketing, base: marketing, pairings: MARKETING_PAIRINGS, floats: false },
 ];
 
 const failures = [];
 const results = [];
 
 for (const theme of themes) {
-  for (const pairing of PAIRINGS) {
+  const base = theme.base;
+  for (const pairing of theme.pairings) {
     let ratio;
     try {
-      const bg = flattenStack(pairing.bg, theme.tokens, light);
-      const fgRaw = parseColour(resolveValue(pairing.fg, theme.tokens, light), pairing.fg);
+      const bg = flattenStack(pairing.bg, theme.tokens, base);
+      const fgRaw = parseColour(resolveValue(pairing.fg, theme.tokens, base), pairing.fg);
       const fg = fgRaw[3] < 1 ? composite(fgRaw, bg) : fgRaw;
       ratio = contrastRatio(fg, bg);
       results.push({
@@ -328,10 +406,12 @@ for (const theme of themes) {
     }
   }
 
+  if (!theme.floats) continue;
+
   // A float has to separate from the scrimmed card behind it, which is the
   // worst case: a card is the lightest thing the scrim ever covers.
-  const behind = flattenStack(["surface-page", "surface-card", "scrim"], theme.tokens, light);
-  const float = flattenStack(["surface-float"], theme.tokens, light);
+  const behind = flattenStack(["surface-page", "surface-card", "scrim"], theme.tokens, base);
+  const float = flattenStack(["surface-float"], theme.tokens, base);
   const separation = contrastRatio(float, behind);
   const separationPass = separation >= FLOAT_SEPARATION;
   results.push({

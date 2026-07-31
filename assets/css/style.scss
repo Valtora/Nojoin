@@ -1,78 +1,142 @@
 ---
 ---
 
-@import "{{ site.theme }}";
+// Nojoin marketing site.
+//
+// Self-contained: the Cayman theme is deliberately not imported. Its layout was
+// already replaced by _layouts/default.html, and its stylesheet carried a
+// gradient page header this design has no use for, so everything the site needs
+// is written down here instead of overridden after the fact.
+//
+// The visual system is the web app's, documented in docs/DESIGN.md. Solid
+// surfaces, 1px hairline borders, no gradients, no backdrop-filter, and no
+// shadows at all: the app's one shadow exception is for floating elements, and
+// a marketing page has none. Separation is by lightness, as it is in the app's
+// dark theme.
 
 :root {
   color-scheme: dark;
-  --bg: #070b16;
-  --bg-elevated: #0d1324;
-  --bg-panel: rgba(15, 22, 40, 0.88);
-  --bg-panel-strong: rgba(17, 25, 46, 0.96);
-  --line: rgba(129, 146, 185, 0.18);
-  --line-strong: rgba(255, 255, 255, 0.08);
-  --text: #f4f7fb;
-  --muted: #a6b1cc;
-  --subtle: #7a86a7;
-  --accent: #ff6a13;
-  --accent-strong: #ff3d2e;
-  --accent-soft: rgba(255, 106, 19, 0.18);
-  --success: #25d98c;
-  --shadow: 0 30px 80px rgba(0, 0, 0, 0.38);
-  --shadow-soft: 0 20px 45px rgba(0, 0, 0, 0.24);
-  --radius-xl: 32px;
-  --radius-lg: 24px;
-  --radius-md: 18px;
+
+  // Surfaces. These are the app's dark-theme values, unchanged, so the site and
+  // the product read as one thing. The site is a two-level stack like the app:
+  // the page, and the content card on it. Everything inside that card that needs
+  // its own surface (the hero, feature tiles, quick-start steps, code blocks)
+  // uses the inset, because a card never contains another card.
+  --surface-page: #161616;
+  --surface-card: #202020;
+  --surface-card-border: rgba(75, 85, 99, 0.38);
+  --surface-divider: rgba(75, 85, 99, 0.25);
+  --surface-inset: rgba(255, 255, 255, 0.03);
+
+  // Text.
+  --foreground: #ededed;
+  --contrast-muted: #e5e7eb;
+  --contrast-helper: #d1d5db;
+  --contrast-icon-muted: #a1a1aa;
+
+  // Action. The site's old #ff6a13 is retired in favour of the app's ramp; the
+  // fill and the accent-text form are separate tokens for the same reason they
+  // are in the app, since one orange cannot both carry a white label and read as
+  // text on a dark page.
+  --action: #c2410c;
+  --action-hover: #9a3412;
+  --action-on: #ffffff;
+  --action-text: #fb923c;
+  --action-text-hover: #fdba74;
+  --action-tint: rgba(249, 115, 22, 0.18);
+  --action-border: rgba(251, 146, 60, 0.35);
+  --focus-ring: #fb923c;
+
+  // Site chrome. The header takes the app's nav rail surface, so the two pieces
+  // of chrome a visitor sees either side of signing in are the same colour.
+  --rail-bg: #242424;
+  --rail-border: rgba(255, 255, 255, 0.12);
+  --rail-fg: #e5e7eb;
+  --rail-fg-muted: #a1a1aa;
+  --rail-item-hover: #2e2e2e;
+
+  // Syntax highlighting, as tokens rather than as literals scattered through the
+  // rouge selectors, so the contrast script can measure them like anything else.
+  --code-fg: #d8deef;
+  --code-comment: #a1a1aa;
+  --code-keyword: #ff9f5c;
+  --code-name: #ffd39b;
+  --code-string: #7ad7ff;
+  --code-punct: #c6cee5;
+
+  // Radii, one step tighter than before by the same 0.625 factor the app applied
+  // when its surface radius went from 2rem to 1.25rem. The header and nav pills
+  // become rounded rectangles.
+  --radius-xl: 20px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 10px;
 }
 
-* {
+/* ------------------------------------------------------------------- base */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
+  -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
-}
-
-html:root {
-  scroll-padding-top: 7rem;
+  scroll-padding-top: 5.5rem;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  color: var(--text);
-  background:
-    radial-gradient(circle at top left, rgba(255, 106, 19, 0.13), transparent 28%),
-    radial-gradient(circle at top right, rgba(76, 107, 255, 0.12), transparent 26%),
-    radial-gradient(circle at bottom center, rgba(255, 62, 47, 0.1), transparent 34%),
-    linear-gradient(180deg, #0a1020 0%, var(--bg) 48%, #05070f 100%);
+  font-family: "Geist", "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--foreground);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  max-width: 100%;
+  border-style: none;
 }
 
 a {
-  color: #ffb06d;
-}
-
-a:hover {
-  color: #ffd0a1;
+  color: var(--action-text);
   text-decoration: none;
 }
 
-.site-backdrop {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 16% 14%, rgba(255, 106, 19, 0.12), transparent 22%),
-    radial-gradient(circle at 84% 10%, rgba(72, 97, 215, 0.15), transparent 20%),
-    radial-gradient(circle at 80% 82%, rgba(255, 106, 19, 0.08), transparent 24%);
+a:hover {
+  color: var(--action-text-hover);
+  text-decoration: underline;
 }
+
+// Affordance is colour, never elevation, and every interactive element carries
+// the same 2px orange ring.
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+/* ----------------------------------------------------------------- header */
 
 .site-header {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 1rem 1.25rem 0;
+  background: var(--rail-bg);
+  border-bottom: 1px solid var(--rail-border);
 }
 
 .site-header__inner {
@@ -82,28 +146,27 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.95rem 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(10, 15, 30, 0.74);
-  backdrop-filter: blur(18px);
-  box-shadow: var(--shadow-soft);
+  padding: 0.75rem 1.25rem;
 }
 
 .site-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.85rem;
-  color: var(--text);
+  gap: 0.75rem;
+  color: var(--rail-fg);
   text-decoration: none;
-  font-family: "Sora", "Segoe UI", sans-serif;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
+}
+
+.site-brand:hover {
+  color: var(--rail-fg);
+  text-decoration: none;
 }
 
 .site-brand img {
-  width: 2rem;
-  height: 2rem;
+  width: 1.85rem;
+  height: 1.85rem;
   flex: 0 0 auto;
 }
 
@@ -111,75 +174,71 @@ a:hover {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.site-nav a,
-.site-footer__links a {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 0.94rem;
-  font-weight: 700;
+  gap: 0.25rem;
 }
 
 .site-nav a {
-  padding: 0.65rem 0.95rem;
-  border-radius: 999px;
+  color: var(--rail-fg-muted);
+  text-decoration: none;
+  font-size: 0.94rem;
+  font-weight: 600;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
-  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .site-nav a:hover,
 .site-nav a:focus-visible {
-  color: var(--text);
-  border-color: rgba(255, 106, 19, 0.2);
-  background: rgba(255, 106, 19, 0.1);
-  transform: translateY(-1px);
+  color: var(--rail-fg);
+  background: var(--rail-item-hover);
+  text-decoration: none;
 }
 
+/* ------------------------------------------------------------ page frame */
+
 .page-frame {
-  position: relative;
-  z-index: 1;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 1.5rem 1.25rem 3rem;
+  padding: 2rem 1.25rem 3rem;
 }
 
 .content-surface {
-  position: relative;
-  overflow: hidden;
   padding: 2rem;
-  border-radius: 40px;
-  border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, rgba(17, 24, 44, 0.96), rgba(10, 15, 29, 0.98)),
-    linear-gradient(135deg, rgba(255, 106, 19, 0.05), transparent 30%);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--surface-card-border);
+  background: var(--surface-card);
 }
 
+/* -------------------------------------------------------------- markdown */
+
 .markdown-body {
-  color: var(--text);
-  background: transparent;
-  font-family: "Manrope", "Segoe UI", sans-serif;
+  color: var(--foreground);
   line-height: 1.72;
 }
 
-.markdown-body::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 40px;
-  pointer-events: none;
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0;
 }
 
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,
 .markdown-body h4 {
-  color: var(--text);
+  color: var(--foreground);
   border: 0;
-  font-family: "Sora", "Segoe UI", sans-serif;
-  letter-spacing: -0.035em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.markdown-body h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  margin: 0 0 1rem;
 }
 
 .markdown-body h2 {
@@ -190,57 +249,94 @@ a:hover {
 
 .markdown-body h3 {
   margin-top: 2rem;
+  margin-bottom: 0.75rem;
   font-size: 1.25rem;
+}
+
+.markdown-body h4 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
 }
 
 .markdown-body p,
 .markdown-body li,
 .markdown-body td,
 .markdown-body th {
-  color: var(--muted);
+  color: var(--contrast-helper);
   font-size: 1rem;
 }
 
+.markdown-body p {
+  margin: 0 0 1rem;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 1rem;
+  padding-left: 1.5rem;
+}
+
+.markdown-body li + li {
+  margin-top: 0.35rem;
+}
+
 .markdown-body strong {
-  color: var(--text);
+  color: var(--foreground);
+  font-weight: 600;
 }
 
 .markdown-body hr {
   height: 1px;
-  margin: 2rem 0;
+  margin: 2.5rem 0;
   border: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 106, 19, 0.42), transparent);
+  background: var(--surface-divider);
 }
 
+.markdown-body h1[id],
+.markdown-body h2[id],
+.markdown-body h3[id],
+.markdown-body h4[id] {
+  scroll-margin-top: 5.5rem;
+}
+
+/* ------------------------------------------------------------------ code */
+
+// Inline code stays plain: no chip, no radius, no border. It is distinguished by
+// the mono face and by sitting a step brighter than body text.
 .markdown-body :not(pre) > code {
-  color: #ffd39b;
+  color: var(--foreground);
   background: transparent;
   border: 0;
   border-radius: 0;
-  display: inline;
   padding: 0;
+  display: inline;
   line-height: inherit;
   vertical-align: baseline;
 }
 
 .markdown-body pre {
-  background: #0b1120;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 0;
+  padding: 0.95rem;
+  overflow-x: auto;
+  color: var(--code-fg);
+  background: var(--surface-inset);
+  border: 1px solid var(--surface-card-border);
   border-radius: 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  line-height: 1.6;
 }
 
 .markdown-body pre code {
   border: 0;
+  padding: 0;
   background: transparent;
+  color: inherit;
 }
 
 .markdown-body .highlighter-rouge {
-  margin: 0.9rem 0 0;
+  margin: 0.9rem 0 1.25rem;
   border-radius: 0;
   overflow: hidden;
-  background: #0b1120;
-  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .markdown-body .highlighter-rouge div.highlight,
@@ -250,25 +346,23 @@ a:hover {
   background: transparent;
   border: 0;
   border-radius: 0;
-  box-shadow: none;
 }
 
-.markdown-body .highlighter-rouge pre.highlight,
-.markdown-body pre.highlight {
-  padding-left: 0.95rem;
-  padding-right: 0.95rem;
+.markdown-body .highlighter-rouge pre.highlight {
+  background: var(--surface-inset);
+  border: 1px solid var(--surface-card-border);
 }
 
 .markdown-body .highlight,
 .markdown-body .highlight pre,
 .markdown-body pre code {
-  color: #d8deef;
+  color: var(--code-fg);
 }
 
 .markdown-body .highlight .c,
 .markdown-body .highlight .c1,
 .markdown-body .highlight .cm {
-  color: #7e8aa8;
+  color: var(--code-comment);
 }
 
 .markdown-body .highlight .k,
@@ -277,7 +371,7 @@ a:hover {
 .markdown-body .highlight .kp,
 .markdown-body .highlight .kr,
 .markdown-body .highlight .ow {
-  color: #ff9f5c;
+  color: var(--code-keyword);
 }
 
 .markdown-body .highlight .nb,
@@ -285,7 +379,7 @@ a:hover {
 .markdown-body .highlight .nt,
 .markdown-body .highlight .nv,
 .markdown-body .highlight .nx {
-  color: #ffd39b;
+  color: var(--code-name);
 }
 
 .markdown-body .highlight .s,
@@ -294,78 +388,72 @@ a:hover {
 .markdown-body .highlight .sb,
 .markdown-body .highlight .sh,
 .markdown-body .highlight .sx {
-  color: #7ad7ff;
+  color: var(--code-string);
 }
 
 .markdown-body .highlight .o,
 .markdown-body .highlight .p,
 .markdown-body .highlight .w {
-  color: #c6cee5;
+  color: var(--code-punct);
 }
 
-.markdown-body h1[id],
-.markdown-body h2[id],
-.markdown-body h3[id],
-.markdown-body h4[id] {
-  scroll-margin-top: 7rem;
-}
+/* --------------------------------------------------------- tables, quotes */
 
 .markdown-body table {
   display: table;
   width: 100%;
+  margin: 0 0 1.25rem;
   overflow: hidden;
   border-collapse: separate;
   border-spacing: 0;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: rgba(9, 14, 28, 0.68);
+  border: 1px solid var(--surface-card-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-inset);
 }
 
 .markdown-body th,
 .markdown-body td {
-  border-color: var(--line);
-  padding: 0.95rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--surface-divider);
+  padding: 0.85rem 1rem;
+  text-align: left;
 }
 
-.markdown-body tr {
-  background: transparent;
+.markdown-body tr:last-child th,
+.markdown-body tr:last-child td {
+  border-bottom: 0;
 }
 
-.markdown-body tr:nth-child(2n) {
-  background: rgba(255, 255, 255, 0.015);
+.markdown-body th {
+  color: var(--foreground);
+  font-weight: 600;
 }
 
 .markdown-body blockquote {
-  color: var(--muted);
-  border-left: 4px solid rgba(255, 106, 19, 0.55);
-  background: rgba(255, 106, 19, 0.06);
-  border-radius: 0 18px 18px 0;
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1.1rem;
+  color: var(--contrast-helper);
+  border: 0;
+  border-left: 4px solid var(--action-text);
+  background: var(--action-tint);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
+.markdown-body blockquote > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ hero */
+
+// The README's centred title block, which is what the home page opens with.
+// It is composite UI inside the content card, so it takes the inset surface
+// rather than a second card.
 .markdown-body > div[align="center"]:first-child {
-  position: relative;
   margin-bottom: 2.5rem;
-  padding: 3.25rem 1.75rem 2.6rem;
+  padding: 3rem 1.75rem 2.5rem;
   border-radius: var(--radius-xl);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    radial-gradient(circle at top left, rgba(255, 179, 26, 0.2), transparent 28%),
-    radial-gradient(circle at right center, rgba(76, 107, 255, 0.18), transparent 26%),
-    linear-gradient(135deg, rgba(16, 22, 39, 0.98), rgba(12, 18, 34, 0.96));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 28px 70px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-}
-
-.markdown-body > div[align="center"]:first-child::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 30%),
-    linear-gradient(180deg, transparent, rgba(255, 106, 19, 0.04));
-  pointer-events: none;
+  border: 1px solid var(--surface-card-border);
+  background: var(--surface-inset);
 }
 
 .markdown-body > div[align="center"]:first-child h1 {
@@ -379,25 +467,23 @@ a:hover {
   width: 4.9rem;
   height: 4.9rem;
   margin-bottom: 0.5rem;
-  filter: drop-shadow(0 16px 32px rgba(255, 106, 19, 0.28));
 }
 
+// The wordmark carries an inline colour in the README, where GitHub renders it
+// directly. Here it is repointed onto the app's accent so the site holds one
+// orange, and the brand gradient survives only inside the logo mark itself.
 .markdown-body > div[align="center"]:first-child h1 span {
   display: inline-block;
   margin-top: 0.35rem;
   padding-bottom: 0.08em;
-  color: var(--text) !important;
-  background: linear-gradient(135deg, #ffc054, #ff6a13 48%, #ff3d2e);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--action-text) !important;
 }
 
 .markdown-body > div[align="center"]:first-child p:first-of-type {
   margin: 1rem auto 1.4rem;
   max-width: 38rem;
   font-size: 1.1rem;
-  color: #f7dcc0;
+  color: var(--contrast-muted);
 }
 
 .markdown-body > div[align="center"]:first-child p:last-of-type {
@@ -410,27 +496,31 @@ a:hover {
 
 .markdown-body > div[align="center"]:first-child p:last-of-type img {
   height: 28px;
-  border-radius: 999px;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+  border-radius: 4px;
 }
+
+/* ----------------------------------------------------------- screenshots */
 
 .markdown-body img[alt="dark"],
 .markdown-body img[alt="light"] {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.38);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--surface-card-border);
 }
 
+// Placeholder fills behind the screenshots while they load, matching what each
+// one depicts.
 .markdown-body img[alt="dark"] {
-  background: linear-gradient(135deg, #0b1120, #141d33);
+  background: var(--surface-card);
 }
 
 .markdown-body img[alt="light"] {
-  background: linear-gradient(135deg, #f6e6d3, #fff5ea);
+  background: #ffffff;
 }
+
+/* ------------------------------------------------- feature and step tiles */
 
 .markdown-body h2#why-nojoin + ul,
 .markdown-body h2#documentation + ul {
@@ -445,12 +535,9 @@ a:hover {
 .markdown-body h2#documentation + ul li {
   margin: 0;
   padding: 1.1rem 1.15rem;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
-    rgba(12, 18, 33, 0.9);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-card-border);
+  background: var(--surface-inset);
 }
 
 .markdown-body h2#quick-start + ol {
@@ -463,9 +550,9 @@ a:hover {
   position: relative;
   margin: 0 0 1rem;
   padding: 1.15rem 1.15rem 1.15rem 4.25rem;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(11, 17, 32, 0.82);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-card-border);
+  background: var(--surface-inset);
 }
 
 .markdown-body h2#quick-start + ol > li > p:first-of-type {
@@ -494,13 +581,11 @@ a:hover {
   height: 2.4rem;
   display: grid;
   place-items: center;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #ff7f1a, #ff4c28);
-  color: white;
-  font-family: "Sora", "Segoe UI", sans-serif;
+  border-radius: var(--radius-sm);
+  background: var(--action);
+  color: var(--action-on);
   font-size: 0.85rem;
   font-weight: 700;
-  box-shadow: 0 12px 26px rgba(255, 106, 19, 0.28);
 }
 
 .markdown-body h2#project-status,
@@ -519,13 +604,15 @@ a:hover {
 .markdown-body h2#legal + p,
 .markdown-body h2#support + p {
   padding: 1.1rem 1.15rem;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.025);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--surface-card-border);
+  background: var(--surface-inset);
 }
 
+/* ----------------------------------------------------------------- footer */
+
 .site-footer {
-  padding: 0 1.25rem 2rem;
+  padding: 0 1.25rem 2.5rem;
 }
 
 .site-footer__inner {
@@ -540,7 +627,7 @@ a:hover {
 
 .site-footer p {
   margin: 0;
-  color: var(--subtle);
+  color: var(--contrast-icon-muted);
   font-size: 0.95rem;
 }
 
@@ -550,16 +637,25 @@ a:hover {
   gap: 1rem;
 }
 
-.site-footer__links a:hover {
-  color: var(--text);
+.site-footer__links a {
+  color: var(--contrast-icon-muted);
+  text-decoration: none;
+  font-size: 0.94rem;
+  font-weight: 600;
 }
+
+.site-footer__links a:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------ responsive */
 
 @media (max-width: 860px) {
   .site-header__inner,
   .site-footer__inner {
     flex-direction: column;
     align-items: flex-start;
-    border-radius: 28px;
   }
 
   .site-nav {
@@ -568,22 +664,18 @@ a:hover {
 }
 
 @media (max-width: 720px) {
-  .site-header {
-    padding: 0.85rem 0.85rem 0;
-  }
-
   .page-frame {
-    padding: 1rem 0.85rem 2rem;
+    padding: 1.25rem 0.85rem 2rem;
   }
 
   .content-surface {
     padding: 1.15rem;
-    border-radius: 28px;
+    border-radius: var(--radius-lg);
   }
 
   .markdown-body > div[align="center"]:first-child {
     padding: 2.25rem 1rem 1.85rem;
-    border-radius: 24px;
+    border-radius: var(--radius-lg);
   }
 
   .markdown-body > div[align="center"]:first-child h1 img {
@@ -599,5 +691,15 @@ a:hover {
   .markdown-body h2#quick-start + ol > li {
     padding-left: 1rem;
     padding-top: 3.8rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  * {
+    transition-duration: 0.01ms !important;
   }
 }
