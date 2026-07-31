@@ -157,7 +157,7 @@ interface TagNode extends PeopleTag {
           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
             formData.tag_ids.includes(tag.id)
               ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-orange-500 shadow-sm ring-1 ring-orange-500"
-              : "bg-white text-gray-600 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-orange-400"
+              : "bg-white text-contrast-helper dark:bg-gray-800 dark:text-gray-400 border-surface-border hover:border-orange-400"
           }`}
           style={{ marginLeft: level > 0 ? `${level * 12}px` : "0" }}
         >
@@ -270,17 +270,17 @@ interface TagNode extends PeopleTag {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-surface-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+        <div className="px-6 py-4 border-b border-surface-border flex justify-between items-center bg-surface-inset/50">
+          <h2 className="text-xl font-semibold text-foreground">
             {person ? "Edit Person" : "Add Person"}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
+            className="p-2 hover:bg-surface-inset rounded-full transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-contrast-helper" />
           </button>
         </div>
 
@@ -290,7 +290,7 @@ interface TagNode extends PeopleTag {
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Full Name *
                 </label>
                 <input
@@ -300,13 +300,13 @@ interface TagNode extends PeopleTag {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none"
                   placeholder="e.g. John Doe"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Avatar Color
                 </label>
                 <ColorPicker
@@ -319,7 +319,7 @@ interface TagNode extends PeopleTag {
             {/* Contact Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Title
                 </label>
                 <input
@@ -328,12 +328,12 @@ interface TagNode extends PeopleTag {
                   onChange={(e) =>
                     setFormData({ ...formData, title: e.target.value })
                   }
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none"
                   placeholder="e.g. CEO"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Company
                 </label>
                 <input
@@ -342,12 +342,12 @@ interface TagNode extends PeopleTag {
                   onChange={(e) =>
                     setFormData({ ...formData, company: e.target.value })
                   }
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none"
                   placeholder="e.g. Acme Corp"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Email
                 </label>
                 <input
@@ -356,12 +356,12 @@ interface TagNode extends PeopleTag {
                   onChange={(e) =>
                     setFormData({ ...formData, email: e.target.value })
                   }
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none"
                   placeholder="john@example.com"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Phone
                 </label>
                 <input
@@ -370,7 +370,7 @@ interface TagNode extends PeopleTag {
                   onChange={(e) =>
                     setFormData({ ...formData, phone_number: e.target.value })
                   }
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none"
                   placeholder="+1 (555) 000-0000"
                 />
               </div>
@@ -378,8 +378,8 @@ interface TagNode extends PeopleTag {
 
             {/* Voiceprint & Merge Section (Only for existing users) */}
             {person && (
-              <div className="space-y-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                <h3 className="text-md font-medium text-gray-900 dark:text-gray-100">
+              <div className="space-y-6 pt-6 border-t border-surface-border">
+                <h3 className="text-md font-medium text-foreground">
                   Voiceprint & Actions
                 </h3>
 
@@ -388,17 +388,17 @@ interface TagNode extends PeopleTag {
                   <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                     <div className="flex items-center gap-3">
                       <div
-                        className={`p-2 rounded-full ${person.has_voiceprint ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"}`}
+                        className={`p-2 rounded-full ${person.has_voiceprint ? "bg-green-100 text-status-success-fg dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-contrast-icon-muted dark:bg-gray-800 dark:text-gray-500"}`}
                       >
                         <Fingerprint className="w-5 h-5" />
                       </div>
                       <div>
-                        <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                        <div className="font-medium text-sm text-foreground">
                           {person.has_voiceprint
                             ? "Voiceprint Active"
                             : "No Voiceprint"}
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <div className="text-xs text-contrast-helper">
                           {person.has_voiceprint
                             ? "Speaker identification is enabled for this person."
                             : "This person cannot be automatically identified in recordings."}
@@ -410,7 +410,7 @@ interface TagNode extends PeopleTag {
                         type="button"
                         onClick={handleDeleteVoiceprint}
                         disabled={isDeletingVoiceprint}
-                        className="text-red-500 hover:text-red-600 text-sm font-medium px-3 py-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                        className="text-danger-text hover:text-danger-text text-sm font-medium px-3 py-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                       >
                         {isDeletingVoiceprint ? "Deleting..." : "Delete"}
                       </button>
@@ -422,22 +422,22 @@ interface TagNode extends PeopleTag {
                     <button
                       type="button"
                       onClick={() => setShowMerge(true)}
-                      className="flex items-center justify-center gap-2 w-full p-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 transition-colors"
+                      className="flex items-center justify-center gap-2 w-full p-2 text-sm text-contrast-helper hover:text-foreground dark:hover:text-gray-200 hover:bg-surface-inset rounded-lg border border-dashed border-control-border transition-colors"
                     >
                       <Users className="w-4 h-4" />
                       Merge into another person...
                     </button>
                   ) : (
-                    <div className="p-4 bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-lg space-y-3">
+                    <div className="p-4 bg-action-tint border border-action-border rounded-lg space-y-3">
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="text-sm font-medium text-orange-900 dark:text-orange-100">
                             Merge Person
                           </h4>
-                          <p className="text-xs text-orange-700 dark:text-orange-300 mt-1">
+                          <p className="text-xs text-action-text mt-1">
                             Merge <strong>{person.name}</strong> into another
                             person. <br />
-                            <span className="font-bold text-red-600 dark:text-red-400">
+                            <span className="font-bold text-status-danger-fg">
                               Warning:
                             </span>{" "}
                             {person.name} will be deleted.
@@ -448,14 +448,14 @@ interface TagNode extends PeopleTag {
                             setShowMerge(false);
                             setMergeTarget(null);
                           }}
-                          className="text-gray-400 hover:text-gray-600"
+                          className="text-contrast-icon-muted hover:text-contrast-helper"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                        <label className="text-xs font-medium text-contrast-muted">
                           Target Person (Recipient)
                         </label>
                         {!mergeTarget ? (
@@ -464,13 +464,13 @@ interface TagNode extends PeopleTag {
                               type="text"
                               value={speakerSearch}
                               onChange={(e) => setSpeakerSearch(e.target.value)}
-                              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none text-sm"
+                              className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none text-sm"
                               placeholder="Search person..."
                             />
                             {speakerSearch && (
-                              <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
+                              <div className="absolute z-10 mt-1 w-full bg-control-bg rounded-md shadow-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto">
                                 {filteredSpeakers.length === 0 ? (
-                                  <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                  <div className="px-3 py-2 text-sm text-contrast-helper">
                                     No people found
                                   </div>
                                 ) : (
@@ -482,11 +482,11 @@ interface TagNode extends PeopleTag {
                                         setMergeTarget(p);
                                         setSpeakerSearch("");
                                       }}
-                                      className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 dark:hover:bg-gray-600 flex items-center justify-between group text-gray-900 dark:text-gray-100"
+                                      className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 dark:hover:bg-gray-600 flex items-center justify-between group text-foreground"
                                     >
                                       <span>{p.name}</span>
                                       {p.company && (
-                                        <span className="text-xs text-gray-500">
+                                        <span className="text-xs text-contrast-helper">
                                           {p.company}
                                         </span>
                                       )}
@@ -497,19 +497,19 @@ interface TagNode extends PeopleTag {
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-800">
+                          <div className="flex items-center justify-between p-2 bg-action-tint rounded-lg border border-action-border">
                             <div className="flex items-center gap-2">
                               <div className="w-6 h-6 rounded-full bg-orange-200 flex items-center justify-center text-xs font-bold text-orange-800">
                                 {mergeTarget.name.charAt(0)}
                               </div>
-                              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                              <span className="text-sm font-medium text-foreground">
                                 {mergeTarget.name}
                               </span>
                             </div>
                             <button
                               type="button"
                               onClick={() => setMergeTarget(null)}
-                              className="text-gray-500 hover:text-red-500"
+                              className="text-contrast-helper hover:text-danger-text"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -521,7 +521,7 @@ interface TagNode extends PeopleTag {
                         type="button"
                         onClick={handleMergeClick}
                         disabled={!mergeTarget || isSubmitting}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-action text-white rounded-lg hover:bg-action-hover transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSubmitting ? "Merging..." : "Confirm Merge"}
                         <ArrowRight className="w-4 h-4" />
@@ -557,13 +557,13 @@ interface TagNode extends PeopleTag {
             {/* Tags */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-sm font-medium text-contrast-muted">
                   Tags
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowTagInput(!showTagInput)}
-                  className="text-xs text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                  className="text-xs text-action-text hover:text-orange-700 flex items-center gap-1"
                 >
                   <Plus className="w-3 h-3" /> New Tag
                 </button>
@@ -576,7 +576,7 @@ interface TagNode extends PeopleTag {
                     value={newTagName}
                     onChange={(e) => setNewTagName(e.target.value)}
                     placeholder="New tag name..."
-                    className="flex-1 px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 outline-none"
+                    className="flex-1 px-3 py-1.5 text-sm rounded-md border border-control-border bg-control-bg outline-none"
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
@@ -587,18 +587,18 @@ interface TagNode extends PeopleTag {
                   <button
                     type="button"
                     onClick={handleCreateTag}
-                    className="px-3 py-1.5 text-sm bg-orange-600 text-white rounded-md hover:bg-orange-700"
+                    className="px-3 py-1.5 text-sm bg-action text-white rounded-md hover:bg-action-hover"
                   >
                     Add
                   </button>
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2 p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50 min-h-[60px]">
+              <div className="flex flex-wrap gap-2 p-3 border border-surface-border rounded-lg bg-surface-inset min-h-[60px]">
                 {allTags.length > 0 ? (
                   renderTagSelection(tagTree)
                 ) : (
-                  <p className="text-xs text-gray-400 italic w-full text-center">
+                  <p className="text-xs text-contrast-icon-muted italic w-full text-center">
                     No tags created yet.
                   </p>
                 )}
@@ -607,7 +607,7 @@ interface TagNode extends PeopleTag {
 
             {/* Notes */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <label className="text-sm font-medium text-contrast-muted">
                 Notes
               </label>
               <textarea
@@ -616,7 +616,7 @@ interface TagNode extends PeopleTag {
                   setFormData({ ...formData, notes: e.target.value })
                 }
                 rows={4}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-2 focus:ring-orange-500 outline-none resize-none"
+                className="w-full px-3 py-2 rounded-lg border border-control-border bg-control-bg focus:ring-2 focus-visible:outline-focus-ring outline-none resize-none"
                 placeholder="Additional notes about this person..."
               />
             </div>
@@ -624,11 +624,11 @@ interface TagNode extends PeopleTag {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3 bg-gray-50 dark:bg-gray-800/50">
+        <div className="px-6 py-4 border-t border-surface-border flex justify-end gap-3 bg-surface-inset/50">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-contrast-muted hover:bg-surface-inset rounded-lg transition-colors"
           >
             Cancel
           </button>
@@ -636,7 +636,7 @@ interface TagNode extends PeopleTag {
             type="submit"
             form="person-form"
             disabled={isSubmitting}
-            className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-white bg-action hover:bg-action-hover rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? "Saving..." : "Save Person"}
           </button>

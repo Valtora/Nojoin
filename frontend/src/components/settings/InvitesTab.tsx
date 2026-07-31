@@ -202,7 +202,7 @@ export default function InvitesTab() {
                 {!inv.is_revoked ? (
                   <button
                     onClick={() => handleRevokeClick(inv.id)}
-                    className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-contrast-helper hover:text-danger-text transition-colors"
                     title="Revoke"
                   >
                     <XCircle className="w-4 h-4" />
@@ -210,7 +210,7 @@ export default function InvitesTab() {
                 ) : (
                   <button
                     onClick={() => handleDeleteClick(inv.id)}
-                    className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
+                    className="text-contrast-helper hover:text-danger-text transition-colors"
                     title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -222,11 +222,11 @@ export default function InvitesTab() {
                 <input
                   readOnly
                   value={inv.link}
-                  className="flex-1 bg-transparent text-sm text-gray-600 dark:text-gray-300 outline-none truncate"
+                  className="flex-1 bg-transparent text-sm text-contrast-helper outline-none truncate"
                 />
                 <button
                   onClick={() => copyLink(inv.link)}
-                  className="text-gray-500 hover:text-orange-600"
+                  className="text-contrast-helper hover:text-action-text"
                 >
                   <Copy className="w-4 h-4" />
                 </button>
@@ -251,7 +251,7 @@ export default function InvitesTab() {
               </div>
 
               {inv.users.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <div className="mt-4 pt-3 border-t border-surface-border">
                   <p className="text-xs font-medium contrast-helper mb-1">
                     Joined Users:
                   </p>
@@ -259,7 +259,7 @@ export default function InvitesTab() {
                     {inv.users.map((u) => (
                       <span
                         key={u}
-                        className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300"
+                        className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-contrast-helper"
                       >
                         {u}
                       </span>
@@ -275,19 +275,19 @@ export default function InvitesTab() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-scrim p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 border border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+          <div className="bg-surface-card rounded-lg shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 border border-surface-border">
+            <h3 className="text-lg font-medium text-foreground mb-4">
               Create Invitation
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-contrast-muted mb-1">
                   Role
                 </label>
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
                 >
                   <option value={UserRole.USER}>User</option>
                   <option value={UserRole.ADMIN}>Admin</option>
@@ -295,7 +295,7 @@ export default function InvitesTab() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-contrast-muted mb-1">
                   Expires In (Days)
                 </label>
                 <input
@@ -306,12 +306,12 @@ export default function InvitesTab() {
                     const val = sanitizeIntegerString(e.target.value, 1, 365);
                     setExpiresIn(Number(val));
                   }}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-contrast-muted mb-1">
                   Max Uses
                 </label>
                 <input
@@ -322,21 +322,21 @@ export default function InvitesTab() {
                     const val = sanitizeIntegerString(e.target.value, 1, 100);
                     setMaxUses(Number(val));
                   }}
-                  className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
                 />
               </div>
 
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-contrast-muted hover:bg-surface-inset rounded-md transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreate}
                   disabled={creating}
-                  className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-md transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm font-medium text-white bg-action hover:bg-action-hover rounded-md transition-colors disabled:opacity-50"
                 >
                   {creating ? "Creating..." : "Create Invite"}
                 </button>

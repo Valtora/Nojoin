@@ -105,19 +105,19 @@ export default function CliOAuthPanel({
   const connectedProvider = status?.providers?.find((p) => p.connected)?.provider;
 
   return (
-    <div className="col-span-2 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
+    <div className="col-span-2 p-4 bg-surface-inset border border-surface-border rounded-xl space-y-3">
       <div>
-        <div className="text-sm font-semibold text-gray-900 dark:text-white">
+        <div className="text-sm font-semibold text-foreground">
           Your AI subscription
         </div>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-contrast-helper mt-1">
           Connect Claude or ChatGPT (one at a time) to route AI through your own
           plan, then choose &ldquo;My own AI subscription&rdquo; above.
         </p>
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-contrast-helper">
           <Loader2 className="w-4 h-4 animate-spin" /> Checking connections…
         </div>
       ) : (
@@ -305,10 +305,10 @@ function ProviderConnectRow({
     <div className="settings-inset space-y-2 rounded-xl p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-gray-900 dark:text-white">
+          <div className="text-sm font-semibold text-foreground">
             {meta.title}
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-contrast-helper mt-0.5">
             Route AI through your own {meta.plan} plan.
           </p>
         </div>
@@ -322,7 +322,7 @@ function ProviderConnectRow({
               <Check className="w-3 h-3" /> Connected
             </span>
           ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-contrast-helper dark:bg-gray-800 dark:text-gray-400">
               Not connected
             </span>
           )}
@@ -330,7 +330,7 @@ function ProviderConnectRow({
       </div>
 
       {usageLimited && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="text-xs text-status-warning-fg">
           Subscription limit reached; it resets around{" "}
           {usageLimitedUntil!.toLocaleString()}. Your fallback provider (if
           configured) is used until then.
@@ -338,7 +338,7 @@ function ProviderConnectRow({
       )}
 
       {connected && typeof tokens7d === "number" && tokens7d > 0 && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+        <p className="text-xs text-contrast-helper">
           {formatTokens(tokens7d)} tokens in the last 7 days
           {typeof tokensTotal === "number"
             ? ` (${formatTokens(tokensTotal)} all time)`
@@ -352,7 +352,7 @@ function ProviderConnectRow({
           type="button"
           onClick={handleDisconnect}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-status-danger-border text-status-danger-fg text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -371,7 +371,7 @@ function ProviderConnectRow({
           type="button"
           onClick={beginFlow}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold disabled:opacity-50"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -384,9 +384,9 @@ function ProviderConnectRow({
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700 flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <div className="bg-surface-card rounded-xl shadow-2xl max-w-lg w-full border border-surface-border flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-surface-border">
+              <h2 className="text-lg font-semibold text-foreground">
                 Connect your {meta.label} subscription
               </h2>
               <button
@@ -396,7 +396,7 @@ function ProviderConnectRow({
                   setDevice(null);
                   setFlowKind(null);
                 }}
-                className="text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                className="text-contrast-icon-muted hover:text-foreground dark:hover:text-white"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
@@ -407,13 +407,13 @@ function ProviderConnectRow({
               {flowKind === "device" ? (
                 device ? (
                 <>
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <p className="text-sm text-contrast-muted">
                     Open the sign-in page, enter the code below, and approve
                     access. This page updates automatically once you approve.
                   </p>
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 px-4 py-3 text-center">
-                    <div className="text-xs text-gray-500 mb-1">Your code</div>
-                    <div className="text-2xl font-mono font-semibold tracking-widest text-gray-900 dark:text-white">
+                  <div className="rounded-lg border border-surface-border bg-surface-inset px-4 py-3 text-center">
+                    <div className="text-xs text-contrast-helper mb-1">Your code</div>
+                    <div className="text-2xl font-mono font-semibold tracking-widest text-foreground">
                       {device.userCode}
                     </div>
                   </div>
@@ -421,25 +421,25 @@ function ProviderConnectRow({
                     href={device.verificationUriComplete || device.verificationUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold no-underline"
+                    className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold no-underline"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Open the {meta.vendor} sign-in page
                   </a>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 text-xs text-contrast-helper">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     Waiting for approval…
                   </div>
                 </>
                 ) : (
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="flex items-center gap-2 text-sm text-contrast-helper">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Generating your code…
                   </div>
                 )
               ) : (
                 <>
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <p className="text-sm text-contrast-muted">
                     Grant Nojoin access to your subscription, then paste back the
                     code {meta.vendor} gives you.
                   </p>
@@ -448,14 +448,14 @@ function ProviderConnectRow({
                       href={authorizeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold no-underline"
+                      className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold no-underline"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Grant access on {meta.vendor}
                     </a>
                   )}
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                    <label className="block text-xs font-medium text-contrast-helper mb-1">
                       Paste the code {meta.vendor} shows you
                     </label>
                     <input
@@ -465,14 +465,14 @@ function ProviderConnectRow({
                       onChange={(event) => setCode(event.target.value)}
                       placeholder="Paste the code here"
                       disabled={busy}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50"
+                      className="w-full px-3 py-2 rounded-lg border border-surface-border bg-surface-card text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none disabled:opacity-50"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={beginFlow}
                     disabled={busy}
-                    className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 text-xs text-contrast-helper hover:text-foreground disabled:opacity-50"
                   >
                     <ExternalLink className="w-3 h-3" />
                     Need a fresh code? Restart sign-in
@@ -481,7 +481,7 @@ function ProviderConnectRow({
               )}
             </div>
 
-            <div className="flex justify-end gap-2 p-5 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex justify-end gap-2 p-5 border-t border-surface-border">
               <button
                 type="button"
                 onClick={() => {
@@ -490,7 +490,7 @@ function ProviderConnectRow({
                   setFlowKind(null);
                 }}
                 disabled={busy}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-contrast-helper hover:bg-surface-inset disabled:opacity-50"
               >
                 {flowKind === "device" ? "Close" : "Cancel"}
               </button>
@@ -499,7 +499,7 @@ function ProviderConnectRow({
                   type="button"
                   onClick={handleComplete}
                   disabled={busy || code.trim().length === 0}
-                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-white text-sm font-semibold disabled:opacity-50"
                 >
                   {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   Connect

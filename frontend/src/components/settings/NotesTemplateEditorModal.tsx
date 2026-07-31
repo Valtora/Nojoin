@@ -181,10 +181,10 @@ export default function NotesTemplateEditorModal({
   // itself to the settings card and overlap the sections around it.
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-scrim">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-[1400px] h-[92vh] overflow-hidden border border-gray-200 dark:border-gray-700 flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-[1400px] h-[92vh] overflow-hidden border border-surface-border flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border shrink-0">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <h2 className="text-xl font-semibold text-foreground">
               {readOnly
                 ? template?.name
                 : template
@@ -198,7 +198,7 @@ export default function NotesTemplateEditorModal({
           </div>
           <button
             onClick={onClose}
-            className="contrast-helper hover:text-gray-900 dark:hover:text-white"
+            className="contrast-helper hover:text-foreground dark:hover:text-white"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -209,7 +209,7 @@ export default function NotesTemplateEditorModal({
           {/* Generate */}
           <div className="flex flex-col min-h-0 gap-3">
             <div>
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h3 className="text-sm font-medium text-contrast-muted">
                 Generate
               </h3>
               <p className="mt-1 text-xs contrast-helper">
@@ -222,13 +222,13 @@ export default function NotesTemplateEditorModal({
               disabled={readOnly || generating}
               onChange={(event) => setBrief(event.target.value)}
               placeholder="e.g. I run weekly user interviews. I need the questions I asked, what the participant did and said, the insights worth acting on, and follow-ups for next time. No action item table."
-              className="flex-1 min-h-[9rem] w-full p-3 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-60 resize-none"
+              className="flex-1 min-h-[9rem] w-full p-3 text-sm rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60 resize-none"
             />
             <button
               type="button"
               onClick={handleGenerate}
               disabled={readOnly || generating || !brief.trim()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-orange-500 text-white hover:bg-action transition-colors disabled:opacity-60"
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -246,7 +246,7 @@ export default function NotesTemplateEditorModal({
           {/* Edit */}
           <div className="flex flex-col min-h-0 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-contrast-muted mb-2">
                 Name
               </label>
               <input
@@ -255,13 +255,13 @@ export default function NotesTemplateEditorModal({
                 disabled={readOnly}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="e.g. User interview notes"
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-60"
+                className="w-full p-2.5 rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60"
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-contrast-muted">
                   Description
                 </label>
                 <span className="text-xs contrast-helper">
@@ -275,17 +275,17 @@ export default function NotesTemplateEditorModal({
                 maxLength={maxDescriptionLength}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="e.g. Questions, observations and follow-ups for user interviews"
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-60"
+                className="w-full p-2.5 rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60"
               />
             </div>
 
             <div className="flex flex-col min-h-0 flex-1">
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <label className="block text-sm font-medium text-contrast-muted">
                   Section Structure
                 </label>
                 <span
-                  className={`text-xs ${overLimit ? "text-red-500" : "contrast-helper"}`}
+                  className={`text-xs ${overLimit ? "text-danger-text" : "contrast-helper"}`}
                 >
                   {sections.length} / {maxSectionsLength}
                 </span>
@@ -295,7 +295,7 @@ export default function NotesTemplateEditorModal({
                 disabled={readOnly}
                 onChange={(event) => setSections(event.target.value)}
                 spellCheck={false}
-                className="flex-1 min-h-[18rem] w-full p-3 font-mono text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white focus:ring-2 focus:ring-orange-500 outline-none transition-all disabled:opacity-60 resize-none"
+                className="flex-1 min-h-[18rem] w-full p-3 font-mono text-xs rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60 resize-none"
               />
               <p className="mt-2 text-xs contrast-helper">
                 Markdown headings and their descriptions. This controls what the
@@ -308,7 +308,7 @@ export default function NotesTemplateEditorModal({
               <button
                 type="button"
                 onClick={() => setSections(builtinSections)}
-                className="inline-flex items-center gap-2 text-sm contrast-helper hover:text-gray-900 dark:hover:text-white shrink-0"
+                className="inline-flex items-center gap-2 text-sm contrast-helper hover:text-foreground dark:hover:text-white shrink-0"
               >
                 <RotateCcw className="w-4 h-4" />
                 Reset to the Nojoin default
@@ -319,14 +319,14 @@ export default function NotesTemplateEditorModal({
           {/* Verify */}
           <div className="flex flex-col min-h-0 gap-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <h3 className="text-sm font-medium text-contrast-muted">
                 Assembled Prompt
               </h3>
               <button
                 type="button"
                 onClick={handlePreview}
                 disabled={loadingPreview}
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-60"
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-surface-inset text-foreground hover:bg-surface-inset transition-colors disabled:opacity-60"
               >
                 {loadingPreview ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -336,17 +336,17 @@ export default function NotesTemplateEditorModal({
                 Preview
               </button>
             </div>
-            <pre className="flex-1 min-h-[12rem] overflow-auto whitespace-pre-wrap break-words p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 text-[11px] leading-relaxed text-gray-700 dark:text-gray-300">
+            <pre className="flex-1 min-h-[12rem] overflow-auto whitespace-pre-wrap break-words p-3 rounded-lg border border-surface-border bg-surface-page text-[11px] leading-relaxed text-contrast-muted">
               {preview ??
                 "Select Preview to see the exact prompt this structure produces, using a short sample transcript. No AI request is made."}
             </pre>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-border shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg contrast-helper hover:text-gray-900 dark:hover:text-white"
+            className="px-4 py-2 text-sm rounded-lg contrast-helper hover:text-foreground dark:hover:text-white"
           >
             {readOnly ? "Close" : "Cancel"}
           </button>
@@ -354,7 +354,7 @@ export default function NotesTemplateEditorModal({
             <button
               onClick={handleSave}
               disabled={saving || overLimit || !name.trim() || !sections.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-60"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-orange-500 text-white hover:bg-action transition-colors disabled:opacity-60"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Save

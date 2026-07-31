@@ -206,21 +206,21 @@ export default function RecalibrateModal({
   return createPortal(
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-800">
+        <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-surface-border">
           {/* Header - Fixed */}
-          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-900/80 z-10 flex justify-between items-start">
+          <div className="px-6 py-5 border-b border-surface-border bg-gray-50/80 dark:bg-gray-900/80 z-10 flex justify-between items-start">
             <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
                 <RefreshCw className="w-6 h-6 text-blue-600 dark:text-blue-500" />
                 Voiceprint Trainer
               </h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mt-1 text-sm text-contrast-helper">
                 Only approve{" "}
-                <span className="font-semibold text-gray-900 dark:text-gray-200">
+                <span className="font-semibold text-foreground dark:text-gray-200">
                   clear, isolated speech
                 </span>{" "}
                 samples. Aim for{" "}
-                <span className="font-semibold text-blue-600 dark:text-blue-400">
+                <span className="font-semibold text-status-info-fg">
                   3-5 samples
                 </span>{" "}
                 to create a &quot;Gold Standard&quot; voiceprint.
@@ -228,7 +228,7 @@ export default function RecalibrateModal({
             </div>
             <button
               onClick={onClose}
-              className="p-2 -mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+              className="p-2 -mr-2 text-contrast-icon-muted hover:text-contrast-helper dark:hover:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -238,13 +238,13 @@ export default function RecalibrateModal({
           <div className="flex-1 overflow-y-auto p-6 scrollbar-thin bg-gray-50 dark:bg-black/20">
             {success ? (
               <div className="flex flex-col items-center justify-center h-full py-12 animate-in fade-in zoom-in duration-300">
-                <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6 shadow-sm">
-                  <Lock className="w-10 h-10 text-green-600 dark:text-green-400" />
+                <div className="w-20 h-20 bg-status-success-bg rounded-full flex items-center justify-center mb-6 shadow-sm">
+                  <Lock className="w-10 h-10 text-status-success-fg" />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                <h3 className="text-2xl font-bold text-foreground mb-2">
                   Training Complete
                 </h3>
-                <p className="text-gray-500 dark:text-gray-400 max-w-sm text-center mb-8">
+                <p className="text-contrast-helper max-w-sm text-center mb-8">
                   {speaker.name}&apos;s voiceprint has been recalibrated and
                   locked to prevent automatic degradation.
                 </p>
@@ -289,7 +289,7 @@ export default function RecalibrateModal({
                       onClose();
                     }}
                     disabled={isSubmitting}
-                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full px-4 py-3 bg-surface-card border border-surface-border text-contrast-muted rounded-xl hover:bg-surface-inset transition-colors"
                   >
                     Done
                   </button>
@@ -298,17 +298,17 @@ export default function RecalibrateModal({
             ) : isLoading ? (
               <div className="flex flex-col items-center justify-center h-64">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
-                <p className="text-gray-500 animate-pulse">
+                <p className="text-contrast-helper animate-pulse">
                   Finding audio segments...
                 </p>
               </div>
             ) : segments.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-center">
                 <AlertCircle className="w-12 h-12 text-gray-300 mb-3" />
-                <p className="text-gray-500 font-medium">
+                <p className="text-contrast-helper font-medium">
                   No sufficient audio segments found.
                 </p>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-contrast-icon-muted mt-1">
                   Try processing more recordings first.
                 </p>
               </div>
@@ -322,12 +322,12 @@ export default function RecalibrateModal({
                     <div
                       key={`${seg.recording_id}-${idx}`}
                       className={`
-                      relative group flex flex-col rounded-xl border-2 transition-all duration-200 overflow-hidden bg-white dark:bg-gray-800
+                      relative group flex flex-col rounded-xl border-2 transition-all duration-200 overflow-hidden bg-surface-card
                       ${
                         status === "approved"
                           ? "border-green-500 shadow-md ring-1 ring-green-500/20"
                           : status === "rejected"
-                            ? "border-gray-200 dark:border-gray-700 opacity-60 grayscale-[0.5] scale-[0.98]"
+                            ? "border-surface-border opacity-60 grayscale-[0.5] scale-[0.98]"
                             : "border-transparent shadow-sm hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800"
                       }
                     `}
@@ -335,16 +335,16 @@ export default function RecalibrateModal({
                       {/* Header / Info */}
                       <div className="p-4 flex-1">
                         <div className="mb-3 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700/50 text-xs font-medium text-gray-600 dark:text-gray-300">
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700/50 text-xs font-medium text-contrast-helper">
                             <Volume2 className="w-3 h-3" />
                             {(seg.end - seg.start).toFixed(1)}s
                           </div>
                           {status === "approved" && (
-                            <Check className="w-5 h-5 text-green-600 animate-in fade-in zoom-in" />
+                            <Check className="w-5 h-5 text-status-success-fg animate-in fade-in zoom-in" />
                           )}
                         </div>
                         <div className="relative">
-                          <p className="text-sm text-gray-700 dark:text-gray-300 font-medium line-clamp-3 leading-relaxed">
+                          <p className="text-sm text-contrast-muted font-medium line-clamp-3 leading-relaxed">
                             &quot;{seg.text}&quot;
                           </p>
                           {/* Gradient fade for long text */}
@@ -353,7 +353,7 @@ export default function RecalibrateModal({
                       </div>
 
                       {/* Controls Footer */}
-                      <div className="p-3 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
+                      <div className="p-3 bg-surface-inset/80 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
                         {/* Play Button */}
                         <button
                           onClick={(e) => {
@@ -365,7 +365,7 @@ export default function RecalibrateModal({
                            ${
                              isPlaying
                                ? "bg-blue-600 text-white shadow-lg scale-105"
-                               : "bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-blue-50 dark:hover:bg-gray-600 hover:text-blue-600"
+                               : "bg-control-bg text-contrast-helper border border-gray-200 dark:border-gray-600 hover:bg-blue-50 dark:hover:bg-gray-600 hover:text-blue-600"
                            }
                          `}
                         >
@@ -377,22 +377,22 @@ export default function RecalibrateModal({
                         </button>
 
                         {/* Action Buttons */}
-                        <div className="flex items-center gap-1.5  p-1 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div className="flex items-center gap-1.5  p-1 bg-surface-card rounded-lg border border-surface-border shadow-sm">
                           <button
                             onClick={(e) =>
                               handleStatusChange(idx, "rejected", e)
                             }
-                            className={`p-2 rounded-md transition-colors ${status === "rejected" ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" : "text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"}`}
+                            className={`p-2 rounded-md transition-colors ${status === "rejected" ? "bg-red-100 text-danger-text dark:bg-red-900/30 dark:text-red-400" : "text-contrast-icon-muted hover:text-danger-text hover:bg-red-50 dark:hover:bg-red-900/20"}`}
                             title="Reject / Not this speaker"
                           >
                             <Ban className="w-4 h-4" />
                           </button>
-                          <div className="w-px h-4 bg-gray-200 dark:bg-gray-700"></div>
+                          <div className="w-px h-4 bg-surface-inset"></div>
                           <button
                             onClick={(e) =>
                               handleStatusChange(idx, "approved", e)
                             }
-                            className={`p-2 rounded-md transition-colors ${status === "approved" ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" : "text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"}`}
+                            className={`p-2 rounded-md transition-colors ${status === "approved" ? "bg-green-100 text-status-success-fg dark:bg-green-900/30 dark:text-green-400" : "text-contrast-icon-muted hover:text-status-success-fg hover:bg-green-50 dark:hover:bg-green-900/20"}`}
                             title="Verify / Approve"
                           >
                             <Check className="w-4 h-4" />
@@ -408,10 +408,10 @@ export default function RecalibrateModal({
 
           {/* Footer Actions */}
           {!success && (
-            <div className="px-6 py-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 flex justify-between items-center z-20">
+            <div className="px-6 py-4 bg-surface-card border-t border-surface-border flex justify-between items-center z-20">
               <div className="flex flex-col items-start gap-1">
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  <span className="font-medium text-gray-900 dark:text-gray-200">
+                <div className="text-sm text-contrast-helper">
+                  <span className="font-medium text-foreground dark:text-gray-200">
                     {activeCount}
                   </span>{" "}
                   samples selected
@@ -420,7 +420,7 @@ export default function RecalibrateModal({
                 {/* Entry Point for Unmerge (Split) */}
                 <button
                   onClick={() => setIsSplitModalOpen(true)}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+                  className="text-xs text-status-info-fg hover:underline hover:text-blue-700 dark:hover:text-blue-300 font-medium"
                 >
                   Not this person? Split into new speaker...
                 </button>
@@ -432,7 +432,7 @@ export default function RecalibrateModal({
                     setSegmentStates({});
                   }}
                   disabled={Object.keys(segmentStates).length === 0}
-                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 disabled:opacity-50"
+                  className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground dark:hover:text-gray-200 disabled:opacity-50"
                 >
                   Reset
                 </button>

@@ -43,15 +43,15 @@ export default function ExportModal({
       />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="relative bg-surface-card rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border">
+          <h2 className="text-lg font-semibold text-foreground">
             Export Content
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="p-1 text-contrast-icon-muted hover:text-contrast-helper dark:hover:text-gray-200 rounded-md hover:bg-surface-inset transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -59,7 +59,7 @@ export default function ExportModal({
 
         {/* Content */}
         <div className="p-6 space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          <p className="text-sm text-contrast-helper mb-4">
             Choose what you want to export:
           </p>
 
@@ -69,8 +69,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 selected === "transcript"
-                  ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20"
-                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-orange-500 bg-action-tint"
+                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
               }`}
             >
               <input
@@ -84,17 +84,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "transcript"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   Transcript Only
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   Export the diarized transcript with timestamps
                 </div>
               </div>
@@ -102,7 +102,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "transcript"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {selected === "transcript" && (
@@ -115,10 +115,10 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-colors ${
                 !hasNotes
-                  ? "opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700"
+                  ? "opacity-50 cursor-not-allowed border-surface-border"
                   : selected === "notes"
-                    ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20 cursor-pointer"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer"
+                    ? "border-orange-500 bg-action-tint cursor-pointer"
+                    : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer"
               }`}
             >
               <input
@@ -133,17 +133,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "notes"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <StickyNote className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   Notes Only
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   {hasNotes
                     ? "Export the AI-generated meeting notes"
                     : "No notes available - generate notes first"}
@@ -153,7 +153,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "notes"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {selected === "notes" && (
@@ -166,10 +166,10 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-colors ${
                 !hasNotes
-                  ? "opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700"
+                  ? "opacity-50 cursor-not-allowed border-surface-border"
                   : selected === "both"
-                    ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20 cursor-pointer"
-                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer"
+                    ? "border-orange-500 bg-action-tint cursor-pointer"
+                    : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer"
               }`}
             >
               <input
@@ -184,17 +184,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "both"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <Files className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   Both
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   {hasNotes
                     ? "Export transcript and notes in a single file"
                     : "No notes available - generate notes first"}
@@ -204,7 +204,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "both"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {selected === "both" && (
@@ -217,8 +217,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 selected === "audio"
-                  ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20"
-                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-orange-500 bg-action-tint"
+                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
               }`}
             >
               <input
@@ -232,17 +232,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   selected === "audio"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <Music className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   Audio File (.mp3)
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   Export the proxy audio file of the recording
                 </div>
               </div>
@@ -250,7 +250,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   selected === "audio"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {selected === "audio" && (
@@ -262,9 +262,9 @@ export default function ExportModal({
 
           {selected !== "audio" && (
             <>
-              <div className="border-t border-gray-200 dark:border-gray-700 my-4" />
+              <div className="border-t border-surface-border my-4" />
 
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              <p className="text-sm text-contrast-helper mb-2">
                 Choose format:
               </p>
 
@@ -272,8 +272,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "txt"
-                  ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20"
-                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-orange-500 bg-action-tint"
+                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
               }`}
             >
               <input
@@ -287,17 +287,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   format === "txt"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   Text File (.txt)
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   Simple text format
                 </div>
               </div>
@@ -305,7 +305,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   format === "txt"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {format === "txt" && (
@@ -317,8 +317,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "pdf"
-                  ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20"
-                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-orange-500 bg-action-tint"
+                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
               }`}
             >
               <input
@@ -332,17 +332,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   format === "pdf"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   PDF Document (.pdf)
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   Formatted document with header
                 </div>
               </div>
@@ -350,7 +350,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   format === "pdf"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {format === "pdf" && (
@@ -362,8 +362,8 @@ export default function ExportModal({
             <label
               className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
                 format === "docx"
-                  ? "border-orange-500 bg-orange-100 dark:bg-orange-900/20"
-                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                  ? "border-orange-500 bg-action-tint"
+                  : "border-surface-border hover:border-gray-300 dark:hover:border-gray-600"
               }`}
             >
               <input
@@ -377,17 +377,17 @@ export default function ExportModal({
               <div
                 className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                   format === "docx"
-                    ? "bg-orange-200 dark:bg-orange-900/40 text-orange-600"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500"
+                    ? "bg-orange-200 dark:bg-orange-900/40 text-action-text"
+                    : "bg-gray-100 dark:bg-gray-700 text-contrast-helper"
                 }`}
               >
                 <FileText className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <div className="font-medium text-gray-900 dark:text-white">
+                <div className="font-medium text-foreground">
                   Microsoft Word (.docx)
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-sm text-contrast-helper">
                   Editable document format
                 </div>
               </div>
@@ -395,7 +395,7 @@ export default function ExportModal({
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                   format === "docx"
                     ? "border-orange-500 bg-orange-500"
-                    : "border-gray-300 dark:border-gray-600"
+                    : "border-control-border"
                 }`}
               >
                 {format === "docx" && (
@@ -409,16 +409,16 @@ export default function ExportModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border bg-surface-inset">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            className="px-4 py-2 text-contrast-helper hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-action text-white rounded-md hover:bg-action-hover transition-colors"
           >
             <Download className="w-4 h-4" />
             Export
