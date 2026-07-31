@@ -228,7 +228,9 @@ samp {
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,
-.markdown-body h4 {
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   color: var(--foreground);
   border: 0;
   font-weight: 700;
@@ -279,6 +281,11 @@ samp {
 
 .markdown-body li + li {
   margin-top: 0.35rem;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 0.35rem 0 0;
 }
 
 .markdown-body strong {
