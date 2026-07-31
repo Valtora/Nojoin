@@ -190,7 +190,7 @@ export function PeopleTagSidebar({
       <>
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            className="fixed inset-0 z-[var(--z-dropdown)] bg-scrim lg:hidden"
             onClick={onMobileClose}
           />
         )}
@@ -207,7 +207,7 @@ export function PeopleTagSidebar({
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-[var(--z-dropdown)] bg-scrim lg:hidden"
           onClick={onMobileClose}
         />
       )}

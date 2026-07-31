@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useState } from "react";
-import { Dialog, Transition } from "@headlessui/react";
-import { X, FileAudio, Server, Monitor } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingInfo } from "@/types";
+import Button from "./ui/Button";
+import Modal from "./ui/Modal";
 
 interface RecordingInfoModalProps {
   isOpen: boolean;
@@ -43,175 +44,108 @@ export default function RecordingInfoModal({
   }, [addNotification, isOpen, recording.id]);
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black/25 backdrop-blur-sm" />
-        </Transition.Child>
-
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 text-center">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
-            >
-              <Dialog.Panel className="w-full max-w-lg transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 p-6 text-left align-middle shadow-xl transition-all border border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between items-center mb-6">
-                  <Dialog.Title
-                    as="h3"
-                    className="text-lg font-medium leading-6 text-gray-900 dark:text-white flex items-center gap-2"
-                  >
-                    <FileAudio className="w-5 h-5 text-orange-500" />
-                    Recording Details
-                  </Dialog.Title>
-                  <button
-                    onClick={onClose}
-                    className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="space-y-6">
-                  {/* General Info */}
-                  <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                      <Monitor className="w-4 h-4 text-blue-500" />
-                      General
-                    </h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                          Name
-                        </span>
-                        <span
-                          className="font-medium text-gray-900 dark:text-white truncate block"
-                          title={recording.name}
-                        >
-                          {recording.name}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                          ID
-                        </span>
-                        <span className="font-mono text-gray-700 dark:text-gray-300">
-                          {recording.id}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                          Created At
-                        </span>
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {new Date(recording.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                          Status
-                        </span>
-                        <span className="capitalize text-gray-700 dark:text-gray-300">
-                          {recording.status}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {loading ? (
-                    <div className="flex justify-center p-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
-                    </div>
-                  ) : unavailable ? (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
-                      Recording details are temporarily unavailable.
-                    </div>
-                  ) : info ? (
-                    <>
-
-
-                      {/* Proxy File */}
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                          <Server className="w-4 h-4 text-green-500" />
-                          Proxy Audio (Web optimized)
-                        </h4>
-                        {info.proxy ? (
-                          <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-sm">
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Format
-                              </span>
-                              <span className="text-gray-900 dark:text-white uppercase">
-                                {info.proxy.format || "N/A"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Bitrate
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.proxy.bitrate
-                                  ? `${Math.round(info.proxy.bitrate / 1000)} kbps`
-                                  : "N/A"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Channels
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.proxy.channels} (Mono)
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 dark:text-gray-400 block text-xs">
-                                Size
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {info.proxy.size
-                                  ? `${(info.proxy.size / 1024 / 1024).toFixed(2)} MB`
-                                  : "N/A"}
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500 italic">
-                            Proxy file not generated yet.
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-
-                <div className="mt-6 flex justify-end">
-                  <button
-                    type="button"
-                    className="rounded-lg bg-gray-100 dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
-                    onClick={onClose}
-                  >
-                    Close
-                  </button>
-                </div>
-              </Dialog.Panel>
-            </Transition.Child>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="md"
+      title={
+        <span className="flex items-center gap-2">
+          <FileAudio aria-hidden="true" className="w-5 h-5 text-action-text" />
+          Recording Details
+        </span>
+      }
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <div className="space-y-6">
+        {/* General Info */}
+        <div className="rounded-lg bg-surface-inset p-4">
+          <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Monitor aria-hidden="true" className="w-4 h-4 text-status-info-fg" />
+            General
+          </h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="block text-xs text-contrast-helper">Name</span>
+              <span
+                className="block truncate font-medium text-foreground"
+                title={recording.name}
+              >
+                {recording.name}
+              </span>
+            </div>
+            <div>
+              <span className="block text-xs text-contrast-helper">ID</span>
+              <span className="font-mono text-contrast-muted">{recording.id}</span>
+            </div>
+            <div>
+              <span className="block text-xs text-contrast-helper">Created At</span>
+              <span className="text-contrast-muted">
+                {new Date(recording.created_at).toLocaleString()}
+              </span>
+            </div>
+            <div>
+              <span className="block text-xs text-contrast-helper">Status</span>
+              <span className="capitalize text-contrast-muted">{recording.status}</span>
+            </div>
           </div>
         </div>
-      </Dialog>
-    </Transition>
+
+        {loading ? (
+          <div className="flex justify-center p-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-action" />
+          </div>
+        ) : unavailable ? (
+          <div className="rounded-lg border border-surface-border bg-surface-inset p-4 text-center text-sm text-contrast-helper">
+            Recording details are temporarily unavailable.
+          </div>
+        ) : info ? (
+          /* Proxy File */
+          <div className="rounded-lg border border-surface-border p-4">
+            <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Server aria-hidden="true" className="w-4 h-4 text-status-success-fg" />
+              Proxy Audio (Web optimized)
+            </h4>
+            {info.proxy ? (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <div>
+                  <span className="block text-xs text-contrast-helper">Format</span>
+                  <span className="uppercase text-foreground">
+                    {info.proxy.format || "N/A"}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-xs text-contrast-helper">Bitrate</span>
+                  <span className="text-foreground">
+                    {info.proxy.bitrate
+                      ? `${Math.round(info.proxy.bitrate / 1000)} kbps`
+                      : "N/A"}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-xs text-contrast-helper">Channels</span>
+                  <span className="text-foreground">{info.proxy.channels} (Mono)</span>
+                </div>
+                <div>
+                  <span className="block text-xs text-contrast-helper">Size</span>
+                  <span className="text-foreground">
+                    {info.proxy.size
+                      ? `${(info.proxy.size / 1024 / 1024).toFixed(2)} MB`
+                      : "N/A"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm italic text-contrast-helper">
+                Proxy file not generated yet.
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </Modal>
   );
 }

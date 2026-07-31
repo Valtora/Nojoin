@@ -74,7 +74,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setIsOpen(false)} />
           <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-50 flex flex-col gap-1">
             <div className="text-xs font-semibold text-gray-400 px-2 py-1 border-b border-gray-100 dark:border-gray-700">
               {hovered

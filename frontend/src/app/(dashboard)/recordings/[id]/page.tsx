@@ -201,7 +201,7 @@ export default function RecordingPage({ params }: PageProps) {
 
             {/* Mobile Chat Full-Screen Modal */}
             {isMobileChatOpen && (
-              <div className="fixed inset-0 z-50 flex h-dvh flex-col bg-white animate-in slide-in-from-bottom dark:bg-gray-900">
+              <div className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
                 <header className="flex shrink-0 items-center justify-between border-b-2 border-gray-200 bg-gray-50 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] dark:border-gray-800 dark:bg-gray-950">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-orange-500" />

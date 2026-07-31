@@ -679,7 +679,7 @@ export default function TranscriptView({
                   {showSettings && (
                     <>
                       <div
-                        className="fixed inset-0 z-40"
+                        className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
                       <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-50 flex flex-col gap-1">
