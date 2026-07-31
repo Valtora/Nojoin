@@ -36,6 +36,14 @@ vi.mock("./ProcessingNotesPanel", () => ({
   default: () => <div data-testid="processing-notes-panel" />,
 }));
 
+// The documents list is fetched by the view now that the upload action lives on
+// the toolbar rather than inside the panel. Partial mock: DocumentUploadModal
+// imports from the same module.
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getDocuments: () => Promise.resolve([]),
+}));
+
 // RecordingStatusDisplay drives discard through useRecordingActions, which reads
 // capture state; stub the provider so the component renders without one.
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -127,6 +135,22 @@ describe("RecordingStatusDisplay", () => {
     expect(screen.getByText("40%")).toBeInTheDocument();
     // The console keeps the state word; the panel does not repeat it.
     expect(screen.getAllByText("Processing")).toHaveLength(1);
+  });
+
+  it("does not render a documents panel with nothing attached", async () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording()}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    // Uploading moved to the capture toolbar, so an empty panel would have
+    // nothing left to offer.
+    await vi.waitFor(() => {
+      expect(screen.queryByText("Documents")).not.toBeInTheDocument();
+    });
   });
 
   it("hides Meeting Edge when disabled", () => {

@@ -213,13 +213,18 @@ export default function SpeakerCapField({
           Max Speakers
         </label>
         {stepper}
-        <span
-          className="text-contrast-icon-muted"
-          title={hintText}
-          aria-hidden="true"
-        >
-          <Info className="h-3.5 w-3.5" />
-        </span>
+        {/* The rail's copy of this control drops the hint icon. It wrapped onto
+            a line of its own there, so a tooltip nobody hovers cost a whole row
+            above the recordings list. The workspace toolbar keeps it. */}
+        {compact ? null : (
+          <span
+            className="text-contrast-icon-muted"
+            title={hintText}
+            aria-hidden="true"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        )}
         {/* Present for screen readers and for the invalid case, where a tooltip
             alone would leave a rejected entry unexplained. */}
         <p

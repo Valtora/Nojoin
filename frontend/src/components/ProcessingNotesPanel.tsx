@@ -158,6 +158,9 @@ function ProcessingNotesPanel({
     }
   }, [flushSave]);
 
+  // Nothing at rest. "Autosaves while you type" was a permanent label
+  // describing behaviour that only matters at the moment it happens, and the
+  // three states that do matter say so themselves.
   const saveMessage =
     disabled
       ? "Locked"
@@ -167,7 +170,7 @@ function ProcessingNotesPanel({
         ? "Saved"
         : saveState === "error"
           ? "Save failed"
-          : "Autosaves while you type";
+          : "";
 
   return (
     <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Loader2, Mic, Pause, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
 
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
 
 import Workspace from "./Workspace";
+import DocumentUploadModal from "./DocumentUploadModal";
 import LiveAudioWaveform from "./LiveAudioWaveform";
 import LiveDocumentsPanel from "./LiveDocumentsPanel";
 import LiveMeetingControls from "./LiveMeetingControls";
@@ -14,6 +15,7 @@ import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import ProcessingNotesPanel from "./ProcessingNotesPanel";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
+import { useLiveDocuments } from "./useLiveDocuments";
 import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 
 const DISCARD_CONFIRM_MESSAGE =
@@ -76,7 +78,9 @@ export default function RecordingStatusDisplay({
 }: RecordingStatusDisplayProps) {
   const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const liveTranscript = useLiveTranscript(recording);
+  const { documents, refresh: refreshDocuments } = useLiveDocuments(recording.id);
 
   // Discard path for a recording shown on the processing/queued screen. Routed
   // through the shared action so that, if this browser still owns the capture
@@ -125,6 +129,21 @@ export default function RecordingStatusDisplay({
         ? "Waiting for a worker to begin processing."
         : "Preparing your meeting transcript.");
 
+  // Attaching a document is a toolbar action, not a panel one. At the bottom of
+  // the last column it was the least findable control on the page, and the
+  // window for using it usefully closes when processing finishes.
+  const uploadButton = (
+    <button
+      type="button"
+      onClick={() => setIsUploadOpen(true)}
+      className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-control-border bg-surface-card px-4 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text"
+      title="Attach an agenda or a deck to this meeting"
+    >
+      <Upload className="h-4 w-4" />
+      Upload
+    </button>
+  );
+
   const progressValue = isActiveRecording
     ? null
     : recording.status === RecordingStatus.QUEUED
@@ -159,16 +178,16 @@ export default function RecordingStatusDisplay({
         </div>
       ) : null}
 
-      {/* A toolbar, then three columns from 74rem of workspace, two from 54rem,
-          one below. Measured against the workspace rather than the viewport
-          because this view sits beside the recordings rail; the model is the
-          dashboard's and the reasoning is written up there.
+      {/* A toolbar, then two columns from 54rem of workspace, one below.
+          Measured against the workspace rather than the viewport because this
+          view sits beside the recordings rail; the model is the dashboard's and
+          the reasoning is written up there.
 
-          The two panels that carry dense text get the two wide columns: the
-          transcript and Meeting Edge, the latter being two lists of prose side
-          by side and so the worst sufferer from a narrow column. Notes and
-          documents take the third, since a textarea and a file list need the
-          least width of anything here. */}
+          Two columns rather than three, because every panel here is dense prose
+          and a third column made all three too narrow to read. The meeting's
+          record takes the first, the transcript scrolling and the notes under
+          it; guidance takes the second and slightly wider one, since it
+          subdivides again internally. */}
       <div
         className={`@container flex grow flex-col gap-[var(--workspace-gap)] ${
           showMobileBackButton && onBack
@@ -197,17 +216,29 @@ export default function RecordingStatusDisplay({
             </span>
 
             {isActiveRecording ? (
-              // The waveform is the flexible element: it takes whatever the
-              // state pill and the transport leave, so the strip stays one row
-              // at any width the columns below it are worth having.
-              <div className="min-w-[12rem] flex-1">
-                <LiveAudioWaveform
-                  recordingId={recording.id}
-                  enabled
-                  paused={isPaused}
-                  compact
-                />
-              </div>
+              <>
+                {/* The meeting's working name. It is the auto-generated one
+                    until the recording is processed and renamed, but it is what
+                    tells you which meeting this workspace belongs to, and the
+                    toolbar had the room. */}
+                <span
+                  className="min-w-0 max-w-[22rem] truncate text-sm font-semibold text-foreground"
+                  title={recording.name}
+                >
+                  {recording.name}
+                </span>
+                {/* The waveform is the flexible element: it takes whatever the
+                    name and the state pill leave, so the strip stays one row at
+                    any width the columns below it are worth having. */}
+                <div className="min-w-[12rem] flex-1">
+                  <LiveAudioWaveform
+                    recordingId={recording.id}
+                    enabled
+                    paused={isPaused}
+                    compact
+                  />
+                </div>
+              </>
             ) : (
               <>
                 <span
@@ -242,14 +273,23 @@ export default function RecordingStatusDisplay({
                   window.dispatchEvent(new Event("recording-updated"));
                 }}
                 onMeetingDiscard={onDiscarded}
+                barTrailing={uploadButton}
               />
             </div>
           ) : null}
         </section>
 
-        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1.35fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch @min-[74rem]:grid-cols-[minmax(0,1.25fr)_minmax(22rem,1.2fr)_minmax(16rem,0.75fr)]">
-          {/* The meeting's output: what was said, or how far along it is. */}
-          <div className="order-1 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 @min-[74rem]:row-span-1">
+        {/* Two columns, not three. Every panel here is dense prose, and a third
+            column bought findability for the notes at the cost of making all
+            three too narrow to read comfortably: Meeting Edge subdivides again
+            internally, so it was carrying four columns of text inside a third
+            of the page. Notes moves under the transcript, which scrolls. */}
+        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(24rem,1.1fr)] @min-[54rem]:items-stretch">
+          {/* The meeting's record: what was said, what you wrote, what you
+              attached. The transcript takes the height and scrolls; the notes
+              sit under it at their own size. */}
+          <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
+          <div className="order-1 flex min-h-0 flex-1 flex-col">
             {isActiveRecording ? (
               <LiveTranscriptPanel
                 segments={liveTranscript.segments}
@@ -307,10 +347,29 @@ export default function RecordingStatusDisplay({
             )}
           </div>
 
-          {/* Guidance gets a column of its own: it is two lists of prose side
-              by side, so it is the panel that suffers most from a narrow one. */}
+            <div className="order-2 flex min-w-0 flex-col">
+              <ProcessingNotesPanel
+                value={recording.transcript?.user_notes}
+                onSave={onSaveProcessingNotes}
+                disabled={notesAreLocked}
+                disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
+              />
+            </div>
+
+            {/* No empty state: with the upload action on the toolbar there is
+                nothing for an empty panel to offer. */}
+            {documents.length > 0 ? (
+              <div className="order-3 flex min-w-0 flex-col">
+                <LiveDocumentsPanel documents={documents} />
+              </div>
+            ) : null}
+          </div>
+
+          {/* Guidance takes the wider column. It is two lists of prose that
+              subdivide again internally, so it is the panel that suffers most
+              from a narrow one. */}
           {showMeetingEdge ? (
-            <div className="order-2 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1">
+            <div className="order-4 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1">
               <MeetingEdgePanel
                 payload={recording.transcript?.meeting_edge_payload}
                 focusText={recording.transcript?.meeting_edge_focus}
@@ -321,34 +380,15 @@ export default function RecordingStatusDisplay({
               />
             </div>
           ) : null}
-
-          {/* What you write and what you attach: the narrow column, because a
-              textarea and a file list need the least. */}
-          {/* With Meeting Edge switched off there is nothing in the second
-              column's first row, so this takes it rather than leaving a gap
-              above itself. Emitted as one class or the other, never both:
-              competing `row-start` utilities resolve by which Tailwind wrote
-              last, not by which came last in the string. */}
-          <div
-            className={`contents @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] @min-[54rem]:col-start-2 @min-[74rem]:col-start-3 @min-[74rem]:row-start-1 ${
-              showMeetingEdge ? "@min-[54rem]:row-start-2" : "@min-[54rem]:row-start-1"
-            }`}
-          >
-            <div className="order-3 flex min-h-0 flex-1 flex-col">
-              <ProcessingNotesPanel
-                value={recording.transcript?.user_notes}
-                onSave={onSaveProcessingNotes}
-                disabled={notesAreLocked}
-                disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
-              />
-            </div>
-
-            <div className="order-4 flex min-w-0 flex-col">
-              <LiveDocumentsPanel recordingId={recording.id} />
-            </div>
-          </div>
         </section>
       </div>
+
+      <DocumentUploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        recordingId={recording.id}
+        onSuccess={refreshDocuments}
+      />
     </Workspace>
   );
 }

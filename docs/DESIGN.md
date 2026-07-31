@@ -259,12 +259,14 @@ Recent Meetings take whatever is left.
 
 The live capture view allocates by how much width a panel's content actually needs. Its capture
 controls are a toolbar across the top rather than a card in a column, because a waveform and four
-buttons do not need a third of the page and the panels beside them do. Below it, the live
-transcript and Meeting Edge take the two wide columns, both being dense prose, with notes and
-documents in a narrower third. The first column carries the transcript while recording and the
-pipeline's progress once it is not, so pressing Stop reflows one column rather than re-laying out
-the page. This is also why that view moved off the 64rem feature cap: it is a console, not a page
-of prose, and a reading measure is what forced five panels into one long scroll.
+buttons do not need a column and the panels beside them do; the toolbar also carries the actions
+that would otherwise be buried, which is why uploading a document lives there. Below it are two
+columns, not three: every panel on this surface is dense prose, and a third column made all three
+too narrow to read. The first carries the transcript with notes under it, and the pipeline's
+progress in the transcript's place once recording stops, so pressing Stop reflows one column rather
+than re-laying out the page. The second, slightly wider, is guidance. This is also why the view
+moved off the 64rem feature cap: it is a console, not a page of prose, and a reading measure is
+what forced five panels into one long scroll.
 
 **A panel that subdivides must query itself, not the window.** Meeting Edge splits into two lists
 side by side, and did so at the `xl` *viewport* breakpoint: at a 1280px window it subdivided a

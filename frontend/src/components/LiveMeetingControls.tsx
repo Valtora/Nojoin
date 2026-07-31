@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Pause, Play, Square, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
@@ -18,6 +18,8 @@ interface LiveMeetingControlsProps {
   size?: "compact" | "full" | "bar";
   onMeetingEnd?: () => void;
   onMeetingDiscard?: () => void;
+  /** Extra controls for the `bar` variant, placed before the speaker cap. */
+  barTrailing?: ReactNode;
 }
 
 const DISCARD_CONFIRM_MESSAGE =
@@ -37,6 +39,7 @@ export default function LiveMeetingControls({
   size = "full",
   onMeetingEnd,
   onMeetingDiscard,
+  barTrailing,
 }: LiveMeetingControlsProps) {
   const {
     cancel,
@@ -247,8 +250,12 @@ export default function LiveMeetingControls({
   }
 
   if (size === "bar") {
+    // The transport shares the row's slack rather than sitting at its intrinsic
+    // width: at three columns there was a great deal of empty bar to the right
+    // of three small buttons. Capped, because a Stop button half a metre wide
+    // is not an improvement.
     const barButtonClass =
-      "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+      "inline-flex h-10 min-w-[7rem] flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
     return (
       <div className="flex flex-col gap-3">
@@ -265,7 +272,7 @@ export default function LiveMeetingControls({
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-[18rem] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
             {isRecording ? (
               <button
                 type="button"
@@ -313,7 +320,10 @@ export default function LiveMeetingControls({
             </button>
           </div>
 
-          <div className="ml-auto shrink-0">{speakerCapField}</div>
+          <div className="flex shrink-0 items-center gap-3">
+            {barTrailing}
+            {speakerCapField}
+          </div>
         </div>
 
         {coverageBadge}
