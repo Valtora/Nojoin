@@ -19,7 +19,14 @@ import {
 } from "@/types";
 
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-export type CalendarViewMode = "month" | "agenda";
+/**
+ * What the agenda module is showing. This replaced a Month/Agenda toggle that
+ * made the grid and the agenda compete for one slot: both are now permanent
+ * modules, and the only thing left to choose is whether the agenda is scoped to
+ * one day or to the whole viewed month. The month grid is that control, so
+ * there is no toggle button.
+ */
+export type AgendaMode = "day" | "month";
 export const MAX_VISIBLE_DOTS = 4;
 export const DEFAULT_TIMELINE_START_HOUR = 7;
 export const DEFAULT_TIMELINE_END_HOUR = 21;

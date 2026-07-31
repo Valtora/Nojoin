@@ -21,7 +21,7 @@ import {
 import { CalendarDashboardSummary } from "@/types";
 
 import {
-  CalendarViewMode,
+  AgendaMode,
   DayTimelineDayState,
   buildDayTimeline,
   buildFooterText,
@@ -33,6 +33,14 @@ import {
   splitMonthAgendaItems,
 } from "./calendarUtils";
 
+/**
+ * The calendar dashboard's entire state, fetch included.
+ *
+ * The month grid and the agenda are separate modules but a single subsystem:
+ * they share one month summary, one selected day and one clock. The hook is
+ * therefore called once by the dashboard and its return value handed to both,
+ * rather than called by each of them, which would double the request.
+ */
 export function useCalendarDashboard() {
   const [now, setNow] = useState<Date>(() => new Date());
   const [timeZone, setTimeZone] = useState(DEFAULT_TIME_ZONE);
@@ -40,7 +48,10 @@ export function useCalendarDashboard() {
   const [viewedMonth, setViewedMonth] = useState<Date>(() =>
     startOfMonth(toTimeZoneDate(new Date(), DEFAULT_TIME_ZONE)),
   );
-  const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
+  // The agenda opens on today rather than on the month list: the live day
+  // timeline is the thing a dashboard is for, and the month list is one click
+  // away on the module's own header.
+  const [agendaMode, setAgendaMode] = useState<AgendaMode>("day");
   const [selectedDay, setSelectedDay] = useState<Date | null>(() =>
     startOfDay(toTimeZoneDate(new Date(), DEFAULT_TIME_ZONE)),
   );
@@ -269,7 +280,18 @@ export function useCalendarDashboard() {
     setNow(currentDate);
     setViewedMonth(startOfMonth(currentZonedDate));
     setSelectedDay(currentZonedDate);
+    setAgendaMode("day");
   };
+
+  // Picking a day in the month grid is what puts the agenda into day mode.
+  // The grid is the agenda's control, which is why neither module carries a
+  // view switch of its own.
+  const handleSelectDay = (day: Date) => {
+    setSelectedDay(startOfDay(day));
+    setAgendaMode("day");
+  };
+
+  const handleShowMonthAgenda = () => setAgendaMode("month");
 
   const handlePreviousMonth = () =>
     setViewedMonth((currentMonth) => addMonths(currentMonth, -1));
@@ -282,20 +304,16 @@ export function useCalendarDashboard() {
     now,
     activeTimeZone,
     viewedMonth,
-    viewMode,
-    setViewMode,
+    agendaMode,
     selectedDay,
-    setSelectedDay,
     calendarLoading,
     calendarRefreshing,
     currentDay,
     monthDays,
-    isViewingCurrentMonth,
     viewedMonthLabel,
     dayMarkerColours,
     nextEventHelper,
     footerText,
-    monthAgendaItems,
     monthHasContent,
     agendaPastItems: monthAgendaSplit.pastItems,
     agendaUpcomingItems: monthAgendaSplit.upcomingItems,
@@ -311,7 +329,16 @@ export function useCalendarDashboard() {
     mobileNowDividerIndex,
     isViewingToday,
     handleJumpToToday,
+    handleSelectDay,
+    handleShowMonthAgenda,
     handlePreviousMonth,
     handleNextMonth,
   };
 }
+
+/**
+ * The shape the two calendar modules receive. Passing the hook's return value
+ * whole keeps them honest about being one subsystem, and is a good deal less
+ * noise than threading thirty-odd props through the dashboard.
+ */
+export type CalendarDashboard = ReturnType<typeof useCalendarDashboard>;

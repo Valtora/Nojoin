@@ -6,14 +6,20 @@ import { getBrowserTimeZone } from "@/lib/timezone";
 
 import Workspace from "./Workspace";
 import DashboardTasksPanel from "./DashboardTasksPanel";
-import DashboardUpcomingMeetingsCard from "./DashboardUpcomingMeetingsCard";
 import MeetingControls from "./MeetingControls";
 import ProcessingCard from "./dashboardRecordings/ProcessingCard";
 import RecentRecordingsCard from "./dashboardRecordings/RecentRecordingsCard";
 import { useDashboardRecordings } from "./dashboardRecordings/useDashboardRecordings";
+import AgendaCard from "./upcomingMeetings/AgendaCard";
+import MonthGridCard from "./upcomingMeetings/MonthGridCard";
+import { useCalendarDashboard } from "./upcomingMeetings/useCalendarDashboard";
 
 export default function DashboardHome() {
   const { recent, processing } = useDashboardRecordings();
+  // The month grid and the agenda are two modules over one subsystem, so the
+  // dashboard owns the fetch and hands the same state to both. Calling the hook
+  // inside each module would request the month summary twice.
+  const calendar = useCalendarDashboard();
   const [timeZone, setTimeZone] = useState("UTC");
 
   // Resolved after mount rather than during render, because the server has no
@@ -22,9 +28,9 @@ export default function DashboardHome() {
     setTimeZone(getBrowserTimeZone());
   }, []);
 
-  // A module with nothing to say does not render. The calendar, Meet Now and
-  // the task list are the floor, so a new account sees a dashboard rather than
-  // a wall of empty boxes, and an active one fills the grid.
+  // A module with nothing to say does not render. The calendar, the agenda,
+  // Meet Now and the task list are the floor, so a new account sees a dashboard
+  // rather than a wall of empty boxes, and an active one fills the grid.
   const showRecents = recent.length > 0;
   const showProcessing = processing.length > 0;
   const hasThirdColumn = showRecents || showProcessing;
@@ -41,8 +47,10 @@ export default function DashboardHome() {
           waits for xl rather than lg, and the third waits for 1600 rather than
           2xl.
 
-          The third column only exists when something fills it, so its absence
-          is a two-column layout rather than an empty gutter.
+          The third column only exists when something fills it. The task list
+          lives there when it does, and folds back beside the agenda when it
+          does not, so the absence of recordings is a two-column layout rather
+          than a column holding one lonely module.
 
           `items-stretch` is what removes the dead corner this layout used to
           have: with `items-start` each column ended wherever its content did,
@@ -50,10 +58,13 @@ export default function DashboardHome() {
           makes the columns end level, and a module that overflows scrolls
           inside itself rather than pushing the grid taller.
 
-          Column order in the DOM is deliberate: the capture card comes first so
-          a phone, which flattens this to one column, opens on the action rather
-          than on a month grid. Desktop puts the calendar back on the left
-          through explicit column placement. */}
+          Below xl the two wrappers are `display: contents`, which takes them
+          out of the box tree and makes all six modules direct children of one
+          flex column. That is what lets `order-*` put them in the phone order
+          decided for this dashboard, which is action first: Meet Now, whatever
+          is processing, the agenda, tasks, recents, and the month grid last. A
+          wrapper cannot reorder across its own boundary, so without this the
+          modules would come out grouped by desktop column. */}
       <section
         className={`flex flex-col gap-[var(--workspace-gap)] xl:grid xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] xl:items-stretch ${
           hasThirdColumn
@@ -61,8 +72,15 @@ export default function DashboardHome() {
             : ""
         }`}
       >
-        <div className="flex min-w-0 flex-col gap-[var(--workspace-gap)] xl:col-start-2 xl:row-start-1">
-          <div id="dashboard-meeting-controls">
+        <div
+          id="dashboard-upcoming-meetings"
+          className="order-6 flex min-w-0 flex-col xl:col-start-1 xl:row-start-1 xl:row-end-[-1]"
+        >
+          <MonthGridCard calendar={calendar} />
+        </div>
+
+        <div className="contents xl:flex xl:min-w-0 xl:flex-col xl:gap-[var(--workspace-gap)] xl:col-start-2 xl:row-start-1">
+          <div id="dashboard-meeting-controls" className="order-1">
             <MeetingControls
               variant="dashboard"
               onMeetingEnd={() => {
@@ -71,32 +89,34 @@ export default function DashboardHome() {
             />
           </div>
 
-          <div id="dashboard-task-cards" className="flex min-h-0 flex-1 flex-col">
-            <DashboardTasksPanel />
+          <div id="dashboard-agenda" className="order-3 flex min-h-0 flex-1 flex-col">
+            <AgendaCard calendar={calendar} />
           </div>
         </div>
 
-        {hasThirdColumn && (
-          <div className="flex min-w-0 flex-col gap-[var(--workspace-gap)] xl:col-start-2 xl:row-start-2 min-[1600px]:col-start-3 min-[1600px]:row-start-1">
-            {showProcessing && (
-              <div id="dashboard-processing">
-                <ProcessingCard recordings={processing} />
-              </div>
-            )}
-
-            {showRecents && (
-              <div id="dashboard-recent-recordings" className="flex min-h-0 flex-1 flex-col">
-                <RecentRecordingsCard recordings={recent} timeZone={timeZone} />
-              </div>
-            )}
-          </div>
-        )}
-
         <div
-          id="dashboard-upcoming-meetings"
-          className="flex min-w-0 flex-col xl:col-start-1 xl:row-start-1 xl:row-end-[-1]"
+          className={`contents xl:flex xl:min-w-0 xl:flex-col xl:gap-[var(--workspace-gap)] xl:col-start-2 xl:row-start-2 ${
+            hasThirdColumn ? "min-[1600px]:col-start-3 min-[1600px]:row-start-1" : ""
+          }`}
         >
-          <DashboardUpcomingMeetingsCard />
+          {showProcessing && (
+            <div id="dashboard-processing" className="order-2">
+              <ProcessingCard recordings={processing} />
+            </div>
+          )}
+
+          <div id="dashboard-task-cards" className="order-4 flex min-h-0 flex-1 flex-col">
+            <DashboardTasksPanel />
+          </div>
+
+          {showRecents && (
+            <div
+              id="dashboard-recent-recordings"
+              className="order-5 flex min-h-0 flex-1 flex-col"
+            >
+              <RecentRecordingsCard recordings={recent} timeZone={timeZone} />
+            </div>
+          )}
         </div>
       </section>
     </Workspace>

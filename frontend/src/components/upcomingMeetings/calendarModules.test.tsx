@@ -42,7 +42,25 @@ vi.mock("@/lib/timezone", async () => {
   };
 });
 
-import DashboardUpcomingMeetingsCard from "./DashboardUpcomingMeetingsCard";
+import AgendaCard from "./AgendaCard";
+import MonthGridCard from "./MonthGridCard";
+import { useCalendarDashboard } from "./useCalendarDashboard";
+
+/**
+ * The dashboard's arrangement in miniature: one hook call feeding both modules.
+ * Rendering them together is the point, because the split only holds if a
+ * single fetch serves both and the grid can drive the agenda.
+ */
+function CalendarModules() {
+  const calendar = useCalendarDashboard();
+
+  return (
+    <>
+      <MonthGridCard calendar={calendar} />
+      <AgendaCard calendar={calendar} />
+    </>
+  );
+}
 
 function makeEvent(
   overrides: Partial<CalendarDashboardEvent> = {},
@@ -98,7 +116,7 @@ function makeSummary(
   };
 }
 
-describe("DashboardUpcomingMeetingsCard", () => {
+describe("calendar dashboard modules", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -111,17 +129,20 @@ describe("DashboardUpcomingMeetingsCard", () => {
     vi.clearAllMocks();
   });
 
-  it("requests the viewed month summary in the resolved time zone", async () => {
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+  it("requests the viewed month summary once for both modules", async () => {
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       expect(getCalendarDashboardSummary).toHaveBeenCalledWith("2026-06", "UTC");
     });
+    // Both modules are on screen, and between them they made one request.
     expect(screen.getByText("Calendar")).toBeInTheDocument();
+    expect(screen.getByText("Agenda")).toBeInTheDocument();
+    expect(getCalendarDashboardSummary).toHaveBeenCalledTimes(1);
   });
 
   it("renders the month grid header label", async () => {
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       expect(screen.getByText("June 2026")).toBeInTheDocument();
@@ -141,7 +162,7 @@ describe("DashboardUpcomingMeetingsCard", () => {
       }),
     );
 
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       // now=10:00, event at 11:00 -> "Next event in 1hr 0min"
@@ -149,7 +170,25 @@ describe("DashboardUpcomingMeetingsCard", () => {
     });
   });
 
-  it("shows upcoming items in the agenda view and reveals past items on demand", async () => {
+  it("opens on the selected day and returns to the month on request", async () => {
+    renderWithProviders(<CalendarModules />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByText("June 2026")).toBeInTheDocument();
+    });
+
+    // The agenda opens scoped to today rather than to the whole month.
+    expect(screen.getByText(/Monday 15 June/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Whole month" }));
+    expect(screen.queryByText(/Monday 15 June/)).not.toBeInTheDocument();
+
+    // Picking a day in the grid is what scopes the agenda back to a day.
+    fireEvent.click(screen.getByRole("button", { name: "16" }));
+    expect(screen.getByText(/Tuesday 16 June/)).toBeInTheDocument();
+  });
+
+  it("shows upcoming items in the month agenda and reveals past items on demand", async () => {
     // now is 10:00; the event ended at 09:30 (past), the recording ends at
     // 11:45 (still upcoming).
     getCalendarDashboardSummary.mockResolvedValue(
@@ -159,13 +198,13 @@ describe("DashboardUpcomingMeetingsCard", () => {
       }),
     );
 
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       expect(screen.getByText("June 2026")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Whole month" }));
 
     await vi.waitFor(() => {
       expect(screen.getByText("Recorded sync")).toBeInTheDocument();
@@ -190,13 +229,13 @@ describe("DashboardUpcomingMeetingsCard", () => {
       }),
     );
 
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       expect(screen.getByText("June 2026")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Whole month" }));
 
     const card = await vi.waitFor(() =>
       screen.getByText("Recorded sync").closest("a"),
@@ -222,13 +261,13 @@ describe("DashboardUpcomingMeetingsCard", () => {
       }),
     );
 
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       expect(screen.getByText("June 2026")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Agenda/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Whole month" }));
 
     const joinLink = await vi.waitFor(() =>
       screen.getByRole("link", {
@@ -263,7 +302,7 @@ describe("DashboardUpcomingMeetingsCard", () => {
       }),
     );
 
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     const bubbles = await vi.waitFor(() => {
       const found = screen.getAllByRole("button", {
@@ -289,8 +328,23 @@ describe("DashboardUpcomingMeetingsCard", () => {
     expect(screen.getAllByText(location).length).toBeGreaterThan(0);
   });
 
+  it("explains an unconnected calendar rather than reporting an empty day", async () => {
+    getCalendarDashboardSummary.mockResolvedValue(
+      makeSummary({ state: "no_accounts" }),
+    );
+
+    renderWithProviders(<CalendarModules />);
+
+    await vi.waitFor(() => {
+      expect(
+        screen.getByText("No calendar accounts connected."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Nothing on/)).not.toBeInTheDocument();
+  });
+
   it("disables the Today button while viewing today", async () => {
-    renderWithProviders(<DashboardUpcomingMeetingsCard />);
+    renderWithProviders(<CalendarModules />);
 
     await vi.waitFor(() => {
       expect(screen.getByText("June 2026")).toBeInTheDocument();

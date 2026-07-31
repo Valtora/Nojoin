@@ -86,7 +86,7 @@ export function DashboardRecordingCard({
   return (
     <Link
       href={`/recordings/${recording.id}`}
-      className="group block rounded-[1.5rem] border border-action-border bg-surface-card px-4 py-4 shadow-card transition-colors hover:border-action-border hover:bg-action-tint"
+      className="density-surface-panel group block bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
@@ -159,7 +159,7 @@ export function DayTimelineAllDayChip({
   const calendarColour = getCalendarColourPresentation(event.calendar_colour);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-surface-border bg-surface-card px-4 py-3 shadow-card">
+    <div className="density-surface-panel relative overflow-hidden bg-surface-inset px-4 py-3">
       <span
         className={`absolute inset-y-0 left-0 w-1.5 ${calendarColour.className}`}
         style={calendarColour.style}
@@ -247,7 +247,10 @@ export function DayTimelineEventCard({
       meetingUrl &&
       (layout === "stacked" || timelineDensity === "comfortable"),
   );
-  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-surface-card text-left shadow-card transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+  // A timeline bubble keeps the card fill and a border because it is a control
+  // rather than a surface in the stack: it has to be opaque over the hour rules
+  // it covers, and its border is the only thing marking it as live or past.
+  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-surface-card text-left transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
     isLive
       ? "border-action-border"
       : "border-surface-border"
@@ -348,7 +351,7 @@ export function DayTimelineEventCard({
           href={meetingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-action px-2.5 py-0.5 text-[10px] font-semibold text-action-on shadow-card transition-colors hover:bg-action-hover"
+          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-action px-2.5 py-0.5 text-[10px] font-semibold text-action-on transition-colors hover:bg-action-hover"
         >
           <Video className="h-3 w-3" />
           Join
@@ -391,7 +394,7 @@ export function AgendaEventCard({
   const locationHost = getUrlHost(locationText);
 
   return (
-    <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+    <div className="density-surface-panel bg-surface-inset p-4">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-contrast-helper">
         <span>{formatAgendaDate(event, timeZone)}</span>
         <span>•</span>
