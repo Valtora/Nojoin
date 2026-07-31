@@ -40,8 +40,9 @@ It brings together:
   once you have recordings.
 
 The first four always render. The last two appear when they have something to report, so a new
-account sees a dashboard rather than a page of empty boxes. Wide displays add a second column at
-1280px and a third at 1600px.
+account sees a dashboard rather than a page of empty boxes. The dashboard adds a second and then a
+third column as space allows, measured against the workspace itself, so collapsing the navigation
+rail can gain you a column at the same window size.
 
 On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout.
 

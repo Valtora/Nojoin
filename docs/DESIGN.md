@@ -240,17 +240,24 @@ prose surface beside it exactly where it was.
 The dashboard's grid uses three breakpoints, chosen so that a column is never narrower than about
 340px:
 
-| Viewport | Columns |
+| Workspace width | Columns |
 | --- | --- |
-| below 1280px | 1 |
-| 1280 to 1599px | 2 |
-| 1600px and above | 3 |
+| below 54rem | 1 |
+| 54rem to 74rem | 2 |
+| 74rem and above | 3 |
 
-**These are viewport widths, and the workspace sits beside a roughly 340px rail**, so the content
-area is always considerably narrower than the number in the class. That is the whole reason the
-second column waits for `xl` rather than `lg`, and the third for `min-[1600px]` rather than `2xl`:
-at a 1024px viewport the content area is only about 620px, which is one column's worth. Do not
-"simplify" these to the standard breakpoints.
+**These are container queries against the workspace, not media queries against the viewport**, and
+that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
+space the grid actually has is the viewport minus a number the grid cannot see. A viewport
+breakpoint gets it wrong in both directions: it withholds a column from someone who collapsed the
+rail, and promises one to someone who widened it. Do not "simplify" these back to `lg`/`xl`/`2xl`.
+
+**Never mix a `px` arbitrary breakpoint with the rem-based scale.** Tailwind orders breakpoint
+variants by their declared value and cannot compare `1600px` against `80rem` without knowing the
+root font size, so it emitted `@media (min-width:1600px)` *before* `@media (min-width:80rem)`. Both
+match on a wide screen, specificity is equal, and the later rule wins, so an `xl:` two-column
+template silently overrode a `min-[1600px]:` three-column one at every width. It compiles, it lints,
+and it produces a layout that simply never appears. Keep every breakpoint in one unit.
 
 Three rules follow from that grid:
 
@@ -266,7 +273,7 @@ Three rules follow from that grid:
   layout rather than an empty gutter.
 
 Modules are direct children of the grid, not children of per-column wrappers. Wrappers still exist
-for stacking, but they take `display: contents` below `xl`, which drops them out of the box tree so
+for stacking, but they take `display: contents` at one column, which drops them out of the box tree so
 that every module becomes a direct child of one flex column and `order-*` can sequence them freely.
 A wrapper cannot reorder across its own boundary, so without this the phone order is forced to match
 the desktop columns. On a phone the order is action first: capture, then anything processing, then
