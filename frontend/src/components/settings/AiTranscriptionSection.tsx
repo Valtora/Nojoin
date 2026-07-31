@@ -126,7 +126,7 @@ export default function AiTranscriptionSection({
               );
             }}
             disabled={!isAdmin}
-            className="w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
+            className="w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
           >
             <option value="whisper">Whisper</option>
             <option value="parakeet">Parakeet (NVIDIA)</option>

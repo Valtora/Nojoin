@@ -17,7 +17,7 @@ import { isServerProviderConfigured } from "@/lib/aiAvailability";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
+  "w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
 
 const PROVIDER_LABEL: Record<CliProvider, string> = {
   claude_code: "Claude",

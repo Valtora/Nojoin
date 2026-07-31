@@ -49,7 +49,7 @@ export default function AiLanguageSection({
               !languageRegistry ||
               transcriptionLanguageCapability?.forced_language === false
             }
-            className="w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-60"
+            className="w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-60"
           >
             {!languageRegistry && (
               <option value="auto">Loading languages...</option>
@@ -79,7 +79,7 @@ export default function AiLanguageSection({
               })
             }
             disabled={!languageRegistry}
-            className="w-full p-2.5 rounded-lg border border-control-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-60"
+            className="w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-60"
           >
             {!languageRegistry && (
               <option value="english">Loading languages...</option>

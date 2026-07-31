@@ -150,6 +150,14 @@ different rules. A control's boundary is the only thing identifying it as a cont
 3:1. A divider or a card edge is decoration, and a hairline is the point. Reusing one token for
 both would force every hairline in the product to the heavier value.
 
+**A control's fill must be `--control-bg`, never `--surface-inset`.** The inset is translucent, and a
+translucent fill on a `<select>` leaks: Chrome paints the option popup from the select's computed
+background-color, so 3%-alpha white composites to an essentially white popup over a dark page. This
+is not fixable with `color-scheme`, because an explicit background overrides the default rendering
+that `color-scheme` selects. It is the reason the primitives exist: `Select` uses `--control-bg` and
+never had the problem, while hand-rolled selects that reached for the nearest-looking surface token
+all did.
+
 | Token | Light | Dark |
 | --- | --- | --- |
 | `--control-bg` | `--surface-card` | `--surface-card` |
