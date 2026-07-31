@@ -56,13 +56,13 @@ export default function LiveDocumentsPanel({
   }, [documents, refresh]);
 
   return (
-    <section className="density-surface border border-white/60 bg-white/80 shadow-xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/65 dark:shadow-black/20">
+    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-semibold text-foreground">
             Documents
           </h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-1 text-sm text-contrast-helper">
             Attach an agenda or a deck now and it will be used when the meeting
             notes are generated.
           </p>
@@ -70,7 +70,7 @@ export default function LiveDocumentsPanel({
         <button
           type="button"
           onClick={() => setIsUploadOpen(true)}
-          className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-orange-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-orange-700"
+          className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-action"
         >
           <Upload className="h-4 w-4" />
           Upload
@@ -78,7 +78,7 @@ export default function LiveDocumentsPanel({
       </div>
 
       {documents.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-contrast-helper">
           No documents attached yet.
         </p>
       ) : (
@@ -86,16 +86,16 @@ export default function LiveDocumentsPanel({
           {documents.map((doc) => (
             <li
               key={doc.id}
-              className="density-surface-panel flex items-center gap-3 border border-orange-200/70 bg-white px-3 py-2 dark:border-orange-500/20 dark:bg-gray-900"
+              className="density-surface-panel flex items-center gap-3 border border-action-border bg-surface-card px-3 py-2"
             >
-              <FileText className="h-4 w-4 flex-shrink-0 text-orange-500" />
+              <FileText className="h-4 w-4 flex-shrink-0 text-action-text" />
               <span
-                className="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-100"
+                className="min-w-0 flex-1 truncate text-sm text-foreground"
                 title={doc.title}
               >
                 {doc.title}
               </span>
-              <span className="flex flex-shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <span className="flex flex-shrink-0 items-center gap-1.5 text-xs text-contrast-helper">
                 {doc.status === "PENDING" || doc.status === "PROCESSING" ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -106,12 +106,12 @@ export default function LiveDocumentsPanel({
                   </>
                 ) : doc.status === "ERROR" ? (
                   <>
-                    <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                    <AlertCircle className="h-3.5 w-3.5 text-status-danger-fg" />
                     Failed
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-status-success-fg" />
                     Ready
                   </>
                 )}

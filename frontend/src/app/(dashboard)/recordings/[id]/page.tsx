@@ -88,7 +88,7 @@ export default function RecordingPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500">
+      <div className="h-full flex items-center justify-center text-contrast-helper">
         Loading...
       </div>
     );
@@ -183,14 +183,14 @@ export default function RecordingPage({ params }: PageProps) {
             />
           </div>
         ) : isMobile ? (
-          <div className="flex h-full flex-1 min-w-0 flex-col bg-white dark:bg-gray-900">
+          <div className="flex h-full flex-1 min-w-0 flex-col bg-surface-card">
             <div className="min-h-0 flex-1">{mainContent}</div>
 
             {!isMobileChatOpen && (
               <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-40">
                 <button
                   onClick={() => setIsMobileChatOpen(true)}
-                  className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-orange-600 text-white shadow-lg shadow-orange-950/20 transition-colors hover:bg-orange-700"
+                  className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-action text-foreground shadow-float transition-colors hover:bg-action"
                   title="Open Meeting Chat"
                   aria-label="Open Meeting Chat"
                 >
@@ -202,14 +202,14 @@ export default function RecordingPage({ params }: PageProps) {
             {/* Mobile Chat Full-Screen Modal */}
             {isMobileChatOpen && (
               <div className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
-                <header className="flex shrink-0 items-center justify-between border-b-2 border-gray-200 bg-gray-50 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] dark:border-gray-800 dark:bg-gray-950">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-orange-500" />
+                <header className="flex shrink-0 items-center justify-between border-b-2 border-surface-border bg-surface-inset px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+                  <h2 className="text-lg font-semibold text-foreground items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-action-text" />
                     Meeting Chat
                   </h2>
                   <button
                     onClick={() => setIsMobileChatOpen(false)}
-                    className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                    className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
                     title="Back to meeting"
                     aria-label="Back to meeting"
                   >
@@ -234,10 +234,10 @@ export default function RecordingPage({ params }: PageProps) {
             </Panel>
 
             <PanelResizeHandle
-              className="bg-gray-200 dark:bg-gray-900 border-l border-gray-400 dark:border-gray-800 w-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group"
+              className="bg-surface-inset border-control-border w-2 transition-colors flex justify-center group"
               onDragging={setIsPanelResizing}
             >
-              <div className="h-8 w-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+              <div className="h-8 w-1 bg-surface-card group-hover:bg-surface-card transition-colors" />
             </PanelResizeHandle>
 
             {/* Sidebar: Stacked Speaker and Chat panels */}
@@ -269,10 +269,10 @@ export default function RecordingPage({ params }: PageProps) {
                 </Panel>
 
                 <PanelResizeHandle
-                  className="bg-gray-200 dark:bg-gray-900 border-t border-gray-400 dark:border-gray-800 h-2 hover:bg-orange-500 dark:hover:bg-orange-500 transition-colors flex items-center justify-center group"
+                  className="bg-surface-inset border-control-border h-2 transition-colors flex justify-center group"
                   onDragging={setIsPanelResizing}
                 >
-                  <div className="w-8 h-1 bg-gray-400 dark:bg-gray-600 rounded-full group-hover:bg-white transition-colors" />
+                  <div className="w-8 h-1 bg-surface-card group-hover:bg-surface-card transition-colors" />
                 </PanelResizeHandle>
 
                 <Panel defaultSize={compactChatPanelHeight} minSize={18}>

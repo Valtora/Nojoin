@@ -143,7 +143,7 @@ export default function RecordingStatusDisplay({
           <button
             type="button"
             onClick={onBack}
-            className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-2xl border border-gray-200 bg-white/90 px-4 text-sm font-medium text-gray-700 shadow-lg shadow-black/10 backdrop-blur-sm transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:bg-gray-800 dark:shadow-black/30"
+            className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card dark:"
             title="Back to Recordings"
             aria-label="Back to Recordings"
           >
@@ -166,10 +166,10 @@ export default function RecordingStatusDisplay({
             : ""
         }`}
       >
-      <section className="density-surface mx-auto flex min-w-0 w-full max-w-5xl flex-col border border-white/60 bg-white/82 shadow-2xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20">
+      <section className="density-surface mx-auto flex min-w-0 w-full max-w-5xl flex-col border border-surface-border bg-surface-card shadow-card">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-3">
-                <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+                <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-action-text">
                   {isActiveRecording ? (
                     isPaused ? (
                       <Pause className="h-3.5 w-3.5" />
@@ -182,21 +182,21 @@ export default function RecordingStatusDisplay({
                   {isActiveRecording ? "Live Capture" : "Meeting Processing"}
                 </span>
                 <div>
-                  <h2 className="density-heading-page text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
+                  <h2 className="density-heading-page text-3xl font-semibold tracking-tight text-foreground">
                     {heading}
                   </h2>
-                  <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300 md:text-base">
+                  <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-contrast-helper">
                     {subheading}
                   </p>
                 </div>
               </div>
 
               {!isActiveRecording && progressValue !== null ? (
-                <div className="density-surface-panel flex min-h-[4.75rem] min-w-[7.5rem] flex-col items-center justify-center border border-orange-200/70 bg-orange-50/85 px-4 py-3 text-center dark:border-orange-500/20 dark:bg-orange-500/10">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">
+                <div className="density-surface-panel flex min-h-[4.75rem] min-w-[7.5rem] flex-col items-center justify-center border border-action-border bg-action-tint px-4 py-3 text-center">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-action-text">
                     Progress
                   </div>
-                  <div className="mt-1 text-3xl font-semibold leading-none text-gray-950 dark:text-white">
+                  <div className="mt-1 text-3xl font-semibold leading-none text-foreground">
                     {Math.round(progressValue)}%
                   </div>
                 </div>
@@ -223,20 +223,20 @@ export default function RecordingStatusDisplay({
                 <>
                   {progressValue !== null ? (
                     <div className="space-y-2">
-                      <div className="h-3 overflow-hidden rounded-full bg-orange-100 dark:bg-gray-800">
+                      <div className="h-3 overflow-hidden rounded-full bg-action-tint">
                         <div
-                          className={`h-full rounded-full transition-all duration-500 ${recording.status === RecordingStatus.QUEUED ? "bg-orange-400" : "bg-gradient-to-r from-orange-500 via-orange-500 to-amber-400"}`}
+                          className={`h-full rounded-full transition-all duration-500 ${recording.status === RecordingStatus.QUEUED ? "bg-action-tint-fg" : "bg-action"}`}
                           style={{ width: `${progressValue}%` }}
                         />
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600 dark:text-gray-300">
+                      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-contrast-helper">
                         <span>{recording.status === RecordingStatus.QUEUED ? "Waiting in queue" : "Pipeline progress"}</span>
                         {recording.processing_eta_seconds != null ? (
-                          <span className="font-medium text-gray-900 dark:text-white">
+                          <span className="font-medium text-foreground">
                             {formatEta(recording.processing_eta_seconds)}
                           </span>
                         ) : recording.processing_eta_learning ? (
-                          <span className="font-medium text-gray-900 dark:text-white">
+                          <span className="font-medium text-foreground">
                             Nojoin needs a few more processed recordings on this system before it can estimate time remaining.
                           </span>
                         ) : null}
@@ -244,11 +244,11 @@ export default function RecordingStatusDisplay({
                     </div>
                   ) : null}
 
-                  <div className="density-surface-panel border border-white/60 bg-white/70 p-4 dark:border-white/10 dark:bg-gray-900/60">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                  <div className="density-surface-panel border border-surface-border bg-surface-card p-4 ">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                       Recording Length
                     </div>
-                    <div className="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">
+                    <div className="mt-2 text-2xl font-semibold text-foreground">
                       {formatClock(Math.round(recording.duration_seconds || 0))}
                     </div>
                   </div>
@@ -258,7 +258,7 @@ export default function RecordingStatusDisplay({
                       type="button"
                       onClick={handleProcessingDiscard}
                       disabled={isDiscarding}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-500/30 dark:bg-gray-950/60 dark:text-red-300 dark:hover:bg-red-500/10"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
                       title="Discard this recording and stop processing"
                     >
                       {isDiscarding ? (

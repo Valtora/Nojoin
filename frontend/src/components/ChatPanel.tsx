@@ -230,11 +230,11 @@ export default function ChatPanel({
   return (
     <aside
       id="meeting-chat"
-      className="flex-1 min-w-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full flex flex-col shadow-xl z-10"
+      className="flex-1 min-w-0 border-l border-surface-border h-full flex-col shadow-float z-10"
     >
-      <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-gray-900">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-orange-500" />
+      <div className="p-4 border-b border-surface-border justify-between items-center bg-surface-card">
+        <h2 className="text-sm font-semibold text-foreground items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-action-text" />
           Chat
         </h2>
         <div className="flex items-center gap-1">
@@ -244,14 +244,14 @@ export default function ChatPanel({
               onClick={() => setShowTagFilter(!showTagFilter)}
               className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border transition-colors ${
                 showTagFilter || selectedTagIds.length > 0
-                  ? "bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800"
-                  : "text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-gray-800"
+                  ? "bg-action-tint border-action-border"
+                  : "text-contrast-helper hover:bg-surface-inset"
               }`}
             >
               <TagIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Context</span>
               {selectedTagIds.length > 0 && (
-                <span className="ml-0.5 bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-100 text-[10px] px-1.5 rounded-full">
+                <span className="ml-0.5 bg-action-tint text-[10px] rounded-full">
                   {selectedTagIds.length}
                 </span>
               )}
@@ -265,7 +265,7 @@ export default function ChatPanel({
           {recordingId && messages.length > 0 && (
             <button
               onClick={handleClear}
-              className="text-gray-400 hover:text-red-500 transition-colors p-1"
+              className="text-contrast-icon-muted hover:text-status-danger-fg transition-colors p-1"
               title="Clear Chat"
             >
               <Trash2 className="w-4 h-4" />
@@ -275,8 +275,8 @@ export default function ChatPanel({
       </div>
 
       {showTagFilter && recordingId && (
-        <div className="px-4 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 animate-in slide-in-from-top-2">
-          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 block">
+        <div className="px-4 py-3 bg-surface-card border-surface-border animate-in">
+          <label className="text-xs text-contrast-helper block">
             Include context from related meetings with these tags:
           </label>
           <MultiSelect
@@ -290,12 +290,12 @@ export default function ChatPanel({
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {!recordingId ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400 opacity-60">
+          <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper">
             <MessageSquare className="w-12 h-12 mb-4" />
             <p className="text-sm">Select a meeting to start chatting.</p>
           </div>
         ) : messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400 opacity-60">
+          <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper">
             <Info className="w-12 h-12 mb-4" />
             <p className="text-sm">
               Ask questions about the transcript, generate summaries, or draft
@@ -309,10 +309,10 @@ export default function ChatPanel({
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-card ${
                   msg.role === "user"
-                    ? "bg-orange-600 text-white rounded-tr-none"
-                    : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none"
+                    ? "bg-action text-foreground rounded-tr-none"
+                    : "bg-surface-card border-surface-border text-foreground"
                 }`}
               >
                 {msg.role === "user" ? (
@@ -323,11 +323,11 @@ export default function ChatPanel({
                       <>
                         <MarkdownBubble content={msg.content} />
                         {isStreaming && index === messages.length - 1 && (
-                          <span className="inline-block w-2 h-4 ml-1 bg-gray-400 animate-pulse align-middle"></span>
+                          <span className="inline-block w-2 h-4 ml-1 bg-surface-card animate-pulse align-middle"></span>
                         )}
                       </>
                     ) : (
-                      <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 py-1">
+                      <div className="flex items-center gap-2 text-contrast-helper">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span className="text-xs">Thinking...</span>
                       </div>
@@ -341,10 +341,10 @@ export default function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 relative">
+      <div className="p-4 border-t border-surface-border relative">
         {!availability.available && (
-          <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 backdrop-blur-[1px] z-20 flex items-center justify-center p-4 text-center">
-            <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
+          <div className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
+            <div className="text-sm text-contrast-helper">
               {availability.reason === "subscription_disconnected" ? (
                 // AI routing is per-user, so this link is right for admins and
                 // non-admins alike.
@@ -352,7 +352,7 @@ export default function ChatPanel({
                   Chat is disabled. Your AI subscription is not connected.{" "}
                   <Link
                     href="/settings"
-                    className="text-orange-500 hover:underline"
+                    className="text-action-text hover:underline"
                   >
                     Reconnect it in Settings
                   </Link>
@@ -363,7 +363,7 @@ export default function ChatPanel({
                   Chat is disabled. Please{" "}
                   <Link
                     href="/settings"
-                    className="text-orange-500 hover:underline"
+                    className="text-action-text hover:underline"
                   >
                     configure an API key and select a model
                   </Link>
@@ -388,14 +388,14 @@ export default function ChatPanel({
             placeholder={
               recordingId ? "Ask a question..." : "Select a meeting first..."
             }
-            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl pl-4 pr-12 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none h-14 max-h-32 flex items-center"
+            className="w-full bg-surface-inset border-control-border rounded-xl pr-12 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-action focus:border-transparent resize-none h-14 max-h-32 flex items-center"
             disabled={!recordingId}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
             {isStreaming ? (
               <button
                 onClick={handleStop}
-                className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-sm"
+                className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
               >
                 <StopCircle className="w-4 h-4" />
@@ -404,7 +404,7 @@ export default function ChatPanel({
               <button
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim()}
-                className="p-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                className="p-2 bg-action text-foreground rounded-lg hover:bg-action disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
                 <Send className="w-4 h-4" />
               </button>
@@ -412,7 +412,7 @@ export default function ChatPanel({
           </div>
         </div>
         {recordingId && (
-          <div className="text-[10px] text-gray-400 mt-2 text-center">
+          <div className="text-[10px] text-contrast-icon-muted mt-2 text-center">
             AI can make mistakes. Check important info.
           </div>
         )}

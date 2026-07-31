@@ -69,12 +69,12 @@ export default function RecordingHeader({
   );
 
   return (
-    <header className={`sticky top-0 z-10 shrink-0 border-b-2 border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-5 lg:p-6"}`}>
+    <header className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-5 lg:p-6"}`}>
       {isMobile ? (
         <>
-          <div className="rounded-2xl border border-gray-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur dark:border-gray-700/80 dark:bg-gray-800/90">
+          <div className="rounded-2xl border border-surface-border bg-surface-card px-4 py-3 shadow-card">
             <div className="min-w-0 pt-0.5">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-icon-muted">
                 Meeting Detail
               </div>
               {isEditingTitle ? (
@@ -91,11 +91,11 @@ export default function RecordingHeader({
                       setTitleValue(recording?.name || "");
                     }
                   }}
-                  className="mt-1 w-full border-b-2 border-orange-500 bg-transparent pb-1 text-lg font-bold text-gray-900 focus:outline-none dark:text-white"
+                  className="mt-1 w-full border-b-2 border-action bg-transparent pb-1 text-lg font-bold text-foreground focus:outline-none"
                 />
               ) : (
                 <h1
-                  className="mt-1 flex cursor-pointer items-start gap-2 text-lg font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 group"
+                  className="mt-1 flex cursor-pointer items-start gap-2 text-lg font-bold text-foreground hover:text-action-text"
                   onClick={() => setIsEditingTitle(true)}
                   title="Click to rename"
                 >
@@ -107,7 +107,7 @@ export default function RecordingHeader({
           </div>
 
           {isMobileHeaderActionsOpen && (
-            <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-40 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-orange-100 bg-orange-50/95 p-2.5 shadow-xl shadow-black/10 backdrop-blur dark:border-orange-500/15 dark:bg-orange-500/10 dark:shadow-black/30">
+            <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-40 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-action-border bg-action-tint p-2.5 shadow-float">
               {renderMobileHeaderActions()}
             </div>
           )}
@@ -129,11 +129,11 @@ export default function RecordingHeader({
                     setTitleValue(recording?.name || "");
                   }
                 }}
-                className="density-heading-section mb-2 w-full border-b-2 border-orange-500 bg-transparent text-xl font-bold text-gray-900 focus:outline-none dark:text-white md:text-2xl"
+                className="density-heading-section mb-2 w-full border-b-2 border-action bg-transparent text-xl font-bold text-foreground focus:outline-none"
               />
             ) : (
               <h1
-                className="density-heading-section group mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-gray-900 hover:text-orange-600 dark:text-white dark:hover:text-orange-400 md:text-2xl"
+                className="density-heading-section group mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-foreground hover:text-action-text"
                 onClick={() => setIsEditingTitle(true)}
                 title="Click to rename"
               >

@@ -150,17 +150,17 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     return (
-      <div className="density-surface border border-orange-100 bg-white shadow-xl shadow-orange-900/10 backdrop-blur dark:border-gray-700/70 dark:bg-gray-900/85 dark:shadow-black/30">
+      <div className="density-surface border border-action-border bg-surface-card shadow-float">
         <div className="flex flex-col gap-5">
           <div className="mt-2 flex items-start gap-3">
-            <div className="rounded-2xl bg-orange-100 p-2 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">
+            <div className="rounded-2xl bg-action-tint p-2 text-action-text">
               <Mic className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="density-heading-section text-2xl font-semibold text-gray-950 dark:text-white">
+              <h2 className="density-heading-section text-2xl font-semibold text-foreground">
                 Meet Now
               </h2>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              <p className="mt-1 text-sm text-contrast-helper">
                 Click Start Meeting to begin browser capture from this dashboard card.
               </p>
             </div>
@@ -171,7 +171,7 @@ export default function MeetingControls({
           ) : null}
 
           {microphoneOnly ? (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+            <div className="rounded-2xl border border-status-info-border bg-status-info-bg px-4 py-3 text-sm text-status-info-fg">
               <p className="font-medium">Phone microphone recording</p>
               <p className="mt-1 leading-5 opacity-90">
                 Mobile Chrome records the phone microphone only. Keep this tab open and the phone awake.
@@ -186,7 +186,7 @@ export default function MeetingControls({
               disabled={meetingSurfaceState.buttonDisabled}
               title={meetingSurfaceState.buttonTooltip}
               aria-label={meetingSurfaceState.buttonLabel}
-              className="density-control-lg flex items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
+              className="density-control-lg flex items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-action disabled:cursor-not-allowed disabled:bg-action-tint"
             >
               <Mic className="h-4 w-4" />
               {meetingSurfaceState.buttonLabel}
@@ -200,7 +200,7 @@ export default function MeetingControls({
   }
 
   return (
-    <div className="border-b border-orange-100/80 bg-transparent p-4 dark:border-gray-800/80">
+    <div className="border-b border-action-border bg-transparent p-4">
       <div className="w-full">
         {unsupported ? (
           <div className="mb-2">
@@ -209,7 +209,7 @@ export default function MeetingControls({
         ) : null}
 
         {microphoneOnly ? (
-          <div className="mb-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+          <div className="mb-2 rounded-lg border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg">
             Phone microphone only. Keep this tab open.
           </div>
         ) : null}
@@ -221,7 +221,7 @@ export default function MeetingControls({
             disabled={meetingSurfaceState.buttonDisabled}
             title={meetingSurfaceState.buttonTooltip}
             aria-label={meetingSurfaceState.buttonLabel}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-orange-600 px-4 py-2 font-medium text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-orange-300 dark:disabled:bg-orange-900/40"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-action px-4 py-2 font-medium text-foreground transition-colors hover:bg-action disabled:cursor-not-allowed disabled:bg-action-tint"
           >
             <Mic className="h-4 w-4" />
             {meetingSurfaceState.buttonLabel}

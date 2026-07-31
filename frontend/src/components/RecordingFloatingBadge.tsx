@@ -104,7 +104,7 @@ export default function RecordingFloatingBadge() {
 
   return (
     <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-2xl border border-red-200/60 bg-white/95 px-4 py-2.5 shadow-xl shadow-red-900/10 backdrop-blur-md dark:border-red-500/20 dark:bg-gray-900/95 dark:shadow-black/30">
+      <div className="flex items-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 shadow-float dark:">
         <button
           type="button"
           onClick={handleNavigate}
@@ -112,24 +112,24 @@ export default function RecordingFloatingBadge() {
           title="Go to recording"
         >
           <span
-            className={`inline-block h-2.5 w-2.5 rounded-full bg-red-500 ${isRecording ? "animate-pulse" : ""}`}
+            className={`inline-block h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
           />
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-red-700 dark:text-red-300">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-status-danger-fg">
             {isRecording ? "Recording" : "Paused"}
           </span>
-          <span className="ml-1 font-mono text-sm font-semibold text-gray-950 dark:text-white">
+          <span className="ml-1 font-mono text-sm font-semibold text-foreground">
             {formatTime(elapsedSeconds)}
           </span>
         </button>
 
-        <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" />
+        <span className="mx-1 h-5 w-px bg-surface-inset" />
 
         {isRecording ? (
           <button
             type="button"
             onClick={() => sendCommand("pause")}
             disabled={transportDisabled}
-            className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg disabled:opacity-50"
             title="Pause recording"
             aria-label="Pause recording"
           >
@@ -140,7 +140,7 @@ export default function RecordingFloatingBadge() {
             type="button"
             onClick={() => sendCommand("resume")}
             disabled={transportDisabled}
-            className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-green-50 hover:text-green-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-green-500/10 dark:hover:text-green-300"
+            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-status-success-bg hover:text-status-success-fg disabled:opacity-50"
             title="Resume recording"
             aria-label="Resume recording"
           >
@@ -152,7 +152,7 @@ export default function RecordingFloatingBadge() {
           type="button"
           onClick={() => sendCommand("stop")}
           disabled={stopDisabled}
-          className="rounded-lg bg-red-600 p-1.5 text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+          className="rounded-lg bg-status-danger-bg p-1.5 text-foreground transition-colors hover:bg-status-danger-bg disabled:opacity-50"
           title="Stop recording"
           aria-label="Stop recording"
         >
@@ -163,7 +163,7 @@ export default function RecordingFloatingBadge() {
           type="button"
           onClick={handleDiscard}
           disabled={stopDisabled}
-          className="rounded-lg p-1.5 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+          className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg disabled:opacity-50"
           title="Discard recording"
           aria-label="Discard recording"
         >

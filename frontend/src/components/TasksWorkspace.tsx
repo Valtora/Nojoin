@@ -471,7 +471,7 @@ export default function TasksWorkspace() {
       contentClassName="workspace-shell workspace-shell-wide"
       paddingClassName="workspace-pad-y"
     >
-      <section className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-float backdrop-blur">
+      <section className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="density-heading-page text-4xl font-semibold tracking-tight text-foreground">
@@ -588,7 +588,7 @@ export default function TasksWorkspace() {
 
       <section className="grid gap-4">
         {loading ? (
-          <div className="density-surface-subtle border border-surface-border bg-surface-card p-6 text-sm text-contrast-helper shadow-float">
+          <div className="density-surface-subtle border border-surface-border bg-surface-card p-6 text-sm text-contrast-helper shadow-card">
             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
             Loading tasks...
           </div>
@@ -606,7 +606,7 @@ export default function TasksWorkspace() {
             return (
               <article
                 key={task.id}
-                className="density-surface-subtle border border-surface-border bg-surface-card p-5 shadow-float"
+                className="density-surface-subtle border border-surface-border bg-surface-card p-5 shadow-card"
               >
                 {isEditing ? (
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.45fr)]">

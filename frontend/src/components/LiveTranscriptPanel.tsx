@@ -125,14 +125,14 @@ export default function LiveTranscriptPanel({
   const isEmpty = lines.length === 0;
 
   return (
-    <section className="density-surface border border-white/60 bg-white/84 shadow-xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/68 dark:shadow-black/20">
+    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+        <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
           Live Transcript
         </div>
         {!isEmpty ? (
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="text-xs text-contrast-helper">
             Provisional. Corrected when the recording is processed.
           </span>
         ) : null}
@@ -148,7 +148,7 @@ export default function LiveTranscriptPanel({
             leaves the bar outside the window entirely. */}
         <div
           aria-hidden
-          className="density-surface-panel pointer-events-none absolute inset-y-0 left-0 right-[var(--live-transcript-gutter)] border border-orange-200/70 bg-white dark:border-orange-500/20 dark:bg-gray-900"
+          className="density-surface-panel pointer-events-none absolute inset-y-0 left-0 right-[var(--live-transcript-gutter)] border border-action-border bg-surface-card"
         />
         <div
           ref={scrollContainerRef}
@@ -159,10 +159,10 @@ export default function LiveTranscriptPanel({
           <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
             {isEmpty ? (
               <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                <p className="text-sm font-medium text-contrast-muted">
                   {isPaused ? "Recording is paused." : "Listening."}
                 </p>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-gray-500 dark:text-gray-400">
+                <p className="mt-2 max-w-sm text-sm leading-6 text-contrast-helper">
                   {hasLoaded
                     ? "Text appears a few seconds behind the conversation, as each sentence completes."
                     : "Loading the transcript so far."}
@@ -173,15 +173,15 @@ export default function LiveTranscriptPanel({
                 {lines.map(({ segment, key, sourceChannel, showSourceLabel }) => (
                   <li key={key} data-testid="live-transcript-line">
                     {showSourceLabel && sourceChannel ? (
-                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:text-orange-300">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
                         {SOURCE_CHANNEL_LABELS[sourceChannel]}
                       </div>
                     ) : null}
                     <div className="flex gap-3">
-                      <span className="shrink-0 pt-0.5 font-mono text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                      <span className="shrink-0 pt-0.5 font-mono text-xs tabular-nums text-contrast-icon-muted">
                         {formatElapsed(segment.start)}
                       </span>
-                      <p className="min-w-0 flex-1 text-sm italic leading-6 text-gray-600 dark:text-gray-300">
+                      <p className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper">
                         {segment.text}
                       </p>
                     </div>
@@ -196,7 +196,7 @@ export default function LiveTranscriptPanel({
           <button
             type="button"
             onClick={jumpToLatest}
-            className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 shadow-lg shadow-orange-950/10 transition-colors hover:bg-orange-50 dark:border-orange-500/30 dark:bg-gray-950 dark:text-orange-300 dark:hover:bg-orange-500/10"
+            className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"
           >
             <ArrowDown className="h-3.5 w-3.5" />
             Jump to latest

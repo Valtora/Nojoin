@@ -64,7 +64,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
     case RecordingStatus.QUEUED:
       return (
         <span
-          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-help"
+          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-info-bg text-status-info-fg"
           title="Meeting is in queue to be processed..."
         >
           <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -78,7 +78,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
       ) {
         return (
           <span
-            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-warning-bg text-status-warning-fg"
             title="Transcript ready. Generating notes..."
           >
             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -88,7 +88,7 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
       }
       return (
         <span
-          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-help"
+          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-info-bg text-status-info-fg"
           title="Processing audio: transcription, diarization, and voiceprint extraction. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing if you prefer manual speaker management."
         >
           <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -97,28 +97,28 @@ const StatusBadge = ({ recording }: { recording: Recording }) => {
       );
     case RecordingStatus.ERROR:
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-danger-bg text-status-danger-fg">
           <AlertCircle className="w-3 h-3 mr-1" />
           Error
         </span>
       );
     case RecordingStatus.PAUSED:
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-status-warning-bg text-status-warning-fg">
           <Pause className="w-3 h-3 mr-1" />
           Paused
         </span>
       );
     case RecordingStatus.CANCELLED:
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-inset text-foreground">
           <AlertCircle className="w-3 h-3 mr-1" />
           Cancelled
         </span>
       );
     default:
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-inset text-foreground">
           <HelpCircle className="w-3 h-3 mr-1" />
           {status}
         </span>
@@ -228,7 +228,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         <div className="block">
           <div
             id={isDemo ? "demo-recording-card" : undefined}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
+            className="bg-surface-card shadow hover:shadow-card transition-shadow p-4 border border-surface-border relative"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
@@ -247,12 +247,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                className="text-lg font-semibold text-gray-900 dark:text-white bg-white dark:bg-gray-700 border border-blue-300 rounded px-1 focus:outline-none flex-1 mr-4"
+                className="text-lg font-semibold text-foreground border rounded px-1 focus:outline-none flex-1 mr-4"
               />
               <StatusBadge recording={recording} />
             </div>
 
-            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
+            <div className="flex items-center text-sm text-contrast-helper">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
                 {formatDate(recording.created_at, recording)}
@@ -268,12 +268,12 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         <Link href={`/recordings/${recording.id}`} className="block">
           <div
             id={isDemo ? "demo-recording-card" : undefined}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-gray-200 dark:border-gray-700 relative group"
+            className="bg-surface-card shadow hover:shadow-card transition-shadow p-4 border border-surface-border relative"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
               <h3
-                className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4 flex-1 hover:text-blue-600 dark:hover:text-blue-400"
+                className="text-lg font-semibold text-foreground pr-4 flex-1 hover:text-status-info-fg"
                 title="Double-click to rename"
                 onDoubleClick={handleRenameStart}
               >
@@ -282,7 +282,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
               <StatusBadge recording={recording} />
             </div>
 
-            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 space-x-4">
+            <div className="flex items-center text-sm text-contrast-helper">
               <div className="flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
                 {formatDate(recording.created_at, recording)}
@@ -322,7 +322,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
                   {
                     label: "Discard Recording",
                     onClick: handleDiscard,
-                    className: "text-red-600 dark:text-red-400",
+                    className: "text-status-danger-fg",
                   },
                 ]
               : []),
@@ -331,14 +331,14 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
                   {
                     label: "Retry Processing",
                     onClick: () => setShowReprocessDialog(true),
-                    className: "text-blue-600 dark:text-blue-400",
+                    className: "text-status-info-fg",
                   },
                 ]
               : []),
             {
               label: "Delete Recording",
               onClick: handleDelete,
-              className: "text-red-600 dark:text-red-400",
+              className: "text-status-danger-fg",
             },
           ]}
         />

@@ -41,19 +41,19 @@ export default function RecordingsLanding() {
     >
       <section
         id="recordings-landing-panel"
-        className="density-surface density-surface-lg border border-white/60 bg-white/82 shadow-xl shadow-orange-950/5 backdrop-blur dark:border-white/10 dark:bg-gray-950/62 dark:shadow-black/20"
+        className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card"
       >
         <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+          <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-action-text">
             <Waves className="h-3.5 w-3.5" />
             Recordings Workspace
           </div>
 
-          <h1 className="density-heading-page mt-4 text-3xl font-semibold tracking-tight text-gray-950 dark:text-white md:text-4xl">
+          <h1 className="density-heading-page mt-4 text-3xl font-semibold tracking-tight text-foreground">
             {copy.title}
           </h1>
 
-          <div className="density-body-copy mt-6 space-y-3 text-base leading-7 text-gray-600 dark:text-gray-300">
+          <div className="density-body-copy mt-6 space-y-3 text-base leading-7 text-contrast-helper">
             <p>{copy.description}</p>
             <p>{copy.detail}</p>
           </div>
@@ -61,7 +61,7 @@ export default function RecordingsLanding() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/settings/help"
-              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-900 transition-colors hover:border-orange-300 hover:text-orange-700 dark:border-white/10 dark:bg-gray-900/80 dark:text-white dark:hover:border-orange-500/30 dark:hover:text-orange-300"
+              className="inline-flex items-center gap-2 rounded-xl border border-surface-border bg-surface-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:border-action-border hover:text-action-text"
             >
               <LifeBuoy className="h-4 w-4" />
               Help

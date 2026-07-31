@@ -67,7 +67,7 @@ export default function DashboardUpcomingMeetingsCard() {
   } = useCalendarDashboard();
 
   return (
-    <div className="density-surface border border-action-border bg-surface-card shadow-float backdrop-blur">
+    <div className="density-surface border border-action-border bg-surface-card shadow-card">
       <div className="mt-2 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="rounded-2xl bg-action-tint p-2 text-action-text">

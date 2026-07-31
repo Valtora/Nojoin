@@ -18,7 +18,7 @@ const ACTIVITY_HINT_COPY = {
 };
 
 const AUDIO_BAR_CLASS_NAME =
-  "bg-gradient-to-t from-orange-600 via-orange-500 to-amber-300";
+  "bg-action";
 
 function smoothLevel(previousLevel: number, nextLevel: number) {
   const riseBlend = nextLevel > previousLevel ? 0.65 : 0.35;
@@ -46,8 +46,8 @@ function WaveformTrack({
 }) {
   const range = dynamicMax - dynamicMin;
   return (
-    <div className="rounded-3xl border border-white/60 bg-white/75 p-4 shadow-lg shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/60 dark:shadow-black/20">
-      <div className="flex h-24 items-end gap-px sm:gap-1 overflow-hidden rounded-2xl bg-gradient-to-b from-orange-100/80 via-white to-white px-2 py-3 dark:from-orange-500/10 dark:via-gray-950 dark:to-gray-950">
+    <div className="rounded-3xl border border-surface-border bg-surface-card p-4 shadow-card dark:">
+      <div className="flex h-24 items-end gap-px sm:gap-1 overflow-hidden rounded-surface-panel bg-surface-inset px-2 py-3 dark:from-orange-500/10 dark:via-gray-950 dark:to-gray-950">
         {history.map((sample, index) => {
           const scaled = range > 0 ? Math.max(0, Math.min(100, ((sample - dynamicMin) / range) * 100)) : 0;
           return (
@@ -183,11 +183,11 @@ export default function LiveAudioWaveform({
   return (
     <div className="space-y-3">
       {showActivityHint ? (
-        <div className="rounded-3xl border border-orange-200/80 bg-orange-50/80 px-4 py-3 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10">
-          <p className="text-sm font-medium text-orange-950 dark:text-orange-100">
+        <div className="rounded-3xl border border-action-border bg-action-tint px-4 py-3 shadow-card">
+          <p className="text-sm font-medium text-action-text">
             {ACTIVITY_HINT_COPY.title}
           </p>
-          <p className="mt-1 text-xs leading-5 text-orange-800 dark:text-orange-100/80">
+          <p className="mt-1 text-xs leading-5 text-action-text">
             {microphoneOnly
               ? ACTIVITY_HINT_COPY.microphoneOnlyMessage
               : ACTIVITY_HINT_COPY.message}
@@ -196,7 +196,7 @@ export default function LiveAudioWaveform({
             <button
               type="button"
               onClick={() => dismissForMeeting(recordingId)}
-              className="rounded-full border border-orange-300/90 bg-white/85 px-3 py-1.5 text-xs font-medium text-orange-900 transition-colors hover:bg-white dark:border-orange-400/25 dark:bg-gray-950/40 dark:text-orange-100 dark:hover:bg-gray-950/70"
+              className="rounded-full border border-action-border bg-surface-card px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-surface-card"
             >
               Dismiss
             </button>
@@ -206,7 +206,7 @@ export default function LiveAudioWaveform({
                 dismissForMeeting(recordingId);
                 suppressWarnings();
               }}
-              className="rounded-full border border-orange-300/70 px-3 py-1.5 text-xs font-medium text-orange-800 transition-colors hover:bg-orange-100/80 dark:border-orange-400/20 dark:text-orange-100 dark:hover:bg-orange-500/10"
+              className="rounded-full border border-action-border px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-action-tint"
             >
               Don&apos;t show again
             </button>

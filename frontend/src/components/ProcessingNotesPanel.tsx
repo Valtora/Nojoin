@@ -170,17 +170,17 @@ function ProcessingNotesPanel({
           : "Autosaves while you type";
 
   return (
-    <section className="density-surface border border-white/60 bg-white/80 shadow-xl shadow-orange-950/10 backdrop-blur dark:border-white/10 dark:bg-gray-950/65 dark:shadow-black/20">
+    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-lg font-semibold text-foreground">
             Notes
           </h3>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-1 text-sm text-contrast-helper">
             Capture anything important while the meeting is being recorded or processed.
           </p>
         </div>
-        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
           {saveMessage}
         </span>
       </div>
@@ -192,22 +192,22 @@ function ProcessingNotesPanel({
           onBlur={handleBlur}
           placeholder="Type quick reminders, decisions, or action items here..."
           disabled={disabled}
-          className={`density-surface-panel min-h-[18rem] w-full resize-none border border-orange-200/70 bg-white px-4 py-4 text-sm leading-6 text-gray-800 outline-none transition dark:border-orange-500/20 dark:bg-gray-900 dark:text-gray-100 ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"}`}
+          className={`density-surface-panel min-h-[18rem] w-full resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-gray-800 outline-none transition dark:border-orange-500/20 dark:bg-gray-900 dark:text-gray-100 ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
         />
         {disabled ? (
-          <div className="density-surface-panel absolute inset-0 flex items-center justify-center border border-white/60 bg-white/45 px-6 text-center backdrop-blur-sm dark:border-white/10 dark:bg-gray-950/55">
+          <div className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center ">
             <div>
-              <div className="text-sm font-semibold text-gray-900 dark:text-white">
+              <div className="text-sm font-semibold text-foreground">
                 Notes are temporarily locked
               </div>
-              <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-200">
+              <p className="mt-2 text-sm leading-6 text-contrast-muted">
                 {disabledMessage || "Your manual notes are being incorporated into the generated meeting notes."}
               </p>
             </div>
           </div>
         ) : null}
       </div>
-      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+      <p className="mt-3 text-xs text-contrast-helper">
         These notes are fed into note generation and the final notes will label them as user-authored.
       </p>
     </section>
