@@ -88,6 +88,47 @@ describe("RecordingStatusDisplay", () => {
     expect(screen.getByTestId("processing-notes-panel")).toBeInTheDocument();
   });
 
+  it("states the capture state without a headline", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.RECORDING,
+          client_status: ClientStatus.RECORDING,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    // The state is a word on the console, not a text-4xl sentence above it.
+    expect(screen.getByText("Recording")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Meeting is being recorded"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("puts pipeline progress where the transcript sits while recording", () => {
+    render(
+      <RecordingStatusDisplay
+        recording={buildRecording({
+          status: RecordingStatus.PROCESSING,
+          client_status: undefined,
+          processing_progress: 40,
+        })}
+        onSaveProcessingNotes={vi.fn()}
+        onSaveMeetingEdgeFocus={vi.fn()}
+      />,
+    );
+
+    // Pressing Stop reflows the middle column rather than re-laying out the
+    // page, so the grid keeps its shape across the two states.
+    expect(screen.queryByTestId("live-transcript-panel")).not.toBeInTheDocument();
+    expect(screen.getByText("Progress")).toBeInTheDocument();
+    expect(screen.getByText("40%")).toBeInTheDocument();
+    // The console keeps the state word; the panel does not repeat it.
+    expect(screen.getAllByText("Processing")).toHaveLength(1);
+  });
+
   it("hides Meeting Edge when disabled", () => {
     render(
       <RecordingStatusDisplay

@@ -170,21 +170,16 @@ function ProcessingNotesPanel({
           : "Autosaves while you type";
 
   return (
-    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-semibold text-foreground">
-            Notes
-          </h3>
-          <p className="mt-1 text-sm text-contrast-helper">
-            Capture anything important while the meeting is being recorded or processed.
-          </p>
-        </div>
-        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
+    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+      {/* One row: title and save state. The sentence under the title explained
+          that you can take notes in a box labelled Notes. */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h3 className="text-base font-semibold text-foreground">Notes</h3>
+        <span className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
           {saveMessage}
         </span>
       </div>
-      <div className="relative">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         <textarea
           ref={textareaRef}
           defaultValue={normalisedValue}
@@ -192,7 +187,7 @@ function ProcessingNotesPanel({
           onBlur={handleBlur}
           placeholder="Type quick reminders, decisions, or action items here..."
           disabled={disabled}
-          className={`density-surface-panel min-h-[18rem] w-full resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
+          className={`density-surface-panel min-h-[10rem] w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
         />
         {disabled ? (
           <div className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center">

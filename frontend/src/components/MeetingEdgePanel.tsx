@@ -193,7 +193,7 @@ function MeetingEdgePanel({
           : "Autosaves";
 
   return (
-    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
+    <section className="density-surface flex min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           {status === "updating" ? (

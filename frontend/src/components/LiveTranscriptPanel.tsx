@@ -125,7 +125,7 @@ export default function LiveTranscriptPanel({
   const isEmpty = lines.length === 0;
 
   return (
-    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
+    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
@@ -138,7 +138,10 @@ export default function LiveTranscriptPanel({
         ) : null}
       </div>
 
-      <div className="relative mt-4">
+      {/* The transcript window used to be a fixed 24rem. It now takes whatever
+          height its column has, with a floor so a short window leaves it
+          readable rather than reducing it to two lines. */}
+      <div className="relative mt-4 flex min-h-0 flex-1 flex-col">
         {/* The transcript window is painted by this overlay rather than by the
             scrolling element, and stops short of the right edge by
             SCROLLBAR_GUTTER. A scroll container always draws its scrollbar
@@ -154,7 +157,7 @@ export default function LiveTranscriptPanel({
           ref={scrollContainerRef}
           onScroll={handleScroll}
           data-testid="live-transcript-scroll"
-          className="relative h-[24rem] overflow-y-auto"
+          className="relative min-h-[14rem] flex-1 overflow-y-auto"
         >
           <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
             {isEmpty ? (

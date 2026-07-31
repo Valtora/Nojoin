@@ -116,6 +116,8 @@ Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is
 
 While recording, Nojoin shows recording state, duration, upload state, a live waveform, a live transcript panel, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
 
+The recording workspace lays these out in columns as space allows, so that on a wide display everything is visible at once rather than down a long scroll: the capture controls and documents on the left, the live transcript in the middle, and Meeting Edge with your notes on the right. It narrows to two columns and then to a single stack on smaller screens. When you press **Stop**, the transcript column becomes pipeline progress and the rest of the layout stays where it is.
+
 On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu button on the main dashboard surfaces. The active recording workspace and processed recording detail view both provide a native back control so you can return to the recordings list without relying on the browser's history buttons. Mobile Meeting Chat also includes its own back action to return to the meeting workspace.
 
 You can switch to another browser tab, window, or application while recording. Nojoin only pauses automatically when the Nojoin tab is refreshed, closed, or navigated away from the active recording.

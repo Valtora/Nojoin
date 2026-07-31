@@ -56,21 +56,16 @@ export default function LiveDocumentsPanel({
   }, [documents, refresh]);
 
   return (
-    <section className="density-surface border border-surface-border bg-surface-card shadow-card">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-foreground">
-            Documents
-          </h3>
-          <p className="mt-1 text-sm text-contrast-helper">
-            Attach an agenda or a deck now and it will be used when the meeting
-            notes are generated.
-          </p>
-        </div>
+    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+      {/* One row: glyph, title, action. The sentence under the title explained
+          what attaching a document does, on a panel with an Upload button. */}
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <FileText className="h-5 w-5 shrink-0 text-action-text" />
+        <h3 className="text-base font-semibold text-foreground">Documents</h3>
         <button
           type="button"
           onClick={() => setIsUploadOpen(true)}
-          className="inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover"
+          className="ml-auto inline-flex flex-shrink-0 items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover"
         >
           <Upload className="h-4 w-4" />
           Upload
@@ -79,14 +74,15 @@ export default function LiveDocumentsPanel({
 
       {documents.length === 0 ? (
         <p className="text-sm text-contrast-helper">
-          No documents attached yet.
+          Attach an agenda or a deck and it will be used when the notes are
+          generated.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {documents.map((doc) => (
             <li
               key={doc.id}
-              className="density-surface-panel flex items-center gap-3 border border-action-border bg-surface-card px-3 py-2"
+              className="density-surface-panel flex items-center gap-3 bg-surface-inset px-3 py-2"
             >
               <FileText className="h-4 w-4 flex-shrink-0 text-action-text" />
               <span

@@ -105,20 +105,21 @@ export default function RecordingStatusDisplay({
     recording.transcript?.notes_status === "generating" ||
     /generating meeting notes/i.test(recording.processing_step || "");
 
-  const heading = isActiveRecording
+  // One short state word, not a headline. The heading this replaced was
+  // `text-4xl` over a sentence explaining that a waveform appears while
+  // recording, on a view whose entire problem is vertical space.
+  const stateLabel = isActiveRecording
     ? isPaused
-      ? "Meeting recording is paused"
-      : "Meeting is being recorded"
+      ? "Paused"
+      : "Recording"
     : recording.status === RecordingStatus.QUEUED
-      ? "Queued for processing"
+      ? "Queued"
       : isFinalisingUpload
-        ? "Uploading meeting"
-        : "Processing recording";
+        ? "Uploading"
+        : "Processing";
 
-  const subheading = isActiveRecording
-    ? isPaused
-      ? "Resume or discard this recording to clear the paused capture state."
-      : "Live audio waveform and timer are shown while your meeting is being recorded."
+  const pipelineStep = isActiveRecording
+    ? null
     : recording.processing_step ||
       (recording.status === RecordingStatus.QUEUED
         ? "Waiting for a worker to begin processing."
@@ -133,10 +134,15 @@ export default function RecordingStatusDisplay({
         : Math.max(20, recording.processing_progress || 20);
 
   return (
+    // The dense shell, not the feature one. This is a console rather than a
+    // page of prose: it has a waveform, a transcript, a guidance panel and two
+    // editors, and capping it at a reading measure is what forced all five into
+    // one long scroll. The `grow` chain hands the window's leftover height down
+    // to the grid, exactly as the dashboard does.
     <Workspace
-      wrapperClassName="flex-1 overflow-visible"
-      backgroundClassName="bg-transparent"
-      contentClassName="workspace-shell workspace-shell-feature"
+      wrapperClassName="flex min-h-full flex-col overflow-visible"
+      backgroundClassName="bg-transparent flex grow flex-col"
+      contentClassName="workspace-shell workspace-shell-dense grow"
     >
       {showMobileBackButton && onBack ? (
         <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[var(--z-sticky)] lg:hidden">
@@ -153,23 +159,33 @@ export default function RecordingStatusDisplay({
         </div>
       ) : null}
 
-      {/* Workspace's workspace-shell supplies the flex gap between its
-          children, but everything here is nested one level inside this wrapper,
-          so that gap applied to the wrapper alone and the capture card sat flush
-          against the panel column below it. Restate it here so the card and the
-          panels are separated by the same workspace gap the panels use between
-          themselves. */}
+      {/* Three columns from 74rem of workspace, two from 54rem, one below,
+          measured against the workspace rather than the viewport because this
+          view sits beside the recordings rail. Same model as the dashboard, and
+          the reasoning is written up there.
+
+          Columns group by job. The console owns the first, with documents under
+          it, since attaching a deck is something you do once. The middle column
+          is the meeting's output: the live transcript while recording, the
+          pipeline's progress once it is not. Guidance and your own notes share
+          the third.
+
+          At one column the wrappers are `display: contents`, so the five panels
+          become direct children of one flex column and `order-*` sequences
+          them: controls first, then transcript, guidance, notes, documents. */}
       <div
-        className={`flex flex-col gap-[var(--workspace-gap)] ${
+        className={`@container flex grow flex-col ${
           showMobileBackButton && onBack
             ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0"
             : ""
         }`}
       >
-      <section className="density-surface mx-auto flex min-w-0 w-full max-w-5xl flex-col border border-surface-border bg-surface-card shadow-card">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-3">
-                <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-action-text">
+        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(20rem,1.25fr)] @min-[54rem]:items-stretch @min-[74rem]:grid-cols-[minmax(0,0.95fr)_minmax(20rem,1.3fr)_minmax(18rem,1.05fr)]">
+          {/* The console, and the things you touch rather than read. */}
+          <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] @min-[74rem]:row-span-1">
+            <section className="density-surface order-1 flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
                   {isActiveRecording ? (
                     isPaused ? (
                       <Pause className="h-3.5 w-3.5" />
@@ -179,128 +195,142 @@ export default function RecordingStatusDisplay({
                   ) : (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   )}
-                  {isActiveRecording ? "Live Capture" : "Meeting Processing"}
+                  {stateLabel}
                 </span>
-                <div>
-                  <h2 className="density-heading-page text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
-                    {heading}
-                  </h2>
-                  <p className="density-body-copy mt-3 max-w-2xl text-sm leading-6 text-contrast-helper md:text-base">
-                    {subheading}
-                  </p>
-                </div>
+                {!isActiveRecording ? (
+                  <span
+                    className="ml-auto font-mono text-lg font-semibold tabular-nums text-foreground"
+                    title="Recording length"
+                  >
+                    {formatClock(Math.round(recording.duration_seconds || 0))}
+                  </span>
+                ) : null}
               </div>
 
-              {!isActiveRecording && progressValue !== null ? (
-                <div className="density-surface-panel flex min-h-[4.75rem] min-w-[7.5rem] flex-col items-center justify-center border border-action-border bg-action-tint px-4 py-3 text-center">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-action-text">
+              <div className="mt-4 space-y-4">
+                {isActiveRecording ? (
+                  <>
+                    <LiveAudioWaveform
+                      recordingId={recording.id}
+                      enabled
+                      paused={isPaused}
+                    />
+                    <LiveMeetingControls
+                      size="full"
+                      onMeetingEnd={() => {
+                        window.dispatchEvent(new Event("recording-updated"));
+                      }}
+                      onMeetingDiscard={onDiscarded}
+                    />
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleProcessingDiscard}
+                    disabled={isDiscarding}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-status-danger-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Discard this recording and stop processing"
+                  >
+                    {isDiscarding ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    Discard Recording
+                  </button>
+                )}
+              </div>
+            </section>
+
+            <div className="order-5 flex min-h-0 flex-1 flex-col">
+              <LiveDocumentsPanel recordingId={recording.id} />
+            </div>
+          </div>
+
+          {/* The meeting's output: what was said, or how far along it is. */}
+          <div className="order-2 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1">
+            {isActiveRecording ? (
+              <LiveTranscriptPanel
+                segments={liveTranscript.segments}
+                hasLoaded={liveTranscript.hasLoaded}
+                isPaused={isPaused}
+              />
+            ) : (
+              <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin text-action-text" />
+                  {/* Not "Processing": the console beside this already carries
+                      the state word, and repeating it says nothing twice. */}
+                  <h2 className="text-base font-semibold text-foreground">
                     Progress
-                  </div>
-                  <div className="mt-1 text-3xl font-semibold leading-none text-foreground">
-                    {Math.round(progressValue)}%
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-6 space-y-4">
-              {isActiveRecording ? (
-                <>
-                  <LiveAudioWaveform
-                    recordingId={recording.id}
-                    enabled
-                    paused={isPaused}
-                  />
-                  <LiveMeetingControls
-                    size="full"
-                    onMeetingEnd={() => {
-                      window.dispatchEvent(new Event("recording-updated"));
-                    }}
-                    onMeetingDiscard={onDiscarded}
-                  />
-                </>
-              ) : (
-                <>
+                  </h2>
                   {progressValue !== null ? (
-                    <div className="space-y-2">
-                      <div className="h-3 overflow-hidden rounded-full bg-action-tint">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${recording.status === RecordingStatus.QUEUED ? "bg-action-tint-fg" : "bg-action"}`}
-                          style={{ width: `${progressValue}%` }}
-                        />
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-contrast-helper">
-                        <span>{recording.status === RecordingStatus.QUEUED ? "Waiting in queue" : "Pipeline progress"}</span>
-                        {recording.processing_eta_seconds != null ? (
-                          <span className="font-medium text-foreground">
-                            {formatEta(recording.processing_eta_seconds)}
-                          </span>
-                        ) : recording.processing_eta_learning ? (
-                          <span className="font-medium text-foreground">
-                            Nojoin needs a few more processed recordings on this system before it can estimate time remaining.
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
+                    <span className="ml-auto text-lg font-semibold tabular-nums text-foreground">
+                      {Math.round(progressValue)}%
+                    </span>
                   ) : null}
+                </div>
 
-                  <div className="density-surface-panel bg-surface-inset p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-                      Recording Length
+                {progressValue !== null ? (
+                  <div className="mt-4 space-y-2">
+                    <div className="h-3 overflow-hidden rounded-full bg-action-tint">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${recording.status === RecordingStatus.QUEUED ? "bg-action-tint-fg" : "bg-action"}`}
+                        style={{ width: `${progressValue}%` }}
+                      />
                     </div>
-                    <div className="mt-2 text-2xl font-semibold text-foreground">
-                      {formatClock(Math.round(recording.duration_seconds || 0))}
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-contrast-helper">
+                      <span>
+                        {recording.status === RecordingStatus.QUEUED
+                          ? "Waiting in queue"
+                          : "Pipeline progress"}
+                      </span>
+                      {recording.processing_eta_seconds != null ? (
+                        <span className="font-medium text-foreground">
+                          {formatEta(recording.processing_eta_seconds)}
+                        </span>
+                      ) : recording.processing_eta_learning ? (
+                        <span className="font-medium text-foreground">
+                          Nojoin needs a few more processed recordings on this
+                          system before it can estimate time remaining.
+                        </span>
+                      ) : null}
                     </div>
                   </div>
+                ) : null}
 
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleProcessingDiscard}
-                      disabled={isDiscarding}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Discard this recording and stop processing"
-                    >
-                      {isDiscarding ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                      Discard Recording
-                    </button>
-                  </div>
-                </>
-              )}
+                {pipelineStep ? (
+                  <p className="mt-4 text-sm text-contrast-helper">{pipelineStep}</p>
+                ) : null}
+              </section>
+            )}
+          </div>
 
+          {/* Guidance, and what you write yourself. */}
+          <div className="contents @min-[54rem]:col-start-2 @min-[54rem]:row-start-2 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] @min-[74rem]:col-start-3 @min-[74rem]:row-start-1">
+            {showMeetingEdge ? (
+              <div className="order-3 flex min-w-0 flex-col">
+                <MeetingEdgePanel
+                  payload={recording.transcript?.meeting_edge_payload}
+                  focusText={recording.transcript?.meeting_edge_focus}
+                  status={recording.transcript?.meeting_edge_status}
+                  onSaveFocus={onSaveMeetingEdgeFocus}
+                  contextLevel={meetingEdgeContextLevel}
+                  onSaveContextLevel={onSaveMeetingEdgeContextLevel}
+                />
+              </div>
+            ) : null}
+
+            <div className="order-4 flex min-h-0 flex-1 flex-col">
+              <ProcessingNotesPanel
+                value={recording.transcript?.user_notes}
+                onSave={onSaveProcessingNotes}
+                disabled={notesAreLocked}
+                disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
+              />
             </div>
-      </section>
-
-      <div className="mx-auto w-full max-w-5xl space-y-[var(--workspace-gap)]">
-        {isActiveRecording ? (
-          <LiveTranscriptPanel
-            segments={liveTranscript.segments}
-            hasLoaded={liveTranscript.hasLoaded}
-            isPaused={isPaused}
-          />
-        ) : null}
-        {showMeetingEdge ? (
-          <MeetingEdgePanel
-            payload={recording.transcript?.meeting_edge_payload}
-            focusText={recording.transcript?.meeting_edge_focus}
-            status={recording.transcript?.meeting_edge_status}
-            onSaveFocus={onSaveMeetingEdgeFocus}
-            contextLevel={meetingEdgeContextLevel}
-            onSaveContextLevel={onSaveMeetingEdgeContextLevel}
-          />
-        ) : null}
-        <ProcessingNotesPanel
-          value={recording.transcript?.user_notes}
-          onSave={onSaveProcessingNotes}
-          disabled={notesAreLocked}
-          disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
-        />
-        <LiveDocumentsPanel recordingId={recording.id} />
-      </div>
+          </div>
+        </section>
       </div>
     </Workspace>
   );

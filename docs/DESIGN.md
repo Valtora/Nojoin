@@ -226,10 +226,10 @@ people page does.
 
 | Token | Comfortable | Compact | Used by |
 | --- | --- | --- | --- |
-| `--workspace-max-width-dense` | 120rem | 112rem | dashboard, people |
+| `--workspace-max-width-dense` | 120rem | 112rem | dashboard, people, live capture |
 | `--workspace-max-width-wide` | 80rem | 74rem | tasks |
 | `--workspace-max-width` | 72rem | 68rem | the `Workspace` default |
-| `--workspace-max-width-feature` | 64rem | 60rem | the recordings landing panel, the live capture view |
+| `--workspace-max-width-feature` | 64rem | 60rem | the recordings landing panel |
 
 A dense surface spends extra width on **more columns, not wider ones**. Nothing in the product grows
 a text column past a comfortable reading measure, which is why widening the dashboard left every
@@ -237,8 +237,8 @@ prose surface beside it exactly where it was.
 
 ### The column model
 
-The dashboard's grid uses three breakpoints, chosen so that a column is never narrower than about
-340px:
+Two surfaces use it: the dashboard and the live capture view. Both use three breakpoints, chosen so
+that a column is never narrower than about 340px:
 
 | Workspace width | Columns | Split |
 | --- | --- | --- |
@@ -256,6 +256,13 @@ is the narrowest, because a row there is a title and a badge.
 Each column pairs modules that keep their natural height with exactly one that absorbs the
 remainder. Meet Now and the month grid stay the size they need; the agenda, the task list and
 Recent Meetings take whatever is left.
+
+The live capture view groups the same way, by job rather than by size: the capture console with
+documents under it, the meeting's own output in the middle, and guidance with your notes on the
+right. The middle column carries the live transcript while recording and the pipeline's progress
+once it is not, so pressing Stop reflows one column rather than re-laying out the page. This is
+also why that view moved off the 64rem feature cap: it is a console, not a page of prose, and a
+reading measure is what forced five panels into one long scroll.
 
 **These are container queries against the workspace, not media queries against the viewport**, and
 that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
