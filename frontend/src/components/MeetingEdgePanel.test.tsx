@@ -15,6 +15,16 @@ describe("MeetingEdgePanel", () => {
       />,
     );
 
+    // The section is collapsed by default: it is a setting rather than
+    // guidance, and a collapsed section is unmounted rather than hidden.
+    expect(
+      screen.queryByLabelText("Meeting Edge Technical Context sensitivity"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Meeting Edge Technical Context/ }),
+    );
+
     const slider = screen.getByLabelText(
       "Meeting Edge Technical Context sensitivity",
     );
@@ -33,5 +43,29 @@ describe("MeetingEdgePanel", () => {
     await waitFor(() => {
       expect(slider).toHaveValue("5");
     });
+  });
+
+  it("folds a guidance section away without losing its content", () => {
+    render(
+      <MeetingEdgePanel
+        onSaveFocus={vi.fn().mockResolvedValue(undefined)}
+        payload={{
+          summary: "A summary.",
+          questions: ["Which index is being used?"],
+          points: [],
+          concepts: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Which index is being used?")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Questions to Ask/ }));
+    expect(
+      screen.queryByText("Which index is being used?"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Questions to Ask/ }));
+    expect(screen.getByText("Which index is being used?")).toBeInTheDocument();
   });
 });

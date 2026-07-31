@@ -6,6 +6,11 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  /* Native controls are drawn by the browser, not by this stylesheet: no
+     selector reaches inside an open <select> popup, a checkbox, a radio or a
+     date picker. `color-scheme` is the only lever, and without it every one of
+     them renders light while the rest of the app is dark. */
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #171717;
   --app-root-font-size: 16px;
@@ -177,6 +182,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* A soft charcoal rather than near-black. The near-black this started from
      was legible but severe, and it left no room beneath the page for anything
      to recede into. Every surface moves together so the stack keeps its

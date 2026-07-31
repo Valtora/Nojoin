@@ -2,12 +2,13 @@
 
 import {
   Brain,
+  ChevronDown,
   Lightbulb,
   Loader2,
   MessageSquareQuote,
   Target,
 } from "lucide-react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -28,6 +29,58 @@ interface MeetingEdgePanelProps {
   onSaveFocus: (focus: string) => Promise<void>;
   contextLevel?: number;
   onSaveContextLevel?: (level: number) => Promise<void>;
+}
+
+/**
+ * A section of the guidance panel that can be folded away.
+ *
+ * Meeting Edge accumulates: questions, points and tracked terms all grow as the
+ * meeting runs, and a setting nobody touches sat between them and the page. The
+ * header is the control, so there is no separate affordance to find, and the
+ * body is unmounted rather than hidden so a collapsed section costs no height.
+ */
+function EdgeSection({
+  title,
+  icon,
+  meta,
+  tone = "inset",
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  meta?: ReactNode;
+  tone?: "inset" | "tint";
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <div
+      className={`density-surface-panel ${
+        tone === "tint" ? "border border-action-border bg-action-tint" : "bg-surface-inset"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+      >
+        {icon}
+        <span className="min-w-0 flex-1">{title}</span>
+        {meta}
+        <ChevronDown
+          aria-hidden="true"
+          className={`h-4 w-4 shrink-0 text-contrast-icon-muted transition-transform duration-150 ${
+            isOpen ? "" : "-rotate-90"
+          }`}
+        />
+      </button>
+      {isOpen ? <div className="px-4 pb-4">{children}</div> : null}
+    </div>
+  );
 }
 
 function MeetingEdgePanel({
@@ -229,12 +282,11 @@ function MeetingEdgePanel({
               when the panel itself was 400px, which is what wrapped these
               lists to three words a line. */}
           <div className="grid gap-4 @min-[34rem]:grid-cols-2">
-            <div className="density-surface-panel bg-surface-inset p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <MessageSquareQuote className="h-4 w-4 text-action-text" />
-                Questions to Ask
-              </div>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-contrast-muted">
+            <EdgeSection
+              title="Questions to Ask"
+              icon={<MessageSquareQuote className="h-4 w-4 shrink-0 text-action-text" />}
+            >
+              <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
                 {questions.length > 0 ? (
                   questions.map((question, index) => (
                     <li key={`${question}-${index}`} className="rounded-xl bg-action-tint px-3 py-2">
@@ -247,14 +299,13 @@ function MeetingEdgePanel({
                   </li>
                 )}
               </ul>
-            </div>
+            </EdgeSection>
 
-            <div className="density-surface-panel bg-surface-inset p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Lightbulb className="h-4 w-4 text-action-text" />
-                Points to Raise
-              </div>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-contrast-muted">
+            <EdgeSection
+              title="Points to Raise"
+              icon={<Lightbulb className="h-4 w-4 shrink-0 text-action-text" />}
+            >
+              <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
                 {points.length > 0 ? (
                   points.map((point, index) => (
                     <li key={`${point}-${index}`} className="rounded-xl bg-status-warning-bg px-3 py-2">
@@ -267,21 +318,20 @@ function MeetingEdgePanel({
                   </li>
                 )}
               </ul>
-            </div>
+            </EdgeSection>
           </div>
 
           {conceptHistory.length > 0 ? (
-            <div className="density-surface-panel bg-surface-inset p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-foreground">
-                  Technical Context
-                </div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
+            <EdgeSection
+              title="Technical Context"
+              meta={
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                   {conceptHistory.length} term{conceptHistory.length === 1 ? "" : "s"} tracked
-                </div>
-              </div>
-              <div className="mt-3 max-h-[22rem] overflow-y-auto pr-1">
-                <div className="grid gap-3 md:grid-cols-2">
+                </span>
+              }
+            >
+              <div className="max-h-[22rem] overflow-y-auto pr-1">
+                <div className="grid gap-3 @min-[34rem]:grid-cols-2">
                   {conceptHistory.map((concept, index) => (
                     <div
                       key={`${concept.term}-${index}`}
@@ -297,7 +347,7 @@ function MeetingEdgePanel({
                   ))}
                 </div>
               </div>
-            </div>
+            </EdgeSection>
           ) : null}
         </div>
       ) : (
@@ -307,54 +357,6 @@ function MeetingEdgePanel({
             : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
         </div>
       )}
-
-      {onSaveContextLevel ? (
-        <div className="density-surface-panel mt-5 border border-action-border bg-action-tint p-4">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-foreground">
-              Meeting Edge Technical Context
-            </div>
-            <p className="mt-1 text-xs leading-5 text-contrast-helper">
-              Adjust how readily live guidance explains technical language on this recording page.
-            </p>
-          </div>
-
-          <input
-            type="range"
-            min={1}
-            max={5}
-            step={1}
-            value={draftContextLevel}
-            onChange={(event) => {
-              void handleContextLevelChange(event);
-            }}
-            aria-label="Meeting Edge Technical Context sensitivity"
-            className="mt-5 w-full accent-action"
-          />
-
-          <div className="relative mt-5 h-4 text-[11px] font-medium text-contrast-helper">
-            {MEETING_EDGE_CONTEXT_OPTIONS.map((option, index) => {
-              const position = `${(index / contextStepCount) * 100}%`;
-              const alignmentClass =
-                index === 0
-                  ? "-translate-x-0 text-left"
-                  : index === contextStepCount
-                    ? "-translate-x-full text-right"
-                    : "-translate-x-1/2 text-center";
-
-              return (
-                <span
-                  key={option.value}
-                  className={`absolute top-0 whitespace-nowrap ${alignmentClass}`}
-                  style={{ left: position }}
-                >
-                  {option.label}
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-5 rounded-[1.5rem] border border-action-border bg-action-tint p-4">
         <div className="flex items-center justify-between gap-3">
@@ -377,6 +379,58 @@ function MeetingEdgePanel({
           className="mt-3 min-h-[6rem] w-full resize-none rounded-[1.25rem] border border-surface-border bg-surface-card px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-action focus:ring-2 focus:ring-action"
         />
       </div>
+
+      {/* Last, and closed. It is a setting rather than guidance: once it is set
+          for a recording it is rarely touched again, and it was sitting between
+          the guidance and the box you type into. */}
+      {onSaveContextLevel ? (
+        <div className="mt-5">
+          <EdgeSection
+            title="Meeting Edge Technical Context"
+            tone="tint"
+            defaultOpen={false}
+          >
+            <p className="text-xs leading-5 text-contrast-helper">
+              Adjust how readily live guidance explains technical language on this recording page.
+            </p>
+
+            <input
+            type="range"
+            min={1}
+            max={5}
+            step={1}
+            value={draftContextLevel}
+            onChange={(event) => {
+              void handleContextLevelChange(event);
+            }}
+              aria-label="Meeting Edge Technical Context sensitivity"
+              className="mt-5 w-full accent-action"
+            />
+
+            <div className="relative mt-5 h-4 text-[11px] font-medium text-contrast-helper">
+              {MEETING_EDGE_CONTEXT_OPTIONS.map((option, index) => {
+                const position = `${(index / contextStepCount) * 100}%`;
+                const alignmentClass =
+                  index === 0
+                    ? "-translate-x-0 text-left"
+                    : index === contextStepCount
+                      ? "-translate-x-full text-right"
+                      : "-translate-x-1/2 text-center";
+
+                return (
+                  <span
+                    key={option.value}
+                    className={`absolute top-0 whitespace-nowrap ${alignmentClass}`}
+                    style={{ left: position }}
+                  >
+                    {option.label}
+                  </span>
+                );
+              })}
+            </div>
+          </EdgeSection>
+        </div>
+      ) : null}
     </section>
   );
 }

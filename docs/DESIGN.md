@@ -49,6 +49,13 @@ declares only what actually changes.
 **A component must not branch on the theme.** A `dark:` variant carrying a colour is a bug: it means
 a token is missing. `dark:` remains legitimate for non-colour concerns, such as swapping an image.
 
+**`color-scheme` is declared on both themes, and it is not optional.** Native controls are drawn by
+the browser: no selector in this stylesheet reaches inside an open `<select>` popup, a checkbox, a
+radio, a range thumb or a date picker. `color-scheme` is the only lever that tells the browser which
+of its own renderings to use, so without `light` on `:root` and `dark` on `.dark`, every native
+control renders light while the rest of the app is dark. This is the price of `Select` being a
+native select, and it is worth paying for the platform picker on a phone.
+
 ## Colour
 
 ### Action, the brand
@@ -361,7 +368,7 @@ tokens exclusively. Build a surface out of these rather than out of raw elements
 | `IconButton` | An action with no label. `aria-label` is required, because it is the only name the control has. The smallest size renders a 16px glyph inside a 40px box, so the target stays reachable. |
 | `Card` | The canonical resting surface. `interactive` switches on the tint-and-border hover treatment. |
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
-| `Input`, `Select` | Form fields. Both draw on the shared `fieldChrome` helper, so they cannot drift apart. `Select` is a native select, because the mobile pass wants the platform picker on a phone. |
+| `Input`, `Select` | Form fields. Both draw on the shared `fieldChrome` helper, so they cannot drift apart. `Select` is a native select, because the mobile pass wants the platform picker on a phone; see `color-scheme` below for what that costs. |
 | `Modal` | Every dialog. Wraps the Headless UI dialog, so the focus trap, scroll lock, Escape handling and portal come from a maintained implementation. Adds the plain scrim, the float surface and shadow, a token z-index, and the height cap and viewport gutter that stop a tall modal pushing its own actions below the fold on a phone. |
 | `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Pre-existing widgets, restyled onto tokens. |
 

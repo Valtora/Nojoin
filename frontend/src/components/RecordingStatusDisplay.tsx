@@ -140,7 +140,7 @@ export default function RecordingStatusDisplay({
       title="Attach an agenda or a deck to this meeting"
     >
       <Upload className="h-4 w-4" />
-      Upload
+      Attach Docs
     </button>
   );
 

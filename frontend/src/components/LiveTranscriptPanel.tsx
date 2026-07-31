@@ -138,10 +138,13 @@ export default function LiveTranscriptPanel({
         ) : null}
       </div>
 
-      {/* The transcript window used to be a fixed 24rem. It now takes whatever
-          height its column has, with a floor so a short window leaves it
-          readable rather than reducing it to two lines. */}
-      <div className="relative mt-4 flex min-h-0 flex-1 flex-col">
+      {/* The transcript window used to be a fixed 24rem. It now takes the
+          height its column has between a floor and a ceiling: the floor keeps
+          it readable on a short window, and the ceiling stops it stretching to
+          match whatever the guidance column happens to be doing, which is what
+          left it several screens tall with the notes pushed off the fold. Past
+          the ceiling it scrolls, which is what a live transcript does anyway. */}
+      <div className="relative mt-4 flex min-h-0 max-h-[34rem] flex-1 flex-col">
         {/* The transcript window is painted by this overlay rather than by the
             scrolling element, and stops short of the right edge by
             SCROLLBAR_GUTTER. A scroll container always draws its scrollbar
