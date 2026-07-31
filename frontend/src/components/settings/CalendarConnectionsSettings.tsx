@@ -300,7 +300,7 @@ export default function CalendarConnectionsSettings() {
   return (
     <SettingsCard
       id="integrations-calendars"
-      title="Calendar connections"
+      title="Calendar Connections"
       description="Connect Gmail or Outlook calendars, approve access in the provider's own consent screen, then choose which calendars Nojoin syncs for this account."
     >
       {loading ? (

@@ -81,7 +81,7 @@ export default function HelpSettings({
   return (
     <div className="space-y-6">
       <SettingsCard
-        title="Tours and demos"
+        title="Tours and Demos"
         description="Reset onboarding helpers or recreate the sample meeting used for first-run guidance."
       >
         <div className="space-y-4">
@@ -133,7 +133,7 @@ export default function HelpSettings({
       </SettingsCard>
 
       <SettingsCard
-        title="Report a bug"
+        title="Report a Bug"
         description="Open the project issue tracker when you hit a reproducible problem or need to share diagnostics with the team."
       >
         <div className="space-y-4">

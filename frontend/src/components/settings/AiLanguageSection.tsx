@@ -29,7 +29,7 @@ export default function AiLanguageSection({
 
   return (
     <SettingsCard
-      title="Language preferences"
+      title="Language Preferences"
       description="Choose the source language used for transcription and the language used for generated meeting titles and notes."
     >
       <SettingsBlock className="space-y-6">

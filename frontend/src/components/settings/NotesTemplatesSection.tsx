@@ -166,7 +166,7 @@ export default function NotesTemplatesSection({
 
   return (
     <SettingsCard
-      title="Notes structure"
+      title="Notes Structure"
       description="Choose how generated meeting notes are organised. Accuracy rules, table formatting and the transcript itself are fixed; the sections and their emphasis are yours."
     >
       <SettingsBlock className="space-y-4">

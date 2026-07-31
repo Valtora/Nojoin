@@ -222,7 +222,7 @@ export default function GeneralSettings({
       {showDateTime && (
         <SettingsCard
           id="appearance-timezone"
-          title="Date and time"
+          title="Date and Time"
           description="The timezone used across the dashboard, calendars, and task deadlines."
         >
           <SettingsRow
@@ -387,7 +387,7 @@ export default function GeneralSettings({
 
       {showProcessing && (
         <SettingsCard
-          title="Processing defaults"
+          title="Processing Defaults"
           description="How recorded audio is prepared before it is transcribed."
         >
           <SettingsRow

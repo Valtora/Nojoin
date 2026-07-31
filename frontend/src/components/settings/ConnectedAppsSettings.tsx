@@ -74,7 +74,7 @@ export default function ConnectedAppsSettings() {
   return (
     <SettingsCard
       id="integrations-connected-apps"
-      title="Connected apps"
+      title="Connected Apps"
       description="Assistants connected through the Nojoin MCP connector. They can read your meeting library and, when granted, add or update people in your People library."
     >
       {apps === null ? (

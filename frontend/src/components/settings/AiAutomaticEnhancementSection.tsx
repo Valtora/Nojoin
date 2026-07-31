@@ -18,7 +18,7 @@ export default function AiAutomaticEnhancementSection({
 }: AiAutomaticEnhancementSectionProps) {
   return (
     <SettingsCard
-      title="Automatic enhancement"
+      title="Automatic Enhancement"
       description="Control how AI-generated titles are written for your meetings and summaries."
     >
       <SettingsBlock

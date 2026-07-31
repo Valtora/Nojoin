@@ -13,7 +13,7 @@ export default function AiHuggingFaceSection({
 }: AiHuggingFaceSectionProps) {
   return (
     <SettingsCard
-      title="Hugging Face access"
+      title="Hugging Face Access"
       description="View status of the installation token required for diarization and related model downloads."
     >
       <SettingsBlock className="space-y-4">

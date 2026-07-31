@@ -226,7 +226,7 @@ export default function BackupRestore() {
   return (
     <SettingsCard
       id="backup-export"
-      title="Backup and restore"
+      title="Backup and Restore"
       description="Export application data as a restorable archive, and recover it transactionally."
     >
       <SettingsBlock contentClassName="space-y-6">
@@ -430,7 +430,7 @@ export default function BackupRestore() {
           <div className="rounded-md border border-status-warning-border bg-status-warning-bg p-4">
             <div className="flex items-start justify-between gap-3 mb-3">
               <h5 className="text-sm font-semibold text-status-warning-fg">
-                Records that could not be restored
+                Records That Could Not Be Restored
               </h5>
               <button
                 onClick={() => {

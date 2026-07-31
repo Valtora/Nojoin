@@ -318,7 +318,7 @@ export default function UpdatesSettings({
   return (
     <div className="space-y-8">
       <SettingsCard
-        title="Release overview"
+        title="Release Overview"
         description="Track the installed version, the latest stable release, and the published release links."
         headerAside={
           <button
@@ -416,7 +416,7 @@ export default function UpdatesSettings({
       </SettingsCard>
 
       <SettingsCard
-        title="Latest release snapshot"
+        title="Latest Release Snapshot"
         description="The latest stable release metadata is sourced from GitHub Releases."
         badge={
           <SettingsStatusBadge tone={getUpdateStatusTone(versionInfo.update_status)}>
@@ -477,7 +477,7 @@ export default function UpdatesSettings({
       </SettingsCard>
 
       <SettingsCard
-        title="Release history"
+        title="Release History"
         description="Recent Nojoin releases published on GitHub."
       >
         {versionInfo.releases.length > 0 ? (

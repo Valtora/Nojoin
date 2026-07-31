@@ -82,7 +82,7 @@ export default function AiModelDependenciesSection({
 
   return (
     <SettingsCard
-      title="Model dependencies"
+      title="Model Dependencies"
       description="Inspect and manage local AI model assets on the server."
     >
       <SettingsBlock className="space-y-6">

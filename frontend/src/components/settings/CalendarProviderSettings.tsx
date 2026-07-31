@@ -173,7 +173,7 @@ export default function CalendarProviderSettings() {
   return (
     <SettingsCard
       id="integrations-calendar-providers"
-      title="Calendar provider credentials"
+      title="Calendar Provider Credentials"
       description="The installation's OAuth app credentials for Google and Microsoft. Nobody else pastes these values; everyone else only clicks Connect and completes the provider's own sign-in."
     >
       {loading ? (

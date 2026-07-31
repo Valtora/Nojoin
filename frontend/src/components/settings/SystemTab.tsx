@@ -567,7 +567,7 @@ export default function SystemTab() {
   return (
     <SettingsCard
       id="system-logs"
-      title="Service health and logs"
+      title="Service Health and Logs"
       description="Live operational output from the Nojoin services."
     >
       <SettingsBlock contentClassName="animate-in fade-in duration-500 space-y-4">

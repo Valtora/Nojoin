@@ -47,7 +47,7 @@ export default function SecondaryProviderSection({
   if (!sp) {
     return (
       <SettingsCard
-        title="Fallback provider"
+        title="Fallback Provider"
         badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
         description="Used automatically when the primary provider is unavailable."
       >
@@ -94,7 +94,7 @@ export default function SecondaryProviderSection({
 
   return (
     <SettingsCard
-      title="Fallback provider"
+      title="Fallback Provider"
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
       description="Used automatically when the primary provider — or a user's own Claude or ChatGPT subscription — is unavailable."
     >

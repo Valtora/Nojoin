@@ -91,7 +91,7 @@ export default function AiTranscriptionSection({
 
   return (
     <SettingsCard
-      title="Transcription model"
+      title="Transcription Model"
       description="Choose the engine Nojoin uses for live and final transcription during normal recording."
     >
       <SettingsBlock className="space-y-4">

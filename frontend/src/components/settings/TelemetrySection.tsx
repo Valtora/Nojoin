@@ -99,7 +99,7 @@ export default function TelemetrySection() {
   if (loading) {
     return (
       <SettingsCard
-        title="Anonymous usage data"
+        title="Anonymous Usage Data"
         description="Loading the current setting."
       >
         <Loader2 className="h-4 w-4 animate-spin text-contrast-icon-muted" />
@@ -113,7 +113,7 @@ export default function TelemetrySection() {
 
   return (
     <SettingsCard
-      title="Anonymous usage data"
+      title="Anonymous Usage Data"
       description="Helps decide what to build next by counting deployments and feature use. Never includes recordings, transcripts, notes, names, or keys, and the data is never sold."
     >
       {status.managed_by_env && (

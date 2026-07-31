@@ -61,7 +61,7 @@ export default function ServerProviderSection({
 
   return (
     <SettingsCard
-      title="Server provider"
+      title="Server Provider"
       badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
       description="The provider and model this server uses for every account on the server default. Some fields are set in the server's .env file and shown here for reference."
     >

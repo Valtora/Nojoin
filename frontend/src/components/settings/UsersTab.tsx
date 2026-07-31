@@ -227,7 +227,7 @@ export default function UsersTab() {
               Create user
             </div>
             <h4 className="mt-2 text-base font-semibold text-foreground">
-              New account
+              New Account
             </h4>
           </div>
           <form

@@ -117,7 +117,7 @@ export default function CliUsageTab() {
   return (
     <SettingsCard
       id="ai-providers-usage"
-      title="Usage and quota"
+      title="Usage and Quota"
       description="Per-user subscription token usage and rate-limit status, across Claude and ChatGPT."
     >
       <SettingsBlock contentClassName="space-y-4">

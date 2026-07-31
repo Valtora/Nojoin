@@ -183,7 +183,7 @@ export default function AiRoutingSection({
 
   return (
     <SettingsCard
-      title="AI routing"
+      title="AI Routing"
       description="Choose how AI runs for your account. This is a per-user preference and does not change anything for other users."
     >
       <div className="space-y-4">
