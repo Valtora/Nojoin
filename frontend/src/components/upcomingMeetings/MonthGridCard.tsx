@@ -95,9 +95,11 @@ export default function MonthGridCard({
       {/* The grid takes whatever height the column has left, so the module fills
           its column instead of ending short and leaving a dead corner beneath
           it. The rows are capped so that on a very tall viewport the cells stop
-          growing rather than becoming a wall of empty boxes. */}
+          growing rather than becoming a wall of empty boxes: 40rem is six rows
+          of roughly 100px, which is as large as a day cell holding a number and
+          four dots has any use for. */}
       <div className="mt-2 min-h-0 flex-1">
-        <div className="grid h-full max-h-[34rem] grid-cols-7 gap-2 text-center [grid-auto-rows:minmax(3.25rem,1fr)]">
+        <div className="grid h-full max-h-[40rem] grid-cols-7 gap-2 text-center [grid-auto-rows:minmax(3.25rem,1fr)]">
           {monthDays.map((day) => {
             const inCurrentMonth = isSameMonth(day, viewedMonth);
             const isCurrentDay = isSameDay(day, currentDay);

@@ -37,8 +37,9 @@ export default function DashboardHome() {
 
   return (
     <Workspace
-      contentClassName="workspace-shell workspace-shell-dense"
+      contentClassName="workspace-shell workspace-shell-dense grow"
       paddingClassName="workspace-pad-y"
+      backgroundClassName="bg-surface-page flex flex-col"
     >
       {/* One column, then two from 54rem, then three from 74rem, measured
           against the workspace rather than the viewport.
@@ -73,11 +74,21 @@ export default function DashboardHome() {
           whatever is processing, the agenda, tasks, recents, and the month grid
           last. A wrapper cannot reorder across its own boundary, so without
           this the modules would come out grouped by desktop column. */}
-      <div className="@container">
+      {/* The grid takes the height the window has left, so the columns reach the
+          bottom of the viewport instead of stopping short and leaving a dead
+          band under them. `min-height` rather than `flex-grow`, because content
+          taller than the window has to push past it rather than be clipped.
+
+          The 64rem ceiling is the one arbitrary number here. Without it a very
+          tall display stretches whichever module is flexible, and a quiet day
+          would give you a 1300px empty agenda. Above the ceiling the leftover
+          sits under the grid, where it reads as page rather than as a card that
+          failed to fill. */}
+      <div className="@container flex grow flex-col">
         <section
-          className={`flex flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch ${
+          className={`flex flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:min-h-[min(100%,64rem)] @min-[54rem]:grid-cols-[minmax(0,1.1fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch ${
             hasThirdColumn
-              ? "@min-[74rem]:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)_minmax(18rem,1fr)]"
+              ? "@min-[74rem]:grid-cols-[minmax(0,1.25fr)_minmax(18rem,1fr)_minmax(16rem,0.85fr)]"
               : ""
           }`}
         >
@@ -97,17 +108,23 @@ export default function DashboardHome() {
             <MonthGridCard calendar={calendar} />
           </div>
 
+          {/* The `order` values are the phone sequence. This column is the one
+              place they need overriding, because on a desktop the task list
+              sits above the agenda while on a phone the agenda comes first. The
+              two orders are independent by design; that is the whole point of
+              the modules being direct grid children. */}
           <div className="contents @min-[54rem]:col-start-2 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
-            <div id="dashboard-meeting-controls" className="order-1">
-              <MeetingControls
-                variant="dashboard"
-                onMeetingEnd={() => {
-                  window.dispatchEvent(new Event("recording-updated"));
-                }}
-              />
+            <div
+              id="dashboard-task-cards"
+              className="order-4 flex min-h-0 flex-1 flex-col @min-[54rem]:order-1"
+            >
+              <DashboardTasksPanel />
             </div>
 
-            <div id="dashboard-agenda" className="order-3 flex min-h-0 flex-1 flex-col">
+            <div
+              id="dashboard-agenda"
+              className="order-3 flex min-h-0 flex-1 flex-col @min-[54rem]:order-2"
+            >
               <AgendaCard calendar={calendar} />
             </div>
           </div>
@@ -117,15 +134,20 @@ export default function DashboardHome() {
               hasThirdColumn ? "@min-[74rem]:col-start-3 @min-[74rem]:row-start-1" : ""
             }`}
           >
+            <div id="dashboard-meeting-controls" className="order-1">
+              <MeetingControls
+                variant="dashboard"
+                onMeetingEnd={() => {
+                  window.dispatchEvent(new Event("recording-updated"));
+                }}
+              />
+            </div>
+
             {showProcessing && (
               <div id="dashboard-processing" className="order-2">
                 <ProcessingCard recordings={processing} />
               </div>
             )}
-
-            <div id="dashboard-task-cards" className="order-4 flex min-h-0 flex-1 flex-col">
-              <DashboardTasksPanel />
-            </div>
 
             {showRecents && (
               <div

@@ -99,6 +99,19 @@ describe("DashboardHome", () => {
     expect(moduleIds(container)).toHaveLength(6);
   });
 
+  it("puts the task list above the agenda on a desktop, but not on a phone", () => {
+    useDashboardRecordings.mockReturnValue({ recent: [], processing: [] });
+
+    const { container } = renderWithProviders(<DashboardHome />);
+    const tasks = container.querySelector("#dashboard-task-cards");
+    const agenda = container.querySelector("#dashboard-agenda");
+
+    // Two independent sequences over the same elements: the phone order runs
+    // agenda then tasks, the desktop order reverses them inside their column.
+    expect(tasks).toHaveClass("order-4", "@min-[54rem]:order-1");
+    expect(agenda).toHaveClass("order-3", "@min-[54rem]:order-2");
+  });
+
   it("puts the action first on a phone, and the month grid last", () => {
     useDashboardRecordings.mockReturnValue({
       recent: [recording("1")],

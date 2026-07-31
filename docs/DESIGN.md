@@ -240,11 +240,14 @@ prose surface beside it exactly where it was.
 The dashboard's grid uses three breakpoints, chosen so that a column is never narrower than about
 340px:
 
-| Workspace width | Columns |
-| --- | --- |
-| below 54rem | 1 |
-| 54rem to 74rem | 2 |
-| 74rem and above | 3 |
+| Workspace width | Columns | Split |
+| --- | --- | --- |
+| below 54rem | 1 | |
+| 54rem to 74rem | 2 | 1.1 / 1 |
+| 74rem and above | 3 | 1.25 / 1 / 0.85 |
+
+Columns are deliberately unequal. The month grid needs the most, because a day cell holds a number
+and up to four markers; the list column needs the least, because a row is a title and a badge.
 
 **These are container queries against the workspace, not media queries against the viewport**, and
 that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
@@ -271,13 +274,22 @@ Three rules follow from that grid:
 - **A column that nothing fills does not exist.** The third column appears only when a module occupies
   it; when it is empty its occupants fold back into the second column, so the result is a two-column
   layout rather than an empty gutter.
+- **The grid takes the height the window has left, up to a ceiling.** `min-height: min(100%, 64rem)`,
+  so the columns reach the bottom of a short window instead of leaving a dead band under them, and
+  content taller than the window pushes past rather than being clipped. `min-height` rather than
+  `flex-grow` for exactly that reason. The ceiling exists because an uncapped fill on a very tall
+  display stretches whichever module is flexible, and a quiet day would produce a 1300px empty
+  agenda; above it the leftover sits under the grid, where it reads as page.
 
 Modules are direct children of the grid, not children of per-column wrappers. Wrappers still exist
 for stacking, but they take `display: contents` at one column, which drops them out of the box tree so
 that every module becomes a direct child of one flex column and `order-*` can sequence them freely.
 A wrapper cannot reorder across its own boundary, so without this the phone order is forced to match
 the desktop columns. On a phone the order is action first: capture, then anything processing, then
-the agenda, tasks, recent recordings, and the month grid last.
+the agenda, tasks, recent recordings, and the month grid last. The desktop stack inside a column is
+a separate sequence, set with a container-query `order` override where the two disagree, which is
+what keeps a phone opening on the record button while a desktop leads its middle column with the
+task list.
 
 ### Surface nesting
 
