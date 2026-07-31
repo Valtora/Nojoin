@@ -193,7 +193,7 @@ function MeetingEdgePanel({
           : "Autosaves";
 
   return (
-    <section className="density-surface flex min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <section className="@container density-surface flex min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           {status === "updating" ? (
@@ -215,7 +215,7 @@ function MeetingEdgePanel({
           {payload?.summary ? (
             <div className="density-surface-panel bg-surface-inset p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-                Current read
+                Current Read
               </div>
               <p className="mt-2 text-sm leading-6 text-contrast-muted">
                 {payload.summary}
@@ -223,11 +223,16 @@ function MeetingEdgePanel({
             </div>
           ) : null}
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          {/* Side by side only when this panel is wide enough to carry two
+              columns of prose, which is a question about the panel and not
+              about the window. On `xl:` these split at a 1280px viewport even
+              when the panel itself was 400px, which is what wrapped these
+              lists to three words a line. */}
+          <div className="grid gap-4 @min-[34rem]:grid-cols-2">
             <div className="density-surface-panel bg-surface-inset p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <MessageSquareQuote className="h-4 w-4 text-action-text" />
-                Questions to ask
+                Questions to Ask
               </div>
               <ul className="mt-3 space-y-2 text-sm leading-6 text-contrast-muted">
                 {questions.length > 0 ? (
@@ -247,7 +252,7 @@ function MeetingEdgePanel({
             <div className="density-surface-panel bg-surface-inset p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Lightbulb className="h-4 w-4 text-action-text" />
-                Points to raise
+                Points to Raise
               </div>
               <ul className="mt-3 space-y-2 text-sm leading-6 text-contrast-muted">
                 {points.length > 0 ? (

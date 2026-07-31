@@ -159,96 +159,97 @@ export default function RecordingStatusDisplay({
         </div>
       ) : null}
 
-      {/* Three columns from 74rem of workspace, two from 54rem, one below,
-          measured against the workspace rather than the viewport because this
-          view sits beside the recordings rail. Same model as the dashboard, and
-          the reasoning is written up there.
+      {/* A toolbar, then three columns from 74rem of workspace, two from 54rem,
+          one below. Measured against the workspace rather than the viewport
+          because this view sits beside the recordings rail; the model is the
+          dashboard's and the reasoning is written up there.
 
-          Columns group by job. The console owns the first, with documents under
-          it, since attaching a deck is something you do once. The middle column
-          is the meeting's output: the live transcript while recording, the
-          pipeline's progress once it is not. Guidance and your own notes share
-          the third.
-
-          At one column the wrappers are `display: contents`, so the five panels
-          become direct children of one flex column and `order-*` sequences
-          them: controls first, then transcript, guidance, notes, documents. */}
+          The two panels that carry dense text get the two wide columns: the
+          transcript and Meeting Edge, the latter being two lists of prose side
+          by side and so the worst sufferer from a narrow column. Notes and
+          documents take the third, since a textarea and a file list need the
+          least width of anything here. */}
       <div
-        className={`@container flex grow flex-col ${
+        className={`@container flex grow flex-col gap-[var(--workspace-gap)] ${
           showMobileBackButton && onBack
             ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0"
             : ""
         }`}
       >
-        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(20rem,1.25fr)] @min-[54rem]:items-stretch @min-[74rem]:grid-cols-[minmax(0,0.95fr)_minmax(20rem,1.3fr)_minmax(18rem,1.05fr)]">
-          {/* The console, and the things you touch rather than read. */}
-          <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] @min-[74rem]:row-span-1">
-            <section className="density-surface order-1 flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
-                  {isActiveRecording ? (
-                    isPaused ? (
-                      <Pause className="h-3.5 w-3.5" />
-                    ) : (
-                      <Mic className="h-3.5 w-3.5" />
-                    )
-                  ) : (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  )}
-                  {stateLabel}
-                </span>
-                {!isActiveRecording ? (
-                  <span
-                    className="ml-auto font-mono text-lg font-semibold tabular-nums text-foreground"
-                    title="Recording length"
-                  >
-                    {formatClock(Math.round(recording.duration_seconds || 0))}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="mt-4 space-y-4">
-                {isActiveRecording ? (
-                  <>
-                    <LiveAudioWaveform
-                      recordingId={recording.id}
-                      enabled
-                      paused={isPaused}
-                    />
-                    <LiveMeetingControls
-                      size="full"
-                      onMeetingEnd={() => {
-                        window.dispatchEvent(new Event("recording-updated"));
-                      }}
-                      onMeetingDiscard={onDiscarded}
-                    />
-                  </>
+        {/* The console is chrome, not a panel. As a card in the first column it
+            took a third of the width to show a waveform and four buttons, and
+            charged it to the transcript and the guidance beside it, both of
+            which are dense text that wraps to three words in a narrow column.
+            As a strip it costs one row and gives that width back. */}
+        <section className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
+              {isActiveRecording ? (
+                isPaused ? (
+                  <Pause className="h-3.5 w-3.5" />
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleProcessingDiscard}
-                    disabled={isDiscarding}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-status-danger-border bg-surface-card px-4 py-2.5 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Discard this recording and stop processing"
-                  >
-                    {isDiscarding ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                    Discard Recording
-                  </button>
-                )}
-              </div>
-            </section>
+                  <Mic className="h-3.5 w-3.5" />
+                )
+              ) : (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              {stateLabel}
+            </span>
 
-            <div className="order-5 flex min-h-0 flex-1 flex-col">
-              <LiveDocumentsPanel recordingId={recording.id} />
-            </div>
+            {isActiveRecording ? (
+              // The waveform is the flexible element: it takes whatever the
+              // state pill and the transport leave, so the strip stays one row
+              // at any width the columns below it are worth having.
+              <div className="min-w-[12rem] flex-1">
+                <LiveAudioWaveform
+                  recordingId={recording.id}
+                  enabled
+                  paused={isPaused}
+                  compact
+                />
+              </div>
+            ) : (
+              <>
+                <span
+                  className="font-mono text-xl font-semibold tabular-nums text-foreground"
+                  title="Recording length"
+                >
+                  {formatClock(Math.round(recording.duration_seconds || 0))}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleProcessingDiscard}
+                  disabled={isDiscarding}
+                  className="ml-auto inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-status-danger-border bg-surface-card px-4 text-sm font-semibold text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Discard this recording and stop processing"
+                >
+                  {isDiscarding ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Discard Recording
+                </button>
+              </>
+            )}
           </div>
 
+          {isActiveRecording ? (
+            <div className="mt-3">
+              <LiveMeetingControls
+                size="bar"
+                onMeetingEnd={() => {
+                  window.dispatchEvent(new Event("recording-updated"));
+                }}
+                onMeetingDiscard={onDiscarded}
+              />
+            </div>
+          ) : null}
+        </section>
+
+        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1.35fr)_minmax(20rem,1fr)] @min-[54rem]:items-stretch @min-[74rem]:grid-cols-[minmax(0,1.25fr)_minmax(22rem,1.2fr)_minmax(16rem,0.75fr)]">
           {/* The meeting's output: what was said, or how far along it is. */}
-          <div className="order-2 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1">
+          <div className="order-1 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:row-span-2 @min-[74rem]:row-span-1">
             {isActiveRecording ? (
               <LiveTranscriptPanel
                 segments={liveTranscript.segments}
@@ -306,28 +307,44 @@ export default function RecordingStatusDisplay({
             )}
           </div>
 
-          {/* Guidance, and what you write yourself. */}
-          <div className="contents @min-[54rem]:col-start-2 @min-[54rem]:row-start-2 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] @min-[74rem]:col-start-3 @min-[74rem]:row-start-1">
-            {showMeetingEdge ? (
-              <div className="order-3 flex min-w-0 flex-col">
-                <MeetingEdgePanel
-                  payload={recording.transcript?.meeting_edge_payload}
-                  focusText={recording.transcript?.meeting_edge_focus}
-                  status={recording.transcript?.meeting_edge_status}
-                  onSaveFocus={onSaveMeetingEdgeFocus}
-                  contextLevel={meetingEdgeContextLevel}
-                  onSaveContextLevel={onSaveMeetingEdgeContextLevel}
-                />
-              </div>
-            ) : null}
+          {/* Guidance gets a column of its own: it is two lists of prose side
+              by side, so it is the panel that suffers most from a narrow one. */}
+          {showMeetingEdge ? (
+            <div className="order-2 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1">
+              <MeetingEdgePanel
+                payload={recording.transcript?.meeting_edge_payload}
+                focusText={recording.transcript?.meeting_edge_focus}
+                status={recording.transcript?.meeting_edge_status}
+                onSaveFocus={onSaveMeetingEdgeFocus}
+                contextLevel={meetingEdgeContextLevel}
+                onSaveContextLevel={onSaveMeetingEdgeContextLevel}
+              />
+            </div>
+          ) : null}
 
-            <div className="order-4 flex min-h-0 flex-1 flex-col">
+          {/* What you write and what you attach: the narrow column, because a
+              textarea and a file list need the least. */}
+          {/* With Meeting Edge switched off there is nothing in the second
+              column's first row, so this takes it rather than leaving a gap
+              above itself. Emitted as one class or the other, never both:
+              competing `row-start` utilities resolve by which Tailwind wrote
+              last, not by which came last in the string. */}
+          <div
+            className={`contents @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)] @min-[54rem]:col-start-2 @min-[74rem]:col-start-3 @min-[74rem]:row-start-1 ${
+              showMeetingEdge ? "@min-[54rem]:row-start-2" : "@min-[54rem]:row-start-1"
+            }`}
+          >
+            <div className="order-3 flex min-h-0 flex-1 flex-col">
               <ProcessingNotesPanel
                 value={recording.transcript?.user_notes}
                 onSave={onSaveProcessingNotes}
                 disabled={notesAreLocked}
                 disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
               />
+            </div>
+
+            <div className="order-4 flex min-w-0 flex-col">
+              <LiveDocumentsPanel recordingId={recording.id} />
             </div>
           </div>
         </section>

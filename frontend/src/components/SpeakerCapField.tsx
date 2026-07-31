@@ -134,7 +134,10 @@ export default function SpeakerCapField({
     <div
       className={`flex items-stretch overflow-hidden rounded-xl border bg-control-bg transition-colors focus-within:border-action focus-within:ring-1 focus-within:ring-focus-ring ${
         compact ? "h-8" : "h-9"
-      } ${inline ? "w-[9.5rem]" : "w-full"} ${
+        // Wide enough for the "Auto-detect" placeholder plus both step buttons.
+        // At 9.5rem the two buttons and the input's padding left about 104px for
+        // a label that needs more, so the final letter was clipped.
+      } ${inline ? "w-[11.5rem]" : "w-full"} ${
         invalid
           ? "border-status-danger-border"
           : "border-control-border"
@@ -201,13 +204,13 @@ export default function SpeakerCapField({
 
   if (inline) {
     return (
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <label
           htmlFor={inputId}
           className="flex items-center gap-1.5 text-xs font-medium text-contrast-helper"
         >
           <Users className="h-3.5 w-3.5" aria-hidden="true" />
-          Maximum speakers
+          Max Speakers
         </label>
         {stepper}
         <span
@@ -240,7 +243,7 @@ export default function SpeakerCapField({
         className="flex items-center gap-1.5 text-xs font-medium text-contrast-helper"
       >
         <Users className="h-3.5 w-3.5" aria-hidden="true" />
-        Maximum speakers
+        Max Speakers
         <span className="font-normal text-contrast-helper">
           (optional)
         </span>

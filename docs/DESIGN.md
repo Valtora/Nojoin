@@ -257,12 +257,19 @@ Each column pairs modules that keep their natural height with exactly one that a
 remainder. Meet Now and the month grid stay the size they need; the agenda, the task list and
 Recent Meetings take whatever is left.
 
-The live capture view groups the same way, by job rather than by size: the capture console with
-documents under it, the meeting's own output in the middle, and guidance with your notes on the
-right. The middle column carries the live transcript while recording and the pipeline's progress
-once it is not, so pressing Stop reflows one column rather than re-laying out the page. This is
-also why that view moved off the 64rem feature cap: it is a console, not a page of prose, and a
-reading measure is what forced five panels into one long scroll.
+The live capture view allocates by how much width a panel's content actually needs. Its capture
+controls are a toolbar across the top rather than a card in a column, because a waveform and four
+buttons do not need a third of the page and the panels beside them do. Below it, the live
+transcript and Meeting Edge take the two wide columns, both being dense prose, with notes and
+documents in a narrower third. The first column carries the transcript while recording and the
+pipeline's progress once it is not, so pressing Stop reflows one column rather than re-laying out
+the page. This is also why that view moved off the 64rem feature cap: it is a console, not a page
+of prose, and a reading measure is what forced five panels into one long scroll.
+
+**A panel that subdivides must query itself, not the window.** Meeting Edge splits into two lists
+side by side, and did so at the `xl` *viewport* breakpoint: at a 1280px window it subdivided a
+400px column and wrapped both lists to three words a line. Any `grid-cols` inside a panel that can
+land in a column belongs behind a container query on that panel.
 
 **These are container queries against the workspace, not media queries against the viewport**, and
 that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the

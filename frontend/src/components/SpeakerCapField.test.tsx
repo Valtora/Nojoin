@@ -35,7 +35,7 @@ describe("SpeakerCapField", () => {
     const onCommit = vi.fn();
     render(<SpeakerCapField value={null} onCommit={onCommit} />);
 
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     fireEvent.change(input, { target: { value: "3" } });
     fireEvent.blur(input);
 
@@ -46,7 +46,7 @@ describe("SpeakerCapField", () => {
     const onCommit = vi.fn();
     render(<SpeakerCapField value={4} onCommit={onCommit} />);
 
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     fireEvent.change(input, { target: { value: "" } });
     fireEvent.blur(input);
 
@@ -57,7 +57,7 @@ describe("SpeakerCapField", () => {
     const onCommit = vi.fn();
     render(<SpeakerCapField value={2} onCommit={onCommit} />);
 
-    const input = screen.getByLabelText(/maximum speakers/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "0" } });
     fireEvent.blur(input);
 
@@ -70,7 +70,7 @@ describe("SpeakerCapField", () => {
     const onCommit = vi.fn();
     render(<SpeakerCapField value={3} onCommit={onCommit} />);
 
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     fireEvent.focus(input);
     fireEvent.blur(input);
 
@@ -81,7 +81,7 @@ describe("SpeakerCapField", () => {
     const onCommit = vi.fn();
     render(<SpeakerCapField value={5} onCommit={onCommit} />);
 
-    const input = screen.getByLabelText(/maximum speakers/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "9" } });
     fireEvent.keyDown(input, { key: "Escape" });
 
@@ -95,7 +95,7 @@ describe("SpeakerCapField", () => {
       <SpeakerCapField value={null} onCommit={onCommit} />,
     );
 
-    const input = screen.getByLabelText(/maximum speakers/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/max speakers/i) as HTMLInputElement;
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "4" } });
 
@@ -107,7 +107,7 @@ describe("SpeakerCapField", () => {
 
   it("shows the auto-detect placeholder when no cap is set", () => {
     render(<SpeakerCapField value={null} onCommit={vi.fn()} />);
-    expect(screen.getByLabelText(/maximum speakers/i)).toHaveAttribute(
+    expect(screen.getByLabelText(/max speakers/i)).toHaveAttribute(
       "placeholder",
       "Auto-detect",
     );
@@ -178,7 +178,7 @@ describe("SpeakerCapField stepper", () => {
     render(<SpeakerCapField value={3} onCommit={vi.fn()} />);
     // Still a number input, so arrow keys keep working; the browser's own
     // spinner is what the flanking buttons replace.
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     expect(input).toHaveAttribute("type", "number");
     expect(input.className).toContain("[appearance:textfield]");
   });
@@ -192,13 +192,13 @@ describe("SpeakerCapField inline layout", () => {
 
     const hint = screen.getByText(/applied when you stop/i);
     expect(hint).toHaveClass("sr-only");
-    expect(screen.getByLabelText(/maximum speakers/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/max speakers/i)).toBeInTheDocument();
   });
 
   it("surfaces the hint visibly when an entry is rejected", () => {
     render(<SpeakerCapField value={2} onCommit={vi.fn()} layout="inline" />);
 
-    const input = screen.getByLabelText(/maximum speakers/i);
+    const input = screen.getByLabelText(/max speakers/i);
     fireEvent.change(input, { target: { value: "99" } });
     fireEvent.blur(input);
 

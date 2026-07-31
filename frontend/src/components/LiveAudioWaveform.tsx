@@ -29,6 +29,8 @@ interface LiveAudioWaveformProps {
   recordingId: RecordingId;
   enabled: boolean;
   paused?: boolean;
+  /** Short track for the recording workspace's toolbar row. */
+  compact?: boolean;
 }
 
 const zeroHistory = () => Array.from({ length: HISTORY_LENGTH }, () => 0);
@@ -38,16 +40,25 @@ function WaveformTrack({
   barClassName,
   dynamicMin,
   dynamicMax,
+  compact = false,
 }: {
   history: number[];
   barClassName: string;
   dynamicMin: number;
   dynamicMax: number;
+  compact?: boolean;
 }) {
   const range = dynamicMax - dynamicMin;
   return (
-    <div className="rounded-3xl border border-surface-border bg-surface-card p-4 shadow-float">
-      <div className="flex h-24 items-end gap-px sm:gap-1 overflow-hidden rounded-surface-panel bg-surface-inset px-2 py-3">
+    // One surface, not two. This used to wrap the track in a card fill, a
+    // border and a *float* shadow, inside the card that already contains it:
+    // a card in a card, and an elevation reserved for things that overlay
+    // other content.
+    <div
+      className={`flex items-end gap-px overflow-hidden rounded-surface-panel bg-surface-inset px-2 sm:gap-1 ${
+        compact ? "h-14 py-2" : "h-24 py-3"
+      }`}
+    >
         {history.map((sample, index) => {
           const scaled = range > 0 ? Math.max(0, Math.min(100, ((sample - dynamicMin) / range) * 100)) : 0;
           return (
@@ -65,7 +76,6 @@ function WaveformTrack({
             </div>
           );
         })}
-      </div>
     </div>
   );
 }
@@ -74,6 +84,7 @@ export default function LiveAudioWaveform({
   recordingId,
   enabled,
   paused = false,
+  compact = false,
 }: LiveAudioWaveformProps) {
   const { controller, runtimeActive, support } = useCapture();
   const levels = useLiveWaveform(controller);
@@ -218,6 +229,7 @@ export default function LiveAudioWaveform({
         barClassName={AUDIO_BAR_CLASS_NAME}
         dynamicMin={scale.min}
         dynamicMax={scale.max}
+        compact={compact}
       />
     </div>
   );

@@ -9,7 +9,13 @@ import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 interface LiveMeetingControlsProps {
-  size?: "compact" | "full";
+  /**
+   * `compact` is the rail's icon-only row, `full` the stacked card, and `bar`
+   * the recording workspace's toolbar: one line carrying the state, the clock,
+   * the transport and the speaker cap, so the columns beneath it keep their
+   * width for the panels that need it.
+   */
+  size?: "compact" | "full" | "bar";
   onMeetingEnd?: () => void;
   onMeetingDiscard?: () => void;
 }
@@ -85,7 +91,9 @@ export default function LiveMeetingControls({
       value={maxSpeakers}
       onCommit={handleMaxSpeakersCommit}
       disabled={transportDisabled || !recordingId}
-      size={size}
+      // The bar takes the standard control height: `compact` is the rail's
+      // icon-only row, and this is a toolbar with room for a normal field.
+      size={size === "compact" ? "compact" : "full"}
       layout="inline"
       liveHint
       idPrefix={`live-speaker-cap-${size}`}
@@ -234,6 +242,81 @@ export default function LiveMeetingControls({
         </div>
         {coverageBadge}
         {speakerCapField}
+      </div>
+    );
+  }
+
+  if (size === "bar") {
+    const barButtonClass =
+      "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <div className="density-surface-panel flex shrink-0 items-center gap-3 bg-status-danger-bg px-3 py-1.5 text-status-danger-fg">
+            <span
+              className={`h-2.5 w-2.5 rounded-full bg-danger ${isRecording ? "animate-pulse" : ""}`}
+            />
+            <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+              {statusLabel}
+            </span>
+            <span className="font-mono text-xl font-semibold tabular-nums text-foreground">
+              {formatTime(elapsedSeconds)}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {isRecording ? (
+              <button
+                type="button"
+                onClick={() => sendCommand("pause")}
+                disabled={transportDisabled}
+                className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
+                title="Pause recording"
+              >
+                <Pause className="h-4 w-4" />
+                Pause
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => sendCommand("resume")}
+                disabled={transportDisabled}
+                className={`${barButtonClass} border border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text`}
+                title="Resume recording"
+              >
+                <Play className="h-4 w-4" />
+                Resume
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleStop}
+              disabled={stopDisabled}
+              className={`${barButtonClass} bg-status-danger-bg text-foreground hover:bg-status-danger-bg`}
+              title="Stop recording"
+            >
+              <Square className="h-4 w-4 fill-current" />
+              Stop
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDiscard}
+              disabled={stopDisabled}
+              className={`${barButtonClass} border border-status-danger-border bg-surface-card text-status-danger-fg hover:bg-status-danger-bg`}
+              title="Discard recording"
+            >
+              <Trash2 className="h-4 w-4" />
+              Discard
+            </button>
+          </div>
+
+          <div className="ml-auto shrink-0">{speakerCapField}</div>
+        </div>
+
+        {coverageBadge}
       </div>
     );
   }
