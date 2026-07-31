@@ -152,11 +152,22 @@ Each phase is one reviewable commit or a small set, gated by `npm run lint`, `np
 
 ### Phase D: dashboard modules
 
-- Split the calendar card: month grid and agenda become separate modules, the toggle and the day
-  view are removed.
-- Add recent recordings and processing in flight, both from one fetch.
-- Empty-module hiding, with the three-module floor.
-- Mobile ordering per decision 12.
+Split in two, because the calendar work is a refactor of a 1,870-line subsystem and the modules are
+additive.
+
+**D1, done.** Recent recordings and processing in flight, from one shared fetch. Empty-module
+hiding with the three-module floor. The third column, which exists only when something fills it.
+
+**D2, outstanding.** Split the calendar card: the month grid and the agenda become separate
+modules, and the Month/Agenda toggle and the day view under the grid are removed. `useCalendarDashboard`
+is called once by the parent and its data passed down, rather than by both modules, so the fetch is
+not doubled. This is also where:
+
+- `CalendarCards`' nesting is fixed, deferred from Phase B because this rewrite touches it.
+- The modules become direct grid children with `order` utilities, which is what decision 12's
+  phone ordering needs: Processing currently sits third on a phone rather than second, because it
+  shares a column wrapper with the recents module.
+- The calendar and agenda headers are built in the Phase C style rather than retrofitted.
 
 ### Phase E: close-out
 
