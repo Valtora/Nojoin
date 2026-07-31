@@ -87,6 +87,7 @@ pytest
 
 cd frontend
 npm run lint
+npm run check:contrast
 npm run test
 npm run build
 
@@ -148,7 +149,8 @@ The release pipeline is instead self-gating through the workflow's own `needs:` 
 ## Verification By Change Scope
 
 - Backend or worker code: run `pytest`.
-- Frontend code: run `npm run lint`, `npm run test`, and `npm run build`.
+- Frontend code: run `npm run lint`, `npm run check:contrast`, `npm run test`, and `npm run build`.
+- Design token changes in `frontend/src/app/globals.css`: `npm run check:contrast` measures the declared pairings in both themes and fails on any that drops below its threshold. Adding a token that participates in a foreground/background relationship means adding that pairing to `frontend/scripts/check-contrast.mjs`; see [DESIGN.md](DESIGN.md#accessibility) for the thresholds and what they apply to.
 - Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behaviour, selected microphone behaviour, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
 - Documentation-only changes: run `python3 scripts/validate_docs.py`.
 - Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision. Also run `python3 scripts/check_migrations.py` against a throwaway Postgres — `validate_alembic.py` only proves the revision graph resolves, and a migration that is well-formed can still abort on real data.
