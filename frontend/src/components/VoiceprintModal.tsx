@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { X, Fingerprint, Link, Plus, HardDrive, AlertCircle, Check, Loader2 } from 'lucide-react';
+import { Fingerprint, Link, Plus, HardDrive, AlertCircle, Check } from 'lucide-react';
+import Button from './ui/Button';
+import Modal from './ui/Modal';
 import { RecordingId, VoiceprintExtractResult, VoiceprintMatchInfo, BatchVoiceprintResult } from '@/types';
 import { applyVoiceprintAction, VoiceprintAction } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
@@ -384,68 +385,56 @@ export default function VoiceprintModal({
     return false;
   };
 
-  if (!isOpen || !mounted) return null;
+  if (!mounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
-      <div className="bg-surface-card rounded-xl shadow-2xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-status-info-bg rounded-lg">
-              <Fingerprint className="w-5 h-5 text-status-info-fg" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">
-                {isBatchMode ? 'Configure Voiceprints' : 'Voiceprint Created'}
-              </h2>
-              <p className="text-sm text-contrast-helper">
-                {isBatchMode
-                  ? `${successfulResults.length} voiceprint(s) extracted`
-                  : 'Choose how to use this voice fingerprint'
-                }
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-lg hover:bg-surface-inset"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
-          {error && (
-            <div className="mb-4 p-3 bg-status-danger-bg border border-status-danger-border rounded-lg text-status-danger-fg text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {isBatchMode ? renderBatchContent() : renderSingleSpeakerContent()}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border bg-surface-inset/50">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-contrast-helper hover:text-foreground"
-          >
+  return (
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="md"
+      className="max-h-[calc(100dvh-2rem)]"
+      title={
+        <span className="flex items-center gap-3">
+          <span className="rounded-lg bg-status-info-bg p-2">
+            <Fingerprint aria-hidden="true" className="h-5 w-5 text-status-info-fg" />
+          </span>
+          <span>
+            <span className="block">
+              {isBatchMode ? 'Configure Voiceprints' : 'Voiceprint Created'}
+            </span>
+            <span className="block text-sm font-normal text-contrast-helper">
+              {isBatchMode
+                ? `${successfulResults.length} voiceprint(s) extracted`
+                : 'Choose how to use this voice fingerprint'
+              }
+            </span>
+          </span>
+        </span>
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={isBatchMode ? handleBatchSubmit : handleSingleSubmit}
             disabled={isSubmitting || isSubmitDisabled()}
-            className="px-4 py-2 text-sm bg-status-info-bg text-foreground rounded-lg hover:bg-status-info-bg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            loading={isSubmitting}
           >
-            {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
             {isBatchMode ? 'Apply All' : 'Apply'}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-status-danger-border bg-status-danger-bg p-3 text-sm text-status-danger-fg">
+          <AlertCircle aria-hidden="true" className="h-4 w-4 flex-shrink-0" />
+          {error}
         </div>
-      </div>
-    </div>,
-    document.body
+      )}
+
+      {isBatchMode ? renderBatchContent() : renderSingleSpeakerContent()}
+    </Modal>
   );
 }

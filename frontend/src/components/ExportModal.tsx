@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, FileText, StickyNote, Files, Download, Music } from "lucide-react";
+import { FileText, StickyNote, Files, Download, Music } from "lucide-react";
+import Button from "./ui/Button";
+import Modal from "./ui/Modal";
 import { ExportContentType, ExportFormat } from "@/lib/api";
 
 interface ExportModalProps {
@@ -27,38 +29,33 @@ export default function ExportModal({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const handleExport = () => {
     onExport(selected, format);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-scrim"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative bg-surface-card rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-border">
-          <h2 className="text-lg font-semibold text-foreground">
-            Export Content
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-1 text-contrast-icon-muted hover:text-contrast-helper hover:text-contrast-icon-muted rounded-md hover:bg-surface-inset transition-colors"
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="sm"
+      title="Export Content"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleExport}
+            iconLeft={<Download aria-hidden="true" className="w-4 h-4" />}
           >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-4">
+            Export
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
           <p className="text-sm text-contrast-helper mb-4">
             Choose what you want to export:
           </p>
@@ -406,25 +403,7 @@ export default function ExportModal({
           </div>
             </>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-surface-border bg-surface-inset">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-contrast-helper hover:text-foreground transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

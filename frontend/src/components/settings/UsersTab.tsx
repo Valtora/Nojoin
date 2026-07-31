@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "../ConfirmationModal";
+import Button from "../ui/Button";
+import Input from "../ui/Input";
+import Modal from "../ui/Modal";
+import Select from "../ui/Select";
 import { User, UserRole } from "@/types";
 import { trimString } from "@/lib/validation";
 import SettingsBlock from "./SettingsBlock";
@@ -399,107 +403,80 @@ export default function UsersTab() {
       </div>
 
       {/* Edit User Modal */}
-      {editModalOpen && (
-        <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-scrim p-4">
-          <div className="bg-surface-card rounded-lg shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 border border-surface-border">
-            <h3 className="text-lg font-medium text-foreground mb-4">
-              Edit User
-            </h3>
-            <form onSubmit={saveEdit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-1">
-                  Username
-                </label>
-                <input
-                  value={editForm.username || ""}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, username: e.target.value })
-                  }
-                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-                />
-              </div>
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        size="sm"
+        title="Edit User"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="edit-user-form" variant="primary">
+              Save Changes
+            </Button>
+          </>
+        }
+      >
+        <form id="edit-user-form" onSubmit={saveEdit} className="space-y-4">
+          <Input
+            label="Username"
+            value={editForm.username || ""}
+            onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+          />
 
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-1">
-                  New Password{" "}
-                  <span className="contrast-helper font-normal">
-                    (Leave blank to keep current)
-                  </span>
-                </label>
-                <input
-                  name="edit-user-password"
-                  type="password"
-                  value={editForm.password || ""}
-                  onChange={(e) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      password: e.target.value,
-                    }))
-                  }
-                  placeholder="Enter new password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-                />
-              </div>
+          <Input
+            label={
+              <>
+                New Password{" "}
+                <span className="font-normal text-contrast-helper">
+                  (Leave blank to keep current)
+                </span>
+              </>
+            }
+            name="edit-user-password"
+            type="password"
+            value={editForm.password || ""}
+            onChange={(e) =>
+              setEditForm((prev) => ({ ...prev, password: e.target.value }))
+            }
+            placeholder="Enter new password"
+            autoComplete="new-password"
+            minLength={8}
+          />
 
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-1">
-                  Role
-                </label>
-                <select
-                  value={editForm.role || "user"}
-                  onChange={(e) =>
-                    setEditForm({
-                      ...editForm,
-                      role: e.target.value as UserRole,
-                    })
-                  }
-                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                  <option value="owner">Owner</option>
-                </select>
-              </div>
+          <Select
+            label="Role"
+            value={editForm.role || "user"}
+            onChange={(e) =>
+              setEditForm({ ...editForm, role: e.target.value as UserRole })
+            }
+          >
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+            <option value="owner">Owner</option>
+          </Select>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={editForm.is_active || false}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, is_active: e.target.checked })
-                  }
-                  className="rounded border-control-border text-action-text focus-visible:outline-focus-ring"
-                />
-                <label
-                  htmlFor="is_active"
-                  className="text-sm font-medium text-contrast-muted"
-                >
-                  Active Account
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setEditModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-contrast-muted hover:bg-surface-inset rounded-md transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium text-action-on bg-action hover:bg-action-hover rounded-md transition-colors"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="is_active"
+              checked={editForm.is_active || false}
+              onChange={(e) =>
+                setEditForm({ ...editForm, is_active: e.target.checked })
+              }
+              className="rounded border-control-border accent-action focus-visible:outline-focus-ring"
+            />
+            <label
+              htmlFor="is_active"
+              className="text-sm font-medium text-contrast-muted"
+            >
+              Active Account
+            </label>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
       </SettingsBlock>
 

@@ -11,6 +11,10 @@ import {
 import { sanitizeIntegerString } from "@/lib/validation";
 import { Plus, Trash2, Copy, Users, Clock, XCircle } from "lucide-react";
 import ConfirmationModal from "../ConfirmationModal";
+import Button from "../ui/Button";
+import Input from "../ui/Input";
+import Modal from "../ui/Modal";
+import Select from "../ui/Select";
 import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
@@ -273,78 +277,60 @@ export default function InvitesTab() {
       )}
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-scrim p-4">
-          <div className="bg-surface-card rounded-lg shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 border border-surface-border">
-            <h3 className="text-lg font-medium text-foreground mb-4">
-              Create Invitation
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-1">
-                  Role
-                </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-                >
-                  <option value={UserRole.USER}>User</option>
-                  <option value={UserRole.ADMIN}>Admin</option>
-                </select>
-              </div>
+      <Modal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        size="sm"
+        title="Create Invitation"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreate}
+              disabled={creating}
+              loading={creating}
+            >
+              {creating ? "Creating..." : "Create Invite"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select
+            label="Role"
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+          >
+            <option value={UserRole.USER}>User</option>
+            <option value={UserRole.ADMIN}>Admin</option>
+          </Select>
 
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-1">
-                  Expires In (Days)
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={expiresIn.toString()}
-                  onChange={(e) => {
-                    const val = sanitizeIntegerString(e.target.value, 1, 365);
-                    setExpiresIn(Number(val));
-                  }}
-                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-                />
-              </div>
+          <Input
+            label="Expires In (Days)"
+            type="text"
+            inputMode="numeric"
+            value={expiresIn.toString()}
+            onChange={(e) => {
+              const val = sanitizeIntegerString(e.target.value, 1, 365);
+              setExpiresIn(Number(val));
+            }}
+          />
 
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-1">
-                  Max Uses
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={maxUses.toString()}
-                  onChange={(e) => {
-                    const val = sanitizeIntegerString(e.target.value, 1, 100);
-                    setMaxUses(Number(val));
-                  }}
-                  className="w-full bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-contrast-muted hover:bg-surface-inset rounded-md transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={creating}
-                  className="px-4 py-2 text-sm font-medium text-action-on bg-action hover:bg-action-hover rounded-md transition-colors disabled:opacity-50"
-                >
-                  {creating ? "Creating..." : "Create Invite"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <Input
+            label="Max Uses"
+            type="text"
+            inputMode="numeric"
+            value={maxUses.toString()}
+            onChange={(e) => {
+              const val = sanitizeIntegerString(e.target.value, 1, 100);
+              setMaxUses(Number(val));
+            }}
+          />
         </div>
-      )}
+      </Modal>
 
       </SettingsBlock>
 

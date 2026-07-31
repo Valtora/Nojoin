@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, ExternalLink, Loader2, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, Trash2 } from "lucide-react";
+import Button from "../ui/Button";
+import Modal from "../ui/Modal";
 import type {
   CliOAuthProviderStatus,
   CliOAuthStatus,
@@ -301,6 +303,12 @@ function ProviderConnectRow({
     }
   };
 
+  const closeConnectModal = () => {
+    setModalOpen(false);
+    setDevice(null);
+    setFlowKind(null);
+  };
+
   return (
     <div className="settings-inset space-y-2 rounded-xl p-3">
       <div className="flex items-center justify-between gap-3">
@@ -382,28 +390,33 @@ function ProviderConnectRow({
         </button>
       )}
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim">
-          <div className="bg-surface-card rounded-xl shadow-2xl max-w-lg w-full border border-surface-border flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-surface-border">
-              <h2 className="text-lg font-semibold text-foreground">
-                Connect your {meta.label} subscription
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  setDevice(null);
-                  setFlowKind(null);
-                }}
-                className="text-contrast-icon-muted hover:text-foreground"
-                aria-label="Close"
+      <Modal
+        open={modalOpen}
+        onClose={closeConnectModal}
+        // Dismissal is blocked while a request is away: the device flow is
+        // polling and the paste flow is exchanging a code.
+        dismissible={!busy}
+        size="md"
+        title={`Connect your ${meta.label} subscription`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeConnectModal} disabled={busy}>
+              {flowKind === "device" ? "Close" : "Cancel"}
+            </Button>
+            {flowKind === "paste_code" && (
+              <Button
+                variant="primary"
+                onClick={handleComplete}
+                disabled={busy || code.trim().length === 0}
+                loading={busy}
               >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
+                Connect
+              </Button>
+            )}
+          </>
+        }
+      >
+        <div className="space-y-4">
               {flowKind === "device" ? (
                 device ? (
                 <>
@@ -479,36 +492,8 @@ function ProviderConnectRow({
                   </button>
                 </>
               )}
-            </div>
-
-            <div className="flex justify-end gap-2 p-5 border-t border-surface-border">
-              <button
-                type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  setDevice(null);
-                  setFlowKind(null);
-                }}
-                disabled={busy}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-contrast-helper hover:bg-surface-inset disabled:opacity-50"
-              >
-                {flowKind === "device" ? "Close" : "Cancel"}
-              </button>
-              {flowKind === "paste_code" && (
-                <button
-                  type="button"
-                  onClick={handleComplete}
-                  disabled={busy || code.trim().length === 0}
-                  className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-action-on text-sm font-semibold disabled:opacity-50"
-                >
-                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Connect
-                </button>
-              )}
-            </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
