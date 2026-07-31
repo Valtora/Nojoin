@@ -168,7 +168,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
     const isLargeFile = !!selectedFile && selectedFile.size > DOCUMENT_SIZE_WARNING_BYTES;
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-scrim">
             <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg flex flex-col border border-gray-300 dark:border-gray-800">
                 {/* Header */}
                 <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">

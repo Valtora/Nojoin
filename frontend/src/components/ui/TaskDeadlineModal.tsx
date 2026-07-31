@@ -207,7 +207,7 @@ export default function TaskDeadlineModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-scrim p-4">
       <button
         type="button"
         aria-label="Close deadline modal"
@@ -220,7 +220,7 @@ export default function TaskDeadlineModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full max-w-xl max-h-[calc(100vh-2rem)] overflow-auto rounded-[1.75rem] border border-white/70 bg-white/95 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.22)] backdrop-blur dark:border-white/10 dark:bg-gray-950/95"
+        className="relative w-full max-w-xl max-h-[calc(100vh-2rem)] overflow-auto rounded-[1.75rem] border border-white/70 bg-white/95 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-gray-950/95"
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">

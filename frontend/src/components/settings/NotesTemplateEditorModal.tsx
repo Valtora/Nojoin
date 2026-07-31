@@ -176,11 +176,11 @@ export default function NotesTemplateEditorModal({
   const overLimit = sections.length > maxSectionsLength;
 
   // Rendered into document.body rather than in place. SettingsSection applies
-  // backdrop-blur, and an element with a backdrop-filter becomes the containing
+  //, and an element with a backdrop-filter becomes the containing
   // block for fixed-position descendants -- so an in-place modal would size
   // itself to the settings card and overlap the sections around it.
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-md">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-scrim">
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-[1400px] h-[92vh] overflow-hidden border border-gray-200 dark:border-gray-700 flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
           <div>

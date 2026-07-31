@@ -179,7 +179,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-scrim p-4">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto flex flex-col border border-gray-300 dark:border-gray-800">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
