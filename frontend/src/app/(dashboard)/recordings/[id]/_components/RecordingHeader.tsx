@@ -72,7 +72,7 @@ export default function RecordingHeader({
     <header className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-5 lg:p-6"}`}>
       {isMobile ? (
         <>
-          <div className="rounded-2xl border border-surface-border bg-surface-card px-4 py-3 shadow-card">
+          <div className="rounded-2xl bg-surface-inset px-4 py-3">
             <div className="min-w-0 pt-0.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-icon-muted">
                 Meeting Detail

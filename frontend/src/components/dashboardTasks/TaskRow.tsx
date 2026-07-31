@@ -149,7 +149,7 @@ export default function TaskRow(props: TaskRowProps) {
     const timeRemainingState = getTimeRemainingState(task, now);
 
     return (
-      <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border border-surface-border bg-surface-card px-4 py-4 shadow-card transition-colors hover:border-action-border hover:bg-action-tint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
+      <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
         <button
           type="button"
           onClick={() => void handleToggleTask(task)}
@@ -232,7 +232,7 @@ export default function TaskRow(props: TaskRowProps) {
   }
 
   return (
-    <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border border-surface-border bg-surface-card px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
+    <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
       <button
         type="button"
         onClick={() => void handleToggleTask(task)}

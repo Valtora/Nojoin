@@ -136,7 +136,7 @@ export default function DashboardTasksPanel() {
           its natural height, so the header and composer never scroll away. */}
       <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
         {loading ? (
-          <div className="density-surface-panel flex items-center gap-3 border border-surface-border bg-surface-card px-4 py-4 text-sm text-contrast-muted">
+          <div className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your tasks...
           </div>

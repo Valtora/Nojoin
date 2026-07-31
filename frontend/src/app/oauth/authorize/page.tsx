@@ -193,7 +193,7 @@ function AuthorizeContent() {
             <>
               {/* App-to-app connection header */}
               <div className="flex items-center justify-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel border border-surface-border bg-surface-card shadow-card overflow-hidden">
+                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel bg-surface-inset overflow-hidden">
                   {clientLogo ? (
                     <Image
                       src={clientLogo}
@@ -207,7 +207,7 @@ function AuthorizeContent() {
                   )}
                 </div>
                 <Link2 className="h-4 w-4 text-contrast-icon-muted" />
-                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel border border-surface-border bg-surface-card shadow-card">
+                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel bg-surface-inset">
                   <Image
                     src="/assets/NojoinLogo.png"
                     alt="Nojoin logo"

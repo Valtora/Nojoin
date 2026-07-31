@@ -213,7 +213,7 @@ function MeetingEdgePanel({
       {hasPayload ? (
         <div className="mt-5 space-y-4">
           {payload?.summary ? (
-            <div className="density-surface-panel border border-surface-border bg-surface-card p-4">
+            <div className="density-surface-panel bg-surface-inset p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                 Current read
               </div>
@@ -224,7 +224,7 @@ function MeetingEdgePanel({
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <div className="density-surface-panel border border-surface-border bg-surface-card p-4">
+            <div className="density-surface-panel bg-surface-inset p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <MessageSquareQuote className="h-4 w-4 text-action-text" />
                 Questions to ask
@@ -244,7 +244,7 @@ function MeetingEdgePanel({
               </ul>
             </div>
 
-            <div className="density-surface-panel border border-surface-border bg-surface-card p-4">
+            <div className="density-surface-panel bg-surface-inset p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Lightbulb className="h-4 w-4 text-action-text" />
                 Points to raise
@@ -266,7 +266,7 @@ function MeetingEdgePanel({
           </div>
 
           {conceptHistory.length > 0 ? (
-            <div className="rounded-[1.5rem] border border-surface-border bg-surface-card p-4">
+            <div className="density-surface-panel bg-surface-inset p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-foreground">
                   Technical Context
@@ -296,7 +296,7 @@ function MeetingEdgePanel({
           ) : null}
         </div>
       ) : (
-        <div className="density-surface-panel mt-5 border border-dashed border-action-border bg-surface-card px-4 py-5 text-sm leading-6 text-contrast-helper">
+        <div className="density-surface-panel mt-5 border border-dashed border-action-border bg-surface-inset px-4 py-5 text-sm leading-6 text-contrast-helper">
           {status === "updating"
             ? "Meeting Edge is building the first guidance pass from the live meeting."
             : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}

@@ -244,7 +244,7 @@ export default function RecordingStatusDisplay({
                     </div>
                   ) : null}
 
-                  <div className="density-surface-panel border border-surface-border bg-surface-card p-4">
+                  <div className="density-surface-panel bg-surface-inset p-4">
                     <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
                       Recording Length
                     </div>
