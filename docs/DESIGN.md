@@ -205,7 +205,7 @@ values. No component needs to know the density.
 | --- | --- |
 | Root sizing | `--app-root-font-size` |
 | Workspace | `--workspace-gap`, `--workspace-padding-x`, `--workspace-padding-x-md`, `--workspace-padding-y`, `--workspace-padding-y-md` |
-| Workspace width | `--workspace-max-width`, `--workspace-max-width-wide`, `--workspace-max-width-feature` |
+| Workspace width | `--workspace-max-width-dense`, `--workspace-max-width`, `--workspace-max-width-wide`, `--workspace-max-width-feature` |
 | Surfaces | `--surface-radius`, `--surface-radius-subtle`, `--surface-radius-panel`, `--surface-padding`, `--surface-padding-lg` |
 | Controls | `--control-height-lg` |
 
@@ -216,6 +216,90 @@ tags, status badges and avatars.
 Adding a hard-coded padding or radius to a component opts that component out of the density
 setting. Use or extend the tokens instead. The radius tokens are also reachable as utilities:
 `rounded-surface`, `rounded-surface-subtle`, `rounded-surface-panel`.
+
+### Width is a property of the surface, not of the app
+
+There is no single content width. A page of prose and a page of modules want opposite things from a
+wide display, so each surface declares which cap it answers to: through a `workspace-shell-*` class
+on `Workspace`, or, where a page predates that component, by reading the token directly, as the
+people page does.
+
+| Token | Comfortable | Compact | Used by |
+| --- | --- | --- | --- |
+| `--workspace-max-width-dense` | 120rem | 112rem | dashboard, people |
+| `--workspace-max-width-wide` | 80rem | 74rem | tasks |
+| `--workspace-max-width` | 72rem | 68rem | the `Workspace` default |
+| `--workspace-max-width-feature` | 64rem | 60rem | the recordings landing panel, the live capture view |
+
+A dense surface spends extra width on **more columns, not wider ones**. Nothing in the product grows
+a text column past a comfortable reading measure, which is why widening the dashboard left every
+prose surface beside it exactly where it was.
+
+### The column model
+
+The dashboard's grid uses three breakpoints, chosen so that a column is never narrower than about
+340px:
+
+| Viewport | Columns |
+| --- | --- |
+| below 1280px | 1 |
+| 1280 to 1599px | 2 |
+| 1600px and above | 3 |
+
+**These are viewport widths, and the workspace sits beside a roughly 340px rail**, so the content
+area is always considerably narrower than the number in the class. That is the whole reason the
+second column waits for `xl` rather than `lg`, and the third for `min-[1600px]` rather than `2xl`:
+at a 1024px viewport the content area is only about 620px, which is one column's worth. Do not
+"simplify" these to the standard breakpoints.
+
+Three rules follow from that grid:
+
+- **Columns are `items-stretch`.** With `items-start` each column ended wherever its content did and
+  the shorter one left an empty L-shape down the page. Stretching makes them end level, and a module
+  that would overflow takes `flex-1 min-h-0 overflow-auto` and scrolls inside itself rather than
+  pushing the grid taller. The page keeps its own scrollbar for the normal laptop case.
+- **Every column needs one module that can absorb height.** A fixed-height module alone in a stretched
+  column recreates the dead corner. Either pair it with a flexible one or let it grow, as the month
+  grid does by sharing the leftover height between its week rows up to a cap.
+- **A column that nothing fills does not exist.** The third column appears only when a module occupies
+  it; when it is empty its occupants fold back into the second column, so the result is a two-column
+  layout rather than an empty gutter.
+
+Modules are direct children of the grid, not children of per-column wrappers. Wrappers still exist
+for stacking, but they take `display: contents` below `xl`, which drops them out of the box tree so
+that every module becomes a direct child of one flex column and `order-*` can sequence them freely.
+A wrapper cannot reorder across its own boundary, so without this the phone order is forced to match
+the desktop columns. On a phone the order is action first: capture, then anything processing, then
+the agenda, tasks, recent recordings, and the month grid last.
+
+### Surface nesting
+
+The flat canon's two-level rule, as a fix pattern. When a surface turns out to be nested, it steps
+down rather than repeating:
+
+| Depth | Wrong | Right |
+| --- | --- | --- |
+| Outer | `bg-surface-card` + border + `shadow-card` | unchanged |
+| Second | `bg-surface-card` + border + `shadow-card` | `bg-surface-inset`, no border, no shadow |
+| Third | `bg-surface-card` + border + `shadow-card` | no surface at all: spacing and a divider |
+
+The test for a surface is a *container* with a solid card fill and a hairline border. A button, a
+pill, an input or a calendar cell that uses the card fill as a control background is not a level in
+the stack, and holding controls to this rule would leave them with nothing to sit on. The judgement
+is whether the element is a region of the page or something you click.
+
+### Modules
+
+A dashboard module is a presentational component with three properties:
+
+- **It does not render its own empty state.** The parent decides whether there is anything to show
+  and omits the module entirely if there is not, so a quiet account sees a smaller dashboard rather
+  than a wall of empty boxes.
+- **There is a floor.** The calendar, the agenda, capture and the task list always render, so the
+  dashboard is never blank.
+- **Data comes from the parent.** Where two modules are two views of one subsystem, the parent calls
+  the hook once and passes the value to both. A hook that fetches must be called once per subsystem,
+  not once per module, or the request doubles silently.
 
 ## Primitives
 

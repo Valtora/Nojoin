@@ -31,16 +31,26 @@ The root route is the operational home surface for Nojoin.
 It brings together:
 
 - **Meet Now** card for live browser capture.
-- **Calendar context** through month and agenda views, including recorded meeting history.
+- **Calendar** month grid, showing which days carry events or recorded meetings.
+- **Agenda**, showing what is happening on the selected day or across the viewed month.
 - **Task List** for quick personal follow-up capture.
+- **Processing**, listing whatever the pipeline is still working on. It appears only while
+  something is in flight.
+- **Recent recordings**, the latest few with a click through to the detail view. It appears only
+  once you have recordings.
+
+The first four always render. The last two appear when they have something to report, so a new
+account sees a dashboard rather than a page of empty boxes. Wide displays add a second column at
+1280px and a third at 1600px.
 
 On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout.
 
 ### Calendar Surface
 
-- Switch between month and agenda views.
+- The month grid and the agenda are separate modules and are both visible at once; there is no view toggle.
+- The agenda opens on today. Selecting a day in the month grid scopes the agenda to that day, and **Whole month** in the agenda header returns it to the full month.
 - Use **Today** to jump back to the current date context.
-- In month view, selecting a day opens a day agenda, and selecting today shows a live now marker against timed events.
+- A day agenda for today shows a live now marker against timed events.
 - Unlinked Nojoin recordings appear on the dashboard calendar as orange meeting items, while Google or Microsoft calendar sources keep their own colours.
 - Recorded meeting cards surface tags, speakers, and timestamps directly inside the selected-day agenda.
 - The agenda view is month-scoped and includes both synced calendar events and unlinked Nojoin meeting history for the viewed month.
