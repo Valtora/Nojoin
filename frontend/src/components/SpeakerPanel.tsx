@@ -218,7 +218,7 @@ export default function SpeakerPanel({
             return (
               <div
                 key={entry.key}
-                className="relative group p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-sm"
+                className="relative group p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-card"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
               >
                 <div className="flex items-start justify-between gap-3">

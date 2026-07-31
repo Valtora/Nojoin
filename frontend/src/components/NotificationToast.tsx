@@ -35,7 +35,7 @@ export default function NotificationToast() {
           key={notification.id}
           className={`
             pointer-events-auto
-            flex items-start gap-3 p-4 rounded-lg border shadow-lg
+            flex items-start gap-3 p-4 rounded-lg border shadow-float
             ${bgColors[notification.type]}
           `}
         >

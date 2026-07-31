@@ -182,7 +182,7 @@ export function PeopleTagSidebar({
   }, [tagTree, searchQuery]);
 
   const mobileTransform = mobileOpen
-    ? "translate-x-0 shadow-2xl lg:shadow-none"
+    ? "translate-x-0 shadow-float lg:shadow-none"
     : "-translate-x-full";
 
   if (isLoading) {

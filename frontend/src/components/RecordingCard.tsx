@@ -228,7 +228,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         <div className="block">
           <div
             id={isDemo ? "demo-recording-card" : undefined}
-            className="bg-surface-card rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-surface-border relative group"
+            className="bg-surface-card rounded-lg shadow-card p-4 border border-surface-border relative group"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">
@@ -268,7 +268,7 @@ export default function RecordingCard({ recording }: RecordingCardProps) {
         <Link href={`/recordings/${recording.id}`} className="block">
           <div
             id={isDemo ? "demo-recording-card" : undefined}
-            className="bg-surface-card rounded-lg shadow hover:shadow-md transition-shadow p-4 border border-surface-border relative group"
+            className="bg-surface-card rounded-lg shadow-card p-4 border border-surface-border relative group"
             onContextMenu={handleContextMenu}
           >
             <div className="flex justify-between items-start mb-2">

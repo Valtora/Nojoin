@@ -269,7 +269,7 @@ export default function SplitPersonModal({
     >
           {success ? (
             <div className="flex flex-col items-center justify-center h-full py-12 animate-in fade-in zoom-in duration-300">
-              <div className="w-20 h-20 bg-status-success-bg rounded-full flex items-center justify-center mb-6 shadow-sm">
+              <div className="w-20 h-20 bg-status-success-bg rounded-full flex items-center justify-center mb-6 shadow-card">
                 <Check className="w-10 h-10 text-status-success-fg" />
               </div>
               <h3 className="text-2xl font-bold text-foreground mb-2">
@@ -284,7 +284,7 @@ export default function SplitPersonModal({
                   onComplete();
                   onClose();
                 }}
-                className="px-6 py-3 bg-status-info-bg hover:bg-status-info-bg text-foreground rounded-xl shadow-lg transition-transform hover:scale-[1.02]"
+                className="px-6 py-3 bg-status-info-bg hover:bg-status-info-bg text-foreground rounded-xl shadow-float transition-transform hover:scale-[1.02]"
               >
                 Done
               </button>
@@ -306,7 +306,7 @@ export default function SplitPersonModal({
           ) : (
             <>
               {/* Name Input */}
-              <div className="mb-6 bg-surface-card p-4 rounded-xl border border-surface-border shadow-sm">
+              <div className="mb-6 bg-surface-card p-4 rounded-xl border border-surface-border shadow-card">
                 <label className="block text-sm font-medium text-contrast-muted mb-2">
                   New Speaker Name <span className="text-danger-text">*</span>
                 </label>
@@ -338,8 +338,8 @@ export default function SplitPersonModal({
                         relative group flex flex-col rounded-xl border-2 transition-all duration-200 overflow-hidden cursor-pointer
                         ${
                           isSelected
-                            ? "border-action bg-action-tint shadow-md ring-1 ring-action"
-                            : "bg-surface-card border-transparent shadow-sm hover:shadow-md hover:border-control-border"
+                            ? "border-action bg-action-tint shadow-card ring-1 ring-action"
+                            : "bg-surface-card border-transparent shadow-card hover:border-control-border"
                         }
                       `}
                     >
@@ -370,7 +370,7 @@ export default function SplitPersonModal({
                              w-8 h-8 rounded-full flex items-center justify-center transition-all
                              ${
                                isPlaying
-                                 ? "bg-action text-action-on shadow-md scale-105"
+                                 ? "bg-action text-action-on shadow-card scale-105"
                                  : "bg-surface-inset text-contrast-helper hover:bg-action-tint hover:text-action-text"
                              }
                            `}

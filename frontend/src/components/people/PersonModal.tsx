@@ -158,7 +158,7 @@ interface TagNode extends PeopleTag {
           onClick={() => toggleTag(tag.id)}
           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
             formData.tag_ids.includes(tag.id)
-              ? "bg-action-tint text-action-text border-action shadow-sm ring-1 ring-action"
+              ? "bg-action-tint text-action-text border-action shadow-card ring-1 ring-action"
               : "bg-surface-card text-contrast-helper text-contrast-icon-muted border-surface-border hover:border-action-border"
           }`}
           style={{ marginLeft: level > 0 ? `${level * 12}px` : "0" }}
@@ -474,7 +474,7 @@ interface TagNode extends PeopleTag {
                               placeholder="Search person..."
                             />
                             {speakerSearch && (
-                              <div className="absolute z-10 mt-1 w-full bg-control-bg rounded-md shadow-lg border border-surface-border max-h-48 overflow-y-auto">
+                              <div className="absolute z-10 mt-1 w-full bg-control-bg rounded-md shadow-float border border-surface-border max-h-48 overflow-y-auto">
                                 {filteredSpeakers.length === 0 ? (
                                   <div className="px-3 py-2 text-sm text-contrast-helper">
                                     No people found
@@ -527,7 +527,7 @@ interface TagNode extends PeopleTag {
                         type="button"
                         onClick={handleMergeClick}
                         disabled={!mergeTarget || isSubmitting}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-card font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {isSubmitting ? "Merging..." : "Confirm Merge"}
                         <ArrowRight className="w-4 h-4" />

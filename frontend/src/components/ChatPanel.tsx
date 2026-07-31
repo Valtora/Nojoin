@@ -230,7 +230,7 @@ export default function ChatPanel({
   return (
     <aside
       id="meeting-chat"
-      className="flex-1 min-w-0 border-l border-surface-border bg-surface-inset h-full flex flex-col shadow-xl z-10"
+      className="flex-1 min-w-0 border-l border-surface-border bg-surface-inset h-full flex flex-col shadow-float z-10"
     >
       <div className="p-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -309,7 +309,7 @@ export default function ChatPanel({
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                className={`max-w-[85%] rounded-surface-panel px-4 py-3 text-sm shadow-card ${
                   msg.role === "user"
                     ? "bg-action text-action-on rounded-tr-none"
                     : "bg-surface-card border border-surface-border text-foreground rounded-tl-none"
@@ -395,7 +395,7 @@ export default function ChatPanel({
             {isStreaming ? (
               <button
                 onClick={handleStop}
-                className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-sm"
+                className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
               >
                 <StopCircle className="w-4 h-4" />
@@ -404,7 +404,7 @@ export default function ChatPanel({
               <button
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim()}
-                className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
                 <Send className="w-4 h-4" />
               </button>

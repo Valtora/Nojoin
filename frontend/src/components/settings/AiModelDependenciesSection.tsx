@@ -111,7 +111,7 @@ export default function AiModelDependenciesSection({
             {DEPENDENCY_MODELS.map((model) => (
               <div
                 key={model.id}
-                className="flex justify-between items-center p-3 bg-surface-card rounded-lg border border-surface-border shadow-sm"
+                className="flex justify-between items-center p-3 bg-surface-card rounded-lg border border-surface-border shadow-card"
               >
                 <div>
                   <div className="text-sm font-medium text-foreground">

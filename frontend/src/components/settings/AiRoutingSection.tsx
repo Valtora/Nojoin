@@ -376,7 +376,7 @@ function RoutingCard({
       className={cn(
         "flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all",
         selected
-          ? "border-action bg-action-tint shadow-sm"
+          ? "border-action bg-action-tint shadow-card"
           : "settings-inset border-transparent hover:border-control-border",
       )}
     >

@@ -304,7 +304,7 @@ export default function PeoplePage() {
               <div className="flex items-center gap-2 self-stretch sm:self-auto">
                 <button
                   onClick={() => setIsTagDrawerOpen(true)}
-                  className="lg:hidden flex items-center gap-2 px-3 py-2 bg-surface-card text-contrast-muted border border-surface-border rounded-lg hover:border-action-border transition-colors shadow-sm font-medium"
+                  className="lg:hidden flex items-center gap-2 px-3 py-2 bg-surface-card text-contrast-muted border border-surface-border rounded-lg hover:border-action-border transition-colors shadow-card font-medium"
                 >
                   <TagIcon className="w-5 h-5" />
                   Tags
@@ -316,7 +316,7 @@ export default function PeoplePage() {
                 </button>
                 <button
                   onClick={handleAddNew}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-sm font-medium"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-card font-medium"
                 >
                   <Plus className="w-5 h-5" />
                   Add Person
@@ -348,7 +348,7 @@ export default function PeoplePage() {
                   <div className="h-6 w-px bg-action-tint mx-1"></div>
                   <button
                     onClick={() => setIsBatchEditOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-surface-card text-contrast-muted border border-surface-border hover:border-action-border rounded-md shadow-sm transition-all"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-surface-card text-contrast-muted border border-surface-border hover:border-action-border rounded-md shadow-card transition-all"
                   >
                     <Edit2 className="w-4 h-4" />
                     Edit
@@ -356,7 +356,7 @@ export default function PeoplePage() {
                   <button
                     onClick={handleBatchDelete}
                     disabled={isBatchDeleting}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-status-danger-bg text-foreground hover:bg-status-danger-bg rounded-md shadow-sm transition-colors"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-status-danger-bg text-foreground hover:bg-status-danger-bg rounded-md shadow-card transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete

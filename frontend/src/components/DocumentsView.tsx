@@ -312,7 +312,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             </p>
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on font-medium rounded-lg hover:bg-action-hover transition-colors shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on font-medium rounded-lg hover:bg-action-hover transition-colors shadow-card"
             >
               <Upload className="w-4 h-4" />
               Upload Document

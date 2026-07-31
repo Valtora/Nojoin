@@ -701,7 +701,7 @@ export default function SystemTab() {
         </div>
       )}
 
-      <div className="bg-[#0d1117] rounded-lg border border-control-border shadow-xl overflow-hidden flex flex-col h-[600px]">
+      <div className="bg-[#0d1117] rounded-lg border border-control-border shadow-float overflow-hidden flex flex-col h-[600px]">
           {/* Toolbar */}
           <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-control-border">
             {/* Container Select */}
@@ -786,7 +786,7 @@ export default function SystemTab() {
                 leaveFrom="transform opacity-100 scale-100"
                 leaveTo="transform opacity-0 scale-95"
               >
-                <Popover.Panel className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[#1c2128] shadow-lg ring-1 ring-surface-border ring-opacity-5 focus:outline-none border border-control-border p-1">
+                <Popover.Panel className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[#1c2128] shadow-float ring-1 ring-surface-border ring-opacity-5 focus:outline-none border border-control-border p-1">
                   <div className="p-1 space-y-1">
                     <button
                       onClick={toggleLogShowTimestamps}

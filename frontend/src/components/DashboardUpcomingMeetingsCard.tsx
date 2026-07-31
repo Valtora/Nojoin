@@ -104,7 +104,7 @@ export default function DashboardUpcomingMeetingsCard() {
         </div>
       </div>
 
-      <div className="density-surface-subtle mt-6 border border-surface-border bg-surface-card p-4 shadow-inner">
+      <div className="density-surface-subtle mt-6 border border-surface-border bg-surface-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-contrast-helper">
@@ -272,7 +272,7 @@ export default function DashboardUpcomingMeetingsCard() {
             </div>
           </div>
         ) : (
-          <div className="density-surface-panel mt-5 border border-surface-border bg-surface-card p-5 shadow-inner">
+          <div className="density-surface-panel mt-5 border border-surface-border bg-surface-card p-5">
             <div className="text-sm font-semibold text-foreground">
               Agenda
             </div>
@@ -328,7 +328,7 @@ export default function DashboardUpcomingMeetingsCard() {
       </div>
 
       {viewMode === "month" && (
-        <div className="density-surface-panel mt-4 border border-surface-border bg-surface-card p-4 text-sm text-contrast-helper shadow-inner">
+        <div className="density-surface-panel mt-4 border border-surface-border bg-surface-card p-4 text-sm text-contrast-helper">
           {calendarLoading ? (
             <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
