@@ -191,7 +191,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -216,7 +216,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -241,7 +241,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -256,9 +256,9 @@ jobs:
   telemetry-worker:
     # The telemetry ingest is the one place a bug is invisible from the app: a
     # broken validator would silently drop real pings rather than fail loudly.
-    # Only tsc and vitest run here — wrangler needs Node 22, and the Worker's
-    # decision surface (payload validation, retention SQL) is deliberately free
-    # of Worker runtime APIs so it tests on plain Node.
+    # Only tsc and vitest run here: the Worker's decision surface (payload
+    # validation, retention SQL) is deliberately free of Worker runtime APIs,
+    # so it tests on plain Node without wrangler or a workerd sandbox.
     name: Telemetry worker
     needs: detect-changes
     if: needs.detect-changes.outputs.telemetry == 'true'
@@ -271,7 +271,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "26"
           cache: npm
           cache-dependency-path: telemetry/package-lock.json
 

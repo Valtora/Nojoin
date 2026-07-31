@@ -236,9 +236,10 @@ describe("TranscriptView", () => {
       "overlap-lane-SPEAKER_B",
       "overlap-lane-SPEAKER_A",
     ]);
-    expect(screen.getByTestId("overlap-lane-body-SPEAKER_B")).toHaveStyle({
-      minHeight: "7rem",
-    });
+    // Assert the declared inline value rather than the computed one: jsdom 30
+    // normalises computed lengths to pixels, so toHaveStyle would compare
+    // against "112px" and stop describing the rem floor the component sets.
+    expect(screen.getByTestId("overlap-lane-body-SPEAKER_B").style.minHeight).toBe("7rem");
   });
 
   it("preserves scroll position when older utterances are inserted ahead of the current viewport", () => {
