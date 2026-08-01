@@ -41,8 +41,9 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. |
-| `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording. |
+| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, and the canonical `transcript_revision` cursor. |
+| `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording, formatted for reading. |
+| `get_transcript_utterances` | `mcp:read` | The canonical transcript as structured utterances: stable ids, millisecond timestamps, per-utterance state and edit provenance, and a revision cursor with tombstones for incremental sync. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
@@ -56,6 +57,10 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 All tools operate only on data owned by the account that authorised the connection. The write tools are additive: `import_people` fills in or updates a person's title, company, email, phone number, notes, and tags; `set_speaker_name` names a diarised speaker and links it to a matching person (importing the person first, if needed, lets it link rather than set a recording-local name); `append_meeting_notes` adds to your own meeting notes without altering the AI-generated notes. None of them delete data or modify voiceprints.
 
 Connections authorised before the write scope existed carry only the `mcp:read` scope: every read tool keeps working, and the write tools respond with an instruction to reconnect. Remove and re-add the connector to consent to the wider scope.
+
+### Keeping an External Copy in Sync
+
+`get_transcript_utterances` exists for tools that maintain their own copy of transcript data, such as a read-only sidecar or knowledge base, rather than for conversational assistants, which should prefer `get_transcript`. Poll `list_recordings` and compare each recording's `transcript_revision` (and `notes_status`) with the last value you stored, then call `get_transcript_utterances` with your stored cursor as `after_revision` to receive only changed utterances plus tombstones. A recording is fully processed once `status` is `PROCESSED` and `notes_status` is `completed`. Treat the cursor as opaque and the response fields as an additive contract: new fields may appear over time, and reprocessing a recording can replace most utterance ids while the cursor keeps increasing.
 
 ## Managing and Revoking Access
 
