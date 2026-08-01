@@ -37,31 +37,22 @@ claude mcp add nojoin --transport http https://your-nojoin-domain/mcp
 
 Claude Code discovers the OAuth flow automatically and opens a browser window for the same sign-in and consent step. No token pasting is required.
 
-## Connect Codex
+## Connect Codex (desktop app)
 
-Codex supports the connector's OAuth flow, but only for a server marked for OAuth in its MCP configuration — adding a custom MCP through the IDE extension's form alone does not start the flow, and the bearer-token field is not how Nojoin authenticates.
+1. Open **Settings → MCP servers** and select **Add server**.
+2. Enter a name (for example `nojoin`), choose **Streamable HTTP** (not STDIO, which is for MCP servers Codex launches locally as a subprocess), and enter the URL `https://your-nojoin-domain/mcp`. Leave any bearer-token and header fields empty — that is not how Nojoin authenticates.
+3. Save the server, then select **Restart**. The restart matters: Codex probes the server on startup and only then flags it as requiring sign-in.
+4. In the server list, select **Authenticate**. A browser window opens for the same Nojoin sign-in and consent step as Claude.
 
-1. Add the server, either with the CLI or through the IDE form (**Type** `Streamable HTTP`, not STDIO, which is for MCP servers Codex launches locally as a subprocess; **URL** `https://your-nojoin-domain/mcp`; bearer token and headers left empty):
+If **Authenticate** never appears after a restart, mark the server for OAuth by hand in `~/.codex/config.toml` (the desktop app, CLI, and IDE extension share this file), restart again, or run `codex mcp login nojoin` in a terminal as a fallback:
 
-   ```bash
-   codex mcp add nojoin --url https://your-nojoin-domain/mcp
-   ```
+```toml
+[mcp_servers.nojoin]
+url = "https://your-nojoin-domain/mcp"
+auth = "oauth"
+```
 
-2. Mark the server for OAuth in `~/.codex/config.toml`. The Codex CLI, IDE extension, and ChatGPT desktop app share this configuration:
-
-   ```toml
-   [mcp_servers.nojoin]
-   url = "https://your-nojoin-domain/mcp"
-   auth = "oauth"
-   ```
-
-3. Sign in:
-
-   ```bash
-   codex mcp login nojoin
-   ```
-
-   A browser window opens for the same Nojoin sign-in and consent step as Claude, and the resulting credentials are shared with the IDE extension.
+Known upstream issue: some Codex Desktop builds (observed on 0.125.0-alpha.3) complete the OAuth sign-in but never import the server's tools into threads, reporting `auth_status` as `unsupported`. That failure is inside Codex — the same Codex-issued token works against the server directly — so if tools stay absent after a successful sign-in, update Codex rather than reconfiguring Nojoin.
 
 ## Available Tools
 
