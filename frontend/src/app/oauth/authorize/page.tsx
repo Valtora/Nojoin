@@ -183,8 +183,8 @@ function AuthorizeContent() {
     : [];
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <div className="max-w-lg w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         <div className="px-8 pt-10 pb-8">
           {loading && (
             <div className="flex justify-center py-16">
@@ -240,7 +240,7 @@ function AuthorizeContent() {
               </div>
 
               {/* Capability list */}
-              <ul className="mt-5 divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
+              <ul className="mt-5 max-h-[45dvh] overflow-y-auto divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
                 {capabilities.map(({ icon: Icon, label }) => (
                   <li
                     key={label}
