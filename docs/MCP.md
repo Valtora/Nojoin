@@ -39,11 +39,29 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 
 ## Connect Codex
 
-In Codex's plugin settings, add a custom MCP with:
+Codex supports the connector's OAuth flow, but only for a server marked for OAuth in its MCP configuration — adding a custom MCP through the IDE extension's form alone does not start the flow, and the bearer-token field is not how Nojoin authenticates.
 
-- **Type**: `Streamable HTTP` (not STDIO, which is for MCP servers Codex launches locally as a subprocess).
-- **URL**: `https://your-nojoin-domain/mcp`
-- **Bearer token and headers**: leave every one empty. Authentication is negotiated through Nojoin's OAuth discovery, and Codex opens a browser window for the same sign-in and consent step.
+1. Add the server, either with the CLI or through the IDE form (**Type** `Streamable HTTP`, not STDIO, which is for MCP servers Codex launches locally as a subprocess; **URL** `https://your-nojoin-domain/mcp`; bearer token and headers left empty):
+
+   ```bash
+   codex mcp add nojoin --url https://your-nojoin-domain/mcp
+   ```
+
+2. Mark the server for OAuth in `~/.codex/config.toml`. The Codex CLI, IDE extension, and ChatGPT desktop app share this configuration:
+
+   ```toml
+   [mcp_servers.nojoin]
+   url = "https://your-nojoin-domain/mcp"
+   auth = "oauth"
+   ```
+
+3. Sign in:
+
+   ```bash
+   codex mcp login nojoin
+   ```
+
+   A browser window opens for the same Nojoin sign-in and consent step as Claude, and the resulting credentials are shared with the IDE extension.
 
 ## Available Tools
 
