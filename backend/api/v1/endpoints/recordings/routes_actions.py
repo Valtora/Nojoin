@@ -258,8 +258,22 @@ async def permanently_delete_recording(
 ):
     """
     Permanently delete a recording and its associated file.
+
+    Only recordings already in the bin can be destroyed: the web client has
+    always offered permanent deletion exclusively from the bin view, and
+    this precondition makes that two-step (bin, then destroy) a server-side
+    invariant for every surface, including MCP.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+
+    if not recording.is_deleted:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only recordings in the bin can be permanently deleted. "
+                "Move the recording to the bin first."
+            ),
+        )
 
     if recording.celery_task_id:
         try:

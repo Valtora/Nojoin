@@ -92,7 +92,15 @@ async def search_context_chunks(  # noqa: PLR0913 - keyword-only search filters
         .where(ContextChunk.embedding_version == TEXT_EMBEDDING_VERSION)
     )
     if sources == "transcripts":
-        statement = statement.where(ContextChunk.document_id.is_(None))
+        # A null document_id alone is not "transcript": indexed AI notes
+        # also carry none, so filter on the chunk's own source metadata,
+        # treating a missing key as transcript for legacy chunks.
+        from sqlalchemy import func as sa_func
+
+        statement = statement.where(ContextChunk.document_id.is_(None)).where(
+            sa_func.coalesce(ContextChunk.meta.op("->>")("source"), "transcript")
+            != "notes"
+        )
     elif sources == "documents":
         statement = statement.where(ContextChunk.document_id.is_not(None))
     statement = statement.order_by(distance).limit(limit)

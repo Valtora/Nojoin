@@ -30,9 +30,14 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
     Embeds the query and ranks the user's indexed content by similarity,
     so it finds passages that match in meaning, not just wording. Results
     carry provenance: the recording, timestamps for transcript passages,
-    and document title and page for document passages. Use this to answer
-    "where did we discuss X" across the whole library; use list_recordings'
-    query parameter for name and keyword lookups instead.
+    and document title and page for document passages. Results labelled
+    "notes" are passages of the meeting's AI notes; only "transcript"
+    results carry timestamps. Coverage depends on what has been indexed:
+    a recording can be fully processed yet have no indexed passages, so
+    an empty result means "nothing indexed matched", not "never
+    discussed". Use this to answer "where did we discuss X" across the
+    library; use list_recordings' query parameter for name and keyword
+    lookups instead.
 
     Args:
         query: What to search for, as a natural-language phrase.
@@ -113,16 +118,22 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
             "recording_name": rec.name if rec else None,
             "distance": round(dist, 4),
         }
-        if meta.get("source") == "transcript" or chunk.document_id is None:
+        # Label from the chunk's own metadata, never by inference: a null
+        # document_id does not make a chunk transcript prose (indexed AI
+        # notes also have none), and mislabelling fabricates provenance.
+        if chunk.document_id is not None:
+            source = "document"
+        else:
+            source = meta.get("source") or "transcript"
+        item["source"] = source
+        if source == "transcript":
             # Resolve raw diarization labels to display names, as chat does.
             for label, name in speaker_maps.get(chunk.recording_id, {}).items():
                 if label and name and label != name:
                     content = content.replace(f"{label}:", f"{name}:")
-            item["source"] = "transcript"
             item["start"] = meta.get("start")
             item["end"] = meta.get("end")
-        else:
-            item["source"] = "document"
+        elif source == "document":
             item["document_title"] = meta.get("document_title")
             item["page_number"] = meta.get("page_number")
             item["page_title"] = meta.get("page_title")

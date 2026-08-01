@@ -1593,11 +1593,12 @@ async def test_write_tools_reject_read_only_grant(
 
 
 @pytest.mark.anyio
-async def test_destroy_recording_requires_opt_in_scope(
+async def test_destroy_recording_requires_opt_in_scope_and_bin(
     session_maker, test_user: User, mcp_context
 ):
-    """A read+write grant cannot destroy; the destroy scope can, and the
-    recording row is gone afterwards."""
+    """Destruction takes both the destroy scope and a recording already in
+    the bin; either missing precondition refuses, and only then does the
+    row actually go."""
     await seed_bare_recording(
         session_maker,
         recording_id=1,
@@ -1614,12 +1615,49 @@ async def test_destroy_recording_requires_opt_in_scope(
         test_user,
         scopes=frozenset({MCP_READ_SCOPE, MCP_WRITE_SCOPE, MCP_DESTROY_SCOPE}),
     )
+    # Scope alone is not enough: an active recording is refused with the
+    # trash-first instruction, and nothing is deleted.
+    with pytest.raises(ToolError) as exc_info:
+        await destroy_recording("rec-1")
+    assert "trash_recording first" in str(exc_info.value)
+    async with session_maker() as session:
+        remaining = await session.execute(text("SELECT COUNT(*) FROM recordings"))
+        assert remaining.scalar() == 1
+
+    await trash_recording("rec-1")
     result = await destroy_recording("rec-1")
     assert result == {"id": "rec-1", "destroyed": True}
 
     async with session_maker() as session:
         remaining = await session.execute(text("SELECT COUNT(*) FROM recordings"))
         assert remaining.scalar() == 0
+
+
+@pytest.mark.anyio
+async def test_permanent_delete_endpoint_refuses_active_recordings(
+    session_maker, test_user: User, mcp_context
+):
+    """The REST endpoint enforces bin-first itself, so every surface is
+    covered even if a caller bypasses the MCP tool's own check."""
+    from backend.api.v1.endpoints.recordings.routes_actions import (
+        permanently_delete_recording,
+    )
+
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    async with session_maker() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            await permanently_delete_recording(
+                "rec-1", db=session, current_user=test_user
+            )
+    assert exc_info.value.status_code == 409
+    assert "bin" in exc_info.value.detail.lower()
 
 
 @pytest.mark.anyio
@@ -1886,17 +1924,26 @@ async def test_search_context_resolves_speakers_and_provenance(
         content="Q3 roadmap: context layer, evaluation harness.",
         meta={"document_title": "Roadmap", "page_number": 2, "page_title": "Q3"},
     )
+    notes_chunk = ContextChunk(
+        recording_id=1,
+        content="**Key Decisions** DEC-001 ship the context layer in Q3.",
+        meta={"source": "notes"},
+    )
 
     async def fake_search(db, **kwargs):
         assert kwargs["user_id"] == test_user.id
-        return [(transcript_chunk, 0.12), (document_chunk, 0.31)]
+        return [
+            (transcript_chunk, 0.12),
+            (document_chunk, 0.31),
+            (notes_chunk, 0.35),
+        ]
 
     monkeypatch.setattr(task_dispatch_module, "dispatch_task", fake_dispatch)
     monkeypatch.setattr(context_search_module, "search_context_chunks", fake_search)
 
     result = await search_context("what did we agree about the context layer?")
 
-    first, second = result["results"]
+    first, second, third = result["results"]
     assert first["source"] == "transcript"
     assert first["content"].startswith("Dana: we agreed")
     assert first["start"] == 61.0
@@ -1905,6 +1952,11 @@ async def test_search_context_resolves_speakers_and_provenance(
     assert second["source"] == "document"
     assert second["document_title"] == "Roadmap"
     assert second["page_number"] == 2
+    # Notes chunks are labelled honestly, never passed off as transcript
+    # prose, and carry no fabricated timestamp provenance.
+    assert third["source"] == "notes"
+    assert "start" not in third
+    assert "document_title" not in third
 
 
 @pytest.mark.anyio

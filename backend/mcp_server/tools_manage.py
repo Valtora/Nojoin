@@ -251,12 +251,15 @@ async def trash_recording(recording_id: str) -> dict[str, Any]:
 
 @mcp_tool()
 async def destroy_recording(recording_id: str) -> dict[str, Any]:
-    """PERMANENTLY delete a recording, its audio, transcript, and notes.
+    """PERMANENTLY delete a recording that is already in the bin.
 
     This is irreversible: the audio file and every derived artefact are
-    destroyed. Requires the mcp:destroy scope, which the user grants only
-    through an explicit opt-in on the consent page. Prefer trash_recording
-    unless permanent destruction is genuinely intended.
+    destroyed. Two independent preconditions apply. The grant must carry
+    the mcp:destroy scope, which the user enables only through an explicit
+    opt-in on the consent page. And the recording must already be in the
+    bin: an active or archived recording is refused, so destruction always
+    takes two deliberate steps (trash_recording, then this), matching the
+    web app, where permanent deletion exists only in the bin view.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -264,11 +267,20 @@ async def destroy_recording(recording_id: str) -> dict[str, Any]:
     from backend.api.v1.endpoints.recordings.routes_actions import (
         permanently_delete_recording,
     )
+    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
 
     user = get_current_mcp_user()
     _require_destroy_scope("permanent recording deletion")
     async with async_session_maker() as db:
+        recording = await _get_owned_recording(db, recording_id, user.id)
+        if not recording.is_deleted:
+            raise ToolError(
+                "Refused: only recordings already in the bin can be "
+                "permanently deleted. Call trash_recording first, confirm "
+                "the recording is the right one, then destroy it. This "
+                "two-step is deliberate and cannot be bypassed."
+            )
         await permanently_delete_recording(recording_id, db=db, current_user=user)
     return {"id": recording_id, "destroyed": True}
 
