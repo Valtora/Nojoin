@@ -37,6 +37,14 @@ claude mcp add nojoin --transport http https://your-nojoin-domain/mcp
 
 Claude Code discovers the OAuth flow automatically and opens a browser window for the same sign-in and consent step. No token pasting is required.
 
+## Connect Codex
+
+In Codex's plugin settings, add a custom MCP with:
+
+- **Type**: `Streamable HTTP` (not STDIO, which is for MCP servers Codex launches locally as a subprocess).
+- **URL**: `https://your-nojoin-domain/mcp`
+- **Bearer token and headers**: leave every one empty. Authentication is negotiated through Nojoin's OAuth discovery, and Codex opens a browser window for the same sign-in and consent step.
+
 ## Available Tools
 
 | Tool | Scope | Description |
