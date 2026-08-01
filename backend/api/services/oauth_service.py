@@ -43,12 +43,19 @@ logger = logging.getLogger(__name__)
 AUTHORIZATION_CODE_TTL_SECONDS = 60
 REFRESH_TOKEN_TTL_DAYS = 180
 MAX_REDIRECT_URIS = 8
-SUPPORTED_SCOPES = {security.MCP_READ_SCOPE, security.MCP_WRITE_SCOPE}
+SUPPORTED_SCOPES = {
+    security.MCP_READ_SCOPE,
+    security.MCP_WRITE_SCOPE,
+    security.MCP_DESTROY_SCOPE,
+}
 # MCP clients (claude.ai, Claude Code) request no scope, so the default is
-# what real grants receive: read plus the People-library write scope, both
-# listed on the consent page. Grants issued before mcp:write existed keep
-# their recorded scope and stay read-only until the user reconnects.
-DEFAULT_SCOPE = " ".join(sorted(SUPPORTED_SCOPES))
+# what real grants receive: read plus the recoverable write scope, both
+# listed on the consent page. The destroy scope is deliberately excluded
+# from the default: it is granted only when the user ticks the explicit
+# opt-in on the consent page (or a client requests it by name). Grants
+# issued before a scope existed keep their recorded scope until the user
+# reconnects.
+DEFAULT_SCOPE = " ".join(sorted({security.MCP_READ_SCOPE, security.MCP_WRITE_SCOPE}))
 
 _LOOPBACK_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
 

@@ -6,12 +6,16 @@ import Image from "next/image";
 import {
   FileText,
   Link2,
+  ListTodo,
   Loader2,
   Lock,
   Mic,
+  Pencil,
   Plug,
+  Search,
   ShieldCheck,
   Tag,
+  Trash2,
   User as UserIcon,
   UserPlus,
   Users,
@@ -45,13 +49,28 @@ const SCOPE_CAPABILITIES: Record<
   "mcp:read": [
     { icon: Mic, label: "View your recordings" },
     { icon: FileText, label: "Read transcripts, notes, and attached documents" },
+    { icon: Search, label: "Search across your meetings and documents" },
     { icon: Users, label: "See meeting speakers and your People library" },
     { icon: Tag, label: "See your tags" },
   ],
   "mcp:write": [
-    { icon: UserPlus, label: "Add or update people in your People library" },
-    { icon: Users, label: "Name meeting speakers and link them to people" },
-    { icon: FileText, label: "Append to a meeting's notes" },
+    {
+      icon: Mic,
+      label: "Organise recordings (rename, tag, archive, move to bin)",
+    },
+    { icon: ListTodo, label: "Create and manage your tasks" },
+    {
+      icon: Pencil,
+      label: "Correct transcripts and regenerate meeting notes",
+    },
+    { icon: FileText, label: "Attach text documents and append to notes" },
+    { icon: UserPlus, label: "Add or update people and name speakers" },
+  ],
+  "mcp:destroy": [
+    {
+      icon: Trash2,
+      label: "Permanently delete recordings and their audio",
+    },
   ],
 };
 
@@ -96,6 +115,7 @@ function AuthorizeContent() {
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [grantDestroy, setGrantDestroy] = useState(false);
 
   useEffect(() => {
     const initialise = async () => {
@@ -150,7 +170,7 @@ function AuthorizeContent() {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await submitOAuthDecision(params, approve);
+      const result = await submitOAuthDecision(params, approve, grantDestroy);
       window.location.href = result.redirect_to;
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Unable to complete the authorisation."));
@@ -162,6 +182,11 @@ function AuthorizeContent() {
   const returnHost = params ? redirectHost(params.redirect_uri) : null;
   const isReadOnly = Boolean(
     info && info.scope_items.every((scope) => scope === "mcp:read"),
+  );
+  // The destroy scope is never granted by default: it is either requested
+  // by name (rare, API-savvy clients) or ticked here by the user.
+  const offerDestroy = Boolean(
+    info && !isReadOnly && !info.scope_items.includes("mcp:destroy"),
   );
   const capabilities = info
     ? info.scope_items.flatMap(
@@ -240,6 +265,27 @@ function AuthorizeContent() {
                 ))}
               </ul>
 
+              {offerDestroy && (
+                <label className="mt-3 flex items-start gap-3 rounded-surface-panel border border-surface-border bg-surface-inset px-4 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={grantDestroy}
+                    onChange={(e) => setGrantDestroy(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-action"
+                  />
+                  <span className="text-sm text-contrast-muted">
+                    <span className="flex items-center gap-2 font-medium text-foreground">
+                      <Trash2 className="h-4 w-4 shrink-0 text-danger-text" />
+                      Also allow permanent deletion
+                    </span>
+                    <span className="mt-1 block text-xs text-contrast-helper">
+                      Off by default. Lets {info.client_name} destroy
+                      recordings and their audio irreversibly.
+                    </span>
+                  </span>
+                </label>
+              )}
+
               <p className="mt-3 flex items-start gap-2 text-xs text-contrast-helper">
                 <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-status-success-fg" />
                 {isReadOnly ? (
@@ -249,9 +295,12 @@ function AuthorizeContent() {
                   </>
                 ) : (
                   <>
-                    Write access is additive: {info.client_name} can add
-                    people, name speakers, and append notes, but cannot delete
-                    anything or change your recordings and transcripts.
+                    Everything {info.client_name} changes with this access
+                    stays recoverable: archived and binned items can be
+                    restored, and transcript edits are tracked.
+                    {grantDestroy
+                      ? " Permanent deletion is enabled by your tick above."
+                      : " It cannot permanently delete anything."}
                   </>
                 )}
               </p>

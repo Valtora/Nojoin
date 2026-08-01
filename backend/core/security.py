@@ -29,9 +29,13 @@ MCP_TOKEN_TYPE = "mcp"
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
 MCP_READ_SCOPE = "mcp:read"
-# Grants the People-library write tools on the MCP endpoint only; mcp-type
+# Grants the recoverable write tools on the MCP endpoint only; mcp-type
 # tokens remain rejected by every general API route regardless of scope.
 MCP_WRITE_SCOPE = "mcp:write"
+# Grants permanent-deletion tools on the MCP endpoint only. Never part of
+# the default grant: the consent page offers it as an explicit opt-in, so
+# a connector holds it only when the user ticked that box.
+MCP_DESTROY_SCOPE = "mcp:destroy"
 
 ALGORITHM = "HS256"
 DEFAULT_LEGACY_KID = "legacy"

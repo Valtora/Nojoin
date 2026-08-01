@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.api.services import oauth_service
 from backend.api.services.oauth_service import OAuthError
+from backend.core.security import MCP_DESTROY_SCOPE
 from backend.models.user import User
 from backend.utils.config_manager import is_mcp_enabled
 from backend.utils.rate_limit import enforce_rate_limit
@@ -146,6 +147,11 @@ class AuthorizeDecision(BaseModel):
     code_challenge: Optional[str] = None
     code_challenge_method: Optional[str] = None
     resource: Optional[str] = None
+    # The consent page's explicit opt-in for the permanent-deletion scope,
+    # which is never part of the default grant. Only ever widens the grant
+    # by mcp:destroy; every other scope still comes from the validated
+    # authorization request.
+    grant_destroy: bool = False
 
 
 class AuthorizeDecisionRead(BaseModel):
@@ -197,11 +203,17 @@ async def authorize_decision(
             redirect_to=_append_query(decision.redirect_uri, params)
         )
 
+    granted_scope = normalised_scope
+    if decision.grant_destroy:
+        granted_scope = " ".join(
+            sorted(set(normalised_scope.split()) | {MCP_DESTROY_SCOPE})
+        )
+
     code = await oauth_service.create_authorization_code(
         db,
         request=authorization_request,
         user=current_user,
-        scope=normalised_scope,
+        scope=granted_scope,
     )
     params = {"code": code}
     if decision.state:

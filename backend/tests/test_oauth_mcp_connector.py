@@ -200,7 +200,11 @@ async def register_claude_client(client: AsyncClient) -> str:
 
 
 async def obtain_code(
-    client: AsyncClient, client_id: str, challenge: str, state: str = "xyz"
+    client: AsyncClient,
+    client_id: str,
+    challenge: str,
+    state: str = "xyz",
+    grant_destroy: bool = False,
 ) -> str:
     response = await client.post(
         "/api/v1/oauth/authorize/decision",
@@ -212,6 +216,7 @@ async def obtain_code(
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
+            "grant_destroy": grant_destroy,
         },
     )
     assert response.status_code == 200, response.text
@@ -247,7 +252,7 @@ async def test_discovery_documents(client: AsyncClient, fixed_origin):
     body = resource.json()
     assert body["resource"] == f"{TEST_ORIGIN}/mcp"
     assert body["authorization_servers"] == [TEST_ORIGIN]
-    assert body["scopes_supported"] == ["mcp:read", "mcp:write"]
+    assert body["scopes_supported"] == ["mcp:destroy", "mcp:read", "mcp:write"]
 
     server = await client.get("/.well-known/oauth-authorization-server")
     assert server.status_code == 200
@@ -366,6 +371,38 @@ async def test_full_authorization_code_flow(
     )
     assert replay.status_code == 400
     assert replay.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.anyio
+async def test_destroy_scope_granted_only_by_consent_opt_in(
+    client: AsyncClient, fixed_origin, isolated_keyring, test_user: User
+):
+    """The default grant never carries mcp:destroy (asserted by the flow
+    test above); the consent page's explicit opt-in adds it."""
+    client_id = await register_claude_client(client)
+    verifier, challenge = make_pkce_pair()
+    code = await obtain_code(client, client_id, challenge, grant_destroy=True)
+
+    token_response = await client.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": CLAUDE_CALLBACK,
+            "code_verifier": verifier,
+        },
+    )
+    assert token_response.status_code == 200, token_response.text
+    tokens = token_response.json()
+    assert tokens["scope"] == "mcp:destroy mcp:read mcp:write"
+
+    payload = security.decode_access_token(tokens["access_token"])
+    assert payload["scopes"] == [
+        security.MCP_DESTROY_SCOPE,
+        security.MCP_READ_SCOPE,
+        security.MCP_WRITE_SCOPE,
+    ]
 
 
 @pytest.mark.anyio
@@ -723,6 +760,25 @@ async def test_mcp_protocol_tools_list_end_to_end(
         "import_people",
         "set_speaker_name",
         "append_meeting_notes",
+        "search_context",
+        "rename_recording",
+        "tag_recording",
+        "untag_recording",
+        "archive_recording",
+        "restore_recording",
+        "trash_recording",
+        "destroy_recording",
+        "reprocess_recording",
+        "regenerate_notes",
+        "attach_document",
+        "correct_utterance_text",
+        "correct_utterance_speaker",
+        "list_calendar_events",
+        "link_calendar_event",
+        "list_tasks",
+        "create_task",
+        "update_task",
+        "delete_task",
     }
 
     assert init.status_code == 200, init.text

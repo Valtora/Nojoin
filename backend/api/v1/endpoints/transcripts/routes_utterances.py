@@ -184,6 +184,36 @@ async def update_transcript_utterance_text(
             current_user,
         )
 
+    return await apply_canonical_utterance_text_update(
+        db,
+        recording=recording,
+        transcript=transcript,
+        utterance_id=utterance_id,
+        update=update,
+        actor_user_id=current_user.id,
+        meeting_edge_enabled=is_meeting_edge_enabled(
+            getattr(current_user, "settings", None)
+        ),
+    )
+
+
+async def apply_canonical_utterance_text_update(  # noqa: PLR0913 - one keyword per side effect the surfaces share
+    db: AsyncSession,
+    *,
+    recording,
+    transcript,
+    utterance_id: str,
+    update: TranscriptUtteranceTextPatch,
+    actor_user_id: int,
+    meeting_edge_enabled: bool,
+    source: str = "api",
+) -> TranscriptPublicRead:
+    """Apply a canonical utterance text edit and its side effects.
+
+    Shared by the REST handler (source="api") and the MCP correction tool
+    (source="mcp"), so the event log records which surface authored the
+    edit while everything else stays identical.
+    """
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )
@@ -202,8 +232,9 @@ async def update_transcript_utterance_text(
                 recording_id=recording.id,
                 utterance_public_id=utterance_id,
                 text=update.text,
-                actor_user_id=current_user.id,
+                actor_user_id=actor_user_id,
                 expected_revision=update.expected_revision,
+                source=source,
             )
         )
     except LookupError as exc:
@@ -219,12 +250,13 @@ async def update_transcript_utterance_text(
         payload={
             "utterance_id": utterance_id,
             "text_chars": len(update.text),
+            "source": source,
         },
         log=logger,
     )
     await _dispatch_meeting_edge_refresh(
         recording.id,
-        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+        enabled=meeting_edge_enabled,
     )
     return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
@@ -278,6 +310,36 @@ async def update_transcript_utterance_speaker(
             refreshed_transcript, recording_public_id=recording.public_id
         )
 
+    return await apply_canonical_utterance_speaker_update(
+        db,
+        recording=recording,
+        transcript=transcript,
+        utterance_id=utterance_id,
+        update=update,
+        actor_user_id=current_user.id,
+        meeting_edge_enabled=is_meeting_edge_enabled(
+            getattr(current_user, "settings", None)
+        ),
+    )
+
+
+async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keyword per side effect the surfaces share
+    db: AsyncSession,
+    *,
+    recording,
+    transcript,
+    utterance_id: str,
+    update: TranscriptUtteranceSpeakerPatch,
+    actor_user_id: int,
+    meeting_edge_enabled: bool,
+    source: str = "api",
+) -> TranscriptPublicRead:
+    """Apply a canonical utterance speaker edit and its side effects.
+
+    Shared by the REST handler (source="api") and the MCP correction tool
+    (source="mcp"), so the event log records which surface authored the
+    edit while everything else stays identical.
+    """
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )
@@ -299,8 +361,9 @@ async def update_transcript_utterance_speaker(
                 global_speaker_id=update.global_speaker_id,
                 diarization_label=update.diarization_label,
                 scope=update.scope,
-                actor_user_id=current_user.id,
+                actor_user_id=actor_user_id,
                 expected_revision=update.expected_revision,
+                source=source,
             )
         )
     except LookupError as exc:
@@ -326,11 +389,12 @@ async def update_transcript_utterance_speaker(
             "utterance_id": utterance_id,
             "scope": update.scope.value,
             "new_label": updated_segment.get("speaker") if updated_segment else None,
+            "source": source,
         },
         log=logger,
     )
     await _dispatch_meeting_edge_refresh(
         recording.id,
-        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+        enabled=meeting_edge_enabled,
     )
     return serialize_transcript(transcript, recording_public_id=recording.public_id)
