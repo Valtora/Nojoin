@@ -1544,7 +1544,12 @@ async def test_recording_lifecycle_tools_roundtrip(
     )
 
     renamed = await rename_recording("rec-1", "Quarterly planning")
-    assert renamed == {"id": "rec-1", "name": "Quarterly planning"}
+    assert renamed["id"] == "rec-1"
+    assert renamed["name"] == "Quarterly planning"
+    # Mutation responses are self-verifying: updated_at moves, the
+    # transcript cursor does not.
+    assert renamed["updated_at"]
+    assert renamed["transcript_revision"] == 0
 
     tagged = await tag_recording("rec-1", "Planning")
     assert tagged["tag"]["name"] == "Planning"
@@ -1900,3 +1905,95 @@ async def test_search_context_resolves_speakers_and_provenance(
     assert second["source"] == "document"
     assert second["document_title"] == "Roadmap"
     assert second["page_number"] == 2
+
+
+@pytest.mark.anyio
+async def test_rename_expected_name_guard(session_maker, test_user: User, mcp_context):
+    """The optional compare-and-swap refuses a rename when the name moved
+    under the caller, instead of clobbering it."""
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    with pytest.raises(ToolError) as exc_info:
+        await rename_recording("rec-1", "New name", expected_name="Stale name")
+    assert "conflict" in str(exc_info.value).lower()
+
+    renamed = await rename_recording("rec-1", "New name", expected_name="Recording 1")
+    assert renamed["name"] == "New name"
+
+
+@pytest.mark.anyio
+async def test_lifecycle_payloads_are_self_verifying(
+    session_maker, test_user: User, mcp_context
+):
+    """Archive and restore echo updated_at and the transcript cursor, so
+    the write response alone proves no transcript disturbance."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    archived = await archive_recording(public_id)
+    assert archived["is_archived"] is True
+    assert archived["updated_at"]
+    assert archived["transcript_revision"] == 3
+
+    restored = await restore_recording(public_id)
+    assert restored["is_archived"] is False
+    assert restored["transcript_revision"] == 3
+
+
+@pytest.mark.anyio
+async def test_list_recordings_match_field_hint(
+    session_maker, test_user: User, mcp_context
+):
+    """With a query, each result carries the best-effort match_field hint;
+    without one, the key is absent."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_recording_tag(
+        session_maker,
+        tag_id=1,
+        recording_id=1,
+        name="Dealflow",
+        user_id=test_user.id,
+    )
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO transcripts (id, created_at, updated_at, recording_id, "
+                "text, segments, notes_status, transcript_status) VALUES "
+                "(1, :ts, :ts, 1, 'we reviewed the quarterly figures', '[]', "
+                "'completed', 'completed')"
+            ),
+            {"ts": TEST_TIMESTAMP},
+        )
+        # The endpoint's search matches RecordingSpeaker.name; the compact
+        # payload prefers local_name, so set both to the same value.
+        await session.execute(
+            text("UPDATE recording_speakers SET name = 'Guest' WHERE id = 2")
+        )
+        await session.commit()
+
+    by_query = {}
+    for query in ("Weekly", "Dealflow", "Guest", "quarterly"):
+        results = await list_recordings(query=query)
+        assert [r["id"] for r in results] == [public_id], query
+        by_query[query] = results[0]["match_field"]
+
+    assert by_query == {
+        "Weekly": "name",  # "Weekly sync" title
+        "Dealflow": "tag",
+        "Guest": "speaker",  # display name carries the searched value
+        "quarterly": "content",  # only the transcript text contains it
+    }
+
+    unqueried = await list_recordings()
+    assert "match_field" not in unqueried[0]

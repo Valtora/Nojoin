@@ -29,24 +29,68 @@ _ATTACH_CONTENT_CHAR_LIMIT = 200_000
 _CALENDAR_EVENTS_LIMIT_MAX = 100
 
 
-def _lifecycle_payload(recording: Any) -> dict[str, Any]:
+async def _transcript_revision(db: Any, recording_public_id: str, user_id: int) -> int:
+    """The recording's canonical revision cursor, 0 when it has none.
+
+    Included in mutation responses so a caller can confirm from the write
+    alone that the transcript cursor was not disturbed, without a
+    follow-up read.
+    """
+    from sqlalchemy import func
+
+    from backend.models.pipeline import TranscriptUtteranceEvent
+    from backend.models.recording import Recording
+
+    internal_id = (
+        await db.execute(
+            select(Recording.id).where(
+                Recording.public_id == recording_public_id,
+                Recording.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if internal_id is None:
+        return 0
+    revision = (
+        await db.execute(
+            select(func.max(TranscriptUtteranceEvent.id)).where(
+                TranscriptUtteranceEvent.recording_id == internal_id
+            )
+        )
+    ).scalar_one_or_none()
+    return int(revision or 0)
+
+
+def _lifecycle_payload(recording: Any, transcript_revision: int) -> dict[str, Any]:
     return {
         "id": recording.id,
         "name": recording.name,
         "is_archived": recording.is_archived,
         "is_deleted": recording.is_deleted,
+        "updated_at": recording.updated_at.isoformat(),
+        "transcript_revision": transcript_revision,
     }
 
 
 @mcp_tool()
-async def rename_recording(recording_id: str, name: str) -> dict[str, Any]:
+async def rename_recording(
+    recording_id: str, name: str, expected_name: Optional[str] = None
+) -> dict[str, Any]:
     """Rename a recording. Requires the mcp:write scope.
+
+    The response echoes updated_at and the transcript_revision cursor, so
+    the write is self-verifying: an unchanged cursor confirms the rename
+    touched metadata only.
 
     Args:
         recording_id: The recording's string id from list_recordings.
         name: The new recording name.
+        expected_name: Optional concurrency guard: when supplied, the
+            rename is refused if the recording's current name differs,
+            instead of overwriting another caller's change.
     """
     from backend.api.v1.endpoints.recordings.routes_actions import update_recording
+    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
     from backend.models.recording import RecordingUpdate
 
@@ -56,13 +100,27 @@ async def rename_recording(recording_id: str, name: str) -> dict[str, Any]:
         raise ToolError("name must not be empty.")
 
     async with async_session_maker() as db:
+        recording = await _get_owned_recording(db, recording_id, user.id)
+        if expected_name is not None and recording.name != expected_name:
+            raise ToolError(
+                f"Rename conflict: the recording is currently named "
+                f"{recording.name!r}, not {expected_name!r}. It changed since "
+                "you last read it; re-read and retry if the rename is still "
+                "wanted."
+            )
         updated = await update_recording(
             recording_id,
             RecordingUpdate(name=name.strip()),
             db=db,
             current_user=user,
         )
-    return {"id": updated.id, "name": updated.name}
+        revision = await _transcript_revision(db, recording_id, user.id)
+    return {
+        "id": updated.id,
+        "name": updated.name,
+        "updated_at": updated.updated_at.isoformat(),
+        "transcript_revision": revision,
+    }
 
 
 @mcp_tool()
@@ -140,7 +198,8 @@ async def archive_recording(recording_id: str) -> dict[str, Any]:
     _require_write_scope("archiving recordings")
     async with async_session_maker() as db:
         updated = await api_archive_recording(recording_id, db=db, current_user=user)
-    return _lifecycle_payload(updated)
+        revision = await _transcript_revision(db, recording_id, user.id)
+    return _lifecycle_payload(updated, revision)
 
 
 @mcp_tool()
@@ -161,7 +220,8 @@ async def restore_recording(recording_id: str) -> dict[str, Any]:
     _require_write_scope("restoring recordings")
     async with async_session_maker() as db:
         updated = await api_restore_recording(recording_id, db=db, current_user=user)
-    return _lifecycle_payload(updated)
+        revision = await _transcript_revision(db, recording_id, user.id)
+    return _lifecycle_payload(updated, revision)
 
 
 @mcp_tool()
@@ -185,7 +245,8 @@ async def trash_recording(recording_id: str) -> dict[str, Any]:
         updated = await api_soft_delete_recording(
             recording_id, db=db, current_user=user
         )
-    return _lifecycle_payload(updated)
+        revision = await _transcript_revision(db, recording_id, user.id)
+    return _lifecycle_payload(updated, revision)
 
 
 @mcp_tool()

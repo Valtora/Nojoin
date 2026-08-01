@@ -141,6 +141,7 @@ def _require_destroy_scope(capability: str) -> None:
 def _compact_recording(
     recording: Any,
     transcript_revision: int = 0,
+    match_query: Optional[str] = None,
 ) -> dict[str, Any]:
     """Compact a Recording ORM row for the MCP client.
 
@@ -149,6 +150,12 @@ def _compact_recording(
     eager-loaded: the web endpoint's serializer strips these unless
     explicitly asked, so list_recordings loads the ORM row itself rather
     than relying on that projection.
+
+    When ``match_query`` is supplied, the payload carries a best-effort
+    ``match_field`` hint. Name, tag, and speaker labels are exact tests
+    against the strings in this payload; ``content`` is inferred by
+    elimination (the search also spans transcript text, which is not
+    loaded here), so treat it as a hint, not proof.
     """
     speakers = [
         speaker.local_name
@@ -164,6 +171,17 @@ def _compact_recording(
         if recording_tag.tag is not None
     ]
     transcript = recording.transcript
+    match_field: Optional[str] = None
+    if match_query:
+        needle = match_query.lower()
+        if needle in recording.name.lower():
+            match_field = "name"
+        elif any(needle in tag.lower() for tag in tags):
+            match_field = "tag"
+        elif any(needle in speaker.lower() for speaker in speakers if speaker):
+            match_field = "speaker"
+        else:
+            match_field = "content"
     return {
         "id": recording.public_id,
         "name": recording.name,
@@ -180,6 +198,7 @@ def _compact_recording(
         "speakers": speakers,
         "is_archived": recording.is_archived,
         "is_deleted": recording.is_deleted,
+        **({"match_field": match_field} if match_field is not None else {}),
     }
 
 
@@ -205,6 +224,14 @@ async def list_recordings(
     changed since last seen, without re-fetching transcripts. Pass a stored
     `transcript_revision` to get_transcript_utterances to fetch only what
     changed.
+
+    When `query` is supplied, each result carries a best-effort
+    `match_field` hint ("name", "tag", "speaker", or "content") saying
+    which field likely produced the match. Name, tag, and speaker are
+    exact tests against the returned strings; "content" means the match
+    was probably in transcript text. Use it to tell a genuine title match
+    from an incidental one before acting on a result, but treat it as a
+    hint rather than proof.
 
     Args:
         limit: Maximum number of recordings to return (1-100).
@@ -295,6 +322,7 @@ async def list_recordings(
         _compact_recording(
             by_public_id[public_id],
             transcript_revision=revisions.get(by_public_id[public_id].id, 0),
+            match_query=query,
         )
         for public_id in ordered_public_ids
         if public_id in by_public_id
