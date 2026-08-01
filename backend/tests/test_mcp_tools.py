@@ -1997,3 +1997,28 @@ async def test_list_recordings_match_field_hint(
 
     unqueried = await list_recordings()
     assert "match_field" not in unqueried[0]
+
+
+@pytest.mark.anyio
+async def test_list_recordings_deduplicates_speaker_names(
+    session_maker, test_user: User, mcp_context
+):
+    """Two diarised labels resolved to the same person appear once in the
+    compact speaker list."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO recording_speakers (id, created_at, updated_at, "
+                "public_id, recording_id, global_speaker_id, diarization_label) "
+                "VALUES (4, :ts, :ts, 'rs-4', 1, 11, 'SPEAKER_03')"
+            ),
+            {"ts": TEST_TIMESTAMP},
+        )
+        await session.commit()
+
+    recordings = await list_recordings()
+
+    assert recordings[0]["speakers"] == ["Dana", "Guest"]

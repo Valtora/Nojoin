@@ -157,14 +157,18 @@ def _compact_recording(
     elimination (the search also spans transcript text, which is not
     loaded here), so treat it as a hint, not proof.
     """
-    speakers = [
-        speaker.local_name
-        or (speaker.global_speaker.name if speaker.global_speaker else None)
-        or speaker.name
-        or speaker.diarization_label
-        for speaker in recording.speakers
-        if not speaker.merged_into_id
-    ]
+    # Order-preserving dedupe: two diarised labels resolved to the same
+    # person would otherwise repeat that person's name in the list.
+    speakers = list(
+        dict.fromkeys(
+            speaker.local_name
+            or (speaker.global_speaker.name if speaker.global_speaker else None)
+            or speaker.name
+            or speaker.diarization_label
+            for speaker in recording.speakers
+            if not speaker.merged_into_id
+        )
+    )
     tags = [
         recording_tag.tag.name
         for recording_tag in recording.tags
