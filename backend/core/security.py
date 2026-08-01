@@ -31,11 +31,10 @@ API_ACCESS_SCOPE = "api:full"
 MCP_READ_SCOPE = "mcp:read"
 # Grants the recoverable write tools on the MCP endpoint only; mcp-type
 # tokens remain rejected by every general API route regardless of scope.
+# There is deliberately no stronger scope: the connector's destructive
+# ceiling is moving a recording to the bin, and permanent deletion exists
+# only in the web app.
 MCP_WRITE_SCOPE = "mcp:write"
-# Grants permanent-deletion tools on the MCP endpoint only. Never part of
-# the default grant: the consent page offers it as an explicit opt-in, so
-# a connector holds it only when the user ticked that box.
-MCP_DESTROY_SCOPE = "mcp:destroy"
 
 ALGORITHM = "HS256"
 DEFAULT_LEGACY_KID = "legacy"

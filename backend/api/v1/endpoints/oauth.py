@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.api.services import oauth_service
 from backend.api.services.oauth_service import OAuthError
-from backend.core.security import MCP_DESTROY_SCOPE
 from backend.models.user import User
 from backend.utils.config_manager import is_mcp_enabled
 from backend.utils.rate_limit import enforce_rate_limit
@@ -147,11 +146,6 @@ class AuthorizeDecision(BaseModel):
     code_challenge: Optional[str] = None
     code_challenge_method: Optional[str] = None
     resource: Optional[str] = None
-    # The consent page's explicit opt-in for the permanent-deletion scope,
-    # which is never part of the default grant. Only ever widens the grant
-    # by mcp:destroy; every other scope still comes from the validated
-    # authorization request.
-    grant_destroy: bool = False
 
 
 class AuthorizeDecisionRead(BaseModel):
@@ -203,21 +197,11 @@ async def authorize_decision(
             redirect_to=_append_query(decision.redirect_uri, params)
         )
 
-    # The consent tick is the only path to the destroy scope. A client may
-    # request it by name (clients re-request previously granted scopes on
-    # reconnect), but a stored preference is not consent: without the tick
-    # the scope is stripped rather than honoured.
-    granted = set(normalised_scope.split())
-    granted.discard(MCP_DESTROY_SCOPE)
-    if decision.grant_destroy:
-        granted.add(MCP_DESTROY_SCOPE)
-    granted_scope = " ".join(sorted(granted))
-
     code = await oauth_service.create_authorization_code(
         db,
         request=authorization_request,
         user=current_user,
-        scope=granted_scope,
+        scope=normalised_scope,
     )
     params = {"code": code}
     if decision.state:

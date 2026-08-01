@@ -22,7 +22,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import select
 
 from backend.api.v1.api import api_router  # noqa: F401 - registers all model mappers
-from backend.core.security import MCP_DESTROY_SCOPE, MCP_READ_SCOPE, MCP_WRITE_SCOPE
+from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
 from backend.mcp_server import server as mcp_server
 from backend.mcp_server.auth import current_mcp_scopes, current_mcp_user
 from backend.mcp_server.server import (
@@ -36,7 +36,6 @@ from backend.mcp_server.tools_manage import (
     archive_recording,
     attach_document,
     correct_utterance_text,
-    destroy_recording,
     link_calendar_event,
     list_calendar_events,
     rename_recording,
@@ -1593,44 +1592,14 @@ async def test_write_tools_reject_read_only_grant(
 
 
 @pytest.mark.anyio
-async def test_destroy_recording_requires_opt_in_scope_and_bin(
-    session_maker, test_user: User, mcp_context
-):
-    """Destruction takes both the destroy scope and a recording already in
-    the bin; either missing precondition refuses, and only then does the
-    row actually go."""
-    await seed_bare_recording(
-        session_maker,
-        recording_id=1,
-        public_id="rec-1",
-        user_id=test_user.id,
-        state="active",
-    )
+async def test_permanent_deletion_is_absent_from_the_mcp_surface():
+    """The connector's strongest deletion verb is the bin: no registered
+    tool can permanently delete anything, by design."""
+    from backend.mcp_server.server import mcp
 
-    bind_mcp_identity(test_user)  # read + write, no destroy
-    with pytest.raises(ToolError):
-        await destroy_recording("rec-1")
-
-    bind_mcp_identity(
-        test_user,
-        scopes=frozenset({MCP_READ_SCOPE, MCP_WRITE_SCOPE, MCP_DESTROY_SCOPE}),
-    )
-    # Scope alone is not enough: an active recording is refused with the
-    # trash-first instruction, and nothing is deleted.
-    with pytest.raises(ToolError) as exc_info:
-        await destroy_recording("rec-1")
-    assert "trash_recording first" in str(exc_info.value)
-    async with session_maker() as session:
-        remaining = await session.execute(text("SELECT COUNT(*) FROM recordings"))
-        assert remaining.scalar() == 1
-
-    await trash_recording("rec-1")
-    result = await destroy_recording("rec-1")
-    assert result == {"id": "rec-1", "destroyed": True}
-
-    async with session_maker() as session:
-        remaining = await session.execute(text("SELECT COUNT(*) FROM recordings"))
-        assert remaining.scalar() == 0
+    tool_names = {tool.name for tool in await mcp.list_tools()}
+    assert "destroy_recording" not in tool_names
+    assert "trash_recording" in tool_names
 
 
 @pytest.mark.anyio

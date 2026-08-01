@@ -1,12 +1,12 @@
-"""MCP tools that manage the user's library: recoverable mutations plus
-the one destructive tool.
+"""MCP tools that manage the user's library. All mutations are recoverable.
 
 Every tool delegates to the endpoint coroutine the web client uses, so
 validation, ownership checks, and side effects stay identical across
-surfaces. Recoverable verbs (rename, tag, archive, bin, restore,
-reprocess, notes regeneration, document attachment, transcript
-correction, calendar linking) require mcp:write; permanent deletion alone
-requires mcp:destroy.
+surfaces. Every verb here (rename, tag, archive, bin, restore, reprocess,
+notes regeneration, document attachment, transcript correction, calendar
+linking) requires mcp:write, and the strongest deletion verb is
+trash_recording: permanent deletion is deliberately not exposed through
+the connector at all.
 """
 
 import logging
@@ -18,7 +18,6 @@ from sqlmodel import select
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
     _parse_iso_datetime,
-    _require_destroy_scope,
     _require_write_scope,
     mcp_tool,
 )
@@ -227,7 +226,9 @@ async def restore_recording(recording_id: str) -> dict[str, Any]:
 @mcp_tool()
 async def trash_recording(recording_id: str) -> dict[str, Any]:
     """Move a recording to the bin (soft delete). Reversible with
-    restore_recording; nothing is destroyed.
+    restore_recording; nothing is destroyed. This is the strongest
+    deletion the connector offers: emptying the bin permanently is only
+    possible in the web app.
 
     Requires the mcp:write scope.
 
@@ -247,42 +248,6 @@ async def trash_recording(recording_id: str) -> dict[str, Any]:
         )
         revision = await _transcript_revision(db, recording_id, user.id)
     return _lifecycle_payload(updated, revision)
-
-
-@mcp_tool()
-async def destroy_recording(recording_id: str) -> dict[str, Any]:
-    """PERMANENTLY delete a recording that is already in the bin.
-
-    This is irreversible: the audio file and every derived artefact are
-    destroyed. Two independent preconditions apply. The grant must carry
-    the mcp:destroy scope, which the user enables only through an explicit
-    opt-in on the consent page. And the recording must already be in the
-    bin: an active or archived recording is refused, so destruction always
-    takes two deliberate steps (trash_recording, then this), matching the
-    web app, where permanent deletion exists only in the bin view.
-
-    Args:
-        recording_id: The recording's string id from list_recordings.
-    """
-    from backend.api.v1.endpoints.recordings.routes_actions import (
-        permanently_delete_recording,
-    )
-    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
-    from backend.core.db import async_session_maker
-
-    user = get_current_mcp_user()
-    _require_destroy_scope("permanent recording deletion")
-    async with async_session_maker() as db:
-        recording = await _get_owned_recording(db, recording_id, user.id)
-        if not recording.is_deleted:
-            raise ToolError(
-                "Refused: only recordings already in the bin can be "
-                "permanently deleted. Call trash_recording first, confirm "
-                "the recording is the right one, then destroy it. This "
-                "two-step is deliberate and cannot be bypassed."
-            )
-        await permanently_delete_recording(recording_id, db=db, current_user=user)
-    return {"id": recording_id, "destroyed": True}
 
 
 @mcp_tool()

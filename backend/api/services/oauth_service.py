@@ -43,19 +43,17 @@ logger = logging.getLogger(__name__)
 AUTHORIZATION_CODE_TTL_SECONDS = 60
 REFRESH_TOKEN_TTL_DAYS = 180
 MAX_REDIRECT_URIS = 8
-SUPPORTED_SCOPES = {
-    security.MCP_READ_SCOPE,
-    security.MCP_WRITE_SCOPE,
-    security.MCP_DESTROY_SCOPE,
-}
+SUPPORTED_SCOPES = {security.MCP_READ_SCOPE, security.MCP_WRITE_SCOPE}
+# Scopes that once existed and were retired. Clients re-request the scopes
+# they were previously granted on reconnect, so a retired scope in a
+# request is stripped rather than rejected: erroring would permanently
+# break re-authorisation for every grant that ever held it.
+RETIRED_SCOPES = {"mcp:destroy"}
 # MCP clients (claude.ai, Claude Code) request no scope, so the default is
 # what real grants receive: read plus the recoverable write scope, both
-# listed on the consent page. The destroy scope is deliberately excluded
-# from the default: it is granted only when the user ticks the explicit
-# opt-in on the consent page (or a client requests it by name). Grants
-# issued before a scope existed keep their recorded scope until the user
-# reconnects.
-DEFAULT_SCOPE = " ".join(sorted({security.MCP_READ_SCOPE, security.MCP_WRITE_SCOPE}))
+# listed on the consent page. Grants issued before a scope existed keep
+# their recorded scope until the user reconnects.
+DEFAULT_SCOPE = " ".join(sorted(SUPPORTED_SCOPES))
 
 _LOOPBACK_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
 
@@ -131,7 +129,9 @@ def _validate_redirect_uri_shape(uri: str) -> None:
 def normalise_scope(scope: Optional[str]) -> str:
     if not scope or not scope.strip():
         return DEFAULT_SCOPE
-    requested = set(scope.split())
+    requested = set(scope.split()) - RETIRED_SCOPES
+    if not requested:
+        return DEFAULT_SCOPE
     unsupported = requested - SUPPORTED_SCOPES
     if unsupported:
         raise OAuthError(

@@ -15,7 +15,6 @@ import {
   Search,
   ShieldCheck,
   Tag,
-  Trash2,
   User as UserIcon,
   UserPlus,
   Users,
@@ -109,7 +108,6 @@ function AuthorizeContent() {
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [grantDestroy, setGrantDestroy] = useState(false);
 
   useEffect(() => {
     const initialise = async () => {
@@ -164,7 +162,7 @@ function AuthorizeContent() {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await submitOAuthDecision(params, approve, grantDestroy);
+      const result = await submitOAuthDecision(params, approve);
       window.location.href = result.redirect_to;
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Unable to complete the authorisation."));
@@ -177,12 +175,8 @@ function AuthorizeContent() {
   const isReadOnly = Boolean(
     info && info.scope_items.every((scope) => scope === "mcp:read"),
   );
-  // The tick below is the only path to the destroy scope: the server
-  // strips a by-name request (clients re-request previously granted
-  // scopes on reconnect) unless the user ticks the box again, so the
-  // toggle is offered on every write-capable grant and the scope is
-  // excluded from the capability list rendering.
-  const offerDestroy = Boolean(info && !isReadOnly);
+  // mcp:destroy is retired; the server strips it from every grant, but an
+  // old client can still request it by name, so keep it out of the list.
   const capabilities = info
     ? info.scope_items
         .filter((scope) => scope !== "mcp:destroy")
@@ -262,28 +256,6 @@ function AuthorizeContent() {
                 ))}
               </ul>
 
-              {offerDestroy && (
-                <label className="mt-3 flex items-start gap-3 rounded-surface-panel border border-surface-border bg-surface-inset px-4 py-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={grantDestroy}
-                    onChange={(e) => setGrantDestroy(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-action"
-                  />
-                  <span className="text-sm text-contrast-muted">
-                    <span className="flex items-center gap-2 font-medium text-foreground">
-                      <Trash2 className="h-4 w-4 shrink-0 text-danger-text" />
-                      Also allow deleting from the bin
-                    </span>
-                    <span className="mt-1 block text-xs text-contrast-helper">
-                      Off by default. Binned recordings can otherwise always
-                      be restored; with this on, {info.client_name} can
-                      delete them for good, audio included.
-                    </span>
-                  </span>
-                </label>
-              )}
-
               <p className="mt-3 flex items-start gap-2 text-xs text-contrast-helper">
                 <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-status-success-fg" />
                 {isReadOnly ? (
@@ -295,10 +267,8 @@ function AuthorizeContent() {
                   <>
                     Everything {info.client_name} changes with this access
                     stays recoverable: archived and binned items can be
-                    restored, and transcript edits are tracked.
-                    {grantDestroy
-                      ? " Deleting from the bin is enabled by your tick above."
-                      : " It cannot delete anything from the bin."}
+                    restored, and transcript edits are tracked. It cannot
+                    permanently delete anything.
                   </>
                 )}
               </p>

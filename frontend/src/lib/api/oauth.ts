@@ -53,7 +53,6 @@ export const getOAuthAuthorizeInfo = async (
 export const submitOAuthDecision = async (
   params: OAuthAuthorizeParams,
   approve: boolean,
-  grantDestroy: boolean = false,
 ): Promise<OAuthDecisionResult> => {
   const response = await api.post<OAuthDecisionResult>(
     "/oauth/authorize/decision",
@@ -67,7 +66,6 @@ export const submitOAuthDecision = async (
       code_challenge: params.code_challenge,
       code_challenge_method: params.code_challenge_method,
       resource: params.resource,
-      grant_destroy: grantDestroy,
     },
   );
   return response.data;

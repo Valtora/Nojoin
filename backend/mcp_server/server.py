@@ -9,12 +9,13 @@ resolution), so the MCP surface can never drift from what the web client
 shows. All tools are scoped to the authenticated user resolved by
 :class:`backend.mcp_server.auth.MCPAuthMiddleware`.
 
-Three access tiers: ``mcp:read`` for every read tool, ``mcp:write`` for
+Two access tiers: ``mcp:read`` for every read tool and ``mcp:write`` for
 recoverable mutations (organising recordings, tasks, transcript
-corrections, notes regeneration, text documents, People maintenance), and
-``mcp:destroy`` — granted only by an explicit consent-page opt-in — for
-permanent recording deletion. Grants keep the scopes they were issued
-with; tools beyond a grant's scopes refuse with reconnect instructions.
+corrections, notes regeneration, text documents, People maintenance).
+There is deliberately no destructive tier: the connector's strongest verb
+is moving a recording to the bin, and permanent deletion exists only in
+the web app. Grants keep the scopes they were issued with; tools beyond a
+grant's scopes refuse with reconnect instructions.
 """
 
 import logging
@@ -30,7 +31,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from starlette.types import ASGIApp
 
-from backend.core.security import MCP_DESTROY_SCOPE, MCP_WRITE_SCOPE
+from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import (
     MCPAuthMiddleware,
     get_current_mcp_scopes,
@@ -50,10 +51,11 @@ MCP_SERVER_INSTRUCTIONS = (
     "organising recordings (rename, tag, archive, bin, restore), managing "
     "tasks, correcting transcripts, regenerating notes, attaching text "
     "documents, appending user notes, and maintaining People records. "
-    "Permanent deletion exists only behind the separate mcp:destroy scope, "
-    "which the user grants by an explicit opt-in. Recording identifiers "
-    "are the string `id` values returned by list_recordings; person "
-    "identifiers are the integer `id` values from list_people. Read "
+    "Nothing here deletes permanently: the strongest deletion verb is "
+    "moving a recording to the bin, which the user can restore or empty "
+    "in the web app. Recording identifiers are the string `id` values "
+    "returned by list_recordings; person identifiers are the integer "
+    "`id` values from list_people. Read "
     "transcripts with get_transcript for prose, or "
     "get_transcript_utterances for structured utterances with stable ids, "
     "timestamps, and a revision cursor for incremental sync."
@@ -116,25 +118,6 @@ def _require_write_scope(capability: str) -> None:
             "This connection is read-only: its grant predates the "
             f"{MCP_WRITE_SCOPE} scope. Ask the user to reconnect the Nojoin "
             f"connector (remove and re-authorise it) to enable {capability}."
-        )
-
-
-def _require_destroy_scope(capability: str) -> None:
-    """Guard a permanent-deletion tool: refuse grants without mcp:destroy.
-
-    The destroy scope is never part of the default grant; the user must
-    tick the explicit opt-in on the consent page. The refusal tells the
-    assistant how the user can enable it, and that everything else keeps
-    working without it.
-    """
-    if MCP_DESTROY_SCOPE not in get_current_mcp_scopes():
-        raise ToolError(
-            "This connection cannot permanently delete anything: the "
-            f"{MCP_DESTROY_SCOPE} scope was not granted. If the user wants "
-            f"to enable {capability}, they must reconnect the Nojoin "
-            "connector and tick 'Also allow permanent deletion' on the "
-            "consent page. Archiving and moving to the bin still work "
-            "without it."
         )
 
 
