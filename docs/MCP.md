@@ -50,7 +50,17 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 3. Save the server, then select **Restart**. The restart matters: Codex probes the server on startup. The handshake and tool listing succeed anonymously (see [Anonymous Discovery](#anonymous-discovery)), every tool advertises the OAuth scope it needs, and the server flags itself as requiring sign-in.
 4. In the server list, select **Authenticate**. A browser window opens for the same Nojoin sign-in and consent step as Claude. Until then, any tool call an assistant attempts returns an authentication challenge rather than data.
 
-If **Authenticate** never appears after a restart, mark the server for OAuth by hand in `~/.codex/config.toml` (the desktop app, CLI, and IDE extension share this file), restart again, or run `codex mcp login nojoin` in a terminal as a fallback:
+### If Authenticate never appears: stale stored credentials
+
+Codex only offers **Authenticate** when it finds no stored OAuth tokens for the server. If it holds tokens from an earlier connection — even dead ones — it reports itself as signed in and silently retries a refresh that can never succeed, and tasks see `MCP server 'nojoin' was not ready for this step`. This happens in particular after Nojoin revokes a grant for refresh-token replay (Codex's desktop app, CLI, and IDE extension share `~/.codex` but can keep divergent credential copies across its keyring and file stores, so one process can replay a token another has already rotated — which Nojoin's OAuth server treats as theft and punishes by revoking the whole grant).
+
+The fix is to remove the stored credentials so Codex re-evaluates the server from scratch:
+
+- Where the Codex CLI is installed: `codex mcp logout nojoin`, then restart the desktop app.
+- Desktop-only hosts: quit Codex fully, then delete the server's entry under the **"Codex MCP Credentials"** service in the OS keychain (Windows Credential Manager → Windows Credentials; the secret name starts with `MCP_OAUTH`), or delete the fallback file `~/.codex/.credentials.json` if it exists (this clears stored credentials for every MCP server, though not the ChatGPT sign-in). Restart the app.
+- Quickest workaround, no credential surgery: delete the server entry in Codex and re-add the same URL under a **different name**. Stored credentials are keyed by server name, so the new name starts clean and **Authenticate** appears after a restart.
+
+If **Authenticate** still never appears from a genuinely clean state, mark the server for OAuth by hand in `~/.codex/config.toml` (shared by the desktop app, CLI, and IDE extension), restart again, or run `codex mcp login nojoin` in a terminal as a fallback:
 
 ```toml
 [mcp_servers.nojoin]
