@@ -199,12 +199,13 @@ async def register_claude_client(client: AsyncClient) -> str:
     return payload["client_id"]
 
 
-async def obtain_code(
+async def obtain_code(  # noqa: PLR0913 - one keyword per consent-form field
     client: AsyncClient,
     client_id: str,
     challenge: str,
     state: str = "xyz",
     grant_destroy: bool = False,
+    scope: str | None = None,
 ) -> str:
     response = await client.post(
         "/api/v1/oauth/authorize/decision",
@@ -213,6 +214,7 @@ async def obtain_code(
             "client_id": client_id,
             "redirect_uri": CLAUDE_CALLBACK,
             "response_type": "code",
+            "scope": scope,
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
@@ -403,6 +405,37 @@ async def test_destroy_scope_granted_only_by_consent_opt_in(
         security.MCP_READ_SCOPE,
         security.MCP_WRITE_SCOPE,
     ]
+
+
+@pytest.mark.anyio
+async def test_destroy_scope_requested_by_name_is_stripped_without_tick(
+    client: AsyncClient, fixed_origin, isolated_keyring, test_user: User
+):
+    """Clients re-request previously granted scopes on reconnect; a stored
+    preference is not consent, so a by-name destroy request without the
+    consent tick is stripped rather than honoured."""
+    client_id = await register_claude_client(client)
+    verifier, challenge = make_pkce_pair()
+    code = await obtain_code(
+        client,
+        client_id,
+        challenge,
+        scope="mcp:destroy mcp:read mcp:write",
+        grant_destroy=False,
+    )
+
+    token_response = await client.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": CLAUDE_CALLBACK,
+            "code_verifier": verifier,
+        },
+    )
+    assert token_response.status_code == 200, token_response.text
+    assert token_response.json()["scope"] == "mcp:read mcp:write"
 
 
 @pytest.mark.anyio

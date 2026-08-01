@@ -203,11 +203,15 @@ async def authorize_decision(
             redirect_to=_append_query(decision.redirect_uri, params)
         )
 
-    granted_scope = normalised_scope
+    # The consent tick is the only path to the destroy scope. A client may
+    # request it by name (clients re-request previously granted scopes on
+    # reconnect), but a stored preference is not consent: without the tick
+    # the scope is stripped rather than honoured.
+    granted = set(normalised_scope.split())
+    granted.discard(MCP_DESTROY_SCOPE)
     if decision.grant_destroy:
-        granted_scope = " ".join(
-            sorted(set(normalised_scope.split()) | {MCP_DESTROY_SCOPE})
-        )
+        granted.add(MCP_DESTROY_SCOPE)
+    granted_scope = " ".join(sorted(granted))
 
     code = await oauth_service.create_authorization_code(
         db,

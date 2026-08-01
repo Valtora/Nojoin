@@ -92,7 +92,7 @@ For operators who want the detail:
 - Discovery documents are served at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` (RFC 9728 / RFC 8414).
 - Clients self-register at `POST /api/v1/oauth/register` (RFC 7591 Dynamic Client Registration). Only public clients with PKCE are accepted; registration is rate limited.
 - The authorisation page at `/oauth/authorize` uses your normal Nojoin session and origin protections. Codes are single-use, PKCE-bound (S256), and expire after 60 seconds.
-- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. New grants carry the `mcp:read` and `mcp:write` scopes by default; `mcp:destroy` is added only when the user ticks the permanent-deletion opt-in on the consent page (or a client requests it by name). Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
+- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. New grants carry the `mcp:read` and `mcp:write` scopes by default; `mcp:destroy` is added only when the user ticks the deletion opt-in on the consent page; a client requesting the scope by name still needs the tick, since clients re-request previously granted scopes on reconnect and a stored preference is not consent. Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
 - The reverse proxy must forward `/mcp` and `/.well-known/oauth-*` to the API service. The bundled Nginx configuration does this out of the box; see [DEPLOYMENT.md](DEPLOYMENT.md) if you front Nojoin with your own edge proxy.
 
 ## Troubleshooting

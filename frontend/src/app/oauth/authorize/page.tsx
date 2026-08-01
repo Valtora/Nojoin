@@ -66,12 +66,6 @@ const SCOPE_CAPABILITIES: Record<
     { icon: FileText, label: "Attach text documents and append to notes" },
     { icon: UserPlus, label: "Add or update people and name speakers" },
   ],
-  "mcp:destroy": [
-    {
-      icon: Trash2,
-      label: "Permanently delete recordings and their audio",
-    },
-  ],
 };
 
 function redirectHost(redirectUri: string): string | null {
@@ -183,16 +177,19 @@ function AuthorizeContent() {
   const isReadOnly = Boolean(
     info && info.scope_items.every((scope) => scope === "mcp:read"),
   );
-  // The destroy scope is never granted by default: it is either requested
-  // by name (rare, API-savvy clients) or ticked here by the user.
-  const offerDestroy = Boolean(
-    info && !isReadOnly && !info.scope_items.includes("mcp:destroy"),
-  );
+  // The tick below is the only path to the destroy scope: the server
+  // strips a by-name request (clients re-request previously granted
+  // scopes on reconnect) unless the user ticks the box again, so the
+  // toggle is offered on every write-capable grant and the scope is
+  // excluded from the capability list rendering.
+  const offerDestroy = Boolean(info && !isReadOnly);
   const capabilities = info
-    ? info.scope_items.flatMap(
-        (scope) =>
-          SCOPE_CAPABILITIES[scope] ?? [{ icon: ShieldCheck, label: scope }],
-      )
+    ? info.scope_items
+        .filter((scope) => scope !== "mcp:destroy")
+        .flatMap(
+          (scope) =>
+            SCOPE_CAPABILITIES[scope] ?? [{ icon: ShieldCheck, label: scope }],
+        )
     : [];
 
   return (
@@ -276,11 +273,12 @@ function AuthorizeContent() {
                   <span className="text-sm text-contrast-muted">
                     <span className="flex items-center gap-2 font-medium text-foreground">
                       <Trash2 className="h-4 w-4 shrink-0 text-danger-text" />
-                      Also allow permanent deletion
+                      Also allow deleting from the bin
                     </span>
                     <span className="mt-1 block text-xs text-contrast-helper">
-                      Off by default. Lets {info.client_name} destroy
-                      recordings and their audio irreversibly.
+                      Off by default. Binned recordings can otherwise always
+                      be restored; with this on, {info.client_name} can
+                      delete them for good, audio included.
                     </span>
                   </span>
                 </label>
@@ -299,8 +297,8 @@ function AuthorizeContent() {
                     stays recoverable: archived and binned items can be
                     restored, and transcript edits are tracked.
                     {grantDestroy
-                      ? " Permanent deletion is enabled by your tick above."
-                      : " It cannot permanently delete anything."}
+                      ? " Deleting from the bin is enabled by your tick above."
+                      : " It cannot delete anything from the bin."}
                   </>
                 )}
               </p>
