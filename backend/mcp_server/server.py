@@ -26,19 +26,24 @@ from typing import Any, Callable, Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import Icon
+from mcp.types import CallToolResult, Icon, TextContent
+from mcp.types import Tool as MCPTool
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from starlette.types import ASGIApp
 
-from backend.core.security import MCP_WRITE_SCOPE
+from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
 from backend.mcp_server.auth import (
     MCPAuthMiddleware,
+    current_mcp_user,
     get_current_mcp_scopes,
     get_current_mcp_user,
 )
 from backend.mcp_server.tool_logging import logged_tool
-from backend.utils.config_manager import get_trusted_web_origin
+from backend.utils.config_manager import (
+    get_trusted_web_origin,
+    is_mcp_anonymous_discovery_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +68,79 @@ MCP_SERVER_INSTRUCTIONS = (
 
 _PUBLIC_ORIGIN = get_trusted_web_origin().rstrip("/")
 
-mcp = FastMCP(
+# Tool name -> the OAuth scope it needs, declared at registration by
+# mcp_tool(). Read by the anonymous challenge (so each refusal names the
+# scope that would unlock the tool) and by the securitySchemes attached to
+# tool listings. Declarative only: enforcement stays with the middleware
+# and _require_write_scope; a test asserts the two never drift.
+_TOOL_SCOPES: dict[str, str] = {}
+
+
+def _authentication_challenge(tool_name: str) -> CallToolResult:
+    """In-band OAuth challenge for an anonymous tools/call.
+
+    Clients that cannot start OAuth from a transport-level 401 (Codex
+    Desktop) recognise this MCP-spec result shape instead: an isError
+    result whose _meta carries the same RFC 9728 challenge the middleware
+    puts in WWW-Authenticate, plus the scope this tool needs.
+    """
+    from backend.api.services.oauth_service import canonical_origin
+
+    scope = _TOOL_SCOPES.get(tool_name, MCP_READ_SCOPE)
+    metadata_url = f"{canonical_origin()}/.well-known/oauth-protected-resource/mcp"
+    challenge = (
+        f'Bearer resource_metadata="{metadata_url}", '
+        f'error="invalid_token", scope="{scope}"'
+    )
+    return CallToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=(
+                    "Authentication required. This Nojoin MCP server uses "
+                    f"OAuth: authorise the connection (scope {scope}), then "
+                    "retry the call."
+                ),
+            )
+        ],
+        isError=True,
+        _meta={"mcp/www_authenticate": [challenge]},
+    )
+
+
+class _AuthGatedFastMCP(FastMCP):
+    """FastMCP that answers anonymous tool calls with an in-band challenge.
+
+    This override — not the mcp_tool decorator — is the tool gate, for a
+    mechanical reason: FastMCP validates whatever a tool function returns
+    against the tool's output schema, so a challenge CallToolResult
+    returned from inside the function is rejected before it reaches the
+    wire. call_tool runs before the tool manager, and the lowlevel server
+    forwards a ready-made CallToolResult verbatim. Registered here on the
+    instance, it covers every tool with no per-tool code.
+    """
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        if current_mcp_user.get() is None:
+            return _authentication_challenge(name)
+        return await super().call_tool(name, arguments)
+
+    async def list_tools(self) -> list[MCPTool]:
+        tools = await super().list_tools()
+        if is_mcp_anonymous_discovery_enabled():
+            # Advertises, pre-auth, that every tool needs OAuth and which
+            # scope — the tool-level metadata OAuth-challenged clients key
+            # off. Tool is an extra="allow" model, so the field serialises
+            # as-is.
+            for tool in tools:
+                scope = _TOOL_SCOPES.get(tool.name, MCP_READ_SCOPE)
+                setattr(
+                    tool, "securitySchemes", [{"type": "oauth2", "scopes": [scope]}]
+                )
+        return tools
+
+
+mcp = _AuthGatedFastMCP(
     name="Nojoin",
     instructions=MCP_SERVER_INSTRUCTIONS,
     # Surfaced by MCP clients next to the server name (e.g. Claude's
@@ -86,10 +163,17 @@ mcp = FastMCP(
 )
 
 
-def mcp_tool() -> Callable[[Callable], Callable]:
-    """Register a coroutine as an MCP tool with call logging."""
+def mcp_tool(scope: str = MCP_READ_SCOPE) -> Callable[[Callable], Callable]:
+    """Register a coroutine as an MCP tool with call logging.
+
+    ``scope`` declares the OAuth scope the tool needs. It feeds the
+    securitySchemes advertised on listings and the scope named by anonymous
+    challenges; it does not itself enforce anything, so write tools declare
+    MCP_WRITE_SCOPE here and still call _require_write_scope in their body.
+    """
 
     def decorator(func: Callable) -> Callable:
+        _TOOL_SCOPES[func.__name__] = scope
         return mcp.tool()(logged_tool(func))
 
     return decorator
@@ -561,7 +645,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     return payload
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
     """Append text to a recording's user notes.
 

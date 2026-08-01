@@ -12,6 +12,7 @@ from typing import Any, Literal, Optional
 
 from mcp.server.fastmcp.exceptions import ToolError
 
+from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
     _parse_iso_datetime,
@@ -57,7 +58,7 @@ async def list_tasks(
     return [_compact_task(task) for task in tasks]
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def create_task(
     title: str,
     body: Optional[str] = None,
@@ -102,7 +103,7 @@ async def create_task(
     return _compact_task(task)
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def update_task(  # noqa: PLR0913 - each parameter is a documented tool argument
     task_id: int,
     title: Optional[str] = None,

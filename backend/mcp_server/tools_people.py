@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import _require_write_scope, mcp_tool
 
@@ -293,7 +294,7 @@ async def _import_one_person(
     return {"name": name, "action": action, "id": person.id}
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def import_people(
     people: list[PersonImportEntry],
     on_conflict: Literal["update", "skip"] = "update",
@@ -352,7 +353,7 @@ async def import_people(
     return {"summary": summary, "results": results}
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def set_speaker_name(
     recording_id: str, diarization_label: str, name: str
 ) -> dict[str, Any]:
