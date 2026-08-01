@@ -15,6 +15,7 @@ from typing import Any, Optional
 from mcp.server.fastmcp.exceptions import ToolError
 from sqlmodel import select
 
+from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import (
     _parse_iso_datetime,
@@ -71,7 +72,7 @@ def _lifecycle_payload(recording: Any, transcript_revision: int) -> dict[str, An
     }
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def rename_recording(
     recording_id: str, name: str, expected_name: Optional[str] = None
 ) -> dict[str, Any]:
@@ -122,7 +123,7 @@ async def rename_recording(
     }
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def tag_recording(
     recording_id: str, tag_name: str, color: Optional[str] = None
 ) -> dict[str, Any]:
@@ -155,7 +156,7 @@ async def tag_recording(
     return {"recording_id": recording_id, "tag": {"id": tag.id, "name": tag.name}}
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def untag_recording(recording_id: str, tag_name: str) -> dict[str, Any]:
     """Remove a tag from a recording. Requires the mcp:write scope.
 
@@ -179,7 +180,7 @@ async def untag_recording(recording_id: str, tag_name: str) -> dict[str, Any]:
     return {"recording_id": recording_id, "removed_tag": tag_name}
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def archive_recording(recording_id: str) -> dict[str, Any]:
     """Archive a recording. Fully reversible with restore_recording.
 
@@ -201,7 +202,7 @@ async def archive_recording(recording_id: str) -> dict[str, Any]:
     return _lifecycle_payload(updated, revision)
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def restore_recording(recording_id: str) -> dict[str, Any]:
     """Restore a recording from the archive or the bin.
 
@@ -223,7 +224,7 @@ async def restore_recording(recording_id: str) -> dict[str, Any]:
     return _lifecycle_payload(updated, revision)
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def trash_recording(recording_id: str) -> dict[str, Any]:
     """Move a recording to the bin (soft delete). Reversible with
     restore_recording; nothing is destroyed. This is the strongest
@@ -250,7 +251,7 @@ async def trash_recording(recording_id: str) -> dict[str, Any]:
     return _lifecycle_payload(updated, revision)
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def reprocess_recording(
     recording_id: str,
     transcription_backend: str,
@@ -297,7 +298,7 @@ async def reprocess_recording(
     return {"id": updated.id, "status": str(updated.status)}
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def regenerate_notes(
     recording_id: str, notes_template_id: Optional[int] = None
 ) -> dict[str, Any]:
@@ -335,7 +336,7 @@ async def regenerate_notes(
     }
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def attach_document(
     recording_id: str, title: str, content: str
 ) -> dict[str, Any]:
@@ -419,7 +420,7 @@ def _require_canonical_writes() -> None:
         )
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def correct_utterance_text(
     recording_id: str,
     utterance_id: str,
@@ -486,7 +487,7 @@ async def correct_utterance_text(
     }
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def correct_utterance_speaker(
     recording_id: str,
     utterance_id: str,
@@ -568,7 +569,7 @@ async def correct_utterance_speaker(
     }
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def unlock_utterance(
     recording_id: str,
     utterance_id: str,
@@ -692,7 +693,7 @@ async def list_calendar_events(
     ]
 
 
-@mcp_tool()
+@mcp_tool(scope=MCP_WRITE_SCOPE)
 async def link_calendar_event(
     recording_id: str, calendar_event_id: Optional[int] = None
 ) -> dict[str, Any]:

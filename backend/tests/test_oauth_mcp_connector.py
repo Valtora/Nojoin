@@ -19,6 +19,7 @@ from backend.api.services import oauth_service
 from backend.api.v1.api import api_router
 from backend.api.v1.endpoints.oauth import well_known_router
 from backend.core import security
+from backend.mcp_server import auth as mcp_auth
 from backend.mcp_server.auth import MCPAuthMiddleware, current_mcp_user
 from backend.models.invitation import (
     Invitation,  # noqa: F401 - register relationship target
@@ -657,11 +658,199 @@ async def test_mcp_token_dies_on_token_version_bump(
     assert response.status_code == 401
 
 
+@pytest.fixture
+def anonymous_rate_limit_fallback(monkeypatch):
+    """Route anonymous rate limiting to a clean in-memory window.
+
+    Stops the limiter probing Redis (absent in tests) and isolates each
+    test from windows consumed by earlier anonymous requests in the same
+    process — the fallback store is module-global.
+    """
+    from backend.utils import rate_limit as rate_limit_utils
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(rate_limit_utils, "_get_redis", _no_redis)
+    rate_limit_utils._fallback_windows.clear()
+    yield
+    rate_limit_utils._fallback_windows.clear()
+
+
+def _jsonrpc(method: str, request_id: int = 1) -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}}
+
+
 @pytest.mark.anyio
-async def test_mcp_protocol_tools_list_end_to_end(
-    monkeypatch, fixed_origin, isolated_keyring, session_maker, test_user: User
+async def test_anonymous_allowlist_passes_bootstrap_methods(
+    fixed_origin, anonymous_rate_limit_fallback
 ):
-    """Full stack: auth middleware -> MCP SDK streamable HTTP -> tools/list."""
+    """The five bootstrap methods reach the app anonymously, as no user."""
+    for method in (
+        "initialize",
+        "notifications/initialized",
+        "ping",
+        "tools/list",
+        "tools/call",
+    ):
+        seen: dict = {}
+        transport = ASGITransport(app=_build_mcp_test_app(seen))
+        async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+            response = await c.post("/", json=_jsonrpc(method))
+        assert response.status_code == 200, method
+        assert "user" in seen and seen["user"] is None, method
+
+
+@pytest.mark.anyio
+async def test_anonymous_unclassifiable_requests_stay_401(fixed_origin):
+    """Anything the allowlist cannot positively classify keeps the strict 401,
+    and every challenge now carries the scope hint."""
+    transport = ASGITransport(app=_build_mcp_test_app({}))
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        rejected = [
+            await c.post("/", json=_jsonrpc("resources/list")),
+            await c.post("/", json=_jsonrpc("tools/call/extra")),
+            await c.post("/", json={}),
+            await c.post(
+                "/", content=b"{not json", headers={"Content-Type": "application/json"}
+            ),
+            await c.post("/", json=[_jsonrpc("ping")]),
+            await c.post(
+                "/", content=b"x" * (mcp_auth._ANONYMOUS_BODY_LIMIT_BYTES + 1)
+            ),
+            await c.get("/"),
+            await c.post(
+                "/", json=_jsonrpc("ping"), headers={"Authorization": "Bearer garbage"}
+            ),
+        ]
+    for response in rejected:
+        assert response.status_code == 401
+        challenge = response.headers["www-authenticate"]
+        assert (
+            f'resource_metadata="{TEST_ORIGIN}/.well-known/oauth-protected-resource/mcp"'
+            in challenge
+        )
+        assert 'scope="mcp:read mcp:write"' in challenge
+
+
+@pytest.mark.anyio
+async def test_anonymous_requests_are_rate_limited(
+    monkeypatch, fixed_origin, anonymous_rate_limit_fallback
+):
+    monkeypatch.setattr(mcp_auth, "_ANONYMOUS_RATE_LIMIT", 2)
+    transport = ASGITransport(app=_build_mcp_test_app({}))
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        first = await c.post("/", json=_jsonrpc("ping"))
+        second = await c.post("/", json=_jsonrpc("ping"))
+        third = await c.post("/", json=_jsonrpc("ping"))
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert "retry-after" in third.headers
+    assert "www-authenticate" in third.headers
+
+
+@pytest.mark.anyio
+async def test_anonymous_discovery_disabled_restores_strict_401(
+    monkeypatch, fixed_origin
+):
+    """Flag off: today's exact pre-feature behaviour, scope hint included."""
+    monkeypatch.setenv("MCP_ANONYMOUS_DISCOVERY", "false")
+    transport = ASGITransport(app=_build_mcp_test_app({}))
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        response = await c.post("/", json=_jsonrpc("initialize"))
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == (
+        f'Bearer resource_metadata="{TEST_ORIGIN}'
+        '/.well-known/oauth-protected-resource/mcp"'
+    )
+
+
+def test_tool_scope_declarations_match_write_guards():
+    """The scope a tool declares to mcp_tool() must match its body's guard.
+
+    The declaration feeds securitySchemes and anonymous challenges; the
+    _require_write_scope call in the body is what actually enforces the
+    write scope. This sweep runs over every registered tool dynamically, so
+    a future tool that declares one and forgets the other fails here.
+    """
+    import inspect
+
+    from backend.mcp_server.server import _TOOL_SCOPES, mcp
+
+    tools = mcp._tool_manager.list_tools()
+    assert tools, "tool registry is empty - registration imports moved?"
+    for tool in tools:
+        source = inspect.getsource(inspect.unwrap(tool.fn))
+        declares_write = _TOOL_SCOPES[tool.name] == security.MCP_WRITE_SCOPE
+        guards_write = "_require_write_scope(" in source
+        assert declares_write == guards_write, (
+            f"{tool.name}: declared scope {_TOOL_SCOPES[tool.name]!r} does not "
+            "match its _require_write_scope guard"
+        )
+
+
+def _assert_anonymous_discovery_results(
+    anon_init, anon_list, anon_calls: dict, anon_disabled, tool_names: set
+) -> None:
+    """Assertions for the anonymous phases of the end-to-end test."""
+    from backend.mcp_server.server import _TOOL_SCOPES
+
+    # Anonymous bootstrap: the handshake and listing succeed with no token,
+    # and the listing names each tool's true scope.
+    assert anon_init.status_code == 200, anon_init.text
+    assert anon_init.json()["result"]["serverInfo"]["name"] == "Nojoin"
+
+    assert anon_list.status_code == 200, anon_list.text
+    anon_tools = anon_list.json()["result"]["tools"]
+    assert {tool["name"] for tool in anon_tools} == tool_names
+    for tool in anon_tools:
+        declared_scope = _TOOL_SCOPES[tool["name"]]
+        assert tool["securitySchemes"] == [
+            {"type": "oauth2", "scopes": [declared_scope]}
+        ], tool["name"]
+
+    # Every anonymous call was answered by the in-band challenge naming that
+    # tool's scope - never by the tool itself.
+    assert set(anon_calls) == tool_names
+    for name, call_result in anon_calls.items():
+        assert call_result["isError"] is True, name
+        challenge = call_result["_meta"]["mcp/www_authenticate"][0]
+        assert (
+            f'resource_metadata="{TEST_ORIGIN}'
+            '/.well-known/oauth-protected-resource/mcp"' in challenge
+        ), name
+        assert 'error="invalid_token"' in challenge, name
+        assert f'scope="{_TOOL_SCOPES[name]}"' in challenge, name
+        challenge_text = " ".join(
+            block["text"] for block in call_result["content"] if block["type"] == "text"
+        )
+        assert "Authentication required" in challenge_text, name
+
+    # With the compatibility flag off, the same anonymous request gets the
+    # strict transport-level 401 again.
+    assert anon_disabled.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_mcp_protocol_tools_list_end_to_end(  # noqa: PLR0913 - one fixture per protocol concern
+    monkeypatch,
+    fixed_origin,
+    isolated_keyring,
+    session_maker,
+    test_user: User,
+    anonymous_rate_limit_fallback,
+):
+    """Full stack: auth middleware -> MCP SDK streamable HTTP -> tools/list.
+
+    Also hosts the anonymous-discovery protocol phases: the SDK allows one
+    session-manager .run() per FastMCP instance and therefore one such
+    context per test process, so every phase that needs the real MCP app
+    shares this test's context. The anonymous sweep below makes one
+    tools/call per registered tool, so lift the per-IP anonymous limit out
+    of the way.
+    """
+    monkeypatch.setattr(mcp_auth, "_ANONYMOUS_RATE_LIMIT", 1000)
     import backend.core.db as core_db
     from backend.mcp_server import (
         NormaliseMcpMountPathMiddleware,
@@ -737,6 +926,55 @@ async def test_mcp_protocol_tools_list_end_to_end(
                 },
             )
 
+            # Anonymous-discovery phases: same requests with no Authorization
+            # header at all (Codex Desktop's position before its first OAuth).
+            anon_headers = {k: v for k, v in headers.items() if k != "Authorization"}
+            anon_init = await c.post(
+                "/mcp",
+                headers=anon_headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "anon", "version": "0"},
+                    },
+                },
+            )
+            anon_list = await c.post(
+                "/mcp",
+                headers=anon_headers,
+                json={"jsonrpc": "2.0", "id": 5, "method": "tools/list", "params": {}},
+            )
+            # Dynamic sweep: one anonymous call per listed tool, so a future
+            # tool cannot ship without the in-band challenge.
+            anon_calls: dict[str, dict] = {}
+            for request_id, tool in enumerate(
+                anon_list.json()["result"]["tools"], start=6
+            ):
+                call = await c.post(
+                    "/mcp",
+                    headers=anon_headers,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": "tools/call",
+                        "params": {"name": tool["name"], "arguments": {}},
+                    },
+                )
+                assert call.status_code == 200, (tool["name"], call.text)
+                anon_calls[tool["name"]] = call.json()["result"]
+
+            monkeypatch.setenv("MCP_ANONYMOUS_DISCOVERY", "false")
+            anon_disabled = await c.post(
+                "/mcp",
+                headers=anon_headers,
+                json={"jsonrpc": "2.0", "id": 999, "method": "ping"},
+            )
+            monkeypatch.delenv("MCP_ANONYMOUS_DISCOVERY")
+
     assert response.status_code == 200, response.text
     body = response.json()
     tool_names = {tool["name"] for tool in body["result"]["tools"]}
@@ -792,3 +1030,7 @@ async def test_mcp_protocol_tools_list_end_to_end(
     )
     assert "read-only" in text_blocks
     assert "reconnect" in text_blocks.lower()
+
+    _assert_anonymous_discovery_results(
+        anon_init, anon_list, anon_calls, anon_disabled, tool_names
+    )

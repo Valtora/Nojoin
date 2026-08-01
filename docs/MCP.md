@@ -15,6 +15,12 @@ The connector is enabled by default and needs no additional configuration, envir
 
 Operators who do not want the connector surface at all can set `MCP_ENABLED=false` in `.env` and restart the stack. This removes the `/mcp` endpoint, the OAuth discovery documents, and the authorisation endpoints — all of them respond `404` — without affecting any other Nojoin functionality. Existing grants stop working immediately because the token endpoint is gone.
 
+## Anonymous Discovery
+
+Some MCP clients — Codex Desktop among them — cannot begin OAuth against a server that answers the protocol handshake with `401`. By default Nojoin therefore serves a small anonymous bootstrap surface on `/mcp`: `initialize`, `ping`, and the tool listing succeed without a token, and an unauthenticated tool call returns an in-band authentication challenge naming the scope it needs instead of executing. What this exposes is only the connector's generic tool metadata — names, descriptions, schemas, and scopes, identical on every deployment and mirrored in the tool table below. No tool runs, no user data is reachable, every request outside that fixed allowlist still gets the strict `401`, and the anonymous surface is rate limited per client IP.
+
+Operators who prefer the strict pre-authentication behaviour can set `MCP_ANONYMOUS_DISCOVERY=false` in `.env` and restart; MCP clients must then be able to start OAuth from the `401` challenge itself (Claude can, Codex Desktop currently cannot). `MCP_ENABLED=false` removes the whole surface regardless.
+
 ## Connect Claude (claude.ai, Claude Desktop, Cowork)
 
 1. In Claude, open **Settings → Connectors → Add custom connector**.
@@ -41,8 +47,8 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 
 1. Open **Settings → MCP servers** and select **Add server**.
 2. Enter a name (for example `nojoin`), choose **Streamable HTTP** (not STDIO, which is for MCP servers Codex launches locally as a subprocess), and enter the URL `https://your-nojoin-domain/mcp`. Leave any bearer-token and header fields empty — that is not how Nojoin authenticates.
-3. Save the server, then select **Restart**. The restart matters: Codex probes the server on startup and only then flags it as requiring sign-in.
-4. In the server list, select **Authenticate**. A browser window opens for the same Nojoin sign-in and consent step as Claude.
+3. Save the server, then select **Restart**. The restart matters: Codex probes the server on startup. The handshake and tool listing succeed anonymously (see [Anonymous Discovery](#anonymous-discovery)), every tool advertises the OAuth scope it needs, and the server flags itself as requiring sign-in.
+4. In the server list, select **Authenticate**. A browser window opens for the same Nojoin sign-in and consent step as Claude. Until then, any tool call an assistant attempts returns an authentication challenge rather than data.
 
 If **Authenticate** never appears after a restart, mark the server for OAuth by hand in `~/.codex/config.toml` (the desktop app, CLI, and IDE extension share this file), restart again, or run `codex mcp login nojoin` in a terminal as a fallback:
 
