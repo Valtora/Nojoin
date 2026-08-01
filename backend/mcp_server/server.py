@@ -13,10 +13,7 @@ on the grant. Every read tool works with ``mcp:read`` alone, so grants
 issued before the write scope existed keep functioning unchanged.
 """
 
-import functools
-import inspect
 import logging
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Callable, Literal, Optional
@@ -34,10 +31,10 @@ from starlette.types import ASGIApp
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import (
     MCPAuthMiddleware,
-    current_mcp_user,
     get_current_mcp_scopes,
     get_current_mcp_user,
 )
+from backend.mcp_server.tool_logging import logged_tool
 from backend.utils.config_manager import get_trusted_web_origin
 
 logger = logging.getLogger(__name__)
@@ -51,7 +48,10 @@ MCP_SERVER_INSTRUCTIONS = (
     "set_speaker_name names a meeting's speaker and links it to a person, "
     "and append_meeting_notes adds to a meeting's user notes. Recording "
     "identifiers are the string `id` values returned by list_recordings; "
-    "person identifiers are the integer `id` values from list_people."
+    "person identifiers are the integer `id` values from list_people. "
+    "Read transcripts with get_transcript for prose, or "
+    "get_transcript_utterances for structured utterances with stable ids, "
+    "timestamps, and a revision cursor for incremental sync."
 )
 
 _PUBLIC_ORIGIN = get_trusted_web_origin().rstrip("/")
@@ -79,107 +79,11 @@ mcp = FastMCP(
 )
 
 
-# Argument names safe to log verbatim: identifiers, pagination, and enums —
-# never free text (note bodies, search queries) or PII (names, contact
-# details), which are summarised by length/count instead. This keeps the
-# MCP call log useful for debugging without recording meeting content, in
-# line with the logging redaction policy in docs/SECURITY.md.
-_LOGGABLE_ARG_NAMES = frozenset(
-    {
-        "recording_id",
-        "person_id",
-        "diarization_label",
-        "on_conflict",
-        "limit",
-        "skip",
-        "start_date",
-        "end_date",
-    }
-)
-
-
-def _summarise_args(arguments: dict[str, Any]) -> str:
-    parts: list[str] = []
-    for name, value in arguments.items():
-        if value is None:
-            continue
-        if name in _LOGGABLE_ARG_NAMES:
-            parts.append(f"{name}={value!r}")
-        elif isinstance(value, str):
-            parts.append(f"{name}=<str:{len(value)}>")
-        elif isinstance(value, (list, tuple, dict)):
-            parts.append(f"{name}=<{type(value).__name__}:{len(value)}>")
-        else:
-            parts.append(f"{name}=<{type(value).__name__}>")
-    return " ".join(parts) or "(no args)"
-
-
-def _summarise_result(result: Any) -> str:
-    if isinstance(result, (list, tuple, dict)):
-        return f"{type(result).__name__}:{len(result)}"
-    return type(result).__name__
-
-
-def _logged_tool(func: Callable) -> Callable:
-    """Wrap an MCP tool with structured call logging.
-
-    Emits one INFO line per successful call (tool, user, redacted args,
-    result shape, duration), a WARNING for a ToolError (an expected,
-    user-facing rejection), and an EXCEPTION for anything unexpected. The
-    signature is preserved via functools.wraps so FastMCP still builds the
-    tool's input schema from the original annotations.
-    """
-    signature = inspect.signature(func)
-
-    @functools.wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        user = current_mcp_user.get()
-        user_id = getattr(user, "id", None)
-        try:
-            bound = signature.bind(*args, **kwargs)
-            bound.apply_defaults()
-            arg_summary = _summarise_args(bound.arguments)
-        except TypeError:
-            arg_summary = "<unbindable args>"
-        started = time.monotonic()
-        try:
-            result = await func(*args, **kwargs)
-        except ToolError as exc:
-            logger.warning(
-                "mcp tool %s rejected user=%s %s: %s",
-                func.__name__,
-                user_id,
-                arg_summary,
-                exc,
-            )
-            raise
-        except Exception:
-            logger.exception(
-                "mcp tool %s failed user=%s %s",
-                func.__name__,
-                user_id,
-                arg_summary,
-            )
-            raise
-        duration_ms = (time.monotonic() - started) * 1000
-        logger.info(
-            "mcp tool %s ok user=%s %s -> %s (%.0fms)",
-            func.__name__,
-            user_id,
-            arg_summary,
-            _summarise_result(result),
-            duration_ms,
-        )
-        return result
-
-    return wrapper
-
-
 def mcp_tool() -> Callable[[Callable], Callable]:
     """Register a coroutine as an MCP tool with call logging."""
 
     def decorator(func: Callable) -> Callable:
-        return mcp.tool()(_logged_tool(func))
+        return mcp.tool()(logged_tool(func))
 
     return decorator
 
@@ -210,13 +114,17 @@ def _require_write_scope(capability: str) -> None:
         )
 
 
-def _compact_recording(recording: Any) -> dict[str, Any]:
+def _compact_recording(
+    recording: Any,
+    transcript_revision: int = 0,
+) -> dict[str, Any]:
     """Compact a Recording ORM row for the MCP client.
 
-    Expects ``tags`` (with each ``RecordingTag.tag``) and ``speakers`` (with
-    each ``RecordingSpeaker.global_speaker``) eager-loaded: the web endpoint's
-    serializer strips both unless explicitly asked, so list_recordings loads
-    the ORM row itself rather than relying on that projection.
+    Expects ``tags`` (with each ``RecordingTag.tag``), ``speakers`` (with
+    each ``RecordingSpeaker.global_speaker``), and ``transcript``
+    eager-loaded: the web endpoint's serializer strips these unless
+    explicitly asked, so list_recordings loads the ORM row itself rather
+    than relying on that projection.
     """
     speakers = [
         speaker.local_name
@@ -231,14 +139,19 @@ def _compact_recording(recording: Any) -> dict[str, Any]:
         for recording_tag in recording.tags
         if recording_tag.tag is not None
     ]
+    transcript = recording.transcript
     return {
         "id": recording.public_id,
         "name": recording.name,
         "created_at": recording.created_at.isoformat(),
+        "updated_at": recording.updated_at.isoformat(),
         "duration_seconds": recording.duration_seconds,
         "status": str(recording.status.value)
         if hasattr(recording.status, "value")
         else str(recording.status),
+        "transcript_status": transcript.transcript_status if transcript else None,
+        "notes_status": transcript.notes_status if transcript else None,
+        "transcript_revision": transcript_revision,
         "tags": tags,
         "speakers": speakers,
         "is_archived": recording.is_archived,
@@ -261,6 +174,14 @@ async def list_recordings(
     Each result carries `is_archived` and `is_deleted` so their state is
     clear and the caller can filter them out when only active meetings matter.
 
+    Each result also reports processing state (`status`, `transcript_status`,
+    `notes_status`), `updated_at`, and the canonical `transcript_revision`
+    cursor, so a caller can tell that a recording has finished processing
+    (`status` PROCESSED and `notes_status` completed) or that its transcript
+    changed since last seen, without re-fetching transcripts. Pass a stored
+    `transcript_revision` to get_transcript_utterances to fetch only what
+    changed.
+
     Args:
         limit: Maximum number of recordings to return (1-100).
         skip: Number of recordings to skip, for pagination.
@@ -271,10 +192,13 @@ async def list_recordings(
         end_date: Only recordings created on or before this ISO 8601
             date/datetime.
     """
+    from sqlalchemy import func
+
     from backend.api.v1.endpoints.recordings.routes_query import (
         list_recordings as api_list_recordings,
     )
     from backend.core.db import async_session_maker
+    from backend.models.pipeline import TranscriptUtteranceEvent
     from backend.models.recording import Recording
     from backend.models.speaker import RecordingSpeaker
     from backend.models.tag import RecordingTag
@@ -321,12 +245,33 @@ async def list_recordings(
                 selectinload(Recording.speakers).selectinload(
                     RecordingSpeaker.global_speaker
                 ),
+                selectinload(Recording.transcript),
             )
         )
         by_public_id = {rec.public_id: rec for rec in orm_result.scalars()}
 
+        # One grouped aggregate for the whole page: the canonical revision
+        # cursor is max(event id) per recording, and a query per row would
+        # be an N+1 against the busiest table in the schema.
+        internal_ids = [rec.id for rec in by_public_id.values()]
+        revision_result = await db.execute(
+            select(
+                TranscriptUtteranceEvent.recording_id,
+                func.max(TranscriptUtteranceEvent.id),
+            )
+            .where(TranscriptUtteranceEvent.recording_id.in_(internal_ids))
+            .group_by(TranscriptUtteranceEvent.recording_id)
+        )
+        revisions = {
+            recording_id: int(revision)
+            for recording_id, revision in revision_result.all()
+        }
+
     return [
-        _compact_recording(by_public_id[public_id])
+        _compact_recording(
+            by_public_id[public_id],
+            transcript_revision=revisions.get(by_public_id[public_id].id, 0),
+        )
         for public_id in ordered_public_ids
         if public_id in by_public_id
     ]
@@ -379,6 +324,56 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
         "duration_seconds": recording.duration_seconds,
         "transcript": transcript_text,
     }
+
+
+@mcp_tool()
+async def get_transcript_utterances(
+    recording_id: str,
+    after_revision: Optional[int] = None,
+) -> dict[str, Any]:
+    """Get the canonical transcript as structured utterances with delta sync.
+
+    Where get_transcript returns formatted prose for reading, this returns
+    the same structured contract the web client synchronises on: stable
+    utterance ids, millisecond timestamps, per-utterance state, revision and
+    edit-provenance flags, the recording's speaker list, a recording-level
+    `revision` cursor, and `tombstones` (ids of utterances removed or
+    superseded since the supplied cursor).
+
+    Intended for tools that keep their own copy of a transcript in sync:
+    store the returned `revision`, and pass it back as `after_revision` on
+    the next call to receive only what changed (empty lists mean up to
+    date). Omit `after_revision` for a full snapshot, which always has empty
+    `tombstones`. The cursor is opaque and increases monotonically per
+    recording; it never resets, including across reprocessing, though
+    reprocessing may replace most utterance ids. The `speakers` list always
+    reflects current names, so speaker renames are visible even when no
+    utterance changed.
+
+    Args:
+        recording_id: The recording's string id from list_recordings.
+        after_revision: The last `revision` cursor already seen, from a
+            previous call or from list_recordings' `transcript_revision`.
+            Omit for a full snapshot.
+    """
+    from backend.api.v1.endpoints.transcripts.routes_utterances import (
+        get_transcript_utterances as api_get_transcript_utterances,
+    )
+    from backend.core.db import async_session_maker
+
+    user = get_current_mcp_user()
+    if after_revision is not None and after_revision < 0:
+        raise ToolError("after_revision must be a non-negative integer.")
+
+    async with async_session_maker() as db:
+        payload = await api_get_transcript_utterances(
+            recording_id,
+            after_revision=after_revision,
+            db=db,
+            current_user=user,
+        )
+
+    return payload.model_dump()
 
 
 @mcp_tool()

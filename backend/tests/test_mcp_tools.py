@@ -31,6 +31,7 @@ from backend.mcp_server.server import (
     get_documents,
     get_person,
     get_speakers,
+    get_transcript_utterances,
     import_people,
     list_people,
     list_recordings,
@@ -38,6 +39,11 @@ from backend.mcp_server.server import (
     set_speaker_name,
 )
 from backend.models.people_tag import PeopleTag, PeopleTagLink
+from backend.models.pipeline import (
+    TranscriptUtterance,
+    TranscriptUtteranceEvent,
+    TranscriptUtteranceState,
+)
 from backend.models.speaker import GlobalSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -250,6 +256,52 @@ SCHEMA_STATEMENTS = [
         updated_at DATETIME NOT NULL,
         recording_id INTEGER NOT NULL,
         tag_id INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE transcript_utterances (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        public_id VARCHAR(36) NOT NULL,
+        recording_id INTEGER NOT NULL,
+        sort_key VARCHAR(64) NOT NULL,
+        start_ms INTEGER NOT NULL,
+        end_ms INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        speaker_label VARCHAR(255),
+        recording_speaker_id INTEGER,
+        state VARCHAR(32) NOT NULL,
+        source_kind VARCHAR(255) NOT NULL,
+        processing_run_id INTEGER,
+        last_utterance_event_id INTEGER,
+        last_diarization_window_result_id INTEGER,
+        revision INTEGER NOT NULL,
+        overlap_group_id VARCHAR(64),
+        overlap_rank INTEGER NOT NULL,
+        manual_text_locked BOOLEAN NOT NULL,
+        manual_speaker_locked BOOLEAN NOT NULL,
+        speaker_assignment_source VARCHAR(32) NOT NULL,
+        speaker_assignment_authority VARCHAR(32) NOT NULL,
+        text_confidence FLOAT,
+        speaker_confidence FLOAT,
+        confidence_payload JSON
+    )
+    """,
+    """
+    CREATE TABLE transcript_utterance_events (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        recording_id INTEGER NOT NULL,
+        utterance_id INTEGER NOT NULL,
+        processing_run_id INTEGER,
+        actor_user_id INTEGER,
+        event_type VARCHAR(64) NOT NULL,
+        source VARCHAR(64) NOT NULL,
+        old_values JSON,
+        new_values JSON,
+        resulting_revision INTEGER NOT NULL
     )
     """,
 ]
@@ -576,6 +628,210 @@ async def test_list_recordings_covers_archived_and_deleted(
     assert states["rec-active"] == (False, False)
     assert states["rec-archived"] == (True, False)
     assert states["rec-deleted"] == (False, True)
+
+
+async def seed_canonical_transcript(session_maker, *, recording_id: int = 1) -> None:
+    """A transcript with two active canonical utterances and one superseded.
+
+    Events 1 and 2 create u-1 and u-2; event 3 supersedes u-3, leaving the
+    recording's revision cursor at 3.
+    """
+    async with session_maker() as session:
+        session.add(
+            Transcript(
+                recording_id=recording_id,
+                segments=[],
+                notes_status="completed",
+                transcript_status="completed",
+            )
+        )
+        session.add_all(
+            [
+                TranscriptUtterance(
+                    id=1,
+                    public_id="u-1",
+                    recording_id=recording_id,
+                    sort_key="0001",
+                    start_ms=0,
+                    end_ms=1500,
+                    text="Hello everyone.",
+                    speaker_label="SPEAKER_00",
+                    recording_speaker_id=1,
+                    state=TranscriptUtteranceState.STABLE,
+                    source_kind="final",
+                ),
+                TranscriptUtterance(
+                    id=2,
+                    public_id="u-2",
+                    recording_id=recording_id,
+                    sort_key="0002",
+                    start_ms=1500,
+                    end_ms=4000,
+                    text="Morning.",
+                    speaker_label="SPEAKER_01",
+                    recording_speaker_id=2,
+                    state=TranscriptUtteranceState.STABLE,
+                    source_kind="final",
+                ),
+                TranscriptUtterance(
+                    id=3,
+                    public_id="u-3",
+                    recording_id=recording_id,
+                    sort_key="0003",
+                    start_ms=4000,
+                    end_ms=6000,
+                    text="Replaced line.",
+                    speaker_label="SPEAKER_01",
+                    recording_speaker_id=2,
+                    state=TranscriptUtteranceState.SUPERSEDED,
+                    source_kind="final",
+                ),
+            ]
+        )
+        session.add_all(
+            [
+                TranscriptUtteranceEvent(
+                    id=1,
+                    recording_id=recording_id,
+                    utterance_id=1,
+                    event_type="create",
+                ),
+                TranscriptUtteranceEvent(
+                    id=2,
+                    recording_id=recording_id,
+                    utterance_id=2,
+                    event_type="create",
+                ),
+                TranscriptUtteranceEvent(
+                    id=3,
+                    recording_id=recording_id,
+                    utterance_id=3,
+                    event_type="supersede",
+                ),
+            ]
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_list_recordings_reports_sync_fields(
+    session_maker, test_user: User, mcp_context
+):
+    """A polling client must be able to see processing state and the
+    canonical revision cursor without fetching any transcript."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    recordings = await list_recordings()
+
+    assert len(recordings) == 1
+    recording = recordings[0]
+    assert recording["status"] == "PROCESSED"
+    assert recording["transcript_status"] == "completed"
+    assert recording["notes_status"] == "completed"
+    assert recording["transcript_revision"] == 3
+    assert recording["updated_at"] == TEST_TIMESTAMP.isoformat()
+
+
+@pytest.mark.anyio
+async def test_list_recordings_sync_fields_without_transcript(
+    session_maker, test_user: User, mcp_context
+):
+    """A recording with no transcript row reports null statuses and a zero
+    cursor rather than failing."""
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-bare",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    recordings = await list_recordings()
+
+    assert recordings[0]["transcript_status"] is None
+    assert recordings[0]["notes_status"] is None
+    assert recordings[0]["transcript_revision"] == 0
+
+
+@pytest.mark.anyio
+async def test_get_transcript_utterances_full_snapshot(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    result = await get_transcript_utterances(public_id)
+
+    assert result["recording_id"] == public_id
+    assert result["revision"] == 3
+    # Only active utterances appear in a snapshot; the superseded one does not.
+    assert [u["id"] for u in result["utterances"]] == ["u-1", "u-2"]
+    first = result["utterances"][0]
+    assert first["start_ms"] == 0
+    assert first["end_ms"] == 1500
+    assert first["text"] == "Hello everyone."
+    assert first["state"] == "stable"
+    assert first["text_manually_edited"] is False
+    assert result["tombstones"] == []
+    assert {s["diarization_label"] for s in result["speakers"]} == {
+        "SPEAKER_00",
+        "SPEAKER_01",
+    }
+
+
+@pytest.mark.anyio
+async def test_get_transcript_utterances_delta_returns_tombstones(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    result = await get_transcript_utterances(public_id, after_revision=2)
+
+    assert result["revision"] == 3
+    assert result["utterances"] == []
+    assert result["tombstones"] == ["u-3"]
+
+
+@pytest.mark.anyio
+async def test_get_transcript_utterances_current_cursor_is_empty_delta(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    result = await get_transcript_utterances(public_id, after_revision=3)
+
+    assert result["revision"] == 3
+    assert result["utterances"] == []
+    assert result["tombstones"] == []
+
+
+@pytest.mark.anyio
+async def test_get_transcript_utterances_rejects_bad_cursor_and_foreign_recording(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=999)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=999)
+    await seed_canonical_transcript(session_maker)
+
+    with pytest.raises(ToolError):
+        await get_transcript_utterances(public_id, after_revision=-1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_transcript_utterances(public_id)
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.anyio
@@ -1049,7 +1305,7 @@ async def test_append_meeting_notes_rejects_empty_text_and_read_only(
 
 # --- tool-call logging -----------------------------------------------------
 
-MCP_LOGGER = "backend.mcp_server.server"
+MCP_LOGGER = "backend.mcp_server.tool_logging"
 
 
 @pytest.mark.anyio
