@@ -175,15 +175,11 @@ function AuthorizeContent() {
   const isReadOnly = Boolean(
     info && info.scope_items.every((scope) => scope === "mcp:read"),
   );
-  // mcp:destroy is retired; the server strips it from every grant, but an
-  // old client can still request it by name, so keep it out of the list.
   const capabilities = info
-    ? info.scope_items
-        .filter((scope) => scope !== "mcp:destroy")
-        .flatMap(
-          (scope) =>
-            SCOPE_CAPABILITIES[scope] ?? [{ icon: ShieldCheck, label: scope }],
-        )
+    ? info.scope_items.flatMap(
+        (scope) =>
+          SCOPE_CAPABILITIES[scope] ?? [{ icon: ShieldCheck, label: scope }],
+      )
     : [];
 
   return (

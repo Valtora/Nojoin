@@ -374,35 +374,28 @@ async def test_full_authorization_code_flow(
 
 
 @pytest.mark.anyio
-async def test_retired_destroy_scope_is_stripped_not_rejected(
+async def test_unknown_scopes_are_rejected(
     client: AsyncClient, fixed_origin, isolated_keyring, test_user: User
 ):
-    """Clients re-request previously granted scopes on reconnect, so a
-    request naming the retired mcp:destroy scope must succeed with the
-    scope stripped rather than fail with invalid_scope, or every grant
-    that ever held it could never re-authorise."""
+    """Any scope outside the supported set is refused outright, including
+    the never-released mcp:destroy: a client whose stored grant names one
+    must be removed and re-added, not silently narrowed."""
     client_id = await register_claude_client(client)
-    verifier, challenge = make_pkce_pair()
-    code = await obtain_code(
-        client, client_id, challenge, scope="mcp:destroy mcp:read mcp:write"
-    )
-
-    token_response = await client.post(
-        "/api/v1/oauth/token",
-        data={
-            "grant_type": "authorization_code",
+    _, challenge = make_pkce_pair()
+    response = await client.post(
+        "/api/v1/oauth/authorize/decision",
+        json={
+            "approve": True,
             "client_id": client_id,
-            "code": code,
             "redirect_uri": CLAUDE_CALLBACK,
-            "code_verifier": verifier,
+            "response_type": "code",
+            "scope": "mcp:destroy mcp:read mcp:write",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
         },
     )
-    assert token_response.status_code == 200, token_response.text
-    tokens = token_response.json()
-    assert tokens["scope"] == "mcp:read mcp:write"
-
-    payload = security.decode_access_token(tokens["access_token"])
-    assert payload["scopes"] == [security.MCP_READ_SCOPE, security.MCP_WRITE_SCOPE]
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_scope"
 
 
 @pytest.mark.anyio
@@ -778,7 +771,6 @@ async def test_mcp_protocol_tools_list_end_to_end(
         "list_tasks",
         "create_task",
         "update_task",
-        "delete_task",
     }
 
     assert init.status_code == 200, init.text

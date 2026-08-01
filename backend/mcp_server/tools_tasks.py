@@ -1,9 +1,10 @@
 """MCP tools for the user's task workspace.
 
 Tasks are the user's own to-do items, linkable to recordings and tags.
-All four tools require mcp:write; deletion stays in the write tier
-because archiving is the soft path and a task is a lightweight note, not
-recorded meeting data.
+The mutating tools require mcp:write, and none of them delete: archiving
+(update_task with archived=true) is the strongest verb, matching the
+connector-wide rule that nothing is permanently deletable through MCP.
+Task deletion exists only in the web app.
 """
 
 import logging
@@ -116,6 +117,8 @@ async def update_task(  # noqa: PLR0913 - each parameter is a documented tool ar
 
     Only the arguments you pass change; omitted fields are left as they
     are. Passing tag_ids or recording_ids replaces the full set of links.
+    Archiving (archived=true) is the strongest removal this connector
+    offers for tasks; deleting a task is only possible in the web app.
     Requires the mcp:write scope.
 
     Args:
@@ -163,24 +166,3 @@ async def update_task(  # noqa: PLR0913 - each parameter is a documented tool ar
             current_user=user,
         )
     return _compact_task(task)
-
-
-@mcp_tool()
-async def delete_task(task_id: int) -> dict[str, Any]:
-    """Delete a task from the Task workspace.
-
-    Deletion is immediate and not recoverable; use update_task with
-    archived=true when the task should merely leave the active list.
-    Requires the mcp:write scope.
-
-    Args:
-        task_id: The task's integer id from list_tasks.
-    """
-    from backend.api.v1.endpoints.tasks import delete_task as api_delete_task
-    from backend.core.db import async_session_maker
-
-    user = get_current_mcp_user()
-    _require_write_scope("task deletion")
-    async with async_session_maker() as db:
-        await api_delete_task(task_id, db=db, current_user=user)
-    return {"id": task_id, "deleted": True}

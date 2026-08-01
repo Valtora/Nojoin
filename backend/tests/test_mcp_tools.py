@@ -55,7 +55,6 @@ from backend.mcp_server.tools_people import (
 from backend.mcp_server.tools_search import search_context
 from backend.mcp_server.tools_tasks import (
     create_task,
-    delete_task,
     list_tasks,
     update_task,
 )
@@ -1599,6 +1598,7 @@ async def test_permanent_deletion_is_absent_from_the_mcp_surface():
 
     tool_names = {tool.name for tool in await mcp.list_tools()}
     assert "destroy_recording" not in tool_names
+    assert "delete_task" not in tool_names
     assert "trash_recording" in tool_names
 
 
@@ -1656,9 +1656,14 @@ async def test_task_tools_roundtrip(session_maker, test_user: User, mcp_context)
     completed = await update_task(created["id"], completed=True)
     assert completed["completed_at"] is not None
 
-    deleted = await delete_task(created["id"])
-    assert deleted == {"id": created["id"], "deleted": True}
-    assert await list_tasks(status="all") == []
+    # Archiving is the strongest task verb the connector offers; the task
+    # survives, off the active list, and remains restorable.
+    archived = await update_task(created["id"], archived=True)
+    assert archived["archived_at"] is not None
+    assert all(task["id"] != created["id"] for task in await list_tasks())
+    assert any(
+        task["id"] == created["id"] for task in await list_tasks(status="archived")
+    )
 
 
 @pytest.mark.anyio

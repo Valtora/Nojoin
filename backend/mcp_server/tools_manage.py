@@ -632,10 +632,13 @@ async def list_calendar_events(
     end_date: Optional[str] = None,
     limit: int = 25,
 ) -> list[dict[str, Any]]:
-    """List the user's synced calendar events, soonest first.
+    """List the user's synced calendar events, most recent first.
 
     Use the numeric event id with link_calendar_event to associate a
-    recording with its meeting.
+    recording with its meeting; recordings are of meetings that already
+    happened, so the default ordering puts the likeliest candidates
+    first. At most `limit` events are returned; narrow with the date
+    filters rather than paging.
 
     Args:
         start_date: Only events starting on or after this ISO 8601
@@ -669,7 +672,7 @@ async def list_calendar_events(
         statement = statement.where(CalendarEvent.starts_at >= start)
     if end is not None:
         statement = statement.where(CalendarEvent.starts_at <= end)
-    statement = statement.order_by(CalendarEvent.starts_at).limit(limit)
+    statement = statement.order_by(CalendarEvent.starts_at.desc()).limit(limit)
 
     async with async_session_maker() as db:
         events = (await db.execute(statement)).scalars().all()

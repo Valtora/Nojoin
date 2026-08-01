@@ -89,7 +89,7 @@ Codex supports the connector's OAuth flow, but only for a server marked for OAut
 | `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. |
 | `unlock_utterance` | `mcp:write` | Release an utterance's manual-edit locks so reprocessing may overwrite it again; the clearing is itself an audited event. |
 | `link_calendar_event` | `mcp:write` | Link a recording to a calendar event, or unlink it. |
-| `create_task` / `update_task` / `delete_task` | `mcp:write` | Create, edit, complete, archive, or delete tasks, with links to recordings and tags. |
+| `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive, or restore tasks, with links to recordings and tags. Archiving is the strongest removal; task deletion exists only in the web app. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by name. |
 | `set_speaker_name` | `mcp:write` | Name a meeting's speaker and link them to a person. |
 | `append_meeting_notes` | `mcp:write` | Append text to a meeting's user notes. |
