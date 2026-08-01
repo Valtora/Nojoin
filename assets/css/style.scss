@@ -562,10 +562,12 @@ samp {
   background: var(--surface-inset);
 }
 
+// The step's own sentence, which must stay a normal block. As a flex container
+// every inline <code> in it became a separate flex item: a step carrying two of
+// them laid out as columns rather than wrapping as prose, and the second one
+// overflowed the card. The badge is aligned against the first line below instead,
+// which is where that problem actually belongs.
 .markdown-body h2#quick-start + ol > li > p:first-of-type {
-  display: flex;
-  align-items: center;
-  min-height: 2.4rem;
   margin: 0;
 }
 
@@ -583,7 +585,12 @@ samp {
   content: counter(steps, decimal-leading-zero);
   position: absolute;
   left: 1rem;
-  top: 1rem;
+  // Centred on the first line of the step text rather than on the card, so a step
+  // that runs to several lines keeps its badge beside the opening line. Derived as
+  // the li's 1.15rem top padding, plus half a 1.7rem line box, less half the
+  // badge's own 2.4rem height. Written out rather than left as a calc() because
+  // Sass evaluates division inside calc() and this needs no runtime arithmetic.
+  top: 0.8rem;
   width: 2.4rem;
   height: 2.4rem;
   display: grid;
