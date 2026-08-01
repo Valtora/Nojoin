@@ -203,6 +203,7 @@ TASK_ROUTES = {
     "backend.worker.tasks.rebuild_text_embeddings_task": {"queue": PARSE_QUEUE},
     "backend.worker.tasks.rebuild_recording_index_task": {"queue": PARSE_QUEUE},
     "backend.worker.tasks.index_transcript_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.index_missing_transcripts_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.get_text_embedding_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.sync_calendar_connection_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.sync_calendar_connections_task": {"queue": IO_QUEUE},
@@ -244,6 +245,13 @@ celery_app.conf.update(
         "cleanup-backup-artifacts-every-6h": {
             "task": "backend.worker.tasks.cleanup_backup_artifacts",
             "schedule": 21600.0,
+        },
+        # Backfill sweep for transcripts left without current-version
+        # context chunks (e.g. after an embedding cutover); a no-op once
+        # the library is fully indexed.
+        "index-missing-transcripts-every-15m": {
+            "task": "backend.worker.tasks.index_missing_transcripts_task",
+            "schedule": 900.0,
         },
         "sync-calendar-connections-every-15m": {
             "task": "backend.worker.tasks.sync_calendar_connections_task",

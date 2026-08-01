@@ -604,6 +604,64 @@ async def correct_utterance_speaker(
 
 
 @mcp_tool()
+async def unlock_utterance(
+    recording_id: str,
+    utterance_id: str,
+    expected_revision: Optional[int] = None,
+) -> dict[str, Any]:
+    """Release an utterance's manual-edit locks.
+
+    Correcting an utterance locks it against being overwritten by
+    reprocessing. Use this after reverting a correction (or when a manual
+    edit should no longer be pinned) so reprocessing owns the utterance
+    again. Text and speaker are untouched, and the clearing is recorded in
+    the edit log attributed to this connection (source "mcp"), so the
+    audit trail of the original edit survives. Requires the mcp:write
+    scope.
+
+    Args:
+        recording_id: The recording's string id from list_recordings.
+        utterance_id: The utterance's string id from
+            get_transcript_utterances.
+        expected_revision: Optional per-utterance revision from
+            get_transcript_utterances; the unlock is refused if the
+            utterance changed since.
+    """
+    from backend.api.v1.endpoints.transcripts.routes_utterances import (
+        apply_canonical_utterance_lock_clear,
+    )
+    from backend.core.db import async_session_maker
+    from backend.utils.canonical_pipeline import get_canonical_transcript_revision
+
+    user = get_current_mcp_user()
+    _require_write_scope("manual-lock clearing")
+    _require_canonical_writes()
+
+    async with async_session_maker() as db:
+        recording, transcript = await _load_recording_for_correction(
+            db, recording_id, user.id
+        )
+        await apply_canonical_utterance_lock_clear(
+            db,
+            recording=recording,
+            transcript=transcript,
+            utterance_id=utterance_id,
+            expected_revision=expected_revision,
+            actor_user_id=user.id,
+            source="mcp",
+        )
+        revision = await db.run_sync(
+            lambda s: get_canonical_transcript_revision(s, recording.id)
+        )
+    return {
+        "recording_id": recording_id,
+        "utterance_id": utterance_id,
+        "unlocked": True,
+        "revision": revision,
+    }
+
+
+@mcp_tool()
 async def list_calendar_events(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,

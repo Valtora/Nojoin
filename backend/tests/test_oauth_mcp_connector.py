@@ -773,6 +773,7 @@ async def test_mcp_protocol_tools_list_end_to_end(
         "attach_document",
         "correct_utterance_text",
         "correct_utterance_speaker",
+        "unlock_utterance",
         "list_calendar_events",
         "link_calendar_event",
         "list_tasks",

@@ -898,3 +898,61 @@ def generate_notes_structure_task(self, job_id: str, user_id: int, brief: str) -
     except Exception as exc:  # noqa: BLE001
         logger.error("Notes structure generation failed for job %s: %s", job_id, exc)
         publish_job(job_id, {"status": STATUS_ERROR, "error": str(exc)})
+
+
+def recording_ids_missing_transcript_index(session, limit: int) -> list[int]:
+    """PROCESSED recordings with transcript text but no current-version
+    transcript chunks, newest first.
+
+    Notes and document chunks do not count: they are separate corpora, and
+    a recording whose transcript is unindexed is invisible to semantic
+    search however many of those it has.
+    """
+    from sqlalchemy import func
+
+    from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+
+    indexed = (
+        select(ContextChunk.id)
+        .where(ContextChunk.recording_id == Recording.id)
+        .where(ContextChunk.document_id.is_(None))
+        .where(ContextChunk.meta.op("->>")("source") == "transcript")
+        .where(ContextChunk.embedding_version == TEXT_EMBEDDING_VERSION)
+        .exists()
+    )
+    statement = (
+        select(Recording.id)
+        .join(Transcript, Transcript.recording_id == Recording.id)
+        .where(Recording.status == RecordingStatus.PROCESSED)
+        .where(Recording.is_deleted.is_(False))
+        .where(func.coalesce(func.length(Transcript.text), 0) > 0)
+        .where(~indexed)
+        .order_by(Recording.created_at.desc())
+        .limit(max(int(limit), 1))
+    )
+    return [int(recording_id) for recording_id in session.exec(statement).all()]
+
+
+@celery_app.task(
+    name="backend.worker.tasks.index_missing_transcripts_task",
+    base=DatabaseTask,
+    bind=True,
+)
+def index_missing_transcripts_task(self, batch_size: int = 10):
+    """Backfill sweep: re-index transcripts left without current chunks.
+
+    An embedding-version cutover deletes every context chunk by design,
+    and ordinary transcript indexing only runs when a recording is
+    processed, so without this sweep the existing library stays invisible
+    to semantic search until every meeting happens to be reprocessed.
+    Beat runs this on the io lane a few recordings at a time;
+    index_transcript_task deletes-then-rewrites, so overlapping with a
+    concurrent reprocess is harmless.
+    """
+    session = self.session
+    missing = recording_ids_missing_transcript_index(session, batch_size)
+    if not missing:
+        return
+    logger.info("Transcript index backfill: dispatching %s recording(s).", len(missing))
+    for recording_id in missing:
+        index_transcript_task.delay(recording_id)

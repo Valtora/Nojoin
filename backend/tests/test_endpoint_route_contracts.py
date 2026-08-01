@@ -73,6 +73,12 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
         "TranscriptUtteranceListRead",
     ),
     (
+        "/{recording_id}/utterances/{utterance_id}/locks",
+        ("DELETE",),
+        "clear_utterance_locks",
+        "TranscriptPublicRead",
+    ),
+    (
         "/{recording_id}/utterances/{utterance_id}/speaker",
         ("PATCH",),
         "update_transcript_utterance_speaker",

@@ -2074,3 +2074,58 @@ async def test_list_recordings_deduplicates_speaker_names(
     recordings = await list_recordings()
 
     assert recordings[0]["speakers"] == ["Dana", "Guest"]
+
+
+@pytest.mark.anyio
+async def test_unlock_utterance_clears_locks_and_keeps_audit_trail(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    """After a correction locks an utterance, unlock_utterance releases
+    both manual locks without touching content, and the clearing is its
+    own mcp-attributed event."""
+    from backend.mcp_server.tools_manage import unlock_utterance
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    corrected = await correct_utterance_text(public_id, "u-1", "Hello, corrected.")
+
+    result = await unlock_utterance(public_id, "u-1")
+    assert result["unlocked"] is True
+    assert result["revision"] > corrected["revision"]
+
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT text, manual_text_locked, manual_speaker_locked "
+                    "FROM transcript_utterances WHERE public_id = 'u-1'"
+                )
+            )
+        ).one()
+        assert row[0] == "Hello, corrected."  # content untouched
+        assert bool(row[1]) is False
+        assert bool(row[2]) is False
+        event = (
+            await session.execute(
+                text(
+                    "SELECT event_type, source FROM transcript_utterance_events "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+            )
+        ).one()
+    assert event[0] == "clear_manual_locks"
+    assert event[1] == "mcp"
+
+
+@pytest.mark.anyio
+async def test_unlock_utterance_requires_write_scope(
+    session_maker, test_user: User, mcp_context
+):
+    from backend.mcp_server.tools_manage import unlock_utterance
+
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+    with pytest.raises(ToolError):
+        await unlock_utterance("any-id", "u-1")

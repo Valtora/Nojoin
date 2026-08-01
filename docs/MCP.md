@@ -61,6 +61,7 @@ Claude Code discovers the OAuth flow automatically and opens a browser window fo
 | `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline; the assistant never writes note content itself. |
 | `attach_document` | `mcp:write` | Attach assistant-authored text as a markdown document; binary uploads stay in the web app. |
 | `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. |
+| `unlock_utterance` | `mcp:write` | Release an utterance's manual-edit locks so reprocessing may overwrite it again; the clearing is itself an audited event. |
 | `link_calendar_event` | `mcp:write` | Link a recording to a calendar event, or unlink it. |
 | `create_task` / `update_task` / `delete_task` | `mcp:write` | Create, edit, complete, archive, or delete tasks, with links to recordings and tags. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by name. |
