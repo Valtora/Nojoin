@@ -91,6 +91,23 @@ async def clear_chat_history(
     return {"status": "success"}
 
 
+def _tag_context_recording_ids(tag_ids: list[int], user_id: int):
+    """Recording ids allowed to widen chat retrieval by tag.
+
+    Tag ids arrive from the client, so the widening must stay inside the
+    caller's own recordings: without the ownership join, any tag id would
+    pull other users' context chunks into the retrieval pool.
+    """
+    return (
+        select(RecordingTag.recording_id)
+        .join(Recording, Recording.id == RecordingTag.recording_id)
+        .where(
+            RecordingTag.tag_id.in_(tag_ids),
+            Recording.user_id == user_id,
+        )
+    )
+
+
 @router.post("/{recording_id}/chat")
 async def chat_with_meeting(
     recording_id: str,
@@ -164,9 +181,7 @@ async def chat_with_meeting(
         # 2. Build Query Condition
         if request.tag_ids:
             # Identify relevant recordings from tags
-            subquery = select(RecordingTag.recording_id).where(
-                RecordingTag.tag_id.in_(request.tag_ids)
-            )
+            subquery = _tag_context_recording_ids(request.tag_ids, current_user.id)
             condition = (ContextChunk.recording_id.in_(subquery)) | (
                 ContextChunk.recording_id == recording.id
             )
