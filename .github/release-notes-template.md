@@ -8,15 +8,27 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 <!-- Maintainer: lead with what an operator would notice. Remove the section if a release has nothing to lead with. -->
 
+#### A Flat Design System
+
 The interface has been rebuilt on a flat design system. Gradients, glass panels and backdrop blur are gone from both the app and the marketing site, replaced by semantic tokens and a shared primitive set covering buttons, cards, badges, inputs, selects and one modal. Roughly twenty five hand rolled modal scrims now come from that single component, so they share a focus trap, a scroll lock and a height cap with a viewport gutter, which stops a tall dialog on a phone pushing its own actions below the fold. A contrast script measures 136 declared token pairings across both themes and runs in the lint job, so a contrast regression fails the build rather than surviving until someone squints at a screenshot.
+
+#### Denser Layouts and Real Touch Targets
 
 The same pass recovered a great deal of vertical space. Cards no longer nest inside cards, the dashboard and settings surfaces move onto a denser layout, and the live recording workspace is reorganised around a capture toolbar with two wide columns, so the transcript and Meeting Edge stop each paying for a third of the page. Touch handling improves alongside it. The smallest icon buttons now render a 16px glyph inside a 40px box, and row actions that were revealed on hover alone, which put them out of reach on a touch device, are shown outright below the desktop breakpoint.
 
+#### Documents Are Parsed Visually
+
 Uploaded documents are parsed visually and now reach notes generation as well as meeting chat. Parsing covers PDF, PowerPoint, Word, Excel, CSV, text, Markdown and images, with a structural pass on the Office formats so slide titles, tables, speaker notes and native chart values come back exactly as they were authored rather than estimated from a rendered picture. Behind that, page images go to a vision capable model on Anthropic, OpenAI, Gemini, Ollama and both subscription CLI paths. Where no vision model is reachable, a local OCR tier runs on your own server, costs nothing and sends nothing anywhere, so a scanned page stays searchable on an install with no AI configured at all. Pages are written as each one completes, so an interrupted parse resumes rather than repeating vision calls that were already paid for. The upload ceiling rises from 20 MB to 250 MB.
+
+#### Parsing Runs on Its Own Lane
 
 Parsing runs on its own Celery lane. A parse has no page cap, so one large upload can hold a worker slot for a long time, and on the io lane that would sit beside Meeting Edge and meeting chat and degrade a live meeting. The lane reuses the worker-io image, so it adds no build and no new image to scan, but it does have to be added to your compose file. See Migration below.
 
+#### A New Embedding Model
+
 Search and meeting chat move to a new embedding model, which purges the existing index. This is the one change in the release that needs an operator action, and it is covered in full under Migration.
+
+#### CPU Only Deployments No Longer Crash
 
 A CPU only deployment no longer dies during transcription. The ONNX ASR engine asked onnxruntime for the CUDA execution provider unconditionally, and onnxruntime-gpu does not degrade when no device is present. It loads its CUDA provider library, finds nothing, and takes the process down with SIGSEGV, which raises no Python exception, so nothing downstream could catch it and fall back. The provider list is now gated on the same device node probe already used to choose quantisation. The CPU only deployment documented in the deployment guide, which drops the compose deploy block while keeping the same image, is the exposed shape exactly.
 
