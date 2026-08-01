@@ -23,6 +23,9 @@ from backend.utils.canonical_pipeline import (
     serialize_canonical_delta,
 )
 from backend.utils.canonical_pipeline import (
+    clear_utterance_manual_locks as clear_canonical_utterance_manual_locks,
+)
+from backend.utils.canonical_pipeline import (
     update_utterance_speaker as update_canonical_utterance_speaker,
 )
 from backend.utils.canonical_pipeline import (
@@ -184,6 +187,36 @@ async def update_transcript_utterance_text(
             current_user,
         )
 
+    return await apply_canonical_utterance_text_update(
+        db,
+        recording=recording,
+        transcript=transcript,
+        utterance_id=utterance_id,
+        update=update,
+        actor_user_id=current_user.id,
+        meeting_edge_enabled=is_meeting_edge_enabled(
+            getattr(current_user, "settings", None)
+        ),
+    )
+
+
+async def apply_canonical_utterance_text_update(  # noqa: PLR0913 - one keyword per side effect the surfaces share
+    db: AsyncSession,
+    *,
+    recording,
+    transcript,
+    utterance_id: str,
+    update: TranscriptUtteranceTextPatch,
+    actor_user_id: int,
+    meeting_edge_enabled: bool,
+    source: str = "api",
+) -> TranscriptPublicRead:
+    """Apply a canonical utterance text edit and its side effects.
+
+    Shared by the REST handler (source="api") and the MCP correction tool
+    (source="mcp"), so the event log records which surface authored the
+    edit while everything else stays identical.
+    """
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )
@@ -202,8 +235,9 @@ async def update_transcript_utterance_text(
                 recording_id=recording.id,
                 utterance_public_id=utterance_id,
                 text=update.text,
-                actor_user_id=current_user.id,
+                actor_user_id=actor_user_id,
                 expected_revision=update.expected_revision,
+                source=source,
             )
         )
     except LookupError as exc:
@@ -219,12 +253,13 @@ async def update_transcript_utterance_text(
         payload={
             "utterance_id": utterance_id,
             "text_chars": len(update.text),
+            "source": source,
         },
         log=logger,
     )
     await _dispatch_meeting_edge_refresh(
         recording.id,
-        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+        enabled=meeting_edge_enabled,
     )
     return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
@@ -278,6 +313,36 @@ async def update_transcript_utterance_speaker(
             refreshed_transcript, recording_public_id=recording.public_id
         )
 
+    return await apply_canonical_utterance_speaker_update(
+        db,
+        recording=recording,
+        transcript=transcript,
+        utterance_id=utterance_id,
+        update=update,
+        actor_user_id=current_user.id,
+        meeting_edge_enabled=is_meeting_edge_enabled(
+            getattr(current_user, "settings", None)
+        ),
+    )
+
+
+async def apply_canonical_utterance_speaker_update(  # noqa: PLR0913 - one keyword per side effect the surfaces share
+    db: AsyncSession,
+    *,
+    recording,
+    transcript,
+    utterance_id: str,
+    update: TranscriptUtteranceSpeakerPatch,
+    actor_user_id: int,
+    meeting_edge_enabled: bool,
+    source: str = "api",
+) -> TranscriptPublicRead:
+    """Apply a canonical utterance speaker edit and its side effects.
+
+    Shared by the REST handler (source="api") and the MCP correction tool
+    (source="mcp"), so the event log records which surface authored the
+    edit while everything else stays identical.
+    """
     await db.run_sync(
         lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
     )
@@ -299,8 +364,9 @@ async def update_transcript_utterance_speaker(
                 global_speaker_id=update.global_speaker_id,
                 diarization_label=update.diarization_label,
                 scope=update.scope,
-                actor_user_id=current_user.id,
+                actor_user_id=actor_user_id,
                 expected_revision=update.expected_revision,
+                source=source,
             )
         )
     except LookupError as exc:
@@ -326,11 +392,108 @@ async def update_transcript_utterance_speaker(
             "utterance_id": utterance_id,
             "scope": update.scope.value,
             "new_label": updated_segment.get("speaker") if updated_segment else None,
+            "source": source,
         },
         log=logger,
     )
     await _dispatch_meeting_edge_refresh(
         recording.id,
-        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
+        enabled=meeting_edge_enabled,
+    )
+    return serialize_transcript(transcript, recording_public_id=recording.public_id)
+
+
+@router.delete(
+    "/{recording_id}/utterances/{utterance_id}/locks",
+    response_model=TranscriptPublicRead,
+)
+async def clear_utterance_locks(
+    recording_id: str,
+    utterance_id: str,
+    expected_revision: Optional[int] = Query(default=None, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Release an utterance's manual-edit locks.
+
+    A manual correction locks the utterance against being overwritten by
+    reprocessing. Clearing the locks lets reprocessing own the utterance
+    again; the clearing itself is recorded in the edit log, so the audit
+    trail of the original edit survives.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = await _get_recording_transcript(db, recording.id)
+
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    _require_recording_transcript_mutations_supported(recording)
+
+    if not _canonical_transcript_writes_enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="Manual-edit locks require canonical transcript writes",
+        )
+
+    return await apply_canonical_utterance_lock_clear(
+        db,
+        recording=recording,
+        transcript=transcript,
+        utterance_id=utterance_id,
+        expected_revision=expected_revision,
+        actor_user_id=current_user.id,
+    )
+
+
+async def apply_canonical_utterance_lock_clear(  # noqa: PLR0913 - one keyword per side effect the surfaces share
+    db: AsyncSession,
+    *,
+    recording,
+    transcript,
+    utterance_id: str,
+    expected_revision: Optional[int],
+    actor_user_id: int,
+    source: str = "api",
+) -> TranscriptPublicRead:
+    """Apply a manual-lock clear and its side effects.
+
+    Shared by the REST handler (source="api") and the MCP unlock tool
+    (source="mcp"), so the event log records which surface released the
+    lock.
+    """
+    await db.run_sync(
+        lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
+    )
+    if not await db.run_sync(
+        lambda sync_session: bool(list_active_utterances(sync_session, recording.id))
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Canonical utterances are not available for this recording",
+        )
+
+    try:
+        await db.run_sync(
+            lambda sync_session: clear_canonical_utterance_manual_locks(
+                sync_session,
+                recording_id=recording.id,
+                utterance_public_id=utterance_id,
+                actor_user_id=actor_user_id,
+                expected_revision=expected_revision,
+                source=source,
+            )
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    await db.commit()
+    await db.refresh(transcript)
+    record_pipeline_metric(
+        stage="transcript_locks_cleared",
+        recording_id=recording.id,
+        payload={"utterance_id": utterance_id, "source": source},
+        log=logger,
     )
     return serialize_transcript(transcript, recording_public_id=recording.public_id)

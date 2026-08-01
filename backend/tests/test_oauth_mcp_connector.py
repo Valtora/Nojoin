@@ -199,8 +199,12 @@ async def register_claude_client(client: AsyncClient) -> str:
     return payload["client_id"]
 
 
-async def obtain_code(
-    client: AsyncClient, client_id: str, challenge: str, state: str = "xyz"
+async def obtain_code(  # noqa: PLR0913 - one keyword per consent-form field
+    client: AsyncClient,
+    client_id: str,
+    challenge: str,
+    state: str = "xyz",
+    scope: str | None = None,
 ) -> str:
     response = await client.post(
         "/api/v1/oauth/authorize/decision",
@@ -209,6 +213,7 @@ async def obtain_code(
             "client_id": client_id,
             "redirect_uri": CLAUDE_CALLBACK,
             "response_type": "code",
+            "scope": scope,
             "state": state,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
@@ -366,6 +371,31 @@ async def test_full_authorization_code_flow(
     )
     assert replay.status_code == 400
     assert replay.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.anyio
+async def test_unknown_scopes_are_rejected(
+    client: AsyncClient, fixed_origin, isolated_keyring, test_user: User
+):
+    """Any scope outside the supported set is refused outright, including
+    the never-released mcp:destroy: a client whose stored grant names one
+    must be removed and re-added, not silently narrowed."""
+    client_id = await register_claude_client(client)
+    _, challenge = make_pkce_pair()
+    response = await client.post(
+        "/api/v1/oauth/authorize/decision",
+        json={
+            "approve": True,
+            "client_id": client_id,
+            "redirect_uri": CLAUDE_CALLBACK,
+            "response_type": "code",
+            "scope": "mcp:destroy mcp:read mcp:write",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_scope"
 
 
 @pytest.mark.anyio
@@ -723,6 +753,24 @@ async def test_mcp_protocol_tools_list_end_to_end(
         "import_people",
         "set_speaker_name",
         "append_meeting_notes",
+        "search_context",
+        "rename_recording",
+        "tag_recording",
+        "untag_recording",
+        "archive_recording",
+        "restore_recording",
+        "trash_recording",
+        "reprocess_recording",
+        "regenerate_notes",
+        "attach_document",
+        "correct_utterance_text",
+        "correct_utterance_speaker",
+        "unlock_utterance",
+        "list_calendar_events",
+        "link_calendar_event",
+        "list_tasks",
+        "create_task",
+        "update_task",
     }
 
     assert init.status_code == 200, init.text

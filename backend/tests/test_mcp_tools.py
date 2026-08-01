@@ -26,17 +26,37 @@ from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
 from backend.mcp_server import server as mcp_server
 from backend.mcp_server.auth import current_mcp_scopes, current_mcp_user
 from backend.mcp_server.server import (
-    PersonImportEntry,
     append_meeting_notes,
     get_documents,
-    get_person,
-    get_speakers,
     get_transcript_utterances,
-    import_people,
-    list_people,
     list_recordings,
     list_tags,
+)
+from backend.mcp_server.tools_manage import (
+    archive_recording,
+    attach_document,
+    correct_utterance_text,
+    link_calendar_event,
+    list_calendar_events,
+    rename_recording,
+    restore_recording,
+    tag_recording,
+    trash_recording,
+    untag_recording,
+)
+from backend.mcp_server.tools_people import (
+    PersonImportEntry,
+    get_person,
+    get_speakers,
+    import_people,
+    list_people,
     set_speaker_name,
+)
+from backend.mcp_server.tools_search import search_context
+from backend.mcp_server.tools_tasks import (
+    create_task,
+    list_tasks,
+    update_task,
 )
 from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.pipeline import (
@@ -302,6 +322,115 @@ SCHEMA_STATEMENTS = [
         old_values JSON,
         new_values JSON,
         resulting_revision INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE chat_messages (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        recording_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        role VARCHAR(32) NOT NULL,
+        content TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE user_tasks (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        body TEXT,
+        due_at DATETIME,
+        completed_at DATETIME,
+        archived_at DATETIME,
+        user_id INTEGER NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE user_task_tags (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        task_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        UNIQUE(task_id, tag_id)
+    )
+    """,
+    """
+    CREATE TABLE user_task_recordings (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        task_id INTEGER NOT NULL,
+        recording_id INTEGER NOT NULL,
+        UNIQUE(task_id, recording_id)
+    )
+    """,
+    """
+    CREATE TABLE calendar_connections (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        user_id INTEGER NOT NULL,
+        provider VARCHAR(32) NOT NULL,
+        provider_account_id VARCHAR(255) NOT NULL,
+        email VARCHAR(320),
+        display_name VARCHAR(255),
+        access_token_encrypted TEXT,
+        refresh_token_encrypted TEXT,
+        granted_scopes JSON NOT NULL DEFAULT '[]',
+        token_expires_at DATETIME,
+        sync_status VARCHAR(32) NOT NULL DEFAULT 'idle',
+        sync_error VARCHAR(512),
+        last_sync_started_at DATETIME,
+        last_sync_completed_at DATETIME,
+        last_synced_at DATETIME
+    )
+    """,
+    """
+    CREATE TABLE calendar_sources (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        connection_id INTEGER NOT NULL,
+        provider_calendar_id VARCHAR(512) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        time_zone VARCHAR(128),
+        colour VARCHAR(32),
+        user_colour VARCHAR(32),
+        is_primary BOOLEAN NOT NULL DEFAULT 0,
+        is_read_only BOOLEAN NOT NULL DEFAULT 0,
+        is_selected BOOLEAN NOT NULL DEFAULT 0,
+        sync_cursor TEXT,
+        last_synced_at DATETIME,
+        sync_window_start DATETIME,
+        sync_window_end DATETIME
+    )
+    """,
+    """
+    CREATE TABLE calendar_events (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        calendar_id INTEGER NOT NULL,
+        provider_event_id VARCHAR(512) NOT NULL,
+        title VARCHAR(512) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'confirmed',
+        is_all_day BOOLEAN NOT NULL DEFAULT 0,
+        starts_at DATETIME,
+        ends_at DATETIME,
+        start_date DATE,
+        end_date DATE,
+        location_text TEXT,
+        description TEXT,
+        attendees JSON,
+        meeting_url VARCHAR(2048),
+        source_url VARCHAR(2048),
+        external_updated_at DATETIME,
+        UNIQUE(calendar_id, provider_event_id)
     )
     """,
 ]
@@ -1392,3 +1521,585 @@ async def test_tool_logging_warns_on_rejection(
         for r in caplog.records
         if r.name == MCP_LOGGER
     )
+
+
+# --- Agentic surface: management, tasks, calendar, search ---
+
+
+@pytest.mark.anyio
+async def test_recording_lifecycle_tools_roundtrip(
+    session_maker, test_user: User, mcp_context
+):
+    """Rename, tag, archive, bin, and restore through the MCP tools, each
+    delegating to the same endpoint coroutine the web client uses."""
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    renamed = await rename_recording("rec-1", "Quarterly planning")
+    assert renamed["id"] == "rec-1"
+    assert renamed["name"] == "Quarterly planning"
+    # Mutation responses are self-verifying: updated_at moves, the
+    # transcript cursor does not.
+    assert renamed["updated_at"]
+    assert renamed["transcript_revision"] == 0
+
+    tagged = await tag_recording("rec-1", "Planning")
+    assert tagged["tag"]["name"] == "Planning"
+    listed = await list_recordings()
+    assert listed[0]["tags"] == ["Planning"]
+
+    removed = await untag_recording("rec-1", "Planning")
+    assert removed == {"recording_id": "rec-1", "removed_tag": "Planning"}
+
+    archived = await archive_recording("rec-1")
+    assert archived["is_archived"] is True
+    restored = await restore_recording("rec-1")
+    assert restored["is_archived"] is False
+
+    binned = await trash_recording("rec-1")
+    assert binned["is_deleted"] is True
+    restored_again = await restore_recording("rec-1")
+    assert restored_again["is_deleted"] is False
+
+
+@pytest.mark.anyio
+async def test_write_tools_reject_read_only_grant(
+    session_maker, test_user: User, mcp_context
+):
+    """Every mutating tool refuses a grant that only carries mcp:read."""
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    with pytest.raises(ToolError):
+        await rename_recording("rec-1", "New name")
+    with pytest.raises(ToolError):
+        await create_task("Follow up")
+    with pytest.raises(ToolError):
+        await attach_document("rec-1", "Brief", "content")
+
+
+@pytest.mark.anyio
+async def test_permanent_deletion_is_absent_from_the_mcp_surface():
+    """The connector's strongest deletion verb is the bin: no registered
+    tool can permanently delete anything, by design."""
+    from backend.mcp_server.server import mcp
+
+    tool_names = {tool.name for tool in await mcp.list_tools()}
+    assert "destroy_recording" not in tool_names
+    assert "delete_task" not in tool_names
+    assert "trash_recording" in tool_names
+
+
+@pytest.mark.anyio
+async def test_permanent_delete_endpoint_refuses_active_recordings(
+    session_maker, test_user: User, mcp_context
+):
+    """The REST endpoint enforces bin-first itself, so every surface is
+    covered even if a caller bypasses the MCP tool's own check."""
+    from backend.api.v1.endpoints.recordings.routes_actions import (
+        permanently_delete_recording,
+    )
+
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    async with session_maker() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            await permanently_delete_recording(
+                "rec-1", db=session, current_user=test_user
+            )
+    assert exc_info.value.status_code == 409
+    assert "bin" in exc_info.value.detail.lower()
+
+
+@pytest.mark.anyio
+async def test_task_tools_roundtrip(session_maker, test_user: User, mcp_context):
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    created = await create_task(
+        "Follow up with Dana",
+        body="Send the revised deck.",
+        due_at="2026-08-15T12:00:00",
+        recording_ids=["rec-1"],
+    )
+    assert created["title"] == "Follow up with Dana"
+    assert created["completed_at"] is None
+    assert [linked["id"] for linked in created["recordings"]] == ["rec-1"]
+
+    listed = await list_tasks()
+    assert [task["id"] for task in listed] == [created["id"]]
+
+    completed = await update_task(created["id"], completed=True)
+    assert completed["completed_at"] is not None
+
+    # Archiving is the strongest task verb the connector offers; the task
+    # survives, off the active list, and remains restorable.
+    archived = await update_task(created["id"], archived=True)
+    assert archived["archived_at"] is not None
+    assert all(task["id"] != created["id"] for task in await list_tasks())
+    assert any(
+        task["id"] == created["id"] for task in await list_tasks(status="archived")
+    )
+
+
+@pytest.mark.anyio
+async def test_attach_document_creates_document_and_dispatches_parse(  # noqa: PLR0913 - fixtures
+    session_maker,
+    test_user: User,
+    mcp_context,
+    stub_celery_dispatch,
+    tmp_path,
+    monkeypatch,
+):
+    import backend.api.v1.endpoints.documents as documents_module
+
+    monkeypatch.setattr(documents_module, "DOCUMENTS_DIR", str(tmp_path))
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    result = await attach_document("rec-1", "Meeting brief", "# Brief\n\nAgenda.")
+
+    assert result["recording_id"] == "rec-1"
+    assert result["title"] == "Meeting brief"
+    assert result["status"] == "PENDING"
+    assert [name for name, _, _ in stub_celery_dispatch] == [
+        "backend.worker.tasks.process_document_task"
+    ]
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text("SELECT title, file_type, parse_mode FROM documents")
+            )
+        ).one()
+    assert row == ("Meeting brief", "text/markdown", "STRUCTURAL")
+    written = list(tmp_path.iterdir())
+    assert len(written) == 1
+    assert written[0].read_text().startswith("# Brief")
+
+
+@pytest.mark.anyio
+async def test_correct_utterance_text_stamps_mcp_source(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    """An MCP correction lands like a web edit but is attributed to the
+    connector in the event log."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    result = await correct_utterance_text(public_id, "u-1", "Hello, corrected.")
+
+    assert result["recording_id"] == public_id
+    assert result["utterance_id"] == "u-1"
+    # The edit appends an update_text event plus a manual-lock event, so the
+    # cursor advances from the seeded 3 to 5.
+    assert result["revision"] == 5
+
+    async with session_maker() as session:
+        utterance = (
+            await session.execute(
+                text(
+                    "SELECT text, manual_text_locked, revision "
+                    "FROM transcript_utterances WHERE public_id = 'u-1'"
+                )
+            )
+        ).one()
+        assert utterance[0] == "Hello, corrected."
+        assert bool(utterance[1]) is True
+        events = (
+            await session.execute(
+                text(
+                    "SELECT event_type, source, actor_user_id "
+                    "FROM transcript_utterance_events WHERE id > 3 ORDER BY id"
+                )
+            )
+        ).all()
+    assert [event[1] for event in events] == ["mcp"] * len(events)
+    assert {event[2] for event in events} == {test_user.id}
+
+
+async def seed_calendar_event(
+    session_maker, *, event_id: int, user_id: int, title: str
+) -> None:
+    """One connection, one source, one event for the given user."""
+    from backend.models.calendar import (
+        CalendarConnection,
+        CalendarEvent,
+        CalendarSource,
+    )
+
+    async with session_maker() as session:
+        connection = CalendarConnection(
+            id=event_id * 10,
+            user_id=user_id,
+            provider="google",
+            provider_account_id=f"acct-{user_id}-{event_id}",
+            sync_status="idle",
+        )
+        session.add(connection)
+        await session.flush()
+        source = CalendarSource(
+            id=event_id * 10,
+            connection_id=connection.id,
+            provider_calendar_id=f"cal-{event_id}",
+            name="Work",
+        )
+        session.add(source)
+        await session.flush()
+        session.add(
+            CalendarEvent(
+                id=event_id,
+                calendar_id=source.id,
+                provider_event_id=f"evt-{event_id}",
+                title=title,
+                starts_at=datetime(2026, 8, 5, 10, 0, 0),
+                ends_at=datetime(2026, 8, 5, 11, 0, 0),
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_calendar_event_tools_scope_to_owner(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+    await seed_calendar_event(
+        session_maker, event_id=1, user_id=test_user.id, title="Planning sync"
+    )
+    await seed_calendar_event(
+        session_maker, event_id=2, user_id=999, title="Someone else's standup"
+    )
+
+    events = await list_calendar_events()
+    assert [event["id"] for event in events] == [1]
+    assert events[0]["title"] == "Planning sync"
+
+    linked = await link_calendar_event("rec-1", 1)
+    assert linked["linked"] is True
+    async with session_maker() as session:
+        stored = await session.execute(
+            text("SELECT calendar_event_id FROM recordings WHERE id = 1")
+        )
+        assert stored.scalar() == 1
+
+    # Another user's event id must be invisible, not linkable.
+    with pytest.raises(HTTPException) as exc_info:
+        await link_calendar_event("rec-1", 2)
+    assert exc_info.value.status_code == 404
+
+    unlinked = await link_calendar_event("rec-1")
+    assert unlinked["linked"] is False
+
+
+@pytest.mark.anyio
+async def test_searchable_recording_ids_scopes_to_owner(
+    session_maker, test_user: User, mcp_context
+):
+    """The search widening subquery never leaves the caller's own,
+    non-deleted recordings."""
+    from backend.services.context_search import searchable_recording_ids
+
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-own",
+        user_id=test_user.id,
+        state="active",
+    )
+    await seed_bare_recording(
+        session_maker,
+        recording_id=2,
+        public_id="rec-foreign",
+        user_id=999,
+        state="active",
+    )
+    await seed_bare_recording(
+        session_maker,
+        recording_id=3,
+        public_id="rec-binned",
+        user_id=test_user.id,
+        state="deleted",
+    )
+
+    async with session_maker() as session:
+        result = await session.execute(searchable_recording_ids(test_user.id))
+        assert result.scalars().all() == [1]
+
+
+@pytest.mark.anyio
+async def test_search_context_resolves_speakers_and_provenance(
+    session_maker, test_user: User, mcp_context, monkeypatch
+):
+    """The tool shapes chunk hits into provenance-carrying results and
+    resolves diarization labels to display names."""
+    import backend.core.task_dispatch as task_dispatch_module
+    import backend.services.context_search as context_search_module
+    from backend.models.context_chunk import ContextChunk
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    class _FakeEmbeddingTask:
+        def get(self, timeout=None):
+            return [[0.0] * 512]
+
+    async def fake_dispatch(name, args=None, **kwargs):
+        assert name == "backend.worker.tasks.get_text_embedding_task"
+        return _FakeEmbeddingTask()
+
+    transcript_chunk = ContextChunk(
+        recording_id=1,
+        content="SPEAKER_00: we agreed to ship the context layer in Q3.",
+        meta={"source": "transcript", "start": 61.0, "end": 74.5},
+    )
+    document_chunk = ContextChunk(
+        recording_id=1,
+        document_id=5,
+        content="Q3 roadmap: context layer, evaluation harness.",
+        meta={"document_title": "Roadmap", "page_number": 2, "page_title": "Q3"},
+    )
+    notes_chunk = ContextChunk(
+        recording_id=1,
+        content="**Key Decisions** DEC-001 ship the context layer in Q3.",
+        meta={"source": "notes"},
+    )
+
+    async def fake_search(db, **kwargs):
+        assert kwargs["user_id"] == test_user.id
+        return [
+            (transcript_chunk, 0.12),
+            (document_chunk, 0.31),
+            (notes_chunk, 0.35),
+        ]
+
+    monkeypatch.setattr(task_dispatch_module, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(context_search_module, "search_context_chunks", fake_search)
+
+    result = await search_context("what did we agree about the context layer?")
+
+    first, second, third = result["results"]
+    assert first["source"] == "transcript"
+    assert first["content"].startswith("Dana: we agreed")
+    assert first["start"] == 61.0
+    assert first["recording_id"] == "11111111-2222-3333-4444-555555555555"
+    assert first["distance"] == 0.12
+    assert second["source"] == "document"
+    assert second["document_title"] == "Roadmap"
+    assert second["page_number"] == 2
+    # Notes chunks are labelled honestly, never passed off as transcript
+    # prose, and carry no fabricated timestamp provenance.
+    assert third["source"] == "notes"
+    assert "start" not in third
+    assert "document_title" not in third
+
+
+@pytest.mark.anyio
+async def test_rename_expected_name_guard(session_maker, test_user: User, mcp_context):
+    """The optional compare-and-swap refuses a rename when the name moved
+    under the caller, instead of clobbering it."""
+    bind_mcp_identity(test_user)
+    await seed_bare_recording(
+        session_maker,
+        recording_id=1,
+        public_id="rec-1",
+        user_id=test_user.id,
+        state="active",
+    )
+
+    with pytest.raises(ToolError) as exc_info:
+        await rename_recording("rec-1", "New name", expected_name="Stale name")
+    assert "conflict" in str(exc_info.value).lower()
+
+    renamed = await rename_recording("rec-1", "New name", expected_name="Recording 1")
+    assert renamed["name"] == "New name"
+
+
+@pytest.mark.anyio
+async def test_lifecycle_payloads_are_self_verifying(
+    session_maker, test_user: User, mcp_context
+):
+    """Archive and restore echo updated_at and the transcript cursor, so
+    the write response alone proves no transcript disturbance."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    archived = await archive_recording(public_id)
+    assert archived["is_archived"] is True
+    assert archived["updated_at"]
+    assert archived["transcript_revision"] == 3
+
+    restored = await restore_recording(public_id)
+    assert restored["is_archived"] is False
+    assert restored["transcript_revision"] == 3
+
+
+@pytest.mark.anyio
+async def test_list_recordings_match_field_hint(
+    session_maker, test_user: User, mcp_context
+):
+    """With a query, each result carries the best-effort match_field hint;
+    without one, the key is absent."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_recording_tag(
+        session_maker,
+        tag_id=1,
+        recording_id=1,
+        name="Dealflow",
+        user_id=test_user.id,
+    )
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO transcripts (id, created_at, updated_at, recording_id, "
+                "text, segments, notes_status, transcript_status) VALUES "
+                "(1, :ts, :ts, 1, 'we reviewed the quarterly figures', '[]', "
+                "'completed', 'completed')"
+            ),
+            {"ts": TEST_TIMESTAMP},
+        )
+        # The endpoint's search matches RecordingSpeaker.name; the compact
+        # payload prefers local_name, so set both to the same value.
+        await session.execute(
+            text("UPDATE recording_speakers SET name = 'Guest' WHERE id = 2")
+        )
+        await session.commit()
+
+    by_query = {}
+    for query in ("Weekly", "Dealflow", "Guest", "quarterly"):
+        results = await list_recordings(query=query)
+        assert [r["id"] for r in results] == [public_id], query
+        by_query[query] = results[0]["match_field"]
+
+    assert by_query == {
+        "Weekly": "name",  # "Weekly sync" title
+        "Dealflow": "tag",
+        "Guest": "speaker",  # display name carries the searched value
+        "quarterly": "content",  # only the transcript text contains it
+    }
+
+    unqueried = await list_recordings()
+    assert "match_field" not in unqueried[0]
+
+
+@pytest.mark.anyio
+async def test_list_recordings_deduplicates_speaker_names(
+    session_maker, test_user: User, mcp_context
+):
+    """Two diarised labels resolved to the same person appear once in the
+    compact speaker list."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO recording_speakers (id, created_at, updated_at, "
+                "public_id, recording_id, global_speaker_id, diarization_label) "
+                "VALUES (4, :ts, :ts, 'rs-4', 1, 11, 'SPEAKER_03')"
+            ),
+            {"ts": TEST_TIMESTAMP},
+        )
+        await session.commit()
+
+    recordings = await list_recordings()
+
+    assert recordings[0]["speakers"] == ["Dana", "Guest"]
+
+
+@pytest.mark.anyio
+async def test_unlock_utterance_clears_locks_and_keeps_audit_trail(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    """After a correction locks an utterance, unlock_utterance releases
+    both manual locks without touching content, and the clearing is its
+    own mcp-attributed event."""
+    from backend.mcp_server.tools_manage import unlock_utterance
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    corrected = await correct_utterance_text(public_id, "u-1", "Hello, corrected.")
+
+    result = await unlock_utterance(public_id, "u-1")
+    assert result["unlocked"] is True
+    assert result["revision"] > corrected["revision"]
+
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT text, manual_text_locked, manual_speaker_locked "
+                    "FROM transcript_utterances WHERE public_id = 'u-1'"
+                )
+            )
+        ).one()
+        assert row[0] == "Hello, corrected."  # content untouched
+        assert bool(row[1]) is False
+        assert bool(row[2]) is False
+        event = (
+            await session.execute(
+                text(
+                    "SELECT event_type, source FROM transcript_utterance_events "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+            )
+        ).one()
+    assert event[0] == "clear_manual_locks"
+    assert event[1] == "mcp"
+
+
+@pytest.mark.anyio
+async def test_unlock_utterance_requires_write_scope(
+    session_maker, test_user: User, mcp_context
+):
+    from backend.mcp_server.tools_manage import unlock_utterance
+
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+    with pytest.raises(ToolError):
+        await unlock_utterance("any-id", "u-1")

@@ -2,7 +2,7 @@
 
 Nojoin ships a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so AI assistants such as Claude can work with your meeting library — recordings, transcripts, meeting notes, attached documents, speakers, tags, and your People library — directly from your own deployment.
 
-Most tools are **read-only**. A small set of **additive** write tools let an assistant add or update people in your People library, name a meeting's speakers (and link them to people), and append to a meeting's notes. Write tools never delete anything, never touch voiceprints, and never modify your recordings, transcripts, or AI-generated notes. Because Nojoin exposes clean read and write primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
+The connector is a full agentic interface with two access tiers. **Read** tools (`mcp:read`) cover the whole library, including semantic search across every meeting and document. **Write** tools (`mcp:write`) cover recoverable changes: organising recordings (rename, tag, archive, bin, restore), managing tasks, correcting transcripts, regenerating notes, attaching text documents, appending user notes, and maintaining People records. Everything an assistant changes stays recoverable by you: archived and binned items restore, transcript edits are tracked in the edit log, and the assistant never authors AI-note content directly. **Permanent deletion is not possible through the connector at all** — the strongest deletion verb is moving a recording to the bin, and emptying the bin exists only in the web app. Because Nojoin exposes clean primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
 
 ## Requirements
 
@@ -37,26 +37,57 @@ claude mcp add nojoin --transport http https://your-nojoin-domain/mcp
 
 Claude Code discovers the OAuth flow automatically and opens a browser window for the same sign-in and consent step. No token pasting is required.
 
+## Connect Codex (desktop app)
+
+1. Open **Settings → MCP servers** and select **Add server**.
+2. Enter a name (for example `nojoin`), choose **Streamable HTTP** (not STDIO, which is for MCP servers Codex launches locally as a subprocess), and enter the URL `https://your-nojoin-domain/mcp`. Leave any bearer-token and header fields empty — that is not how Nojoin authenticates.
+3. Save the server, then select **Restart**. The restart matters: Codex probes the server on startup and only then flags it as requiring sign-in.
+4. In the server list, select **Authenticate**. A browser window opens for the same Nojoin sign-in and consent step as Claude.
+
+If **Authenticate** never appears after a restart, mark the server for OAuth by hand in `~/.codex/config.toml` (the desktop app, CLI, and IDE extension share this file), restart again, or run `codex mcp login nojoin` in a terminal as a fallback:
+
+```toml
+[mcp_servers.nojoin]
+url = "https://your-nojoin-domain/mcp"
+auth = "oauth"
+```
+
+Known upstream issue: some Codex Desktop builds (observed on 0.125.0-alpha.3) complete the OAuth sign-in but never import the server's tools into threads, reporting `auth_status` as `unsupported`. That failure is inside Codex — the same Codex-issued token works against the server directly — so if tools stay absent after a successful sign-in, update Codex rather than reconfiguring Nojoin.
+
 ## Available Tools
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, and the canonical `transcript_revision` cursor. |
+| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the canonical `transcript_revision` cursor, and, for searches, a best-effort `match_field` hint. |
 | `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording, formatted for reading. |
 | `get_transcript_utterances` | `mcp:read` | The canonical transcript as structured utterances: stable ids, millisecond timestamps, per-utterance state and edit provenance, and a revision cursor with tombstones for incremental sync. |
+| `search_context` | `mcp:read` | Semantic search across every transcript and attached document, with recording, timestamp, and page provenance on each hit. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
 | `list_tags` | `mcp:read` | Your tag list, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes, and tags. |
 | `get_person` | `mcp:read` | One person's profile plus the meetings they appear in. |
+| `list_calendar_events` | `mcp:read` | Your synced calendar events, for linking recordings to meetings. |
+| `list_tasks` | `mcp:read` | Your tasks from the Task workspace. |
+| `rename_recording` | `mcp:write` | Rename a recording. |
+| `tag_recording` / `untag_recording` | `mcp:write` | Add or remove a tag on a recording, creating the tag if needed. |
+| `archive_recording` / `restore_recording` | `mcp:write` | Archive a recording, or bring it back from the archive or bin. |
+| `trash_recording` | `mcp:write` | Move a recording to the bin (soft delete, reversible). |
+| `reprocess_recording` | `mcp:write` | Re-run the processing pipeline for a recording. |
+| `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline; the assistant never writes note content itself. |
+| `attach_document` | `mcp:write` | Attach assistant-authored text as a markdown document; binary uploads stay in the web app. |
+| `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. |
+| `unlock_utterance` | `mcp:write` | Release an utterance's manual-edit locks so reprocessing may overwrite it again; the clearing is itself an audited event. |
+| `link_calendar_event` | `mcp:write` | Link a recording to a calendar event, or unlink it. |
+| `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive, or restore tasks, with links to recordings and tags. Archiving is the strongest removal; task deletion exists only in the web app. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by name. |
 | `set_speaker_name` | `mcp:write` | Name a meeting's speaker and link them to a person. |
 | `append_meeting_notes` | `mcp:write` | Append text to a meeting's user notes. |
 
-All tools operate only on data owned by the account that authorised the connection. The write tools are additive: `import_people` fills in or updates a person's title, company, email, phone number, notes, and tags; `set_speaker_name` names a diarised speaker and links it to a matching person (importing the person first, if needed, lets it link rather than set a recording-local name); `append_meeting_notes` adds to your own meeting notes without altering the AI-generated notes. None of them delete data or modify voiceprints.
+All tools operate only on data owned by the account that authorised the connection. Everything is recoverable: archived and binned recordings restore, transcript corrections are attributed and tracked in the edit log, notes regeneration re-runs Nojoin's own pipeline rather than accepting assistant-authored notes, and People imports never touch voiceprints or remove existing data. There is deliberately no destructive tool: an assistant can move a recording to the bin, and only you can empty the bin, from the web app, which itself only offers permanent deletion for recordings already binned.
 
-Connections authorised before the write scope existed carry only the `mcp:read` scope: every read tool keeps working, and the write tools respond with an instruction to reconnect. Remove and re-add the connector to consent to the wider scope.
+Connections keep the scopes they were granted. Grants that predate `mcp:write` stay read-only: the write tools respond with an instruction to reconnect rather than failing opaquely, and removing and re-adding the connector consents to the wider scope.
 
 ### Keeping an External Copy in Sync
 
@@ -77,7 +108,7 @@ For operators who want the detail:
 - Discovery documents are served at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` (RFC 9728 / RFC 8414).
 - Clients self-register at `POST /api/v1/oauth/register` (RFC 7591 Dynamic Client Registration). Only public clients with PKCE are accepted; registration is rate limited.
 - The authorisation page at `/oauth/authorize` uses your normal Nojoin session and origin protections. Codes are single-use, PKCE-bound (S256), and expire after 60 seconds.
-- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. New grants carry the `mcp:read` and `mcp:write` scopes; the write scope unlocks only the additive People, speaker-name, and note-append tools. Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
+- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. Grants carry the `mcp:read` and `mcp:write` scopes; there is no stronger scope, and the retired `mcp:destroy` scope is stripped from any client that still requests it by name. Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
 - The reverse proxy must forward `/mcp` and `/.well-known/oauth-*` to the API service. The bundled Nginx configuration does this out of the box; see [DEPLOYMENT.md](DEPLOYMENT.md) if you front Nojoin with your own edge proxy.
 
 ## Troubleshooting

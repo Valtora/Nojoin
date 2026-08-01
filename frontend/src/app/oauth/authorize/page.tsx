@@ -6,10 +6,13 @@ import Image from "next/image";
 import {
   FileText,
   Link2,
+  ListTodo,
   Loader2,
   Lock,
   Mic,
+  Pencil,
   Plug,
+  Search,
   ShieldCheck,
   Tag,
   User as UserIcon,
@@ -45,13 +48,22 @@ const SCOPE_CAPABILITIES: Record<
   "mcp:read": [
     { icon: Mic, label: "View your recordings" },
     { icon: FileText, label: "Read transcripts, notes, and attached documents" },
+    { icon: Search, label: "Search across your meetings and documents" },
     { icon: Users, label: "See meeting speakers and your People library" },
     { icon: Tag, label: "See your tags" },
   ],
   "mcp:write": [
-    { icon: UserPlus, label: "Add or update people in your People library" },
-    { icon: Users, label: "Name meeting speakers and link them to people" },
-    { icon: FileText, label: "Append to a meeting's notes" },
+    {
+      icon: Mic,
+      label: "Organise recordings (rename, tag, archive, move to bin)",
+    },
+    { icon: ListTodo, label: "Create and manage your tasks" },
+    {
+      icon: Pencil,
+      label: "Correct transcripts and regenerate meeting notes",
+    },
+    { icon: FileText, label: "Attach text documents and append to notes" },
+    { icon: UserPlus, label: "Add or update people and name speakers" },
   ],
 };
 
@@ -171,8 +183,8 @@ function AuthorizeContent() {
     : [];
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <div className="max-w-lg w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         <div className="px-8 pt-10 pb-8">
           {loading && (
             <div className="flex justify-center py-16">
@@ -228,7 +240,7 @@ function AuthorizeContent() {
               </div>
 
               {/* Capability list */}
-              <ul className="mt-5 divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
+              <ul className="mt-5 max-h-[45dvh] overflow-y-auto divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
                 {capabilities.map(({ icon: Icon, label }) => (
                   <li
                     key={label}
@@ -249,9 +261,10 @@ function AuthorizeContent() {
                   </>
                 ) : (
                   <>
-                    Write access is additive: {info.client_name} can add
-                    people, name speakers, and append notes, but cannot delete
-                    anything or change your recordings and transcripts.
+                    Everything {info.client_name} changes with this access
+                    stays recoverable: archived and binned items can be
+                    restored, and transcript edits are tracked. It cannot
+                    permanently delete anything.
                   </>
                 )}
               </p>

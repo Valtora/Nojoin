@@ -29,8 +29,11 @@ MCP_TOKEN_TYPE = "mcp"
 WEB_SESSION_SCOPE = "session:web"
 API_ACCESS_SCOPE = "api:full"
 MCP_READ_SCOPE = "mcp:read"
-# Grants the People-library write tools on the MCP endpoint only; mcp-type
+# Grants the recoverable write tools on the MCP endpoint only; mcp-type
 # tokens remain rejected by every general API route regardless of scope.
+# There is deliberately no stronger scope: the connector's destructive
+# ceiling is moving a recording to the bin, and permanent deletion exists
+# only in the web app.
 MCP_WRITE_SCOPE = "mcp:write"
 
 ALGORITHM = "HS256"

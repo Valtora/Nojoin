@@ -51,6 +51,50 @@ DOCUMENTS_DIR = str(PathManager().documents_directory)
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 
+async def create_text_document(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    title: str,
+    content: str,
+    user_id: int,
+) -> Document:
+    """Persist authored text as an attached markdown document and queue parsing.
+
+    The MCP attach_document tool's ingest path: text arrives as a JSON
+    argument rather than a multipart file, so the upload streaming, size
+    negotiation, and concurrency guard of upload_document do not apply.
+    Parsing is structural: the source is already text, so no vision
+    provider is ever called for it.
+    """
+    payload = content.encode("utf-8")
+    ensure_disk_headroom(DOCUMENTS_DIR, len(payload))
+    file_path = os.path.join(DOCUMENTS_DIR, f"{uuid4()}.md")
+    with open(file_path, "wb") as handle:
+        handle.write(payload)
+
+    document = Document(
+        recording_id=recording.id,
+        title=title,
+        file_path=file_path,
+        file_type="text/markdown",
+        file_size_bytes=len(payload),
+        status=DocumentStatus.PENDING,
+        parse_mode=DocumentParseMode.STRUCTURAL,
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+
+    task = await dispatch_task(
+        "backend.worker.tasks.process_document_task", args=[document.id]
+    )
+    from backend.models.task import register_task_ownership
+
+    await register_task_ownership(db, task.id, user_id)
+    return document
+
+
 @router.get(
     "/recordings/{recording_id}/documents", response_model=List[DocumentPublicRead]
 )
