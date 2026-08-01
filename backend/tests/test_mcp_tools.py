@@ -779,10 +779,45 @@ async def test_get_transcript_utterances_full_snapshot(
     assert first["state"] == "stable"
     assert first["text_manually_edited"] is False
     assert result["tombstones"] == []
+    assert result["total_utterances"] == 2
+    assert result["next_offset"] is None
     assert {s["diarization_label"] for s in result["speakers"]} == {
         "SPEAKER_00",
         "SPEAKER_01",
     }
+
+
+@pytest.mark.anyio
+async def test_get_transcript_utterances_pages_with_limit_and_offset(
+    session_maker, test_user: User, mcp_context
+):
+    """Long transcripts page: each page slices utterances only, while the
+    revision, tombstones, and speakers stay complete on every page."""
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+
+    first_page = await get_transcript_utterances(public_id, limit=1)
+    assert [u["id"] for u in first_page["utterances"]] == ["u-1"]
+    assert first_page["total_utterances"] == 2
+    assert first_page["next_offset"] == 1
+    assert first_page["revision"] == 3
+    assert len(first_page["speakers"]) == 2
+
+    second_page = await get_transcript_utterances(
+        public_id, limit=1, offset=first_page["next_offset"]
+    )
+    assert [u["id"] for u in second_page["utterances"]] == ["u-2"]
+    assert second_page["next_offset"] is None
+    assert second_page["revision"] == 3
+    assert len(second_page["speakers"]) == 2
+
+    # Out-of-range offset yields an empty page, not an error.
+    past_end = await get_transcript_utterances(public_id, offset=10)
+    assert past_end["utterances"] == []
+    assert past_end["total_utterances"] == 2
+    assert past_end["next_offset"] is None
 
 
 @pytest.mark.anyio

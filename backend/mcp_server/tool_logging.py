@@ -31,6 +31,7 @@ _LOGGABLE_ARG_NAMES = frozenset(
         "on_conflict",
         "limit",
         "skip",
+        "offset",
         "start_date",
         "end_date",
         "after_revision",

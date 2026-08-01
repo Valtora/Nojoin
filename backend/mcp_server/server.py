@@ -330,6 +330,8 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
 async def get_transcript_utterances(
     recording_id: str,
     after_revision: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> dict[str, Any]:
     """Get the canonical transcript as structured utterances with delta sync.
 
@@ -350,11 +352,20 @@ async def get_transcript_utterances(
     reflects current names, so speaker renames are visible even when no
     utterance changed.
 
+    Long transcripts are paged: `utterances` holds at most `limit` entries
+    starting at `offset`, `total_utterances` is the full match count, and
+    `next_offset` is the offset of the next page, or null when this page is
+    the last. `tombstones` and `speakers` are complete on every page. Pages
+    are consistent only within one `revision`: if `revision` differs between
+    pages, the transcript changed mid-read, so restart from offset 0.
+
     Args:
         recording_id: The recording's string id from list_recordings.
         after_revision: The last `revision` cursor already seen, from a
             previous call or from list_recordings' `transcript_revision`.
             Omit for a full snapshot.
+        limit: Maximum utterances per page (1-500, default 100).
+        offset: Number of matching utterances to skip, for pagination.
     """
     from backend.api.v1.endpoints.transcripts.routes_utterances import (
         get_transcript_utterances as api_get_transcript_utterances,
@@ -364,6 +375,8 @@ async def get_transcript_utterances(
     user = get_current_mcp_user()
     if after_revision is not None and after_revision < 0:
         raise ToolError("after_revision must be a non-negative integer.")
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
 
     async with async_session_maker() as db:
         payload = await api_get_transcript_utterances(
@@ -373,7 +386,13 @@ async def get_transcript_utterances(
             current_user=user,
         )
 
-    return payload.model_dump()
+    result = payload.model_dump()
+    utterances = result["utterances"]
+    page_end = offset + limit
+    result["utterances"] = utterances[offset:page_end]
+    result["total_utterances"] = len(utterances)
+    result["next_offset"] = page_end if page_end < len(utterances) else None
+    return result
 
 
 @mcp_tool()

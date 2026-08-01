@@ -62,6 +62,8 @@ Connections authorised before the write scope existed carry only the `mcp:read` 
 
 `get_transcript_utterances` exists for tools that maintain their own copy of transcript data, such as a read-only sidecar or knowledge base, rather than for conversational assistants, which should prefer `get_transcript`. Poll `list_recordings` and compare each recording's `transcript_revision` (and `notes_status`) with the last value you stored, then call `get_transcript_utterances` with your stored cursor as `after_revision` to receive only changed utterances plus tombstones. A recording is fully processed once `status` is `PROCESSED` and `notes_status` is `completed`. Treat the cursor as opaque and the response fields as an additive contract: new fields may appear over time, and reprocessing a recording can replace most utterance ids while the cursor keeps increasing.
 
+Responses are paged, because a full snapshot of a long meeting easily exceeds an assistant's tool-output budget: `utterances` carries at most `limit` entries (1-500, default 100) starting at `offset`, `total_utterances` is the full count, and `next_offset` is the next page's offset, or null on the last page. `tombstones` and `speakers` are complete on every page. Pages are only consistent within a single `revision`: if `revision` changes between pages, the transcript moved mid-read, so restart from offset 0. Deltas are usually a single page; the calls that need paging are the first snapshot and the delta after a reprocess.
+
 ## Managing and Revoking Access
 
 - **Settings → Integrations → Connected apps** lists every active connection with its scope, creation time, and last use, and offers per-connection revocation.
