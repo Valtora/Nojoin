@@ -713,6 +713,7 @@ async def test_mcp_protocol_tools_list_end_to_end(
     assert tool_names == {
         "list_recordings",
         "get_transcript",
+        "get_transcript_utterances",
         "get_meeting_notes",
         "list_tags",
         "get_speakers",
