@@ -110,9 +110,9 @@ export default function LoginPage() {
               </div>
               <input
                 id="login-username"
-                name="login-username"
+                name="username"
                 type="text"
-                autoComplete="section-login username"
+                autoComplete="username"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
@@ -134,9 +134,9 @@ export default function LoginPage() {
               </div>
               <input
                 id="login-current-password"
-                name="login-current-password"
+                name="password"
                 type="password"
-                autoComplete="section-login current-password"
+                autoComplete="current-password"
                 aria-describedby={error ? "login-error" : undefined}
                 aria-invalid={Boolean(error)}
                 required
