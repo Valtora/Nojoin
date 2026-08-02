@@ -32,6 +32,7 @@ const src = (url: string) => ({ url, checked: CHECKED });
 
 const README = src("https://github.com/Valtora/Nojoin/blob/main/README.md");
 const USAGE = src("https://github.com/Valtora/Nojoin/blob/main/docs/USAGE.md");
+const MCP = src("https://github.com/Valtora/Nojoin/blob/main/docs/MCP.md");
 
 const UNSOURCED: Cell = { text: "Not stated in current docs" };
 
@@ -207,7 +208,7 @@ export const rows: Row[] = [
         source: src("https://otter.ai/features"),
       },
       granola: {
-        text: "Google and Microsoft/Outlook; Apple Calendar is not supported.",
+        text: "Google and Microsoft/Outlook; Apple Calendar isn't supported.",
         source: src("https://docs.granola.ai/help-center/getting-started/syncing-your-calendars"),
       },
       fireflies: {
@@ -232,6 +233,34 @@ export const rows: Row[] = [
       fireflies: {
         text: "Across recordings and transcripts, with host, participant, title and date filters.",
         source: src("https://guide.fireflies.ai/articles/4577578901-how-to-search-and-find-your-meetings"),
+      },
+    },
+  },
+  {
+    // All four ship an MCP server, so the distinction is not that one exists.
+    // It is where it runs and what it reaches: three of them are endpoints on
+    // the vendor's own cloud, and Nojoin's is served by the deployment the
+    // recordings already sit on. Read-versus-write is not the line either --
+    // Fireflies documents five tools that change data -- so the cells say what
+    // each one actually does rather than implying a gap that isn't there.
+    key: "agents",
+    label: "Agent access to your meetings",
+    cells: {
+      nojoin: {
+        text: "An MCP server on your own deployment, authorised per user. Read tools cover the whole library; write tools cover recoverable changes, and permanent deletion isn't reachable through it at all.",
+        source: MCP,
+      },
+      otter: {
+        text: "An MCP server on Otter's cloud, part of Otter for Enterprise. Searches transcripts across time, analyses themes and generates content from them.",
+        source: src("https://otter.ai/blog/otter-for-enterprise-connect-ai-to-ai-with-otters-mcp"),
+      },
+      granola: {
+        text: "An MCP server on Granola's cloud for paid plans, reading notes and transcripts. On Enterprise it's early-access beta and stays off until an admin enables it.",
+        source: src("https://www.granola.ai/blog/granola-mcp"),
+      },
+      fireflies: {
+        text: "An MCP server at api.fireflies.ai: 14 tools that read, and 5 that change data — share a meeting, revoke access, rename, move, and create a soundbite.",
+        source: src("https://docs.fireflies.ai/mcp-tools/overview"),
       },
     },
   },

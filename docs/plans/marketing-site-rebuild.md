@@ -26,11 +26,11 @@ Agreed before implementation. Reasons recorded so they are not revisited by acci
 
 | Decision | Reason |
 | --- | --- |
-| Two pages: landing and comparison | No docs platform to build or maintain |
+| Three pages: landing, comparison and managed | No docs platform to build or maintain. The third page was anticipated below and arrived sooner than expected |
 | Docs stay on GitHub as `docs/*.md`, linked out to | One source of truth. The site never holds a second copy that can drift |
 | `/docs/*` 301s to `github.com/Valtora/Nojoin/blob/main/docs/*` | Released images hardcode `www.nojoin.co.uk/docs/TELEMETRY`. See "The URL contract" |
 | Two equal hero CTAs: Get Started, Star on GitHub | A visitor ready to install should not have to hunt for the command |
-| No pricing, but nav and layout accommodate a third page later | There is no hosted or paid offering. Adding one should not need a redesign |
+| Nav and layout accommodate a third page later | Superseded, and the reasoning held: `/managed/` was added afterwards with one nav entry, one landing band and no redesign. It publishes a monthly figure, so the original "no pricing" position no longer stands. See SITE.md, "The managed service" |
 
 ### Stack and hosting
 
@@ -619,7 +619,6 @@ be read from here. Anything requiring it is done by hand in the dashboard.
 ## Out of scope
 
 - Any docs hosting on the site
-- A pricing page, or anything implying a hosted offering
 - Changes to the app, other than the `tokens.css` extraction
 - Changes to `.github/workflows/release.yml` beyond the site rebuild trigger
 - SEO work beyond correct titles, descriptions, Open Graph tags, a sitemap and `robots.txt`
@@ -628,7 +627,7 @@ be read from here. Anything requiring it is done by hand in the dashboard.
 
 - [ ] `www.nojoin.co.uk` serves the Astro site from Cloudflare Workers, apex 301s to it
 - [ ] All five URL contract rows verified by hand, before and after cutover
-- [ ] Both pages render correctly in light and dark, on a phone and a desktop, with no
+- [ ] Every page renders correctly in light and dark, on a phone and a desktop, with no
       horizontal scroll
 - [ ] Contrast gate passes over the site's tokens in both themes, in CI
 - [ ] Jekyll removed, GitHub Pages disabled, `README.md` still renders correctly on GitHub

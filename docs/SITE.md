@@ -9,10 +9,15 @@ authority on tokens and this document is the authority on the site's composition
 
 ## What the site is
 
-Two pages, landing and comparison. Documentation stays on GitHub as `docs/*.md` and the site
-links out to it; the site never holds a copy that can drift. `/docs/*` URLs 301 to the
-corresponding GitHub blob URL forever, because released images hardcode
-`www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
+Three pages: landing, comparison and the managed service. Documentation stays on GitHub as
+`docs/*.md` and the site links out to it; the site never holds a copy that can drift.
+`/docs/*` URLs 301 to the corresponding GitHub blob URL forever, because released images
+hardcode `www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
+
+The rebuild shipped two pages and recorded "there is no hosted or paid offering" as the
+reason, while deliberately building the nav and layout to take a third page later. That
+turned out to be worth doing: `/managed/` arrived afterwards and cost one nav entry, one
+landing band and no redesign.
 
 Both themes follow `prefers-color-scheme` by default, and a toggle in the header lets a
 visitor override that. The choice is stored and applied before the first paint, so there is
@@ -72,6 +77,15 @@ person, sentence case, British English, no emoji. It shares a writing standard w
 sibling brand Vorkane, adapted rather than copied — Vorkane sells a person and writes in the
 first person singular; Nojoin is a product and never says "I" or "we" in marketing copy.
 
+**One page is exempt: `/managed/`.** What it sells is not the product but one named person's
+time, and a service provided personally cannot honestly describe itself as "it". That page
+writes in the first person singular, names Tay outright, and says so in its own
+first paragraph. The exception is scoped to that page and does not travel: the landing
+band that points at it stays in the product's voice and refers to "Nojoin's author" in the
+third person, so a visitor meets one narrator per page rather than two per scroll. "We"
+stays banned everywhere, including there — one person is an "I", never a "we", and the
+corporate plural is exactly the register the rest of these rules exist to avoid.
+
 The rules:
 
 - **Contract everything.** "It's", "can't", "won't", "you've". The refusal to contract is
@@ -119,6 +133,44 @@ The comparison page holds itself to the standard it would want applied to it:
   turns the run red without giving a competitor's web server a veto over the site's own
   rebuild. Changed facts behind live URLs still need a human re-read; treat any vendor
   feature announcement as a trigger to re-check its row.
+
+## The managed service
+
+`/managed/` sells one thing: Tay scoping, installing and maintaining a private
+instance for an organisation. The commercial shape below was settled deliberately and the
+reasoning matters more than the numbers, because the numbers will move.
+
+- **The customer owns the hardware and pays for it directly.** The fee is labour and nothing
+  else. That removes idle spend, cost overruns and supplier risk from the offering in one
+  move, and it keeps "your server, your data" literally true — which the rest of the site
+  spends two pages arguing for.
+- **The page describes the machine, not its price.** 8 GB of VRAM, quoted from
+  DEPLOYMENT.md, with CPU-only named as slower rather than absent. The same reasoning that
+  bans competitor pricing applies to a supplier's: a quoted cloud price goes stale and a
+  stale price is the error people screenshot. It is also honest that a customer with a
+  suitable machine already pays nothing extra.
+- **£250 a month, ten to twenty-five people.** The floor sits at ten because fixed hardware
+  cost spread across five people makes the smallest customer the worst value in the book,
+  and no wording fixes an intercept. Above twenty-five is a conversation rather than a
+  published tier: there is no customer of that size yet, and an invented price is exactly
+  the unbacked number the comparison page's standard exists to prevent.
+- **Setup is £950, waived on a twelve-month commitment.** Month one is the heaviest month.
+- **Nothing on the page is a promise that breaks on a bad week.** No uptime figure, no SLA,
+  no capacity claim. Same day if the instance is down, next working day otherwise, UK hours,
+  and the limit named rather than implied. Monitoring is listed as part of the fee because
+  an outage promise is only meetable if something outside the network notices the outage.
+- **Upgrades run monthly, deliberately slower than releases.** Ten releases shipped in the
+  seven weeks before the page was written. Applying each one to a customer's production
+  system means changing it twice a week, and this repository has already met an Alembic
+  back-stamp that crash-loops a newer image.
+- **The AGPL position is stated as a feature, not conceded as a limit.** Prioritised
+  requests get read first and get an answer; whatever gets built ships to everyone under the
+  same licence. The licence forbids a private version, so nobody is locked in, and the thing
+  being sold is time rather than access. That is a strong sentence and a weak omission.
+
+Two things that are true and stay off the page by decision: the processing agreement, and
+the admin access that makes maintenance possible. No sentence there claims the data is
+unreachable, so nothing needs retracting on a call.
 
 ## Maintenance
 
