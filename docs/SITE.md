@@ -181,6 +181,18 @@ Two things that are true and stay off the page by decision: the processing agree
 the admin access that makes maintenance possible. No sentence there claims the data is
 unreachable, so nothing needs retracting on a call.
 
+**The call to action is an address, not a booking page.** A self-hosted scheduler was the
+plan, on the reasoning that a page arguing for self-hosting should book its own calls
+through software it hosts. Cal.com then moved its production codebase into a private
+repository: the public repo became `calcom/cal.diy`, relicensed from AGPL-3.0 to MIT,
+stripped of teams and workflows, and documented by its own maintainers as being for
+personal rather than production use. No Docker image is published for it and its app URL is
+baked in at build time, so running it would mean building and rebuilding a Next.js monorepo
+to keep one booking type alive — under the page's only call to action, with nothing behind
+it if the build broke. `hello@nojoin.co.uk` cannot go down. It is a Proton alias on the
+custom domain rather than the inbox itself, because an address in public markup gets scraped
+and an alias can be replaced without moving the mailbox.
+
 ## Maintenance
 
 - The site deploys from `main` only: a push touching `site/`, a published release, a weekly

@@ -13,9 +13,21 @@ import Base from "../layouts/Base.astro";
 
 const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
 
-// The scheduler is self-hosted, so this is the one value that changes if it
-// moves. It is the page's only call to action: there is no email fallback.
-const booking = "https://cal.nojoin.co.uk/scoping";
+// An address rather than a booking page, by decision. A self-hosted scheduler
+// was the plan until Cal.com moved its production codebase into a private
+// repository in 2026: the public repo became calcom/cal.diy, relicensed from
+// AGPL-3.0 to MIT, stripped of teams and workflows, maintained separately, and
+// documented by its own maintainers as being for personal rather than
+// production use. No image is published for it, and its app URL is baked in at
+// build time, so self-hosting it would mean building and rebuilding a Next.js
+// monorepo to keep one booking type alive. This page's only call to action is
+// not the place for that. An address cannot go down.
+//
+// It is a Proton alias on the nojoin.co.uk custom domain, delivering to the
+// taylan@ inbox. An alias rather than the inbox itself because this address sits
+// in public markup and will be scraped: an alias can be burned and replaced
+// without touching the mailbox behind it.
+const contact = "hello@nojoin.co.uk";
 ---
 
 <Base
@@ -33,7 +45,7 @@ const booking = "https://cal.nojoin.co.uk/scoping";
           Nojoin, and for £250 a month I'll do that part on hardware you own.
         </p>
         <div class="ctas">
-          <a class="btn btn-primary" href={booking}>Book a scoping call</a>
+          <a class="btn btn-primary" href={`mailto:${contact}`}>Email me</a>
           <a class="btn btn-secondary" href={`${docs}/DEPLOYMENT.md`}>What you'd be running</a>
         </div>
       </div>
@@ -162,13 +174,14 @@ const booking = "https://cal.nojoin.co.uk/scoping";
 
     <section class="closer">
       <div class="wrap">
-        <h2 class="heading-2">Book thirty minutes</h2>
+        <h2 class="heading-2">Start with an email</h2>
         <p style="font-size: 1rem; margin-top: 0.75rem;">
-          I'll tell you if it's a bad fit. That happens, and it's cheaper for both of us
-          than finding out in month three.
+          Tell me how many people, what you're running now, and what's stopping you using
+          something hosted. I'll tell you if it's a bad fit. That happens, and it's cheaper
+          for both of us than finding out in month three.
         </p>
         <div class="ctas">
-          <a class="btn btn-inverse" href={booking}>Book a scoping call</a>
+          <a class="btn btn-inverse" href={`mailto:${contact}`}>{contact}</a>
           <a class="btn btn-ghost" href="/compare/">See the comparison</a>
         </div>
       </div>
