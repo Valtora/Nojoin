@@ -87,8 +87,14 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   tools by what they touch, each led by a glyph. A wider card carries the CRM bridge on its
   own, because an assistant reconciling your People library with anything it can already
   reach is the claim with no equivalent in the comparison, and it was a clause in a
-  paragraph. The actor pills say "Agent", never a vendor name: Claude and Codex are both
-  supported and the claim is about assistants generally.
+  paragraph. The actor pills say "Agent", never a vendor name: more than one assistant is
+  supported and the claim is about assistants generally. The prose names Claude and ChatGPT,
+  which is what a reader installs; OpenAI renamed the Codex desktop app to ChatGPT on 9 July
+  2026, and Codex survives as a mode inside it. `docs/MCP.md` still says Codex throughout,
+  deliberately: its instructions carry literal commands and paths (`codex mcp logout`,
+  `~/.codex/config.toml`, the "Codex MCP Credentials" keychain entry) that the rename did not
+  change, and its troubleshooting section records behaviour observed on a specific Codex
+  build that nobody has re-tested since.
 - **The headline concedes the commodity and claims the hard part**: "Transcription is
   easy. Agentic meeting intelligence isn't." This reverses the earlier no-bot headline
   deliberately, and then reverses its first agent-led replacement too. Not joining the call
@@ -102,7 +108,7 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
   No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
 - **The agents section carries no screenshot, by decision.** Every other feature section on
-  the landing page is led by its shot. That capability happens in Claude's or Codex's
+  the landing page is led by its shot. That capability happens in Claude's or ChatGPT's
   window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
   capture of someone else's interface would be a false image on a page that argues from
   checkable ones. Nojoin's own screens cannot carry the claim either: the app records that
