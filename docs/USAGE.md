@@ -240,6 +240,13 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 - **Documents** can be uploaded to support meeting context, meeting notes, and later search.
 - **Search** spans recordings, transcript text, notes, tags, and document content where available.
 
+On desktop, the Speakers and Chat panels sit in a resizable column to the right of the transcript
+and notes. Each collapses independently from the control in its header: collapsing one gives the
+other the full column height, and collapsing both reduces the column to a slim strip of icons that
+restores them. The recordings list can likewise be collapsed from the control beside its search
+box. All of these choices persist across visits, so a laptop can keep the full width for reading a
+transcript without giving the panels up for good.
+
 ### Attaching Documents
 
 Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or from the Documents panel that appears below the live transcript while a meeting is still recording or processing.

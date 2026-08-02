@@ -286,7 +286,12 @@ what forced five panels into one long scroll.
 **A panel that subdivides must query itself, not the window.** Meeting Edge splits into two lists
 side by side, and did so at the `xl` *viewport* breakpoint: at a 1280px window it subdivided a
 400px column and wrapped both lists to three words a line. Any `grid-cols` inside a panel that can
-land in a column belongs behind a container query on that panel.
+land in a column belongs behind a container query on that panel. Settings now complies wholesale:
+`SettingsBlock` and `SettingsCard` are containers, `SettingsRow` switches its label-beside-control
+layout on its own width, and every grid under `components/settings/` queries its block or card.
+The calendar provider credentials card is the cautionary tale: its two-provider grid engaged on
+the `lg` viewport inside a 768px-capped column, leaving the label side of every row about 24px at
+every window width — a layout that was unsatisfiable, not merely tight.
 
 **These are container queries against the workspace, not media queries against the viewport**, and
 that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
@@ -336,6 +341,17 @@ a separate sequence, set with a container-query `order` override where the two d
 what keeps a phone opening on the record button while a desktop leads its middle column with the
 task list.
 
+### Collapsible surfaces
+
+Both rails and both meeting side panels collapse, and every collapse state persists in the
+navigation store (`navigation-storage`). The pattern is uniform: the collapse control lives in the
+surface's own header, a slim strip carries the re-open affordance when nothing else is left, and
+nothing auto-collapses — the user decides, the choice survives a reload, and mobile keeps its own
+layouts (drawer, full-width list, tabs) untouched. The meeting view's Speakers and Chat panels
+collapse independently; collapsing one gives the other the full column height, and collapsing both
+reduces the right column to an icon strip. The recordings rail collapses to the same strip width
+as the nav rail so the two align.
+
 ### Surface nesting
 
 The flat canon's two-level rule, as a fix pattern. When a surface turns out to be nested, it steps
@@ -379,6 +395,7 @@ tokens exclusively. Build a surface out of these rather than out of raw elements
 | `Input`, `Select` | Form fields. Both draw on the shared `fieldChrome` helper, so they cannot drift apart. `Select` is a native select, because the mobile pass wants the platform picker on a phone; see `color-scheme` below for what that costs. |
 | `Modal` | Every dialog. Wraps the Headless UI dialog, so the focus trap, scroll lock, Escape handling and portal come from a maintained implementation. Adds the plain scrim, the float surface and shadow, a token z-index, and the height cap and viewport gutter that stop a tall modal pushing its own actions below the fold on a phone. |
 | `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Pre-existing widgets, restyled onto tokens. |
+| `FitText` | A single line that must fit its container, meaning the meeting title. Steps the font from a designed size down to a readability floor, then wraps to two clamped lines. CSS cannot do this: `clamp()` tracks the container's size, never the text's own length. |
 
 ## Typography
 
@@ -397,6 +414,19 @@ font class is absent entirely.
 
 There is no need to add a `font-sans` class to reach the body font; an element only needs one when
 it is overriding something else back to the default.
+
+### The heading scale
+
+`density-heading-page` and `density-heading-section` carry the fluid heading sizes: a viewport
+clamp below the desktop breakpoint, and a second clamp under compact desktop density. Their
+font-size declarations live *outside* the cascade layers on purpose. Inside `@layer components`
+they lose to the `text-*` utilities on the same elements, because the utilities layer is declared
+after components and layer order beats selector specificity — which is exactly how the compact
+scaling originally shipped inert. Keep them unlayered, and keep each clamp's upper bound at the
+largest `text-*` size the class is paired with, so a clamp only ever steps a heading down.
+
+Where a heading must respond to its own content rather than to its container — the meeting title
+is the case — CSS cannot help, and the `FitText` primitive measures and fits instead.
 
 Lucide is the sole icon system.
 
