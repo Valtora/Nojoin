@@ -358,6 +358,9 @@ async def test_full_authorization_code_flow(
     assert payload["sub"] == test_user.username
     assert payload["res"] == f"{TEST_ORIGIN}/mcp"
     assert payload["tv"] == test_user.token_version
+    # The access token names its consent grant so /mcp requests can stamp
+    # the grant's last-used time for the Connected Apps view.
+    assert payload["grant_id"]
 
     # Codes are single-use.
     replay = await client.post(
@@ -656,6 +659,93 @@ async def test_mcp_token_dies_on_token_version_bump(
             "/", json={}, headers={"Authorization": f"Bearer {token}"}
         )
     assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_authenticated_requests_stamp_grant_last_used(
+    monkeypatch, fixed_origin, isolated_keyring, session_maker, test_user: User
+):
+    """An authenticated /mcp request stamps the grant's active refresh row.
+
+    Rotation only ever writes last_used_at onto rows it simultaneously
+    revokes, which the Connected Apps query excludes, so without this stamp
+    the view shows "Never" forever. The stamp is throttled, and tokens
+    issued before the grant_id claim existed skip it without failing.
+    """
+    from datetime import timedelta
+
+    import backend.core.db as core_db
+    from backend.models.oauth import OAuthClient, OAuthRefreshToken
+    from backend.utils.time import utc_now
+
+    monkeypatch.setattr(core_db, "async_session_maker", session_maker)
+
+    async with session_maker() as session:
+        session.add(
+            OAuthClient(client_id="abc", client_name="Codex", redirect_uris="[]")
+        )
+        session.add(
+            OAuthRefreshToken(
+                token_hash="h1",
+                grant_id="grant-1",
+                client_id="abc",
+                user_id=test_user.id,
+                scope="mcp:read mcp:write",
+                resource=f"{TEST_ORIGIN}/mcp",
+                expires_at=utc_now() + timedelta(days=1),
+            )
+        )
+        await session.commit()
+
+    def make_token(extra_claims: dict) -> str:
+        return security.create_access_token(
+            test_user.username,
+            token_type=security.MCP_TOKEN_TYPE,
+            scopes=[security.MCP_READ_SCOPE],
+            token_version=test_user.token_version,
+            extra_claims={"client_id": "abc", "res": f"{TEST_ORIGIN}/mcp"}
+            | extra_claims,
+        )
+
+    token = make_token({"grant_id": "grant-1"})
+    legacy_token = make_token({})
+
+    async def read_stamp():
+        async with session_maker() as session:
+            row = await session.get(OAuthRefreshToken, "h1")
+            return row.last_used_at
+
+    transport = ASGITransport(app=_build_mcp_test_app({}))
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        first = await c.post("/", json={}, headers={"Authorization": f"Bearer {token}"})
+        assert first.status_code == 200
+        stamped = await read_stamp()
+        assert stamped is not None
+
+        # Within the throttle window a second request leaves the stamp alone.
+        second = await c.post(
+            "/", json={}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert second.status_code == 200
+        assert await read_stamp() == stamped
+
+        # Outside the window (throttle forced to zero) the stamp advances.
+        monkeypatch.setattr(oauth_service, "GRANT_LAST_USED_THROTTLE_SECONDS", 0)
+        third = await c.post("/", json={}, headers={"Authorization": f"Bearer {token}"})
+        assert third.status_code == 200
+        assert await read_stamp() >= stamped
+
+        # Tokens issued before the claim existed still authenticate.
+        legacy = await c.post(
+            "/", json={}, headers={"Authorization": f"Bearer {legacy_token}"}
+        )
+        assert legacy.status_code == 200
+
+    # The Connected Apps listing now surfaces the usage.
+    async with session_maker() as session:
+        grants = await oauth_service.list_active_grants(session, user_id=test_user.id)
+    assert [g["grant_id"] for g in grants] == ["grant-1"]
+    assert grants[0]["last_used_at"] is not None
 
 
 @pytest.fixture

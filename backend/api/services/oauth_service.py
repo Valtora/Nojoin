@@ -25,6 +25,7 @@ from datetime import timedelta
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -292,7 +293,9 @@ def _verify_pkce(code_challenge: str, code_verifier: str) -> bool:
     return secrets.compare_digest(computed, code_challenge)
 
 
-def _build_access_token(user: User, *, client_id: str, scope: str) -> tuple[str, int]:
+def _build_access_token(
+    user: User, *, client_id: str, scope: str, grant_id: str
+) -> tuple[str, int]:
     expires_in = security.MCP_TOKEN_EXPIRE_MINUTES * 60
     token = security.create_access_token(
         user.username,
@@ -304,6 +307,9 @@ def _build_access_token(user: User, *, client_id: str, scope: str) -> tuple[str,
             # Custom claim (not "aud": python-jose rejects tokens carrying
             # "aud" unless every decode call passes an audience option).
             "res": mcp_resource_url(),
+            # Lets the MCP endpoint attribute a request to its consent grant
+            # so Connected Apps can show when the grant was actually used.
+            "grant_id": grant_id,
         },
     )
     return token, expires_in
@@ -380,10 +386,11 @@ async def exchange_authorization_code(
     record.used_at = utc_now()
     user = await _load_user(db, record.user_id)
 
+    grant_id = uuid.uuid4().hex
     refresh_token = await _issue_refresh_token(
         db,
         RefreshGrant(
-            grant_id=uuid.uuid4().hex,
+            grant_id=grant_id,
             client_id=client_id,
             user_id=user.id,
             scope=record.scope,
@@ -394,7 +401,7 @@ async def exchange_authorization_code(
     await db.commit()
 
     access_token, expires_in = _build_access_token(
-        user, client_id=client_id, scope=record.scope
+        user, client_id=client_id, scope=record.scope, grant_id=grant_id
     )
     return {
         "access_token": access_token,
@@ -455,7 +462,7 @@ async def refresh_access_token(
     await db.commit()
 
     access_token, expires_in = _build_access_token(
-        user, client_id=client_id, scope=record.scope
+        user, client_id=client_id, scope=record.scope, grant_id=record.grant_id
     )
     return {
         "access_token": access_token,
@@ -477,6 +484,40 @@ async def revoke_grant(db: AsyncSession, *, grant_id: str) -> int:
             revoked += 1
     await db.commit()
     return revoked
+
+
+# One write per grant per interval keeps the usage stamp off the hot path:
+# a busy assistant makes many tool calls per minute, and per-request writes
+# to the busiest auth table would buy no extra precision the UI can show.
+GRANT_LAST_USED_THROTTLE_SECONDS = 60
+
+
+async def touch_grant_last_used(db: AsyncSession, grant_id: str) -> None:
+    """Record connector usage on the grant's active refresh-token row.
+
+    Rotation stamps last_used_at only on rows it simultaneously revokes, so
+    without this the Connected Apps view can never show a last-used time:
+    the value only ever exists on rows its query excludes. Stamping the
+    active row on authenticated /mcp requests makes "last used" mean what
+    it says — the last actual tool traffic, not the last token rotation.
+    """
+    now = utc_now()
+    threshold = (now - timedelta(seconds=GRANT_LAST_USED_THROTTLE_SECONDS)).replace(
+        tzinfo=None
+    )
+    await db.execute(
+        update(OAuthRefreshToken)
+        .where(
+            OAuthRefreshToken.grant_id == grant_id,
+            OAuthRefreshToken.revoked_at.is_(None),  # type: ignore[union-attr]
+            or_(
+                OAuthRefreshToken.last_used_at.is_(None),  # type: ignore[union-attr]
+                OAuthRefreshToken.last_used_at < threshold,
+            ),
+        )
+        .values(last_used_at=now)
+    )
+    await db.commit()
 
 
 async def list_active_grants(db: AsyncSession, *, user_id: int) -> list[dict[str, Any]]:
