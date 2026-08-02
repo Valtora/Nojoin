@@ -198,6 +198,14 @@ const SITE_PAIRINGS = [
   { label: "lead text on page", fg: "contrast-helper", bg: ["surface-page"], min: AA_TEXT },
   { label: "lead text on card band", fg: "contrast-helper", bg: ["surface-page", "surface-card"], min: AA_TEXT },
   { label: "zebra row text on inset", fg: "contrast-muted", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+  // The agent-flow card's actor pills. The Nojoin pill is the action fill,
+  // already covered by the primary CTA rows below; the "you" pill reuses the
+  // secondary control's text and border. Only the assistant pill is new:
+  // foreground on the inset surface, inside a card, on the page band.
+  { label: "actor pill label on inset", fg: "foreground", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+  { label: "actor pill border vs card", fg: "control-border", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+  // The tool map's per-group count, which is the action colour as small text.
+  { label: "tool group count on card", fg: "action-text", bg: ["surface-page", "surface-card"], min: AA_TEXT },
 
   // Hairlines and boundaries.
   { label: "card border vs page", fg: "surface-card-border", bg: ["surface-page"], min: HAIRLINE },

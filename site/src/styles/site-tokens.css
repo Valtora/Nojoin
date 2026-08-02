@@ -39,6 +39,33 @@
   --btn-ghost-border: rgba(255, 255, 255, 0.8);
   --btn-ghost-hover-bg: rgba(0, 0, 0, 0.15);
 
+  /* Marketing effects, site-only. The app stays flat; these exist so the site
+     reads as marketing without the two palettes drifting apart. The glow is
+     derived from the Nojoin ramp rather than copied from the sibling brand:
+     orange-600 (#ea580c) rather than the button's own orange-700, because a
+     halo the same darkness as its fill reads as a smudge instead of a glow.
+     The inset highlight is a 1px white top edge, which is what stops a flat
+     fill looking like a rectangle of paint. Neither carries meaning, so
+     neither answers to the contrast gate -- the fill underneath already does. */
+  --glow-action: 0 8px 20px rgba(234, 88, 12, 0.32);
+  --glow-action-hover: 0 10px 26px rgba(234, 88, 12, 0.42);
+  --glow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+
+  /* The warm wash behind the hero. A single soft radial off the top-right,
+     not a gradient across the surface: it has to be invisible as a shape and
+     survive being the backdrop to a 64px headline. */
+  --hero-wash: radial-gradient(
+    62rem 34rem at 78% -8%,
+    rgba(234, 88, 12, 0.09),
+    transparent 68%
+  );
+
+  /* Screenshot frames get an orange edge so they read as objects on the page
+     rather than dissolving into the band behind them. It is decoration on a
+     card that already has its own hairline, so it is deliberately a tint of
+     the action colour rather than the action colour itself. */
+  --frame-accent: rgba(194, 65, 12, 0.45);
+
   /* Marketing scale, Variant C ("Statement"). The display clamp is the locked
      64px hero; rhythm scales with it. */
   --display: clamp(2.75rem, 6.5vw, 4rem);
@@ -60,5 +87,19 @@
 
     --frame-chrome: #2a2a2a;
     --frame-dot: #4b5563;
+
+    /* Dark needs a hotter, wider halo: the same rgba over a near-black band is
+       almost invisible, and the wash has to lift off a dark surface rather
+       than tint a light one. The frame edge brightens for the same reason --
+       orange-700 against #111 reads as brown. */
+    --glow-action: 0 8px 24px rgba(249, 115, 22, 0.3);
+    --glow-action-hover: 0 10px 30px rgba(249, 115, 22, 0.4);
+    --glow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    --hero-wash: radial-gradient(
+      62rem 34rem at 78% -8%,
+      rgba(249, 115, 22, 0.11),
+      transparent 68%
+    );
+    --frame-accent: rgba(249, 115, 22, 0.4);
   }
 }

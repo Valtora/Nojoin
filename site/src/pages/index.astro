@@ -71,6 +71,77 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
+    {/* The agent band. Promoted to just under the strip because the MCP surface
+        is the capability with no equivalent elsewhere, and it sat five sections
+        down as prose. No screenshot, deliberately: the work happens in Claude's
+        or Codex's window, and Nojoin's frame chrome reads nojoin.your-server.net.
+        Two infographics carry it instead. See SITE.md, "Design direction". */}
+    <section class="agent-band" aria-label="Agent access">
+      <div class="wrap">
+        <div class="agent-grid">
+          <div class="agent-copy">
+            <p class="eyebrow">Agents</p>
+            <h2 class="heading-2">An assistant that changes the record, not just reads it</h2>
+            <p>
+              Connect Claude or Codex to your own instance. Thirty tools, eighteen of them
+              writing, authorised per user and on by default — no API key, no configuration,
+              nothing to paste.
+            </p>
+            <p>
+              The CRM sync needs no CRM integration in Nojoin. An assistant already connected
+              to HubSpot or Airtable reconciles both sides itself, because what Nojoin exposes
+              are plain primitives over its own data rather than a fixed list of partners.
+            </p>
+            <p>
+              Every change it makes is reversible. The bin is the strongest delete it has.
+            </p>
+            <a class="text-link" href={`${docs}/MCP.md`}>
+              The connector, tool by tool →
+            </a>
+          </div>
+
+          <div class="flowcard">
+            <p class="flowcard-label">After the weekly review</p>
+            <ul class="flow-rows">
+              <li><span class="pill pill-agent">Claude</span><span>Reads the transcript and the notes</span></li>
+              <li><span class="pill pill-agent">Claude</span><span>Spots a name the diariser misheard</span></li>
+              <li><span class="pill pill-nojoin">Nojoin</span><span>Corrects the utterance, and locks it against reprocessing</span></li>
+              <li><span class="pill pill-nojoin">Nojoin</span><span>Files three tasks, each linked to the meeting</span></li>
+              <li><span class="pill pill-agent">Claude</span><span>Reconciles the attendees with your CRM</span></li>
+              <li><span class="pill pill-you">You</span><span>Check what it did</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <ul class="toolmap">
+          <li>
+            <h3>Recordings <span class="n">8</span></h3>
+            <p>List, rename, tag, untag, archive, restore, bin, reprocess.</p>
+          </li>
+          <li>
+            <h3>Transcript <span class="n">5</span></h3>
+            <p>Read it, read it as utterances, correct the text, correct the speaker, unlock.</p>
+          </li>
+          <li>
+            <h3>Notes and documents <span class="n">5</span></h3>
+            <p>Read the notes, regenerate them, append your own, read documents, attach one.</p>
+          </li>
+          <li>
+            <h3>People and speakers <span class="n">5</span></h3>
+            <p>List, read one, import, read a meeting's speakers, name one.</p>
+          </li>
+          <li>
+            <h3>Tasks <span class="n">3</span></h3>
+            <p>List, create, update.</p>
+          </li>
+          <li>
+            <h3>Calendar, search and tags <span class="n">4</span></h3>
+            <p>List events, link one to a recording, search everything, list tags.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <section class="band">
       <div class="wrap">
         <div class="feature">
@@ -129,47 +200,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
-    {/* No screenshot here, deliberately. The capability lives in Claude's or
-        Codex's window rather than Nojoin's, and the frame chrome reads
-        nojoin.your-server.net -- putting someone else's interface inside it
-        would be a false image on a page that argues from checkable ones. The
-        verb list carries the weight instead. See SITE.md, "Design direction". */}
     <section class="section">
-      <div class="wrap">
-        <div class="feature-copy" style="max-width: 60ch;">
-          <p class="eyebrow">Agents</p>
-          <h2 class="heading-2">An assistant that changes the record, not just reads it</h2>
-          <p>
-            Connect Claude or Codex to your own instance. Thirty tools, eighteen of them
-            writing, authorised per user and on by default — no API key, no configuration,
-            nothing to paste.
-          </p>
-        </div>
-        <ul class="verbs">
-          <li>Corrects a misheard line</li>
-          <li>Names the speaker, and remembers them next time</li>
-          <li>Re-runs the notes, or the whole pipeline</li>
-          <li>Files the tasks the meeting produced</li>
-          <li>Attaches the document the meeting referred to</li>
-          <li>Searches every transcript and document at once</li>
-          <li>Keeps your People library current</li>
-          <li>Syncs those people with your CRM, both directions</li>
-        </ul>
-        <div class="feature-copy" style="max-width: 60ch;">
-          <p style="margin-top: 1.75rem;">
-            That last one needs no CRM integration in Nojoin. An assistant already connected
-            to HubSpot or Airtable reconciles both sides itself, because what Nojoin exposes
-            are plain primitives over its own data rather than a fixed list of partners.
-          </p>
-          <p style="margin-top: 1rem;">
-            Every change it makes is reversible. The bin is the strongest delete it has.
-          </p>
-          <a class="text-link" href={`${docs}/MCP.md`}>The connector, tool by tool →</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="band">
       <div class="wrap">
         <div class="feature" data-side="right">
           <div class="feature-copy">
@@ -188,7 +219,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
-    <section class="section" id="quick-start">
+    <section class="band" id="quick-start">
       <div class="wrap">
         <div class="qs">
           <div>
@@ -214,7 +245,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
-    <section class="band centered" aria-label="Privacy">
+    <section class="section centered" aria-label="Privacy">
       <div class="wrap">
         <p class="eyebrow">Privacy</p>
         <h2 class="heading-2">Your meetings never leave your machines</h2>
@@ -229,7 +260,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
-    <section class="section centered" aria-label="Comparison">
+    <section class="band centered" aria-label="Comparison">
       <div class="wrap">
         <h2 class="heading-2">How it compares</h2>
         <p class="lead">
@@ -242,7 +273,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
-    <section class="band centered" aria-label="Managed service">
+    <section class="section centered" aria-label="Managed service">
       <div class="wrap">
         <p class="eyebrow">Managed</p>
         <h2 class="heading-2">Or have someone else run it</h2>

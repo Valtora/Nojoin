@@ -53,9 +53,33 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   itself stays left-aligned. This replaces a side-by-side layout, which gave the screenshot
   half of a 72rem wrap and so rendered a 1920px capture at about 28% — unreadable, which
   defeats the point of showing the interface at all.
-- **Colour is neutral plus one orange closer**: the only loud surface is the full-bleed
-  orange-700 band at the foot. No cream tints, no gradients, no glass — the app's flat canon
-  holds on the site.
+- **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
+  orange-700 band at the foot. No cream tints and no glass.
+- **Three marketing effects, and no more.** The app's flat canon governs the product,
+  where a lifted control is noise in a workspace someone stares at all day. The site is a
+  page whose job is to be looked at once, so it takes three departures, all site-only and
+  all declared in `site-tokens.css` rather than in the shared app tokens:
+  a halo and a 1px inset white top edge under the primary button (`--glow-action`,
+  `--glow-inset`); one soft radial wash off the top right behind the hero and the agent
+  band (`--hero-wash`); and an orange edge on every screenshot frame (`--frame-accent`),
+  because the captures are light interface on a light page and a divider-coloured hairline
+  did nothing at reading distance. All three are decoration over fills that already answer
+  to the contrast gate, so none of them can hide a failing pair. The wash is the only
+  gradient on the site, it carries no information, and it degrades to a plain surface.
+  These match the sibling brand Vorkane's treatment deliberately — the same person sells
+  both — but they use Nojoin's own orange ramp rather than Vorkane's, so the site and the
+  app never disagree about what the brand colour is. The glow derives from orange-600
+  rather than the button's own orange-700, because a halo the same darkness as its fill
+  reads as a smudge.
+- **The header is sticky**, with a solid fill rather than a blurred scrim. Glass is out by
+  the flat canon, and `backdrop-filter` over text this dense costs a repaint per scroll
+  frame for an effect the design does not want.
+- **The agent band sits directly under the strip**, on the page surface with the hero's
+  wash and hairlines closing it, so the alternating band rhythm below is untouched. It
+  carries two infographics rather than prose: a flow card tagging each step of one real
+  post-meeting job with the actor who performs it, and a six-cell map of the thirty tools
+  grouped by what they touch. Both exist because there is no honest screenshot to take
+  (see below), and because a capability list is more convincing shown than described.
 - **The headline is no-bot led**: "Meeting notes, with no bot in the call". Self-hosting
   lands in the subhead.
 - **The agents section carries no screenshot, by decision.** Every other feature section on
@@ -64,9 +88,9 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   capture of someone else's interface would be a false image on a page that argues from
   checkable ones. Nojoin's own screens cannot carry the claim either: the app records that
   an utterance was manually edited but never distinguishes an assistant's edit from a web
-  one, so a task list an assistant filed is indistinguishable from a typed one. A list of
-  verbs takes the visual weight instead. Should the app ever surface MCP provenance, this
-  section earns a real shot and should get one.
+  one, so a task list an assistant filed is indistinguishable from a typed one. The flow
+  card and the tool map take the visual weight instead. Should the app ever surface MCP
+  provenance, this band earns a real shot and should get one.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never
