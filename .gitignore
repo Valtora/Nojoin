@@ -29,6 +29,8 @@ backend/tests/pipeline_fixtures/generated/
 /output/
 /dist
 telemetry/dist/
+site/dist/
+site/.astro/
 
 # Companion App (Rust)
 companion/target/

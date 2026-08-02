@@ -21,6 +21,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      site: ${{ steps.filter.outputs.site }}
       scripts: ${{ steps.filter.outputs.scripts }}
       deployment: ${{ steps.filter.outputs.deployment }}
       migrations: ${{ steps.filter.outputs.migrations }}
@@ -56,9 +57,12 @@ jobs:
               - 'pyproject.toml'
             frontend:
               - 'frontend/**'
+            site:
+              - 'site/**'
               # The marketing stylesheet is audited by frontend/scripts/check-contrast.mjs,
-              # which reads its token block as a third theme. Without this path the
-              # site could drift off the shared palette without the gate ever running.
+              # which reads its token block as a marketing theme. The site job runs
+              # that gate, so a stylesheet-only change must trigger it here rather
+              # than dragging in the full frontend suite.
               - 'assets/css/**'
             scripts:
               - 'scripts/**'
@@ -265,6 +269,38 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  site-build:
+    # The marketing site: an Astro static build deployed by site-deploy.yml.
+    # This job proves the site still builds and that its tokens still clear the
+    # contrast thresholds; the gate script is dependency-free Node, so it runs
+    # here without installing the frontend's packages.
+    name: Site build
+    needs: detect-changes
+    if: needs.detect-changes.outputs.site == 'true' || needs.detect-changes.outputs.deployment == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build the site
+        working-directory: site
+        run: npm run build
+
+      - name: Check token contrast
+        run: node frontend/scripts/check-contrast.mjs
+
   telemetry-worker:
     # The telemetry ingest is the one place a bug is invisible from the app: a
     # broken validator would silently drop real pings rather than fail loudly.
@@ -408,6 +444,7 @@ jobs:
       - frontend-lint
       - frontend-unit-tests
       - frontend-build
+      - site-build
       - telemetry-worker
       - docs-validation
       - alembic-validation
