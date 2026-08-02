@@ -1,0 +1,64 @@
+/* Site-only token families. Everything shared with the app lives in
+   frontend/src/app/tokens.css, imported by Base.astro through the
+   app-tokens-media plugin; this file holds only what has no app equivalent.
+
+   The light and dark blocks are parsed by frontend/scripts/check-contrast.mjs
+   as the site-light and site-dark themes, so the shapes here (a top-level
+   :root, then one :root inside the prefers-color-scheme media query) are load
+   bearing. */
+
+:root {
+  /* Syntax highlighting for the quick-start block. The app has no code
+     blocks, and the old marketing site was dark-only, so the light values are
+     new: each is pitched to clear 4.5:1 on the inset code surface, which the
+     gate asserts. */
+  --code-fg: #1f2937;
+  --code-comment: #52525b;
+  --code-keyword: #9a3412;
+  --code-name: #92400e;
+  --code-string: #1e40af;
+  --code-punct: #374151;
+
+  /* The browser-chrome frame every screenshot sits in. The chrome strip and
+     its dots are decoration; the URL text inside answers to AA as text. */
+  --frame-chrome: #f1f5f9;
+  --frame-dot: #cbd5e1;
+
+  /* The inverse button on the orange closer band keeps an orange-700 label in
+     both themes: the fill under it never changes, so the label must not
+     follow --action-text into orange-400, which would fail on white. */
+  --btn-inverse-fg: #c2410c;
+  --btn-inverse-bg: #ffffff;
+  --btn-inverse-bg-hover: #fff7ed;
+
+  /* The ghost button on the closer. Its border is the only thing identifying
+     it as a control, so it owes 3:1 against the orange fill; 80% white clears
+     that where the 65% a lighter touch would suggest does not. The hover tint
+     darkens rather than lightens: a white wash under the white label pulled
+     it below 4.5:1, and darkening is also how every other button hovers. */
+  --btn-ghost-border: rgba(255, 255, 255, 0.8);
+  --btn-ghost-hover-bg: rgba(0, 0, 0, 0.15);
+
+  /* Marketing scale, Variant C ("Statement"). The display clamp is the locked
+     64px hero; rhythm scales with it. */
+  --display: clamp(2.75rem, 6.5vw, 4rem);
+  --display-sub: 1.25rem;
+  --heading-2: 2.25rem;
+  --hero-pad: clamp(4rem, 9vw, 6.75rem);
+  --section-pad: clamp(3.5rem, 7.5vw, 5.5rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark syntax values, carried over from the retired style.scss. */
+    --code-fg: #d8deef;
+    --code-comment: #a1a1aa;
+    --code-keyword: #ff9f5c;
+    --code-name: #ffd39b;
+    --code-string: #7ad7ff;
+    --code-punct: #c6cee5;
+
+    --frame-chrome: #2a2a2a;
+    --frame-dot: #4b5563;
+  }
+}
