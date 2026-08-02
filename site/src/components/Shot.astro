@@ -1,7 +1,9 @@
 ---
 // A screenshot in the browser-chrome frame, swapping light and dark sources
-// on prefers-color-scheme. Only the matching source downloads. P7 replaces
-// the placeholder SVGs with real captures under the same names.
+// on prefers-color-scheme. Only the matching source downloads. The shots are
+// taken on a 1920x1080 desktop with the app's navigation collapsed, and ship
+// as 2560x1440 WebP. The width and height below are the layout size and the
+// aspect ratio the browser reserves, not the file's pixel size.
 interface Props {
   name: string;
   alt: string;
@@ -17,12 +19,12 @@ const { name, alt, eager = false } = Astro.props;
     <span class="frame-url">nojoin.your-server.net</span>
   </div>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset={`/images/${name}-dark.svg`} />
+    <source media="(prefers-color-scheme: dark)" srcset={`/images/${name}-dark.webp`} />
     <img
-      src={`/images/${name}-light.svg`}
+      src={`/images/${name}-light.webp`}
       alt={alt}
-      width="1440"
-      height="900"
+      width="1920"
+      height="1080"
       loading={eager ? "eager" : "lazy"}
     />
   </picture>
