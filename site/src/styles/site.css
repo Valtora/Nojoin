@@ -438,6 +438,14 @@ button:focus-visible {
   align-items: center;
 }
 
+/* A grid item's automatic minimum size is its content, so the code block's
+   longest line sets a floor the track cannot go below and the whole page
+   scrolls sideways on a narrow phone. The block already scrolls on its own
+   axis; this lets the track actually shrink to it. */
+.qs > * {
+  min-width: 0;
+}
+
 .qs-steps {
   list-style: none;
   counter-reset: step;
@@ -455,6 +463,17 @@ button:focus-visible {
   font-size: 0.96875rem;
   color: var(--contrast-helper);
   line-height: 1.6;
+}
+
+/* The step text is a flex item, so its minimum width is its longest unbreakable
+   run -- and two of the steps name environment variables that are longer than a
+   360px screen. Let those break rather than widen the page. */
+.qs-steps li {
+  min-width: 0;
+}
+
+.qs-steps code {
+  overflow-wrap: anywhere;
 }
 
 .qs-steps li::before {
