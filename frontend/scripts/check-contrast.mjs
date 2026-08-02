@@ -2,8 +2,10 @@
 /**
  * Token contrast audit.
  *
- * Reads the design tokens straight out of globals.css and the marketing site's
- * style.scss, and measures the pairings declared below against WCAG 2.2 AA. It
+ * Reads the design tokens straight out of tokens.css and the marketing site's
+ * site-tokens.css, and measures the pairings declared below against WCAG 2.2
+ * AA across four themes: the app's light and dark, and the site's light and
+ * dark, which are the app themes plus the site-only families. It
  * exists because contrast is a property
  * of a pair, not of a colour: a token can only be judged against the thing it is
  * actually drawn on, and that relationship lives nowhere in CSS. Declaring the
@@ -23,14 +25,20 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const GLOBALS = resolve(ROOT, "src/app/globals.css");
 /**
- * The Jekyll marketing site. It is a `.scss` file, but its tokens are real CSS
- * custom properties on `:root` rather than Sass variables, so the same parser
- * reads it. Auditing it here rather than by eye is what stops the site drifting
- * off the app's palette again, which is how it acquired its own orange.
+ * The design tokens, extracted from globals.css so the marketing site can
+ * import the same file. The :root, .dark and density blocks live here; the
+ * app furniture that stayed in globals.css declares no colour tokens.
  */
-const MARKETING = resolve(ROOT, "../assets/css/style.scss");
+const TOKENS = resolve(ROOT, "src/app/tokens.css");
+/**
+ * The marketing site's own token families: syntax highlighting, the screenshot
+ * frame chrome, and the closer-band buttons. Everything else the site draws
+ * comes from tokens.css above, so the site themes below are the app themes
+ * plus this file. The light block is the top-level :root; the dark block is
+ * the :root inside the prefers-color-scheme media query.
+ */
+const SITE_TOKENS = resolve(ROOT, "../site/src/styles/site-tokens.css");
 
 /**
  * Thresholds.
@@ -173,50 +181,67 @@ const PAIRINGS = [
 ];
 
 /**
- * The marketing site's pairings.
+ * The marketing site's pairings, audited in both themes.
  *
- * It runs one theme on a dark canvas, and it reuses the app's token names with
- * the app's dark values, so these read like the dark half of the list above.
- * What differs is the furniture: there are no modals, no form controls and no
- * status pills on a marketing page, and there is a syntax highlighter, which the
- * app has no equivalent of.
+ * The site consumes the app's tokens plus the site-only families, so most of
+ * these read like the app list. What differs is the furniture: no modals, no
+ * form controls beyond two buttons, no status pills — and a syntax
+ * highlighter, a screenshot frame, and a full-bleed orange closer band, none
+ * of which the app has an equivalent of.
  */
-const MARKETING_PAIRINGS = [
-  // The page and its one content card.
-  { label: "heading on card", fg: "foreground", bg: ["surface-page", "surface-card"], min: AA_TEXT },
-  { label: "body text on card", fg: "contrast-helper", bg: ["surface-page", "surface-card"], min: AA_TEXT },
-  { label: "lead text on inset", fg: "contrast-muted", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
-  { label: "body text on inset", fg: "contrast-helper", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
-  { label: "inline code on card", fg: "foreground", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+const SITE_PAIRINGS = [
+  // Text on the alternating page and card bands.
+  { label: "heading on page", fg: "foreground", bg: ["surface-page"], min: AA_TEXT },
+  { label: "heading on card band", fg: "foreground", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "body text on page", fg: "contrast-muted", bg: ["surface-page"], min: AA_TEXT },
+  { label: "body text on card band", fg: "contrast-muted", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "lead text on page", fg: "contrast-helper", bg: ["surface-page"], min: AA_TEXT },
+  { label: "lead text on card band", fg: "contrast-helper", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "zebra row text on inset", fg: "contrast-muted", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+
+  // Hairlines and boundaries.
   { label: "card border vs page", fg: "surface-card-border", bg: ["surface-page"], min: HAIRLINE },
-  { label: "inset border vs card", fg: "surface-card-border", bg: ["surface-page", "surface-card"], min: HAIRLINE },
   { label: "divider vs card", fg: "surface-divider", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "band border vs page", fg: "surface-divider", bg: ["surface-page"], min: HAIRLINE },
 
-  // Links and the accent. The wordmark is large text, so it answers to 3:1.
-  { label: "link on card", fg: "action-text", bg: ["surface-page", "surface-card"], min: AA_TEXT },
-  { label: "link hover on card", fg: "action-text-hover", bg: ["surface-page", "surface-card"], min: AA_TEXT },
-  { label: "link on inset", fg: "action-text", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
-  { label: "wordmark on hero", fg: "action-text", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_LARGE },
-  { label: "step number on action fill", fg: "action-on", bg: ["action"], min: AA_TEXT },
-  // The quick-start step counter is a filled square with a numeral in it, and
-  // the numeral is what conveys the step, at 5.18:1. The square is decoration
-  // and answers to the hairline floor rather than to 3:1, on the same reasoning
-  // that exempts a status pill's fill: nothing is identified by the block of
-  // colour. Holding it to 3:1 would force the brand orange lighter on a surface
-  // no control ever sits on.
-  { label: "step counter fill vs inset", fg: "action", bg: ["surface-page", "surface-card", "surface-inset"], min: HAIRLINE },
-  { label: "quote text on tint", fg: "contrast-helper", bg: ["surface-page", "surface-card", "action-tint"], min: AA_TEXT },
-  { label: "quote bar vs card", fg: "action-text", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
-  { label: "focus ring vs card", fg: "focus-ring", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+  // Links, eyebrows, and the accent.
+  { label: "link on page", fg: "action-text", bg: ["surface-page"], min: AA_TEXT },
+  { label: "link on card band", fg: "action-text", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "link hover on card band", fg: "action-text-hover", bg: ["surface-page", "surface-card"], min: AA_TEXT },
 
-  // Site chrome, on the app's rail surface.
-  { label: "brand text on header", fg: "rail-fg", bg: ["rail-bg"], min: AA_TEXT },
-  { label: "nav link on header", fg: "rail-fg-muted", bg: ["rail-bg"], min: AA_TEXT },
-  { label: "nav link on hovered item", fg: "rail-fg", bg: ["rail-bg", "rail-item-hover"], min: AA_TEXT },
-  { label: "header border vs page", fg: "rail-border", bg: ["surface-page"], min: HAIRLINE },
-  { label: "focus ring vs header", fg: "focus-ring", bg: ["rail-bg"], min: AA_NON_TEXT },
+  // The hero CTA pair. The primary's fill identifies it, so 3:1 applies to
+  // the resting fill; the secondary is identified by its control border.
+  { label: "primary CTA label", fg: "action-on", bg: ["action"], min: AA_TEXT },
+  { label: "primary CTA label on hover", fg: "action-on", bg: ["action-hover"], min: AA_TEXT },
+  { label: "primary CTA fill vs page", fg: "action", bg: ["surface-page"], min: AA_NON_TEXT },
+  { label: "primary CTA fill vs card band", fg: "action", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+  { label: "secondary CTA text", fg: "contrast-muted", bg: ["surface-page", "surface-card"], min: AA_TEXT },
+  { label: "secondary CTA text on hover", fg: "contrast-muted", bg: ["surface-page", "surface-card", "surface-inset"], min: AA_TEXT },
+  { label: "secondary CTA border vs page", fg: "control-border", bg: ["surface-page"], min: AA_NON_TEXT },
+  { label: "secondary CTA border vs card band", fg: "control-border", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
+  { label: "focus ring vs page", fg: "focus-ring", bg: ["surface-page"], min: AA_NON_TEXT },
+  { label: "focus ring vs card band", fg: "focus-ring", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
 
-  // Footer text sits directly on the page, outside the card.
+  // The screenshot frame. The chrome strip and dots are decoration inside the
+  // framed card; the URL text is read, so it answers as text.
+  { label: "frame url text on url pill", fg: "contrast-icon-muted", bg: ["surface-card", "frame-chrome", "surface-page"], min: AA_TEXT },
+
+  // The orange closer band. The standard focus ring vanishes on this fill, so
+  // the site inverts focus to the label colour there, and the gate holds that
+  // substitute to the same 3:1 the ring answers to everywhere else.
+  { label: "closer heading on fill", fg: "action-on", bg: ["action"], min: AA_TEXT },
+  { label: "closer subhead on fill", fg: "action-on-muted", bg: ["action"], min: AA_TEXT },
+  { label: "inverse button label", fg: "btn-inverse-fg", bg: ["action", "btn-inverse-bg"], min: AA_TEXT },
+  { label: "inverse button label on hover", fg: "btn-inverse-fg", bg: ["action", "btn-inverse-bg-hover"], min: AA_TEXT },
+  { label: "ghost button border vs fill", fg: "btn-ghost-border", bg: ["action"], min: AA_NON_TEXT },
+  { label: "ghost button label on hover tint", fg: "action-on", bg: ["action", "btn-ghost-hover-bg"], min: AA_TEXT },
+  { label: "closer focus vs fill", fg: "action-on", bg: ["action"], min: AA_NON_TEXT },
+
+  // The selective highlight: lead-register text on the flat action tint.
+  { label: "highlight text on tint", fg: "contrast-helper", bg: ["surface-page", "action-tint"], min: AA_TEXT },
+  { label: "highlight strong text on tint", fg: "foreground", bg: ["surface-page", "action-tint"], min: AA_TEXT },
+
+  // Footer text sits directly on the page.
   { label: "footer text on page", fg: "contrast-icon-muted", bg: ["surface-page"], min: AA_TEXT },
   { label: "footer link hover on page", fg: "foreground", bg: ["surface-page"], min: AA_TEXT },
 
@@ -247,15 +272,15 @@ const FLOAT_SEPARATION = HAIRLINE;
  * Pull `--name: value;` declarations out of one top-level CSS block.
  *
  * The selector is anchored to the start of a line and has to be followed by its
- * own brace, because `.dark` also appears inside the @custom-variant on line 6
- * and inside every `.dark .react-datepicker__…` override further down. A plain
- * substring search finds the variant first and then reads the *next* block,
- * which is `:root`, so the dark audit measures the light theme and passes.
+ * own brace. That mattered most when this read globals.css, where `.dark` also
+ * appeared inside a @custom-variant and in component overrides; tokens.css is
+ * cleaner, but the anchoring stays because a substring match that finds the
+ * wrong block makes the audit measure the wrong theme and pass anyway.
  */
 function parseBlock(css, selector) {
   const anchored = new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`, "m");
   const match = anchored.exec(css);
-  if (match === null) throw new Error(`selector ${selector} not found in globals.css`);
+  if (match === null) throw new Error(`selector ${selector} not found`);
   const start = match.index;
   const open = css.indexOf("{", start);
   let depth = 0;
@@ -273,6 +298,40 @@ function parseBlock(css, selector) {
   const body = css.slice(open + 1, end);
   const tokens = {};
   for (const [, name, value] of body.matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)) {
+    tokens[name] = value.trim();
+  }
+  return tokens;
+}
+
+/**
+ * Pull the `:root` block from inside the site's prefers-color-scheme media
+ * query. The site has no JavaScript, so its dark theme lives under a media
+ * query rather than a class; the block is indented, which the anchored parser
+ * above deliberately refuses to match, so it gets its own entry point.
+ */
+function parseMediaDarkRoot(css) {
+  const media = /^@media \(prefers-color-scheme: dark\)\s*\{/m.exec(css);
+  if (media === null) throw new Error("no prefers-color-scheme dark block found");
+  const open = css.indexOf("{", media.index);
+  let depth = 0;
+  let end = open;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const inner = css.slice(open + 1, end);
+  const root = /:root\s*\{/.exec(inner);
+  if (root === null) throw new Error("no :root inside the dark media block");
+  const rootOpen = inner.indexOf("{", root.index);
+  const rootEnd = inner.indexOf("}", rootOpen);
+  const tokens = {};
+  for (const [, name, value] of inner.slice(rootOpen + 1, rootEnd).matchAll(/--([\w-]+)\s*:\s*([^;]+);/g)) {
     tokens[name] = value.trim();
   }
   return tokens;
@@ -354,25 +413,42 @@ function flattenStack(stack, theme, base) {
 
 /* -------------------------------------------------------------------- audit */
 
-const css = await readFile(GLOBALS, "utf8");
+const css = await readFile(TOKENS, "utf8");
 const light = parseBlock(css, ":root");
 const dark = parseBlock(css, ".dark");
-const marketing = parseBlock(await readFile(MARKETING, "utf8"), ":root");
+
+const siteCss = await readFile(SITE_TOKENS, "utf8");
+const siteLight = parseBlock(siteCss, ":root");
+const siteDark = parseMediaDarkRoot(siteCss);
 
 /**
  * `base` is the fallback a token resolves against when the block does not
  * declare it. The app's `.dark` block only declares what changes, so it falls
- * back to `:root`; the marketing block is self-contained and falls back to
- * itself, which means a token it forgets to declare is an error rather than a
- * silent borrow of an app value that is not in its stylesheet.
+ * back to `:root`. The site themes are the app themes overlaid with the
+ * site-only families: at build time the site imports tokens.css (with its
+ * dark block mapped onto a media query by the app-tokens-media plugin) plus
+ * site-tokens.css, and these merges mirror that cascade exactly.
  *
- * `floats` is off for marketing because the site has no floating elements: it
+ * `floats` is off for the site because it has no floating elements: it
  * carries no modals, so it carries no shadows at all.
  */
 const themes = [
   { name: "light", tokens: light, base: light, pairings: PAIRINGS, floats: true },
   { name: "dark", tokens: dark, base: light, pairings: PAIRINGS, floats: true },
-  { name: "marketing", tokens: marketing, base: marketing, pairings: MARKETING_PAIRINGS, floats: false },
+  {
+    name: "site-light",
+    tokens: { ...light, ...siteLight },
+    base: { ...light, ...siteLight },
+    pairings: SITE_PAIRINGS,
+    floats: false,
+  },
+  {
+    name: "site-dark",
+    tokens: { ...dark, ...siteDark },
+    base: { ...light, ...siteLight },
+    pairings: SITE_PAIRINGS,
+    floats: false,
+  },
 ];
 
 const failures = [];

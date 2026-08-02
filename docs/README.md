@@ -21,6 +21,7 @@ Use the links below by task rather than treating the root README as the source o
 - [TELEMETRY.md](TELEMETRY.md): What the anonymous usage ping contains, when it is sent, and how to turn it off.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
 - [DESIGN.md](DESIGN.md): The web client's design tokens, themes, density model, and accessibility posture.
+- [SITE.md](SITE.md): The marketing site's design direction, voice rules, claim standards, and maintenance.
 
 ## Policies and Project References
 
@@ -46,4 +47,5 @@ Use the links below by task rather than treating the root README as the source o
 | See what anonymous usage data is sent, or turn it off | [TELEMETRY.md](TELEMETRY.md) |
 | Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Match the interface's colours, spacing, and themes | [DESIGN.md](DESIGN.md) |
+| Write or review marketing site copy and design | [SITE.md](SITE.md) |
 | Set up a local source development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |

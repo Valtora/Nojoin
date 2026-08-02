@@ -1,7 +1,8 @@
 # Design System
 
 The web client's visual language is defined once, as CSS custom properties in
-[frontend/src/app/globals.css](../frontend/src/app/globals.css), and consumed through Tailwind
+[frontend/src/app/tokens.css](../frontend/src/app/tokens.css) (imported by `globals.css`, which
+keeps the app-only furniture), and consumed through Tailwind
 utility classes and a small set of primitive components. The marketing site runs the same system on
 its own dark canvas; see [The marketing site](#the-marketing-site) below. This document records the
 tokens, the primitives, and the rules that govern them, so a change to the interface can be checked
@@ -213,7 +214,7 @@ these with `z-[var(--z-modal)]`, never with a bare number.
 
 Spacing, radii and control heights are tokens rather than per-component values, which is what makes
 the density setting possible. `ViewportDensityProvider` sets `data-ui-density="compact"` on the
-document element, and a single block in `globals.css` re-declares the layout tokens at smaller
+document element, and a single block in `tokens.css` re-declares the layout tokens at smaller
 values. No component needs to know the density.
 
 | Token group | Members |
@@ -434,10 +435,12 @@ Lucide is the sole icon system.
 
 The contrast target is strict WCAG 2.2 AA, and it is enforced rather than reviewed.
 [frontend/scripts/check-contrast.mjs](../frontend/scripts/check-contrast.mjs) parses the token
-blocks out of `globals.css` and out of the marketing site's `style.scss`, resolves `var()`
+blocks out of `tokens.css` and out of the marketing site's `site-tokens.css`, resolves `var()`
 indirection, composites translucent values over their backdrop stack, and measures a declared list
-of pairings across all three themes. It runs as `npm run check:contrast` and as a step in the
-`Frontend lint` CI job, which is why `assets/css/**` is one of that job's trigger paths.
+of pairings across four themes: the app's light and dark, and the site's light and dark, which are
+the app themes overlaid with the site-only families. It runs as `npm run check:contrast` in the
+`Frontend lint` CI job and dependency-free as `node frontend/scripts/check-contrast.mjs` in the
+`Site build` job.
 
 Contrast is a property of a pair, not of a colour, and that relationship lives nowhere in CSS.
 Declaring the pairs in the script is what makes them reviewable. **A pairing that cannot be

@@ -6,6 +6,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "serve": "astro build && astro preview --host --port 4322",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

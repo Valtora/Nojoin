@@ -1,4 +1,609 @@
-/* P1 placeholder stylesheet. It exists so the Tailwind v4 compile path is
-   exercised by the very first deploy; P2 replaces this with the shared
-   tokens import and the site token families. */
+/* The marketing site's stylesheet. Tokens come from two places: the app's
+   tokens.css (imported in Base.astro through the app-tokens-media plugin, so
+   the .dark block also lands under prefers-color-scheme) and the site-only
+   families in site-tokens.css. Every colour below is a var() into one of
+   those files; a literal colour here is a defect, because the contrast gate
+   audits tokens, not stylesheets. */
+
 @import "tailwindcss";
+@import "./site-tokens.css";
+
+/* Geist, self-hosted. A font CDN request from a page whose pitch is "nothing
+   leaves your server" would undercut the point; the latin variable subsets
+   are 40KB together. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin.woff2") format("woff2");
+}
+
+@theme inline {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--surface-page);
+  color: var(--contrast-muted);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ---- Layout ---- */
+
+.wrap {
+  max-width: var(--workspace-max-width);
+  margin-inline: auto;
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+/* Full-bleed band on the card surface. Bands alternate page/card down the
+   landing page; the borders close the shape per the flat canon. */
+.band {
+  background: var(--surface-card);
+  border-block: 1px solid var(--surface-divider);
+  padding-block: var(--section-pad);
+}
+
+.section {
+  padding-block: var(--section-pad);
+}
+
+/* ---- Type ---- */
+
+.display {
+  font-size: var(--display);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+  text-wrap: balance;
+}
+
+.heading-2 {
+  font-size: var(--heading-2);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--foreground);
+  text-wrap: balance;
+}
+
+.lead {
+  font-size: var(--display-sub);
+  line-height: 1.6;
+  color: var(--contrast-helper);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: var(--action-text);
+}
+
+/* The selective highlight, imported from the sibling brand's device set: one
+   line per page, at most, on a flat action tint. If nothing on a page earns
+   it, that is a finding about the page. */
+.hl {
+  background: var(--action-tint);
+  color: inherit;
+  padding: 0.05em 0.25em;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.text-link {
+  color: var(--action-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.text-link:hover {
+  color: var(--action-text-hover);
+  text-decoration: underline;
+}
+
+/* ---- Buttons. Affordance is colour, nothing lifts. ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 8px;
+  padding: 0.65rem 1.35rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border: 1px solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--action);
+  color: var(--action-on);
+}
+.btn-primary:hover {
+  background: var(--action-hover);
+}
+.btn-primary:active {
+  background: var(--action-active);
+}
+
+.btn-secondary {
+  background: var(--surface-card);
+  border-color: var(--control-border);
+  color: var(--contrast-muted);
+}
+.btn-secondary:hover {
+  background: var(--surface-inset);
+}
+
+/* The two closer-band buttons: an inverse fill and a ghost, both sitting on
+   the orange action fill. */
+.btn-inverse {
+  background: var(--btn-inverse-bg);
+  color: var(--btn-inverse-fg);
+}
+.btn-inverse:hover {
+  background: var(--btn-inverse-bg-hover);
+}
+
+.btn-ghost {
+  border-color: var(--btn-ghost-border);
+  color: var(--action-on);
+}
+.btn-ghost:hover {
+  background: var(--btn-ghost-hover-bg);
+}
+
+/* ---- The browser-chrome frame every screenshot sits in ---- */
+
+.frame {
+  border: 1px solid var(--surface-card-border);
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--surface-card-shadow);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.frame-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.8rem;
+  background: var(--frame-chrome);
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.frame-bar i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--frame-dot);
+}
+
+.frame-url {
+  margin-inline: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--contrast-icon-muted);
+  background: var(--surface-page);
+  border: 1px solid var(--surface-divider);
+  border-radius: 6px;
+  padding: 0.16rem 0.9rem;
+}
+
+.frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---- Site chrome ---- */
+
+.site-head {
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.site-head .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 3.5rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 1.0625rem;
+  color: var(--action-text);
+  text-decoration: none;
+}
+
+.brand svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.375rem;
+  font-size: 0.875rem;
+}
+
+.site-nav a {
+  color: var(--contrast-helper);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.site-nav a:hover {
+  color: var(--action-text);
+}
+
+.star-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  color: var(--contrast-muted) !important;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.star-badge:hover {
+  background: var(--surface-inset);
+  border-color: var(--contrast-border);
+}
+.star-badge .count {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* ---- Closer band ---- */
+
+.closer {
+  background: var(--action);
+  padding-block: calc(var(--section-pad) * 0.9);
+  text-align: center;
+}
+
+.closer .heading-2 {
+  color: var(--action-on);
+}
+
+.closer p {
+  color: var(--action-on-muted);
+}
+
+/* The standard focus ring is orange and disappears against the orange band,
+   so focus inverts to the label colour here. */
+.closer a:focus-visible,
+.closer button:focus-visible {
+  outline-color: var(--action-on);
+}
+
+/* ---- Footer ---- */
+
+.site-foot {
+  border-top: 1px solid var(--surface-divider);
+  padding-block: 2.5rem;
+  font-size: 0.875rem;
+  color: var(--contrast-icon-muted);
+}
+
+.site-foot a {
+  color: var(--contrast-icon-muted);
+  text-decoration: none;
+}
+.site-foot a:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.site-foot .version {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* ---- Landing sections ---- */
+
+.hero {
+  padding-block: var(--hero-pad) calc(var(--hero-pad) * 0.85);
+  text-align: center;
+}
+
+.hero .display {
+  max-width: 21ch;
+  margin-inline: auto;
+}
+
+.hero .lead {
+  max-width: 52ch;
+  margin: 1.375rem auto 0;
+}
+
+.ctas {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+
+.hero-shot {
+  margin-top: calc(var(--hero-pad) * 0.6);
+}
+
+.strip {
+  padding-block: calc(var(--section-pad) * 0.85);
+}
+
+.strip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+}
+
+.strip-item svg {
+  width: 1.375rem;
+  height: 1.375rem;
+  color: var(--action-text);
+}
+
+.strip-item h2 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 0.875rem;
+}
+
+.strip-item p {
+  font-size: 0.90625rem;
+  color: var(--contrast-helper);
+  line-height: 1.6;
+  margin-top: 0.5rem;
+  max-width: 36ch;
+}
+
+/* Feature rows: text and shot side by side, alternating sides down the page.
+   The shot sits left by default; data-side="right" flips it. */
+.feature {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.feature > .frame {
+  order: -1;
+}
+
+.feature[data-side="right"] > .frame {
+  order: 1;
+}
+
+.feature .heading-2 {
+  margin-top: 0.625rem;
+}
+
+.feature p {
+  font-size: 0.96875rem;
+  color: var(--contrast-helper);
+  line-height: 1.65;
+  margin-top: 0.875rem;
+  max-width: 46ch;
+}
+
+.feature .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.125rem;
+  font-size: 0.90625rem;
+}
+
+/* Quick start: four steps and one highlighted command block. */
+.qs {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.qs-steps {
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.qs-steps li {
+  counter-increment: step;
+  display: flex;
+  gap: 0.875rem;
+  align-items: baseline;
+  font-size: 0.96875rem;
+  color: var(--contrast-helper);
+  line-height: 1.6;
+}
+
+.qs-steps li::before {
+  content: counter(step);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--action-text);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 8px;
+  padding: 0.1rem 0.55rem;
+  flex: none;
+}
+
+.code-block {
+  background: var(--surface-inset);
+  border: 1px solid var(--surface-divider);
+  border-radius: 8px;
+  padding: 1.125rem 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--code-fg);
+  overflow-x: auto;
+}
+
+.code-block .c-com {
+  color: var(--code-comment);
+}
+.code-block .c-kw {
+  color: var(--code-keyword);
+}
+.code-block .c-str {
+  color: var(--code-string);
+}
+.code-block .c-name {
+  color: var(--code-name);
+}
+.code-block .c-p {
+  color: var(--code-punct);
+}
+
+/* ---- Comparison table ---- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--surface-card-border);
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--surface-card-shadow);
+  margin-top: 2.5rem;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 56rem;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 0.875rem 1rem;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.55;
+}
+
+.compare-table thead th {
+  color: var(--foreground);
+  font-weight: 600;
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.compare-table tbody th {
+  color: var(--foreground);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.compare-table td {
+  color: var(--contrast-muted);
+}
+
+.compare-table tbody tr:nth-child(even) {
+  background: var(--surface-inset);
+}
+
+.compare-table td:first-of-type {
+  color: var(--contrast-muted);
+}
+
+.compare-table .fn {
+  font-size: 0.6875rem;
+  vertical-align: super;
+  line-height: 1;
+}
+
+.footnotes {
+  margin-top: 2rem;
+  font-size: 0.8125rem;
+  color: var(--contrast-helper);
+}
+
+.footnotes ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.footnotes a {
+  color: var(--action-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.footnotes a:hover {
+  text-decoration: underline;
+}
+
+/* Comparison teaser and privacy band content are centred prose. */
+.centered {
+  text-align: center;
+}
+
+.centered .lead {
+  max-width: 56ch;
+  margin: 1rem auto 0;
+}
+
+@media (max-width: 860px) {
+  .strip-grid {
+    grid-template-columns: 1fr;
+  }
+  .feature,
+  .qs {
+    grid-template-columns: 1fr;
+  }
+  /* Stacked, the copy reads first regardless of which side the shot took. */
+  .feature > .frame,
+  .feature[data-side="right"] > .frame {
+    order: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

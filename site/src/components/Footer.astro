@@ -1,0 +1,25 @@
+---
+// The released version, inlined from the checkout at build time via Vite's
+// ?raw import (a runtime readFileSync would resolve against the compiled
+// chunk's location, not the source tree). This is also the fallback github.ts
+// uses when the API is unreachable, so the footer can never be versionless.
+import versionRaw from "../../../docs/VERSION?raw";
+
+const version = versionRaw.trim();
+const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
+---
+
+<footer class="site-foot">
+  <div class="wrap" style="display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: space-between; align-items: baseline;">
+    <nav aria-label="Documentation" style="display: flex; flex-wrap: wrap; gap: 1.25rem;">
+      <a href={`${docs}/GETTING_STARTED.md`}>Getting started</a>
+      <a href={`${docs}/DEPLOYMENT.md`}>Deployment</a>
+      <a href={`${docs}/USAGE.md`}>Usage</a>
+      <a href={`${docs}/TELEMETRY.md`}>Telemetry</a>
+      <a href="https://github.com/Valtora/Nojoin">Repository</a>
+      <a href="https://github.com/Valtora/Nojoin/blob/main/LICENSE">AGPLv3</a>
+      <a href="https://github.com/Valtora/Nojoin/issues">Support</a>
+    </nav>
+    <span class="version">v{version}</span>
+  </div>
+</footer>
