@@ -14,5 +14,10 @@ export default defineConfig({
         allow: [".."],
       },
     },
+    preview: {
+      // Lets `npm run serve` be reviewed through a temporary Cloudflare quick
+      // tunnel; the preview server only ever serves the public static build.
+      allowedHosts: [".trycloudflare.com"],
+    },
   },
 });
