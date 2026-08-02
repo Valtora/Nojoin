@@ -91,10 +91,13 @@ was decided by questioning first, so the pick is genuinely about register.
 
 ### Voice and copy, imported from the Vorkane brand docs (2026-08-02)
 
-The operator's other property, Vorkane, carries a mature set of writing rules in
-`/home/msadmin/vorkane/website/docs/` (VOICE.md, MESSAGING.md, DECISIONS.md, BRAND.md). The
-two brands are siblings, not twins: these are the rules that transfer, the ones that do not,
-and the devices adopted.
+The durable record of the site's brand, voice and maintenance rules now lives in
+`docs/SITE.md`, which survives this plan's deletion. The summary below records what was
+decided during this work and why; where the two disagree, `docs/SITE.md` wins.
+
+Vorkane, the sibling brand, carries a mature set of writing rules in its own private brand
+documents (voice, messaging, decisions, brand). The two brands are siblings, not twins:
+these are the rules that transfer, the ones that do not, and the devices adopted.
 
 **Transfers, applied to every page of copy:**
 
