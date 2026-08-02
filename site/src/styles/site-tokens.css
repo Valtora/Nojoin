@@ -60,6 +60,22 @@
     transparent 68%
   );
 
+  /* Replaces the hard band. A near-invisible vertical gradient that gives a
+     section weight without drawing an edge, so the page reads as one surface
+     with things floating on it. It must stay subtle enough that two adjacent
+     bands never look like a seam. */
+  --band-wash: linear-gradient(
+    180deg,
+    rgba(120, 113, 108, 0.05),
+    rgba(120, 113, 108, 0) 38%,
+    rgba(120, 113, 108, 0.045)
+  );
+
+  /* Floating cards. Softer and wider than the app's resting shadow, because
+     these sit on a page rather than in a workspace and depth is the point. */
+  --lift: 0 1px 2px rgba(16, 18, 22, 0.04), 0 8px 24px rgba(16, 18, 22, 0.07);
+  --lift-strong: 0 2px 4px rgba(16, 18, 22, 0.05), 0 18px 44px rgba(16, 18, 22, 0.1);
+
   /* Screenshot frames get an orange edge so they read as objects on the page
      rather than dissolving into the band behind them. It is decoration on a
      card that already has its own hairline, so it is deliberately a tint of
@@ -101,5 +117,17 @@
       transparent 68%
     );
     --frame-accent: rgba(249, 115, 22, 0.4);
+
+    /* Dark lifts by lightening, not by casting: a black shadow on a near-black
+       page is invisible, so the band wash brightens instead and the cards rely
+       on their own surface being a step up from the page. */
+    --band-wash: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.028),
+      rgba(255, 255, 255, 0) 38%,
+      rgba(255, 255, 255, 0.024)
+    );
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.36);
+    --lift-strong: 0 2px 4px rgba(0, 0, 0, 0.45), 0 18px 44px rgba(0, 0, 0, 0.44);
   }
 }

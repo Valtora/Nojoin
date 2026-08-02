@@ -266,6 +266,32 @@ export const rows: Row[] = [
     },
   },
   {
+    // Limits, not prices -- the no-competitor-pricing rule still holds. The
+    // concessions here are load-bearing: Fireflies transcribes without limit on
+    // every plan, and Otter's top plans lift the monthly cap. Saying otherwise
+    // would be checkable in one click and would cost the rest of the table.
+    key: "caps",
+    label: "Limits on how much you process",
+    cells: {
+      nojoin: {
+        text: "None in the software. No monthly allowance, no per-meeting ceiling, no history that expires. How much you get through is a question about your hardware.",
+        source: README,
+      },
+      otter: {
+        text: "300 minutes a month and 30 minutes per conversation on the entry plan; 1,200 and 90 on the next. The upper plans lift the monthly cap and hold a four-hour ceiling per meeting.",
+        source: src("https://otter.ai/pricing"),
+      },
+      granola: {
+        text: "Meeting history is limited on the entry plan, by an amount the pricing page doesn't state. Unlimited notes and history above it.",
+        source: src("https://www.granola.ai/pricing"),
+      },
+      fireflies: {
+        text: "Transcription is unlimited on every plan. Storage isn't: 400 minutes a team on the entry plan, 8,000 a seat above it. AI features draw on a monthly credit allowance.",
+        source: src("https://fireflies.ai/pricing"),
+      },
+    },
+  },
+  {
     key: "export",
     label: "Export and portability",
     cells: {
@@ -403,6 +429,19 @@ export const summaryRows: SummaryRow[] = [
       otter: no("Reads Otter, writes elsewhere"),
       granola: no("Reads notes and transcripts"),
       fireflies: partial("Renames, moves, shares"),
+    },
+  },
+  {
+    // Every one of them has a tier where something runs out; none of them is a
+    // flat no, so all three take a partial. Nojoin's yes is structural rather
+    // than generous -- there are no plans, so there is nothing to meter.
+    key: "caps",
+    label: "Nothing runs out",
+    cells: {
+      nojoin: yes("No plans, no meters"),
+      otter: partial("Capped below Business"),
+      granola: partial("History capped on free"),
+      fireflies: partial("Storage and AI credits"),
     },
   },
   {

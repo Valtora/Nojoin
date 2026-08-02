@@ -54,12 +54,24 @@ button:focus-visible {
   padding-inline: clamp(1.25rem, 4vw, 2.5rem);
 }
 
-/* Full-bleed band on the card surface. Bands alternate page/card down the
-   landing page; the borders close the shape per the flat canon. */
+/* Wider than .wrap, for the comparison tables. Five columns of prose do not
+   fit a 72rem reading measure, and a table that scrolls sideways is a table
+   most people never see the right-hand column of. */
+.wrap-wide {
+  max-width: 88rem;
+  margin-inline: auto;
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+/* Bands used to be a full-bleed card surface with hairlines top and bottom,
+   alternating down the page. That read as a stack of documents rather than a
+   product page: every section boundary was a hard edge. Depth now comes from
+   the content instead -- framed screenshots, the flow card, the tool showcase
+   and the price card all float on one continuous surface -- and the band keeps
+   only a whisper of gradient so the rhythm survives without the edges. */
 .band {
-  background: var(--surface-card);
-  border-block: 1px solid var(--surface-divider);
   padding-block: var(--section-pad);
+  background-image: var(--band-wash);
 }
 
 .section {
@@ -192,9 +204,9 @@ button:focus-visible {
    the divider colour was doing nothing at reading distance. */
 .frame {
   border: 1px solid var(--frame-accent);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-card);
-  box-shadow: var(--surface-card-shadow);
+  box-shadow: var(--lift-strong);
   overflow: hidden;
   max-width: 100%;
 }
@@ -500,11 +512,11 @@ button:focus-visible {
   padding-inline: clamp(1.25rem, 4vw, 2.5rem);
 }
 
-.feature .heading-2 {
+.feature-copy .heading-2 {
   margin-top: 0.625rem;
 }
 
-.feature p {
+.feature-copy p {
   font-size: 0.96875rem;
   color: var(--contrast-helper);
   line-height: 1.65;
@@ -512,7 +524,7 @@ button:focus-visible {
   max-width: 46ch;
 }
 
-.feature .text-link {
+.feature-copy .text-link {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -614,9 +626,9 @@ button:focus-visible {
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--surface-card-border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-card);
-  box-shadow: var(--surface-card-shadow);
+  box-shadow: var(--lift);
   margin-top: 2.5rem;
 }
 
@@ -635,7 +647,7 @@ button:focus-visible {
 /* Narrower than the detailed table: these cells are a mark and a few words, so
    they do not need the horizontal scroll the prose table earns. */
 .glance-table {
-  min-width: 44rem;
+  min-width: 32rem;
 }
 
 /* Positioned so the visually-hidden verdict inside it is contained here rather
@@ -645,7 +657,6 @@ button:focus-visible {
    scroll sideways by the width of the table. */
 .glance-cell {
   position: relative;
-  white-space: nowrap;
 }
 
 .glance-mark {
@@ -761,7 +772,6 @@ button:focus-visible {
 .agent-band {
   padding-block: var(--section-pad);
   background-image: var(--hero-wash);
-  border-block: 1px solid var(--surface-divider);
 }
 
 .agent-grid {
@@ -771,30 +781,10 @@ button:focus-visible {
   align-items: start;
 }
 
-/* Matches .feature's rhythm rather than inheriting it: this block sits outside
-   .feature because it has no screenshot beneath it. */
 .agent-copy {
   max-width: 46ch;
 }
 
-.agent-copy .heading-2 {
-  margin-top: 0.625rem;
-}
-
-.agent-copy p {
-  font-size: 0.96875rem;
-  color: var(--contrast-helper);
-  line-height: 1.65;
-  margin-top: 0.875rem;
-}
-
-.agent-copy .text-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 1.125rem;
-  font-size: 0.90625rem;
-}
 
 /* One real post-meeting job, each step tagged with who performs it. Every row
    maps to a documented tool; nothing here is a capability Nojoin lacks. */
@@ -803,7 +793,7 @@ button:focus-visible {
   border: 1px solid var(--surface-card-border);
   border-radius: 16px;
   padding: clamp(1.25rem, 3vw, 1.75rem);
-  box-shadow: var(--surface-card-shadow);
+  box-shadow: var(--lift);
   min-width: 0;
 }
 
@@ -873,64 +863,160 @@ button:focus-visible {
   border-style: dashed;
 }
 
-/* Thirty tools, grouped by what they touch. A hairline grid built from a 1px
-   gap over the divider colour, so the cells share edges rather than stacking
-   borders. */
-.toolmap {
+/* The flow reads downward, so it is drawn as one: the row dividers are gone
+   and a chevron sits under each pill except the last. A table of rows and a
+   sequence of steps look identical without it. */
+.flow-rows li {
+  padding-block: 0.85rem;
+}
+
+.flow-rows li:first-child {
+  padding-top: 0;
+}
+
+.pill {
+  position: relative;
+}
+
+.flow-rows li:not(:last-child) .pill::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  translate: -50% 0;
+  margin-top: 0.42rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 1.5px solid var(--frame-accent);
+  border-bottom: 1.5px solid var(--frame-accent);
+  rotate: 45deg;
+}
+
+/* Thirty tools as a showcase rather than a table. Each cell leads with a glyph
+   because a wall of six headings is what the tool map looked like before, and
+   the point of the section is that the surface is broad. */
+.toolrail {
   margin-top: clamp(2.25rem, 4vw, 3.25rem);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--surface-divider);
-  border: 1px solid var(--surface-card-border);
-  border-radius: 14px;
-  overflow: hidden;
+  gap: clamp(0.75rem, 1.6vw, 1rem);
 }
 
-.toolmap li {
+.toolrail li {
   background: var(--surface-card);
-  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--surface-card-border);
+  border-radius: 14px;
+  box-shadow: var(--lift);
+  padding: 1.15rem 1.25rem;
   min-width: 0;
 }
 
-.toolmap h3 {
+.toolrail svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--action-text);
+}
+
+.toolrail h3 {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
+  margin-top: 0.7rem;
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--foreground);
 }
 
-.toolmap .n {
+.toolrail .n {
   font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--action-text);
 }
 
-.toolmap p {
-  margin-top: 0.35rem;
+.toolrail p {
+  margin-top: 0.3rem;
   font-size: 0.8125rem;
   line-height: 1.55;
   color: var(--contrast-helper);
+}
+
+/* The CRM bridge gets its own card. It is the claim with no equivalent
+   anywhere in the comparison, and it was a clause in a paragraph. */
+.bridge {
+  margin-top: clamp(0.75rem, 1.6vw, 1rem);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+  background: var(--surface-card);
+  border: 1px solid var(--frame-accent);
+  border-radius: 14px;
+  box-shadow: var(--lift);
+  padding: clamp(1.25rem, 3vw, 1.6rem);
+}
+
+.bridge svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--action-text);
+}
+
+.bridge h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* The card is full width because the chips need the room; the prose is not,
+   because a 120-character line is unreadable however wide the box is. */
+.bridge p {
+  margin-top: 0.4rem;
+  max-width: 68ch;
+  font-size: 0.90625rem;
+  line-height: 1.6;
+  color: var(--contrast-helper);
+}
+
+.bridge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.bridge-chips span {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--contrast-muted);
+  background: var(--surface-inset);
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
 }
 
 @media (max-width: 60rem) {
   .agent-grid {
     grid-template-columns: 1fr;
   }
-  .toolmap {
+  .toolrail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 40rem) {
-  .toolmap {
+  .toolrail {
     grid-template-columns: 1fr;
   }
   .flow-rows li {
     grid-template-columns: 4.5rem minmax(0, 1fr);
     gap: 0.7rem;
+  }
+  /* The glyph goes above the copy rather than beside it, so the text keeps a
+     readable measure on a phone instead of a 20ch column. */
+  .bridge {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
   }
 }
 

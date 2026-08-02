@@ -45,14 +45,20 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   headings 2.25rem, generous vertical rhythm to match. Geist stays semibold (600) with
   -0.025em display tracking; no new weight enters the system.
 - **Every screenshot sits in a minimal browser-chrome frame**: three dots, a muted
-  `nojoin.your-server.net` URL pill, hairline border, 12px radius, the resting shadow in
-  light only. The frame signals "a web app you self-host", which is half the pitch.
+  `nojoin.your-server.net` URL pill, an orange edge, 14px radius and `--lift-strong`. The
+  frame signals "a web app you self-host", which is half the pitch.
 - **Feature rows stack**: copy at reading width, screenshot beneath it in a container wider
-  than the rest of the page, on bands that alternate the page and card surfaces. The
-  alternating rhythm survives as the copy block changing sides down the page; the text
-  itself stays left-aligned. This replaces a side-by-side layout, which gave the screenshot
-  half of a 72rem wrap and so rendered a 1920px capture at about 28% — unreadable, which
-  defeats the point of showing the interface at all.
+  than the rest of the page. The rhythm survives as the copy block changing sides down the
+  page; the text itself stays left-aligned. This replaces a side-by-side layout, which gave
+  the screenshot half of a 72rem wrap and so rendered a 1920px capture at about 28% —
+  unreadable, which defeats the point of showing the interface at all.
+- **No hard bands.** Sections used to alternate a full-bleed card surface against the page
+  with hairlines top and bottom. That read as a stack of documents: every boundary was an
+  edge. The page is now one continuous surface and depth comes from the content floating on
+  it — framed screenshots, the flow card, the tool showcase, the price card — each carrying
+  `--lift`. `.band` keeps only `--band-wash`, a gradient faint enough that two adjacent
+  bands never look like a seam. In dark it lightens rather than casting, because a black
+  shadow on a near-black page is invisible.
 - **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
   orange-700 band at the foot. No cream tints and no glass.
 - **Three marketing effects, and no more.** The app's flat canon governs the product,
@@ -75,13 +81,21 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   the flat canon, and `backdrop-filter` over text this dense costs a repaint per scroll
   frame for an effect the design does not want.
 - **The agent band sits directly under the strip**, on the page surface with the hero's
-  wash and hairlines closing it, so the alternating band rhythm below is untouched. It
-  carries two infographics rather than prose: a flow card tagging each step of one real
-  post-meeting job with the actor who performs it, and a six-cell map of the thirty tools
-  grouped by what they touch. Both exist because there is no honest screenshot to take
-  (see below), and because a capability list is more convincing shown than described.
-- **The headline is no-bot led**: "Meeting notes, with no bot in the call". Self-hosting
-  lands in the subhead.
+  wash. It carries three devices rather than prose. A flow card walks one real post-meeting
+  job and tags each step with the actor who performs it, chevrons between the steps so it
+  reads downward as a sequence rather than as a table. A six-card showcase groups the thirty
+  tools by what they touch, each led by a glyph. A wider card carries the CRM bridge on its
+  own, because an assistant reconciling your People library with anything it can already
+  reach is the claim with no equivalent in the comparison, and it was a clause in a
+  paragraph. The actor pills say "Agent", never a vendor name: Claude and Codex are both
+  supported and the claim is about assistants generally.
+- **The headline is agent led**: "Meeting notes your AI assistant can actually change".
+  This reverses the earlier no-bot headline, deliberately. Not joining the call is a strong
+  feature and three competitors match some version of it; an assistant that can rewrite the
+  meeting record on a server you own is the thing none of them documents. No-bot did not
+  disappear, it moved to the strip directly under the hero, where it is the first of three
+  claims. The subhead carries no-bot, self-hosting and the uncapped point, in that order,
+  so a reader who has never heard of MCP still gets a reason to care in one sentence.
 - **The agents section carries no screenshot, by decision.** Every other feature section on
   the landing page is led by its shot. That capability happens in Claude's or Codex's
   window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
@@ -89,8 +103,8 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   checkable ones. Nojoin's own screens cannot carry the claim either: the app records that
   an utterance was manually edited but never distinguishes an assistant's edit from a web
   one, so a task list an assistant filed is indistinguishable from a typed one. The flow
-  card and the tool map take the visual weight instead. Should the app ever surface MCP
-  provenance, this band earns a real shot and should get one.
+  card, the tool showcase and the bridge card take the visual weight instead. Should the app
+  ever surface MCP provenance, this band earns a real shot and should get one.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never
@@ -112,8 +126,9 @@ first person singular; Nojoin is a product and never says "I" or "we" in marketi
 
 **One page is exempt: `/managed/`.** What it sells is not the product but one named person's
 time, and a service provided personally cannot honestly describe itself as "it". That page
-writes in the first person singular, names Tay outright, and says so in its own first
-paragraph. The full legal name stays off the site and out of the repository by decision.
+writes in the first person singular and says so in its own first paragraph. It names nobody:
+the person is identified as the one who built Nojoin, which is checkable against the commit
+history, and no name goes on the site or into the repository by decision.
 The exception is scoped to that page and does not travel: the landing
 band that points at it stays in the product's voice and refers to "Nojoin's author" in the
 third person, so a visitor meets one narrator per page rather than two per scroll. "We"
@@ -134,6 +149,15 @@ The rules:
 - **Concede facts, not ground.** Where a competitor does something well, say so plainly;
   where a concession has a counterpoint, make it. Candour about checkable limits is what
   buys the credibility of everything else.
+- **Sell, and let the facts do it.** This is a marketing site, not a paper. The register is
+  confident and a little pleased with itself, and it earns that by stacking true things and
+  stating them flatly rather than by reaching for adjectives: no funding, no employees, no
+  bot, no caps, thirty tools, one compose file. A sentence like "Nojoin has taken no
+  funding, employs nobody, and sells nothing you can't download" is doing more work than any
+  superlative would, and it survives being checked, which no superlative does. The banned
+  list below still holds — those words are banned because they carry no information, and
+  swagger without information is just noise. Competitor claims still need a source and a
+  date. Everything else is fair game.
 - **Plain labels beat clever ones.** A label may be evocative only if its meaning is still
   obvious in half a second.
 - **Parallel closers.** Paired elements end on matched short sentences.
@@ -170,9 +194,17 @@ The comparison page holds itself to the standard it would want applied to it:
 
 ## The managed service
 
-`/managed/` sells one thing: Tay scoping, installing and maintaining a private
-instance for an organisation. The commercial shape below was settled deliberately and the
+`/managed/` sells one thing: the developer of Nojoin scoping, installing and maintaining a
+private instance for an organisation. **The page names nobody.** It writes in the first
+person, because one person really does answer, but it identifies him as the person who built
+Nojoin rather than by name — the full legal name stays off the site and out of the
+repository by decision. The commercial shape below was settled deliberately and the
 reasoning matters more than the numbers, because the numbers will move.
+
+The tagline is "All the control, none of the admin". It replaced "Self-hosted, without
+hosting it yourself", which assumed the reader already knew what self-hosting was — on the
+one page most likely to be read by someone who does not. The replacement names the trade
+rather than the technology.
 
 - **The customer owns the hardware and pays for it directly.** The fee is labour and nothing
   else. That removes idle spend, cost overruns and supplier risk from the offering in one
@@ -183,12 +215,18 @@ reasoning matters more than the numbers, because the numbers will move.
   bans competitor pricing applies to a supplier's: a quoted cloud price goes stale and a
   stale price is the error people screenshot. It is also honest that a customer with a
   suitable machine already pays nothing extra.
-- **£250 a month, ten to twenty-five people.** The floor sits at ten because fixed hardware
-  cost spread across five people makes the smallest customer the worst value in the book,
-  and no wording fixes an intercept. Above twenty-five is a conversation rather than a
-  published tier: there is no customer of that size yet, and an invented price is exactly
-  the unbacked number the comparison page's standard exists to prevent.
-- **Setup is £950, waived on a twelve-month commitment.** Month one is the heaviest month.
+- **£24.99 a person a month, minimum five.** This replaced a £250 flat fee covering ten to
+  twenty-five people, and a £950 setup charge waived on a twelve-month commitment. Both are
+  gone from the page: per-seat is what a buyer already understands, and it scales without
+  the cliff the banded version had at the sixth seat. The line "per-seat pricing runs the
+  other way" went with it — the offering is now per-seat, so that argument would have been
+  aimed at itself.
+- **Nothing is capped, and the page leads on it.** No monthly allowance, no ceiling on call
+  length, no history that expires while the customer is still paying. There is no meter in
+  the software to hit. Every competitor has a tier where something runs out, which the
+  comparison page now shows in a sourced row rather than asserting — Otter meters minutes
+  below its upper plans, Fireflies caps storage and AI credits, Granola limits history on
+  its entry plan. Fireflies transcribes without limit on every plan, and the row says so.
 - **Nothing on the page is a promise that breaks on a bad week.** No uptime figure, no SLA,
   no capacity claim. Same day if the instance is down, next working day otherwise, UK hours,
   and the limit named rather than implied. Monitoring is listed as part of the fee because
