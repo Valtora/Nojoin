@@ -23,6 +23,8 @@ interface NavigationState {
   setNavWidth: (width: number) => void;
   recordingsSidebarWidth: number;
   setRecordingsSidebarWidth: (width: number) => void;
+  isRecordingsSidebarCollapsed: boolean;
+  toggleRecordingsSidebarCollapse: () => void;
   expandedTagIds: number[];
   toggleExpandedTag: (tagId: number) => void;
   setExpandedTagIds: (ids: number[]) => void;
@@ -52,6 +54,12 @@ interface NavigationState {
   // Chat Panel State
   chatPanelHeight: number;
   setChatPanelHeight: (height: number) => void;
+
+  // Recording Detail Side-Panel Collapse State
+  isSpeakerPanelCollapsed: boolean;
+  setSpeakerPanelCollapsed: (collapsed: boolean) => void;
+  isChatPanelCollapsed: boolean;
+  setChatPanelCollapsed: (collapsed: boolean) => void;
 
   // Log Settings
   logShowTimestamps: boolean;
@@ -90,6 +98,11 @@ export const useNavigationStore = create<NavigationState>()(
       setNavWidth: (width) => set({ navWidth: width }),
       recordingsSidebarWidth: 320,
       setRecordingsSidebarWidth: (width) => set({ recordingsSidebarWidth: width }),
+      isRecordingsSidebarCollapsed: false,
+      toggleRecordingsSidebarCollapse: () =>
+        set((state) => ({
+          isRecordingsSidebarCollapsed: !state.isRecordingsSidebarCollapsed,
+        })),
       expandedTagIds: [],
       toggleExpandedTag: (tagId) =>
         set((state) => ({
@@ -154,6 +167,14 @@ export const useNavigationStore = create<NavigationState>()(
       chatPanelHeight: 50,
       setChatPanelHeight: (height) => set({ chatPanelHeight: height }),
 
+      // Recording Detail Side-Panel Collapse State
+      isSpeakerPanelCollapsed: false,
+      setSpeakerPanelCollapsed: (collapsed) =>
+        set({ isSpeakerPanelCollapsed: collapsed }),
+      isChatPanelCollapsed: false,
+      setChatPanelCollapsed: (collapsed) =>
+        set({ isChatPanelCollapsed: collapsed }),
+
       // Log Settings
       logShowTimestamps: true,
       toggleLogShowTimestamps: () =>
@@ -172,11 +193,14 @@ export const useNavigationStore = create<NavigationState>()(
         isNavCollapsed: state.isNavCollapsed,
         navWidth: state.navWidth,
         recordingsSidebarWidth: state.recordingsSidebarWidth,
+        isRecordingsSidebarCollapsed: state.isRecordingsSidebarCollapsed,
         expandedTagIds: state.expandedTagIds,
         hasSeenTour: state.hasSeenTour,
         hasSeenRecordingsTour: state.hasSeenRecordingsTour,
         hasSeenTranscriptTour: state.hasSeenTranscriptTour,
         chatPanelHeight: state.chatPanelHeight,
+        isSpeakerPanelCollapsed: state.isSpeakerPanelCollapsed,
+        isChatPanelCollapsed: state.isChatPanelCollapsed,
         logShowTimestamps: state.logShowTimestamps,
         logWordWrap: state.logWordWrap,
         activePanel: state.activePanel,

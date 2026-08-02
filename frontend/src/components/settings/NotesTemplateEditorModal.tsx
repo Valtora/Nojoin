@@ -219,7 +219,11 @@ export default function NotesTemplateEditorModal({
         </>
       }
     >
-      <div className="grid h-full min-h-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
+      {/* Container on a wrapper because the modal, not the viewport, decides
+          how wide the editor is. 64rem gives the narrowest of the three
+          columns roughly 19rem before they sit side by side. */}
+      <div className="@container h-full min-h-0">
+      <div className="grid h-full min-h-0 gap-6 @min-[64rem]:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
           {/* Generate */}
           <div className="flex flex-col min-h-0 gap-3">
             <div>
@@ -355,6 +359,7 @@ export default function NotesTemplateEditorModal({
                 "Select Preview to see the exact prompt this structure produces, using a short sample transcript. No AI request is made."}
             </pre>
           </div>
+      </div>
       </div>
     </Modal>
   );

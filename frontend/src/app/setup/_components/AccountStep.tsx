@@ -50,7 +50,7 @@ export default function AccountStep({
           type="text"
           name="setup-admin-username"
           data-field-key="username"
-          autoComplete="section-setup-admin username"
+          autoComplete="username"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
@@ -73,7 +73,7 @@ export default function AccountStep({
           type="password"
           name="setup-admin-new-password"
           data-field-key="password"
-          autoComplete="section-setup-admin new-password"
+          autoComplete="new-password"
           aria-describedby={error ? "setup-error" : undefined}
           aria-invalid={Boolean(error)}
           required
@@ -94,7 +94,7 @@ export default function AccountStep({
           type="password"
           name="setup-admin-confirm-password"
           data-field-key="confirmPassword"
-          autoComplete="section-setup-admin new-password"
+          autoComplete="new-password"
           aria-describedby={error ? "setup-error" : undefined}
           aria-invalid={Boolean(error)}
           required

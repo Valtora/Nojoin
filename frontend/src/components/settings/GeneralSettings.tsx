@@ -395,7 +395,7 @@ export default function GeneralSettings({
             label="Voice activity detection"
             description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
             icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
           >
             <Switch
               checked={settings.enable_vad !== false} // Default true
@@ -410,7 +410,7 @@ export default function GeneralSettings({
             label="Speaker diarization"
             description="Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing."
             icon={<Users className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
           >
             <Switch
               checked={settings.enable_diarization !== false} // Default true

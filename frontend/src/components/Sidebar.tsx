@@ -15,7 +15,13 @@ import {
   X,
   CheckSquare,
   Square,
+  Archive,
+  Mic,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Trash2,
 } from "lucide-react";
+import IconButton from "./ui/IconButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -122,6 +128,8 @@ export default function Sidebar() {
     clearSelection,
     recordingsSidebarWidth,
     setRecordingsSidebarWidth,
+    isRecordingsSidebarCollapsed,
+    toggleRecordingsSidebarCollapse,
   } = useNavigationStore();
 
   const [mounted, setMounted] = useState(false);
@@ -143,9 +151,14 @@ export default function Sidebar() {
   const [reprocessRecordingId, setReprocessRecordingId] = useState<RecordingId | null>(null);
   const MIN_SIDEBAR_WIDTH = isCompact ? 240 : 256;
   const MAX_SIDEBAR_WIDTH = isCompact ? 520 : 600;
+  const COLLAPSED_SIDEBAR_WIDTH = isCompact ? 60 : 64;
   const resolvedSidebarWidth = isCompact
     ? Math.min(recordingsSidebarWidth, 304)
     : recordingsSidebarWidth;
+
+  // The persisted collapse only applies on desktop, and we fall back to
+  // expanded until mounted to avoid a hydration mismatch (mirrors MainNav).
+  const isCollapsed = mounted && isDesktopLayout && isRecordingsSidebarCollapsed;
 
   const { onResizePointerDown: handleResizePointerDown } = useSidebarResize({
     minWidth: MIN_SIDEBAR_WIDTH,
@@ -633,11 +646,46 @@ export default function Sidebar() {
   return (
     <aside
       id="sidebar-recordings-list"
-      className={`shrink-0 border-r border-rail-border bg-rail flex flex-col h-full relative transition-opacity ${
+      className={`shrink-0 border-r border-rail-border bg-rail flex flex-col h-full relative transition-all duration-300 ${
         isRecordingView ? "hidden lg:flex" : "w-full lg:flex"
       }`}
-      style={mounted && isDesktopLayout ? { width: `${resolvedSidebarWidth}px` } : {}}
+      style={
+        mounted && isDesktopLayout
+          ? {
+              width: isCollapsed
+                ? `${COLLAPSED_SIDEBAR_WIDTH}px`
+                : `${resolvedSidebarWidth}px`,
+            }
+          : {}
+      }
     >
+      {isCollapsed && (
+        <div className="flex flex-col items-center gap-1 p-2">
+          <IconButton
+            onClick={toggleRecordingsSidebarCollapse}
+            size="sm"
+            icon={<PanelLeftOpen aria-hidden="true" />}
+            className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+            title="Expand recordings list"
+            aria-label="Expand recordings list"
+            aria-expanded={false}
+          />
+          {/* Non-interactive hint for which library view the hidden list holds. */}
+          <span
+            className="flex h-10 w-10 items-center justify-center text-rail-fg-muted"
+            title={currentViewLabel}
+          >
+            {view === "archived" ? (
+              <Archive aria-hidden="true" className="h-4 w-4" />
+            ) : view === "deleted" ? (
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+            ) : (
+              <Mic aria-hidden="true" className="h-4 w-4" />
+            )}
+          </span>
+        </div>
+      )}
+      {!isCollapsed && (
       <div className="flex-1 overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
@@ -684,21 +732,32 @@ export default function Sidebar() {
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
+            <div className="flex items-center gap-1">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
+                />
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
+                >
+                  <Filter className="w-4 h-4" />
+                </button>
+              </div>
+              <IconButton
+                onClick={toggleRecordingsSidebarCollapse}
+                size="sm"
+                icon={<PanelLeftClose aria-hidden="true" />}
+                className="hidden lg:inline-flex text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+                title="Collapse recordings list"
+                aria-label="Collapse recordings list"
+                aria-expanded={true}
               />
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
-              >
-                <Filter className="w-4 h-4" />
-              </button>
             </div>
             {/* ... filters ... */}
           </div>
@@ -859,7 +918,7 @@ export default function Sidebar() {
       </div>
 
       {/* Recording List */}
-      <div className="p-2 space-y-2">
+      <div className="@container p-2 space-y-2">
         {filteredRecordings.length === 0 && (
           <div className="text-center p-4 text-rail-fg-muted text-sm">
             <p>{getEmptyMessage().main}</p>
@@ -929,7 +988,7 @@ export default function Sidebar() {
                           </div>
                         )}
                         <h3
-                          className={`text-sm font-semibold truncate ${isActive && !selectionMode ? "text-action-text" : "text-foreground"}`}
+                          className={`text-sm font-semibold line-clamp-2 ${isActive && !selectionMode ? "text-action-text" : "text-foreground"}`}
                           title="Double-click to rename"
                           onDoubleClick={(e) => {
                             e.preventDefault();
@@ -944,19 +1003,22 @@ export default function Sidebar() {
                     </div>
 
                     <div
-                      className={`flex items-center text-xs text-contrast-helper gap-2 ${selectionMode || isSelected ? "pl-6" : ""}`}
+                      className={`flex items-center overflow-hidden text-xs text-contrast-helper gap-2 ${selectionMode || isSelected ? "pl-6" : ""}`}
                     >
-                      <span>{formatDate(recording.created_at)}</span>
-                      <span className="text-contrast-icon-muted">
+                      <span className="whitespace-nowrap">
+                        {formatDate(recording.created_at)}
+                      </span>
+                      {/* The time range yields first when the rail narrows; date and duration stay. */}
+                      <span className="hidden whitespace-nowrap text-contrast-icon-muted @min-[19rem]:inline">
                         |
                       </span>
-                      <span>
+                      <span className="hidden whitespace-nowrap @min-[19rem]:inline">
                         {formatTime(startDate)} - {formatTime(endDate)}
                       </span>
-                      <span className="text-contrast-icon-muted">
+                      <span className="whitespace-nowrap text-contrast-icon-muted">
                         |
                       </span>
-                      <span>
+                      <span className="whitespace-nowrap">
                         {formatDurationString(recording.duration_seconds)}
                       </span>
                     </div>
@@ -1026,14 +1088,17 @@ export default function Sidebar() {
       )}
         {/* Footer/Empty States could go here if needed */}
       </div>
+      )}
 
-      {/* Resize Handle - Hidden on Mobile */}
-      <div
-        className="absolute right-0 top-0 bottom-0 z-[var(--z-sticky)] hidden w-1 cursor-col-resize touch-none hover:bg-action active:bg-action-hover lg:block"
-        onPointerDown={handleResizePointerDown}
-      >
-        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-rail-border hover:bg-action transition-colors" />
-      </div>
+      {/* Resize Handle - Hidden on Mobile, inert while collapsed */}
+      {!isCollapsed && (
+        <div
+          className="absolute right-0 top-0 bottom-0 z-[var(--z-sticky)] hidden w-1 cursor-col-resize touch-none hover:bg-action active:bg-action-hover lg:block"
+          onPointerDown={handleResizePointerDown}
+        >
+          <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-rail-border hover:bg-action transition-colors" />
+        </div>
+      )}
     </aside>
   );
 }

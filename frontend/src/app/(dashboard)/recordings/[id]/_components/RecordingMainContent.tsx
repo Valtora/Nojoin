@@ -1,6 +1,5 @@
 "use client";
 
-import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import type { RefObject } from "react";
 
 import type { ActivePanel } from "@/lib/store";
@@ -139,39 +138,12 @@ export default function RecordingMainContent({
 }: RecordingMainContentProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
-      {isMobile ? (
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-[var(--z-sticky)] flex items-start justify-between px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] lg:hidden">
-          <button
-            onClick={onBack}
-            className="pointer-events-auto inline-flex h-12 shrink-0 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card"
-            title="Back to Recordings"
-            aria-label="Back to Recordings"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Back</span>
-          </button>
-
-          <button
-            onClick={() => setIsMobileHeaderActionsOpen((current) => !current)}
-            className={`pointer-events-auto inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border shadow-float transition-colors dark: ${isMobileHeaderActionsOpen ? "border-action-border bg-action-tint text-action-text" : "border-surface-border bg-surface-card text-contrast-muted hover:bg-surface-card"}`}
-            title={
-              isMobileHeaderActionsOpen
-                ? "Hide meeting actions"
-                : "Show meeting actions"
-            }
-            aria-label={
-              isMobileHeaderActionsOpen
-                ? "Hide meeting actions"
-                : "Show meeting actions"
-            }
-          >
-            <MoreHorizontal className="h-5 w-5" />
-          </button>
-        </div>
-      ) : null}
-
-      {/* Header (Title, Tags, Audio Player) */}
+      {/* Header (Title, Tags, Audio Player). On mobile it also carries the
+          back and actions controls inline, so nothing floats over content
+          and no top padding is reserved for an overlay. */}
       <RecordingHeader
+        onBack={onBack}
+        setIsMobileHeaderActionsOpen={setIsMobileHeaderActionsOpen}
         recording={recording}
         isMobile={isMobile}
         isEditingTitle={isEditingTitle}

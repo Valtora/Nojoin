@@ -170,7 +170,7 @@ export default function TagItem({
       {...attributes}
       {...listeners}
       className={`
-        group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer relative select-none touch-none
+        group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer relative select-none touch-manipulation
         ${isSelected ? "bg-rail-item-active text-rail-item-active-fg" : "text-rail-fg hover:bg-rail-item-hover"}
         ${isDragging ? "opacity-50" : ""}
         ${isOver ? "bg-action-tint ring-2 ring-action-border" : ""}

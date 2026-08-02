@@ -126,7 +126,7 @@ export default function SecondaryProviderSection({
           </div>
 
           {isOllama && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 @min-[42rem]:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-contrast-muted mb-2">
                   Secondary Ollama API URL

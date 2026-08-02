@@ -104,7 +104,7 @@ export default function ConnectedAppsSettings() {
             label={app.client_name}
             description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at)} · Last used ${formatTimestamp(app.last_used_at)}`}
             icon={<Plug className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
           >
             <button
               type="button"

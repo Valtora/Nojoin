@@ -641,7 +641,7 @@ export default function SystemTab() {
       )}
 
       {adminHealth && (
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 @min-[33rem]:grid-cols-2 @min-[67rem]:grid-cols-4">
           {HEALTH_CARDS.map(({ key, title, icon: Icon }) => {
             const check = adminHealth.checks[key];
             const styles = STATUS_STYLES[check.status as AdminHealthCheckStatus];

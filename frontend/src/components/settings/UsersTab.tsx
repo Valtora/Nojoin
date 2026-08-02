@@ -233,7 +233,7 @@ export default function UsersTab() {
           <form
             onSubmit={handleCreateUser}
             autoComplete="off"
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            className="grid grid-cols-1 @min-[44rem]:grid-cols-2 gap-4"
           >
             <input
               name="new-user-username"
@@ -270,7 +270,7 @@ export default function UsersTab() {
               <option value="admin">Admin</option>
               <option value="owner">Owner</option>
             </select>
-            <div className="md:col-span-2 flex justify-end gap-2">
+            <div className="@min-[44rem]:col-span-2 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {

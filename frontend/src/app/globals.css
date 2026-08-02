@@ -639,18 +639,39 @@ html {
   .density-heading-page {
     line-height: 1.05;
   }
+}
 
-  html[data-ui-density="compact"] .density-heading-page {
-    font-size: clamp(2rem, 2vw + 1.35rem, 2.75rem);
+/* The heading scale overrides live outside the cascade layers deliberately.
+   Inside @layer components they lose to the text-* utilities on the same
+   elements, because the utilities layer is declared after components and
+   layer order beats selector specificity — which left these rules silently
+   inert. Unlayered declarations beat every layer, so the scaling actually
+   applies. */
+html[data-ui-density="compact"] .density-heading-page {
+  font-size: clamp(2rem, 2vw + 1.35rem, 2.75rem);
+}
+
+html[data-ui-density="compact"] .density-heading-section {
+  font-size: clamp(1.375rem, 1vw + 1rem, 1.875rem);
+  line-height: 1.1;
+}
+
+html[data-ui-density="compact"] .density-body-copy {
+  line-height: 1.55;
+}
+
+/* Below the desktop breakpoint the density attribute is always
+   "comfortable", so phones and small tablets need their own fluid step.
+   The upper bounds match the largest text-* size each class is paired
+   with, so the clamp only ever steps a heading down. */
+@media (max-width: 63.9375rem) {
+  .density-heading-page {
+    font-size: clamp(1.625rem, 3vw + 0.9rem, 2.25rem);
   }
 
-  html[data-ui-density="compact"] .density-heading-section {
-    font-size: clamp(1.375rem, 1vw + 1rem, 1.875rem);
+  .density-heading-section {
+    font-size: clamp(1.125rem, 1.5vw + 0.75rem, 1.5rem);
     line-height: 1.1;
-  }
-
-  html[data-ui-density="compact"] .density-body-copy {
-    line-height: 1.55;
   }
 }
 

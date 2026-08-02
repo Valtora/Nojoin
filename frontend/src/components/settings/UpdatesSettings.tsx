@@ -330,9 +330,11 @@ export default function UpdatesSettings({
           </button>
         }
       >
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-6 @min-[46rem]:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.85fr)]">
+          {/* The column is a container of its own so the stat pair below
+              queries the column's width, not the whole card's. */}
+          <div className="@container space-y-4">
+            <div className="grid gap-4 @min-[33rem]:grid-cols-2">
               <SettingsBlock inset>
                 <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
                   Installed version

@@ -42,7 +42,9 @@ export default function SettingsBlock({
   const hasHeader = Boolean(label || description || aside);
 
   return (
-    <div id={id} className={cn("settings-cell px-5 py-4 sm:px-6 scroll-mt-24", className)}>
+    // The block is a container so any grid in its content can query the width
+    // it actually has, which the viewport cannot see once the page is capped.
+    <div id={id} className={cn("@container settings-cell px-5 py-4 sm:px-6 scroll-mt-24", className)}>
       {hasHeader && (
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">

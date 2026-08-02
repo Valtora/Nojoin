@@ -265,7 +265,7 @@ export default function SpeakerAssignmentPopover({
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed z-[var(--z-popover)] flex flex-col overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float animate-in fade-in zoom-in-95 duration-100"
+      className="@container fixed z-[var(--z-popover)] flex flex-col overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float animate-in fade-in zoom-in-95 duration-100"
       style={{
         top: position.top,
         left: position.left,
@@ -287,7 +287,10 @@ export default function SpeakerAssignmentPopover({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 border-b border-surface-divider bg-surface-inset p-2">
+      {/* Below 21rem the popover has been clamped to a narrow viewport and
+          "Whole transcript" no longer fits beside its twin, so the scope
+          buttons stack rather than truncate. */}
+      <div className="grid gap-1 @min-[21rem]:grid-cols-2 border-b border-surface-divider bg-surface-inset p-2">
         {scopeOptions.map(({ value, label, Icon }) => {
           const isSelected = selectedScope === value;
 

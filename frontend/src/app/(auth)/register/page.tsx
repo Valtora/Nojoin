@@ -132,7 +132,7 @@ function RegisterForm() {
                 id="register-username"
                 name="register-username"
                 type="text"
-                autoComplete="section-register username"
+                autoComplete="username"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
@@ -157,7 +157,7 @@ function RegisterForm() {
                 id="register-new-password"
                 name="register-new-password"
                 type="password"
-                autoComplete="section-register new-password"
+                autoComplete="new-password"
                 aria-describedby={error ? 'register-error' : undefined}
                 aria-invalid={Boolean(error)}
                 required
@@ -180,7 +180,7 @@ function RegisterForm() {
                 id="register-confirm-password"
                 name="register-confirm-password"
                 type="password"
-                autoComplete="section-register new-password"
+                autoComplete="new-password"
                 aria-describedby={error ? 'register-error' : undefined}
                 aria-invalid={Boolean(error)}
                 required

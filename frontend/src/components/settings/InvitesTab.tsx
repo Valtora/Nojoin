@@ -180,7 +180,7 @@ export default function InvitesTab() {
           message="Create an invitation to generate a registration link for a new user."
         />
       ) : (
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 @min-[33rem]:grid-cols-2 @min-[50rem]:grid-cols-3">
           {invitations.map((inv) => (
             <div
               key={inv.id}

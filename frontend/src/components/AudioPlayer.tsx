@@ -145,7 +145,7 @@ export default function AudioPlayer({
     !isDemo;
   const shellClassName = compact
     ? "w-full rounded-2xl border border-control-border bg-surface-card px-3 py-2.5 shadow-card"
-    : "w-full bg-surface-card border border-control-border rounded-lg p-2 md:p-3 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-card";
+    : "w-full bg-surface-card border border-control-border rounded-lg p-2 md:p-2.5 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shadow-card";
   const compactMockContent = (
     <div className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
       <div className="flex items-center justify-between gap-3">
