@@ -6,6 +6,7 @@ import type { RefObject } from "react";
 import AudioPlayer from "@/components/AudioPlayer";
 import RecordingTagEditor from "@/components/RecordingTagEditor";
 import LinkedEventPanel from "@/components/LinkedEventPanel";
+import FitText from "@/components/ui/FitText";
 import { getRecording } from "@/lib/api";
 import { Recording, RecordingStatus } from "@/types";
 
@@ -69,7 +70,7 @@ export default function RecordingHeader({
   );
 
   return (
-    <header className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-4 p-4 md:p-5 lg:p-6"}`}>
+    <header className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+4.75rem)]" : "space-y-3 p-4 md:p-5"}`}>
       {isMobile ? (
         <>
           <div className="rounded-2xl bg-surface-inset px-4 py-3">
@@ -95,11 +96,13 @@ export default function RecordingHeader({
                 />
               ) : (
                 <h1
-                  className="mt-1 flex cursor-pointer items-start gap-2 text-lg font-bold text-foreground hover:text-action-text group"
+                  className="mt-1 flex cursor-pointer items-start gap-2 font-bold leading-[1.2] text-foreground hover:text-action-text group"
                   onClick={() => setIsEditingTitle(true)}
                   title="Click to rename"
                 >
-                  <span className="min-w-0 break-words">{recording?.name}</span>
+                  <FitText maxRem={1.125} minRem={1} className="flex-1">
+                    {recording?.name ?? ""}
+                  </FitText>
                   <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
                 </h1>
               )}
@@ -113,8 +116,7 @@ export default function RecordingHeader({
           )}
         </>
       ) : (
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0 flex-1">
+        <div className="min-w-0">
             {isEditingTitle ? (
               <input
                 autoFocus
@@ -133,40 +135,39 @@ export default function RecordingHeader({
               />
             ) : (
               <h1
-                className="density-heading-section group mb-2 flex cursor-pointer items-start gap-2 text-xl font-bold text-foreground hover:text-action-text md:text-2xl"
+                className="group mb-2 flex cursor-pointer items-start gap-2 font-bold leading-[1.15] text-foreground hover:text-action-text"
                 onClick={() => setIsEditingTitle(true)}
                 title="Click to rename"
               >
-                <span className="min-w-0 break-words md:truncate">
-                  {recording?.name}
-                </span>
+                <FitText maxRem={1.5} minRem={1.0625} className="flex-1">
+                  {recording?.name ?? ""}
+                </FitText>
                 <Edit2 className="mt-1 h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-50" />
               </h1>
             )}
 
-            <div className="flex flex-col items-start gap-2">
-              <RecordingTagEditor
-                recordingId={recording.id}
-                tags={recording.tags || []}
-                onTagsUpdated={() => {
-                  getRecording(recording.id)
-                    .then(setRecording)
-                    .catch(console.error);
-                }}
-              />
-              <LinkedEventPanel
-                recordingId={recording.id}
-                linkedEvent={recording.calendar_event}
-                onLinkChanged={() => {
-                  getRecording(recording.id)
-                    .then(setRecording)
-                    .catch(console.error);
-                }}
-              />
-            </div>
+          {/* Tags and the calendar link share one wrapping row to keep the
+              header's fixed vertical cost to a single pill line. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <RecordingTagEditor
+              recordingId={recording.id}
+              tags={recording.tags || []}
+              onTagsUpdated={() => {
+                getRecording(recording.id)
+                  .then(setRecording)
+                  .catch(console.error);
+              }}
+            />
+            <LinkedEventPanel
+              recordingId={recording.id}
+              linkedEvent={recording.calendar_event}
+              onLinkChanged={() => {
+                getRecording(recording.id)
+                  .then(setRecording)
+                  .catch(console.error);
+              }}
+            />
           </div>
-
-
         </div>
       )}
 

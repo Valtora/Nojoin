@@ -36,7 +36,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
 
   return (
     <>
-      <div className={`flex flex-wrap items-center ${compact ? "gap-2" : "mb-4 gap-3"}`}>
+      <div className="flex flex-wrap items-center gap-2">
         {tags.map((tag) => {
           const color = getColorByKey(tag.color);
           const parentName = getParentName(tag.parent_id);
