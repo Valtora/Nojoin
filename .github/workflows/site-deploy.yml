@@ -1,0 +1,102 @@
+name: Site deploy
+
+# The marketing site deploys on four triggers: a change under site/ landing on
+# main, a published release (so the baked-in version and star count refresh),
+# a weekly schedule (same reason, without needing a release), and by hand.
+# There is deliberately no branch trigger: the workflow only ever deploys what
+# main contains, which is what makes reverting a commit a complete rollback.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+  release:
+    types: [published]
+  schedule:
+    # Monday 06:12 UTC. Off the hour to avoid the GitHub scheduled-job rush.
+    - cron: "12 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and a queued deploy supersedes a waiting one. Never
+# cancel a running deploy: wrangler uploads are not transactional enough to
+# kill halfway through.
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build the site
+        working-directory: site
+        # The token authenticates the build-time GitHub API calls (star count,
+        # latest release) once site/src/data/github.ts exists; both values fall
+        # back rather than failing the build, so this step must never depend on
+        # api.github.com being reachable.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: site
+        # Uses the wrangler version pinned in site/package-lock.json rather
+        # than a third-party deploy action.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm exec --no -- wrangler deploy
+
+  check-comparison-sources:
+    name: Comparison source check
+    # Weekly only, and deliberately not a dependency of the deploy job: a dead
+    # competitor URL should turn the run red and get noticed, not hand that
+    # competitor's web server a veto over our own scheduled deploy.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check comparison source URLs still resolve
+        run: |
+          set -euo pipefail
+          data=site/src/data/comparison.ts
+          if [ ! -f "$data" ]; then
+            echo "No comparison data yet ($data missing); nothing to check."
+            exit 0
+          fi
+          mapfile -t urls < <(grep -oE 'https://[^"'"'"' ]+' "$data" | sort -u)
+          echo "Checking ${#urls[@]} source URLs."
+          failed=0
+          for url in "${urls[@]}"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 30 \
+              -A "Mozilla/5.0 (compatible; nojoin-site-source-check)" "$url" || echo 000)
+            if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+              echo "ok   $code  $url"
+            else
+              echo "FAIL $code  $url"
+              failed=1
+            fi
+          done
+          exit "$failed"

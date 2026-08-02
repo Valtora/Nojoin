@@ -1,0 +1,4 @@
+/* P1 placeholder stylesheet. It exists so the Tailwind v4 compile path is
+   exercised by the very first deploy; P2 replaces this with the shared
+   tokens import and the site token families. */
+@import "tailwindcss";
