@@ -237,6 +237,10 @@ const SITE_PAIRINGS = [
   { label: "ghost button label on hover tint", fg: "action-on", bg: ["action", "btn-ghost-hover-bg"], min: AA_TEXT },
   { label: "closer focus vs fill", fg: "action-on", bg: ["action"], min: AA_NON_TEXT },
 
+  // The selective highlight: lead-register text on the flat action tint.
+  { label: "highlight text on tint", fg: "contrast-helper", bg: ["surface-page", "action-tint"], min: AA_TEXT },
+  { label: "highlight strong text on tint", fg: "foreground", bg: ["surface-page", "action-tint"], min: AA_TEXT },
+
   // Footer text sits directly on the page.
   { label: "footer text on page", fg: "contrast-icon-muted", bg: ["surface-page"], min: AA_TEXT },
   { label: "footer link hover on page", fg: "foreground", bg: ["surface-page"], min: AA_TEXT },

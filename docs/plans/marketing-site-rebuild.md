@@ -89,6 +89,61 @@ was decided by questioning first, so the pick is genuinely about register.
 | Positioning strip | Three columns: mic / globe / server Lucide icons in accent, 1.0625rem headings |
 | Closer CTAs | White-fill button with orange-700 label, plus a white-outline ghost |
 
+### Voice and copy, imported from the Vorkane brand docs (2026-08-02)
+
+The operator's other property, Vorkane, carries a mature set of writing rules in
+`/home/msadmin/vorkane/website/docs/` (VOICE.md, MESSAGING.md, DECISIONS.md, BRAND.md). The
+two brands are siblings, not twins: these are the rules that transfer, the ones that do not,
+and the devices adopted.
+
+**Transfers, applied to every page of copy:**
+
+- **Contract everything.** "It's", "can't", "won't". The refusal to contract is the
+  strongest machine-written tell.
+- **Vary sentence length deliberately.** A three-word sentence next to a thirty-word one.
+- **Numbers instead of adjectives, wherever a true number exists.** One compose file, one
+  daily ping, one setting, four steps, one click.
+- **The banned list, in full:** seamless, powerful, robust, enterprise-grade, best-in-class,
+  cutting-edge, unlock, empower, leverage, revolutionise, game-changing, AI-powered,
+  frictionless, turnkey, peace of mind, bank-grade, and every superlative implying
+  exclusivity (only, first, unique, unmatched). Unverifiable claims cost the credibility of
+  every checkable one.
+- **Name the actor; never a bare "it"** where two subjects are in play.
+- **Do not guess at the reader.** No "you probably", no assumptions about firm size or setup.
+- **Concede facts, not ground.** The comparison already does this (Otter's bot-free mode and
+  persistent speakers are stated plainly); keep the habit everywhere. Where a concession has
+  a counterpoint, the counterpoint gets made.
+- **Claims survive being checked, and comparisons carry their date.** Already built into
+  comparison.ts; this is also where Vorkane's stale-Drive-claim lesson came from.
+- **Plain labels beat clever ones.** "FAQ" beats "The awkward ones". A label may be evocative
+  only if its meaning is obvious in half a second.
+- **Parallel closers.** Paired elements end on matched short sentences.
+- **A word budget for the skim layer: 400–600 words of prose** across headlines, ledes,
+  labels. Devices and diagrams carry the rest.
+- **Whole jobs, not first drafts** as the framing for every feature example: each ends with
+  something genuinely delivered (the transcript attributed, the notes written, the task
+  filed), not a capability list.
+
+**Does not transfer, deliberately:**
+
+- **First person singular.** Vorkane is one person selling himself; Nojoin is a product with
+  the repo's own voice: plain, direct, second person, impersonal-imperative. "We/I" stays
+  out of the marketing copy entirely.
+- **Single committed theme.** Vorkane is light-with-a-toggle; Nojoin's dual
+  `prefers-color-scheme` decision stands.
+- **Question-form headings.** A Vorkane FAQ device; Nojoin's headings stay declarative,
+  matching the product's register.
+- **The zero-analytics posture.** Vorkane rejects even a beacon and reads visitors from edge
+  metrics. Nojoin's settled decision (Cloudflare Web Analytics, cookieless, the only script)
+  stands, but the edge-metrics-only alternative is recorded here as the fallback if the
+  beacon ever feels wrong against the privacy positioning.
+
+**Device adopted: the selective highlight.** One line per page, at most, carries a flat
+`--action-tint` mark behind the text (the token already exists and is gate-audited). If
+nothing on a page is punchy enough to deserve it, that is a finding about the page. The
+budget is one: the highlight and the orange closer are separate devices, but a page never
+gains a second highlight.
+
 Two risks were examined and accepted rather than mitigated:
 
 - Between P2 (gate repointed at the new tokens) and P9 (Jekyll deleted), the live Jekyll

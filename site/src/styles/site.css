@@ -99,6 +99,18 @@ button:focus-visible {
   color: var(--action-text);
 }
 
+/* The selective highlight, imported from the sibling brand's device set: one
+   line per page, at most, on a flat action tint. If nothing on a page earns
+   it, that is a finding about the page. */
+.hl {
+  background: var(--action-tint);
+  color: inherit;
+  padding: 0.05em 0.25em;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 .text-link {
   color: var(--action-text);
   font-weight: 600;
