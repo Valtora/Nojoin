@@ -343,9 +343,20 @@ site — it is a way to take the site down.** Fixing a bad deploy means rolling 
 not backwards. Re-enabling Pages is a repository settings change that no `git revert` can
 perform.
 
-Cloudflare Web Analytics is a `CF_BEACON_TOKEN` constant in `Base.astro`. The token is not a
-secret: it ships in the markup on every page and only identifies which site a beacon belongs
-to. Empty is supported and renders no beacon at all, which is what every local build does.
+Cloudflare Web Analytics is wired through `PUBLIC_CF_BEACON_TOKEN`, a build-time environment
+variable read in `Base.astro` and supplied by CI as a **repository variable, not a secret**.
+
+The value is the beacon `siteTag`. It is not an API token: it has no scopes, grants nothing,
+and ships in the markup of every page that uses Web Analytics, so anyone can read it from any
+such site. **A Cloudflare API token must never be used here** — an "Analytics Read" token is a
+real credential and putting one in a public repository is a leak that needs rotating.
+
+It comes from the environment rather than from source for cleanliness rather than secrecy. A
+build-time value is inlined into the HTML either way, so an environment variable hides
+nothing from anyone. What it does is keep the beacon out of local builds: a source constant
+would fire real page views from every `npm run build` and every preview tunnel, tagged with a
+throwaway `trycloudflare.com` hostname, straight into the live figures. Unset is a supported
+state and renders no beacon at all, which is what every local build should get.
 
 ## Maintenance
 

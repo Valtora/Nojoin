@@ -54,8 +54,15 @@ jobs:
         # latest release) once site/src/data/github.ts exists; both values fall
         # back rather than failing the build, so this step must never depend on
         # api.github.com being reachable.
+        #
+        # PUBLIC_CF_BEACON_TOKEN is the Cloudflare Web Analytics siteTag. It is a
+        # repository *variable*, not a secret: it grants nothing and is visible
+        # in the markup of every deployed page. It lives here rather than in the
+        # source so local builds and preview tunnels do not report into the live
+        # figures. Unset is fine -- the beacon then does not render.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLIC_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
         run: npm run build
 
       - name: Deploy to Cloudflare Workers

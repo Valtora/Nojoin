@@ -15,16 +15,20 @@ interface Props {
 const { title, description } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 
-// Cloudflare Web Analytics. The site token is not a secret -- it ships in the
-// markup on every page and identifies which site a beacon belongs to, nothing
-// more -- so it lives here rather than in a repository secret, and CI needs no
-// extra configuration to build with it.
+// Cloudflare Web Analytics. This is the beacon siteTag, not an API token: it
+// grants nothing, has no scopes, and ships in the markup of every page that
+// uses Web Analytics. Do not put a Cloudflare API token here.
 //
-// Empty is a supported state: the beacon simply does not render, which is what
-// every local build and every preview does. Cloudflare still reports
-// request-level analytics for the Worker either way; this only adds the
-// page-level view.
-const CF_BEACON_TOKEN = "";
+// It comes from the environment rather than from source, and the reason is
+// pollution rather than secrecy -- a build-time value is inlined into the HTML
+// either way, so an env var hides nothing. What it does do is keep the beacon
+// out of local builds. A source constant would fire real page views from every
+// `npm run build` and every preview tunnel, tagged with a throwaway hostname,
+// straight into the live figures.
+//
+// CI supplies it as a repository variable. Empty is a supported state and
+// renders no beacon at all, which is what every local build gets.
+const CF_BEACON_TOKEN = import.meta.env.PUBLIC_CF_BEACON_TOKEN ?? "";
 ---
 
 <!doctype html>
