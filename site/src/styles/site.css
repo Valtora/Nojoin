@@ -485,6 +485,86 @@ button:focus-visible {
   color: var(--code-punct);
 }
 
+/* ---- Comparison table ---- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--surface-card-border);
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--surface-card-shadow);
+  margin-top: 2.5rem;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 56rem;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 0.875rem 1rem;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.55;
+}
+
+.compare-table thead th {
+  color: var(--foreground);
+  font-weight: 600;
+  border-bottom: 1px solid var(--surface-divider);
+}
+
+.compare-table tbody th {
+  color: var(--foreground);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.compare-table td {
+  color: var(--contrast-muted);
+}
+
+.compare-table tbody tr:nth-child(even) {
+  background: var(--surface-inset);
+}
+
+.compare-table td:first-of-type {
+  color: var(--contrast-muted);
+}
+
+.compare-table .fn {
+  font-size: 0.6875rem;
+  vertical-align: super;
+  line-height: 1;
+}
+
+.footnotes {
+  margin-top: 2rem;
+  font-size: 0.8125rem;
+  color: var(--contrast-helper);
+}
+
+.footnotes ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.footnotes a {
+  color: var(--action-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.footnotes a:hover {
+  text-decoration: underline;
+}
+
 /* Comparison teaser and privacy band content are centred prose. */
 .centered {
   text-align: center;

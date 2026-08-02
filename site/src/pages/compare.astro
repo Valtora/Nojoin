@@ -1,22 +1,101 @@
 ---
-// P6 replaces this stub with the sourced comparison. It exists now so the
-// header and teaser links resolve while the site lives on workers.dev.
+// The comparison page. Every competitor cell in comparison.ts carries a
+// source URL and the date it was checked, rendered here as footnotes; a
+// claim that cannot be sourced does not appear. No pricing anywhere:
+// prices change without notice, and a stale price is the error people
+// screenshot.
 import Base from "../layouts/Base.astro";
+import { rows, products, type Cell } from "../data/comparison";
+
+// Footnote numbers are assigned in reading order: across each row, then down.
+const sourceIndex = new Map<string, number>();
+for (const row of rows) {
+  for (const product of products) {
+    const cell = row.cells[product.key];
+    if (cell.source && !sourceIndex.has(cell.source.url)) {
+      sourceIndex.set(cell.source.url, sourceIndex.size + 1);
+    }
+  }
+}
+const footnotes = [...sourceIndex.entries()].map(([url, n]) => {
+  let checked = "";
+  for (const row of rows) {
+    for (const product of products) {
+      const cell = row.cells[product.key];
+      if (cell.source?.url === url) checked = cell.source.checked;
+    }
+  }
+  return { n, url, checked };
+});
+
+const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : undefined);
 ---
 
 <Base
   title="Compare — Nojoin"
-  description="How Nojoin compares to Otter, Granola and Fireflies on capture, storage, self-hosting and model choice."
+  description="How Nojoin compares to Otter, Granola and Fireflies on capture, storage, self-hosting, licences and model choice, with every claim sourced and dated."
 >
-  <main class="section centered">
+  <main class="section">
     <div class="wrap">
-      <p class="eyebrow">Comparison</p>
-      <h1 class="heading-2">Nojoin next to Otter, Granola and Fireflies</h1>
-      <p class="lead">
-        The sourced comparison lands here with this pull request: capture method, storage,
-        self-hosting, licences and model choice, with a source URL and checked date on
-        every claim.
-      </p>
+      <div class="centered">
+        <p class="eyebrow">Comparison</p>
+        <h1 class="heading-2">Nojoin next to Otter, Granola and Fireflies</h1>
+        <p class="lead" style="max-width: 60ch; margin-inline: auto;">
+          The same axes for every product, answered from each vendor's own current
+          documentation. Every competitor claim carries a source and the date it was
+          checked; anything that could not be sourced is marked rather than guessed.
+        </p>
+      </div>
+
+      <div class="table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              {products.map((p) => <th scope="col">{p.name}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              rows.map((row) => (
+                <tr>
+                  <th scope="row">{row.label}</th>
+                  {products.map((p) => {
+                    const cell = row.cells[p.key];
+                    const n = fn(cell);
+                    return (
+                      <td>
+                        {cell.text}
+                        {n !== undefined && (
+                          <a class="fn" href={`#source-${n}`} aria-label={`Source ${n}`}>
+                            [{n}]
+                          </a>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footnotes">
+        <p>
+          Sources, each opened and read on the date shown. Nojoin's own claims cite its
+          repository documentation the same way.
+        </p>
+        <ol>
+          {
+            footnotes.map(({ n, url, checked }) => (
+              <li id={`source-${n}`}>
+                <a href={url}>{url}</a> (checked {checked})
+              </li>
+            ))
+          }
+        </ol>
+      </div>
     </div>
   </main>
 </Base>
