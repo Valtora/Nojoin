@@ -429,9 +429,21 @@ button:focus-visible {
   background-image: var(--hero-wash);
 }
 
+/* The headline is two sentences and the break belongs at the full stop.
+   text-wrap: balance optimises for even line lengths instead, which split it
+   mid-phrase as "...is easy. Agentic / meeting intelligence isn't." Each
+   sentence is its own block above the breakpoint so the break is structural;
+   below it they run together and wrap naturally, because two short blocks on a
+   phone would waste a line. */
 .hero .display {
-  max-width: 21ch;
+  max-width: 30ch;
   margin-inline: auto;
+}
+
+@media (min-width: 48rem) {
+  .hero .display span {
+    display: block;
+  }
 }
 
 .hero .lead {

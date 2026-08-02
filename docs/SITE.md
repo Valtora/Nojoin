@@ -89,13 +89,18 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   reach is the claim with no equivalent in the comparison, and it was a clause in a
   paragraph. The actor pills say "Agent", never a vendor name: Claude and Codex are both
   supported and the claim is about assistants generally.
-- **The headline is agent led**: "Meeting notes your AI assistant can actually change".
-  This reverses the earlier no-bot headline, deliberately. Not joining the call is a strong
-  feature and three competitors match some version of it; an assistant that can rewrite the
-  meeting record on a server you own is the thing none of them documents. No-bot did not
-  disappear, it moved to the strip directly under the hero, where it is the first of three
-  claims. The subhead carries no-bot, self-hosting and the uncapped point, in that order,
-  so a reader who has never heard of MCP still gets a reason to care in one sentence.
+- **The headline concedes the commodity and claims the hard part**: "Transcription is
+  easy. Agentic meeting intelligence isn't." This reverses the earlier no-bot headline
+  deliberately, and then reverses its first agent-led replacement too. Not joining the call
+  is a strong feature that three competitors match some version of, and transcription is a
+  solved problem that nobody wins on. What is not solved is being the bridge between
+  whatever agent someone already uses and the rest of their stack, which is what Nojoin was
+  built to be and what none of the three documents. The headline says so by conceding the
+  easy half out loud, which is more convincing than claiming the hard half on its own.
+  "Agentic" is jargon and stays anyway: on the landing page it flatters a reader who knows
+  the word, and the subhead immediately spells it out in plain terms for one who does not.
+  The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
+  No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
 - **The agents section carries no screenshot, by decision.** Every other feature section on
   the landing page is led by its shot. That capability happens in Claude's or Codex's
   window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
@@ -255,6 +260,63 @@ to keep one booking type alive — under the page's only call to action, with no
 it if the build broke. `hello@nojoin.co.uk` cannot go down. It is a Proton alias on the
 custom domain rather than the inbox itself, because an address in public markup gets scraped
 and an alias can be replaced without moving the mailbox.
+
+## Working on the site, and previewing it
+
+Everything under `site/` runs in an **nvm-sourced shell**. A non-interactive shell falls back
+to the distro Node and npm, which has silently rewritten `package-lock.json` before — it
+strips `libc` fields and downgrades entries CI then rejects.
+
+```bash
+. ~/.nvm/nvm.sh          # Node 26 / npm 11, matching CI and the deploy job
+cd site
+npm ci                   # never `npm install`, for the reason above
+npm run build            # writes site/dist
+npm run serve            # builds, then serves the build on port 4322
+```
+
+`npm run dev` exists but preview the **built** output before asking anyone to look: the dev
+server resolves imports differently and has shipped differences before.
+
+### Sharing a preview
+
+The site owner reviews over SSH from Windows and cannot reliably bind local ports, so a
+Cloudflare quick tunnel beats `ssh -L`. It needs no account, no DNS record and no token:
+
+```bash
+~/.local/bin/cloudflared tunnel --url http://127.0.0.1:4322
+```
+
+It prints a single-use `https://<random>.trycloudflare.com` URL. `astro.config.mjs` already
+allows `.trycloudflare.com` under `vite.preview.allowedHosts`; without that entry the preview
+server answers every tunnelled request with a host-check error.
+
+**There is a long-running `cloudflared` container on the development host that serves live
+production traffic. Never stop, restart or reconfigure it.** It is `docker compose` service
+`cloudflared` in the homelab core stack, running as uid 65532. A quick tunnel is a separate
+user process and touching one has no effect on the other — but `pkill -f cloudflared` kills
+both, and on this host `pkill` patterns also match the shell wrapper that invoked them. Kill
+preview tunnels by PID, or by matching the binary path `~/.local/bin/cloudflared`, and tidy
+them up when the review is done rather than leaving a fleet running.
+
+### What a static preview cannot show you
+
+`/docs/*` redirects do not fire. They live in `site/worker/index.js` and only run on a real
+Workers deployment, so a 404 on `/docs/TELEMETRY` in local preview is expected rather than a
+regression. Verify that contract on the workers.dev URL after a deploy.
+
+### Checks worth running before asking for review
+
+- `node frontend/scripts/check-contrast.mjs` — audits the site as two of its four themes.
+  It only checks pairings listed in `SITE_PAIRINGS`, so **new colour-on-colour furniture is
+  invisible to it until someone adds the pairing**. Adding one is part of adding the
+  furniture, not a follow-up.
+- Horizontal overflow at 360px and 1920px, in both themes, on every page: compare
+  `document.documentElement.scrollWidth` against `window.innerWidth`. Two overflow bugs have
+  shipped from this repository and both were invisible at desktop width. An element with its
+  own `overflow-x: auto` exceeding its box is fine — a code block and the comparison tables
+  both do, deliberately. The document moving is not.
+- `python3 scripts/validate_docs.py` and `git diff --check`.
 
 ## Maintenance
 
