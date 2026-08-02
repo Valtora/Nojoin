@@ -237,29 +237,30 @@ export const rows: Row[] = [
     },
   },
   {
-    // All four ship an MCP server, so the distinction is not that one exists.
-    // It is where it runs and what it reaches: three of them are endpoints on
-    // the vendor's own cloud, and Nojoin's is served by the deployment the
-    // recordings already sit on. Read-versus-write is not the line either --
-    // Fireflies documents five tools that change data -- so the cells say what
-    // each one actually does rather than implying a gap that isn't there.
+    // All four ship an MCP server, so "we have one" is not the claim. The line
+    // that survives sourcing is what an assistant can actually do once it is
+    // connected: three of them read the meeting and act elsewhere, and Nojoin's
+    // acts on the meeting itself. Every cell states what that vendor documents
+    // and stops there. In particular no cell asserts that a competitor *cannot*
+    // write back -- that is an unsourced negative, and the gap is visible from
+    // the positives alone.
     key: "agents",
-    label: "Agent access to your meetings",
+    label: "What an assistant can do with your meetings",
     cells: {
       nojoin: {
-        text: "An MCP server on your own deployment, authorised per user. Read tools cover the whole library; write tools cover recoverable changes, and permanent deletion isn't reachable through it at all.",
+        text: "Thirty tools on your own deployment, authorised per user. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks that came out of the meeting, and keeps your People library current.",
         source: MCP,
       },
       otter: {
-        text: "An MCP server on Otter's cloud, part of Otter for Enterprise. Searches transcripts across time, analyses themes and generates content from them.",
-        source: src("https://otter.ai/blog/otter-for-enterprise-connect-ai-to-ai-with-otters-mcp"),
+        text: "Reads Otter's transcripts to search across time, analyse themes and generate content. Writes outward into Google Docs, Slides, Jira, Salesforce and Slack. Part of Otter for Enterprise.",
+        source: src("https://otter.ai/blog/otter-mcp-your-meetings-now-power-every-tool-you-use"),
       },
       granola: {
-        text: "An MCP server on Granola's cloud for paid plans, reading notes and transcripts. On Enterprise it's early-access beta and stays off until an admin enables it.",
+        text: "Reads notes and transcripts on paid plans: list meetings, read a meeting, search the history. On Enterprise it's early-access beta and stays off until an admin enables it.",
         source: src("https://www.granola.ai/blog/granola-mcp"),
       },
       fireflies: {
-        text: "An MCP server at api.fireflies.ai: 14 tools that read, and 5 that change data — share a meeting, revoke access, rename, move, and create a soundbite.",
+        text: "Nineteen tools: 14 read, and 5 change something about the filing — rename a meeting, move it to a channel, share it, revoke that share, cut a soundbite.",
         source: src("https://docs.fireflies.ai/mcp-tools/overview"),
       },
     },

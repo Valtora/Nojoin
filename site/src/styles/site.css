@@ -738,6 +738,46 @@ button:focus-visible {
   text-decoration: underline;
 }
 
+/* The agents section's verb list. It stands in for a screenshot: the capability
+   it describes happens in Claude's or Codex's window, and the frame chrome reads
+   nojoin.your-server.net, so there is no honest shot to take. The dot is the
+   action colour on the page surface, a pair the contrast gate already checks as
+   "primary CTA fill vs page", so this introduces no new SITE_PAIRINGS entry. */
+.verbs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 2.5rem;
+  margin-top: 1.75rem;
+  max-width: 52rem;
+}
+
+/* Grid rather than flex on purpose: flex would make the bullet and every inline
+   run inside the item separate flex items, which is how an inline <code> ends up
+   with a column of its own and breaks mid-token elsewhere on this site. */
+.verbs li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.625rem;
+  align-items: baseline;
+  color: var(--contrast-muted);
+  line-height: 1.6;
+}
+
+.verbs li::before {
+  content: "";
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--action);
+  translate: 0 -0.15em;
+}
+
+@media (max-width: 40rem) {
+  .verbs {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* The managed service's price block. Deliberately built from the card surface
    sitting on the page band, because the contrast gate's existing "heading on
    card band" and "card border vs page" pairings already cover that pair. A

@@ -72,6 +72,9 @@ Known upstream issue: some Codex Desktop builds (observed on 0.125.0-alpha.3) co
 
 ## Available Tools
 
+Thirty tools. Twelve read and eighteen write; the table below pairs a few of them onto one
+row where they are opposites of each other, so it has fewer rows than there are tools.
+
 | Tool | Scope | Description |
 | --- | --- | --- |
 | `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the canonical `transcript_revision` cursor, and, for searches, a best-effort `match_field` hint. |
