@@ -1,5 +1,8 @@
 ---
 import Mark from "./Mark.astro";
+import { getStarCount, formatStarCount } from "../data/github";
+
+const stars = await getStarCount();
 ---
 
 <header class="site-head">
@@ -18,6 +21,7 @@ import Mark from "./Mark.astro";
           </path>
         </svg>
         Star on GitHub
+        {stars !== null && <span class="count">{formatStarCount(stars)}</span>}
       </a>
     </nav>
   </div>

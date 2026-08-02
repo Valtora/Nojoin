@@ -321,6 +321,195 @@ button:focus-visible {
   font-size: 0.8125rem;
 }
 
+/* ---- Landing sections ---- */
+
+.hero {
+  padding-block: var(--hero-pad) calc(var(--hero-pad) * 0.85);
+  text-align: center;
+}
+
+.hero .display {
+  max-width: 21ch;
+  margin-inline: auto;
+}
+
+.hero .lead {
+  max-width: 52ch;
+  margin: 1.375rem auto 0;
+}
+
+.ctas {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+
+.hero-shot {
+  margin-top: calc(var(--hero-pad) * 0.6);
+}
+
+.strip {
+  padding-block: calc(var(--section-pad) * 0.85);
+}
+
+.strip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+}
+
+.strip-item svg {
+  width: 1.375rem;
+  height: 1.375rem;
+  color: var(--action-text);
+}
+
+.strip-item h2 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 0.875rem;
+}
+
+.strip-item p {
+  font-size: 0.90625rem;
+  color: var(--contrast-helper);
+  line-height: 1.6;
+  margin-top: 0.5rem;
+  max-width: 36ch;
+}
+
+/* Feature rows: text and shot side by side, alternating sides down the page.
+   The shot sits left by default; data-side="right" flips it. */
+.feature {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.feature > .frame {
+  order: -1;
+}
+
+.feature[data-side="right"] > .frame {
+  order: 1;
+}
+
+.feature .heading-2 {
+  margin-top: 0.625rem;
+}
+
+.feature p {
+  font-size: 0.96875rem;
+  color: var(--contrast-helper);
+  line-height: 1.65;
+  margin-top: 0.875rem;
+  max-width: 46ch;
+}
+
+.feature .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.125rem;
+  font-size: 0.90625rem;
+}
+
+/* Quick start: four steps and one highlighted command block. */
+.qs {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: center;
+}
+
+.qs-steps {
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.qs-steps li {
+  counter-increment: step;
+  display: flex;
+  gap: 0.875rem;
+  align-items: baseline;
+  font-size: 0.96875rem;
+  color: var(--contrast-helper);
+  line-height: 1.6;
+}
+
+.qs-steps li::before {
+  content: counter(step);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--action-text);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 8px;
+  padding: 0.1rem 0.55rem;
+  flex: none;
+}
+
+.code-block {
+  background: var(--surface-inset);
+  border: 1px solid var(--surface-divider);
+  border-radius: 8px;
+  padding: 1.125rem 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--code-fg);
+  overflow-x: auto;
+}
+
+.code-block .c-com {
+  color: var(--code-comment);
+}
+.code-block .c-kw {
+  color: var(--code-keyword);
+}
+.code-block .c-str {
+  color: var(--code-string);
+}
+.code-block .c-name {
+  color: var(--code-name);
+}
+.code-block .c-p {
+  color: var(--code-punct);
+}
+
+/* Comparison teaser and privacy band content are centred prose. */
+.centered {
+  text-align: center;
+}
+
+.centered .lead {
+  max-width: 56ch;
+  margin: 1rem auto 0;
+}
+
+@media (max-width: 860px) {
+  .strip-grid {
+    grid-template-columns: 1fr;
+  }
+  .feature,
+  .qs {
+    grid-template-columns: 1fr;
+  }
+  /* Stacked, the copy reads first regardless of which side the shot took. */
+  .feature > .frame,
+  .feature[data-side="right"] > .frame {
+    order: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

@@ -1,0 +1,29 @@
+---
+// A screenshot in the browser-chrome frame, swapping light and dark sources
+// on prefers-color-scheme. Only the matching source downloads. P7 replaces
+// the placeholder SVGs with real captures under the same names.
+interface Props {
+  name: string;
+  alt: string;
+  eager?: boolean;
+}
+
+const { name, alt, eager = false } = Astro.props;
+---
+
+<div class="frame">
+  <div class="frame-bar" aria-hidden="true">
+    <i></i><i></i><i></i>
+    <span class="frame-url">nojoin.your-server.net</span>
+  </div>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset={`/images/${name}-dark.svg`} />
+    <img
+      src={`/images/${name}-light.svg`}
+      alt={alt}
+      width="1440"
+      height="900"
+      loading={eager ? "eager" : "lazy"}
+    />
+  </picture>
+</div>

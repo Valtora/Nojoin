@@ -1,20 +1,210 @@
 ---
-// P5 replaces this placeholder main with the landing sections. The chrome
-// around it (Base, Header, Footer) is the real P2 foundation.
+// The landing page. Every claim here is traceable to README.md or docs/*;
+// nothing is invented for marketing effect. Screenshots are placeholder
+// frames until P7 drops the real captures in under the same names.
 import Base from "../layouts/Base.astro";
+import Shot from "../components/Shot.astro";
+
+const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
 ---
 
 <Base
-  title="Nojoin"
-  description="Self-hosted meeting transcription and notes. No bot joins the call; everything is processed on your own server."
+  title="Nojoin — self-hosted meeting transcription and notes"
+  description="Meeting transcripts, speaker attribution, AI notes and search, processed on your own server. No bot joins the call, and nothing is handed to a SaaS."
 >
-  <main class="section">
-    <div class="wrap" style="text-align: center;">
-      <h1 class="display">Meeting notes, with no bot in the call</h1>
-      <p class="lead" style="max-width: 52ch; margin: 1.375rem auto 0;">
-        The landing page lands here in this pull request. This build proves the design
-        foundation: shared tokens, both themes, and the site chrome.
-      </p>
-    </div>
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <h1 class="display">Meeting notes, with no bot in the call</h1>
+        <p class="lead">
+          Nojoin captures the call straight from your browser and processes everything on your
+          own server: transcripts, speaker attribution, AI notes and search, without handing
+          your audio to a SaaS.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-primary" href="#quick-start">Get started</a>
+          <a class="btn btn-secondary" href="https://github.com/Valtora/Nojoin">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--action-text)">
+              <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path>
+            </svg>
+            Star on GitHub
+          </a>
+        </div>
+        <div class="hero-shot">
+          <Shot name="dashboard" alt="The Nojoin dashboard: recordings, upcoming meetings and search" eager />
+        </div>
+      </div>
+    </section>
+
+    <section class="strip" aria-label="What makes Nojoin different">
+      <div class="wrap">
+        <div class="strip-grid">
+          <div class="strip-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="22"></line>
+            </svg>
+            <h2>No bot joins the call</h2>
+            <p>Capture happens in your browser tab, so nothing ever sits in the participant list.</p>
+          </div>
+          <div class="strip-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+              <path d="M2 12h20"></path>
+            </svg>
+            <h2>Works with any platform</h2>
+            <p>Google Meet, Microsoft Teams and Zoom, with no integration to install and no meeting links to hand over.</p>
+          </div>
+          <div class="strip-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="20" height="8" x="2" y="2" rx="2"></rect>
+              <rect width="20" height="8" x="2" y="14" rx="2"></rect>
+              <line x1="6" x2="6.01" y1="6" y2="6"></line>
+              <line x1="6" x2="6.01" y1="18" y2="18"></line>
+            </svg>
+            <h2>Runs on your hardware</h2>
+            <p>Recordings, transcripts and models stay on a server you control, with optional fully local AI through Ollama.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <div class="feature">
+          <Shot name="edge" alt="Meeting Edge suggesting questions and flagging missed points during a live meeting" />
+          <div>
+            <p class="eyebrow">Meeting Edge</p>
+            <h2 class="heading-2">Guidance while the meeting is still happening</h2>
+            <p>
+              Live in-meeting help with questions worth asking, points you have missed, and
+              concepts explained as they come up, grounded in what has been said so far.
+            </p>
+            <a class="text-link" href={`${docs}/USAGE.md`}>How it works in practice →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="feature" data-side="right">
+          <Shot name="transcript" alt="A diarised transcript with named speakers and timestamps" />
+          <div>
+            <p class="eyebrow">Transcripts</p>
+            <h2 class="heading-2">Every word, attributed to the right person</h2>
+            <p>
+              Built-in transcription with speaker attribution, backed by a global speaker
+              library: voiceprints match the people you have named across every future
+              meeting, and corrections take one click.
+            </p>
+            <a class="text-link" href={`${docs}/USAGE.md`}>Speakers and voiceprints →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <div class="feature">
+          <Shot name="documents" alt="Meeting Chat answering with citations from the transcript and an uploaded document" />
+          <div>
+            <p class="eyebrow">Documents and chat</p>
+            <h2 class="heading-2">Ask the meeting, and the papers around it</h2>
+            <p>
+              Meeting Chat is grounded in the transcript, the notes and the documents you
+              attach, and search spans recordings, notes and documents in one query.
+            </p>
+            <a class="text-link" href={`${docs}/USAGE.md`}>Search and Meeting Chat →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="feature" data-side="right">
+          <Shot name="calendar" alt="The dashboard calendar with synced meetings and their recordings" />
+          <div>
+            <p class="eyebrow">Calendar</p>
+            <h2 class="heading-2">Meetings arrive with their context</h2>
+            <p>
+              Google and Outlook calendar sync puts each meeting next to its recording, notes
+              and tasks, so the dashboard reads as your week rather than as a file list.
+            </p>
+            <a class="text-link" href={`${docs}/CALENDAR.md`}>Calendar sync →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="quick-start">
+      <div class="wrap">
+        <div class="qs">
+          <div>
+            <p class="eyebrow">Quick start</p>
+            <h2 class="heading-2">Running on your server tonight</h2>
+            <ol class="qs-steps">
+              <li>Clone the repository.</li>
+              <li>Create your deployment files from the tracked examples.</li>
+              <li>Set <code>FIRST_RUN_PASSWORD</code> and <code>DATA_ENCRYPTION_KEY</code> in <code>.env</code>.</li>
+              <li>Start it, then finish first-run setup at <code>/setup</code>.</li>
+            </ol>
+            <a class="text-link" href={`${docs}/GETTING_STARTED.md`} style="display: inline-flex; margin-top: 1.25rem;">
+              The full path, step by step →
+            </a>
+          </div>
+          <pre class="code-block"><code><span class="c-kw">git</span> clone <span class="c-str">https://github.com/Valtora/Nojoin</span>
+<span class="c-kw">cd</span> Nojoin
+<span class="c-kw">cp</span> docker-compose.example.yml docker-compose.yml
+<span class="c-kw">cp</span> .env.example .env
+<span class="c-com"># set FIRST_RUN_PASSWORD and DATA_ENCRYPTION_KEY</span>
+<span class="c-kw">docker</span> <span class="c-name">compose</span> up <span class="c-p">-d</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section centered" aria-label="Privacy">
+      <div class="wrap">
+        <p class="eyebrow">Privacy</p>
+        <h2 class="heading-2">Your meetings never leave your machines</h2>
+        <p class="lead">
+          Self-hosted and open source under AGPLv3. Bring your own AI keys, or run fully
+          local inference with Ollama. Anonymous telemetry is one daily ping, and it turns
+          off in a single setting.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-secondary" href={`${docs}/TELEMETRY.md`}>Exactly what telemetry sends</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band centered" aria-label="Comparison">
+      <div class="wrap">
+        <h2 class="heading-2">How it compares</h2>
+        <p class="lead">
+          Otter, Granola and Fireflies, on the axes that matter for ownership and privacy,
+          with every claim sourced and dated.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-secondary" href="/compare/">See the comparison</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="closer">
+      <div class="wrap">
+        <h2 class="heading-2">Your meetings, on your own server, tonight</h2>
+        <p style="font-size: 1rem; margin-top: 0.75rem;">
+          One compose file, any supported browser, no bot. Free and open source under AGPLv3.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-inverse" href="#quick-start">Get started</a>
+          <a class="btn btn-ghost" href="https://github.com/Valtora/Nojoin">Star on GitHub</a>
+        </div>
+      </div>
+    </section>
   </main>
 </Base>
