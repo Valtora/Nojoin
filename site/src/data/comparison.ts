@@ -392,6 +392,20 @@ export const summaryRows: SummaryRow[] = [
     },
   },
   {
+    // Fireflies earns a partial rather than a no: five of its tools genuinely
+    // change something, they just change the filing rather than the record.
+    // Otter writes too, but outward into other products, so on this axis --
+    // what happens to the meeting itself -- it is a no.
+    key: "agents",
+    label: "An assistant can change the record, not just read it",
+    cells: {
+      nojoin: yes("Thirty tools, on your server"),
+      otter: no("Reads Otter, writes elsewhere"),
+      granola: no("Reads notes and transcripts"),
+      fireflies: partial("Renames, moves, shares"),
+    },
+  },
+  {
     key: "browser",
     label: "Capture without a desktop app",
     cells: {

@@ -223,7 +223,15 @@ button:focus-visible {
 
 /* ---- Site chrome ---- */
 
+/* Sticky, so the nav and its call to action stay reachable down a long page.
+   A solid fill rather than a blurred scrim: the flat canon rules out glass, and
+   backdrop-filter over a page this text-heavy costs a repaint on every scroll
+   frame for an effect the design does not want anyway. */
 .site-head {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--surface-page);
   border-bottom: 1px solid var(--surface-divider);
 }
 
@@ -607,14 +615,6 @@ button:focus-visible {
 
 .glance-heading {
   margin-top: 3.5rem;
-}
-
-.glance-caption {
-  caption-side: top;
-  text-align: left;
-  padding: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--contrast-muted);
 }
 
 /* Narrower than the detailed table: these cells are a mark and a few words, so

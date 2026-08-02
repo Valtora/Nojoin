@@ -88,8 +88,9 @@ first person singular; Nojoin is a product and never says "I" or "we" in marketi
 
 **One page is exempt: `/managed/`.** What it sells is not the product but one named person's
 time, and a service provided personally cannot honestly describe itself as "it". That page
-writes in the first person singular, names Tay outright, and says so in its own
-first paragraph. The exception is scoped to that page and does not travel: the landing
+writes in the first person singular, names Tay outright, and says so in its own first
+paragraph. The full legal name stays off the site and out of the repository by decision.
+The exception is scoped to that page and does not travel: the landing
 band that points at it stays in the product's voice and refers to "Nojoin's author" in the
 third person, so a visitor meets one narrator per page rather than two per scroll. "We"
 stays banned everywhere, including there — one person is an "I", never a "we", and the

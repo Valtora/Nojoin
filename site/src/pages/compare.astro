@@ -52,11 +52,10 @@ const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : und
 
       <h2 class="heading-3 glance-heading">At a glance</h2>
       <div class="table-wrap">
-        <table class="compare-table glance-table">
-          <caption class="glance-caption">
-            The short form of the detailed comparison below, which carries the source and
-            the date checked for every claim.
-          </caption>
+        {/* aria-label rather than a visible <caption>: the table still needs an
+            accessible name, but the sentence explaining it duplicated the heading
+            above and the footnote block below. */}
+        <table class="compare-table glance-table" aria-label="At a glance comparison">
           <thead>
             <tr>
               <th scope="col"></th>
