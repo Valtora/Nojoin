@@ -190,7 +190,7 @@ export default function AiRoutingSection({
         <div
           role="radiogroup"
           aria-label="AI routing"
-          className="grid gap-3 sm:grid-cols-2"
+          className="grid gap-3 @min-[36rem]:grid-cols-2"
         >
           <RoutingCard
             selected={!isCli}
@@ -233,7 +233,7 @@ export default function AiRoutingSection({
               </SettingsCallout>
             )}
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 @min-[44rem]:grid-cols-2">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-contrast-muted">

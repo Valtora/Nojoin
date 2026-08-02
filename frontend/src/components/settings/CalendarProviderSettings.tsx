@@ -184,7 +184,10 @@ export default function CalendarProviderSettings() {
           </div>
         </SettingsBlock>
       ) : (
-        <SettingsBlock contentClassName="grid gap-4 lg:grid-cols-2">
+        // Two provider columns only once each gets ~26rem; under the settings
+        // page cap the card stays single-column, deliberately: the old lg
+        // viewport variant split a ~45rem block at every desktop width.
+        <SettingsBlock contentClassName="grid gap-4 @min-[54rem]:grid-cols-2">
           {providers.map((provider) => {
             const form = forms[provider.provider];
             const isSaving = savingProvider === provider.provider;

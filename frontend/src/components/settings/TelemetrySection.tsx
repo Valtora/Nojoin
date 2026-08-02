@@ -134,7 +134,7 @@ export default function TelemetrySection() {
             ? "A ping is sent once a day."
             : "Nothing is sent."
         }
-        controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+        controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
       >
         <Switch
           checked={status.enabled}
@@ -170,7 +170,7 @@ export default function TelemetrySection() {
       </SettingsBlock>
 
       <SettingsBlock>
-        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <dl className="grid gap-3 text-sm @min-[33rem]:grid-cols-2">
           <div>
             <dt className="text-contrast-helper">Install ID</dt>
             <dd className="font-mono text-xs break-all text-foreground">
@@ -183,7 +183,7 @@ export default function TelemetrySection() {
               {formatTimestamp(status.last_sent_at)}
             </dd>
           </div>
-          <div className="sm:col-span-2">
+          <div className="@min-[33rem]:col-span-2">
             <dt className="text-contrast-helper">Endpoint</dt>
             <dd className="font-mono text-xs break-all text-foreground">
               {status.endpoint}

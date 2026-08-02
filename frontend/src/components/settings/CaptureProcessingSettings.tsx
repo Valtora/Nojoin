@@ -28,7 +28,7 @@ export default function CaptureProcessingSettings() {
   );
   const resetWarnings = useAudioWarningStore((state) => state.resetWarnings);
 
-  const toggleControlClass = "sm:min-w-0 sm:flex sm:justify-end";
+  const toggleControlClass = "@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end";
 
   return (
     <>
@@ -101,7 +101,7 @@ export default function CaptureProcessingSettings() {
               ? "Currently suppressed. Reset them to see the prompts again."
               : "Currently enabled."
           }
-          controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+          controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
         >
           <button
             type="button"

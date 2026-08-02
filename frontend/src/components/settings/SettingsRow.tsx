@@ -11,11 +11,6 @@ interface SettingsRowProps {
   icon?: ReactNode;
   /** Trailing badge next to the label, for status or scope. */
   badge?: ReactNode;
-  /**
-   * Stack the control beneath the label instead of beside it. For controls that
-   * need the full width: textareas, editors, multi-line pickers.
-   */
-  stacked?: boolean;
   className?: string;
   controlClassName?: string;
   children?: ReactNode;
@@ -26,6 +21,11 @@ interface SettingsRowProps {
  * control on the right, hairline separated from its neighbours by the parent
  * card. It draws no border and no background of its own, which is what keeps a
  * page to two surface levels.
+ *
+ * The row is its own container: rows land inside provider tiles and grid
+ * columns whose width the viewport cannot see, so the beside-layout keys off
+ * the row's own width. Below the threshold the row stacks, which is also the
+ * phone layout, so narrow columns and small screens share one mechanism.
  */
 export default function SettingsRow({
   id,
@@ -33,7 +33,6 @@ export default function SettingsRow({
   description,
   icon,
   badge,
-  stacked = false,
   className,
   controlClassName,
   children,
@@ -41,39 +40,41 @@ export default function SettingsRow({
   return (
     <div
       id={id}
+      // Padding stays on the viewport scale: it must line up with the card
+      // gutter, which globals.css steps at the same sm breakpoint.
       className={cn(
-        "settings-cell px-5 py-4 sm:px-6",
-        stacked
-          ? "space-y-3"
-          : "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6",
-        "scroll-mt-24",
+        "@container settings-cell px-5 py-4 sm:px-6 scroll-mt-24",
         className,
       )}
     >
-      <div className={cn("min-w-0", !stacked && "sm:max-w-md")}>
-        <div className="flex flex-wrap items-center gap-2">
-          {icon}
-          <span className="text-sm font-medium text-foreground">
-            {label}
-          </span>
-          {badge}
+      {/* 26rem = the control's 14rem floor + the 1.5rem gap + at least
+          10.5rem for the label before the two sit side by side. */}
+      <div className="flex flex-col gap-3 @min-[26rem]:flex-row @min-[26rem]:items-start @min-[26rem]:justify-between @min-[26rem]:gap-6">
+        <div className="min-w-0 @min-[26rem]:max-w-md">
+          <div className="flex flex-wrap items-center gap-2">
+            {icon}
+            <span className="text-sm font-medium text-foreground">
+              {label}
+            </span>
+            {badge}
+          </div>
+
+          {description && (
+            <p className="mt-1 text-xs leading-5 contrast-helper">{description}</p>
+          )}
         </div>
 
-        {description && (
-          <p className="mt-1 text-xs leading-5 contrast-helper">{description}</p>
+        {children && (
+          <div
+            className={cn(
+              "w-full shrink-0 @min-[26rem]:w-auto @min-[26rem]:min-w-56 @min-[26rem]:max-w-sm",
+              controlClassName,
+            )}
+          >
+            {children}
+          </div>
         )}
       </div>
-
-      {children && (
-        <div
-          className={cn(
-            stacked ? "w-full" : "w-full shrink-0 sm:w-auto sm:min-w-56 sm:max-w-sm",
-            controlClassName,
-          )}
-        >
-          {children}
-        </div>
-      )}
     </div>
   );
 }

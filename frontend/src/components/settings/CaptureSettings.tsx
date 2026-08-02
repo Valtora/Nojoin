@@ -433,7 +433,7 @@ export default function CaptureSettings() {
         label="Automatic levels"
         description="Nojoin balances sources while recording. The sliders above set the baseline mix it starts from."
         icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-        controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+        controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
       >
         <SettingsStatusBadge tone="success">
           Enabled with manual baseline
@@ -465,7 +465,7 @@ export default function CaptureSettings() {
         inset
         contentClassName="space-y-4"
       >
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 @min-[35rem]:grid-cols-2">
           <MeterBar label="Raw microphone" value={previewRawLevel} tone="emerald" />
           <MeterBar
             label="After microphone gain"

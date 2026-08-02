@@ -57,7 +57,9 @@ export default function SettingsCard({
         {headerAside && <div className="shrink-0">{headerAside}</div>}
       </div>
 
-      <div className={cn("settings-card-body border-t settings-divider", contentClassName)}>
+      {/* The body is a container so grids placed directly in a card, outside
+          any block, can query the card's width rather than the viewport's. */}
+      <div className={cn("@container settings-card-body border-t settings-divider", contentClassName)}>
         {children}
       </div>
     </section>

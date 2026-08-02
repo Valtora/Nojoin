@@ -323,7 +323,7 @@ export default function CalendarConnectionsSettings() {
                     ? `You will be redirected to ${PROVIDER_LABELS[provider.provider]} to sign in and approve access.`
                     : "Not configured by an administrator yet."
                 }
-                controlClassName="sm:min-w-0 sm:flex sm:justify-end"
+                controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
               >
                 <button
                   type="button"
@@ -423,17 +423,17 @@ export default function CalendarConnectionsSettings() {
                       </div>
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2 @min-[35rem]:grid-cols-2">
                       {connection.calendars.map((calendar) => (
                         <div
                           key={calendar.id}
-                          className={`rounded-xl border px-4 py-4 transition-all ${
+                          className={`@container rounded-xl border px-4 py-4 transition-all ${
                             calendar.is_selected
                               ? "border-action-border bg-action-tint shadow-card hover:border-action-border hover:bg-action-tint"
                               : "border-surface-border bg-surface-card hover:border-action-border hover:bg-action-tint"
                           }`}
                         >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex flex-col gap-3 @min-[24rem]:flex-row @min-[24rem]:items-start @min-[24rem]:justify-between">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 text-foreground">
                                 <span className="truncate text-sm font-semibold">
@@ -453,7 +453,7 @@ export default function CalendarConnectionsSettings() {
                               )}
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                            <div className="flex flex-wrap items-center gap-2 @min-[24rem]:shrink-0">
                               {busyKey === `colour:${calendar.id}` ? (
                                 <div className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-helper">
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
