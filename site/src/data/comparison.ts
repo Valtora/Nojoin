@@ -248,7 +248,7 @@ export const rows: Row[] = [
     label: "What an assistant can do with your meetings",
     cells: {
       nojoin: {
-        text: "Thirty tools on your own deployment, authorised per user. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks that came out of the meeting, and keeps your People library current.",
+        text: "Thirty tools on your own deployment, authorised per user and on by default. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks, and syncs your People library with a CRM it's separately connected to — with no CRM integration in Nojoin at all.",
         source: MCP,
       },
       otter: {

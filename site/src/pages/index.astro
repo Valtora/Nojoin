@@ -140,21 +140,29 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
           <p class="eyebrow">Agents</p>
           <h2 class="heading-2">An assistant that changes the record, not just reads it</h2>
           <p>
-            Connect Claude or Codex to your own instance over MCP. Thirty tools, authorised
-            per user, and eighteen of them write.
+            Connect Claude or Codex to your own instance. Thirty tools, eighteen of them
+            writing, authorised per user and on by default — no API key, no configuration,
+            nothing to paste.
           </p>
         </div>
         <ul class="verbs">
           <li>Corrects a misheard line</li>
-          <li>Names the speaker, and remembers them</li>
-          <li>Re-runs the notes</li>
+          <li>Names the speaker, and remembers them next time</li>
+          <li>Re-runs the notes, or the whole pipeline</li>
           <li>Files the tasks the meeting produced</li>
+          <li>Attaches the document the meeting referred to</li>
+          <li>Searches every transcript and document at once</li>
           <li>Keeps your People library current</li>
-          <li>Searches every transcript and document</li>
+          <li>Syncs those people with your CRM, both directions</li>
         </ul>
         <div class="feature-copy" style="max-width: 60ch;">
           <p style="margin-top: 1.75rem;">
-            Nothing it does is permanent. The bin is the strongest delete it has.
+            That last one needs no CRM integration in Nojoin. An assistant already connected
+            to HubSpot or Airtable reconciles both sides itself, because what Nojoin exposes
+            are plain primitives over its own data rather than a fixed list of partners.
+          </p>
+          <p style="margin-top: 1rem;">
+            Every change it makes is reversible. The bin is the strongest delete it has.
           </p>
           <a class="text-link" href={`${docs}/MCP.md`}>The connector, tool by tool →</a>
         </div>
