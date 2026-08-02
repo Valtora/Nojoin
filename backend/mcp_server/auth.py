@@ -242,7 +242,10 @@ class MCPAuthMiddleware:
         # Imported lazily so importing this module never drags the DB layer
         # into contexts (tests, tooling) that only need the contextvar.
         from backend.api.deps import get_authenticated_token_details
-        from backend.api.services.oauth_service import mcp_resource_url
+        from backend.api.services.oauth_service import (
+            mcp_resource_url,
+            touch_grant_last_used,
+        )
         from backend.core.db import async_session_maker
 
         try:
@@ -279,6 +282,17 @@ class MCPAuthMiddleware:
         granted_scopes = frozenset(
             item for item in (token_scopes or []) if isinstance(item, str)
         )
+
+        # Best-effort usage stamp for the Connected Apps view, throttled in
+        # the service. Tokens issued before the grant_id claim existed skip
+        # it, and no failure here may cost the request itself.
+        grant_id = payload.get("grant_id")
+        if isinstance(grant_id, str) and grant_id:
+            try:
+                async with async_session_maker() as db:
+                    await touch_grant_last_used(db, grant_id)
+            except Exception:  # noqa: BLE001 - usage telemetry must never 500
+                logger.warning("Failed to record MCP grant usage.", exc_info=True)
 
         context_token = current_mcp_user.set(user)
         scopes_token = current_mcp_scopes.set(granted_scopes)
