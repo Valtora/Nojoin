@@ -43,20 +43,29 @@ const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : und
       <div class="centered">
         <p class="eyebrow">Comparison</p>
         <h1 class="heading-2">Nojoin next to Otter, Granola and Fireflies</h1>
-        <p class="lead" style="max-width: 60ch; margin-inline: auto;">
-          The same axes for every product, answered from each vendor's own current
-          documentation. Every competitor claim carries a source and the date it was
-          checked; anything that couldn't be sourced is marked rather than guessed.
+        <p class="lead" style="max-width: 62ch; margin-inline: auto;">
+          Nojoin has taken no funding, employs nobody, and sells nothing you can't
+          download. It still runs on your hardware, under a licence you can read, with an
+          agent that edits your meetings and nothing that runs out at month end. Here's
+          the whole thing next to three products that have raised money to build it.
+        </p>
+        <p class="lead" style="max-width: 62ch; margin-inline: auto; font-size: 1rem;">
+          Every competitor claim below comes from that vendor's own current documentation
+          and carries the URL and the date it was read. Where they're better, the table
+          says so. That's the part most comparison pages leave out, and it's the reason
+          you can trust the rest of this one.
         </p>
       </div>
 
+    </div>
+
+    <div class="wrap-wide">
       <h2 class="heading-3 glance-heading">At a glance</h2>
       <div class="table-wrap">
-        <table class="compare-table glance-table">
-          <caption class="glance-caption">
-            The short form of the detailed comparison below, which carries the source and
-            the date checked for every claim.
-          </caption>
+        {/* aria-label rather than a visible <caption>: the table still needs an
+            accessible name, but the sentence explaining it duplicated the heading
+            above and the footnote block below. */}
+        <table class="compare-table glance-table" aria-label="At a glance comparison">
           <thead>
             <tr>
               <th scope="col"></th>

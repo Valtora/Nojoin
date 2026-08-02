@@ -1,0 +1,187 @@
+---
+// The managed service. This is the one page on the site written in the first
+// person: everywhere else Nojoin speaks as a product, but a service provided
+// personally by one named human cannot honestly say "it". SITE.md carries the
+// scoped exception and its reasoning.
+//
+// Every figure here is a commitment rather than a claim, so nothing appears
+// that could not be met on a bad week: no uptime number, no SLA, no capacity
+// promise. The hardware requirement is quoted from DEPLOYMENT.md rather than
+// priced, because a supplier's price goes stale exactly the way a competitor's
+// does and a stale price is the error people screenshot.
+import Base from "../layouts/Base.astro";
+
+const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
+
+// An address rather than a booking page, by decision. A self-hosted scheduler
+// was the plan until Cal.com moved its production codebase into a private
+// repository in 2026: the public repo became calcom/cal.diy, relicensed from
+// AGPL-3.0 to MIT, stripped of teams and workflows, maintained separately, and
+// documented by its own maintainers as being for personal rather than
+// production use. No image is published for it, and its app URL is baked in at
+// build time, so self-hosting it would mean building and rebuilding a Next.js
+// monorepo to keep one booking type alive. This page's only call to action is
+// not the place for that. An address cannot go down.
+//
+// It is a Proton alias on the nojoin.co.uk custom domain, delivering to the
+// taylan@ inbox. An alias rather than the inbox itself because this address sits
+// in public markup and will be scraped: an alias can be burned and replaced
+// without touching the mailbox behind it.
+const contact = "hello@nojoin.co.uk";
+---
+
+<Base
+  title="Managed Nojoin — set up and maintained on your hardware"
+  description="From £24.99 a person a month: a private Nojoin instance set up on hardware you own, kept patched, watched and backed up. Every meeting, every minute, no caps."
+>
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow">Managed</p>
+        <h1 class="display">All the control, none of the admin</h1>
+        <p class="lead">
+          Nojoin is free, and setting it up yourself is four steps. Someone still has to
+          own the server, apply the upgrades and notice when it stops. I built Nojoin, and
+          from £24.99 a person I'll do that part on hardware you own.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-primary" href={`mailto:${contact}`}>Email me</a>
+          <a class="btn btn-secondary" href={`${docs}/DEPLOYMENT.md`}>What you'd be running</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="strip" aria-label="What the fee covers">
+      <div class="wrap">
+        <div class="strip-grid">
+          <div class="strip-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <h2>Watching</h2>
+            <p>
+              A check outside your network keeps an eye on the instance. When it stops, I
+              find out before you tell me.
+            </p>
+          </div>
+          <div class="strip-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+              <path d="M21 3v6h-6"></path>
+            </svg>
+            <h2>Upgrades</h2>
+            <p>
+              One maintenance window a month, batching whatever's shipped since. Security
+              fixes don't wait for it.
+            </p>
+          </div>
+          <div class="strip-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+              <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path>
+              <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path>
+            </svg>
+            <h2>Backups</h2>
+            <p>
+              Configured, and the restore tested rather than assumed. A backup nobody has
+              restored is a hypothesis.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <div class="feature-copy">
+          <p class="eyebrow">Support</p>
+          <h2 class="heading-2">Same day if it's down, next working day otherwise</h2>
+          <p>
+            One person answers, and it's me, during UK working hours. There's no 24-hour
+            line and no ticket queue. I'd rather name the limit than publish a promise that
+            breaks the first time I'm ill.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap">
+        <div class="feature-copy">
+          <p class="eyebrow">Hardware</p>
+          <h2 class="heading-2">Your machine, your bill</h2>
+          <p>
+            The hardware is yours, in your building or your own cloud account, and you pay
+            for it directly. The practical minimum is 8 GB of VRAM for Whisper Turbo and
+            Pyannote. CPU-only works as well and runs slower. If you've already got
+            something that qualifies, the hardware costs you nothing extra; if you haven't,
+            scoping one is where the first call starts.
+          </p>
+          <a class="text-link" href={`${docs}/DEPLOYMENT.md`}>Recommended hardware →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <div class="feature-copy">
+          <p class="eyebrow">Feature requests</p>
+          <h2 class="heading-2">Requests go to the front, and ship to everyone</h2>
+          <p>
+            Your requests get read first and get an answer rather than silence. Sometimes
+            that answer is no, with the reason. Whatever does get built ships in Nojoin for
+            everyone under AGPLv3, because the licence doesn't permit a private version and
+            I wouldn't sell one anyway. <mark class="hl">Nothing here locks you in: you're
+            buying my time, not access.</mark>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-label="Price">
+      <div class="wrap">
+        <div class="terms">
+          <p class="eyebrow">Price</p>
+          <h2 class="heading-2">£24.99 a person, a month</h2>
+          <dl class="terms-list">
+            <div>
+              <dt>Minimum</dt>
+              <dd>Five people. Above that it's per person, and it stays per person.</dd>
+            </div>
+            <div>
+              <dt>Included</dt>
+              <dd>
+                Every meeting, every minute, all of it. No monthly allowance, no ceiling on
+                how long a call can run, no history that expires while you're still paying.
+                There's no meter in the software to hit.
+              </dd>
+            </div>
+            <div>
+              <dt>Hardware</dt>
+              <dd>
+                Yours, in your building or your own cloud account, and billed to you
+                directly rather than marked up through me.
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="closer">
+      <div class="wrap">
+        <h2 class="heading-2">Start with an email</h2>
+        <p style="font-size: 1rem; margin-top: 0.75rem;">
+          Tell me how many people, what you're running now, and what's stopping you using
+          something hosted. I'll tell you if it's a bad fit. That happens, and it's cheaper
+          for both of us than finding out in month three.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-inverse" href={`mailto:${contact}`}>{contact}</a>
+          <a class="btn btn-ghost" href="/compare/">See the comparison</a>
+        </div>
+      </div>
+    </section>
+  </main>
+</Base>

@@ -466,22 +466,35 @@ a loading button, and a real focus trap in `Modal`.
 
 ## The marketing site
 
-The Jekyll site at [assets/css/style.scss](../assets/css/style.scss) runs the same system on a dark
-canvas, using the app's dark-theme values under the app's token names. It is deliberately
-self-contained: the Cayman theme is not imported, because its layout is already replaced by
-[_layouts/default.html](../_layouts/default.html) and its stylesheet carries a gradient page header.
+`www.nojoin.co.uk` lives in `site/` as an Astro build deployed to Cloudflare Workers static
+assets. It runs this system at marketing scale: `site/src/styles/site.css` imports
+`frontend/src/app/tokens.css` by relative path, and a build-time transform maps the app's
+class-based dark theme onto the site's media query, so the site and the app cannot disagree
+about what a token means.
 
-Three things differ, and only because the site has different furniture:
+`site/src/styles/site-tokens.css` holds the families the app has no equivalent of: syntax
+highlighting for the quick-start block, the screenshot frame's chrome, the closer band's
+inverse and ghost buttons, the marketing type scale, and the three marketing effects below.
+Those are tokens rather than literals precisely so the contrast audit can measure them.
 
-- It has no floating elements, so it has no shadows at all. The float exception has nothing to
-  apply to.
-- Its chrome takes the rail tokens, so the header a visitor sees before signing in is the same
-  colour as the nav rail they see afterwards.
-- It owns a `--code-*` family for syntax highlighting, which the app has no equivalent of. Those
-  are tokens rather than literals in the rouge selectors precisely so the audit can measure them.
+The site takes three deliberate departures from the flat canon, all site-only:
 
-Its radii are one step tighter as well, at 20/16/12px, scaled by the same factor that took the
-app's surface radius from 2rem to 1.25rem.
+- A halo and a 1px inset white top edge under the primary button.
+- One soft radial wash behind the hero and the agent band — the only gradient in either
+  surface, and the reason the flat canon's "no gradients" line is scoped to the app.
+- An orange edge on every screenshot frame, plus a softer, wider lift on floating cards than
+  the app's resting shadow.
+
+The app stays flat because a lifted control is noise in a workspace someone stares at all
+day; the site is a page whose job is to be looked at once. All three are decoration over
+fills that already answer to the gate, so none can hide a failing pair.
+
+The contrast audit covers the site as two extra themes, `site-light` and `site-dark`, driven
+by `SITE_PAIRINGS` in `frontend/scripts/check-contrast.mjs`. **The gate only checks pairings
+it has been told about**, so it passes silently on any combination nobody registered.
+
+[SITE.md](SITE.md) is the authority on the site's composition, voice and claims, and carries
+the preview runbook. This document remains the authority on tokens.
 
 ## Related documentation
 

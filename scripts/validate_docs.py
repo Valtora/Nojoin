@@ -31,8 +31,6 @@ def should_skip_target(target: str) -> bool:
         or target.startswith("tel:")
         or target.startswith("data:")
         or target.startswith("javascript:")
-        or target.startswith("{{")
-        or target.startswith("{%")
         or target.startswith("//")
         or SCHEME_RE.match(target) is not None
     )

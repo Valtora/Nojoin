@@ -1,15 +1,25 @@
 // Static assets plus one deliberately narrow Worker script: run_worker_first
 // limits execution to the legacy /docs URLs, whose redirect mapping deployed
 // _redirects rules could not express (see worker/index.js). Every other path
-// is served straight from the static bundle and nothing executes per
-// request. The production route is deliberately absent until the cutover PR;
-// until then the site is reachable only on workers.dev.
+// is served straight from the static bundle and nothing executes per request.
+//
+// A Route, not a Custom Domain. www.nojoin.co.uk was already a proxied record,
+// and a Custom Domain cannot attach to a hostname that has one -- it forces the
+// record to be deleted first, which is a gap in service with DNS propagation
+// behind the rollback. A Route sits in front of the proxied record instead:
+// adding it intercepts traffic atomically, and removing it stops intercepting
+// just as atomically.
+//
+// Rollback is reverting the commit that added this block and letting CI deploy.
+// Deleting the route in the Cloudflare dashboard is NOT the rollback path: the
+// weekly scheduled deploy from main would silently re-add it.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nojoin-site",
   "compatibility_date": "2026-08-01",
   "account_id": "54b2d24ea54cb676eea55814237b88c9",
   "workers_dev": true,
+  "routes": [{ "pattern": "www.nojoin.co.uk/*", "zone_name": "nojoin.co.uk" }],
   "main": "worker/index.js",
   "assets": {
     "directory": "./dist",

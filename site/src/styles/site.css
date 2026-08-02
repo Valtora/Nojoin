@@ -54,12 +54,24 @@ button:focus-visible {
   padding-inline: clamp(1.25rem, 4vw, 2.5rem);
 }
 
-/* Full-bleed band on the card surface. Bands alternate page/card down the
-   landing page; the borders close the shape per the flat canon. */
+/* Wider than .wrap, for the comparison tables. Five columns of prose do not
+   fit a 72rem reading measure, and a table that scrolls sideways is a table
+   most people never see the right-hand column of. */
+.wrap-wide {
+  max-width: 88rem;
+  margin-inline: auto;
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+}
+
+/* Bands used to be a full-bleed card surface with hairlines top and bottom,
+   alternating down the page. That read as a stack of documents rather than a
+   product page: every section boundary was a hard edge. Depth now comes from
+   the content instead -- framed screenshots, the flow card, the tool showcase
+   and the price card all float on one continuous surface -- and the band keeps
+   only a whisper of gradient so the rhythm survives without the edges. */
 .band {
-  background: var(--surface-card);
-  border-block: 1px solid var(--surface-divider);
   padding-block: var(--section-pad);
+  background-image: var(--band-wash);
 }
 
 .section {
@@ -139,15 +151,23 @@ button:focus-visible {
     border-color 0.15s ease;
 }
 
+/* The primary action carries a halo and a 1px inset top highlight. This is the
+   one place the site departs from the app's flat canon, deliberately: the app
+   is a workspace where a lifted control would be noise, and the site is a page
+   whose job is to be looked at. Both effects are decoration over a fill that
+   already answers to the contrast gate, so neither can hide a failing pair. */
 .btn-primary {
   background: var(--action);
   color: var(--action-on);
+  box-shadow: var(--glow-inset), var(--glow-action);
 }
 .btn-primary:hover {
   background: var(--action-hover);
+  box-shadow: var(--glow-inset), var(--glow-action-hover);
 }
 .btn-primary:active {
   background: var(--action-active);
+  box-shadow: var(--glow-inset), var(--glow-action);
 }
 
 .btn-secondary {
@@ -179,11 +199,14 @@ button:focus-visible {
 
 /* ---- The browser-chrome frame every screenshot sits in ---- */
 
+/* The orange edge stops a screenshot dissolving into the band behind it. The
+   captures are mostly light grey interface on a light page, so a hairline in
+   the divider colour was doing nothing at reading distance. */
 .frame {
-  border: 1px solid var(--surface-card-border);
-  border-radius: 12px;
+  border: 1px solid var(--frame-accent);
+  border-radius: 14px;
   background: var(--surface-card);
-  box-shadow: var(--surface-card-shadow);
+  box-shadow: var(--lift-strong);
   overflow: hidden;
   max-width: 100%;
 }
@@ -223,7 +246,15 @@ button:focus-visible {
 
 /* ---- Site chrome ---- */
 
+/* Sticky, so the nav and its call to action stay reachable down a long page.
+   A solid fill rather than a blurred scrim: the flat canon rules out glass, and
+   backdrop-filter over a page this text-heavy costs a repaint on every scroll
+   frame for an effect the design does not want anyway. */
 .site-head {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--surface-page);
   border-bottom: 1px solid var(--surface-divider);
 }
 
@@ -255,10 +286,17 @@ button:focus-visible {
   height: 1.375rem;
 }
 
+/* Wraps, and has to. The outer .wrap wrapping only moves the whole nav below
+   the brand -- it cannot break the nav's own row, so a third page's worth of
+   links overflowed the document by 33px at 360px while every desktop width
+   looked fine. The row gap is tighter than the column gap because two nav
+   lines stacked at the full 1.375rem read as two separate bars. */
 .site-nav {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 1.375rem;
+  gap: 0.625rem 1.375rem;
   font-size: 0.875rem;
 }
 
@@ -382,14 +420,30 @@ button:focus-visible {
 
 /* ---- Landing sections ---- */
 
+/* A single soft radial off the top right, behind the headline. It is the one
+   gradient on the site and it carries no information, so it degrades to a
+   plain surface wherever it does not render. */
 .hero {
   padding-block: var(--hero-pad) calc(var(--hero-pad) * 0.85);
   text-align: center;
+  background-image: var(--hero-wash);
 }
 
+/* The headline is two sentences and the break belongs at the full stop.
+   text-wrap: balance optimises for even line lengths instead, which split it
+   mid-phrase as "...is easy. Agentic / meeting intelligence isn't." Each
+   sentence is its own block above the breakpoint so the break is structural;
+   below it they run together and wrap naturally, because two short blocks on a
+   phone would waste a line. */
 .hero .display {
-  max-width: 21ch;
+  max-width: 30ch;
   margin-inline: auto;
+}
+
+@media (min-width: 48rem) {
+  .hero .display span {
+    display: block;
+  }
 }
 
 .hero .lead {
@@ -470,11 +524,11 @@ button:focus-visible {
   padding-inline: clamp(1.25rem, 4vw, 2.5rem);
 }
 
-.feature .heading-2 {
+.feature-copy .heading-2 {
   margin-top: 0.625rem;
 }
 
-.feature p {
+.feature-copy p {
   font-size: 0.96875rem;
   color: var(--contrast-helper);
   line-height: 1.65;
@@ -482,7 +536,7 @@ button:focus-visible {
   max-width: 46ch;
 }
 
-.feature .text-link {
+.feature-copy .text-link {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -584,9 +638,9 @@ button:focus-visible {
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--surface-card-border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-card);
-  box-shadow: var(--surface-card-shadow);
+  box-shadow: var(--lift);
   margin-top: 2.5rem;
 }
 
@@ -602,18 +656,10 @@ button:focus-visible {
   margin-top: 3.5rem;
 }
 
-.glance-caption {
-  caption-side: top;
-  text-align: left;
-  padding: 0 0 1rem;
-  font-size: 0.875rem;
-  color: var(--contrast-muted);
-}
-
 /* Narrower than the detailed table: these cells are a mark and a few words, so
    they do not need the horizontal scroll the prose table earns. */
 .glance-table {
-  min-width: 44rem;
+  min-width: 32rem;
 }
 
 /* Positioned so the visually-hidden verdict inside it is contained here rather
@@ -623,7 +669,6 @@ button:focus-visible {
    scroll sideways by the width of the table. */
 .glance-cell {
   position: relative;
-  white-space: nowrap;
 }
 
 .glance-mark {
@@ -731,7 +776,318 @@ button:focus-visible {
   text-decoration: underline;
 }
 
-/* Comparison teaser and privacy band content are centred prose. */
+/* ---- The agent band ----
+   The MCP surface at hero scale, sitting directly under the three-up strip. It
+   keeps the page surface and takes the hero's wash, with hairlines closing the
+   shape, so the alternating band rhythm below it is untouched. Two infographics
+   carry it because there is no honest screenshot: see SITE.md. */
+.agent-band {
+  padding-block: var(--section-pad);
+  background-image: var(--hero-wash);
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: start;
+}
+
+.agent-copy {
+  max-width: 46ch;
+}
+
+
+/* One real post-meeting job, each step tagged with who performs it. Every row
+   maps to a documented tool; nothing here is a capability Nojoin lacks. */
+.flowcard {
+  background: var(--surface-card);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 16px;
+  padding: clamp(1.25rem, 3vw, 1.75rem);
+  box-shadow: var(--lift);
+  min-width: 0;
+}
+
+.flowcard-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--contrast-icon-muted);
+}
+
+.flow-rows {
+  margin-top: 0.9rem;
+}
+
+/* Grid, not flex: a flex item would make every inline run its own column. */
+.flow-rows li {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: center;
+  padding-block: 0.7rem;
+  border-top: 1px solid var(--surface-divider);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--contrast-muted);
+}
+
+.flow-rows li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.pill {
+  display: inline-flex;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Three actors, three treatments. The Nojoin pill is the action fill, which the
+   gate already checks as the primary CTA; the assistant pill is foreground on
+   inset, which is a new pairing and is registered in SITE_PAIRINGS; the "you"
+   pill is the secondary control's own text and border, already checked. */
+.pill-agent {
+  background: var(--surface-inset);
+  color: var(--foreground);
+  border-color: var(--control-border);
+}
+
+.pill-nojoin {
+  background: var(--action);
+  color: var(--action-on);
+  box-shadow: var(--glow-inset);
+}
+
+.pill-you {
+  color: var(--contrast-muted);
+  border-color: var(--control-border);
+  border-style: dashed;
+}
+
+/* The flow reads downward, so it is drawn as one: the row dividers are gone
+   and a chevron sits under each pill except the last. A table of rows and a
+   sequence of steps look identical without it. */
+.flow-rows li {
+  padding-block: 0.85rem;
+}
+
+.flow-rows li:first-child {
+  padding-top: 0;
+}
+
+.pill {
+  position: relative;
+}
+
+.flow-rows li:not(:last-child) .pill::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  translate: -50% 0;
+  margin-top: 0.42rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 1.5px solid var(--frame-accent);
+  border-bottom: 1.5px solid var(--frame-accent);
+  rotate: 45deg;
+}
+
+/* Thirty tools as a showcase rather than a table. Each cell leads with a glyph
+   because a wall of six headings is what the tool map looked like before, and
+   the point of the section is that the surface is broad. */
+.toolrail {
+  margin-top: clamp(2.25rem, 4vw, 3.25rem);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(0.75rem, 1.6vw, 1rem);
+}
+
+.toolrail li {
+  background: var(--surface-card);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 14px;
+  box-shadow: var(--lift);
+  padding: 1.15rem 1.25rem;
+  min-width: 0;
+}
+
+.toolrail svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--action-text);
+}
+
+.toolrail h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.toolrail .n {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--action-text);
+}
+
+.toolrail p {
+  margin-top: 0.3rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--contrast-helper);
+}
+
+/* The CRM bridge gets its own card. It is the claim with no equivalent
+   anywhere in the comparison, and it was a clause in a paragraph. */
+.bridge {
+  margin-top: clamp(0.75rem, 1.6vw, 1rem);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+  background: var(--surface-card);
+  border: 1px solid var(--frame-accent);
+  border-radius: 14px;
+  box-shadow: var(--lift);
+  padding: clamp(1.25rem, 3vw, 1.6rem);
+}
+
+.bridge svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--action-text);
+}
+
+.bridge h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* The card is full width because the chips need the room; the prose is not,
+   because a 120-character line is unreadable however wide the box is. */
+.bridge p {
+  margin-top: 0.4rem;
+  max-width: 68ch;
+  font-size: 0.90625rem;
+  line-height: 1.6;
+  color: var(--contrast-helper);
+}
+
+.bridge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.bridge-chips span {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--contrast-muted);
+  background: var(--surface-inset);
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+}
+
+@media (max-width: 60rem) {
+  .agent-grid {
+    grid-template-columns: 1fr;
+  }
+  .toolrail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 40rem) {
+  .toolrail {
+    grid-template-columns: 1fr;
+  }
+  .flow-rows li {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.7rem;
+  }
+  /* The glyph goes above the copy rather than beside it, so the text keeps a
+     readable measure on a phone instead of a 20ch column. */
+  .bridge {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+}
+
+/* The managed service's price block. Deliberately built from the card surface
+   sitting on the page band, because the contrast gate's existing "heading on
+   card band" and "card border vs page" pairings already cover that pair. A
+   bespoke surface here would need new entries in SITE_PAIRINGS, and the gate
+   silently passes any combination it has not been told about. */
+.terms {
+  max-width: 46rem;
+  margin-inline: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-card-border);
+  border-radius: 12px;
+  padding: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.terms-list {
+  margin-top: 1.75rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.terms-list > div {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.35rem 1.5rem;
+  align-items: baseline;
+  border-top: 1px solid var(--surface-divider);
+  padding-top: 1.25rem;
+}
+
+.terms-list dt {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: var(--contrast-muted);
+}
+
+/* A grid item's min-width defaults to auto, so a long unbroken term would
+   floor the track and push the card past its parent. */
+.terms-list dd {
+  color: var(--contrast-muted);
+  line-height: 1.65;
+  min-width: 0;
+}
+
+.terms-note {
+  margin-top: 1.75rem;
+  color: var(--contrast-helper);
+}
+
+@media (max-width: 34rem) {
+  .terms-list > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Comparison teaser, managed teaser and privacy band content are centred prose. */
 .centered {
   text-align: center;
 }

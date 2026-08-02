@@ -9,17 +9,21 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
 ---
 
 <Base
-  title="Nojoin — self-hosted meeting transcription and notes"
-  description="Meeting transcripts, speaker attribution, AI notes and search, processed on your own server. No bot joins the call, and nothing is handed to a SaaS."
+  title="Nojoin — agentic meeting intelligence on your own server"
+  description="Transcripts, speaker attribution, notes and search on hardware you own, with no bot in the call. Thirty MCP tools let Claude or ChatGPT correct the record, file the actions and reconcile your people with any CRM. Nothing is capped."
 >
   <main>
     <section class="hero">
       <div class="wrap">
-        <h1 class="display">Meeting notes, with no bot in the call</h1>
+        <h1 class="display">
+          <span>Transcription is easy.</span>
+          <span>Agentic meeting intelligence isn't.</span>
+        </h1>
         <p class="lead">
-          Nojoin captures the call straight from your browser and processes everything on your
-          own server: transcripts, speaker attribution, AI notes and search,
-          <mark class="hl">without handing your audio to a SaaS</mark>.
+          No bot joins the call, and nothing leaves your server. Then Nojoin hands the whole
+          library to Claude or ChatGPT: thirty tools that correct the record, file the actions,
+          and reconcile your people with any CRM your agent already reaches.
+          <mark class="hl">It was built to be that bridge, and nothing about it is metered.</mark>
         </p>
         <div class="ctas">
           <a class="btn btn-primary" href="#quick-start">Get started</a>
@@ -71,6 +75,129 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
+    {/* The agent band. Promoted to just under the strip because the MCP surface
+        is the capability with no equivalent elsewhere, and it sat five sections
+        down as prose. No screenshot, deliberately: the work happens in Claude's
+        or ChatGPT's window, and Nojoin's frame chrome reads nojoin.your-server.net.
+        Two infographics carry it instead. See SITE.md, "Design direction". */}
+    <section class="agent-band" aria-label="Agent access">
+      <div class="wrap">
+        <div class="agent-grid">
+          <div class="agent-copy">
+            <p class="eyebrow">Agents</p>
+            <h2 class="heading-2">An assistant that changes the record, not just reads it</h2>
+            <p>
+              Connect Claude or ChatGPT to your own instance. Thirty tools, eighteen of them
+              writing, authorised per user and on by default — no API key, no configuration,
+              nothing to paste.
+            </p>
+            <p>
+              The CRM sync needs no CRM integration in Nojoin. An assistant already connected
+              to HubSpot or Airtable reconciles both sides itself, because what Nojoin exposes
+              are plain primitives over its own data rather than a fixed list of partners.
+            </p>
+            <p>
+              Every change it makes is reversible. The bin is the strongest delete it has.
+            </p>
+            <a class="text-link" href={`${docs}/MCP.md`}>
+              The connector, tool by tool →
+            </a>
+          </div>
+
+          <div class="flowcard">
+            <p class="flowcard-label">After the weekly review</p>
+            <ul class="flow-rows">
+              <li><span class="pill pill-agent">Agent</span><span>Reads the transcript and the notes</span></li>
+              <li><span class="pill pill-agent">Agent</span><span>Spots a name the diariser misheard</span></li>
+              <li><span class="pill pill-nojoin">Nojoin</span><span>Corrects the utterance, and locks it against reprocessing</span></li>
+              <li><span class="pill pill-nojoin">Nojoin</span><span>Files three tasks, each linked to the meeting</span></li>
+              <li><span class="pill pill-agent">Agent</span><span>Reconciles the attendees with your CRM</span></li>
+              <li><span class="pill pill-you">You</span><span>Check what it did</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <ul class="toolrail">
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="22"></line>
+            </svg>
+            <h3>Recordings <span class="n">8</span></h3>
+            <p>List, rename, tag, untag, archive, restore, bin, reprocess.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path>
+              <path d="M14 2v5h5"></path>
+              <path d="M8 13h8M8 17h5"></path>
+            </svg>
+            <h3>Transcript <span class="n">5</span></h3>
+            <p>Read it, read it as utterances, correct the text, correct the speaker, unlock.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h6"></path>
+              <path d="M14 2v5h5"></path>
+              <path d="M18.4 13.6a2 2 0 0 1 2.8 2.8L17 20.6l-3 .7.7-3Z"></path>
+            </svg>
+            <h3>Notes and documents <span class="n">5</span></h3>
+            <p>Read the notes, regenerate them, append your own, read documents, attach one.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <h3>People and speakers <span class="n">5</span></h3>
+            <p>List, read one, import, read a meeting's speakers, name one.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="8" height="4" x="8" y="2" rx="1"></rect>
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <path d="m9 14 2 2 4-4"></path>
+            </svg>
+            <h3>Tasks <span class="n">3</span></h3>
+            <p>List them, create them, complete them.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
+            <h3>Calendar, search and tags <span class="n">4</span></h3>
+            <p>List events, link one to a recording, search everything, list tags.</p>
+          </li>
+        </ul>
+
+        <div class="bridge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3 4 7l4 4"></path>
+            <path d="M4 7h16"></path>
+            <path d="m16 21 4-4-4-4"></path>
+            <path d="M20 17H4"></path>
+          </svg>
+          <div>
+            <h3>The bridge between your meetings and any CRM</h3>
+            <p>
+              Nojoin ships no CRM integration and needs none. An assistant already connected
+              to something else reads both sides and reconciles them, because what Nojoin
+              exposes are plain primitives over its own data rather than a fixed list of
+              partners. Nothing to wait for, and nothing to be dropped from.
+            </p>
+            <div class="bridge-chips">
+              <span>HubSpot</span><span>Airtable</span><span>Salesforce</span>
+              <span>A spreadsheet</span><span>Whatever it can already reach</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="band">
       <div class="wrap">
         <div class="feature">
@@ -98,8 +225,8 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <h2 class="heading-2">Every word, attributed to the right person</h2>
             <p>
               Built-in transcription with speaker attribution, backed by a global speaker
-              library: voiceprints match the people you've named across every future
-              meeting, and corrections take one click.
+              library. Voiceprints match the people you've named across every future
+              meeting. Corrections take one click.
             </p>
             <a class="text-link" href={`${docs}/USAGE.md`}>Speakers and voiceprints →</a>
           </div>
@@ -118,7 +245,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <h2 class="heading-2">Ask the meeting, and the documents around it</h2>
             <p>
               Meeting Chat is grounded in the transcript, the notes and the documents you
-              attach, and search spans recordings, notes and documents in one query.
+              attach. Search spans all three in one query.
             </p>
             <a class="text-link" href={`${docs}/USAGE.md`}>Search and Meeting Chat →</a>
           </div>
@@ -198,6 +325,20 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
         </p>
         <div class="ctas">
           <a class="btn btn-secondary" href="/compare/">See the comparison</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section centered" aria-label="Managed service">
+      <div class="wrap">
+        <p class="eyebrow">Managed</p>
+        <h2 class="heading-2">Or have someone else run it</h2>
+        <p class="lead">
+          Nojoin's author will scope the hardware, set an instance up on a machine you own,
+          and keep it patched, watched and backed up. £250 a month, from ten people.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-secondary" href="/managed/">The managed service</a>
         </div>
       </div>
     </section>

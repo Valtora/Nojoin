@@ -32,6 +32,7 @@ const src = (url: string) => ({ url, checked: CHECKED });
 
 const README = src("https://github.com/Valtora/Nojoin/blob/main/README.md");
 const USAGE = src("https://github.com/Valtora/Nojoin/blob/main/docs/USAGE.md");
+const MCP = src("https://github.com/Valtora/Nojoin/blob/main/docs/MCP.md");
 
 const UNSOURCED: Cell = { text: "Not stated in current docs" };
 
@@ -207,7 +208,7 @@ export const rows: Row[] = [
         source: src("https://otter.ai/features"),
       },
       granola: {
-        text: "Google and Microsoft/Outlook; Apple Calendar is not supported.",
+        text: "Google and Microsoft/Outlook; Apple Calendar isn't supported.",
         source: src("https://docs.granola.ai/help-center/getting-started/syncing-your-calendars"),
       },
       fireflies: {
@@ -232,6 +233,61 @@ export const rows: Row[] = [
       fireflies: {
         text: "Across recordings and transcripts, with host, participant, title and date filters.",
         source: src("https://guide.fireflies.ai/articles/4577578901-how-to-search-and-find-your-meetings"),
+      },
+    },
+  },
+  {
+    // All four ship an MCP server, so "we have one" is not the claim. The line
+    // that survives sourcing is what an assistant can actually do once it is
+    // connected: three of them read the meeting and act elsewhere, and Nojoin's
+    // acts on the meeting itself. Every cell states what that vendor documents
+    // and stops there. In particular no cell asserts that a competitor *cannot*
+    // write back -- that is an unsourced negative, and the gap is visible from
+    // the positives alone.
+    key: "agents",
+    label: "What an assistant can do with your meetings",
+    cells: {
+      nojoin: {
+        text: "Thirty tools on your own deployment, authorised per user and on by default. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks, and syncs your People library with a CRM it's separately connected to — with no CRM integration in Nojoin at all.",
+        source: MCP,
+      },
+      otter: {
+        text: "Reads Otter's transcripts to search across time, analyse themes and generate content. Writes outward into Google Docs, Slides, Jira, Salesforce and Slack. Part of Otter for Enterprise.",
+        source: src("https://otter.ai/blog/otter-mcp-your-meetings-now-power-every-tool-you-use"),
+      },
+      granola: {
+        text: "Reads notes and transcripts on paid plans: list meetings, read a meeting, search the history. On Enterprise it's early-access beta and stays off until an admin enables it.",
+        source: src("https://www.granola.ai/blog/granola-mcp"),
+      },
+      fireflies: {
+        text: "Nineteen tools: 14 read, and 5 change something about the filing — rename a meeting, move it to a channel, share it, revoke that share, cut a soundbite.",
+        source: src("https://docs.fireflies.ai/mcp-tools/overview"),
+      },
+    },
+  },
+  {
+    // Limits, not prices -- the no-competitor-pricing rule still holds. The
+    // concessions here are load-bearing: Fireflies transcribes without limit on
+    // every plan, and Otter's top plans lift the monthly cap. Saying otherwise
+    // would be checkable in one click and would cost the rest of the table.
+    key: "caps",
+    label: "Limits on how much you process",
+    cells: {
+      nojoin: {
+        text: "None in the software. No monthly allowance, no per-meeting ceiling, no history that expires. How much you get through is a question about your hardware.",
+        source: README,
+      },
+      otter: {
+        text: "300 minutes a month and 30 minutes per conversation on the entry plan; 1,200 and 90 on the next. The upper plans lift the monthly cap and hold a four-hour ceiling per meeting.",
+        source: src("https://otter.ai/pricing"),
+      },
+      granola: {
+        text: "Meeting history is limited on the entry plan, by an amount the pricing page doesn't state. Unlimited notes and history above it.",
+        source: src("https://www.granola.ai/pricing"),
+      },
+      fireflies: {
+        text: "Transcription is unlimited on every plan. Storage isn't: 400 minutes a team on the entry plan, 8,000 a seat above it. AI features draw on a monthly credit allowance.",
+        source: src("https://fireflies.ai/pricing"),
       },
     },
   },
@@ -359,6 +415,33 @@ export const summaryRows: SummaryRow[] = [
       otter: yes("Auto-tags names"),
       granola: no("Per-meeting tags"),
       fireflies: no("Per-transcript edits"),
+    },
+  },
+  {
+    // Fireflies earns a partial rather than a no: five of its tools genuinely
+    // change something, they just change the filing rather than the record.
+    // Otter writes too, but outward into other products, so on this axis --
+    // what happens to the meeting itself -- it is a no.
+    key: "agents",
+    label: "An assistant can change the record, not just read it",
+    cells: {
+      nojoin: yes("Thirty tools, on your server"),
+      otter: no("Reads Otter, writes elsewhere"),
+      granola: no("Reads notes and transcripts"),
+      fireflies: partial("Renames, moves, shares"),
+    },
+  },
+  {
+    // Every one of them has a tier where something runs out; none of them is a
+    // flat no, so all three take a partial. Nojoin's yes is structural rather
+    // than generous -- there are no plans, so there is nothing to meter.
+    key: "caps",
+    label: "Nothing runs out",
+    cells: {
+      nojoin: yes("No plans, no meters"),
+      otter: partial("Capped below Business"),
+      granola: partial("History capped on free"),
+      fireflies: partial("Storage and AI credits"),
     },
   },
   {

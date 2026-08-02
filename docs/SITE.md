@@ -9,10 +9,15 @@ authority on tokens and this document is the authority on the site's composition
 
 ## What the site is
 
-Two pages, landing and comparison. Documentation stays on GitHub as `docs/*.md` and the site
-links out to it; the site never holds a copy that can drift. `/docs/*` URLs 301 to the
-corresponding GitHub blob URL forever, because released images hardcode
-`www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
+Three pages: landing, comparison and the managed service. Documentation stays on GitHub as
+`docs/*.md` and the site links out to it; the site never holds a copy that can drift.
+`/docs/*` URLs 301 to the corresponding GitHub blob URL forever, because released images
+hardcode `www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
+
+The rebuild shipped two pages and recorded "there is no hosted or paid offering" as the
+reason, while deliberately building the nav and layout to take a third page later. That
+turned out to be worth doing: `/managed/` arrived afterwards and cost one nav entry, one
+landing band and no redesign.
 
 Both themes follow `prefers-color-scheme` by default, and a toggle in the header lets a
 visitor override that. The choice is stored and applied before the first paint, so there is
@@ -40,19 +45,77 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   headings 2.25rem, generous vertical rhythm to match. Geist stays semibold (600) with
   -0.025em display tracking; no new weight enters the system.
 - **Every screenshot sits in a minimal browser-chrome frame**: three dots, a muted
-  `nojoin.your-server.net` URL pill, hairline border, 12px radius, the resting shadow in
-  light only. The frame signals "a web app you self-host", which is half the pitch.
+  `nojoin.your-server.net` URL pill, an orange edge, 14px radius and `--lift-strong`. The
+  frame signals "a web app you self-host", which is half the pitch.
 - **Feature rows stack**: copy at reading width, screenshot beneath it in a container wider
-  than the rest of the page, on bands that alternate the page and card surfaces. The
-  alternating rhythm survives as the copy block changing sides down the page; the text
-  itself stays left-aligned. This replaces a side-by-side layout, which gave the screenshot
-  half of a 72rem wrap and so rendered a 1920px capture at about 28% — unreadable, which
-  defeats the point of showing the interface at all.
-- **Colour is neutral plus one orange closer**: the only loud surface is the full-bleed
-  orange-700 band at the foot. No cream tints, no gradients, no glass — the app's flat canon
-  holds on the site.
-- **The headline is no-bot led**: "Meeting notes, with no bot in the call". Self-hosting
-  lands in the subhead.
+  than the rest of the page. The rhythm survives as the copy block changing sides down the
+  page; the text itself stays left-aligned. This replaces a side-by-side layout, which gave
+  the screenshot half of a 72rem wrap and so rendered a 1920px capture at about 28% —
+  unreadable, which defeats the point of showing the interface at all.
+- **No hard bands.** Sections used to alternate a full-bleed card surface against the page
+  with hairlines top and bottom. That read as a stack of documents: every boundary was an
+  edge. The page is now one continuous surface and depth comes from the content floating on
+  it — framed screenshots, the flow card, the tool showcase, the price card — each carrying
+  `--lift`. `.band` keeps only `--band-wash`, a gradient faint enough that two adjacent
+  bands never look like a seam. In dark it lightens rather than casting, because a black
+  shadow on a near-black page is invisible.
+- **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
+  orange-700 band at the foot. No cream tints and no glass.
+- **Three marketing effects, and no more.** The app's flat canon governs the product,
+  where a lifted control is noise in a workspace someone stares at all day. The site is a
+  page whose job is to be looked at once, so it takes three departures, all site-only and
+  all declared in `site-tokens.css` rather than in the shared app tokens:
+  a halo and a 1px inset white top edge under the primary button (`--glow-action`,
+  `--glow-inset`); one soft radial wash off the top right behind the hero and the agent
+  band (`--hero-wash`); and an orange edge on every screenshot frame (`--frame-accent`),
+  because the captures are light interface on a light page and a divider-coloured hairline
+  did nothing at reading distance. All three are decoration over fills that already answer
+  to the contrast gate, so none of them can hide a failing pair. The wash is the only
+  gradient on the site, it carries no information, and it degrades to a plain surface.
+  These match the sibling brand Vorkane's treatment deliberately — the same person sells
+  both — but they use Nojoin's own orange ramp rather than Vorkane's, so the site and the
+  app never disagree about what the brand colour is. The glow derives from orange-600
+  rather than the button's own orange-700, because a halo the same darkness as its fill
+  reads as a smudge.
+- **The header is sticky**, with a solid fill rather than a blurred scrim. Glass is out by
+  the flat canon, and `backdrop-filter` over text this dense costs a repaint per scroll
+  frame for an effect the design does not want.
+- **The agent band sits directly under the strip**, on the page surface with the hero's
+  wash. It carries three devices rather than prose. A flow card walks one real post-meeting
+  job and tags each step with the actor who performs it, chevrons between the steps so it
+  reads downward as a sequence rather than as a table. A six-card showcase groups the thirty
+  tools by what they touch, each led by a glyph. A wider card carries the CRM bridge on its
+  own, because an assistant reconciling your People library with anything it can already
+  reach is the claim with no equivalent in the comparison, and it was a clause in a
+  paragraph. The actor pills say "Agent", never a vendor name: more than one assistant is
+  supported and the claim is about assistants generally. The prose names Claude and ChatGPT,
+  which is what a reader installs; OpenAI renamed the Codex desktop app to ChatGPT on 9 July
+  2026, and Codex survives as a mode inside it. `docs/MCP.md` still says Codex throughout,
+  deliberately: its instructions carry literal commands and paths (`codex mcp logout`,
+  `~/.codex/config.toml`, the "Codex MCP Credentials" keychain entry) that the rename did not
+  change, and its troubleshooting section records behaviour observed on a specific Codex
+  build that nobody has re-tested since.
+- **The headline concedes the commodity and claims the hard part**: "Transcription is
+  easy. Agentic meeting intelligence isn't." This reverses the earlier no-bot headline
+  deliberately, and then reverses its first agent-led replacement too. Not joining the call
+  is a strong feature that three competitors match some version of, and transcription is a
+  solved problem that nobody wins on. What is not solved is being the bridge between
+  whatever agent someone already uses and the rest of their stack, which is what Nojoin was
+  built to be and what none of the three documents. The headline says so by conceding the
+  easy half out loud, which is more convincing than claiming the hard half on its own.
+  "Agentic" is jargon and stays anyway: on the landing page it flatters a reader who knows
+  the word, and the subhead immediately spells it out in plain terms for one who does not.
+  The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
+  No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
+- **The agents section carries no screenshot, by decision.** Every other feature section on
+  the landing page is led by its shot. That capability happens in Claude's or ChatGPT's
+  window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
+  capture of someone else's interface would be a false image on a page that argues from
+  checkable ones. Nojoin's own screens cannot carry the claim either: the app records that
+  an utterance was manually edited but never distinguishes an assistant's edit from a web
+  one, so a task list an assistant filed is indistinguishable from a typed one. The flow
+  card, the tool showcase and the bridge card take the visual weight instead. Should the app
+  ever surface MCP provenance, this band earns a real shot and should get one.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never
@@ -72,6 +135,17 @@ person, sentence case, British English, no emoji. It shares a writing standard w
 sibling brand Vorkane, adapted rather than copied — Vorkane sells a person and writes in the
 first person singular; Nojoin is a product and never says "I" or "we" in marketing copy.
 
+**One page is exempt: `/managed/`.** What it sells is not the product but one named person's
+time, and a service provided personally cannot honestly describe itself as "it". That page
+writes in the first person singular and says so in its own first paragraph. It names nobody:
+the person is identified as the one who built Nojoin, which is checkable against the commit
+history, and no name goes on the site or into the repository by decision.
+The exception is scoped to that page and does not travel: the landing
+band that points at it stays in the product's voice and refers to "Nojoin's author" in the
+third person, so a visitor meets one narrator per page rather than two per scroll. "We"
+stays banned everywhere, including there — one person is an "I", never a "we", and the
+corporate plural is exactly the register the rest of these rules exist to avoid.
+
 The rules:
 
 - **Contract everything.** "It's", "can't", "won't", "you've". The refusal to contract is
@@ -86,6 +160,15 @@ The rules:
 - **Concede facts, not ground.** Where a competitor does something well, say so plainly;
   where a concession has a counterpoint, make it. Candour about checkable limits is what
   buys the credibility of everything else.
+- **Sell, and let the facts do it.** This is a marketing site, not a paper. The register is
+  confident and a little pleased with itself, and it earns that by stacking true things and
+  stating them flatly rather than by reaching for adjectives: no funding, no employees, no
+  bot, no caps, thirty tools, one compose file. A sentence like "Nojoin has taken no
+  funding, employs nobody, and sells nothing you can't download" is doing more work than any
+  superlative would, and it survives being checked, which no superlative does. The banned
+  list below still holds — those words are banned because they carry no information, and
+  swagger without information is just noise. Competitor claims still need a source and a
+  date. Everything else is fair game.
 - **Plain labels beat clever ones.** A label may be evocative only if its meaning is still
   obvious in half a second.
 - **Parallel closers.** Paired elements end on matched short sentences.
@@ -120,12 +203,171 @@ The comparison page holds itself to the standard it would want applied to it:
   rebuild. Changed facts behind live URLs still need a human re-read; treat any vendor
   feature announcement as a trigger to re-check its row.
 
+## The managed service
+
+`/managed/` sells one thing: the developer of Nojoin scoping, installing and maintaining a
+private instance for an organisation. **The page names nobody.** It writes in the first
+person, because one person really does answer, but it identifies him as the person who built
+Nojoin rather than by name — the full legal name stays off the site and out of the
+repository by decision. The commercial shape below was settled deliberately and the
+reasoning matters more than the numbers, because the numbers will move.
+
+The tagline is "All the control, none of the admin". It replaced "Self-hosted, without
+hosting it yourself", which assumed the reader already knew what self-hosting was — on the
+one page most likely to be read by someone who does not. The replacement names the trade
+rather than the technology.
+
+- **The customer owns the hardware and pays for it directly.** The fee is labour and nothing
+  else. That removes idle spend, cost overruns and supplier risk from the offering in one
+  move, and it keeps "your server, your data" literally true — which the rest of the site
+  spends two pages arguing for.
+- **The page describes the machine, not its price.** 8 GB of VRAM, quoted from
+  DEPLOYMENT.md, with CPU-only named as slower rather than absent. The same reasoning that
+  bans competitor pricing applies to a supplier's: a quoted cloud price goes stale and a
+  stale price is the error people screenshot. It is also honest that a customer with a
+  suitable machine already pays nothing extra.
+- **£24.99 a person a month, minimum five.** This replaced a £250 flat fee covering ten to
+  twenty-five people, and a £950 setup charge waived on a twelve-month commitment. Both are
+  gone from the page: per-seat is what a buyer already understands, and it scales without
+  the cliff the banded version had at the sixth seat. The line "per-seat pricing runs the
+  other way" went with it — the offering is now per-seat, so that argument would have been
+  aimed at itself.
+- **Nothing is capped, and the page leads on it.** No monthly allowance, no ceiling on call
+  length, no history that expires while the customer is still paying. There is no meter in
+  the software to hit. Every competitor has a tier where something runs out, which the
+  comparison page now shows in a sourced row rather than asserting — Otter meters minutes
+  below its upper plans, Fireflies caps storage and AI credits, Granola limits history on
+  its entry plan. Fireflies transcribes without limit on every plan, and the row says so.
+- **Nothing on the page is a promise that breaks on a bad week.** No uptime figure, no SLA,
+  no capacity claim. Same day if the instance is down, next working day otherwise, UK hours,
+  and the limit named rather than implied. Monitoring is listed as part of the fee because
+  an outage promise is only meetable if something outside the network notices the outage.
+- **Upgrades run monthly, deliberately slower than releases.** Ten releases shipped in the
+  seven weeks before the page was written. Applying each one to a customer's production
+  system means changing it twice a week, and this repository has already met an Alembic
+  back-stamp that crash-loops a newer image.
+- **The AGPL position is stated as a feature, not conceded as a limit.** Prioritised
+  requests get read first and get an answer; whatever gets built ships to everyone under the
+  same licence. The licence forbids a private version, so nobody is locked in, and the thing
+  being sold is time rather than access. That is a strong sentence and a weak omission.
+
+Two things that are true and stay off the page by decision: the processing agreement, and
+the admin access that makes maintenance possible. No sentence there claims the data is
+unreachable, so nothing needs retracting on a call.
+
+**The call to action is an address, not a booking page.** A self-hosted scheduler was the
+plan, on the reasoning that a page arguing for self-hosting should book its own calls
+through software it hosts. Cal.com then moved its production codebase into a private
+repository: the public repo became `calcom/cal.diy`, relicensed from AGPL-3.0 to MIT,
+stripped of teams and workflows, and documented by its own maintainers as being for
+personal rather than production use. No Docker image is published for it and its app URL is
+baked in at build time, so running it would mean building and rebuilding a Next.js monorepo
+to keep one booking type alive — under the page's only call to action, with nothing behind
+it if the build broke. `hello@nojoin.co.uk` cannot go down. It is a Proton alias on the
+custom domain rather than the inbox itself, because an address in public markup gets scraped
+and an alias can be replaced without moving the mailbox.
+
+## Working on the site, and previewing it
+
+Everything under `site/` runs in an **nvm-sourced shell**. A non-interactive shell falls back
+to the distro Node and npm, which has silently rewritten `package-lock.json` before — it
+strips `libc` fields and downgrades entries CI then rejects.
+
+```bash
+. ~/.nvm/nvm.sh          # Node 26 / npm 11, matching CI and the deploy job
+cd site
+npm ci                   # never `npm install`, for the reason above
+npm run build            # writes site/dist
+npm run serve            # builds, then serves the build on port 4322
+```
+
+`npm run dev` exists but preview the **built** output before asking anyone to look: the dev
+server resolves imports differently and has shipped differences before.
+
+### Sharing a preview
+
+The site owner reviews over SSH from Windows and cannot reliably bind local ports, so a
+Cloudflare quick tunnel beats `ssh -L`. It needs no account, no DNS record and no token:
+
+```bash
+~/.local/bin/cloudflared tunnel --url http://127.0.0.1:4322
+```
+
+It prints a single-use `https://<random>.trycloudflare.com` URL. `astro.config.mjs` already
+allows `.trycloudflare.com` under `vite.preview.allowedHosts`; without that entry the preview
+server answers every tunnelled request with a host-check error.
+
+**There is a long-running `cloudflared` container on the development host that serves live
+production traffic. Never stop, restart or reconfigure it.** It is `docker compose` service
+`cloudflared` in the homelab core stack, running as uid 65532. A quick tunnel is a separate
+user process and touching one has no effect on the other — but `pkill -f cloudflared` kills
+both, and on this host `pkill` patterns also match the shell wrapper that invoked them. Kill
+preview tunnels by PID, or by matching the binary path `~/.local/bin/cloudflared`, and tidy
+them up when the review is done rather than leaving a fleet running.
+
+### What a static preview cannot show you
+
+`/docs/*` redirects do not fire. They live in `site/worker/index.js` and only run on a real
+Workers deployment, so a 404 on `/docs/TELEMETRY` in local preview is expected rather than a
+regression. Verify that contract on the workers.dev URL after a deploy.
+
+### Checks worth running before asking for review
+
+- `node frontend/scripts/check-contrast.mjs` — audits the site as two of its four themes.
+  It only checks pairings listed in `SITE_PAIRINGS`, so **new colour-on-colour furniture is
+  invisible to it until someone adds the pairing**. Adding one is part of adding the
+  furniture, not a follow-up.
+- Horizontal overflow at 360px and 1920px, in both themes, on every page: compare
+  `document.documentElement.scrollWidth` against `window.innerWidth`. Two overflow bugs have
+  shipped from this repository and both were invisible at desktop width. An element with its
+  own `overflow-x: auto` exceeding its box is fine — a code block and the comparison tables
+  both do, deliberately. The document moving is not.
+- `python3 scripts/validate_docs.py` and `git diff --check`.
+
+## How it is served, and what replaced what
+
+`www.nojoin.co.uk` is a Cloudflare **Worker Route**, declared in `site/wrangler.jsonc` and
+deployed by CI. It is a Route rather than a Custom Domain on purpose: the hostname was
+already a proxied record, a Custom Domain cannot attach to a hostname that has one without
+deleting the record first, and that would put DNS propagation behind any rollback. A Route
+sits in front of the proxied record, so adding it intercepts traffic atomically and removing
+it stops intercepting just as atomically.
+
+**Rolling back is `git revert` of the commit that added the route, then letting CI deploy.**
+Deleting the route in the Cloudflare dashboard is not the rollback path: the weekly scheduled
+deploy from `main` re-applies whatever `wrangler.jsonc` says.
+
+That rollback used to land on a live GitHub Pages origin. It no longer does. Pages served
+the previous Jekyll site from `main` as a `build_type: legacy` build — no workflow, just a
+repository setting — and it was disabled and its sources deleted (`_config.yml`, `_layouts/`,
+`_includes/`, `assets/css/style.scss`, `docs/index.md`, `CNAME`) when the Astro site went
+live. `assets/images/nojoin-mark.svg` stayed, because `README.md` still references it.
+
+The consequence is worth being clear about: reverting the route now removes the Worker and
+leaves the DNS record pointing at nothing, so **revert is no longer a fallback to a working
+site — it is a way to take the site down.** Fixing a bad deploy means rolling `site/` forward,
+not backwards. Re-enabling Pages is a repository settings change that no `git revert` can
+perform.
+
+Cloudflare Web Analytics is wired through `PUBLIC_CF_BEACON_TOKEN`, a build-time environment
+variable read in `Base.astro` and supplied by CI as a **repository variable, not a secret**.
+
+The value is the beacon `siteTag`. It is not an API token: it has no scopes, grants nothing,
+and ships in the markup of every page that uses Web Analytics, so anyone can read it from any
+such site. **A Cloudflare API token must never be used here** — an "Analytics Read" token is a
+real credential and putting one in a public repository is a leak that needs rotating.
+
+It comes from the environment rather than from source for cleanliness rather than secrecy. A
+build-time value is inlined into the HTML either way, so an environment variable hides
+nothing from anyone. What it does is keep the beacon out of local builds: a source constant
+would fire real page views from every `npm run build` and every preview tunnel, tagged with a
+throwaway `trycloudflare.com` hostname, straight into the live figures. Unset is a supported
+state and renders no beacon at all, which is what every local build should get.
+
 ## Maintenance
 
 - The site deploys from `main` only: a push touching `site/`, a published release, a weekly
-  schedule, and manual dispatch. Rolling back the production route is a git revert of the
-  cutover commit, never a dashboard action, because the next scheduled deploy re-applies
-  whatever `wrangler.jsonc` says.
+  schedule, and manual dispatch.
 - Build-time data (star count, latest release) degrades gracefully: the release falls back
   to `docs/VERSION`, the star count to no number. No API outage may fail a build.
 - Screenshots are real captures from a seeded demonstration instance processed through the
