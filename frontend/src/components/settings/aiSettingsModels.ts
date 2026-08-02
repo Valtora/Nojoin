@@ -6,7 +6,13 @@ import { Settings } from "@/types";
  * component remains responsible for calling `onUpdate`/`onPersist`.
  */
 
-export const DEFAULT_OLLAMA_CONTEXT_WINDOW = 131072;
+/**
+ * Placeholder shown before an install has saved a context window, and the
+ * recovery value for unparseable input. Must match `ollama_context_window` in
+ * the backend's DEFAULT_SYSTEM_CONFIG, which is the real default; this copy
+ * exists only so the form has something to render before settings arrive.
+ */
+export const DEFAULT_OLLAMA_CONTEXT_WINDOW = 32768;
 
 export type ModelKind = "main" | "live";
 
