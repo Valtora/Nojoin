@@ -23,7 +23,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const GLOBALS = resolve(ROOT, "src/app/globals.css");
+/**
+ * The design tokens, extracted from globals.css so the marketing site can
+ * import the same file. The :root, .dark and density blocks live here; the
+ * app furniture that stayed in globals.css declares no colour tokens.
+ */
+const TOKENS = resolve(ROOT, "src/app/tokens.css");
 /**
  * The Jekyll marketing site. It is a `.scss` file, but its tokens are real CSS
  * custom properties on `:root` rather than Sass variables, so the same parser
@@ -247,15 +252,15 @@ const FLOAT_SEPARATION = HAIRLINE;
  * Pull `--name: value;` declarations out of one top-level CSS block.
  *
  * The selector is anchored to the start of a line and has to be followed by its
- * own brace, because `.dark` also appears inside the @custom-variant on line 6
- * and inside every `.dark .react-datepicker__…` override further down. A plain
- * substring search finds the variant first and then reads the *next* block,
- * which is `:root`, so the dark audit measures the light theme and passes.
+ * own brace. That mattered most when this read globals.css, where `.dark` also
+ * appeared inside a @custom-variant and in component overrides; tokens.css is
+ * cleaner, but the anchoring stays because a substring match that finds the
+ * wrong block makes the audit measure the wrong theme and pass anyway.
  */
 function parseBlock(css, selector) {
   const anchored = new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{`, "m");
   const match = anchored.exec(css);
-  if (match === null) throw new Error(`selector ${selector} not found in globals.css`);
+  if (match === null) throw new Error(`selector ${selector} not found`);
   const start = match.index;
   const open = css.indexOf("{", start);
   let depth = 0;
@@ -354,7 +359,7 @@ function flattenStack(stack, theme, base) {
 
 /* -------------------------------------------------------------------- audit */
 
-const css = await readFile(GLOBALS, "utf8");
+const css = await readFile(TOKENS, "utf8");
 const light = parseBlock(css, ":root");
 const dark = parseBlock(css, ".dark");
 const marketing = parseBlock(await readFile(MARKETING, "utf8"), ":root");
