@@ -25,7 +25,8 @@ import {
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   pointerWithin,
@@ -243,11 +244,21 @@ export default function MainNav() {
     },
   ];
 
-  // Drag and drop logic
+  // Drag and drop logic. Mouse drags start on an 8px move, but touch
+  // requires a press-and-hold: a bare movement threshold turns every
+  // scroll swipe over the tag tree into a drag, which both traps the
+  // scroll and nests tags by accident on release. Movement beyond the
+  // tolerance during the hold cancels activation, so a swipe scrolls.
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 8,
       },
     }),
   );
