@@ -10,6 +10,7 @@ import {
   Loader2,
   Tag as TagIcon,
   ChevronDown,
+  ChevronsRight,
   ChevronUp,
 } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -29,11 +30,15 @@ import MarkdownBubble from "./MarkdownBubble";
 import { useNotificationStore } from "@/lib/notificationStore";
 import ConfirmationModal from "./ConfirmationModal";
 import MultiSelect, { Option } from "@/components/ui/MultiSelect";
+import IconButton from "@/components/ui/IconButton";
 
 export default function ChatPanel({
   onNotesUpdate,
+  onCollapse,
 }: {
   onNotesUpdate?: () => void;
+  /** Desktop side-column collapse; the mobile full-screen chat omits it. */
+  onCollapse?: () => void;
 }) {
   const params = useParams();
   const recordingId: RecordingId | null =
@@ -230,9 +235,9 @@ export default function ChatPanel({
   return (
     <aside
       id="meeting-chat"
-      className="flex-1 min-w-0 border-l border-surface-border bg-surface-inset h-full flex flex-col shadow-float z-10"
+      className="@container flex-1 min-w-0 bg-surface-inset h-full flex flex-col"
     >
-      <div className="p-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
+      <div className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-action-text" />
           Chat
@@ -271,6 +276,15 @@ export default function ChatPanel({
               <Trash2 className="w-4 h-4" />
             </button>
           )}
+          {onCollapse && (
+            <IconButton
+              size="sm"
+              icon={<ChevronsRight />}
+              aria-label="Collapse chat panel"
+              title="Collapse chat panel"
+              onClick={onCollapse}
+            />
+          )}
         </div>
       </div>
 
@@ -288,7 +302,7 @@ export default function ChatPanel({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 @min-[20rem]:p-4 @min-[20rem]:space-y-4">
         {!recordingId ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper opacity-60">
             <MessageSquare className="w-12 h-12 mb-4" />
@@ -309,7 +323,7 @@ export default function ChatPanel({
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-surface-panel px-4 py-3 text-sm shadow-card ${
+                className={`max-w-[85%] rounded-surface-panel px-3 py-2 @min-[20rem]:px-4 @min-[20rem]:py-3 text-sm shadow-card ${
                   msg.role === "user"
                     ? "bg-action text-action-on rounded-tr-none"
                     : "bg-surface-card border border-surface-border text-foreground rounded-tl-none"
@@ -341,7 +355,7 @@ export default function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-surface-border bg-surface-card relative">
+      <div className="p-3 @min-[20rem]:p-4 border-t border-surface-border bg-surface-card relative">
         {!availability.available && (
           <div className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
             <div className="text-sm text-contrast-helper font-medium">
@@ -388,7 +402,7 @@ export default function ChatPanel({
             placeholder={
               recordingId ? "Ask a question..." : "Select a meeting first..."
             }
-            className="w-full bg-surface-inset border border-control-border rounded-xl pl-4 pr-12 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-action focus:border-transparent resize-none h-14 max-h-32 flex items-center"
+            className="w-full bg-surface-inset border border-control-border rounded-xl pl-4 pr-12 py-3 h-12 @min-[20rem]:py-4 @min-[20rem]:h-14 text-sm focus:outline-none focus:ring-2 focus:ring-action focus:border-transparent resize-none max-h-32 flex items-center"
             disabled={!recordingId}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2">

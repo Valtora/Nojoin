@@ -10,11 +10,14 @@ import {
   Play,
   Pause,
   ArrowRightToLine,
+  ChevronsRight,
   User,
   UserCheck,
+  Users,
   Loader2,
 } from "lucide-react";
 import { useState } from "react";
+import IconButton from "./ui/IconButton";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -43,6 +46,8 @@ interface SpeakerPanelProps {
   onRefresh: () => void;
   globalSpeakers: GlobalSpeaker[];
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
+  /** Desktop side-column collapse; the mobile Speakers tab omits it. */
+  onCollapse?: () => void;
 }
 
 export default function SpeakerPanel({
@@ -59,6 +64,7 @@ export default function SpeakerPanel({
   onRefresh,
   globalSpeakers,
   onSpeakerRenamed,
+  onCollapse,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{
@@ -140,11 +146,25 @@ export default function SpeakerPanel({
   return (
     <aside
       id="speaker-panel"
-      className="shrink-0 border-l border-surface-border bg-surface-inset h-full overflow-y-auto"
+      className="@container flex h-full min-w-0 flex-col bg-surface-inset"
     >
-      {/* Header with batch voiceprint action */}
+      {onCollapse && (
+        <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card py-1 pl-4 pr-2">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Users className="h-4 w-4 text-action-text" />
+            Speakers
+          </h2>
+          <IconButton
+            size="sm"
+            icon={<ChevronsRight />}
+            aria-label="Collapse speakers panel"
+            title="Collapse speakers panel"
+            onClick={onCollapse}
+          />
+        </div>
+      )}
 
-      <div className="p-2 space-y-2 mt-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-2">
         {speakerEntries.length === 0 ? (
           <div className="p-4 text-sm text-contrast-helper text-center italic">
             No speakers detected.
@@ -218,11 +238,11 @@ export default function SpeakerPanel({
             return (
               <div
                 key={entry.key}
-                className="relative group p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-card"
+                className="relative group p-2.5 @min-[18rem]:p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-card"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2 @min-[18rem]:gap-3">
+                  <div className="flex items-center gap-2 @min-[18rem]:gap-3 min-w-0 flex-1">
                     <div className="relative shrink-0">
                       <div className="relative">
                         <div className="w-8 h-8 rounded-full border border-control-border flex items-center justify-center bg-surface-inset">
