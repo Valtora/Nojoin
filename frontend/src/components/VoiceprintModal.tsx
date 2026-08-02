@@ -290,7 +290,7 @@ export default function VoiceprintModal({
     const currentAction = batchActions[currentResult.diarization_label];
 
     return (
-      <div className="space-y-4">
+      <div className="@container space-y-4">
         {/* Progress indicator */}
         <div className="flex items-center justify-between text-sm text-contrast-helper">
           <span>Speaker {currentBatchIndex + 1} of {successfulResults.length}</span>
@@ -310,8 +310,10 @@ export default function VoiceprintModal({
           {renderMatchInfo(currentResult.matched_speaker)}
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Quick Actions. The link button carries a speaker name of unbounded
+            length, so the pair stacks below roughly two 9.5rem buttons plus
+            the gap. */}
+        <div className="grid gap-2 @min-[20rem]:grid-cols-2">
           <button
             onClick={() => {
               if (currentResult.matched_speaker) {

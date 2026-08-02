@@ -482,8 +482,12 @@ export default function TasksWorkspace() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-surface-border bg-surface-inset p-1">
+          {/* The container is scoped to below lg deliberately: at lg this div
+              becomes a content-sized flex item, and inline-size containment
+              would collapse it. With no query container at lg the @min falls
+              back to the viewport, which is always past the threshold there. */}
+          <div className="max-lg:@container flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="grid gap-2 @min-[23rem]:grid-cols-3 rounded-2xl border border-surface-border bg-surface-inset p-1">
               {(["open", "completed", "archived"] as TaskView[]).map((item) => (
                 <button
                   key={item}

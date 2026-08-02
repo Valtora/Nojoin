@@ -60,14 +60,16 @@ export default function RecordingInfoModal({
         </Button>
       }
     >
-      <div className="space-y-6">
+      <div className="@container space-y-6">
         {/* General Info */}
         <div className="rounded-lg bg-surface-inset p-4">
           <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
             <Monitor aria-hidden="true" className="w-4 h-4 text-status-info-fg" />
             General
           </h4>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          {/* 22rem covers two columns wide enough for a locale timestamp,
+              plus the gap and the card's own padding. */}
+          <div className="grid gap-4 text-sm @min-[22rem]:grid-cols-2">
             <div>
               <span className="block text-xs text-contrast-helper">Name</span>
               <span
@@ -79,7 +81,9 @@ export default function RecordingInfoModal({
             </div>
             <div>
               <span className="block text-xs text-contrast-helper">ID</span>
-              <span className="font-mono text-contrast-muted">{recording.id}</span>
+              <span className="break-all font-mono text-contrast-muted">
+                {recording.id}
+              </span>
             </div>
             <div>
               <span className="block text-xs text-contrast-helper">Created At</span>
@@ -110,7 +114,7 @@ export default function RecordingInfoModal({
               Proxy Audio (Web optimized)
             </h4>
             {info.proxy ? (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <div className="grid gap-x-4 gap-y-3 text-sm @min-[13rem]:grid-cols-2">
                 <div>
                   <span className="block text-xs text-contrast-helper">Format</span>
                   <span className="uppercase text-foreground">
