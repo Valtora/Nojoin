@@ -5,7 +5,10 @@
 // prices change without notice, and a stale price is the error people
 // screenshot.
 import Base from "../layouts/Base.astro";
-import { rows, products, type Cell } from "../data/comparison";
+import { rows, summaryRows, products, type Cell, type Verdict } from "../data/comparison";
+
+const MARK: Record<Verdict, string> = { yes: "✓", partial: "~", no: "✗" };
+const READS: Record<Verdict, string> = { yes: "Yes", partial: "Partly", no: "No" };
 
 // Footnote numbers are assigned in reading order: across each row, then down.
 const sourceIndex = new Map<string, number>();
@@ -47,6 +50,42 @@ const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : und
         </p>
       </div>
 
+      <h2 class="heading-3 glance-heading">At a glance</h2>
+      <div class="table-wrap">
+        <table class="compare-table glance-table">
+          <caption class="glance-caption">
+            The short form of the detailed comparison below, which carries the source and
+            the date checked for every claim.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              {products.map((p) => <th scope="col">{p.name}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              summaryRows.map((row) => (
+                <tr>
+                  <th scope="row">{row.label}</th>
+                  {products.map((p) => {
+                    const cell = row.cells[p.key];
+                    return (
+                      <td class="glance-cell" data-verdict={cell.verdict}>
+                        <span class="glance-mark" aria-hidden="true">{MARK[cell.verdict]}</span>
+                        <span class="visually-hidden">{READS[cell.verdict]}. </span>
+                        <span class="glance-note">{cell.note}</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="heading-3 glance-heading">Detailed comparison</h2>
       <div class="table-wrap">
         <table class="compare-table">
           <thead>

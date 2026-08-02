@@ -72,6 +72,47 @@ in the sections below, and the sections have been rewritten to match.
 | Comparison claim staleness? | The weekly workflow gains a source-URL check as a separate, non-blocking job | A dead source turns the run red and notifies, but the deploy job does not depend on it — a competitor outage must not veto the site's own rebuild. The check catches dead links only; changed facts still rely on the dated footnotes |
 | Demo audio source? | Public-domain, meeting-shaped audio: US government hearings, city-council sessions, NASA briefings. Labelled honestly — real titles, real speaker names | Diarisation and waveforms are genuine, no privacy or licence exposure, and no invented names sit over real people's words. Seed fixtures supply the surrounding density. Provenance recorded per import |
 
+### Decisions taken during the P4/P7 interrogation (2026-08-02)
+
+The demo-seeding and screenshot phases were grilled once the earlier phases had merged.
+Reading the code first turned up three things the plan had assumed away, and the decisions
+below supersede the original P4 and P7 text, which has been rewritten to match.
+
+| Finding or question | Decision | Consequence |
+| --- | --- | --- |
+| The demo stack has no LLM provider, so notes, Edge and chat cannot be genuine | Point it at an Ollama server on the LAN running `qwen3:14b`, context window 16384 | Every AI surface in the screenshots is real product output, at no API cost. `ollama_url_policy` permits a private address because every entry point passes `allow_private=True`. Embeddings are local ONNX, so search never depended on the provider. Note the context window is a *reduction* from the shipped 131072 default, which no 14B model on a 16GB card can hold a KV cache for |
+| Ollama's thinking models could pollute the notes | No change needed | Ollama 0.32.5 returns reasoning in `message.thinking`; the backend reads `message.content` only, so it is discarded. Verified against the live server rather than assumed |
+| Meeting Edge only renders while a recording is in flight, so it cannot be captured from a finished one | Generate a real payload from the Artemis transcript, then stage that recording back into an in-flight status for the capture | The panel renders purely from `transcript.meeting_edge_payload`, so the content is genuine and the framing is controlled. Capturing a live session instead would need tab capture and a well-timed shot |
+| Only one real recording exists, but three shots need a transcript | Accepted: the transcript, Edge and chat shots all show the Artemis briefing | Each shot is individually credible, and Edge suits a press conference well. Inventing a transcript for a seeded meeting was rejected outright |
+| What the seeded rows describe | A mixed small business: eight recordings over three weeks, fictional people, tags, tasks and calendar events | Broad enough not to assume the reader's trade. Calendar events are seeded independently of the recordings so the current week stays full |
+| The owner account is visible in the UI | James Smith, on a reserved `.example` address | RFC 2606 guarantees the address can never resolve, and no real person's data appears |
+| `/app` is baked into the image and only `./data` is mounted | `docker cp` the seed script into the api container and run it there, against the app's own session | The models and Alembic stay the single source of truth. Hand-written SQL would reproduce the test-DDL-drift failure this repository has hit before |
+| The script's name collides with the application's own seeder | Named `scripts/seed_demo_instance.py`, not `seed_demo_data.py` | `backend/seed_demo.py` already defines `seed_demo_data()`, which seeds the "Welcome to Nojoin" recording every install gets. Two different things sharing a name in one repository is a reading trap. First-run setup is also driven with `include_demo_recording=false`, so the stock recording stays out of the screenshots |
+| Re-running the seed script | Aborts if its own marker is present; `--reset` deletes only its own rows | Iterating on seed content is a one-command loop, and the Artemis import with its GPU time is never at risk |
+| How the screenshots are taken | Playwright headless on the host, 1920x1080 at device scale factor 2, both colour schemes in one run, with the app's navigation collapsed | 1920x1080 is the desktop most visitors actually have, and the sidebar at marketing scale is a column of labels too small to read, so collapsing it hands the width to the subject of each shot. Ten shots stay pixel-consistent and are reproducible after any content change. Installed outside the repository, which has no browser-automation dependency and should not gain one for a job that runs about once a year |
+| Screenshot format | WebP at 2560x1440, quality 82 | The hero displays at roughly 1072 CSS px inside the 72rem wrap, so 2560 is about 2.4x the real display size. Downscaling from the 2x capture supersamples, which both sharpens small interface text and compresses better: 1.27 MB for all eleven images. `Shot.astro` hardcoded `.svg` at 1440x900, so P7 changes the component's sources and its declared aspect ratio as well as the files |
+| Open Graph card content | Mark, wordmark, the headline at display scale, and the descriptor small beneath | A social card arrives without context, so it carries both the hook and a plain statement of what Nojoin is. `Base.astro` gains `og:image` and the Twitter card tags, neither of which exists yet |
+| The document behind the chat shot | The NASA Artemis II press kit | Public domain, genuinely about the audio, and it exercises the real PDF parsing path rather than a text file written for the occasion |
+
+### Polish round after the first screenshots landed (2026-08-02)
+
+Reviewing the real screenshots on the page produced a second round of decisions. The
+durable ones are already folded into `docs/SITE.md`.
+
+| Finding or question | Decision | Consequence |
+| --- | --- | --- |
+| The feature screenshots were unreadable | Feature rows stack: copy at reading width, screenshot beneath in a 102rem container | Side by side, the shot got half of a 72rem wrap and rendered a 1920px capture at about 28%. Full width it lands near 1600px on a 1920 screen, roughly 85% of life size. The alternating rhythm survives as the copy block changing sides |
+| The Meeting Edge shot showed a recording being processed | Replaced with a genuine live capture | The panel is stageable from the database, but the waveform is drawn from a real MediaStream and cannot be. Chromium is given a fake microphone fed from a WAV of the briefing (`--use-file-for-fake-audio-capture`), so the waveform, the live transcript and the guidance are all real output. The typed focus line and note visibly change what Edge returns |
+| Light and dark toggle | Added, superseding the no-JavaScript decision | Two small inline scripts: one stamps the stored choice on the root element before first paint, one wires the button. The build-time token transform now emits both a `prefers-color-scheme` rule and a `[data-theme]` rule from the same source. The screenshots follow the chosen theme by having their `<source media>` forced |
+| A simpler comparison | An at-a-glance table above the detailed one, ticks and crosses with a short qualifier | Rows chosen because their answers are structural. Nojoin does not sweep it: Granola also records without a bot, Otter also remembers speakers between meetings. Live in-meeting guidance is deliberately absent as a row, because all four products document some form of it and claiming it as a difference would be the overclaim `docs/SITE.md` exists to prevent |
+| The quick-start steps broke mid-token | The step counter is positioned rather than laid out with flex | `display: flex` on the `li` made every inline `<code>` its own flex item, so `FIRST_RUN_PASSWORD` got a column of its own and broke with room to spare. This was introduced by the 360px overflow fix, which let those items shrink |
+
+Two 360px regressions came out of this round and were fixed: the theme toggle pushed the
+header nav past the viewport, so the header wraps; and the at-a-glance table's
+visually-hidden verdict text, being absolutely positioned with no positioned ancestor, was
+contained by the initial containing block rather than the table's scroll container, which
+made the whole document scroll sideways by the width of the table.
+
 ### Design direction (locked 2026-08-02)
 
 Resolved by a second interrogation and a three-variant mock-up comparison built from the
@@ -433,17 +474,31 @@ rather than by hand, from a `main` merge.
 
 ### P4: demo instance and seeding — PR 2
 
-- A private `Nojoin-demo` stack on this host: local only, no reverse proxy, no public DNS,
-  separate ports and volumes. The compose file stays on the host and is not committed
-- `scripts/seed_demo_data.py`: DB-level fixtures giving the recordings list, calendar and
-  tasks enough density to look like a real install
-- The hero recordings come from public-domain, meeting-shaped audio — US government
-  hearings, city-council sessions, NASA briefings — imported by hand and processed
-  normally, so waveforms, diarisation and timings are genuine. Recordings are labelled
-  honestly: real titles, real speaker names, provenance noted per import. No invented
-  names over real people's words
-- The demo shares this host's single RTX 2080 SUPER with the live instance, so seeding does
-  no GPU work and the manual imports are run a few at a time
+- A private demonstration stack on the development host: local only, no reverse proxy, no
+  public DNS, separate ports and volumes. The compose file stays on the host and is not
+  committed
+- Inference comes from an Ollama server on the LAN running `qwen3:14b`, with the context
+  window lowered to 16384. The shipped default is 131072, which is right for a hosted
+  provider and wrong for a 14B model on a 16GB card: the KV cache for a 128K window will
+  not fit alongside the weights. `LLM_PROVIDER`, `OLLAMA_API_URL` and
+  `OLLAMA_CONTEXT_WINDOW` are environment overrides that take precedence over
+  `config.json`, so they belong in the stack's `.env`; the model name has no override and
+  is chosen in the first-run wizard
+- `scripts/seed_demo_instance.py`: DB-level fixtures giving the recordings list, calendar and
+  tasks enough density to look like a real install. It imports `backend.models` and uses
+  the application's own session, so the models and Alembic stay the single source of truth
+  and no column list is hand-written. It aborts if its own marker is already present, and
+  `--reset` deletes only the rows it created
+- Eight seeded recordings over three weeks describe a mixed small business, with fictional
+  people, tags and tasks around them. Calendar events are seeded independently so the
+  current week is populated regardless of when the recordings fall
+- One real recording comes from public-domain, meeting-shaped audio — a NASA media day
+  briefing — imported by hand and processed normally, so waveforms, diarisation and
+  timings are genuine. It is labelled honestly: real title, real speaker names, provenance
+  noted. No invented names sit over real people's words, and no seeded recording is given
+  an invented transcript
+- The demonstration stack shares the host's single RTX 2080 SUPER with the live instance,
+  so seeding does no GPU work and the import is run on its own
 
 **Acceptance:** the demo instance boots, the seed script populates it, and it looks like an
 established install rather than a fresh one.
@@ -469,10 +524,33 @@ each source has been opened and read rather than inferred.
 ### P7: screenshots — PR 2
 
 Eleven images: dashboard hero plus four feature shots, each in light and dark, and one
-dedicated 1200×630 Open Graph card composed from the mark, wordmark and tagline. The
-screenshots swap by `<picture>` on `prefers-color-scheme`; the OG card is a single fixed
-image because OG cannot theme-swap. All compressed, sized, and checked for anything
-identifying.
+dedicated 1200×630 Open Graph card composed from the mark, wordmark, headline and
+descriptor. The screenshots swap by `<picture>` on `prefers-color-scheme`; the OG card is a
+single fixed image because OG cannot theme-swap. All compressed, sized, and checked for
+anything identifying.
+
+Captured with Playwright driving headless Chromium against the demonstration stack:
+viewport 1920×1080 at device scale factor 2, both colour schemes in one run, with the app's
+navigation collapsed, so the ten shots stay consistent with each other and can be retaken
+after any content change. The capture script lives outside the repository, which has no
+browser-automation dependency and should not gain one for a job that runs about once a year.
+Output is WebP at quality 82, downscaled to 2560×1440 and served at the 1920×1080 layout
+size.
+
+Panel state is set by writing the persisted `navigation-storage` store rather than by
+clicking chevrons, which is both faster and immune to a control moving with the viewport.
+The same mechanism marks the driver.js onboarding tour as seen: it fires after a `getUserMe`
+call resolves, so it can appear later than `networkidle` and outrace any click-to-dismiss.
+
+Two components change alongside the files. `Shot.astro` hardcodes `.svg` in both `srcset`
+and `src` and declares a 1440×900 layout size, so it is repointed at `.webp` at 1920×1080.
+`Base.astro` has no `og:image` and no Twitter card tags at all, so it gains both.
+
+The Meeting Edge shot is the awkward one: the panel lives inside `RecordingStatusDisplay`,
+which the recording detail page renders only for an in-flight recording, so a finished
+recording never shows it. It renders purely from `transcript.meeting_edge_payload`, so the
+shot is taken by generating a real payload from the Artemis transcript and then staging that
+recording back into an in-flight status.
 
 **Acceptance:** no real personal data in any image; the page's layout is unchanged from the
 placeholder version beyond the images themselves.

@@ -30,10 +30,83 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
+    {/* One fixed card for every page. Open Graph images cannot follow
+        prefers-color-scheme, so this commits to the dark treatment rather than
+        pairing light and dark the way the screenshots do. Absolute URL because
+        relative og:image is not resolved by every crawler. */}
+    <meta property="og:image" content={new URL("/images/og-card.png", Astro.site)} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Nojoin: meeting notes, with no bot in the call" />
+    <meta name="twitter:card" content="summary_large_image" />
+    {/* Render-blocking on purpose: stamping the stored choice before the first
+        paint is what stops a light flash on the way to a dark page. */}
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem("nojoin-theme");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.dataset.theme = stored;
+          }
+        } catch (error) {
+          /* Private mode and blocked storage both land here. The system
+             preference still applies, so there is nothing to recover from. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <Header />
     <slot />
     <Footer />
+    <script is:inline>
+      (function () {
+        var root = document.documentElement;
+
+        function activeTheme() {
+          if (root.dataset.theme) return root.dataset.theme;
+          return window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        }
+
+        // Screenshots are art-directed on prefers-color-scheme, which a chosen
+        // theme has to override. Forcing each source's media is enough: the
+        // picture element re-evaluates and still fetches only one file.
+        function applyShots(theme) {
+          document
+            .querySelectorAll("picture > source[data-theme-source]")
+            .forEach(function (source) {
+              source.media = theme === "dark" ? "all" : "not all";
+            });
+        }
+
+        if (root.dataset.theme) applyShots(root.dataset.theme);
+
+        var toggle = document.querySelector("[data-theme-toggle]");
+        if (!toggle) return;
+
+        function label() {
+          var next = activeTheme() === "dark" ? "light" : "dark";
+          toggle.setAttribute("aria-label", "Switch to " + next + " theme");
+        }
+        label();
+
+        toggle.addEventListener("click", function () {
+          var next = activeTheme() === "dark" ? "light" : "dark";
+          try {
+            localStorage.setItem("nojoin-theme", next);
+          } catch (error) {
+            /* Nothing to persist to; reloading would drop the choice, so apply
+               it in place instead and let it last the page view. */
+            root.dataset.theme = next;
+            applyShots(next);
+            label();
+            return;
+          }
+          window.location.reload();
+        });
+      })();
+    </script>
   </body>
 </html>

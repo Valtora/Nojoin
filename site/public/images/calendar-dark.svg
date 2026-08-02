@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900">
-  <rect width="1440" height="900" fill="#161616"/>
-  <rect x="24" y="24" width="280" height="852" rx="12" fill="#2a2a2a"/>
-  <rect x="328" y="24" width="1088" height="852" rx="12" fill="#2a2a2a"/>
-  <text x="872" y="450" fill="#6b7280" font-family="sans-serif" font-size="40" text-anchor="middle">Calendar screenshot placeholder</text>
-  <text x="872" y="500" fill="#6b7280" font-family="sans-serif" font-size="24" text-anchor="middle">Replaced with a real capture in P7</text>
-</svg>

@@ -3,12 +3,21 @@
  * theme, at build time, from the same source file.
  *
  * The app toggles dark mode with a `.dark` class because a user can override
- * their OS preference in settings. The site has no JavaScript, so it follows
- * `prefers-color-scheme` instead. Rather than keeping a hand-written copy of
- * the dark values under a media query, which would drift, this transform reads
- * the `.dark { ... }` block out of tokens.css as Vite loads it and appends
+ * their OS preference in settings. The site follows `prefers-color-scheme` by
+ * default and lets a visitor override it with the header toggle, which stores a
+ * choice and stamps `data-theme` on the root element. Rather than keeping a
+ * hand-written copy of the dark values, which would drift, this transform reads
+ * the `.dark { ... }` block out of tokens.css as Vite loads it and appends two
+ * rules built from the same declarations:
  *
- *   @media (prefers-color-scheme: dark) { :root { ...same declarations... } }
+ *   @media (prefers-color-scheme: dark) {
+ *     :root:not([data-theme="light"]) { ...same declarations... }
+ *   }
+ *   :root[data-theme="dark"] { ...same declarations... }
+ *
+ * The `:not()` is what makes an explicit light choice win on a machine set to
+ * dark; the light values already live in the unqualified `:root`, so choosing
+ * light only has to stop the dark rules applying.
  *
  * The `.dark` selector block itself stays in the output and is inert: nothing
  * on the site ever carries that class.
@@ -38,7 +47,13 @@ export default function appTokensMedia() {
         }
       }
       const darkBody = code.slice(open + 1, end);
-      return `${code}\n@media (prefers-color-scheme: dark) {\n  :root {${darkBody}}\n}\n`;
+      return (
+        `${code}\n` +
+        `@media (prefers-color-scheme: dark) {\n` +
+        `  :root:not([data-theme="light"]) {${darkBody}}\n` +
+        `}\n` +
+        `:root[data-theme="dark"] {${darkBody}}\n`
+      );
     },
   };
 }
