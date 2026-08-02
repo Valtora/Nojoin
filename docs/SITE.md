@@ -318,12 +318,39 @@ regression. Verify that contract on the workers.dev URL after a deploy.
   both do, deliberately. The document moving is not.
 - `python3 scripts/validate_docs.py` and `git diff --check`.
 
+## How it is served, and what replaced what
+
+`www.nojoin.co.uk` is a Cloudflare **Worker Route**, declared in `site/wrangler.jsonc` and
+deployed by CI. It is a Route rather than a Custom Domain on purpose: the hostname was
+already a proxied record, a Custom Domain cannot attach to a hostname that has one without
+deleting the record first, and that would put DNS propagation behind any rollback. A Route
+sits in front of the proxied record, so adding it intercepts traffic atomically and removing
+it stops intercepting just as atomically.
+
+**Rolling back is `git revert` of the commit that added the route, then letting CI deploy.**
+Deleting the route in the Cloudflare dashboard is not the rollback path: the weekly scheduled
+deploy from `main` re-applies whatever `wrangler.jsonc` says.
+
+That rollback used to land on a live GitHub Pages origin. It no longer does. Pages served
+the previous Jekyll site from `main` as a `build_type: legacy` build — no workflow, just a
+repository setting — and it was disabled and its sources deleted (`_config.yml`, `_layouts/`,
+`_includes/`, `assets/css/style.scss`, `docs/index.md`, `CNAME`) when the Astro site went
+live. `assets/images/nojoin-mark.svg` stayed, because `README.md` still references it.
+
+The consequence is worth being clear about: reverting the route now removes the Worker and
+leaves the DNS record pointing at nothing, so **revert is no longer a fallback to a working
+site — it is a way to take the site down.** Fixing a bad deploy means rolling `site/` forward,
+not backwards. Re-enabling Pages is a repository settings change that no `git revert` can
+perform.
+
+Cloudflare Web Analytics is a `CF_BEACON_TOKEN` constant in `Base.astro`. The token is not a
+secret: it ships in the markup on every page and only identifies which site a beacon belongs
+to. Empty is supported and renders no beacon at all, which is what every local build does.
+
 ## Maintenance
 
 - The site deploys from `main` only: a push touching `site/`, a published release, a weekly
-  schedule, and manual dispatch. Rolling back the production route is a git revert of the
-  cutover commit, never a dashboard action, because the next scheduled deploy re-applies
-  whatever `wrangler.jsonc` says.
+  schedule, and manual dispatch.
 - Build-time data (star count, latest release) degrades gracefully: the release falls back
   to `docs/VERSION`, the star count to no number. No API outage may fail a build.
 - Screenshots are real captures from a seeded demonstration instance processed through the

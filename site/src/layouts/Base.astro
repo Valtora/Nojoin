@@ -14,6 +14,17 @@ interface Props {
 
 const { title, description } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
+
+// Cloudflare Web Analytics. The site token is not a secret -- it ships in the
+// markup on every page and identifies which site a beacon belongs to, nothing
+// more -- so it lives here rather than in a repository secret, and CI needs no
+// extra configuration to build with it.
+//
+// Empty is a supported state: the beacon simply does not render, which is what
+// every local build and every preview does. Cloudflare still reports
+// request-level analytics for the Worker either way; this only adds the
+// page-level view.
+const CF_BEACON_TOKEN = "";
 ---
 
 <!doctype html>
@@ -108,5 +119,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         });
       })();
     </script>
+    {CF_BEACON_TOKEN && (
+      <script
+        is:inline
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={`{"token": "${CF_BEACON_TOKEN}"}`}
+      />
+    )}
   </body>
 </html>
