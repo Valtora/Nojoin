@@ -258,3 +258,117 @@ export const rows: Row[] = [
     },
   },
 ];
+
+// The at-a-glance summary. Every verdict here is the short form of a row in
+// `rows` above, so the sourcing lives in one place: the detailed table carries
+// the URL and checked date for each claim, and this table says so rather than
+// repeating footnotes that could drift out of step with it.
+//
+// The rows were chosen because their answers are structural -- where the
+// software runs, who holds the recordings, what the licence permits -- rather
+// than roadmap-sensitive. Nojoin does not sweep the table, deliberately:
+// Granola also records without a bot, Otter also remembers speakers between
+// meetings, and saying otherwise would cost the credibility of the rows where
+// the difference is real. Live in-meeting guidance is absent for the same
+// reason: all four products document some form of it, so it is not a
+// distinction, whatever Meeting Edge is worth on its own merits.
+
+export type Verdict = "yes" | "partial" | "no";
+
+export interface SummaryCell {
+  verdict: Verdict;
+  note: string;
+}
+
+export interface SummaryRow {
+  key: string;
+  label: string;
+  cells: Record<string, SummaryCell>;
+}
+
+const yes = (note: string): SummaryCell => ({ verdict: "yes", note });
+const partial = (note: string): SummaryCell => ({ verdict: "partial", note });
+const no = (note: string): SummaryCell => ({ verdict: "no", note });
+
+export const summaryRows: SummaryRow[] = [
+  {
+    key: "selfhost",
+    label: "Runs on your own hardware",
+    cells: {
+      nojoin: yes("One compose file"),
+      otter: no("Not stated in docs"),
+      granola: no("Vendor cloud"),
+      fireflies: no("Vendor cloud"),
+    },
+  },
+  {
+    key: "processing",
+    label: "Processing stays on your infrastructure",
+    cells: {
+      nojoin: yes("Your server"),
+      otter: no("Otter's cloud"),
+      granola: no("Granola's cloud"),
+      fireflies: no("Fireflies' cloud"),
+    },
+  },
+  {
+    key: "storage",
+    label: "Recordings and transcripts stay yours",
+    cells: {
+      nojoin: yes("Your server"),
+      otter: no("Otter's cloud"),
+      granola: no("Vendor-hosted"),
+      fireflies: partial("Own bucket on Enterprise"),
+    },
+  },
+  {
+    key: "source",
+    label: "Source available and auditable",
+    cells: {
+      nojoin: yes("AGPLv3"),
+      otter: no("Proprietary"),
+      granola: no("Proprietary"),
+      fireflies: no("Proprietary"),
+    },
+  },
+  {
+    key: "models",
+    label: "Your choice of model, including fully local",
+    cells: {
+      nojoin: yes("Your keys, or Ollama"),
+      otter: no("Vendor-chosen"),
+      granola: no("Vendor-chosen"),
+      fireflies: no("Vendor-chosen"),
+    },
+  },
+  {
+    key: "nobot",
+    label: "No bot joins the call",
+    cells: {
+      nojoin: yes("Never a participant"),
+      otter: partial("Bot by default"),
+      granola: yes("Captures locally"),
+      fireflies: partial("Bot by default"),
+    },
+  },
+  {
+    key: "speakers",
+    label: "Speakers remembered between meetings",
+    cells: {
+      nojoin: yes("Voiceprint library"),
+      otter: yes("Auto-tags names"),
+      granola: no("Per-meeting tags"),
+      fireflies: no("Per-transcript edits"),
+    },
+  },
+  {
+    key: "browser",
+    label: "Capture without a desktop app",
+    cells: {
+      nojoin: yes("Any browser"),
+      otter: yes("Web app"),
+      granola: no("Desktop app"),
+      fireflies: partial("Chrome extension"),
+    },
+  },
+];

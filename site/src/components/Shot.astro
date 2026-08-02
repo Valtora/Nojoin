@@ -19,7 +19,14 @@ const { name, alt, eager = false } = Astro.props;
     <span class="frame-url">nojoin.your-server.net</span>
   </div>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset={`/images/${name}-dark.webp`} />
+    {/* Art direction on the system preference by default. When a visitor has
+        chosen a theme, the script in Base.astro forces this source's media on
+        or off; the picture element re-evaluates and still fetches one file. */}
+    <source
+      data-theme-source
+      media="(prefers-color-scheme: dark)"
+      srcset={`/images/${name}-dark.webp`}
+    />
     <img
       src={`/images/${name}-light.webp`}
       alt={alt}

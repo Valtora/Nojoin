@@ -227,11 +227,17 @@ button:focus-visible {
   border-bottom: 1px solid var(--surface-divider);
 }
 
+/* Wraps rather than overflowing: the theme toggle pushed the nav past a 360px
+   screen, and a header that grows a second line is better than a page that
+   scrolls sideways. */
 .site-head .wrap {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 3.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  min-height: 3.5rem;
+  padding-block: 0.5rem;
 }
 
 .brand {
@@ -263,6 +269,47 @@ button:focus-visible {
 }
 .site-nav a:hover {
   color: var(--action-text);
+}
+
+/* Same colours as a nav link, so it introduces no new contrast pairing. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--contrast-helper);
+  transition: color 0.15s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--action-text);
+}
+
+/* Show the theme being offered, not the one in force. The base rule is the
+   light case; the media query covers a dark system, and the attribute rules
+   cover an explicit choice in either direction. */
+.theme-toggle .icon-sun {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .icon-sun {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .theme-toggle .icon-moon {
+    display: none;
+  }
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-toggle .icon-moon {
+  display: none;
 }
 
 .star-badge {
@@ -362,6 +409,7 @@ button:focus-visible {
   margin-top: calc(var(--hero-pad) * 0.6);
 }
 
+
 .strip {
   padding-block: calc(var(--section-pad) * 0.85);
 }
@@ -395,19 +443,31 @@ button:focus-visible {
 
 /* Feature rows: text and shot side by side, alternating sides down the page.
    The shot sits left by default; data-side="right" flips it. */
+/* Feature sections stack: copy at reading width, screenshot beneath at close to
+   the viewport width. Side by side, the shot got half of a 72rem wrap, which
+   rendered a 1920px capture at about 28% and made the interface unreadable --
+   the whole point of showing it. The alternating rhythm survives as the copy
+   block changing sides; the text itself stays left-aligned, because ragged-left
+   prose is harder to read than the rhythm is worth. */
 .feature {
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
-  gap: clamp(2rem, 5vw, 4rem);
-  align-items: center;
+  display: block;
 }
 
-.feature > .frame {
-  order: -1;
+.feature-copy {
+  max-width: 52ch;
 }
 
-.feature[data-side="right"] > .frame {
-  order: 1;
+.feature[data-side="right"] .feature-copy {
+  margin-inline-start: auto;
+}
+
+/* Wider than .wrap so the screenshots dominate. At 1920 the frame lands near
+   1600px, so the captured interface renders at roughly 85% of life size. */
+.wrap-shot {
+  max-width: 102rem;
+  margin-inline: auto;
+  margin-top: clamp(2rem, 4vw, 3.25rem);
+  padding-inline: clamp(1.25rem, 4vw, 2.5rem);
 }
 
 .feature .heading-2 {
@@ -455,29 +515,33 @@ button:focus-visible {
   margin-top: 1.5rem;
 }
 
+/* Not a flex row. Flex would make every inline <code> in the step its own flex
+   item, so "FIRST_RUN_PASSWORD" gets a column of its own and breaks mid-token
+   with room to spare. Taking the counter out of flow leaves the step body as
+   ordinary inline content that wraps between words like prose. */
 .qs-steps li {
   counter-increment: step;
-  display: flex;
-  gap: 0.875rem;
-  align-items: baseline;
+  position: relative;
+  padding-left: 2.5rem;
   font-size: 0.96875rem;
   color: var(--contrast-helper);
   line-height: 1.6;
 }
 
-/* The step text is a flex item, so its minimum width is its longest unbreakable
-   run -- and two of the steps name environment variables that are longer than a
-   360px screen. Let those break rather than widen the page. */
-.qs-steps li {
-  min-width: 0;
-}
-
-.qs-steps code {
-  overflow-wrap: anywhere;
+/* Two steps name environment variables longer than a 360px screen. Only let
+   them break where they would otherwise force the page sideways; at any usable
+   width there is room and the token stays whole. */
+@media (max-width: 26rem) {
+  .qs-steps code {
+    overflow-wrap: anywhere;
+  }
 }
 
 .qs-steps li::before {
   content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 0.8125rem;
@@ -485,7 +549,6 @@ button:focus-visible {
   border: 1px solid var(--surface-card-border);
   border-radius: 8px;
   padding: 0.1rem 0.55rem;
-  flex: none;
 }
 
 .code-block {
@@ -525,6 +588,78 @@ button:focus-visible {
   background: var(--surface-card);
   box-shadow: var(--surface-card-shadow);
   margin-top: 2.5rem;
+}
+
+/* Section headings on the comparison page, between the two tables. */
+.heading-3 {
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+
+.glance-heading {
+  margin-top: 3.5rem;
+}
+
+.glance-caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--contrast-muted);
+}
+
+/* Narrower than the detailed table: these cells are a mark and a few words, so
+   they do not need the horizontal scroll the prose table earns. */
+.glance-table {
+  min-width: 44rem;
+}
+
+/* Positioned so the visually-hidden verdict inside it is contained here rather
+   than by the initial containing block. Left to escape, an absolutely
+   positioned descendant is not clipped by the table's scroll container, and it
+   sits at the cell's x-position on the page -- which makes the whole document
+   scroll sideways by the width of the table. */
+.glance-cell {
+  position: relative;
+  white-space: nowrap;
+}
+
+.glance-mark {
+  display: inline-block;
+  width: 1.25rem;
+  font-weight: 600;
+}
+
+/* Colour is a reinforcement, never the message: the glyph and the
+   visually-hidden word both carry the verdict on their own. */
+.glance-cell[data-verdict="yes"] .glance-mark {
+  color: var(--action-text);
+}
+
+.glance-cell[data-verdict="partial"] .glance-mark {
+  color: var(--contrast-helper);
+}
+
+.glance-cell[data-verdict="no"] .glance-mark {
+  color: var(--contrast-muted);
+}
+
+.glance-note {
+  color: var(--contrast-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .compare-table {
@@ -610,14 +745,13 @@ button:focus-visible {
   .strip-grid {
     grid-template-columns: 1fr;
   }
-  .feature,
   .qs {
     grid-template-columns: 1fr;
   }
-  /* Stacked, the copy reads first regardless of which side the shot took. */
-  .feature > .frame,
-  .feature[data-side="right"] > .frame {
-    order: 1;
+  /* Nothing left to alternate at this width, and an auto start margin on a
+     block already as wide as its parent just looks like a mistake. */
+  .feature[data-side="right"] .feature-copy {
+    margin-inline-start: 0;
   }
 }
 

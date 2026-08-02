@@ -14,9 +14,21 @@ links out to it; the site never holds a copy that can drift. `/docs/*` URLs 301 
 corresponding GitHub blob URL forever, because released images hardcode
 `www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
 
-The site ships no JavaScript of its own. Both themes follow `prefers-color-scheme` with no
-toggle. Fonts are self-hosted: a page whose pitch is that nothing leaves your server does
-not fetch fonts from a CDN.
+Both themes follow `prefers-color-scheme` by default, and a toggle in the header lets a
+visitor override that. The choice is stored and applied before the first paint, so there is
+no flash on the way to a dark page, and the screenshots follow the active theme rather than
+the system one.
+
+This replaces an earlier decision to ship no JavaScript of our own. That position bought
+one thing — a page with nothing to break — and it cost visitors the ability to look at the
+product in the theme they wanted. The toggle wins because the screenshots are most of the
+page's argument and half of them were unreachable to anyone whose system setting disagreed.
+What remains true is that there is no framework and no hydration: two small inline scripts,
+one to stamp the stored choice on the root element and one to wire the button, alongside
+the Cloudflare beacon.
+
+Fonts are self-hosted: a page whose pitch is that nothing leaves your server does not fetch
+fonts from a CDN.
 
 ## Design direction
 
@@ -30,8 +42,12 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
 - **Every screenshot sits in a minimal browser-chrome frame**: three dots, a muted
   `nojoin.your-server.net` URL pill, hairline border, 12px radius, the resting shadow in
   light only. The frame signals "a web app you self-host", which is half the pitch.
-- **Feature rows alternate sides** down the page, on bands that alternate the page and card
-  surfaces. Stacked on mobile, copy first.
+- **Feature rows stack**: copy at reading width, screenshot beneath it in a container wider
+  than the rest of the page, on bands that alternate the page and card surfaces. The
+  alternating rhythm survives as the copy block changing sides down the page; the text
+  itself stays left-aligned. This replaces a side-by-side layout, which gave the screenshot
+  half of a 72rem wrap and so rendered a 1920px capture at about 28% — unreadable, which
+  defeats the point of showing the interface at all.
 - **Colour is neutral plus one orange closer**: the only loud surface is the full-bleed
   orange-700 band at the foot. No cream tints, no gradients, no glass — the app's flat canon
   holds on the site.

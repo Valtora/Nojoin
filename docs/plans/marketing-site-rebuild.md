@@ -94,6 +94,25 @@ below supersede the original P4 and P7 text, which has been rewritten to match.
 | Open Graph card content | Mark, wordmark, the headline at display scale, and the descriptor small beneath | A social card arrives without context, so it carries both the hook and a plain statement of what Nojoin is. `Base.astro` gains `og:image` and the Twitter card tags, neither of which exists yet |
 | The document behind the chat shot | The NASA Artemis II press kit | Public domain, genuinely about the audio, and it exercises the real PDF parsing path rather than a text file written for the occasion |
 
+### Polish round after the first screenshots landed (2026-08-02)
+
+Reviewing the real screenshots on the page produced a second round of decisions. The
+durable ones are already folded into `docs/SITE.md`.
+
+| Finding or question | Decision | Consequence |
+| --- | --- | --- |
+| The feature screenshots were unreadable | Feature rows stack: copy at reading width, screenshot beneath in a 102rem container | Side by side, the shot got half of a 72rem wrap and rendered a 1920px capture at about 28%. Full width it lands near 1600px on a 1920 screen, roughly 85% of life size. The alternating rhythm survives as the copy block changing sides |
+| The Meeting Edge shot showed a recording being processed | Replaced with a genuine live capture | The panel is stageable from the database, but the waveform is drawn from a real MediaStream and cannot be. Chromium is given a fake microphone fed from a WAV of the briefing (`--use-file-for-fake-audio-capture`), so the waveform, the live transcript and the guidance are all real output. The typed focus line and note visibly change what Edge returns |
+| Light and dark toggle | Added, superseding the no-JavaScript decision | Two small inline scripts: one stamps the stored choice on the root element before first paint, one wires the button. The build-time token transform now emits both a `prefers-color-scheme` rule and a `[data-theme]` rule from the same source. The screenshots follow the chosen theme by having their `<source media>` forced |
+| A simpler comparison | An at-a-glance table above the detailed one, ticks and crosses with a short qualifier | Rows chosen because their answers are structural. Nojoin does not sweep it: Granola also records without a bot, Otter also remembers speakers between meetings. Live in-meeting guidance is deliberately absent as a row, because all four products document some form of it and claiming it as a difference would be the overclaim `docs/SITE.md` exists to prevent |
+| The quick-start steps broke mid-token | The step counter is positioned rather than laid out with flex | `display: flex` on the `li` made every inline `<code>` its own flex item, so `FIRST_RUN_PASSWORD` got a column of its own and broke with room to spare. This was introduced by the 360px overflow fix, which let those items shrink |
+
+Two 360px regressions came out of this round and were fixed: the theme toggle pushed the
+header nav past the viewport, so the header wraps; and the at-a-glance table's
+visually-hidden verdict text, being absolutely positioned with no positioned ancestor, was
+contained by the initial containing block rather than the table's scroll container, which
+made the whole document scroll sideways by the width of the table.
+
 ### Design direction (locked 2026-08-02)
 
 Resolved by a second interrogation and a three-variant mock-up comparison built from the
