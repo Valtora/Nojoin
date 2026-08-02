@@ -148,8 +148,14 @@ DEFAULT_SYSTEM_CONFIG = {
     "transcription_backend": "whisper",  # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
-    "ollama_context_window": 131072,
-    "secondary_ollama_context_window": 131072,
+    # Ollama num_ctx. Sized for the hardware this project is actually
+    # self-hosted on rather than for the model's advertised maximum: a KV cache
+    # costs roughly 190 KiB per token on a 14B model, so 32768 is about 6 GB and
+    # fits alongside quantised weights on a 16 GB card. It still covers a
+    # two-hour meeting (~25-30k tokens). The previous 131072 needed ~24 GB of
+    # cache on its own and silently failed to load on any consumer GPU.
+    "ollama_context_window": 32768,
+    "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
@@ -202,7 +208,7 @@ DEFAULT_USER_SETTINGS = {
     "ollama_model": None,  # Default Ollama model
     "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
     "ollama_api_url": "http://host.docker.internal:11434",  # Default Ollama API URL
-    "ollama_context_window": 131072,  # Ollama num_ctx for full-context meeting chat
+    "ollama_context_window": 32768,  # Ollama num_ctx for full-context meeting chat
     "secondary_llm_provider": None,  # Secondary LLM provider (used when primary is unavailable)
     "secondary_gemini_model": None,  # Secondary Gemini model
     "secondary_gemini_live_model": None,  # Optional secondary Meeting Edge Gemini model
@@ -213,7 +219,7 @@ DEFAULT_USER_SETTINGS = {
     "secondary_ollama_model": None,  # Secondary Ollama model
     "secondary_ollama_live_model": None,  # Optional secondary Meeting Edge Ollama model
     "secondary_ollama_api_url": "http://host.docker.internal:11434",  # Default secondary Ollama URL
-    "secondary_ollama_context_window": 131072,  # Secondary Ollama num_ctx
+    "secondary_ollama_context_window": 32768,  # Secondary Ollama num_ctx
     "secondary_gemini_api_key": None,  # Secondary Gemini API key
     "secondary_openai_api_key": None,  # Secondary OpenAI API key
     "secondary_anthropic_api_key": None,  # Secondary Anthropic API key
@@ -236,6 +242,20 @@ DEFAULT_USER_SETTINGS = {
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
     "timezone": "UTC",  # Default user timezone for calendar and task rendering
+}
+
+# Install-wide settings an operator can drive from the environment instead of
+# config.json. Module level rather than local to _load_config so the deployment
+# templates can be checked against it: a key here that no service passes through
+# is a setting the documentation promises and the containers never receive
+# (see backend/tests/test_compose_env_plumbing.py).
+ENV_OVERRIDES = {
+    "llm_provider": "LLM_PROVIDER",
+    "ollama_api_url": "OLLAMA_API_URL",
+    "ollama_context_window": "OLLAMA_CONTEXT_WINDOW",
+    "secondary_llm_provider": "SECONDARY_LLM_PROVIDER",
+    "secondary_ollama_api_url": "SECONDARY_OLLAMA_API_URL",
+    "secondary_ollama_context_window": "SECONDARY_OLLAMA_CONTEXT_WINDOW",
 }
 
 WHISPER_MODEL_SIZES = ["turbo", "tiny", "base", "small", "medium", "large"]
@@ -388,15 +408,7 @@ class ConfigManager:
         # Overlay ENV values for install-wide LLM settings. These take precedence
         # over config.json so that operators can manage the active provider and
         # endpoints via .env without having to edit config.json directly.
-        env_overrides = {
-            "llm_provider": "LLM_PROVIDER",
-            "ollama_api_url": "OLLAMA_API_URL",
-            "ollama_context_window": "OLLAMA_CONTEXT_WINDOW",
-            "secondary_llm_provider": "SECONDARY_LLM_PROVIDER",
-            "secondary_ollama_api_url": "SECONDARY_OLLAMA_API_URL",
-            "secondary_ollama_context_window": "SECONDARY_OLLAMA_CONTEXT_WINDOW",
-        }
-        for config_key, env_key in env_overrides.items():
+        for config_key, env_key in ENV_OVERRIDES.items():
             env_val = os.environ.get(env_key)
             if env_val is not None and env_val != "":
                 if config_key.endswith("_context_window"):

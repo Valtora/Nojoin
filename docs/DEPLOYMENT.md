@@ -333,6 +333,8 @@ lanes then run on CPU.
 Create `.env` from `.env.example` and treat it as the canonical operator configuration file.
 The compose stack derives internal service URLs for PostgreSQL, Redis, and Celery automatically, so those values are intentionally not part of `.env.example`.
 Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
+Every variable below is only read by a container if that container's compose service passes it in, which the shipped `docker-compose.example.yml` does for all of them.
+If you maintain your own compose file, a variable you set in `.env` but never declare in a service's `environment:` block is silently discarded: the stack starts and the application default applies with no warning.
 Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that.
 Nojoin can also auto-generate `data/.data_encryption_key`, but operators should treat that as a fallback rather than the primary persistence strategy.
 
@@ -362,13 +364,13 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `OPENAI_API_KEY`: OpenAI API key.
 - `ANTHROPIC_API_KEY`: Anthropic API key.
 - `OLLAMA_API_URL`: Local or remote Ollama endpoint.
-- `OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value used for full-context meeting prompts. Defaults to `131072`; ensure the selected model and hardware can support the requested context.
+- `OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value used for full-context meeting prompts. Defaults to `32768`, which covers a two-hour meeting (roughly 25,000 to 30,000 tokens). Size it against VRAM, not against the model's advertised maximum: the KV cache costs roughly 190 KiB per token on a 14B model, so `32768` is about 6 GB on top of the weights and `131072` would be about 24 GB, which no consumer card can hold. Ollama fails the load outright rather than degrading if the cache does not fit.
 - `SECONDARY_LLM_PROVIDER`: Secondary LLM provider used when the primary fails. Same values as `LLM_PROVIDER`. Leave empty to disable fallback.
 - `SECONDARY_GEMINI_API_KEY`: Gemini API key for the secondary provider.
 - `SECONDARY_OPENAI_API_KEY`: OpenAI API key for the secondary provider.
 - `SECONDARY_ANTHROPIC_API_KEY`: Anthropic API key for the secondary provider.
 - `SECONDARY_OLLAMA_API_URL`: Ollama endpoint for the secondary provider.
-- `SECONDARY_OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value for the secondary Ollama provider. Defaults to `131072`.
+- `SECONDARY_OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value for the secondary Ollama provider. Defaults to `32768`; the same VRAM sizing applies.
 - `GOOGLE_OAUTH_CLIENT_ID`: Google calendar OAuth client ID.
 - `GOOGLE_OAUTH_CLIENT_SECRET`: Google calendar OAuth client secret.
 - `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft calendar OAuth client ID.

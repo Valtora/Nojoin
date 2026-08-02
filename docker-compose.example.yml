@@ -18,16 +18,27 @@ x-shared-app-environment: &shared-app-environment
   # they fall back to the localhost default and build the wrong URL.
   WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
   NOJOIN_TELEMETRY_ENABLED: ${NOJOIN_TELEMETRY_ENABLED:-}
+  NOJOIN_TELEMETRY_ENDPOINT: ${NOJOIN_TELEMETRY_ENDPOINT:-}
+  # Exports have to be readable by whoever serves them: a worker writes the
+  # archive and the API streams it back, so both sides must resolve the same
+  # directory. Setting it on one service only silently breaks the download.
+  BACKUP_EXPORT_DIR: ${BACKUP_EXPORT_DIR:-}
+  NOJOIN_UMASK: ${NOJOIN_UMASK:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
+  # No default here on purpose. config_manager owns the application default and
+  # skips an empty value, so an unset variable falls through to it; repeating a
+  # number here would create a second default to keep in step.
+  OLLAMA_CONTEXT_WINDOW: ${OLLAMA_CONTEXT_WINDOW:-}
   SECONDARY_LLM_PROVIDER: ${SECONDARY_LLM_PROVIDER:-}
   SECONDARY_GEMINI_API_KEY: ${SECONDARY_GEMINI_API_KEY:-}
   SECONDARY_OPENAI_API_KEY: ${SECONDARY_OPENAI_API_KEY:-}
   SECONDARY_ANTHROPIC_API_KEY: ${SECONDARY_ANTHROPIC_API_KEY:-}
   SECONDARY_OLLAMA_API_URL: ${SECONDARY_OLLAMA_API_URL:-http://host.docker.internal:11434}
+  SECONDARY_OLLAMA_CONTEXT_WINDOW: ${SECONDARY_OLLAMA_CONTEXT_WINDOW:-}
   DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
   GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
   GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
@@ -64,6 +75,11 @@ x-worker-base: &worker-base
 
 x-worker-environment: &worker-environment
   <<: *shared-app-environment
+  # Only the worker lanes ever run a subscription CLI, and only the two on the
+  # io image carry the binary. Declared for all four rather than merged into
+  # those two separately: it is inert where codex is absent, and a single
+  # declaration cannot drift.
+  NOJOIN_CODEX_PATH: ${NOJOIN_CODEX_PATH:-}
   XDG_CACHE_HOME: /home/appuser/.cache
   HF_HOME: /home/appuser/.cache/huggingface
   OMP_NUM_THREADS: 2
@@ -143,6 +159,7 @@ services:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
       MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_ANONYMOUS_DISCOVERY: ${MCP_ANONYMOUS_DISCOVERY:-true}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache
       HF_HOME: /shared_model_cache/huggingface
