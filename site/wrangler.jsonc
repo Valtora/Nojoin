@@ -1,15 +1,20 @@
-// Assets-only Worker: no `main`, so nothing executes per request. The
-// deployment is the static bundle in dist/ plus (from P3) a _redirects
-// rules file. The production route is deliberately absent until the P8
-// cutover PR; until then the site is reachable only on workers.dev.
+// Static assets plus one deliberately narrow Worker script: run_worker_first
+// limits execution to the legacy /docs URLs, whose redirect mapping deployed
+// _redirects rules could not express (see worker/index.js). Every other path
+// is served straight from the static bundle and nothing executes per
+// request. The production route is deliberately absent until the cutover PR;
+// until then the site is reachable only on workers.dev.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nojoin-site",
   "compatibility_date": "2026-08-01",
   "account_id": "54b2d24ea54cb676eea55814237b88c9",
   "workers_dev": true,
+  "main": "worker/index.js",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/docs", "/docs/*"]
   }
 }
