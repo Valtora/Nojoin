@@ -21,7 +21,6 @@
 
 export interface Cell {
   text: string;
-  source?: { url: string; checked: string };
 }
 
 export interface Row {
@@ -40,17 +39,6 @@ export const products = [
   { key: "granola", name: "Granola" },
 ] as const;
 
-const CHECKED = "2 Aug 2026";
-// Jamie's rows were researched a day after the others. The dates are per-claim
-// rather than per-table so a footnote says when that specific page was read.
-const CHECKED_JAMIE = "3 Aug 2026";
-const src = (url: string) => ({ url, checked: CHECKED });
-const jsrc = (url: string) => ({ url, checked: CHECKED_JAMIE });
-
-const README = src("https://github.com/Valtora/Nojoin/blob/main/README.md");
-const USAGE = src("https://github.com/Valtora/Nojoin/blob/main/docs/USAGE.md");
-const MCP = src("https://github.com/Valtora/Nojoin/blob/main/docs/MCP.md");
-
 const UNSOURCED: Cell = { text: "Not stated in current docs" };
 
 export const rows: Row[] = [
@@ -59,20 +47,16 @@ export const rows: Row[] = [
     label: "How audio is captured",
     cells: {
       nojoin: {
-        text: "Your browser captures the call. Nothing joins the meeting or appears in the participant list.",
-        source: README,
+        text: "Your browser captures the call. Nothing joins the meeting or appears in the participant list."
       },
       jamie: {
-        text: "A native macOS or Windows app captures the audio on your machine, online or in the room. No bot joins the call.",
-        source: jsrc("https://docs.meetjamie.ai/getting-started/quickstart"),
+        text: "A native macOS or Windows app captures the audio on your machine, online or in the room. No bot joins the call."
       },
       otter: {
-        text: "An AI meeting agent joins Zoom, Teams and Meet calls; bot-free recording is also available from the desktop, mobile or web app.",
-        source: src("https://otter.ai/"),
+        text: "An AI meeting agent joins Zoom, Teams and Meet calls; bot-free recording is also available from the desktop, mobile or web app."
       },
       granola: {
-        text: "No bot. Desktop apps for macOS and Windows, plus an iPhone app, capture system audio and microphone.",
-        source: src("https://docs.granola.ai/help-center/taking-notes/transcription"),
+        text: "No bot. Desktop apps for macOS and Windows, plus an iPhone app, capture system audio and microphone."
       },
     },
   },
@@ -81,20 +65,16 @@ export const rows: Row[] = [
     label: "Speaker attribution",
     cells: {
       nojoin: {
-        text: "Built-in diarisation plus a global speaker library: voiceprints keep people named across future meetings.",
-        source: README,
+        text: "Built-in diarisation plus a global speaker library: voiceprints keep people named across future meetings."
       },
       jamie: {
-        text: "You name each speaker once from an audio clip after the meeting, and Jamie identifies them automatically in future ones. No voiceprint library is documented.",
-        source: jsrc("https://docs.meetjamie.ai/getting-started/identify-speaker"),
+        text: "You name each speaker once from an audio clip after the meeting, and Jamie identifies them automatically in future ones. No voiceprint library is documented."
       },
       otter: {
-        text: "Speaker identification recognises tagged speakers and auto-tags their names in future transcripts.",
-        source: src("https://otter.ai/privacy-policy"),
+        text: "Speaker identification recognises tagged speakers and auto-tags their names in future transcripts."
       },
       granola: {
-        text: "Speaker tags use platform display names on Meet and Zoom; no cross-meeting speaker memory documented.",
-        source: src("https://docs.granola.ai/help-center/taking-notes/transcription"),
+        text: "Speaker tags use platform display names on Meet and Zoom; no cross-meeting speaker memory documented."
       },
     },
   },
@@ -102,18 +82,15 @@ export const rows: Row[] = [
     key: "processing",
     label: "Where processing happens",
     cells: {
-      nojoin: { text: "On your own server.", source: README },
+      nojoin: { text: "On your own server." },
       jamie: {
-        text: "Entirely within the EU: audio goes to Frankfurt and is transcribed on Modal's serverless GPUs, with notes generated through the Anthropic or OpenAI APIs.",
-        source: jsrc("https://docs.meetjamie.ai/faqs-troubleshooting/data"),
+        text: "Entirely within the EU: audio goes to Frankfurt and is transcribed on Modal's serverless GPUs, with notes generated through the Anthropic or OpenAI APIs."
       },
       otter: {
-        text: "In Otter's cloud, principally on AWS in the United States.",
-        source: src("https://otter.ai/privacy-policy"),
+        text: "In Otter's cloud, principally on AWS in the United States."
       },
       granola: {
-        text: "Audio goes from your device to Granola's cloud transcription and AI providers.",
-        source: src("https://docs.granola.ai/help-center/taking-notes/transcription"),
+        text: "Audio goes from your device to Granola's cloud transcription and AI providers."
       },
     },
   },
@@ -121,18 +98,15 @@ export const rows: Row[] = [
     key: "storage",
     label: "Where recordings live",
     cells: {
-      nojoin: { text: "On your own server.", source: README },
+      nojoin: { text: "On your own server." },
       jamie: {
-        text: "Transcripts sit on a server in Frankfurt; the audio is deleted permanently once the transcript is ready.",
-        source: jsrc("https://docs.meetjamie.ai/faqs-troubleshooting/data"),
+        text: "Transcripts sit on a server in Frankfurt; the audio is deleted permanently once the transcript is ready."
       },
       otter: {
-        text: "In Otter's cloud on AWS S3, with server-side encryption.",
-        source: src("https://otter.ai/privacy-security"),
+        text: "In Otter's cloud on AWS S3, with server-side encryption."
       },
       granola: {
-        text: "Audio is deleted after transcription; transcripts and notes are stored on US-hosted AWS.",
-        source: src("https://docs.granola.ai/help-center/consent-security-privacy/security-privacy-data-faqs"),
+        text: "Audio is deleted after transcription; transcripts and notes are stored on US-hosted AWS."
       },
     },
   },
@@ -140,15 +114,13 @@ export const rows: Row[] = [
     key: "selfhost",
     label: "Self-hosting",
     cells: {
-      nojoin: { text: "Self-hosting is the product: one compose file on your hardware.", source: README },
+      nojoin: { text: "Self-hosting is the product: one compose file on your hardware." },
       jamie: {
-        text: "None documented; the app is local but every meeting is processed and stored in Jamie's EU cloud.",
-        source: jsrc("https://docs.meetjamie.ai/enterprise/security-and-compliance"),
+        text: "None documented; the app is local but every meeting is processed and stored in Jamie's EU cloud."
       },
       otter: UNSOURCED,
       granola: {
-        text: "None documented; the service runs in Granola's US-hosted cloud.",
-        source: src("https://www.granola.ai/security"),
+        text: "None documented; the service runs in Granola's US-hosted cloud."
       },
     },
   },
@@ -156,18 +128,15 @@ export const rows: Row[] = [
     key: "source",
     label: "Source and licence",
     cells: {
-      nojoin: { text: "Open source under AGPLv3.", source: README },
+      nojoin: { text: "Open source under AGPLv3." },
       jamie: {
-        text: "Closed source, proprietary licence: a non-exclusive, non-transferable right to use, lasting only as long as the contract.",
-        source: jsrc("https://www.meetjamie.ai/terms-of-services"),
+        text: "Closed source, proprietary licence: a non-exclusive, non-transferable right to use, lasting only as long as the contract."
       },
       otter: {
-        text: "Closed source, proprietary licence.",
-        source: src("https://otter.ai/terms-of-service"),
+        text: "Closed source, proprietary licence."
       },
       granola: {
-        text: "Closed source, proprietary licence.",
-        source: src("https://docs.granola.ai/help-center/policies/terms-of-service/application-terms-of-service"),
+        text: "Closed source, proprietary licence."
       },
     },
   },
@@ -176,20 +145,16 @@ export const rows: Row[] = [
     label: "Model choice",
     cells: {
       nojoin: {
-        text: "Bring your own API keys, or run fully local inference with Ollama.",
-        source: README,
+        text: "Bring your own API keys, or run fully local inference with Ollama."
       },
       jamie: {
-        text: "Vendor-chosen: notes come from the Anthropic or OpenAI APIs, and no bring-your-own-key or local option is documented.",
-        source: jsrc("https://docs.meetjamie.ai/faqs-troubleshooting/data"),
+        text: "Vendor-chosen: notes come from the Anthropic or OpenAI APIs, and no bring-your-own-key or local option is documented."
       },
       otter: {
-        text: "Otter's own AI plus vendor-chosen third-party providers; no bring-your-own-key or local option documented.",
-        source: src("https://otter.ai/privacy-policy"),
+        text: "Otter's own AI plus vendor-chosen third-party providers; no bring-your-own-key or local option documented."
       },
       granola: {
-        text: "Vendor-chosen providers (Deepgram, AssemblyAI, OpenAI, Anthropic); no bring-your-own-key or local option documented.",
-        source: src("https://www.granola.ai/security"),
+        text: "Vendor-chosen providers (Deepgram, AssemblyAI, OpenAI, Anthropic); no bring-your-own-key or local option documented."
       },
     },
   },
@@ -203,20 +168,16 @@ export const rows: Row[] = [
     label: "Live in-meeting guidance",
     cells: {
       nojoin: {
-        text: "Meeting Edge: live questions worth asking, missed points, and concept help.",
-        source: README,
+        text: "Meeting Edge: live questions worth asking, missed points, and concept help."
       },
       jamie: {
-        text: "The in-meeting widget is a private scratchpad for your own notes. Notes and transcript are generated after you stop recording.",
-        source: jsrc("https://docs.meetjamie.ai/getting-started/recorder"),
+        text: "The in-meeting widget is a private scratchpad for your own notes. Notes and transcript are generated after you stop recording."
       },
       otter: {
-        text: "The meeting agent gives real-time transcription, takeaways and action items, and answers questions live.",
-        source: src("https://otter.ai/"),
+        text: "The meeting agent gives real-time transcription, takeaways and action items, and answers questions live."
       },
       granola: {
-        text: "Granola Chat can answer questions about the ongoing meeting.",
-        source: src("https://docs.granola.ai/help-center/getting-more-from-your-notes/chatting-with-your-meetings"),
+        text: "Granola Chat can answer questions about the ongoing meeting."
       },
     },
   },
@@ -224,18 +185,15 @@ export const rows: Row[] = [
     key: "calendar",
     label: "Calendar integration",
     cells: {
-      nojoin: { text: "Google and Outlook sync, with meeting context in the dashboard.", source: README },
+      nojoin: { text: "Google and Outlook sync, with meeting context in the dashboard." },
       jamie: {
-        text: "Google Calendar or Outlook, used for reminders, automatic meeting titles and better speaker identification.",
-        source: jsrc("https://docs.meetjamie.ai/enterprise/users/calendar-connection"),
+        text: "Google Calendar or Outlook, used for reminders, automatic meeting titles and better speaker identification."
       },
       otter: {
-        text: "Google Calendar, Microsoft Outlook and iOS Calendar.",
-        source: src("https://otter.ai/features"),
+        text: "Google Calendar, Microsoft Outlook and iOS Calendar."
       },
       granola: {
-        text: "Google and Microsoft/Outlook; Apple Calendar isn't supported.",
-        source: src("https://docs.granola.ai/help-center/getting-started/syncing-your-calendars"),
+        text: "Google and Microsoft/Outlook; Apple Calendar isn't supported."
       },
     },
   },
@@ -243,18 +201,15 @@ export const rows: Row[] = [
     key: "search",
     label: "Search",
     cells: {
-      nojoin: { text: "One query across recordings, notes and documents.", source: README },
+      nojoin: { text: "One query across recordings, notes and documents." },
       jamie: {
-        text: "Semantic search across your meeting content, reachable from the app, the API and the MCP server.",
-        source: jsrc("https://docs.meetjamie.ai/integrations/mcp"),
+        text: "Semantic search across your meeting content, reachable from the app, the API and the MCP server."
       },
       otter: {
-        text: "Search and AI chat across meetings and connected apps, by keyword, speaker and date.",
-        source: src("https://otter.ai/"),
+        text: "Search and AI chat across meetings and connected apps, by keyword, speaker and date."
       },
       granola: {
-        text: "Chat spans notes and transcripts across meetings and folders, plus files you upload.",
-        source: src("https://docs.granola.ai/help-center/getting-more-from-your-notes/chatting-with-your-meetings"),
+        text: "Chat spans notes and transcripts across meetings and folders, plus files you upload."
       },
     },
   },
@@ -273,20 +228,16 @@ export const rows: Row[] = [
     label: "What an assistant can do with your meetings",
     cells: {
       nojoin: {
-        text: "Thirty tools on your own deployment, authorised per user and on by default. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks, and syncs your People library with a CRM it's separately connected to — with no CRM integration in Nojoin at all.",
-        source: MCP,
+        text: "Thirty tools on your own deployment, authorised per user and on by default. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks, and syncs your People library with a CRM it's separately connected to — with no CRM integration in Nojoin at all."
       },
       jamie: {
-        text: "Thirteen tools for Claude, ChatGPT, Cursor, Windsurf and Copilot: nine read meetings, transcripts, tasks and people, and four change tags — create, rename, delete and apply them.",
-        source: jsrc("https://docs.meetjamie.ai/integrations/mcp"),
+        text: "Thirteen tools for Claude, ChatGPT, Cursor, Windsurf and Copilot: nine read meetings, transcripts, tasks and people, and four change tags — create, rename, delete and apply them."
       },
       otter: {
-        text: "Reads Otter's transcripts to search across time, analyse themes and generate content. Writes outward into Google Docs, Slides, Jira, Salesforce and Slack. Part of Otter for Enterprise.",
-        source: src("https://otter.ai/blog/otter-mcp-your-meetings-now-power-every-tool-you-use"),
+        text: "Reads Otter's transcripts to search across time, analyse themes and generate content. Writes outward into Google Docs, Slides, Jira, Salesforce and Slack. Part of Otter for Enterprise."
       },
       granola: {
-        text: "Reads notes and transcripts on paid plans: list meetings, read a meeting, search the history. On Enterprise it's early-access beta and stays off until an admin enables it.",
-        source: src("https://www.granola.ai/blog/granola-mcp"),
+        text: "Reads notes and transcripts on paid plans: list meetings, read a meeting, search the history. On Enterprise it's early-access beta and stays off until an admin enables it."
       },
     },
   },
@@ -300,20 +251,16 @@ export const rows: Row[] = [
     label: "Limits on how much you process",
     cells: {
       nojoin: {
-        text: "None in the software. No monthly allowance, no per-meeting ceiling, no history that expires. How much you get through is a question about your hardware.",
-        source: README,
+        text: "None in the software. No monthly allowance, no per-meeting ceiling, no history that expires. How much you get through is a question about your hardware."
       },
       jamie: {
-        text: "One credit a meeting whatever its length: 10 a month and 30-minute meetings on the free plan, 20 and two hours on the next. Above that the count goes but a three-hour ceiling stays. Run out and existing notes lock until you upgrade.",
-        source: jsrc("https://docs.meetjamie.ai/billing-pricing/subscriptions-plans"),
+        text: "One credit a meeting whatever its length: 10 a month and 30-minute meetings on the free plan, 20 and two hours on the next. Above that the count goes but a three-hour ceiling stays. Run out and existing notes lock until you upgrade."
       },
       otter: {
-        text: "300 minutes a month and 30 minutes per conversation on the entry plan; 1,200 and 90 on the next. The upper plans lift the monthly cap and hold a four-hour ceiling per meeting.",
-        source: src("https://otter.ai/pricing"),
+        text: "300 minutes a month and 30 minutes per conversation on the entry plan; 1,200 and 90 on the next. The upper plans lift the monthly cap and hold a four-hour ceiling per meeting."
       },
       granola: {
-        text: "Meeting history is limited on the entry plan, by an amount the pricing page doesn't state. Unlimited notes and history above it.",
-        source: src("https://www.granola.ai/pricing"),
+        text: "Meeting history is limited on the entry plan, by an amount the pricing page doesn't state. Unlimited notes and history above it."
       },
     },
   },
@@ -322,20 +269,16 @@ export const rows: Row[] = [
     label: "Export and portability",
     cells: {
       nojoin: {
-        text: "Transcript, notes or combined output as DOCX, PDF or plain text, plus full-instance backup archives.",
-        source: USAGE,
+        text: "Transcript, notes or combined output as DOCX, PDF or plain text, plus full-instance backup archives."
       },
       jamie: {
-        text: "Summary, transcript and tasks sync into Notion, Google Docs, OneNote, HubSpot, Salesforce, Dynamics 365, Attio and Asana, with an API and webhooks behind them. No file download is documented.",
-        source: jsrc("https://docs.meetjamie.ai/integrations/overview"),
+        text: "Summary, transcript and tasks sync into Notion, Google Docs, OneNote, HubSpot, Salesforce, Dynamics 365, Attio and Asana, with an API and webhooks behind them. No file download is documented."
       },
       otter: {
-        text: "TXT, DOCX, PDF and SRT, plus audio export.",
-        source: src("https://otter.ai/transcription"),
+        text: "TXT, DOCX, PDF and SRT, plus audio export."
       },
       granola: {
-        text: "Bulk export of notes to CSV: titles, summaries, transcripts and details.",
-        source: src("https://docs.granola.ai/help-center/sharing/exporting-notes"),
+        text: "Bulk export of notes to CSV: titles, summaries, transcripts and details."
       },
     },
   },

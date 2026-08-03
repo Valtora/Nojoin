@@ -47,11 +47,16 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
 - **Every screenshot sits in a minimal browser-chrome frame**: three dots, a muted
   `nojoin.your-server.net` URL pill, an orange edge, 14px radius and `--lift-strong`. The
   frame signals "a web app you self-host", which is half the pitch.
-- **Feature rows stack**: copy at reading width, screenshot beneath it in a container wider
-  than the rest of the page. The rhythm survives as the copy block changing sides down the
-  page; the text itself stays left-aligned. This replaces a side-by-side layout, which gave
-  the screenshot half of a 72rem wrap and so rendered a 1920px capture at about 28% —
-  unreadable, which defeats the point of showing the interface at all.
+- **Feature rows put the copy beside the shot**, alternating sides down the page. This
+  reverses the stacked layout, which itself replaced a side-by-side one, so the reasoning
+  matters more than the arrangement. Side-by-side failed the first time because it gave a
+  1920px full-app capture half of a 72rem wrap and rendered the interface at about 28% —
+  unreadable, which defeats the point of showing it. Stacking fixed that by giving the shot
+  the full width. **What changed is the captures, not the layout.** Each shot is now cropped
+  to the thing its row is about — 540 to 810 logical pixels rather than 1600 — so half a wrap
+  shows it at roughly life size. The stack had started to look like four identical pictures
+  of the same window, each too big for what it was saying. If a future shot goes back to
+  being a whole window, this layout breaks again, and **the fix is the crop, not the grid.**
 - **A feature row earns its place with its screenshot.** The Calendar row was cut: its
   capture was the dashboard shot scrolled down a little, so the row spent a full section of
   vertical rhythm showing something the page had already shown. Calendar sync is not
@@ -66,7 +71,18 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   it — framed screenshots, the flow card, the tool showcase, the price card — each carrying
   `--lift`. `.band` keeps only `--band-wash`, a gradient faint enough that two adjacent
   bands never look like a seam. In dark it lightens rather than casting, because a black
-  shadow on a near-black page is invisible.
+  shadow on a near-black page is invisible. **`.band` and `.section` must still strictly
+  alternate**, and it is worth checking after any section is added or removed: the wash is
+  faint, so two `.band`s in a row do not look like a seam, they look like nothing at all, and
+  the rhythm quietly disappears. Removing the privacy section left three consecutive bands
+  before anyone noticed.
+- **The spell check is in the notes screenshot on purpose.** The generated demo notes use
+  American spellings and the editor underlines them, which read as errors in Nojoin's output
+  until the copy beside the shot claimed them: the row now points at the red line under
+  "emphasizing" and says the spell check reads British English. That turns an artefact into
+  the feature it actually is. It is also the honest reading — nothing was retouched, and four
+  attempts to suppress the underlines failed because the editor re-renders through DOM and
+  stylesheet overrides alike.
 - **The quick-start code block is dark in both themes**, and it is the only surface that
   ignores the theme toggle. It followed the theme until a reader pointed out it was still
   hard to look at in light: the syntax colours were legible on the measurements, but the
@@ -76,6 +92,19 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   numbers.
 - **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
   orange-700 band at the foot. No cream tints and no glass.
+- **The closer is the managed offer, and there is no repeat-CTA band.** The foot of the page
+  used to carry "Your meetings, on your own server, tonight" with Get started and Star on
+  GitHub — the same two calls the hero already makes, one screen further down a page that had
+  grown too long. It went. The managed teaser took the orange treatment in its place, so the
+  page still ends on a deliberate surface rather than trailing off, and the last thing a
+  visitor reads is the one offer the hero does not make. A page that has to ask twice is
+  usually too long, which is what the rest of this pass was about.
+- **The landing page carries no privacy section.** It had one, and it was cut when the page
+  was shortened: those claims are made better elsewhere. Self-hosting and local inference
+  lead the three-up strip, the licence is in the footer, telemetry has a footer link on every
+  page, and `/compare/` argues the whole privacy case in sourced rows rather than assertions.
+  A section repeating them on the apex page was the fourth time a visitor met the same
+  argument.
 - **Three marketing effects, and no more.** The app's flat canon governs the product,
   where a lifted control is noise in a workspace someone stares at all day. The site is a
   page whose job is to be looked at once, so it takes three departures, all site-only and
@@ -145,17 +174,43 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   the word, and the subhead immediately spells it out in plain terms for one who does not.
   The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
   No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
-- **The agents section carries no screenshot, by decision.** Every other feature section on
-  the landing page is led by its shot. That capability happens in Claude's or ChatGPT's
-  window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
-  capture of someone else's interface would be a false image on a page that argues from
-  checkable ones. Nojoin's own screens now carry part of the claim: the transcript labels an
-  utterance an assistant edited as `AI corrected text` or `AI corrected speaker`, distinct
-  from the plain `Edited` a web correction earns, so a transcript capture would be honest.
-  The rest of the
-  surface is not there yet, and a task list an assistant filed is still indistinguishable
-  from a typed one. The flow card, the tool showcase and the bridge card take the visual
-  weight for now; the band earns a real shot at the next site pass.
+- **The agents section carries no screenshot, and this has now been tried both ways.** The
+  original reason still stands: the capability happens in Claude's or ChatGPT's window, not
+  Nojoin's, and the frame chrome reads `nojoin.your-server.net`, so a framed capture of
+  someone else's interface would be a false image on a page that argues from checkable ones.
+  A shot of Nojoin's *own* transcript showing the `AI corrected text` and `AI corrected
+  speaker` labels is honest, so it was added — and then removed, because in place it said the
+  same thing as the transcripts row two sections below it and sat under the bridge card with
+  no copy beside it. Honest is not the same as earning its place. The three devices carry the
+  band instead: the flow card, the tool showcase and the bridge card, each with a claim no
+  capture makes — the actors in a real post-meeting job, thirty tools, the CRM
+  reconciliation. **The rest of the surface still has none.** A task list an assistant filed
+  is indistinguishable from a typed one, so the band does not claim it in an image.
+- **Screenshots are cropped to the thing the row is about, and sized for half a wrap.** Every
+  capture used to be the whole app, so four rows showed four near-identical pictures and the
+  detail each row argued from rendered too small to read. Each shot is now framed on its own
+  claim: Meeting Edge on the guidance panel, transcripts on a speaker handover, notes on the
+  generated summary and the Key Decisions table. The hero keeps the full-app view deliberately — it is the one place a
+  visitor should see the whole interface, and it is what the browser-chrome frame is arguing
+  for. Three rules keep this working:
+  - **Crop to roughly 550–800 logical pixels wide.** That is what renders near life size in
+    half a wrap. A crop of 1000+ is a stacked-layout crop and will be too small beside copy.
+  - **Capture at the width the crop wants**, rather than cropping a wide window. The
+    transcripts shot is taken at a 1280px viewport so the utterance bubbles wrap inside the
+    frame; cropping the same column out of a 1600px capture cut every line in half.
+  - **A crop must not duplicate another crop.** The transcripts shot sits on a different
+    passage from anything else for this reason, and it is why the agent band ended up with
+    no shot at all.
+
+  **Which recording each shot comes from.** The notes and Meeting Edge shots come from the
+  Artemis briefing. The transcripts shot comes from **"Welcome to Nojoin", the demo recording
+  the product itself seeds** — four speakers trading one line each, which is what a
+  diarisation shot needs and what a press conference cannot give: Artemis is long monologues,
+  and its whole 12,070px transcript was scanned at 40px steps without ever holding three
+  speakers at once. Any user can re-create that recording from **Settings**, or with
+  `POST /api/v1/system/seed-demo`, so the shot is reproducible rather than a one-off. Note
+  that the other eight seeded business meetings are metadata only and have no transcript at
+  all, so they cannot supply one.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never
@@ -175,7 +230,7 @@ accessibility section.
 ## Voice
 
 The site speaks the product's own register: plain, direct, a little opinionated, second
-person, sentence case, British English, no emoji. It shares a writing standard with the
+person, British English, no emoji. It shares a writing standard with the
 sibling brand Vorkane, adapted rather than copied — Vorkane sells a person and writes in the
 first person singular; Nojoin is a product and never says "I" or "we" in marketing copy.
 
@@ -194,7 +249,15 @@ corporate plural is exactly the register the rest of these rules exist to avoid.
 
 The rules:
 
-- **Contract everything.** "It's", "can't", "won't", "you've". The refusal to contract is
+- **Title case for headings and eyebrow labels, sentence case for everything else.** This
+  reverses an earlier sentence-case-everywhere rule. Headings on this site are labels rather
+  than sentences, and title case is what the rest of the web sets them in. The style is the
+  conventional one, not every-word-capitalised: principal words take a capital and short
+  function words do not unless they open or close the line — "Every Word, Attributed to the
+  Right Person", "£24.99 a Person, a Month", "Four Steps to Running". Body copy, leads,
+  buttons, table cells and alt text stay sentence case. **The hero headline is exempt**: it is
+  set as two sentences and it is baked into the Open Graph card, so changing its case means
+  regenerating that card as well. "It's", "can't", "won't", "you've". The refusal to contract is
   the single strongest tell that a machine wrote it.
 - **Vary sentence length deliberately.** A three-word sentence next to a thirty-word one.
 - **Numbers instead of adjectives**, wherever a true number exists. One compose file, one
@@ -250,20 +313,42 @@ As it stands Jamie takes an outright yes on no-bot capture and on remembering sp
 partial on assistant write access — the row Nojoin leads with. A table Nojoin swept would be
 worth a second look for that reason alone.
 
-The comparison page holds itself to the standard it would want applied to it:
+**The page no longer shows its sources.** It used to carry a numbered footnote under every
+competitor cell with the exact URL and the date it was read, plus a weekly CI job that
+re-checked each link. All of it is gone: the footnotes, the `source` field on `Cell`, and the
+`check-comparison-sources` job. Nobody else in this market footnotes a comparison, the
+apparatus made the page read like a paper rather than a product page, and a reader who
+genuinely doubts a row can check it in a minute. **This was the site owner's call, and it is
+his to reverse.** The cost is stated plainly so the reversal is an informed one: the
+footnotes were the reason the concessions read as candour rather than as marketing, and they
+were the answer if a competitor ever disputed a cell.
 
-- Every competitor claim is verified against **that vendor's own current documentation**,
-  carries the exact URL read and the date it was checked, and renders as a footnote.
-- A claim that cannot be sourced does not go on the page. It appears as an explicit "Not
-  stated in current docs" cell rather than a guess.
+What has *not* changed is the standard the claims themselves are held to:
+
+- **Every competitor claim is still checked against that vendor's own current documentation
+  before it goes up.** Not showing the source is not the same as not having one. Write the
+  cell from the vendor's docs, not from memory, a review site, or a competitor's own
+  comparison page.
+- **A claim that cannot be checked does not go on the page.** It appears as an explicit "Not
+  stated in current docs" cell rather than a guess. That wording survives the footnotes
+  deliberately: it says what was looked for and not found.
 - **No competitor pricing, ever.** Prices change without notice, and a stale price is the
   error people screenshot.
-- Where a competitor is good, the cell says so. The concessions are what make the
-  structural gaps (self-hosting, licence, model choice) believable.
-- The weekly deploy workflow runs a non-blocking source-URL check: a dead footnote link
-  turns the run red without giving a competitor's web server a veto over the site's own
-  rebuild. Changed facts behind live URLs still need a human re-read; treat any vendor
-  feature announcement as a trigger to re-check its row.
+- **Where a competitor is good, the cell says so.** The concessions are what make the
+  structural gaps (self-hosting, licence, model choice) believable, and they matter more now
+  that nothing else on the page demonstrates rigour.
+- **Nothing watches for staleness any more.** The weekly link check is gone and no date is
+  displayed, so a row that quietly went wrong will stay wrong until someone re-reads it.
+  Treat any vendor feature announcement as a trigger to re-check that row by hand.
+- **Do not demote a competitor on an assumption.** The first attempt at this pass was to
+  downgrade Otter's cross-meeting speaker matching to a name-label lookup. Otter's own help
+  centre describes acoustic enrolment — "learns from just a few tagged paragraphs for each
+  speaker", and it calls them "speaker enrollments" — so the downgrade would have been false.
+  Where Nojoin is genuinely ahead here is depth and ownership: a speaker library you can
+  open, voiceprints you can recalibrate from better samples, automatic rebuilds after an
+  upgrade, and deletion that actually removes the voiceprint — none of which any competitor
+  documents, all of it in `USAGE.md`. Argue from that rather than from a competitor being
+  worse than they are.
 
 ## The managed service
 

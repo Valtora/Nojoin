@@ -1,48 +1,27 @@
 ---
-// The comparison page. Every competitor cell in comparison.ts carries a
-// source URL and the date it was checked, rendered here as footnotes; a
-// claim that cannot be sourced does not appear. No pricing anywhere:
-// prices change without notice, and a stale price is the error people
-// screenshot.
+// The comparison page. Claims are still checked against each vendor's own
+// documentation before they go up -- that has not changed -- but the page no
+// longer shows the URL and date behind each cell. Nobody else in this market
+// footnotes a comparison, and a reader who wants to verify a row can. No
+// pricing anywhere: prices change without notice, and a stale price is the
+// error people screenshot.
 import Base from "../layouts/Base.astro";
-import { rows, summaryRows, products, type Cell, type Verdict } from "../data/comparison";
+import { rows, summaryRows, products, type Verdict } from "../data/comparison";
 
 const MARK: Record<Verdict, string> = { yes: "✓", partial: "~", no: "✗" };
 const READS: Record<Verdict, string> = { yes: "Yes", partial: "Partly", no: "No" };
 
-// Footnote numbers are assigned in reading order: across each row, then down.
-const sourceIndex = new Map<string, number>();
-for (const row of rows) {
-  for (const product of products) {
-    const cell = row.cells[product.key];
-    if (cell.source && !sourceIndex.has(cell.source.url)) {
-      sourceIndex.set(cell.source.url, sourceIndex.size + 1);
-    }
-  }
-}
-const footnotes = [...sourceIndex.entries()].map(([url, n]) => {
-  let checked = "";
-  for (const row of rows) {
-    for (const product of products) {
-      const cell = row.cells[product.key];
-      if (cell.source?.url === url) checked = cell.source.checked;
-    }
-  }
-  return { n, url, checked };
-});
-
-const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : undefined);
 ---
 
 <Base
   title="Compare — Nojoin"
-  description="How Nojoin compares to Jamie, Otter and Granola on capture, storage, self-hosting, licences and model choice, with every claim sourced and dated."
+  description="How Nojoin compares to Jamie, Otter and Granola on capture, storage, self-hosting, licences and model choice."
 >
   <main class="section">
     <div class="wrap">
       <div class="centered">
         <p class="eyebrow">Comparison</p>
-        <h1 class="heading-2">Nojoin next to Jamie, Otter and Granola</h1>
+        <h1 class="heading-2">Nojoin Next to Jamie, Otter and Granola</h1>
         <p class="lead" style="max-width: 62ch; margin-inline: auto;">
           Nojoin has taken no funding, employs nobody, and sells nothing you can't
           download. It still runs on your hardware, under a licence you can read, with an
@@ -64,7 +43,7 @@ const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : und
       <div class="table-wrap">
         {/* aria-label rather than a visible <caption>: the table still needs an
             accessible name, but the sentence explaining it duplicated the heading
-            above and the footnote block below. */}
+            above it. */}
         <table class="compare-table glance-table" aria-label="At a glance comparison">
           <thead>
             <tr>
@@ -108,20 +87,9 @@ const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : und
               rows.map((row) => (
                 <tr>
                   <th scope="row">{row.label}</th>
-                  {products.map((p) => {
-                    const cell = row.cells[p.key];
-                    const n = fn(cell);
-                    return (
-                      <td>
-                        {cell.text}
-                        {n !== undefined && (
-                          <a class="fn" href={`#source-${n}`} aria-label={`Source ${n}`}>
-                            [{n}]
-                          </a>
-                        )}
-                      </td>
-                    );
-                  })}
+                  {products.map((p) => (
+                    <td>{row.cells[p.key].text}</td>
+                  ))}
                 </tr>
               ))
             }
@@ -129,21 +97,6 @@ const fn = (cell: Cell) => (cell.source ? sourceIndex.get(cell.source.url) : und
         </table>
       </div>
 
-      <div class="footnotes">
-        <p>
-          Sources, each opened and read on the date shown. Nojoin's own claims cite its
-          repository documentation the same way.
-        </p>
-        <ol>
-          {
-            footnotes.map(({ n, url, checked }) => (
-              <li id={`source-${n}`}>
-                <a href={url}>{url}</a> (checked {checked})
-              </li>
-            ))
-          }
-        </ol>
-      </div>
     </div>
   </main>
 </Base>
