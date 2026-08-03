@@ -71,7 +71,18 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   it — framed screenshots, the flow card, the tool showcase, the price card — each carrying
   `--lift`. `.band` keeps only `--band-wash`, a gradient faint enough that two adjacent
   bands never look like a seam. In dark it lightens rather than casting, because a black
-  shadow on a near-black page is invisible.
+  shadow on a near-black page is invisible. **`.band` and `.section` must still strictly
+  alternate**, and it is worth checking after any section is added or removed: the wash is
+  faint, so two `.band`s in a row do not look like a seam, they look like nothing at all, and
+  the rhythm quietly disappears. Removing the privacy section left three consecutive bands
+  before anyone noticed.
+- **The spell check is in the notes screenshot on purpose.** The generated demo notes use
+  American spellings and the editor underlines them, which read as errors in Nojoin's output
+  until the copy beside the shot claimed them: the row now points at the red line under
+  "emphasizing" and says the spell check reads British English. That turns an artefact into
+  the feature it actually is. It is also the honest reading — nothing was retouched, and four
+  attempts to suppress the underlines failed because the editor re-renders through DOM and
+  stylesheet overrides alike.
 - **The quick-start code block is dark in both themes**, and it is the only surface that
   ignores the theme toggle. It followed the theme until a reader pointed out it was still
   hard to look at in light: the syntax colours were legible on the measurements, but the
@@ -183,14 +194,15 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
     passage from anything else for this reason, and it is why the agent band ended up with
     no shot at all.
 
-  **What the seeded instance can and cannot show.** Only the Artemis briefing has a
-  transcript; the other eight recordings are metadata with no utterances, so every transcript
-  crop has to come from that one. It is a press conference, which means long monologues: the
-  whole 12,070px transcript was scanned at 40px steps and **no window of it ever holds three
-  speakers at once**, even at 880px tall. The transcripts row therefore shows a two-speaker
-  handover, and a three-speaker frame needs a differently seeded recording rather than a
-  better crop. The notes shot carries two spell-check underlines for the same reason — the
-  demo notes are generated text with American spellings, and the editor flags them.
+  **Which recording each shot comes from.** The notes and Meeting Edge shots come from the
+  Artemis briefing. The transcripts shot comes from **"Welcome to Nojoin", the demo recording
+  the product itself seeds** — four speakers trading one line each, which is what a
+  diarisation shot needs and what a press conference cannot give: Artemis is long monologues,
+  and its whole 12,070px transcript was scanned at 40px steps without ever holding three
+  speakers at once. Any user can re-create that recording from **Settings**, or with
+  `POST /api/v1/system/seed-demo`, so the shot is reproducible rather than a one-off. Note
+  that the other eight seeded business meetings are metadata only and have no transcript at
+  all, so they cannot supply one.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never
@@ -210,7 +222,7 @@ accessibility section.
 ## Voice
 
 The site speaks the product's own register: plain, direct, a little opinionated, second
-person, sentence case, British English, no emoji. It shares a writing standard with the
+person, British English, no emoji. It shares a writing standard with the
 sibling brand Vorkane, adapted rather than copied — Vorkane sells a person and writes in the
 first person singular; Nojoin is a product and never says "I" or "we" in marketing copy.
 
@@ -229,7 +241,15 @@ corporate plural is exactly the register the rest of these rules exist to avoid.
 
 The rules:
 
-- **Contract everything.** "It's", "can't", "won't", "you've". The refusal to contract is
+- **Title case for headings and eyebrow labels, sentence case for everything else.** This
+  reverses an earlier sentence-case-everywhere rule. Headings on this site are labels rather
+  than sentences, and title case is what the rest of the web sets them in. The style is the
+  conventional one, not every-word-capitalised: principal words take a capital and short
+  function words do not unless they open or close the line — "Every Word, Attributed to the
+  Right Person", "£24.99 a Person, a Month", "Four Steps to Running". Body copy, leads,
+  buttons, table cells and alt text stay sentence case. **The hero headline is exempt**: it is
+  set as two sentences and it is baked into the Open Graph card, so changing its case means
+  regenerating that card as well. "It's", "can't", "won't", "you've". The refusal to contract is
   the single strongest tell that a machine wrote it.
 - **Vary sentence length deliberately.** A three-word sentence next to a thirty-word one.
 - **Numbers instead of adjectives**, wherever a true number exists. One compose file, one
