@@ -4,7 +4,13 @@ name: Site deploy
 # main, a published release (so the baked-in version and star count refresh),
 # a weekly schedule (same reason, without needing a release), and by hand.
 # There is deliberately no branch trigger: the workflow only ever deploys what
-# main contains, which is what makes reverting a commit a complete rollback.
+# main contains, so whatever lands there is what the public gets.
+#
+# That does NOT make reverting a complete rollback. Reverting an ordinary site/
+# commit is fine, because the deploy just publishes the earlier content. But the
+# route in site/wrangler.jsonc has nothing behind it any more — GitHub Pages was
+# disabled and deleted when this site went live — so reverting the commit that
+# added it takes www.nojoin.co.uk down instead of restoring it. Roll forward.
 on:
   push:
     branches:

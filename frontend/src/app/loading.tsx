@@ -1,6 +1,8 @@
 export default function Loading() {
   return (
-    <main className="min-h-dvh bg-surface-page p-8">
+    // page-shell: this route owns its scroll; <body> is overflow-hidden. Six
+    // skeleton cards in a single column is taller than a short viewport.
+    <main className="page-shell bg-surface-page p-8">
       <div className="max-w-7xl mx-auto">
         <header className="mb-8 flex justify-between items-center">
           <div>

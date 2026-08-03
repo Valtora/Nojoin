@@ -153,7 +153,15 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   deliberately: its instructions carry literal commands and paths (`codex mcp logout`,
   `~/.codex/config.toml`, the "Codex MCP Credentials" keychain entry) that the rename did not
   change, and its troubleshooting section records behaviour observed on a specific Codex
-  build that nobody has re-tested since.
+  build that nobody has re-tested since. **One part of that has now been re-tested and is
+  settled, and it was never a naming question at all**: the name on Nojoin's consent screen
+  is whatever the connecting client sends as `client_name` when it registers. Nojoin stores
+  and displays it verbatim, so any client that speaks the protocol can appear under any name
+  it chooses. The OpenAI app still registers as `Codex` after its rename — checked on a
+  freshly built instance with a newly added server, so neither a stale image nor a cached
+  registration — but that is a fact about the client, not about Nojoin, and no release here
+  can change it. `docs/MCP.md` now explains the mechanism where a reader meets the screen,
+  including the part that matters for safety: the name is a claim, the redirect host is not.
 - **The headline concedes the commodity and claims the hard part**: "Transcription is
   easy. Agentic meeting intelligence isn't." This reverses the earlier no-bot headline
   deliberately, and then reverses its first agent-led replacement too. Not joining the call
@@ -537,9 +545,16 @@ liability: `Base.astro` builds its canonical from `Astro.site` and so pointed cr
 at `www.nojoin.co.uk`, but that is mitigation rather than a reason to keep it. Reviewing an
 unmerged change is what `npm run serve` and a quick tunnel are for.
 
-**Rolling back is `git revert` of the commit that added the route, then letting CI deploy.**
-Deleting the route in the Cloudflare dashboard is not the rollback path: the weekly scheduled
-deploy from `main` re-applies whatever `wrangler.jsonc` says.
+**Fixing a bad deploy means rolling `site/` forward, not backwards.** There is no revert that
+lands on a working site, and reverting the commit that added the route takes the site down
+rather than restoring it — the reasoning is two paragraphs below, and it is the single
+easiest thing to get wrong here under pressure. Deleting the route in the Cloudflare
+dashboard is not a rollback either: the weekly scheduled deploy from `main` re-applies
+whatever `wrangler.jsonc` says.
+
+`git revert` of an ordinary `site/` commit is fine, and is just another way of rolling
+forward — the deploy publishes whatever `main` holds. What is not survivable is reverting
+the route itself.
 
 That rollback used to land on a live GitHub Pages origin. It no longer does. Pages served
 the previous Jekyll site from `main` as a `build_type: legacy` build — no workflow, just a

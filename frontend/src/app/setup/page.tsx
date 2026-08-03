@@ -58,7 +58,10 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page p-4">
+    // page-shell: this route owns its scroll, because <body> is overflow-hidden
+    // for the dashboard's sake. The wizard is the tallest of these pages and it
+    // clipped -- 660px of content in a 420px viewport, unreachable.
+    <div className="page-shell flex flex-col items-center bg-surface-page p-4">
       <ConfirmationModal
         isOpen={showSkipLLMModal}
         onClose={() => setShowSkipLLMModal(false)}
@@ -69,7 +72,7 @@ export default function SetupPage() {
         isDangerous={true}
       />
 
-      <div className="w-full max-w-md bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+      <div className="my-auto w-full max-w-md bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         {/* Header */}
         <div className="bg-action p-6 text-center">
           <div className="flex justify-center mb-4">
@@ -83,7 +86,9 @@ export default function SetupPage() {
               />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-action-on">Welcome to Nojoin</h1>
+          <h1 className="text-2xl font-bold text-action-on">
+            Welcome to Nojoin
+          </h1>
           <p className="text-action-on-muted mt-2">Initial System Setup</p>
         </div>
 
