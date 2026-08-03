@@ -1,7 +1,9 @@
 ---
 // The landing page. Every claim here is traceable to README.md or docs/*;
-// nothing is invented for marketing effect. Screenshots are placeholder
-// frames until P7 drops the real captures in under the same names.
+// nothing is invented for marketing effect. Every Shot is a real capture from
+// a seeded demonstration instance, cropped to the thing its row is about, and
+// carries the true pixel dimensions of its file so the browser reserves the
+// right box before the image loads.
 import Base from "../layouts/Base.astro";
 import Shot from "../components/Shot.astro";
 
@@ -82,9 +84,12 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
 
     {/* The agent band. Promoted to just under the strip because the MCP surface
         is the capability with no equivalent elsewhere, and it sat five sections
-        down as prose. No screenshot, deliberately: the work happens in Claude's
-        or ChatGPT's window, and Nojoin's frame chrome reads nojoin.your-server.net.
-        Two infographics carry it instead. See SITE.md, "Design direction". */}
+        down as prose. The shot at the foot is Nojoin's own transcript, not a
+        capture of Claude's or ChatGPT's window: the frame chrome reads
+        nojoin.your-server.net, so someone else's interface inside it would be a
+        false image. What it shows is the result -- an utterance labelled AI
+        corrected, next to one a human edited. The three devices stay, because
+        each carries a claim the shot does not. See SITE.md, "Design direction". */}
     <section class="agent-band" aria-label="Agent access">
       <div class="wrap">
         <div class="agent-grid">
@@ -201,6 +206,14 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
           </div>
         </div>
       </div>
+      <div class="wrap-shot">
+        <Shot
+          name="agent"
+          alt="A transcript in Nojoin labelling one line AI corrected text and another AI corrected speaker, beside a line marked Edited by hand"
+          width={1624}
+          height={1060}
+        />
+      </div>
     </section>
 
     <section class="band">
@@ -218,7 +231,10 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
         </div>
       </div>
       <div class="wrap-shot">
-        <Shot name="edge" alt="Meeting Edge suggesting questions and flagging missed points during a live meeting" />
+        <Shot name="edge" alt="Meeting Edge beside a live transcript, suggesting questions to ask, points to raise and definitions for the terms being used"
+          width={2000}
+          height={1040}
+        />
       </div>
     </section>
 
@@ -238,7 +254,10 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
         </div>
       </div>
       <div class="wrap-shot">
-        <Shot name="transcript" alt="A diarised transcript with named speakers and timestamps" />
+        <Shot name="transcript" alt="A diarised transcript changing speaker from Mila Faramji to Mark Clampin, each timestamped and colour-coded, beside the meeting's speaker list"
+          width={2000}
+          height={1524}
+        />
       </div>
     </section>
 
@@ -257,7 +276,10 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
         </div>
       </div>
       <div class="wrap-shot">
-        <Shot name="documents" alt="Meeting Chat answering with citations from the transcript and an uploaded document" />
+        <Shot name="documents" alt="Two PDFs attached to a meeting, with Meeting Chat answering a question about one of them and citing the page it came from"
+          width={2000}
+          height={1487}
+        />
       </div>
     </section>
 

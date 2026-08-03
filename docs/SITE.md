@@ -137,17 +137,32 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   the word, and the subhead immediately spells it out in plain terms for one who does not.
   The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
   No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
-- **The agents section carries no screenshot, by decision.** Every other feature section on
-  the landing page is led by its shot. That capability happens in Claude's or ChatGPT's
-  window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
-  capture of someone else's interface would be a false image on a page that argues from
-  checkable ones. Nojoin's own screens now carry part of the claim: the transcript labels an
+- **The agents section now carries a screenshot, and it is Nojoin's own screen.** This
+  reverses the earlier decision to leave it without one. That decision was right at the time
+  and for a reason worth keeping: the capability happens in Claude's or ChatGPT's window, not
+  Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed capture of
+  someone else's interface would be a false image on a page that argues from checkable ones.
+  What changed is that Nojoin's own surface now shows the result. The transcript labels an
   utterance an assistant edited as `AI corrected text` or `AI corrected speaker`, distinct
-  from the plain `Edited` a web correction earns, so a transcript capture would be honest.
-  The rest of the
-  surface is not there yet, and a task list an assistant filed is still indistinguishable
-  from a typed one. The flow card, the tool showcase and the bridge card take the visual
-  weight for now; the band earns a real shot at the next site pass.
+  from the plain `Edited` a web correction earns, so a transcript capture is honest evidence
+  of an assistant changing the record rather than a picture of somebody else's chat window.
+  The shot is that, and nothing else. The three devices stay: the flow card, the tool
+  showcase and the bridge card each carry a claim the capture does not — thirty tools, the
+  actors in a real post-meeting job, and the CRM reconciliation. **The rest of the surface is
+  still not there.** A task list an assistant filed is indistinguishable from a typed one, so
+  the band does not claim it in an image.
+- **Screenshots are cropped to the thing the row is about.** Every capture used to be the
+  whole app, which meant four rows showed four nearly identical pictures and the detail that
+  made each row's point rendered too small to read. Each shot is now framed on its own claim:
+  the agent band on the provenance labels, the transcripts row on a speaker change with the
+  speaker list beside it, the documents row on the attached PDFs and the answer citing a page
+  of one, Meeting Edge on the live transcript beside the guidance panel. The hero keeps the
+  full-app view deliberately — it is the one place a visitor should see the whole interface,
+  and it is what the browser-chrome frame is arguing for. Two consequences worth holding on
+  to: **a crop must not duplicate another crop** — the transcripts shot deliberately sits on
+  a different passage from the agent shot, because two rows showing the same picture is the
+  problem this solved, not a smaller version of it — and **a crop must still be a real
+  capture**, not a zoom that hides context which would change how it reads.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never

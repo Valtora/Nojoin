@@ -1,16 +1,24 @@
 ---
 // A screenshot in the browser-chrome frame, swapping light and dark sources
-// on prefers-color-scheme. Only the matching source downloads. The shots are
-// taken on a 1920x1080 desktop with the app's navigation collapsed, and ship
-// as 2560x1440 WebP. The width and height below are the layout size and the
-// aspect ratio the browser reserves, not the file's pixel size.
+// on prefers-color-scheme. Only the matching source downloads.
+//
+// width and height are the intrinsic ratio the browser reserves space with,
+// not a layout size -- the CSS is width: 100%, height: auto. They must match
+// the file, and the files are no longer all one shape: the hero is a 16:9
+// full-app capture and the rest are crops crediting whatever the row is about.
+// Passing a stale 16:9 for a crop does not distort anything, because height is
+// auto, but it reserves the wrong box and the page jumps when the shot loads.
+// Both source files in a pair must share the ratio, which is why each is
+// captured from one clip in both themes rather than framed twice.
 interface Props {
   name: string;
   alt: string;
   eager?: boolean;
+  width?: number;
+  height?: number;
 }
 
-const { name, alt, eager = false } = Astro.props;
+const { name, alt, eager = false, width = 1920, height = 1080 } = Astro.props;
 ---
 
 <div class="frame">
@@ -30,8 +38,8 @@ const { name, alt, eager = false } = Astro.props;
     <img
       src={`/images/${name}-light.webp`}
       alt={alt}
-      width="1920"
-      height="1080"
+      width={width}
+      height={height}
       loading={eager ? "eager" : "lazy"}
     />
   </picture>
