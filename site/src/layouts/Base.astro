@@ -1,8 +1,12 @@
 ---
-// The one layout. Token order matters: the app's tokens.css first (the
-// app-tokens-media plugin appends its dark block as a media query), then the
-// site stylesheet, whose site-tokens.css supplies the site-only families.
+// The one layout. Token order matters, and so does the fact that both token
+// files are imported here as their own modules: that is what puts them through
+// the tokens-theme plugin, which is what makes their dark values answer to the
+// header toggle and not only to the OS setting. site-tokens.css was once
+// `@import`ed from site.css instead, and Tailwind's CSS pipeline inlined it
+// before any transform could see it -- see the plugin's header comment.
 import "../../../frontend/src/app/tokens.css";
+import "../styles/site-tokens.css";
 import "../styles/site.css";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";

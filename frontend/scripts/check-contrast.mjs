@@ -254,10 +254,14 @@ const SITE_PAIRINGS = [
   { label: "footer link hover on page", fg: "foreground", bg: ["surface-page"], min: AA_TEXT },
 
   // Syntax highlighting. Every token is read as code, so all of it is text.
+  // --code-bg is opaque and dark in both themes, so this pairing measures the
+  // same numbers under site-light and site-dark by design; the block does not
+  // follow the theme. It stays declared as a stack so a later translucent
+  // value cannot silently stop being composited.
   ...["fg", "comment", "keyword", "name", "string", "punct"].map((part) => ({
     label: `code ${part} on code surface`,
     fg: `code-${part}`,
-    bg: ["surface-page", "surface-card", "surface-inset"],
+    bg: ["surface-page", "surface-card", "code-bg"],
     min: AA_TEXT,
   })),
 ];
@@ -433,9 +437,18 @@ const siteDark = parseMediaDarkRoot(siteCss);
  * `base` is the fallback a token resolves against when the block does not
  * declare it. The app's `.dark` block only declares what changes, so it falls
  * back to `:root`. The site themes are the app themes overlaid with the
- * site-only families: at build time the site imports tokens.css (with its
- * dark block mapped onto a media query by the app-tokens-media plugin) plus
- * site-tokens.css, and these merges mirror that cascade exactly.
+ * site-only families: at build time the site imports tokens.css and
+ * site-tokens.css, both put through the tokens-theme plugin, and these merges
+ * mirror that cascade exactly.
+ *
+ * KNOWN BLIND SPOT. This audit measures VALUES. It has no model of selector
+ * resolution, so it cannot tell whether the block a value sits in ever applies
+ * to anything. Both site blocks passed for the whole time site-tokens.css had
+ * no `data-theme` handling at all -- the dark values were correct, and
+ * unreachable for any visitor who chose light on a machine set to dark. Adding
+ * a pairing here proves a colour pair is legible, never that a visitor can
+ * reach it. Reaching it is the build's job (see site/plugins/tokens-theme.mjs)
+ * and the browser's (see the four-way theme matrix in docs/SITE.md).
  *
  * `floats` is off for the site because it has no floating elements: it
  * carries no modals, so it carries no shadows at all.

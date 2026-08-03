@@ -1,12 +1,12 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import tailwindcss from "@tailwindcss/vite";
-import appTokensMedia from "./plugins/app-tokens-media.mjs";
+import tokensTheme from "./plugins/tokens-theme.mjs";
 
 export default defineConfig({
   site: "https://www.nojoin.co.uk",
   vite: {
-    plugins: [appTokensMedia(), tailwindcss()],
+    plugins: [tokensTheme(), tailwindcss()],
     server: {
       fs: {
         // The design tokens are imported from the app by relative path, so the

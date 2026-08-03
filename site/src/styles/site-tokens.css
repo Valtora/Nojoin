@@ -1,23 +1,49 @@
 /* Site-only token families. Everything shared with the app lives in
-   frontend/src/app/tokens.css, imported by Base.astro through the
-   app-tokens-media plugin; this file holds only what has no app equivalent.
+   frontend/src/app/tokens.css; this file holds only what has no app
+   equivalent. Base.astro imports both as their own modules, which is what puts
+   them through the tokens-theme plugin.
 
-   The light and dark blocks are parsed by frontend/scripts/check-contrast.mjs
-   as the site-light and site-dark themes, so the shapes here (a top-level
-   :root, then one :root inside the prefers-color-scheme media query) are load
-   bearing. */
+   TWO READERS DEPEND ON THE SHAPE BELOW, and they want different things:
+
+   1. frontend/scripts/check-contrast.mjs parses this file FROM DISK as the
+      site-light and site-dark themes. It expects exactly a top-level :root and
+      one :root inside the prefers-color-scheme media query. That is why the
+      dark selector here is still a bare :root, and why it must stay one.
+
+   2. The tokens-theme plugin rewrites that bare :root at BUILD TIME into
+      :root:not([data-theme="light"]) and appends a :root[data-theme="dark"]
+      rule from the same declarations. Nothing is written back to disk, so the
+      gate and the browser see different text on purpose.
+
+   The consequence to remember: what you read here is not what ships, and the
+   gate measures these values without any model of whether the block that holds
+   them applies. It would pass this file just as happily if the dark block were
+   unreachable -- which it was, until the plugin learned to transform it. */
 
 :root {
-  /* Syntax highlighting for the quick-start block. The app has no code
-     blocks, and the old marketing site was dark-only, so the light values are
-     new: each is pitched to clear 4.5:1 on the inset code surface, which the
-     gate asserts. */
-  --code-fg: #1f2937;
-  --code-comment: #52525b;
-  --code-keyword: #9a3412;
-  --code-name: #92400e;
-  --code-string: #1e40af;
-  --code-punct: #374151;
+  /* The quick-start block is dark in BOTH themes, so everything in this group
+     is declared once here and never overridden below.
+
+     It used to follow the theme on --surface-inset, a shared app token. The
+     text was legible either way -- the worst syntax pairing measured 6.5:1,
+     comfortably past AA -- but the block barely existed as an object: composited
+     over the page it came out at 1.04:1 in light and 1.07:1 in dark, so a
+     reader saw a faint rectangle rather than a panel. Following the theme could
+     not fix that in dark, either. The page is already near-black, so the
+     furthest a darker fill can get is about 1.1:1.
+
+     A dark block on both pages is the way out, and it is what a reader expects
+     of code anyway. It buys 16.96:1 against the light page and keeps the worst
+     syntax pairing at 6.92:1. One palette replaces two: the old light syntax
+     values are gone rather than left unused. */
+  --code-bg: #111827;
+  --code-border: rgba(255, 255, 255, 0.1);
+  --code-fg: #d8deef;
+  --code-comment: #a1a1aa;
+  --code-keyword: #ff9f5c;
+  --code-name: #ffd39b;
+  --code-string: #7ad7ff;
+  --code-punct: #c6cee5;
 
   /* The browser-chrome frame every screenshot sits in. The chrome strip and
      its dots are decoration; the URL text inside answers to AA as text. */
@@ -93,14 +119,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Dark syntax values, carried over from the retired style.scss. */
-    --code-fg: #d8deef;
-    --code-comment: #a1a1aa;
-    --code-keyword: #ff9f5c;
-    --code-name: #ffd39b;
-    --code-string: #7ad7ff;
-    --code-punct: #c6cee5;
-
+    /* No --code-* overrides here on purpose: the code block is dark in both
+       themes, so its whole group is declared once in the light :root above. */
     --frame-chrome: #2a2a2a;
     --frame-dot: #4b5563;
 
