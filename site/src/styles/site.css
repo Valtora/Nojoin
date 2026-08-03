@@ -819,36 +819,6 @@ section[id] {
   color: var(--contrast-muted);
 }
 
-.compare-table .fn {
-  font-size: 0.6875rem;
-  vertical-align: super;
-  line-height: 1;
-}
-
-.footnotes {
-  margin-top: 2rem;
-  font-size: 0.8125rem;
-  color: var(--contrast-helper);
-}
-
-.footnotes ol {
-  list-style: decimal;
-  padding-left: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.75rem;
-}
-
-.footnotes a {
-  color: var(--action-text);
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.footnotes a:hover {
-  text-decoration: underline;
-}
-
 /* ---- The agent band ----
    The MCP surface at hero scale, sitting directly under the three-up strip. It
    keeps the page surface and takes the hero's wash, with hairlines closing the

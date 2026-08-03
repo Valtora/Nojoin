@@ -305,20 +305,42 @@ As it stands Jamie takes an outright yes on no-bot capture and on remembering sp
 partial on assistant write access — the row Nojoin leads with. A table Nojoin swept would be
 worth a second look for that reason alone.
 
-The comparison page holds itself to the standard it would want applied to it:
+**The page no longer shows its sources.** It used to carry a numbered footnote under every
+competitor cell with the exact URL and the date it was read, plus a weekly CI job that
+re-checked each link. All of it is gone: the footnotes, the `source` field on `Cell`, and the
+`check-comparison-sources` job. Nobody else in this market footnotes a comparison, the
+apparatus made the page read like a paper rather than a product page, and a reader who
+genuinely doubts a row can check it in a minute. **This was the site owner's call, and it is
+his to reverse.** The cost is stated plainly so the reversal is an informed one: the
+footnotes were the reason the concessions read as candour rather than as marketing, and they
+were the answer if a competitor ever disputed a cell.
 
-- Every competitor claim is verified against **that vendor's own current documentation**,
-  carries the exact URL read and the date it was checked, and renders as a footnote.
-- A claim that cannot be sourced does not go on the page. It appears as an explicit "Not
-  stated in current docs" cell rather than a guess.
+What has *not* changed is the standard the claims themselves are held to:
+
+- **Every competitor claim is still checked against that vendor's own current documentation
+  before it goes up.** Not showing the source is not the same as not having one. Write the
+  cell from the vendor's docs, not from memory, a review site, or a competitor's own
+  comparison page.
+- **A claim that cannot be checked does not go on the page.** It appears as an explicit "Not
+  stated in current docs" cell rather than a guess. That wording survives the footnotes
+  deliberately: it says what was looked for and not found.
 - **No competitor pricing, ever.** Prices change without notice, and a stale price is the
   error people screenshot.
-- Where a competitor is good, the cell says so. The concessions are what make the
-  structural gaps (self-hosting, licence, model choice) believable.
-- The weekly deploy workflow runs a non-blocking source-URL check: a dead footnote link
-  turns the run red without giving a competitor's web server a veto over the site's own
-  rebuild. Changed facts behind live URLs still need a human re-read; treat any vendor
-  feature announcement as a trigger to re-check its row.
+- **Where a competitor is good, the cell says so.** The concessions are what make the
+  structural gaps (self-hosting, licence, model choice) believable, and they matter more now
+  that nothing else on the page demonstrates rigour.
+- **Nothing watches for staleness any more.** The weekly link check is gone and no date is
+  displayed, so a row that quietly went wrong will stay wrong until someone re-reads it.
+  Treat any vendor feature announcement as a trigger to re-check that row by hand.
+- **Do not demote a competitor on an assumption.** The first attempt at this pass was to
+  downgrade Otter's cross-meeting speaker matching to a name-label lookup. Otter's own help
+  centre describes acoustic enrolment — "learns from just a few tagged paragraphs for each
+  speaker", and it calls them "speaker enrollments" — so the downgrade would have been false.
+  Where Nojoin is genuinely ahead here is depth and ownership: a speaker library you can
+  open, voiceprints you can recalibrate from better samples, automatic rebuilds after an
+  upgrade, and deletion that actually removes the voiceprint — none of which any competitor
+  documents, all of it in `USAGE.md`. Argue from that rather than from a competitor being
+  worse than they are.
 
 ## The managed service
 
