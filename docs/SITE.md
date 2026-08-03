@@ -92,6 +92,21 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   app never disagree about what the brand colour is. The glow derives from orange-600
   rather than the button's own orange-700, because a halo the same darkness as its fill
   reads as a smudge.
+- **The nav carries the two destinations a visitor looks for by name**: Home, Quick start,
+  Pricing, Compare, Docs. "Quick start" jumps to the landing page's install section, which
+  had no way to reach it from another page; "Pricing" is what the third page is called
+  everywhere else on the web, and it replaced "Managed" rather than joining it, because two
+  entries pointing at one page is a worse header than a slightly generic label. The link is
+  `/#quick-start` rather than `#quick-start`: the section exists on one page only.
+  There is no menu button and no second script. The nav already wraps — measured, not
+  assumed, it holds 5 links plus the star badge and the toggle inside the content box at
+  320px, with the header growing a row instead of the page scrolling sideways. A hamburger
+  is worth revisiting only if the nav stops fitting.
+- **Every in-page anchor reserves the sticky header's height.** `section[id]` carries
+  `scroll-margin-top`, 8.5rem while the nav is wrapped and 5rem once it fits one line. The
+  browser scrolls a hash target to y=0, which is exactly where a sticky header already is, so
+  without this the quick-start heading lands underneath it. The mobile value is the larger of
+  the two, which is the opposite of the usual direction and the reason it is written out.
 - **The header is sticky**, with a solid fill rather than a blurred scrim. Glass is out by
   the flat canon, and `backdrop-filter` over text this dense costs a repaint per scroll
   frame for an effect the design does not want.
@@ -220,11 +235,12 @@ cloud, no self-hosting to concede against — and Jamie is the opposite on all t
 makes it the harder comparison and the more useful one. Jamie sits second, directly after
 Nojoin, because column order decides which competitor actually gets read.
 
-**Dropping a competitor is not a licence to pick easy ones.** The set has to stay honest, and
-the test is whether the table still contains rows a competitor wins. Jamie takes an outright
-yes on no-bot capture and on remembering speakers, and a partial on assistant write access —
-the row Nojoin leads with. If a future edit leaves Nojoin sweeping every row, the problem is
-the competitor set, not the product.
+**Which competitors appear is the site owner's call.** What this document records is the
+reasoning to weigh, not a rule: a set worth publishing is one where the table still contains
+rows a competitor wins, because the concessions are what make the structural gaps believable.
+As it stands Jamie takes an outright yes on no-bot capture and on remembering speakers, and a
+partial on assistant write access — the row Nojoin leads with. A table Nojoin swept would be
+worth a second look for that reason alone.
 
 The comparison page holds itself to the standard it would want applied to it:
 

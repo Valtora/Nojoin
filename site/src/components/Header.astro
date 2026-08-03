@@ -13,7 +13,12 @@ const stars = await getStarCount();
     </a>
     <nav class="site-nav" aria-label="Site">
       <a href="/">Home</a>
-      <a href="/managed/">Managed</a>
+      {/* Absolute with the hash, not a bare "#quick-start": the section only
+          exists on the landing page, so from /compare/ or /managed/ this has
+          to navigate there first. On the landing page itself the browser
+          treats it as a same-document hash and just scrolls. */}
+      <a href="/#quick-start">Quick start</a>
+      <a href="/managed/">Pricing</a>
       <a href="/compare/">Compare</a>
       <a href="https://github.com/Valtora/Nojoin/blob/main/docs/README.md">Docs</a>
       <a class="star-badge" href="https://github.com/Valtora/Nojoin">

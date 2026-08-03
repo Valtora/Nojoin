@@ -260,6 +260,22 @@ button:focus-visible {
   border-bottom: 1px solid var(--surface-divider);
 }
 
+/* Because that header is sticky, a hash link lands its target underneath it:
+   the browser scrolls the element to y=0, where the header already is. Every
+   in-page anchor therefore reserves the header's height plus a little air.
+   The two values track the header's own breakpoint -- it is 114px tall while
+   the nav is wrapped and 57px once it fits on one line -- and the mobile value
+   is the larger one, which is the opposite of the usual direction. */
+section[id] {
+  scroll-margin-top: 8.5rem;
+}
+
+@media (min-width: 48rem) {
+  section[id] {
+    scroll-margin-top: 5rem;
+  }
+}
+
 /* Wraps rather than overflowing: the theme toggle pushed the nav past a 360px
    screen, and a header that grows a second line is better than a page that
    scrolls sideways. */
