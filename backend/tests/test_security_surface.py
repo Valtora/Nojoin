@@ -614,6 +614,15 @@ async def test_setup_requests_are_rate_limited(monkeypatch) -> None:
 @pytest.mark.anyio
 async def test_initial_config_masks_prefilled_secrets(monkeypatch) -> None:
     app, _ = _build_app(initialized=False)
+    # config_manager resolves a key from its loaded config first and only then
+    # from the environment, and that config is built once at import from
+    # data/config.json overlaid with .env. Setting an environment variable here
+    # is therefore too late to change it. Clear the two keys this test drives so
+    # the env fallback is what answers, whatever provider the developer running
+    # the suite happens to have configured; without this the test asserts
+    # against the host's own installation and passes only on a bare checkout.
+    monkeypatch.setitem(setup.config_manager.config, "llm_provider", None)
+    monkeypatch.setitem(setup.config_manager.config, "gemini_model", None)
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
