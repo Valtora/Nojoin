@@ -1,26 +1,27 @@
-'use client';
+"use client";
 
-import { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import Image from 'next/image';
-import { registerUser, validateInvitation, login } from '@/lib/api';
-import { getErrorMessage } from '@/lib/errors';
-import { Loader2, User, Lock } from 'lucide-react';
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
+import { registerUser, validateInvitation, login } from "@/lib/api";
+import { getErrorMessage } from "@/lib/errors";
+import { Loader2, User, Lock } from "lucide-react";
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Support both 'invite' (from backend link) and 'invite_code' (legacy/manual)
-  const inviteCode = searchParams.get('invite') || searchParams.get('invite_code');
+  const inviteCode =
+    searchParams.get("invite") || searchParams.get("invite_code");
 
   const [formData, setFormData] = useState({
-    username: '',
-    password: '',
-    confirmPassword: '',
-    invite_code: inviteCode || '',
+    username: "",
+    password: "",
+    confirmPassword: "",
+    invite_code: inviteCode || "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(true);
 
@@ -33,9 +34,8 @@ function RegisterForm() {
 
       try {
         await validateInvitation(inviteCode);
-        setFormData(prev => ({ ...prev, invite_code: inviteCode }));
-
-            } catch (e: unknown) {
+        setFormData((prev) => ({ ...prev, invite_code: inviteCode }));
+      } catch (e: unknown) {
         console.error("Invalid invite code", e);
         setError("Invalid or expired invite code.");
       } finally {
@@ -48,7 +48,7 @@ function RegisterForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     if (formData.password !== formData.confirmPassword) {
@@ -61,17 +61,21 @@ function RegisterForm() {
       await registerUser(
         formData.username,
         formData.password,
-        formData.invite_code
+        formData.invite_code,
       );
 
       // Auto-login after registration
       await login(formData.username, formData.password);
 
       // Redirect to dashboard (or setup if needed, but usually dashboard)
-      router.push('/');
-
-        } catch (err: unknown) {
-      setError(getErrorMessage(err, "Registration failed. Please check your details and invite code."));
+      router.push("/");
+    } catch (err: unknown) {
+      setError(
+        getErrorMessage(
+          err,
+          "Registration failed. Please check your details and invite code.",
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -86,8 +90,10 @@ function RegisterForm() {
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
+    // page-shell: this route owns its scroll; <body> is overflow-hidden. See
+    // the note on .page-shell in globals.css.
+    <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 lg:px-8">
+      <div className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -97,16 +103,17 @@ function RegisterForm() {
               height={68}
               className="object-contain"
             />
-            <h2 className="text-3xl font-bold text-action-text">
-              Nojoin
-            </h2>
+            <h2 className="text-3xl font-bold text-action-text">Nojoin</h2>
           </div>
           <h2 className="mt-4 text-center text-2xl font-bold text-foreground">
             Create your account
           </h2>
           <p className="mt-2 text-center text-sm text-contrast-helper">
-            Or{' '}
-            <Link href="/login" className="font-medium text-action-text hover:text-action-text-hover">
+            Or{" "}
+            <Link
+              href="/login"
+              className="font-medium text-action-text hover:text-action-text-hover"
+            >
               sign in to your existing account
             </Link>
           </p>
@@ -136,13 +143,15 @@ function RegisterForm() {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                aria-describedby={error ? 'register-error' : undefined}
+                aria-describedby={error ? "register-error" : undefined}
                 aria-invalid={Boolean(error)}
                 required
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Username"
                 value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, username: e.target.value })
+                }
               />
             </div>
 
@@ -158,14 +167,16 @@ function RegisterForm() {
                 name="register-new-password"
                 type="password"
                 autoComplete="new-password"
-                aria-describedby={error ? 'register-error' : undefined}
+                aria-describedby={error ? "register-error" : undefined}
                 aria-invalid={Boolean(error)}
                 required
                 minLength={8}
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Password"
                 value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
+                }
               />
             </div>
 
@@ -181,14 +192,16 @@ function RegisterForm() {
                 name="register-confirm-password"
                 type="password"
                 autoComplete="new-password"
-                aria-describedby={error ? 'register-error' : undefined}
+                aria-describedby={error ? "register-error" : undefined}
                 aria-invalid={Boolean(error)}
                 required
                 minLength={8}
                 className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
                 placeholder="Confirm Password"
                 value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, confirmPassword: e.target.value })
+                }
               />
             </div>
           </div>
@@ -199,23 +212,28 @@ function RegisterForm() {
               Let's show it only if it wasn't in the URL.
           */}
           {!inviteCode && (
-             <div>
-                <label htmlFor="invite-code" className="block text-sm font-medium text-contrast-muted mb-1">
-                  Invite Code
-                </label>
-                <input
-                  id="invite-code"
-                  name="register-invite-code"
-                  type="text"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  required
-                  className="appearance-none block w-full px-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
-                  placeholder="Enter your invite code"
-                  value={formData.invite_code}
-                  onChange={(e) => setFormData({ ...formData, invite_code: e.target.value })}
-                />
+            <div>
+              <label
+                htmlFor="invite-code"
+                className="block text-sm font-medium text-contrast-muted mb-1"
+              >
+                Invite Code
+              </label>
+              <input
+                id="invite-code"
+                name="register-invite-code"
+                type="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                required
+                className="appearance-none block w-full px-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
+                placeholder="Enter your invite code"
+                value={formData.invite_code}
+                onChange={(e) =>
+                  setFormData({ ...formData, invite_code: e.target.value })
+                }
+              />
             </div>
           )}
 
@@ -251,7 +269,13 @@ function RegisterForm() {
 
 export default function RegisterPage() {
   return (
-    <Suspense fallback={<div className="min-h-dvh flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-action-text" /></div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-dvh flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-action-text" />
+        </div>
+      }
+    >
       <RegisterForm />
     </Suspense>
   );

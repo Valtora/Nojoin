@@ -192,17 +192,11 @@ function AuthorizeContent() {
     : [];
 
   return (
-    // This route is its own scroll container. layout.tsx puts overflow-hidden
-    // on <body>, which is right for the dashboard -- it manages its own scroll
-    // regions -- but it means a full-page route taller than the viewport is
-    // clipped with no way to reach the rest. The consent card gets tall when a
-    // client asks for many scopes, and what fell off the bottom was the return
-    // host, the revocation note and, on a short enough window, Allow itself.
-    //
-    // my-auto rather than justify-center: auto margins centre the card when
-    // there is room and collapse to zero when there is not, so the padding
-    // survives instead of the overflow being split unreachably above the top.
-    <div className="h-dvh overflow-y-auto flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+    // page-shell: this route owns its scroll; <body> is overflow-hidden. See
+    // the note on .page-shell in globals.css. The card gets tall when a client
+    // asks for many scopes, and what fell off the bottom here was the return
+    // host, the revocation note and, on a short window, Allow itself.
+    <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="my-auto w-full max-w-lg flex flex-col items-center">
         <div className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
           <div className="px-8 pt-10 pb-8">

@@ -42,11 +42,7 @@ export default function LoginPage() {
     const checkCurrentUser = async () => {
       try {
         const user = await getCurrentUser();
-        router.push(
-          user.force_password_change
-            ? "/settings/profile"
-            : "/",
-        );
+        router.push(user.force_password_change ? "/settings/profile" : "/");
         return;
       } catch {
         // no-op, user is not logged in
@@ -78,8 +74,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-dvh flex items-center justify-center bg-surface-page px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
+    // page-shell: this route owns its scroll; <body> is overflow-hidden. See
+    // the note on .page-shell in globals.css.
+    <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 lg:px-8">
+      <div className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image

@@ -6,7 +6,6 @@
 /* Enable class-based dark mode for manual theme switching */
 @custom-variant dark (&:where(.dark, .dark *));
 
-
 /* Tailwind v4 has no config file, so this block is where a raw value above
    becomes a utility. Everything is referenced through var() rather than
    copied, which is what makes bg-action, text-status-info-fg and the rest
@@ -146,6 +145,26 @@ html {
 }
 
 @layer components {
+  /* Full-page routes outside the dashboard shell: login, register, setup, the
+     OAuth consent screen, the route-level loading skeleton.
+
+     layout.tsx puts overflow-hidden on <body>, which is right for the dashboard
+     because it manages its own scroll regions -- but it means one of these
+     routes growing past the viewport is clipped with nothing able to scroll it.
+     That has shipped as a real defect: the consent screen lost its Allow and
+     Deny buttons on a short window, and the setup wizard needed 660px in a
+     420px viewport with no way to reach the rest.
+
+     So a page like that owns its scroll rather than borrowing the document's.
+     Pair with `my-auto` on the child to centre it: auto margins centre when
+     there is room and collapse to zero when there is not, so padding survives.
+     `justify-center` does not -- it splits the overflow and puts half above the
+     top edge, where scrolling cannot reach it. */
+  .page-shell {
+    height: 100dvh;
+    overflow-y: auto;
+  }
+
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
@@ -513,12 +532,19 @@ html[data-ui-density="compact"] .density-body-copy {
   text-align: left;
 }
 
-.task-deadline-calendar .react-datepicker__input-time-container .react-datepicker-time__caption {
+.task-deadline-calendar
+  .react-datepicker__input-time-container
+  .react-datepicker-time__caption {
   display: none;
 }
 
-.task-deadline-calendar .react-datepicker__input-time-container .react-datepicker-time__input-container,
-.task-deadline-calendar .react-datepicker__input-time-container .react-datepicker-time__input-container .react-datepicker-time__input {
+.task-deadline-calendar
+  .react-datepicker__input-time-container
+  .react-datepicker-time__input-container,
+.task-deadline-calendar
+  .react-datepicker__input-time-container
+  .react-datepicker-time__input-container
+  .react-datepicker-time__input {
   display: block;
   width: 100%;
   margin: 0;
