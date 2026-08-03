@@ -52,6 +52,14 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   page; the text itself stays left-aligned. This replaces a side-by-side layout, which gave
   the screenshot half of a 72rem wrap and so rendered a 1920px capture at about 28% —
   unreadable, which defeats the point of showing the interface at all.
+- **A feature row earns its place with its screenshot.** The Calendar row was cut: its
+  capture was the dashboard shot scrolled down a little, so the row spent a full section of
+  vertical rhythm showing something the page had already shown. Calendar sync is not
+  demoted — it still leads a tool group in the agent band's showcase and holds a sourced row
+  on the comparison page. What it lost was a screenshot that carried no new information, and
+  a row whose shot duplicates another row's is a finding about the row rather than a reason
+  to keep scrolling. `calendar-light.webp` and `calendar-dark.webp` went with it, because an
+  unreferenced capture in `public/` is a thing the next person re-adds by accident.
 - **No hard bands.** Sections used to alternate a full-bleed card surface against the page
   with hairlines top and bottom. That read as a stack of documents: every boundary was an
   edge. The page is now one continuous surface and depth comes from the content floating on
@@ -143,8 +151,10 @@ writes in the first person singular and says so in its own first paragraph. It n
 the person is identified as the one who built Nojoin, which is checkable against the commit
 history, and no name goes on the site or into the repository by decision.
 The exception is scoped to that page and does not travel: the landing
-band that points at it stays in the product's voice and refers to "Nojoin's author" in the
-third person, so a visitor meets one narrator per page rather than two per scroll. "We"
+band that points at it stays in the product's voice and refers to "Nojoin's developer" in the
+third person, so a visitor meets one narrator per page rather than two per scroll. "Developer"
+rather than "author": he wrote software, not a book, and the word that describes the work is
+also the word that makes the managed offering make sense. "We"
 stays banned everywhere, including there — one person is an "I", never a "we", and the
 corporate plural is exactly the register the rest of these rules exist to avoid.
 
@@ -233,7 +243,10 @@ rather than the technology.
   gone from the page: per-seat is what a buyer already understands, and it scales without
   the cliff the banded version had at the sixth seat. The line "per-seat pricing runs the
   other way" went with it — the offering is now per-seat, so that argument would have been
-  aimed at itself.
+  aimed at itself. **The price is written in two places** — the `/managed/` price card and
+  the landing page's managed teaser — and the teaser was missed when the number changed, so
+  the landing page advertised £250 from ten people for as long as `/managed/` sold £24.99
+  from five. Move both, or the cheaper page wins the argument with the other one.
 - **Nothing is capped, and the page leads on it.** No monthly allowance, no ceiling on call
   length, no history that expires while the customer is still paying. There is no meter in
   the software to hit. Every competitor has a tier where something runs out, which the
@@ -307,6 +320,22 @@ both, and on this host `pkill` patterns also match the shell wrapper that invoke
 preview tunnels by PID, or by matching the binary path `~/.local/bin/cloudflared`, and tidy
 them up when the review is done rather than leaving a fleet running.
 
+### Titles: the tab and the share card are different jobs
+
+`Base.astro` takes `title` and an optional `ogTitle` that defaults to it. They started as one
+prop and were split deliberately. A browser tab wants the shortest thing that identifies the
+site, so the landing page's tab reads `Nojoin` and nothing else. A Slack or LinkedIn card is
+read cold by someone who has never heard of Nojoin and wants the descriptive line, so its
+`og:title` stays "Nojoin — agentic meeting intelligence on your own server". Collapsing them
+back into one prop degrades every share link to the bare word, invisibly from the site
+itself — the same failure mode as the card that advertised a superseded tagline for two
+rewrites.
+
+Sub-pages take `Subject — Nojoin`: `Compare — Nojoin`, `Managed — Nojoin`. That keeps three
+open tabs distinguishable, which flattening every page to `Nojoin` would not, and each keeps
+its own longer `ogTitle`. Only set `ogTitle` on a page where the two genuinely want different
+words; today that is the landing page and `/managed/`.
+
 ### The Open Graph card
 
 `site/public/images/og-card.png` is the single card every page shares, and it carries the
@@ -327,7 +356,10 @@ it renders a bitmap, out of the stylesheet's reach. No gate catches a drift betw
 
 `/docs/*` redirects do not fire. They live in `site/worker/index.js` and only run on a real
 Workers deployment, so a 404 on `/docs/TELEMETRY` in local preview is expected rather than a
-regression. Verify that contract on the workers.dev URL after a deploy.
+regression. `wrangler dev` is not parity either — redirect rules that worked there have failed
+in production. Verify that contract against `https://www.nojoin.co.uk/docs/TELEMETRY` after a
+deploy; there is no longer a workers.dev copy to test it on first, so a redirect change is
+verified in production or not at all.
 
 ### Checks worth running before asking for review
 
@@ -350,6 +382,14 @@ already a proxied record, a Custom Domain cannot attach to a hostname that has o
 deleting the record first, and that would put DNS propagation behind any rollback. A Route
 sits in front of the proxied record, so adding it intercepts traffic atomically and removing
 it stops intercepting just as atomically.
+
+**The site is served on that route alone.** `workers_dev` was `true` while the site was
+being built, so it could be reviewed before the route existed, and it left a complete public
+duplicate of every page on `nojoin-site.taylan-d.workers.dev`. It is now `false`. The
+duplicate had no remaining job, and a second indexable copy of a marketing site is a
+liability: `Base.astro` builds its canonical from `Astro.site` and so pointed crawlers back
+at `www.nojoin.co.uk`, but that is mitigation rather than a reason to keep it. Reviewing an
+unmerged change is what `npm run serve` and a quick tunnel are for.
 
 **Rolling back is `git revert` of the commit that added the route, then letting CI deploy.**
 Deleting the route in the Cloudflare dashboard is not the rollback path: the weekly scheduled

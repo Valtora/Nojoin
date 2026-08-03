@@ -10,9 +10,15 @@ import Footer from "../components/Footer.astro";
 interface Props {
   title: string;
   description: string;
+  ogTitle?: string;
 }
 
-const { title, description } = Astro.props;
+// The tab title and the share-card title are deliberately allowed to differ.
+// A browser tab wants the shortest thing that identifies the site; a Slack or
+// LinkedIn card is read cold by someone who has never heard of it and wants
+// the descriptive line. `ogTitle` defaults to `title`, so a page only sets it
+// where the two genuinely want different words -- currently the landing page.
+const { title, description, ogTitle = title } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 
 // Cloudflare Web Analytics. This is the beacon siteTag, not an API token: it
@@ -42,7 +48,7 @@ const CF_BEACON_TOKEN = import.meta.env.PUBLIC_CF_BEACON_TOKEN ?? "";
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content={title} />
+    <meta property="og:title" content={ogTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     {/* One fixed card for every page. Open Graph images cannot follow
