@@ -170,8 +170,8 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
 - **Screenshots are cropped to the thing the row is about, and sized for half a wrap.** Every
   capture used to be the whole app, so four rows showed four near-identical pictures and the
   detail each row argued from rendered too small to read. Each shot is now framed on its own
-  claim: Meeting Edge on the guidance panel, transcripts on a speaker handover, documents on
-  the attached files. The hero keeps the full-app view deliberately — it is the one place a
+  claim: Meeting Edge on the guidance panel, transcripts on a speaker handover, notes on the
+  generated summary and the Key Decisions table. The hero keeps the full-app view deliberately — it is the one place a
   visitor should see the whole interface, and it is what the browser-chrome frame is arguing
   for. Three rules keep this working:
   - **Crop to roughly 550–800 logical pixels wide.** That is what renders near life size in
@@ -182,6 +182,15 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   - **A crop must not duplicate another crop.** The transcripts shot sits on a different
     passage from anything else for this reason, and it is why the agent band ended up with
     no shot at all.
+
+  **What the seeded instance can and cannot show.** Only the Artemis briefing has a
+  transcript; the other eight recordings are metadata with no utterances, so every transcript
+  crop has to come from that one. It is a press conference, which means long monologues: the
+  whole 12,070px transcript was scanned at 40px steps and **no window of it ever holds three
+  speakers at once**, even at 880px tall. The transcripts row therefore shows a two-speaker
+  handover, and a three-speaker frame needs a differently seeded recording rather than a
+  better crop. The notes shot carries two spell-check underlines for the same reason — the
+  demo notes are generated text with American spellings, and the editor flags them.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never
