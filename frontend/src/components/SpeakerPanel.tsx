@@ -15,6 +15,7 @@ import {
   UserCheck,
   Users,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import IconButton from "./ui/IconButton";
@@ -293,6 +294,18 @@ export default function SpeakerPanel({
                           >
                             {entry.displayName}
                           </p>
+                          {/* A rename relabels every line this speaker holds,
+                              so it is disclosed once here rather than on each
+                              utterance in the transcript. */}
+                          {entry.namedByAssistant && (
+                            <span
+                              className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
+                              title="An assistant connected through the MCP connector named this speaker"
+                            >
+                              <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
+                              AI named
+                            </span>
+                          )}
                           {entry.members.length > 1 && (
                             <p className="text-xs text-contrast-helper truncate">
                               {entry.members.length} linked labels

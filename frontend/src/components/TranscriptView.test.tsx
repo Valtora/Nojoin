@@ -34,6 +34,9 @@ function buildSegment(
     provisional: overrides.provisional,
     overlapping_speakers: overrides.overlapping_speakers,
     speaker_manually_edited: overrides.speaker_manually_edited,
+    text_manually_edited: overrides.text_manually_edited,
+    text_edit_source: overrides.text_edit_source,
+    speaker_edit_source: overrides.speaker_edit_source,
     speaker_confidence: overrides.speaker_confidence,
     updated_at: overrides.updated_at,
     state: overrides.state,
@@ -300,5 +303,73 @@ describe("TranscriptView", () => {
     );
 
     expect(scrollRegion.scrollTop).toBe(90);
+  });
+});
+
+describe("edit provenance pills", () => {
+  it("labels a web edit neutrally, without claiming who made it", () => {
+    renderTranscriptView([
+      buildSegment({
+        id: "seg-1",
+        text: "corrected in the app",
+        speaker: "SPEAKER_A",
+        text_manually_edited: true,
+        text_edit_source: "api",
+      }),
+    ]);
+
+    expect(screen.getByText("Edited")).toBeInTheDocument();
+    expect(screen.queryByText("AI corrected text")).not.toBeInTheDocument();
+  });
+
+  it("names the assistant when the edit came over the connector", () => {
+    renderTranscriptView([
+      buildSegment({
+        id: "seg-1",
+        text: "corrected by an assistant",
+        speaker: "SPEAKER_A",
+        text_manually_edited: true,
+        text_edit_source: "mcp",
+      }),
+    ]);
+
+    expect(screen.getByText("AI corrected text")).toBeInTheDocument();
+    expect(screen.queryByText("Edited")).not.toBeInTheDocument();
+  });
+
+  it("labels an assistant's speaker reassignment, where a web one stays silent", () => {
+    renderTranscriptView([
+      buildSegment({
+        id: "seg-1",
+        text: "reassigned by an assistant",
+        speaker: "SPEAKER_A",
+        speaker_manually_edited: true,
+        speaker_edit_source: "mcp",
+      }),
+      buildSegment({
+        id: "seg-2",
+        text: "reassigned in the app",
+        speaker: "SPEAKER_B",
+        speaker_manually_edited: true,
+        speaker_edit_source: "api",
+      }),
+    ]);
+
+    expect(screen.getAllByText("AI corrected speaker")).toHaveLength(1);
+  });
+
+  it("falls back to the neutral pill when no source was recorded", () => {
+    renderTranscriptView([
+      buildSegment({
+        id: "seg-1",
+        text: "edited before provenance existed",
+        speaker: "SPEAKER_A",
+        text_manually_edited: true,
+        text_edit_source: null,
+      }),
+    ]);
+
+    expect(screen.getByText("Edited")).toBeInTheDocument();
+    expect(screen.queryByText("AI corrected text")).not.toBeInTheDocument();
   });
 });

@@ -65,6 +65,7 @@ function buildSpeaker(
     global_speaker: overrides.global_speaker,
     has_voiceprint: overrides.has_voiceprint,
     merged_into_id: overrides.merged_into_id,
+    name_last_edit_source: overrides.name_last_edit_source,
   } as RecordingSpeaker;
 }
 
@@ -196,5 +197,51 @@ describe("SpeakerPanel", () => {
       expect(deleteRecordingSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00");
     });
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+});
+
+describe("speaker naming provenance", () => {
+  it("discloses a speaker an assistant named", () => {
+    renderPanel({
+      speakers: [
+        buildSpeaker({
+          diarization_label: "SPEAKER_00",
+          local_name: "Mila Faramji",
+          name_last_edit_source: "mcp",
+        }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    expect(screen.getByText("AI named")).toBeInTheDocument();
+  });
+
+  it("stays silent for a name set in the web app", () => {
+    renderPanel({
+      speakers: [
+        buildSpeaker({
+          diarization_label: "SPEAKER_00",
+          local_name: "Mila Faramji",
+          name_last_edit_source: "api",
+        }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    expect(screen.queryByText("AI named")).not.toBeInTheDocument();
+  });
+
+  it("stays silent when no source was recorded", () => {
+    renderPanel({
+      speakers: [
+        buildSpeaker({
+          diarization_label: "SPEAKER_00",
+          local_name: "Mila Faramji",
+        }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    expect(screen.queryByText("AI named")).not.toBeInTheDocument();
   });
 });

@@ -23,6 +23,8 @@ export interface SpeakerPanelEntry {
   labels: string[];
   displayName: string;
   hasVoiceprint: boolean;
+  /** True when a connected assistant, rather than the web app, named this speaker. */
+  namedByAssistant: boolean;
 }
 
 export interface UseSpeakerPanelEntriesResult {
@@ -121,6 +123,11 @@ export function useSpeakerPanelEntries(
           labels: sortedMembers.map((speaker) => speaker.diarization_label),
           displayName: getSpeakerName(representative),
           hasVoiceprint,
+          // Any member being named by an assistant is worth disclosing: the
+          // rows are grouped, so a linked label carries the same name.
+          namedByAssistant: sortedMembers.some(
+            (speaker) => speaker.name_last_edit_source === "mcp",
+          ),
         } satisfies SpeakerPanelEntry;
       })
       .sort((left, right) => {

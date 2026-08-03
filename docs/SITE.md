@@ -111,11 +111,13 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   the landing page is led by its shot. That capability happens in Claude's or ChatGPT's
   window, not Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed
   capture of someone else's interface would be a false image on a page that argues from
-  checkable ones. Nojoin's own screens cannot carry the claim either: the app records that
-  an utterance was manually edited but never distinguishes an assistant's edit from a web
-  one, so a task list an assistant filed is indistinguishable from a typed one. The flow
-  card, the tool showcase and the bridge card take the visual weight instead. Should the app
-  ever surface MCP provenance, this band earns a real shot and should get one.
+  checkable ones. Nojoin's own screens now carry part of the claim: the transcript labels an
+  utterance an assistant edited as `AI corrected text` or `AI corrected speaker`, distinct
+  from the plain `Edited` a web correction earns, so a transcript capture would be honest.
+  The rest of the
+  surface is not there yet, and a task list an assistant filed is still indistinguishable
+  from a typed one. The flow card, the tool showcase and the bridge card take the visual
+  weight for now; the band earns a real shot at the next site pass.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never

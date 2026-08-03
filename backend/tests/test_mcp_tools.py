@@ -178,6 +178,7 @@ SCHEMA_STATEMENTS = [
         last_seen_ms INTEGER,
         identity_confidence FLOAT,
         identity_locked BOOLEAN NOT NULL DEFAULT 0,
+        name_last_edit_source VARCHAR(32),
         voice_snippet_path VARCHAR(1024),
         snippet_start FLOAT,
         snippet_end FLOAT,
@@ -301,6 +302,8 @@ SCHEMA_STATEMENTS = [
         overlap_rank INTEGER NOT NULL,
         manual_text_locked BOOLEAN NOT NULL,
         manual_speaker_locked BOOLEAN NOT NULL,
+        text_last_edit_source VARCHAR(32),
+        speaker_last_edit_source VARCHAR(32),
         speaker_assignment_source VARCHAR(32) NOT NULL,
         speaker_assignment_authority VARCHAR(32) NOT NULL,
         text_confidence FLOAT,
@@ -1356,10 +1359,11 @@ async def test_set_speaker_name_maps_to_global_speaker_name_field(
 
     captured: dict = {}
 
-    async def fake_update(recording_id, update, *, db, current_user):
+    async def fake_update(recording_id, update, *, db, current_user, source="api"):
         captured["recording_id"] = recording_id
         captured["update"] = update
         captured["user"] = current_user
+        captured["source"] = source
         return [
             SimpleNamespace(
                 diarization_label=update.diarization_label,
@@ -1368,7 +1372,7 @@ async def test_set_speaker_name_maps_to_global_speaker_name_field(
         ]
 
     monkeypatch.setattr(
-        "backend.api.v1.endpoints.speakers.routes_recording.update_recording_speaker",
+        "backend.api.v1.endpoints.speakers.routes_recording.apply_recording_speaker_update",
         fake_update,
     )
     bind_mcp_identity(test_user)
@@ -1379,6 +1383,9 @@ async def test_set_speaker_name_maps_to_global_speaker_name_field(
     assert captured["update"].diarization_label == "SPEAKER_00"
     assert captured["update"].global_speaker_name == "Dana"
     assert captured["user"].id == test_user.id
+    # A rename relabels every line the speaker holds, so mislabelling its
+    # surface is the widest false attribution the connector could make.
+    assert captured["source"] == "mcp"
     assert result["linked_person"] == "Dana"
     assert result["diarization_label"] == "SPEAKER_00"
 
@@ -1395,7 +1402,7 @@ async def test_set_speaker_name_requires_write_scope(
         return []
 
     monkeypatch.setattr(
-        "backend.api.v1.endpoints.speakers.routes_recording.update_recording_speaker",
+        "backend.api.v1.endpoints.speakers.routes_recording.apply_recording_speaker_update",
         fake_update,
     )
     bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
@@ -1730,13 +1737,19 @@ async def test_correct_utterance_text_stamps_mcp_source(
         utterance = (
             await session.execute(
                 text(
-                    "SELECT text, manual_text_locked, revision "
+                    "SELECT text, manual_text_locked, revision, "
+                    "text_last_edit_source, speaker_last_edit_source "
                     "FROM transcript_utterances WHERE public_id = 'u-1'"
                 )
             )
         ).one()
         assert utterance[0] == "Hello, corrected."
         assert bool(utterance[1]) is True
+        # Denormalised onto the row so the read model can label the line
+        # without joining the event log on every transcript open.
+        assert utterance[3] == "mcp"
+        # A text correction says nothing about who assigned the speaker.
+        assert utterance[4] is None
         events = (
             await session.execute(
                 text(

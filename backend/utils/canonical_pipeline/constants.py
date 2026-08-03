@@ -368,4 +368,25 @@ def _record_manual_lock_events(
         )
 
 
+def _segment_edit_source(
+    segment: dict[str, Any], key: str, *, locked: bool
+) -> str | None:
+    """Read an edit source off a segment payload, gated on its lock.
+
+    A source only means something while the lock it describes is held, so an
+    unlocked segment carrying a stale source resolves to None rather than
+    claiming an edit the row no longer pins. The rebuild paths in core.py read
+    their provenance through here, which is what carries an assistant's
+    correction onto a replacement utterance when boundaries shift.
+
+    Rolling diarization's own rebuild deliberately does not call this. Every
+    path into it refuses a locked utterance outright, so a segment reaching
+    that constructor can never carry a source worth reading.
+    """
+    if not locked:
+        return None
+    value = segment.get(key)
+    return str(value) if value else None
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

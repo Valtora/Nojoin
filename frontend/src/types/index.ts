@@ -90,6 +90,13 @@ export interface RecordingSpeaker extends BaseDBModel {
   global_speaker?: GlobalSpeaker;
   color?: string;
   merged_into_id?: number | null;
+  /**
+   * Which surface last named this speaker: "api" for the web app, "mcp" for a
+   * connected assistant. Null or absent where the name came from the pipeline
+   * or predates provenance being recorded. Disclosed once against the speaker
+   * rather than on each utterance, because a rename relabels every line.
+   */
+  name_last_edit_source?: string | null;
 }
 
 export type SpeakerNameSuggestionStatus =
@@ -161,6 +168,14 @@ export interface TranscriptUtterance {
   segment_source?: "live" | string;
   speaker_manually_edited?: boolean;
   text_manually_edited?: boolean;
+  /**
+   * Which surface made the edit the flag above reports: "api" for the web app,
+   * "mcp" for a connected assistant. Null or absent where no edit is
+   * attributable, including every edit made before provenance was recorded.
+   * Render those as unattributed rather than assuming a person.
+   */
+  text_edit_source?: string | null;
+  speaker_edit_source?: string | null;
   speaker_confidence?: number | null;
   /**
    * Which capture channel carried this audio, when the live lane could tell.
@@ -204,6 +219,14 @@ export interface TranscriptSegment {
   segment_source?: "live" | string;
   speaker_manually_edited?: boolean;
   text_manually_edited?: boolean;
+  /**
+   * Which surface made the edit the flag above reports: "api" for the web app,
+   * "mcp" for a connected assistant. Null or absent where no edit is
+   * attributable, including every edit made before provenance was recorded.
+   * Render those as unattributed rather than assuming a person.
+   */
+  text_edit_source?: string | null;
+  speaker_edit_source?: string | null;
   speaker_confidence?: number | null;
   /**
    * Which capture channel carried this audio, when the live lane could tell.

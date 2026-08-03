@@ -75,7 +75,7 @@ export default function ConnectedAppsSettings() {
     <SettingsCard
       id="integrations-connected-apps"
       title="Connected Apps"
-      description="Assistants connected through the Nojoin MCP connector. They can read your meeting library and, when granted, add or update people in your People library."
+      description="Assistants connected through the Nojoin MCP connector. They can read your meeting library, and, when write access is granted, change it: correcting transcripts, regenerating notes, re-running processing, organising recordings, managing tasks, attaching documents, and maintaining your People library. Nothing they do is permanent, and edits they make are labelled as theirs in the transcript."
     >
       {apps === null ? (
         <SettingsBlock>

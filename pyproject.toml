@@ -156,6 +156,10 @@ max-complexity = 10
 "backend/utils/canonical_pipeline/identity_fields.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/segmentation.py" = ["C901", "PLR0913", "PLR0915"]
 "backend/utils/canonical_pipeline/speaker.py" = ["C901", "PLR0912", "PLR0913"]
+# Carries _find_matching_recording_speaker, split out of speaker.py unchanged;
+# it brings that module's existing exemptions with it rather than being
+# rewritten as part of an unrelated change.
+"backend/utils/canonical_pipeline/speaker_matching.py" = ["C901", "PLR0912", "PLR0913"]
 "backend/utils/config_manager.py" = ["C901", "PLR0912"]
 "backend/utils/download_progress.py" = ["PLR0913"]
 "backend/utils/live_transcript.py" = ["C901", "PLR0912", "PLR0915"]

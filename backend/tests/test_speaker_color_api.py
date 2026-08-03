@@ -84,6 +84,7 @@ SCHEMA_STATEMENTS = [
         last_seen_ms INTEGER,
         identity_confidence FLOAT,
         identity_locked BOOLEAN NOT NULL DEFAULT 0,
+        name_last_edit_source VARCHAR(32),
         voice_snippet_path VARCHAR(1024),
         snippet_start FLOAT,
         snippet_end FLOAT,

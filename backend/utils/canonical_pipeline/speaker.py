@@ -1,5 +1,6 @@
 from .constants import *
 from .identity_fields import apply_recording_speaker_identity_fields
+from .notes_propagation import propagate_speaker_rename_to_notes
 
 
 @dataclass(frozen=True)
@@ -787,107 +788,6 @@ def _apply_source_run_provenance(
     session.add(recording_speaker)
 
 
-def _find_matching_recording_speaker(
-    session,
-    *,
-    recording_id: int,
-    recording_speakers: list[RecordingSpeaker],
-    value: str,
-    source_run_id: int | None,
-    segment_start_ms: int | None = None,
-) -> RecordingSpeaker | None:
-    speaker_ids = [speaker.id for speaker in recording_speakers]
-    if speaker_ids and segment_start_ms is not None:
-        alias_rows = (
-            session.execute(
-                select(RecordingSpeakerAlias)
-                .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
-                .where(RecordingSpeakerAlias.active.is_(True))
-                .where(RecordingSpeakerAlias.alias_value == value)
-                .where(
-                    or_(
-                        RecordingSpeakerAlias.valid_from_ms.is_(None),
-                        RecordingSpeakerAlias.valid_from_ms <= segment_start_ms,
-                    )
-                )
-                .where(
-                    or_(
-                        RecordingSpeakerAlias.valid_to_ms.is_(None),
-                        RecordingSpeakerAlias.valid_to_ms > segment_start_ms,
-                    )
-                )
-                .order_by(
-                    func.coalesce(RecordingSpeakerAlias.valid_from_ms, -1).desc(),
-                    RecordingSpeakerAlias.id.desc(),
-                )
-            )
-            .scalars()
-            .all()
-        )
-        speakers_by_id = {speaker.id: speaker for speaker in recording_speakers}
-        for alias_row in alias_rows:
-            alias_speaker = speakers_by_id.get(alias_row.recording_speaker_id)
-            if alias_speaker is None:
-                alias_speaker = session.get(
-                    RecordingSpeaker, alias_row.recording_speaker_id
-                )
-            if alias_speaker is None or alias_speaker.recording_id != recording_id:
-                continue
-            resolved = _resolve_active_recording_speaker(session, alias_speaker)
-            _apply_source_run_provenance(session, resolved, source_run_id)
-            return resolved
-
-    for recording_speaker in recording_speakers:
-        if recording_speaker.diarization_label == value:
-            resolved = _resolve_active_recording_speaker(session, recording_speaker)
-            _apply_source_run_provenance(session, resolved, source_run_id)
-            return resolved
-
-    for recording_speaker in recording_speakers:
-        if matches_speaker_name(recording_speaker.local_name, value):
-            resolved = _resolve_active_recording_speaker(session, recording_speaker)
-            _apply_source_run_provenance(session, resolved, source_run_id)
-            return resolved
-        if matches_speaker_name(recording_speaker.name, value):
-            resolved = _resolve_active_recording_speaker(session, recording_speaker)
-            _apply_source_run_provenance(session, resolved, source_run_id)
-            return resolved
-        global_speaker = getattr(recording_speaker, "global_speaker", None)
-        if global_speaker and matches_speaker_name(global_speaker.name, value):
-            resolved = _resolve_active_recording_speaker(session, recording_speaker)
-            _apply_source_run_provenance(session, resolved, source_run_id)
-            return resolved
-
-    if not speaker_ids:
-        return None
-
-    alias_rows = (
-        session.execute(
-            select(RecordingSpeakerAlias)
-            .where(RecordingSpeakerAlias.recording_speaker_id.in_(speaker_ids))
-            .where(RecordingSpeakerAlias.active.is_(True))
-            .where(RecordingSpeakerAlias.alias_value == value)
-            .order_by(RecordingSpeakerAlias.id.desc())
-        )
-        .scalars()
-        .all()
-    )
-    speakers_by_id = {speaker.id: speaker for speaker in recording_speakers}
-    for alias_row in alias_rows:
-        alias_speaker = speakers_by_id.get(alias_row.recording_speaker_id)
-        if alias_speaker is None:
-            alias_speaker = session.get(
-                RecordingSpeaker, alias_row.recording_speaker_id
-            )
-        if alias_speaker is None or alias_speaker.recording_id != recording_id:
-            continue
-        resolved = _resolve_active_recording_speaker(session, alias_speaker)
-        _apply_source_run_provenance(session, resolved, source_run_id)
-        return resolved
-
-    return None
-
-
 def _append_boundary_revision_events(
     session,
     *,
@@ -1146,11 +1046,17 @@ def update_recording_speaker_identity(
             # the voiceprint (pre-refactor behaviour of this path).
             respect_voiceprint_lock=False,
         )
+        recording_speaker.name_last_edit_source = source
 
     effective_event_type = event_type or (
         SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
         if target_global_speaker is not None
         else SpeakerCorrectionEventType.RENAME
+    )
+    resolved_new_name = (
+        target_global_speaker.name
+        if target_global_speaker is not None
+        else new_speaker_name
     )
     record_recording_speaker_corrections(
         session,
@@ -1167,11 +1073,7 @@ def update_recording_speaker_identity(
         payload_by_speaker_id={
             recording_speaker.id: {
                 "old_name": old_display_names.get(recording_speaker.id),
-                "new_name": (
-                    target_global_speaker.name
-                    if target_global_speaker is not None
-                    else new_speaker_name
-                ),
+                "new_name": resolved_new_name,
                 "matched_global_speaker": target_global_speaker is not None,
                 "source": source,
             }
@@ -1181,6 +1083,13 @@ def update_recording_speaker_identity(
 
     if list_active_utterances(session, recording_id):
         refresh_transcript_projection_from_canonical(session, recording_id)
+
+    propagate_speaker_rename_to_notes(
+        session,
+        recording_id=recording_id,
+        old_names=list(old_display_names.values()),
+        new_name=resolved_new_name,
+    )
 
     return matching_speakers
 

@@ -2,6 +2,7 @@ from .constants import *
 from .diarization import *
 from .segmentation import *
 from .speaker import *
+from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
 from .startup import *
 
 
@@ -42,62 +43,6 @@ def get_canonical_transcript_revision(session, recording_id: int) -> int:
     )
     revision = session.execute(statement).scalar_one_or_none()
     return int(revision or 0)
-
-
-def serialize_canonical_delta(
-    session,
-    recording_id: int,
-    *,
-    after_revision: int | None = None,
-) -> tuple[int, list[dict[str, Any]], list[str]]:
-    revision = get_canonical_transcript_revision(session, recording_id)
-    if after_revision is None or after_revision <= 0:
-        return revision, serialize_canonical_utterances(session, recording_id), []
-
-    event_rows = session.execute(
-        select(
-            TranscriptUtteranceEvent.event_type,
-            TranscriptUtterance.public_id,
-            TranscriptUtterance.state,
-        )
-        .join(
-            TranscriptUtterance,
-            TranscriptUtterance.id == TranscriptUtteranceEvent.utterance_id,
-        )
-        .where(TranscriptUtteranceEvent.recording_id == recording_id)
-        .where(TranscriptUtteranceEvent.id > after_revision)
-        .order_by(TranscriptUtteranceEvent.id)
-    ).all()
-
-    changed_public_ids: set[str] = set()
-    tombstones: list[str] = []
-    tombstone_ids: set[str] = set()
-
-    for event_type, public_id, state in event_rows:
-        if not public_id:
-            continue
-        state_value = state.value if hasattr(state, "value") else str(state)
-        if (
-            event_type in {"supersede", "delete"}
-            or state_value in TOMBSTONE_UTTERANCE_STATES
-        ):
-            changed_public_ids.discard(public_id)
-            if public_id not in tombstone_ids:
-                tombstone_ids.add(public_id)
-                tombstones.append(public_id)
-            continue
-        if state_value in ACTIVE_UTTERANCE_STATES:
-            changed_public_ids.add(public_id)
-
-    return (
-        revision,
-        serialize_canonical_utterances(
-            session,
-            recording_id,
-            only_public_ids=changed_public_ids,
-        ),
-        tombstones,
-    )
 
 
 def ensure_processing_run(
@@ -373,6 +318,12 @@ def replace_utterances_from_segments(
             overlap_rank=overlap_groups.get(index, {}).get("rank", 0),
             manual_text_locked=manual_text_locked,
             manual_speaker_locked=manual_speaker_locked,
+            text_last_edit_source=_segment_edit_source(
+                segment, "text_edit_source", locked=manual_text_locked
+            ),
+            speaker_last_edit_source=_segment_edit_source(
+                segment, "speaker_edit_source", locked=manual_speaker_locked
+            ),
             speaker_assignment_source=_resolve_segment_speaker_assignment_source(
                 segment,
                 source=source,
@@ -550,6 +501,7 @@ def finalize_utterances_from_segments(
         overlap_by_speaker_id: dict[int, int] = defaultdict(int)
         source_public_ids_by_speaker_id: dict[int, list[str]] = defaultdict(list)
         confidence_by_speaker_id: dict[int, float] = defaultdict(float)
+        edit_sources_by_speaker_id: dict[int, set[str]] = defaultdict(set)
 
         for source_utterance in active_utterances:
             if source_utterance.id in matched_utterance_ids:
@@ -577,6 +529,10 @@ def finalize_utterances_from_segments(
                     confidence_by_speaker_id[speaker_id],
                     float(source_utterance.speaker_confidence),
                 )
+            if source_utterance.speaker_last_edit_source:
+                edit_sources_by_speaker_id[speaker_id].add(
+                    source_utterance.speaker_last_edit_source
+                )
 
         if not overlap_by_speaker_id:
             return None
@@ -593,11 +549,21 @@ def finalize_utterances_from_segments(
         if speaker is None:
             return None
 
+        # Attribution is only inherited when every utterance that voted for
+        # this speaker was edited by the same surface. Where a person and an
+        # assistant both touched the range, neither can honestly claim the
+        # inherited assignment, so it goes across unattributed.
+        edit_sources = edit_sources_by_speaker_id.get(speaker_id) or set()
+        inherited_edit_source = (
+            next(iter(edit_sources)) if len(edit_sources) == 1 else None
+        )
+
         return {
             "speaker": speaker,
             "overlap_ms": int(overlap_ms),
             "source_public_ids": source_public_ids_by_speaker_id[speaker_id],
             "speaker_confidence": confidence_by_speaker_id.get(speaker_id) or None,
+            "speaker_edit_source": inherited_edit_source,
         }
 
     for index, segment in enumerate(segments):
@@ -662,6 +628,14 @@ def finalize_utterances_from_segments(
             effective_segment["text_manually_edited"] = old_text_locked or bool(
                 segment.get("text_manually_edited") is True
             )
+            # The lock is what pins the value, so the same condition pins its
+            # provenance: a locked utterance keeps the source it was edited
+            # with, and an unlocked one takes whatever the run supplies.
+            effective_segment["text_edit_source"] = (
+                matched_utterance.text_last_edit_source
+                if old_text_locked
+                else segment.get("text_edit_source")
+            )
 
             if old_speaker_locked:
                 current_speaker = (
@@ -687,6 +661,11 @@ def finalize_utterances_from_segments(
             effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(
                 segment.get("speaker_manually_edited") is True
             )
+            effective_segment["speaker_edit_source"] = (
+                matched_utterance.speaker_last_edit_source
+                if old_speaker_locked
+                else segment.get("speaker_edit_source")
+            )
 
             effective_text = str(effective_segment.get("text", "") or "")
             effective_speaker_label = (
@@ -702,6 +681,16 @@ def finalize_utterances_from_segments(
             )
             effective_manual_speaker_locked = bool(
                 effective_segment.get("speaker_manually_edited") is True
+            )
+            effective_text_edit_source = _segment_edit_source(
+                effective_segment,
+                "text_edit_source",
+                locked=effective_manual_text_locked,
+            )
+            effective_speaker_edit_source = _segment_edit_source(
+                effective_segment,
+                "speaker_edit_source",
+                locked=effective_manual_speaker_locked,
             )
             effective_text_confidence = _to_optional_float(
                 segment.get("text_confidence")
@@ -740,6 +729,10 @@ def finalize_utterances_from_segments(
                     != effective_manual_text_locked,
                     bool(matched_utterance.manual_speaker_locked)
                     != effective_manual_speaker_locked,
+                    matched_utterance.text_last_edit_source
+                    != effective_text_edit_source,
+                    matched_utterance.speaker_last_edit_source
+                    != effective_speaker_edit_source,
                     matched_utterance.state != TranscriptUtteranceState.FINALIZED,
                     matched_utterance.processing_run_id != processing_run.id,
                     matched_utterance.overlap_group_id
@@ -762,6 +755,8 @@ def finalize_utterances_from_segments(
             matched_utterance.recording_speaker_id = effective_recording_speaker_id
             matched_utterance.manual_text_locked = effective_manual_text_locked
             matched_utterance.manual_speaker_locked = effective_manual_speaker_locked
+            matched_utterance.text_last_edit_source = effective_text_edit_source
+            matched_utterance.speaker_last_edit_source = effective_speaker_edit_source
             matched_utterance.text_confidence = effective_text_confidence
             matched_utterance.speaker_confidence = effective_speaker_confidence
             matched_utterance.state = TranscriptUtteranceState.FINALIZED
@@ -826,6 +821,9 @@ def finalize_utterances_from_segments(
             effective_segment["speaker"] = recording_speaker.diarization_label
             effective_segment["recording_speaker_id"] = int(recording_speaker.id)
             effective_segment["speaker_manually_edited"] = True
+            effective_segment["speaker_edit_source"] = manual_speaker_inheritance.get(
+                "speaker_edit_source"
+            )
             if effective_segment.get("speaker_confidence") is None:
                 effective_segment["speaker_confidence"] = (
                     manual_speaker_inheritance.get("speaker_confidence")
@@ -867,6 +865,16 @@ def finalize_utterances_from_segments(
             ),
             manual_speaker_locked=bool(
                 effective_segment.get("speaker_manually_edited") is True
+            ),
+            text_last_edit_source=_segment_edit_source(
+                effective_segment,
+                "text_edit_source",
+                locked=bool(effective_segment.get("text_manually_edited") is True),
+            ),
+            speaker_last_edit_source=_segment_edit_source(
+                effective_segment,
+                "speaker_edit_source",
+                locked=bool(effective_segment.get("speaker_manually_edited") is True),
             ),
             speaker_assignment_source=_resolve_segment_speaker_assignment_source(
                 effective_segment,
@@ -1093,6 +1101,12 @@ def append_utterances_from_segments(
             overlap_rank=overlap_groups.get(offset, {}).get("rank", 0),
             manual_text_locked=manual_text_locked,
             manual_speaker_locked=manual_speaker_locked,
+            text_last_edit_source=_segment_edit_source(
+                segment, "text_edit_source", locked=manual_text_locked
+            ),
+            speaker_last_edit_source=_segment_edit_source(
+                segment, "speaker_edit_source", locked=manual_speaker_locked
+            ),
             speaker_assignment_source=_resolve_segment_speaker_assignment_source(
                 segment,
                 source=source,
@@ -1163,6 +1177,7 @@ def update_utterance_text(
     old_text_locked = bool(utterance.manual_text_locked)
     utterance.text = text
     utterance.manual_text_locked = True
+    utterance.text_last_edit_source = source
     utterance.revision += 1
     session.add(utterance)
     session.flush()
@@ -1194,6 +1209,7 @@ def update_utterance_text(
             {
                 "text": utterance.text,
                 "text_manually_edited": True,
+                "text_edit_source": source,
                 "revision": utterance.revision,
                 "state": utterance.state.value,
                 "updated_at": utterance.updated_at.isoformat(),
@@ -1278,6 +1294,7 @@ def update_utterance_speaker(
         target_utterance.recording_speaker_id = target_key
         target_utterance.speaker_label = target_speaker.diarization_label
         target_utterance.manual_speaker_locked = True
+        target_utterance.speaker_last_edit_source = source
         target_utterance.speaker_assignment_source = SPEAKER_ASSIGNMENT_SOURCE_MANUAL
         target_utterance.speaker_assignment_authority = (
             SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL
@@ -1316,6 +1333,7 @@ def update_utterance_speaker(
                 target_speaker.diarization_label,
             )
             updated_segments[projection_index]["speaker_manually_edited"] = True
+            updated_segments[projection_index]["speaker_edit_source"] = source
             updated_segments[projection_index]["recording_speaker_id"] = target_key
             updated_segments[projection_index]["revision"] = target_utterance.revision
             updated_segments[projection_index]["state"] = target_utterance.state.value
@@ -1451,6 +1469,11 @@ def apply_compatibility_segment_replace(
             effective_segment["text_manually_edited"] = old_text_locked or bool(
                 segment.get("text_manually_edited") is True
             )
+            effective_segment["text_edit_source"] = (
+                utterance.text_last_edit_source
+                if old_text_locked
+                else segment.get("text_edit_source")
+            )
 
             if old_speaker_locked:
                 recording_speaker = (
@@ -1481,6 +1504,11 @@ def apply_compatibility_segment_replace(
             effective_segment["speaker_manually_edited"] = old_speaker_locked or bool(
                 segment.get("speaker_manually_edited") is True
             )
+            effective_segment["speaker_edit_source"] = (
+                utterance.speaker_last_edit_source
+                if old_speaker_locked
+                else segment.get("speaker_edit_source")
+            )
 
             effective_sort_key = _sort_key_for_index(index)
             effective_start_ms = _segment_to_ms(segment.get("start", 0.0))
@@ -1499,6 +1527,16 @@ def apply_compatibility_segment_replace(
             )
             effective_manual_speaker_locked = bool(
                 effective_segment.get("speaker_manually_edited") is True
+            )
+            effective_text_edit_source = _segment_edit_source(
+                effective_segment,
+                "text_edit_source",
+                locked=effective_manual_text_locked,
+            )
+            effective_speaker_edit_source = _segment_edit_source(
+                effective_segment,
+                "speaker_edit_source",
+                locked=effective_manual_speaker_locked,
             )
             effective_state = _state_for_segment(recording, effective_segment)
             effective_speaker_assignment_source = (
@@ -1528,6 +1566,8 @@ def apply_compatibility_segment_replace(
                     bool(utterance.manual_text_locked) != effective_manual_text_locked,
                     bool(utterance.manual_speaker_locked)
                     != effective_manual_speaker_locked,
+                    utterance.text_last_edit_source != effective_text_edit_source,
+                    utterance.speaker_last_edit_source != effective_speaker_edit_source,
                     utterance.state != effective_state,
                     utterance.overlap_group_id is not None,
                     int(utterance.overlap_rank or 0) != 0,
@@ -1547,6 +1587,8 @@ def apply_compatibility_segment_replace(
                 utterance.speaker_label = effective_speaker_label
                 utterance.manual_text_locked = effective_manual_text_locked
                 utterance.manual_speaker_locked = effective_manual_speaker_locked
+                utterance.text_last_edit_source = effective_text_edit_source
+                utterance.speaker_last_edit_source = effective_speaker_edit_source
                 utterance.revision += 1
                 utterance.overlap_group_id = None
                 utterance.overlap_rank = 0
@@ -1659,6 +1701,8 @@ def serialize_canonical_utterances(
             "provisional": state_value == TranscriptUtteranceState.PROVISIONAL.value,
             "speaker_manually_edited": utterance.manual_speaker_locked,
             "text_manually_edited": utterance.manual_text_locked,
+            "text_edit_source": utterance.text_last_edit_source,
+            "speaker_edit_source": utterance.speaker_last_edit_source,
             "speaker_state": _speaker_state_for_utterance(
                 utterance, projection=projection
             ),
@@ -1797,84 +1841,6 @@ def refresh_transcript_projection_from_canonical(
     session.add(transcript)
     refresh_recording_speaker_usage_state(session, recording_id)
     return projection_segments
-
-
-def build_transient_utterance_payloads_from_segments(
-    transcript: Transcript | None,
-) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
-    for index, segment in enumerate((transcript.segments or []) if transcript else []):
-        payloads.append(
-            {
-                "id": segment.get("id") or f"legacy-{index}",
-                "start": float(segment.get("start", 0.0)),
-                "end": float(segment.get("end", 0.0)),
-                "start_ms": _segment_to_ms(segment.get("start", 0.0)),
-                "end_ms": _segment_to_ms(segment.get("end", 0.0)),
-                "text": str(segment.get("text", "") or ""),
-                "speaker": str(segment.get("speaker") or UNKNOWN_SPEAKER),
-                "recording_speaker_id": segment.get("recording_speaker_id"),
-                "state": str(
-                    segment.get("state")
-                    or (
-                        TranscriptUtteranceState.PROVISIONAL.value
-                        if segment.get("provisional")
-                        else TranscriptUtteranceState.STABLE.value
-                    )
-                ),
-                "revision": int(segment.get("revision") or 1),
-                "segment_source": segment.get("segment_source") or "legacy",
-                "provisional": bool(segment.get("provisional") is True),
-                "speaker_manually_edited": bool(
-                    segment.get("speaker_manually_edited") is True
-                ),
-                "text_manually_edited": bool(
-                    segment.get("text_manually_edited") is True
-                ),
-                "speaker_state": segment.get("speaker_state"),
-                "speaker_confidence": _to_optional_float(
-                    segment.get("speaker_confidence")
-                ),
-                "text_confidence": _to_optional_float(segment.get("text_confidence")),
-                "speaker_assignment_source": _normalize_speaker_assignment_source(
-                    segment.get("speaker_assignment_source")
-                    or _derive_default_speaker_assignment_source(
-                        source=str(segment.get("segment_source") or "legacy"),
-                        source_kind=str(segment.get("segment_source") or "legacy"),
-                        state=str(
-                            segment.get("state")
-                            or (
-                                TranscriptUtteranceState.PROVISIONAL.value
-                                if segment.get("provisional")
-                                else TranscriptUtteranceState.STABLE.value
-                            )
-                        ),
-                        manual_speaker_locked=bool(
-                            segment.get("speaker_manually_edited") is True
-                        ),
-                    )
-                ),
-                "speaker_assignment_authority": _normalize_speaker_assignment_authority(
-                    segment.get("speaker_assignment_authority")
-                    or _derive_default_speaker_assignment_authority(
-                        state=str(
-                            segment.get("state")
-                            or (
-                                TranscriptUtteranceState.PROVISIONAL.value
-                                if segment.get("provisional")
-                                else TranscriptUtteranceState.STABLE.value
-                            )
-                        ),
-                        manual_speaker_locked=bool(
-                            segment.get("speaker_manually_edited") is True
-                        ),
-                    )
-                ),
-                "updated_at": segment.get("updated_at"),
-                "overlapping_speakers": list(segment.get("overlapping_speakers") or []),
-            }
-        )
-    return payloads
 
 
 def resolve_assignment_target(
@@ -2103,6 +2069,8 @@ def _build_projection_segment(
             or utterance.source_kind,
             "speaker_manually_edited": utterance.manual_speaker_locked,
             "text_manually_edited": utterance.manual_text_locked,
+            "text_edit_source": utterance.text_last_edit_source,
+            "speaker_edit_source": utterance.speaker_last_edit_source,
             "speaker_state": _speaker_state_for_utterance(
                 utterance, projection=source_segment
             ),

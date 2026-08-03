@@ -148,7 +148,8 @@ CREATE TABLE recording_speakers (
     first_seen_ms INTEGER,
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
-    identity_locked BOOLEAN NOT NULL
+    identity_locked BOOLEAN NOT NULL,
+    name_last_edit_source VARCHAR(32)
 )
 """
 
@@ -270,6 +271,8 @@ CREATE TABLE transcript_utterances (
     overlap_rank INTEGER NOT NULL,
     manual_text_locked BOOLEAN NOT NULL,
     manual_speaker_locked BOOLEAN NOT NULL,
+    text_last_edit_source VARCHAR(32),
+    speaker_last_edit_source VARCHAR(32),
     speaker_assignment_source VARCHAR(32) NOT NULL,
     speaker_assignment_authority VARCHAR(32) NOT NULL,
     text_confidence FLOAT,
@@ -1015,6 +1018,35 @@ async def test_bulk_segment_replace_preserves_manual_text_lock(
         ).one()
         assert row[0] == "manual text"
         assert bool(row[1]) is True
+
+
+@pytest.mark.anyio
+async def test_utterance_read_model_exposes_edit_source(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """The surface that made the edit reaches the payload the app renders.
+
+    Without this the provenance is recorded but unreachable, which is the
+    whole gap being closed.
+    """
+    await _seed_processed_recording(test_session_maker)
+
+    before = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    assert before.json()["utterances"][0]["text_edit_source"] is None
+
+    text_update = await client.put(
+        "/api/v1/transcripts/canon-rec/segments/0/text",
+        json={"text": "edited in the web app"},
+    )
+    assert text_update.status_code == 200
+
+    after = await client.get("/api/v1/transcripts/canon-rec/utterances")
+    utterance = after.json()["utterances"][0]
+
+    assert utterance["text_manually_edited"] is True
+    assert utterance["text_edit_source"] == "api"
+    assert utterance["speaker_edit_source"] is None
 
 
 @pytest.mark.anyio
@@ -2696,6 +2728,281 @@ async def test_finalize_utterances_from_segments_preserves_manual_text_lock(
         assert utterance_row[3].lower() == "finalized"
         assert transcript_segments[0]["text"] == "manual text"
         assert transcript_segments[0]["text_manually_edited"] is True
+
+
+@pytest.mark.anyio
+async def test_finalize_preserves_mcp_edit_source_in_place(
+    test_session_maker: sessionmaker,
+) -> None:
+    """An assistant's correction stays attributed to it across a reprocess.
+
+    The lock already survived finalize; without the source surviving with it,
+    reprocessing would silently downgrade an assistant's edit to an
+    unattributed one, which fails quietly rather than loudly.
+    """
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        finalize_utterances_from_segments,
+        update_utterance_text,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "hello live",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_text(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                text="corrected by the assistant",
+                actor_user_id=1,
+                source="mcp",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        source_before = (
+            await session.execute(
+                text(
+                    "SELECT text_last_edit_source FROM transcript_utterances "
+                    "WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).scalar_one()
+        assert source_before == "mcp"
+
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "model text",
+                        "segment_source": "finalize",
+                    }
+                ],
+                reused_live_asr=True,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        utterance_row = (
+            await session.execute(
+                text(
+                    "SELECT text, manual_text_locked, text_last_edit_source "
+                    "FROM transcript_utterances "
+                    "WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED'"
+                )
+            )
+        ).one()
+        transcript_segments = (
+            await session.execute(
+                text("SELECT segments FROM transcripts WHERE recording_id = 1")
+            )
+        ).scalar_one()
+        transcript_segments = (
+            json.loads(transcript_segments)
+            if isinstance(transcript_segments, str)
+            else transcript_segments
+        )
+
+        assert utterance_row[0] == "corrected by the assistant"
+        assert bool(utterance_row[1]) is True
+        assert utterance_row[2] == "mcp"
+        assert transcript_segments[0]["text_edit_source"] == "mcp"
+
+
+@pytest.mark.anyio
+async def test_finalize_inherits_mcp_edit_source_when_boundaries_shift(
+    test_session_maker: sessionmaker,
+) -> None:
+    """The supersede path carries provenance onto the replacement row.
+
+    Shifting boundaries retire the edited utterance and build a new one, so the
+    source has to ride the segment payload across rather than living only on
+    the row that was superseded.
+    """
+    from backend.models.pipeline import SpeakerCorrectionScope
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        finalize_utterances_from_segments,
+        update_utterance_speaker,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "opening question",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_speaker(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                new_speaker_name="Dwarkesh Patel",
+                scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                actor_user_id=1,
+                source="mcp",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.2,
+                        "speaker": "UNKNOWN",
+                        "text": "opening question with final boundary",
+                        "segment_source": "finalize",
+                    }
+                ],
+                reused_live_asr=True,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        active_row = (
+            await session.execute(
+                text(
+                    "SELECT manual_speaker_locked, speaker_last_edit_source "
+                    "FROM transcript_utterances "
+                    "WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED'"
+                )
+            )
+        ).one()
+
+        assert bool(active_row[0]) is True
+        assert active_row[1] == "mcp"
+
+
+@pytest.mark.anyio
+async def test_clear_manual_locks_clears_edit_sources(
+    test_session_maker: sessionmaker,
+) -> None:
+    """Releasing the lock releases the attribution it described.
+
+    The pill is driven by the lock, so a source left behind would be state the
+    interface can never reach.
+    """
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        clear_utterance_manual_locks,
+        update_utterance_text,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "live-utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "LIVE_01",
+                        "text": "hello live",
+                        "provisional": True,
+                        "segment_source": "live",
+                    }
+                ],
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: update_utterance_text(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                text="corrected by the assistant",
+                actor_user_id=1,
+                source="mcp",
+            )
+        )
+        await session.run_sync(
+            lambda sync_session: clear_utterance_manual_locks(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="live-utt-1",
+                actor_user_id=1,
+                source="mcp",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT manual_text_locked, text_last_edit_source, "
+                    "speaker_last_edit_source FROM transcript_utterances "
+                    "WHERE public_id = 'live-utt-1'"
+                )
+            )
+        ).one()
+
+        assert bool(row[0]) is False
+        assert row[1] is None
+        assert row[2] is None
 
 
 @pytest.mark.anyio
@@ -7078,3 +7385,149 @@ async def test_serialized_utterances_expose_the_capture_source_channel(
     # Live utterances carry no speaker: diarization only runs at finalize.
     assert {payload["speaker"] for payload in serialized} == {"UNKNOWN"}
     assert all(payload["provisional"] is True for payload in serialized)
+
+
+@pytest.mark.anyio
+async def test_speaker_rename_propagates_into_generated_notes(
+    test_session_maker: sessionmaker,
+) -> None:
+    """A rename carries into the notes, which store names rather than labels.
+
+    The transcript resolves a display name from a label at read time, so it
+    updates for free. Notes are prose written once, and without this they keep
+    calling someone by a name nothing else in the recording uses.
+    """
+    from backend.utils.canonical_pipeline.notes_propagation import (
+        propagate_speaker_rename_to_notes,
+    )
+
+    await _seed_processed_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text("UPDATE transcripts SET notes = :notes WHERE recording_id = 1"),
+            {
+                "notes": (
+                    "## Summary\n\nSPEAKER_00 opened the review. "
+                    "Later SPEAKER_00 agreed to send the figures."
+                )
+            },
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        replaced = await session.run_sync(
+            lambda s: propagate_speaker_rename_to_notes(
+                s,
+                recording_id=1,
+                old_names=["SPEAKER_00"],
+                new_name="Dana Whitfield",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        notes = (
+            await session.execute(
+                text("SELECT notes FROM transcripts WHERE recording_id = 1")
+            )
+        ).scalar_one()
+
+    assert replaced == 2
+    assert "SPEAKER_00" not in notes
+    assert notes.count("Dana Whitfield") == 2
+
+
+@pytest.mark.anyio
+async def test_speaker_rename_notes_replacement_respects_word_boundaries(
+    test_session_maker: sessionmaker,
+) -> None:
+    """Substitution is anchored, so a short name cannot maul a longer word.
+
+    This is the guard on a known-sharp tool: replacing generated prose by
+    string match is only defensible if it cannot rewrite text that merely
+    contains the name.
+    """
+    from backend.utils.canonical_pipeline.notes_propagation import (
+        propagate_speaker_rename_to_notes,
+    )
+
+    await _seed_processed_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text("UPDATE transcripts SET notes = :notes WHERE recording_id = 1"),
+            {"notes": "Matt raised it. Matthew disagreed, as a matter of record."},
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        replaced = await session.run_sync(
+            lambda s: propagate_speaker_rename_to_notes(
+                s,
+                recording_id=1,
+                old_names=["Matt"],
+                new_name="Mateusz",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        notes = (
+            await session.execute(
+                text("SELECT notes FROM transcripts WHERE recording_id = 1")
+            )
+        ).scalar_one()
+
+    assert replaced == 1
+    assert notes == "Mateusz raised it. Matthew disagreed, as a matter of record."
+
+
+@pytest.mark.anyio
+async def test_speaker_rename_leaves_user_notes_alone(
+    test_session_maker: sessionmaker,
+) -> None:
+    """Only the generated notes are rewritten.
+
+    user_notes is the user's own writing; editing that without being asked is
+    a different act from updating text a model produced.
+    """
+    from backend.utils.canonical_pipeline.notes_propagation import (
+        propagate_speaker_rename_to_notes,
+    )
+
+    await _seed_processed_recording(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET notes = :notes, user_notes = :user_notes "
+                "WHERE recording_id = 1"
+            ),
+            {
+                "notes": "SPEAKER_00 presented.",
+                "user_notes": "Ask SPEAKER_00 about the timeline.",
+            },
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda s: propagate_speaker_rename_to_notes(
+                s,
+                recording_id=1,
+                old_names=["SPEAKER_00"],
+                new_name="Dana",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text("SELECT notes, user_notes FROM transcripts WHERE recording_id = 1")
+            )
+        ).one()
+
+    assert row[0] == "Dana presented."
+    assert row[1] == "Ask SPEAKER_00 about the timeline."

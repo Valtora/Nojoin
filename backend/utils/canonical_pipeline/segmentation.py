@@ -192,6 +192,8 @@ def _segment_payload_from_utterance(utterance: TranscriptUtterance) -> dict[str,
         "segment_source": utterance.source_kind,
         "speaker_manually_edited": bool(utterance.manual_speaker_locked),
         "text_manually_edited": bool(utterance.manual_text_locked),
+        "text_edit_source": utterance.text_last_edit_source,
+        "speaker_edit_source": utterance.speaker_last_edit_source,
         "revision": int(utterance.revision),
         "recording_speaker_id": utterance.recording_speaker_id,
         "state": utterance.state.value
