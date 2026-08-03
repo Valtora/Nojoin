@@ -48,7 +48,10 @@ const SCOPE_CAPABILITIES: Record<
 > = {
   "mcp:read": [
     { icon: Mic, label: "View your recordings" },
-    { icon: FileText, label: "Read transcripts, notes, and attached documents" },
+    {
+      icon: FileText,
+      label: "Read transcripts, notes, and attached documents",
+    },
     { icon: Search, label: "Search across your meetings and documents" },
     { icon: Users, label: "See meeting speakers and your People library" },
     { icon: Tag, label: "See your tags" },
@@ -189,208 +192,224 @@ function AuthorizeContent() {
     : [];
 
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-      <div className="max-w-lg w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
-        <div className="px-8 pt-10 pb-8">
-          {loading && (
-            <div className="flex justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-action-text" />
-            </div>
-          )}
-
-          {!loading && error && !info && (
-            <div className="text-center space-y-4 py-6">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-surface-panel bg-status-danger-bg">
-                <Plug className="h-6 w-6 text-danger-text" />
+    // This route is its own scroll container. layout.tsx puts overflow-hidden
+    // on <body>, which is right for the dashboard -- it manages its own scroll
+    // regions -- but it means a full-page route taller than the viewport is
+    // clipped with no way to reach the rest. The consent card gets tall when a
+    // client asks for many scopes, and what fell off the bottom was the return
+    // host, the revocation note and, on a short enough window, Allow itself.
+    //
+    // my-auto rather than justify-center: auto margins centre the card when
+    // there is room and collapse to zero when there is not, so the padding
+    // survives instead of the overflow being split unreachably above the top.
+    <div className="h-dvh overflow-y-auto flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <div className="my-auto w-full max-w-lg flex flex-col items-center">
+        <div className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+          <div className="px-8 pt-10 pb-8">
+            {loading && (
+              <div className="flex justify-center py-16">
+                <Loader2 className="h-6 w-6 animate-spin text-action-text" />
               </div>
-              <p className="text-sm text-contrast-muted">{error}</p>
-            </div>
-          )}
+            )}
+
+            {!loading && error && !info && (
+              <div className="text-center space-y-4 py-6">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-surface-panel bg-status-danger-bg">
+                  <Plug className="h-6 w-6 text-danger-text" />
+                </div>
+                <p className="text-sm text-contrast-muted">{error}</p>
+              </div>
+            )}
+
+            {!loading && info && (
+              <>
+                {/* App-to-app connection header */}
+                <div className="flex items-center justify-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel bg-surface-inset overflow-hidden">
+                    {clientLogo ? (
+                      <Image
+                        src={clientLogo}
+                        alt={`${info.client_name} logo`}
+                        width={64}
+                        height={64}
+                        className="object-cover"
+                      />
+                    ) : (
+                      <Plug className="h-7 w-7 text-contrast-icon-muted" />
+                    )}
+                  </div>
+                  <Link2 className="h-4 w-4 text-contrast-icon-muted" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel bg-surface-inset">
+                    <Image
+                      src="/assets/NojoinLogo.png"
+                      alt="Nojoin logo"
+                      width={40}
+                      height={40}
+                      className="object-contain"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-6 text-center">
+                  <h1 className="text-xl font-semibold text-foreground">
+                    Connect {info.client_name} to Nojoin
+                  </h1>
+                  <p className="mt-1.5 text-sm text-contrast-helper">
+                    {info.client_name} will be able to:
+                  </p>
+                </div>
+
+                {/* Capability list */}
+                <ul className="mt-5 max-h-[45dvh] overflow-y-auto divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
+                  {capabilities.map(({ icon: Icon, label }) => (
+                    <li
+                      key={label}
+                      className="flex items-center gap-3 px-4 py-3 text-sm text-contrast-muted"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-action-text" />
+                      <span>{label}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="mt-3 flex items-start gap-2 text-xs text-contrast-helper">
+                  <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-status-success-fg" />
+                  {isReadOnly ? (
+                    <>
+                      Read-only access. {info.client_name} cannot change or
+                      delete anything in Nojoin.
+                    </>
+                  ) : (
+                    <>
+                      Everything {info.client_name} changes with this access
+                      stays recoverable: archived and binned items can be
+                      restored, and transcript edits are tracked. It cannot
+                      permanently delete anything.
+                    </>
+                  )}
+                </p>
+
+                {error && (
+                  <p
+                    className="mt-4 text-sm text-danger-text text-center"
+                    role="alert"
+                  >
+                    {error}
+                  </p>
+                )}
+
+                {!signedInUsername ? (
+                  <form className="mt-6 space-y-4" onSubmit={handleSignIn}>
+                    <p className="text-sm font-medium text-foreground text-center">
+                      Sign in to continue
+                    </p>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <UserIcon className="h-5 w-5 text-contrast-icon-muted" />
+                      </div>
+                      <input
+                        id="oauth-username"
+                        name="username"
+                        type="text"
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        required
+                        className={inputClasses}
+                        placeholder="Username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                      />
+                    </div>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock className="h-5 w-5 text-contrast-icon-muted" />
+                      </div>
+                      <input
+                        id="oauth-password"
+                        name="password"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        className={inputClasses}
+                        placeholder="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={signingIn}
+                      className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
+                    >
+                      {signingIn && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                      {signingIn ? "Signing in..." : "Sign in"}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="mt-6 space-y-5">
+                    <div className="flex items-center justify-center gap-2.5 rounded-lg border border-surface-border px-4 py-2.5">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-action-tint text-xs font-semibold text-action-tint-fg">
+                        {signedInUsername.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="text-sm text-contrast-helper">
+                        Signed in as{" "}
+                        <span className="font-medium text-foreground">
+                          {signedInUsername}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => handleDecision(false)}
+                        className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
+                      >
+                        Deny
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => handleDecision(true)}
+                        className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
+                      >
+                        {submitting && (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        )}
+                        {submitting ? "Connecting..." : "Allow"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
 
           {!loading && info && (
-            <>
-              {/* App-to-app connection header */}
-              <div className="flex items-center justify-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel bg-surface-inset overflow-hidden">
-                  {clientLogo ? (
-                    <Image
-                      src={clientLogo}
-                      alt={`${info.client_name} logo`}
-                      width={64}
-                      height={64}
-                      className="object-cover"
-                    />
-                  ) : (
-                    <Plug className="h-7 w-7 text-contrast-icon-muted" />
-                  )}
-                </div>
-                <Link2 className="h-4 w-4 text-contrast-icon-muted" />
-                <div className="flex h-16 w-16 items-center justify-center rounded-surface-panel bg-surface-inset">
-                  <Image
-                    src="/assets/NojoinLogo.png"
-                    alt="Nojoin logo"
-                    width={40}
-                    height={40}
-                    className="object-contain"
-                  />
-                </div>
-              </div>
-
-              <div className="mt-6 text-center">
-                <h1 className="text-xl font-semibold text-foreground">
-                  Connect {info.client_name} to Nojoin
-                </h1>
-                <p className="mt-1.5 text-sm text-contrast-helper">
-                  {info.client_name} will be able to:
+            <div className="border-t border-surface-divider bg-surface-inset px-8 py-4 space-y-1 text-center">
+              {returnHost && (
+                <p className="text-xs text-contrast-helper">
+                  You will be returned to{" "}
+                  <span className="font-medium text-contrast-muted">
+                    {returnHost}
+                  </span>
+                  .
                 </p>
-              </div>
-
-              {/* Capability list */}
-              <ul className="mt-5 max-h-[45dvh] overflow-y-auto divide-y divide-surface-divider rounded-surface-panel border border-surface-border bg-surface-inset">
-                {capabilities.map(({ icon: Icon, label }) => (
-                  <li
-                    key={label}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-contrast-muted"
-                  >
-                    <Icon className="h-4 w-4 shrink-0 text-action-text" />
-                    <span>{label}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <p className="mt-3 flex items-start gap-2 text-xs text-contrast-helper">
-                <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-status-success-fg" />
-                {isReadOnly ? (
-                  <>
-                    Read-only access. {info.client_name} cannot change or
-                    delete anything in Nojoin.
-                  </>
-                ) : (
-                  <>
-                    Everything {info.client_name} changes with this access
-                    stays recoverable: archived and binned items can be
-                    restored, and transcript edits are tracked. It cannot
-                    permanently delete anything.
-                  </>
-                )}
+              )}
+              <p className="text-xs text-contrast-icon-muted">
+                You can revoke this connection at any time in Settings &rsaquo;
+                Connected Apps.
               </p>
-
-              {error && (
-                <p
-                  className="mt-4 text-sm text-danger-text text-center"
-                  role="alert"
-                >
-                  {error}
-                </p>
-              )}
-
-              {!signedInUsername ? (
-                <form className="mt-6 space-y-4" onSubmit={handleSignIn}>
-                  <p className="text-sm font-medium text-foreground text-center">
-                    Sign in to continue
-                  </p>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <UserIcon className="h-5 w-5 text-contrast-icon-muted" />
-                    </div>
-                    <input
-                      id="oauth-username"
-                      name="username"
-                      type="text"
-                      autoComplete="username"
-                      autoCapitalize="none"
-                      required
-                      className={inputClasses}
-                      placeholder="Username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                    />
-                  </div>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock className="h-5 w-5 text-contrast-icon-muted" />
-                    </div>
-                    <input
-                      id="oauth-password"
-                      name="password"
-                      type="password"
-                      autoComplete="current-password"
-                      required
-                      className={inputClasses}
-                      placeholder="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={signingIn}
-                    className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
-                  >
-                    {signingIn && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {signingIn ? "Signing in..." : "Sign in"}
-                  </button>
-                </form>
-              ) : (
-                <div className="mt-6 space-y-5">
-                  <div className="flex items-center justify-center gap-2.5 rounded-lg border border-surface-border px-4 py-2.5">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-action-tint text-xs font-semibold text-action-tint-fg">
-                      {signedInUsername.charAt(0).toUpperCase()}
-                    </span>
-                    <span className="text-sm text-contrast-helper">
-                      Signed in as{" "}
-                      <span className="font-medium text-foreground">
-                        {signedInUsername}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() => handleDecision(false)}
-                      className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
-                    >
-                      Deny
-                    </button>
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() => handleDecision(true)}
-                      className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
-                    >
-                      {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {submitting ? "Connecting..." : "Allow"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
 
-        {!loading && info && (
-          <div className="border-t border-surface-divider bg-surface-inset px-8 py-4 space-y-1 text-center">
-            {returnHost && (
-              <p className="text-xs text-contrast-helper">
-                You will be returned to{" "}
-                <span className="font-medium text-contrast-muted">
-                  {returnHost}
-                </span>
-                .
-              </p>
-            )}
-            <p className="text-xs text-contrast-icon-muted">
-              You can revoke this connection at any time in Settings &rsaquo;
-              Connected Apps.
-            </p>
-          </div>
-        )}
+        <p className="mt-6 text-xs text-contrast-icon-muted">
+          Secured by your Nojoin server
+        </p>
       </div>
-
-      <p className="mt-6 text-xs text-contrast-icon-muted">
-        Secured by your Nojoin server
-      </p>
     </div>
   );
 }
