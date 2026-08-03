@@ -181,6 +181,13 @@ class RecordingSpeaker(BaseDBModel, table=True):
     last_seen_ms: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
     identity_confidence: Optional[float] = None
     identity_locked: bool = Field(default=False)
+    # Which surface last named this speaker: "api" for the web app, "mcp" for a
+    # connected assistant. NULL where the name came from the pipeline or from
+    # before this was recorded. A rename relabels every line the speaker holds,
+    # so the interface discloses it once here rather than on each utterance.
+    name_last_edit_source: Optional[str] = Field(
+        default=None, sa_column=Column(String(32))
+    )
 
     # Optional snippet for identification
     snippet_start: Optional[float] = None

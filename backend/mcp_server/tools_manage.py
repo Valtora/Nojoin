@@ -432,13 +432,21 @@ async def correct_utterance_text(
     The edit is recorded in the transcript's event log attributed to this
     connection (source "mcp"), bumps the revision cursor, and locks the
     utterance against being overwritten by reprocessing, exactly like an
-    edit made in the web app. Requires the mcp:write scope.
+    edit made in the web app. The app labels the line as corrected by an
+    assistant. Requires the mcp:write scope.
+
+    Pass the corrected words only. The transcript is a record of what was
+    said, so never add editorial annotation to it: no bracketed notes, no
+    "[corrected]" markers, no explanation of the change. Provenance is
+    already recorded and shown to the user, and anything added here becomes
+    part of the transcript, its exports, and the context the notes are
+    generated from. Explain the change in your reply instead.
 
     Args:
         recording_id: The recording's string id from list_recordings.
         utterance_id: The utterance's string id from
             get_transcript_utterances.
-        text: The corrected utterance text.
+        text: The corrected utterance text, and nothing else.
         expected_revision: Optional per-utterance revision from
             get_transcript_utterances; the edit is refused if the
             utterance changed since.
@@ -500,8 +508,9 @@ async def correct_utterance_speaker(
     By default the correction applies to every utterance by that speaker
     in the recording, matching the web app's behaviour; set
     only_this_utterance for a single-line fix. The edit is recorded in the
-    event log attributed to this connection (source "mcp"). Requires the
-    mcp:write scope.
+    event log attributed to this connection (source "mcp"), and the app
+    labels the affected lines as having had their speaker corrected by an
+    assistant. Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.

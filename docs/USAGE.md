@@ -202,6 +202,14 @@ Within a processed recording you can:
 
 Historical recordings carried forward from before the unified pipeline cutover may open in a read-only compatibility state. Playback, transcript viewing, and export remain available, but transcript or speaker edits require explicit reprocess first.
 
+### Who Edited A Line
+
+An edited utterance carries a small label. `Edited` means the line was changed by hand in the web app. `AI corrected text` or `AI corrected speaker` means an assistant connected through the MCP connector made that change, so a correction an assistant made is never mistaken for one you made yourself. The labels survive reprocessing, and clearing an utterance's edit lock clears them along with it.
+
+Edits made before this labelling existed show as `Edited`, because there is no record of which surface made them. Recordings in the read-only compatibility state above also show `Edited` only, since the connector cannot edit them at all.
+
+Naming a speaker is disclosed differently, because it relabels every line that speaker holds. A speaker an assistant named carries a single `AI named` label in the speaker panel rather than a label on each utterance.
+
 ## Speaker Management
 
 Nojoin maintains a global speaker library across recordings.
@@ -209,6 +217,8 @@ Nojoin maintains a global speaker library across recordings.
 Common workflows include linking an unknown in-recording speaker to an existing global speaker, promoting a recording speaker into the People library, creating or updating voiceprints, recalibrating voiceprints from better samples, and merging duplicate speakers.
 
 Inferred speaker names from final processing and manual retry flows are applied automatically to speakers that do not already have a trusted name. Manual speaker edits are authoritative: renaming, merging, promoting, or deleting a speaker always overrides inferred names, and speakers you have already named are never renamed by inference.
+
+Renaming a speaker updates the transcript and the AI meeting notes together, so a meeting does not end up calling the same person two different things. The transcript resolves names at read time and so is always current; the notes are rewritten in place, matching the previous name only where it stands as a whole word. Your own notes are never rewritten. Because the notes are prose, a display name that is also an ordinary phrase will be replaced wherever it appears, so prefer regenerating the notes after renaming a speaker whose old name was not a personal name.
 
 ### Limiting The Number Of Speakers
 

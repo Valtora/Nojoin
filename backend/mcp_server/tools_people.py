@@ -374,7 +374,7 @@ async def set_speaker_name(
     """
     from backend.api.v1.endpoints.speakers.helpers import SpeakerUpdate
     from backend.api.v1.endpoints.speakers.routes_recording import (
-        update_recording_speaker,
+        apply_recording_speaker_update,
     )
     from backend.core.db import async_session_maker
 
@@ -382,13 +382,14 @@ async def set_speaker_name(
     _require_write_scope("speaker naming")
 
     async with async_session_maker() as db:
-        speakers = await update_recording_speaker(
+        speakers = await apply_recording_speaker_update(
             recording_id,
             SpeakerUpdate(
                 diarization_label=diarization_label, global_speaker_name=name
             ),
             db=db,
             current_user=user,
+            source="mcp",
         )
 
     updated = next(

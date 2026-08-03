@@ -448,6 +448,17 @@ class TranscriptUtterance(BaseDBModel, table=True):
     overlap_rank: Optional[int] = Field(default=0)
     manual_text_locked: bool = Field(default=False)
     manual_speaker_locked: bool = Field(default=False)
+    # Which surface authored the edit the corresponding lock is pinning:
+    # "api" for the web app, "mcp" for a connected assistant. NULL is a real
+    # state, not a missing value - it means no attributable edit, which is
+    # true of a pipeline-authored utterance and of the legacy rows the phase-1
+    # import locked without an event to replay.
+    text_last_edit_source: Optional[str] = Field(
+        default=None, sa_column=Column(String(32))
+    )
+    speaker_last_edit_source: Optional[str] = Field(
+        default=None, sa_column=Column(String(32))
+    )
     speaker_assignment_source: str = Field(
         default="legacy",
         sa_column=Column(String(32), nullable=False, default="legacy"),

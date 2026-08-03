@@ -39,10 +39,17 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
     old_values = {
         "manual_text_locked": bool(utterance.manual_text_locked),
         "manual_speaker_locked": bool(utterance.manual_speaker_locked),
+        "text_last_edit_source": utterance.text_last_edit_source,
+        "speaker_last_edit_source": utterance.speaker_last_edit_source,
         "revision": utterance.revision,
     }
     utterance.manual_text_locked = False
     utterance.manual_speaker_locked = False
+    # The lock is what the source describes, so releasing one releases the
+    # other. A source kept past its lock would be state the interface can
+    # never reach, since every pill is gated on the lock.
+    utterance.text_last_edit_source = None
+    utterance.speaker_last_edit_source = None
     utterance.revision += 1
     session.add(utterance)
     session.flush()
@@ -69,6 +76,8 @@ def clear_utterance_manual_locks(  # noqa: PLR0913 - keyword-only edit context, 
             {
                 "text_manually_edited": False,
                 "speaker_manually_edited": False,
+                "text_edit_source": None,
+                "speaker_edit_source": None,
                 "revision": utterance.revision,
                 "state": utterance.state.value,
                 "updated_at": utterance.updated_at.isoformat(),

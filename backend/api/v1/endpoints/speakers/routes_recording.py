@@ -26,6 +26,9 @@ from backend.utils.canonical_pipeline import (
     record_recording_speaker_corrections,
     update_recording_speaker_identity,
 )
+from backend.utils.canonical_pipeline.notes_propagation import (
+    propagate_speaker_rename_to_notes,
+)
 from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
 )
@@ -58,8 +61,31 @@ async def update_recording_speaker(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Rename a recording's speaker from the web app."""
+    return await apply_recording_speaker_update(
+        recording_id,
+        update,
+        db=db,
+        current_user=current_user,
+        source="api",
+    )
+
+
+async def apply_recording_speaker_update(
+    recording_id: str,
+    update: SpeakerUpdate,
+    *,
+    db: AsyncSession,
+    current_user: User,
+    source: str = "api",
+):
     """
     Update a speaker label in a recording with a name.
+
+    Shared by the REST handler (source="api") and the MCP naming tool
+    (source="mcp"). `source` is deliberately not a request field: exposing it
+    on the route would let any client claim an edit came from somewhere it did
+    not, and the whole point of recording it is that it can be trusted.
 
     - If the name matches an existing Global Speaker, link to it
     - Otherwise, set as local_name (local to this recording only)
@@ -100,7 +126,7 @@ async def update_recording_speaker(
                     merge_global_embedding_alpha=(
                         0.3 if global_speaker is not None else None
                     ),
-                    source="api",
+                    source=source,
                 )
             )
         except LookupError as exc:
@@ -193,6 +219,7 @@ async def update_recording_speaker(
             rs.global_speaker_id = None
             rs.name = None
 
+        rs.name_last_edit_source = source
         db.add(rs)
 
     # Transcript Repair
@@ -243,6 +270,17 @@ async def update_recording_speaker(
 
     segments_repaired = segments_updated
 
+    # The legacy path repairs segments itself, so the notes need the same
+    # carry-over the canonical path gets inside update_recording_speaker_identity.
+    await db.run_sync(
+        lambda sync_session: propagate_speaker_rename_to_notes(
+            sync_session,
+            recording_id=recording.id,
+            old_names=list(old_display_names.values()),
+            new_name=update.global_speaker_name,
+        )
+    )
+
     if (
         _canonical_transcript_writes_enabled()
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
@@ -269,6 +307,7 @@ async def update_recording_speaker(
                         "new_name": update.global_speaker_name,
                         "matched_global_speaker": global_speaker is not None,
                         "segments_repaired": segments_repaired,
+                        "source": source,
                     }
                     for rs in recording_speakers
                 },

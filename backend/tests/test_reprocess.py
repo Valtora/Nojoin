@@ -123,7 +123,8 @@ CREATE TABLE recording_speakers (
     first_seen_ms INTEGER,
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
-    identity_locked BOOLEAN NOT NULL
+    identity_locked BOOLEAN NOT NULL,
+    name_last_edit_source VARCHAR(32)
 )
 """
 
@@ -275,6 +276,8 @@ CREATE TABLE transcript_utterances (
     overlap_rank INTEGER NOT NULL,
     manual_text_locked BOOLEAN NOT NULL,
     manual_speaker_locked BOOLEAN NOT NULL,
+    text_last_edit_source VARCHAR(32),
+    speaker_last_edit_source VARCHAR(32),
     speaker_assignment_source VARCHAR(32) NOT NULL,
     speaker_assignment_authority VARCHAR(32) NOT NULL,
     text_confidence FLOAT,

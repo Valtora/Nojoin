@@ -12,6 +12,7 @@ import {
   Mic,
   Pencil,
   Plug,
+  RefreshCw,
   Search,
   ShieldCheck,
   Tag,
@@ -60,7 +61,12 @@ const SCOPE_CAPABILITIES: Record<
     { icon: ListTodo, label: "Create and manage your tasks" },
     {
       icon: Pencil,
-      label: "Correct transcripts and regenerate meeting notes",
+      label:
+        "Correct transcripts, release edit locks, and regenerate meeting notes",
+    },
+    {
+      icon: RefreshCw,
+      label: "Re-run processing on a recording, replacing its transcript",
     },
     { icon: FileText, label: "Attach text documents and append to notes" },
     { icon: UserPlus, label: "Add or update people and name speakers" },

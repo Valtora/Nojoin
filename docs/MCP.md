@@ -96,15 +96,15 @@ row where they are opposites of each other, so it has fewer rows than there are 
 | `reprocess_recording` | `mcp:write` | Re-run the processing pipeline for a recording. |
 | `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline; the assistant never writes note content itself. |
 | `attach_document` | `mcp:write` | Attach assistant-authored text as a markdown document; binary uploads stay in the web app. |
-| `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. |
+| `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. The app labels the result `AI corrected text` or `AI corrected speaker`, so an assistant's correction is visibly distinct from one made in the web app, and stays so across reprocessing. |
 | `unlock_utterance` | `mcp:write` | Release an utterance's manual-edit locks so reprocessing may overwrite it again; the clearing is itself an audited event. |
 | `link_calendar_event` | `mcp:write` | Link a recording to a calendar event, or unlink it. |
 | `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive, or restore tasks, with links to recordings and tags. Archiving is the strongest removal; task deletion exists only in the web app. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by name. |
-| `set_speaker_name` | `mcp:write` | Name a meeting's speaker and link them to a person. |
+| `set_speaker_name` | `mcp:write` | Name a meeting's speaker and link them to a person. The name propagates to the transcript and the AI meeting notes, and the speaker panel labels it `AI named`; because this relabels every line the speaker holds, it is disclosed once against the speaker rather than on each utterance. |
 | `append_meeting_notes` | `mcp:write` | Append text to a meeting's user notes. |
 
-All tools operate only on data owned by the account that authorised the connection. Everything is recoverable: archived and binned recordings restore, transcript corrections are attributed and tracked in the edit log, notes regeneration re-runs Nojoin's own pipeline rather than accepting assistant-authored notes, and People imports never touch voiceprints or remove existing data. There is deliberately no destructive tool: an assistant can move a recording to the bin, and only you can empty the bin, from the web app, which itself only offers permanent deletion for recordings already binned.
+All tools operate only on data owned by the account that authorised the connection. Everything is recoverable: archived and binned recordings restore, transcript corrections are attributed in the app as well as tracked in the edit log, notes regeneration re-runs Nojoin's own pipeline rather than accepting assistant-authored notes, and People imports never touch voiceprints or remove existing data. There is deliberately no destructive tool: an assistant can move a recording to the bin, and only you can empty the bin, from the web app, which itself only offers permanent deletion for recordings already binned.
 
 Connections keep the scopes they were granted. Grants that predate `mcp:write` stay read-only: the write tools respond with an instruction to reconnect rather than failing opaquely, and removing and re-adding the connector consents to the wider scope.
 

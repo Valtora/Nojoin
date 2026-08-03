@@ -164,6 +164,13 @@ class TranscriptUtteranceRead(BaseModel):
     provisional: bool = False
     speaker_manually_edited: bool = False
     text_manually_edited: bool = False
+    # Which surface authored the edit the corresponding flag reports: "api" for
+    # the web app, "mcp" for a connected assistant. None where no edit is
+    # attributable, which includes every edit made before provenance was
+    # recorded. The interface must show those as unattributed rather than
+    # guessing at a person.
+    text_edit_source: Optional[str] = None
+    speaker_edit_source: Optional[str] = None
     speaker_confidence: Optional[float] = None
     # "microphone" | "system" when the live lane could attribute the audio to a
     # capture channel, else None. Provenance of the audio, not who was speaking.

@@ -42,6 +42,9 @@ class RecordingSpeakerPublicRead(PublicModel):
     last_seen_ms: Optional[int] = None
     identity_confidence: Optional[float] = None
     identity_locked: bool = False
+    # "api" for the web app, "mcp" for a connected assistant, None where the
+    # name came from the pipeline or predates provenance being recorded.
+    name_last_edit_source: Optional[str] = None
     global_speaker: Optional[GlobalSpeakerRead] = None
 
 

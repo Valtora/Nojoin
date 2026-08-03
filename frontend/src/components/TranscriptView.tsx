@@ -20,6 +20,7 @@ import {
   Redo2,
   Settings,
   Radio,
+  Sparkles,
 } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
@@ -389,6 +390,15 @@ export default function TranscriptView({
       typeof segment.speaker_confidence === "number" &&
       segment.speaker_confidence < 0.6 &&
       !segment.speaker_manually_edited;
+    // An assistant editing someone's transcript is disclosed; a person editing
+    // their own is not remarkable, so only the assistant side names the field.
+    // Anything edited without a recorded source stays the neutral pill rather
+    // than being attributed to a person the backend cannot vouch for.
+    const isAiTextEdit =
+      segment.text_manually_edited === true && segment.text_edit_source === "mcp";
+    const isAiSpeakerEdit =
+      segment.speaker_manually_edited === true &&
+      segment.speaker_edit_source === "mcp";
     const isRecentlyUpdated = isRecentlyUpdatedSegment(segment);
     const hasPendingRemoteUpdate =
       typeof segment.id === "string" && pendingRemoteUtteranceIdSet.has(segment.id);
@@ -490,9 +500,28 @@ export default function TranscriptView({
           )}
 
           <div className="flex flex-wrap items-center gap-1">
-            {segment.text_manually_edited && (
-              <span className="rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-contrast-muted">
-                Manual text
+            {isAiTextEdit ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
+                title="An assistant connected through the MCP connector corrected this line's text"
+              >
+                <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
+                AI corrected text
+              </span>
+            ) : (
+              segment.text_manually_edited && (
+                <span className="rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-contrast-muted">
+                  Edited
+                </span>
+              )
+            )}
+            {isAiSpeakerEdit && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
+                title="An assistant connected through the MCP connector corrected which speaker this line is attributed to"
+              >
+                <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
+                AI corrected speaker
               </span>
             )}
             {isSpeakerLowConfidence && (
