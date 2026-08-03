@@ -67,6 +67,13 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   `--lift`. `.band` keeps only `--band-wash`, a gradient faint enough that two adjacent
   bands never look like a seam. In dark it lightens rather than casting, because a black
   shadow on a near-black page is invisible.
+- **The quick-start code block is dark in both themes**, and it is the only surface that
+  ignores the theme toggle. It followed the theme until a reader pointed out it was still
+  hard to look at in light: the syntax colours were legible on the measurements, but the
+  block sat at 1.04:1 against the page, so there was nothing to look *at*. Code being dark on
+  a light page is a convention rather than a departure, and it is the only version of this
+  that also works in dark, where a darker fill has nowhere to go. See DESIGN.md for the
+  numbers.
 - **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
   orange-700 band at the foot. No cream tints and no glass.
 - **Three marketing effects, and no more.** The app's flat canon governs the product,

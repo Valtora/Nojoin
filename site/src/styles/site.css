@@ -608,8 +608,12 @@ button:focus-visible {
 }
 
 .code-block {
-  background: var(--surface-inset);
-  border: 1px solid var(--surface-divider);
+  /* Dark in both themes, on its own token rather than the shared
+     --surface-inset -- see the note in site-tokens.css. The border is a white
+     tint for the same reason: --surface-divider is pitched for a light surface
+     and would draw a bright outline around a dark panel on the light page. */
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
   border-radius: 8px;
   padding: 1.125rem 1.25rem;
   font-family: var(--font-mono);

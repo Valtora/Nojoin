@@ -254,10 +254,14 @@ const SITE_PAIRINGS = [
   { label: "footer link hover on page", fg: "foreground", bg: ["surface-page"], min: AA_TEXT },
 
   // Syntax highlighting. Every token is read as code, so all of it is text.
+  // --code-bg is opaque and dark in both themes, so this pairing measures the
+  // same numbers under site-light and site-dark by design; the block does not
+  // follow the theme. It stays declared as a stack so a later translucent
+  // value cannot silently stop being composited.
   ...["fg", "comment", "keyword", "name", "string", "punct"].map((part) => ({
     label: `code ${part} on code surface`,
     fg: `code-${part}`,
-    bg: ["surface-page", "surface-card", "surface-inset"],
+    bg: ["surface-page", "surface-card", "code-bg"],
     min: AA_TEXT,
   })),
 ];

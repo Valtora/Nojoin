@@ -485,6 +485,17 @@ highlighting for the quick-start block, the screenshot frame's chrome, the close
 inverse and ghost buttons, the marketing type scale, and the three marketing effects below.
 Those are tokens rather than literals precisely so the contrast audit can measure them.
 
+**The code block is dark in both themes**, on its own `--code-bg` rather than the shared
+`--surface-inset`, and it is the one surface on the site that does not follow the theme. It
+used to: the text was legible either way, but composited over the page the block came out at
+1.04:1 in light and 1.07:1 in dark, so it read as a faint rectangle rather than a panel. That
+is a separation problem, not a legibility one, and the contrast gate is silent on it because
+AA has nothing to say about a decorative fill against the page behind it. Following the theme
+could not have fixed dark in any case — the page is already near-black, so the furthest a
+darker fill gets is about 1.1:1. A dark block reaches 16.96:1 against the light page, keeps
+the worst syntax pairing at 6.92:1, and is what a reader expects code to look like. One
+syntax palette now serves both themes.
+
 The site takes three deliberate departures from the flat canon, all site-only:
 
 - A halo and a 1px inset white top edge under the primary button.
