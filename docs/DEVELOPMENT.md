@@ -203,14 +203,14 @@ Use the normal container rebuild loop when you are staying in the containerised 
 
 ```bash
 docker compose up -d --build api
-docker compose up -d --build worker-gpu worker-cpu worker-io
+docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse
 docker compose up -d --build frontend
 ```
 
 Practical use:
 
 - Run `docker compose up -d --build api` after API changes or shared backend changes.
-- Run `docker compose up -d --build worker-gpu worker-cpu worker-io` after worker code, dependency, or worker-image changes. The three worker lanes share one image, so this rebuilds it once and recreates all three containers.
+- Run `docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse` after worker code, dependency, or worker-image changes. Name all four: they do not all share one image. `worker-gpu` and `worker-cpu` run the shared worker image, `worker-io` layers the subscription-CLI tooling on top of it, and `worker-parse` runs the `worker-io` image without building anything of its own. Compose builds each image once and recreates the four containers.
 - Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
 
 The compose files now gate `frontend` on a healthy `api`, and gate `nginx` (or `nginx-dev` in development) on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
@@ -237,11 +237,22 @@ docker compose build --no-cache api worker-gpu worker-cpu worker-io frontend
 docker compose up -d --force-recreate
 ```
 
+`worker-parse` is deliberately absent from that build list. It declares no build
+of its own, so it has nothing to rebuild; `--force-recreate` picks up the fresh
+`worker-io` image it shares.
+
 ### Optional Backend Source-Mount Patch
 
-If you want the API and worker to reflect Python changes without rebuilding those two images every time, patch your local ignored `docker-compose.yml` like this:
+If you want the API and the workers to reflect Python changes without rebuilding those images every time, patch your local ignored `docker-compose.yml` like this. Add `.:/app` to the shared worker runtime anchor once, so every lane picks the source mount up, then wrap each lane's command in `watchmedo`:
 
 ```yaml
+x-worker-runtime: &worker-runtime
+  volumes:
+    - .:/app
+    - ./data:/app/data
+    - model_cache:/home/appuser/.cache
+    - /sys/class/drm:/sys/class/drm:ro
+
 services:
   api:
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
@@ -250,16 +261,24 @@ services:
       - ./data:/app/data
       - model_cache:/shared_model_cache:ro
 
-  worker:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu,cpu,io -B -s /app/data/celerybeat-schedule --loglevel=info --pool=solo
-    volumes:
-      - .:/app
-      - ./data:/app/data
-      - model_cache:/home/appuser/.cache
-      - /sys/class/drm:/sys/class/drm:ro
+  worker-gpu:
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu --pool=solo --concurrency=1 --loglevel=info
+
+  worker-cpu:
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q cpu --pool=prefork --concurrency=3 --loglevel=info
+
+  worker-io:
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --concurrency=4 --loglevel=info
+
+  worker-parse:
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --pool=prefork --concurrency=2 --loglevel=info
 ```
 
-The development compose runs a single worker that drains all three resource lanes (`-Q gpu,cpu,io`) with embedded beat, which keeps the local loop simple. Production instead splits that work across dedicated `worker-gpu`, `worker-cpu`, and `worker-io` services; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes). The `-Q gpu,cpu,io` flag above is required — without it the worker would only consume the default (gpu) queue and CPU/IO tasks would never run.
+Every lane keeps the `-Q`, `--pool`, and `--concurrency` values it has in the template. Those flags are load-bearing rather than cosmetic:
+
+- A lane that drains the wrong queue either starves that queue or duplicates work another lane is already doing. Anything unrouted falls back to the GPU queue, so a missing `-Q` quietly turns a lane into a second GPU worker.
+- `-B` belongs to `worker-io` alone. A second embedded scheduler double-fires every periodic job.
+- `--pool` is part of the dispatch model, not a tuning knob. Worker code queues follow-on Celery work with a blocking call, which is safe only while one task owns one operating-system process; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes).
 
 That patch is optional. It changes the backend feedback loop only. It does not change the frontend contract. If Nginx still proxies the `frontend` container, rebuilding `frontend` remains the way to update `https://localhost:14443`.
 
@@ -663,28 +682,83 @@ x-shared-app-environment: &shared-app-environment
   CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-change_to_secure_string}@redis:6379/0
   HF_TOKEN: ${HF_TOKEN:-}
   DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
-  # Shared, not api-only: the worker resolves the public origin too, for
+  # Shared, not api-only: the worker lanes resolve the public origin too, for
   # calendar webhook URLs and the telemetry local-origin flag.
   WEB_APP_URL: ${WEB_APP_URL:-https://localhost:14443}
   # Local development stacks should not contribute to the public telemetry
   # dataset; unset it here if you deliberately want to exercise the ping.
   NOJOIN_TELEMETRY_ENABLED: ${NOJOIN_TELEMETRY_ENABLED:-false}
+  NOJOIN_TELEMETRY_ENDPOINT: ${NOJOIN_TELEMETRY_ENDPOINT:-}
+  # Exports have to be readable by whoever serves them: a worker writes the
+  # archive and the API streams it back, so both sides must resolve the same
+  # directory. Setting it on one service only silently breaks the download.
+  BACKUP_EXPORT_DIR: ${BACKUP_EXPORT_DIR:-}
+  NOJOIN_UMASK: ${NOJOIN_UMASK:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.docker.internal:11434}
+  # No default here on purpose. config_manager owns the application default and
+  # skips an empty value, so an unset variable falls through to it; repeating a
+  # number here would create a second default to keep in step.
+  OLLAMA_CONTEXT_WINDOW: ${OLLAMA_CONTEXT_WINDOW:-}
   SECONDARY_LLM_PROVIDER: ${SECONDARY_LLM_PROVIDER:-}
   SECONDARY_GEMINI_API_KEY: ${SECONDARY_GEMINI_API_KEY:-}
   SECONDARY_OPENAI_API_KEY: ${SECONDARY_OPENAI_API_KEY:-}
   SECONDARY_ANTHROPIC_API_KEY: ${SECONDARY_ANTHROPIC_API_KEY:-}
   SECONDARY_OLLAMA_API_URL: ${SECONDARY_OLLAMA_API_URL:-http://host.docker.internal:11434}
+  SECONDARY_OLLAMA_CONTEXT_WINDOW: ${SECONDARY_OLLAMA_CONTEXT_WINDOW:-}
   DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
   GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
   GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
   MICROSOFT_OAUTH_CLIENT_ID: ${MICROSOFT_OAUTH_CLIENT_ID:-}
   MICROSOFT_OAUTH_CLIENT_SECRET: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
   MICROSOFT_OAUTH_TENANT_ID: ${MICROSOFT_OAUTH_TENANT_ID:-common}
+
+# Runtime settings shared by every worker lane. Deliberately carries no image:
+# or build:, so the one lane that runs a different image (worker-parse) cannot
+# inherit the wrong one. A YAML merge key replaces a whole key; it never merges
+# the values under it.
+x-worker-runtime: &worker-runtime
+  volumes:
+    - ./data:/app/data
+    - model_cache:/home/appuser/.cache
+    - /sys/class/drm:/sys/class/drm:ro
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  restart: unless-stopped
+  networks:
+    - nojoin_net
+  logging: *default-logging
+
+# The lanes that run the shared worker image built from Dockerfile.worker.
+# worker-io overrides the image and build below; worker-parse must not use this
+# anchor at all, because it runs the worker-io image and would otherwise tag a
+# plain worker build as nojoin-dev-worker-io:local.
+x-worker-base: &worker-base
+  <<: *worker-runtime
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.worker
+  image: nojoin-dev-worker:local
+  pull_policy: never
+
+x-worker-environment: &worker-environment
+  <<: *shared-app-environment
+  NOJOIN_CODEX_PATH: ${NOJOIN_CODEX_PATH:-}
+  XDG_CACHE_HOME: /home/appuser/.cache
+  HF_HOME: /home/appuser/.cache/huggingface
+  OMP_NUM_THREADS: 2
+  MKL_NUM_THREADS: 2
+  OPENBLAS_NUM_THREADS: 2
+  VECLIB_MAXIMUM_THREADS: 2
+  NUMEXPR_NUM_THREADS: 2
 
 services:
   db:
@@ -755,10 +829,17 @@ services:
     environment:
       <<: *shared-app-environment
       DOCKER_HOST: tcp://socket-proxy:2375
+      MCP_ENABLED: ${MCP_ENABLED:-true}
+      MCP_ANONYMOUS_DISCOVERY: ${MCP_ANONYMOUS_DISCOVERY:-true}
       NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS: ${NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS:-true}
       FIRST_RUN_PASSWORD: ${FIRST_RUN_PASSWORD:?Set FIRST_RUN_PASSWORD in .env}
       XDG_CACHE_HOME: /shared_model_cache
       HF_HOME: /shared_model_cache/huggingface
+      # Trust proxies by IP or CIDR, never by container name, whenever the edge
+      # proxy runs on a network the API is not itself attached to: the API
+      # resolves these entries at startup and silently drops any name it cannot
+      # resolve, collapsing every external client into one rate-limit bucket.
+      NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
     depends_on:
       db:
         condition: service_healthy
@@ -783,24 +864,21 @@ services:
       - nojoin_net
     logging: *default-logging
 
-  worker:
-    container_name: nojoin-dev-worker
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.worker
-    image: nojoin-dev-worker:local
-    pull_policy: never
-    volumes:
-      - ./data:/app/data
-      - model_cache:/home/appuser/.cache
-      - /sys/class/drm:/sys/class/drm:ro
+  # Four worker lanes, matching production. Each drains one Celery queue (see
+  # backend/celery_app.py TASK_ROUTES), so local work is routed exactly as it is
+  # live. Worker Concurrency Lanes in docs/DEPLOYMENT.md explains the split.
+  #
+  # GPU lane: finalize, live ASR, embeddings. Single-slot (--pool=solo
+  # --concurrency=1). This is the ONLY worker with GPU access; remove the deploy
+  # block on a CPU-only host.
+  worker-gpu:
+    <<: *worker-base
+    container_name: nojoin-dev-worker-gpu
     environment:
-      <<: *shared-app-environment
+      <<: *worker-environment
       NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
       NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
-      XDG_CACHE_HOME: /home/appuser/.cache
-      HF_HOME: /home/appuser/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -808,17 +886,73 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "gpu", "--pool=solo", "--concurrency=1", "--loglevel=info",
+      ]
+
+  # CPU lane: ffmpeg segment transcode, proxy generation, backups. No GPU.
+  worker-cpu:
+    <<: *worker-base
+    container_name: nojoin-dev-worker-cpu
+    environment: *worker-environment
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "cpu", "--pool=prefork", "--concurrency=3", "--loglevel=info",
+      ]
+
+  # IO/LLM lane: Meeting Edge, notes, chat embeddings, calendar sync, cleanup.
+  # Owns Celery Beat (-B) so the periodic jobs fire exactly once across the
+  # stack. No other lane may carry -B.
+  worker-io:
+    <<: *worker-base
+    container_name: nojoin-dev-worker-io
+    # CLI OAuth AI mode needs Node plus the subscription CLIs, layered on the
+    # shared worker image by docker/Dockerfile.worker-io.
+    image: nojoin-dev-worker-io:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker-io
+      # Build the shared worker base FIRST, then layer worker-io on it. Without
+      # this the two builds run in parallel and worker-io can ship stale code on
+      # the previous base.
+      additional_contexts:
+        worker_base: "service:worker-gpu"
+      args:
+        WORKER_BASE_IMAGE: worker_base
+    environment: *worker-environment
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "io", "-B", "-s", "/app/data/celerybeat-schedule",
+        "--pool=prefork", "--concurrency=4", "--loglevel=info",
+      ]
+
+  # Document parsing, isolated from every other lane. A parse has no page cap,
+  # so one large upload can hold a worker slot for a long time; on the io lane
+  # that would degrade Meeting Edge during a live meeting. Reuses the worker-io
+  # IMAGE (no extra build) because visual parsing may route through a
+  # subscription CLI whose binaries ship only there.
+  worker-parse:
+    # *worker-runtime, NOT *worker-base: this lane runs the worker-io image, so
+    # inheriting the base build would build Dockerfile.worker and tag the result
+    # nojoin-dev-worker-io:local, racing worker-io for that tag.
+    <<: *worker-runtime
+    container_name: nojoin-dev-worker-parse
+    image: nojoin-dev-worker-io:local
+    pull_policy: never
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    restart: unless-stopped
-    networks:
-      - nojoin_net
-    logging: *default-logging
+      worker-io:
+        condition: service_started
+    environment: *worker-environment
+    command:
+      [
+        "celery", "-A", "backend.celery_app.celery_app", "worker",
+        "-Q", "parse",
+        "--pool=prefork", "--concurrency=2", "--loglevel=info",
+      ]
 
   frontend:
     container_name: nojoin-dev-frontend
