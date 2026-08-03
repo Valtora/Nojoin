@@ -10,9 +10,14 @@
 // adding it intercepts traffic atomically, and removing it stops intercepting
 // just as atomically.
 //
-// Rollback is reverting the commit that added this block and letting CI deploy.
-// Deleting the route in the Cloudflare dashboard is NOT the rollback path: the
-// weekly scheduled deploy from main would silently re-add it.
+// DO NOT revert the commit that added this route to roll back. It reads like
+// the undo button and it is not one: GitHub Pages used to sit behind this route
+// and was disabled and deleted when the Astro site went live, so removing the
+// Worker now leaves the DNS record pointing at nothing. That is an outage, not
+// a rollback. Fix a bad deploy by rolling site/ forward.
+//
+// Deleting the route in the Cloudflare dashboard is not a rollback either: the
+// weekly scheduled deploy from main re-applies whatever this file says.
 //
 // workers_dev is off. It was on while the site was being built, so it could be
 // reviewed before the route existed, and it served a complete public duplicate
