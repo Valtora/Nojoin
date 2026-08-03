@@ -17,7 +17,11 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
     <section class="hero">
       <div class="wrap">
         <h1 class="display">
-          <span>Transcription is easy.</span>
+          {/* The space is explicit because Astro's HTML compression strips the
+              whitespace between these two elements. Above 48rem they are
+              display:block and it makes no difference; below it they are inline
+              and the headline ran together as "easy.Agentic". */}
+          <span>Transcription is easy.</span>{" "}
           <span>Agentic meeting intelligence isn't.</span>
         </h1>
         <p class="lead">

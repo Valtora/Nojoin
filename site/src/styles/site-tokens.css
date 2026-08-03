@@ -1,11 +1,24 @@
 /* Site-only token families. Everything shared with the app lives in
-   frontend/src/app/tokens.css, imported by Base.astro through the
-   app-tokens-media plugin; this file holds only what has no app equivalent.
+   frontend/src/app/tokens.css; this file holds only what has no app
+   equivalent. Base.astro imports both as their own modules, which is what puts
+   them through the tokens-theme plugin.
 
-   The light and dark blocks are parsed by frontend/scripts/check-contrast.mjs
-   as the site-light and site-dark themes, so the shapes here (a top-level
-   :root, then one :root inside the prefers-color-scheme media query) are load
-   bearing. */
+   TWO READERS DEPEND ON THE SHAPE BELOW, and they want different things:
+
+   1. frontend/scripts/check-contrast.mjs parses this file FROM DISK as the
+      site-light and site-dark themes. It expects exactly a top-level :root and
+      one :root inside the prefers-color-scheme media query. That is why the
+      dark selector here is still a bare :root, and why it must stay one.
+
+   2. The tokens-theme plugin rewrites that bare :root at BUILD TIME into
+      :root:not([data-theme="light"]) and appends a :root[data-theme="dark"]
+      rule from the same declarations. Nothing is written back to disk, so the
+      gate and the browser see different text on purpose.
+
+   The consequence to remember: what you read here is not what ships, and the
+   gate measures these values without any model of whether the block that holds
+   them applies. It would pass this file just as happily if the dark block were
+   unreachable -- which it was, until the plugin learned to transform it. */
 
 :root {
   /* Syntax highlighting for the quick-start block. The app has no code

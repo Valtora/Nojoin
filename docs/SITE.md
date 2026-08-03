@@ -131,12 +131,16 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   reason to lower the bar. The highlight and the closer are separate devices; a page never
   gains a second highlight.
 
-Tokens are shared with the app: `site/src/styles/site.css` imports
-`frontend/src/app/tokens.css` by relative path, a build-time transform maps the app's
-class-based dark theme onto the site's media query, and `site/src/styles/site-tokens.css`
-holds the families the app has no equivalent of (syntax highlighting, frame chrome, the
-closer-band buttons, the marketing scale). The contrast gate audits the site as two extra
-themes; see DESIGN.md's accessibility section.
+Tokens are shared with the app: `Base.astro` imports `frontend/src/app/tokens.css` by
+relative path alongside `site/src/styles/site-tokens.css`, which holds the families the app
+has no equivalent of (syntax highlighting, frame chrome, the closer-band buttons, the
+marketing scale). Both go through `site/plugins/tokens-theme.mjs`, which is what makes their
+dark values answer to the header toggle as well as to the OS setting. **Both must be imported
+as modules from `Base.astro`.** An `@import` from `site.css` is inlined by Tailwind's pipeline
+before any transform can see it, which is how the site-only tokens came to ignore the toggle
+entirely; the plugin now fails the build if that import comes back. The contrast gate audits
+the site as two extra themes and cannot see this class of bug at all; see DESIGN.md's
+accessibility section.
 
 ## Voice
 
@@ -366,7 +370,25 @@ verified in production or not at all.
 - `node frontend/scripts/check-contrast.mjs` — audits the site as two of its four themes.
   It only checks pairings listed in `SITE_PAIRINGS`, so **new colour-on-colour furniture is
   invisible to it until someone adds the pairing**. Adding one is part of adding the
-  furniture, not a follow-up.
+  furniture, not a follow-up. It also measures values only, never whether the rule holding
+  them applies to anybody, so a green gate is not evidence that a visitor can reach the
+  colours it just approved.
+- **The four-way theme matrix.** The site has two theme inputs — the OS
+  `prefers-color-scheme`, and the choice the header toggle stores in `localStorage` under
+  `nojoin-theme` — and the bugs live where the two disagree. Checking "light" and "dark" is
+  checking half of it. Force both independently: Playwright's `colorScheme` context option
+  for the OS, and an init script setting `nojoin-theme` for the choice.
+
+  | Stored choice | OS setting | What must render |
+  | --- | --- | --- |
+  | none | light | light |
+  | none | dark | dark |
+  | light | dark | light |
+  | dark | light | dark |
+
+  The last two are the ones that shipped broken. Read the computed value of a site-only
+  token (`--code-fg` is the clearest) rather than judging by eye: the page chrome comes from
+  the app tokens and looked right in every case while the syntax colours were wrong.
 - Horizontal overflow at 360px and 1920px, in both themes, on every page: compare
   `document.documentElement.scrollWidth` against `window.innerWidth`. Two overflow bugs have
   shipped from this repository and both were invisible at desktop width. An element with its

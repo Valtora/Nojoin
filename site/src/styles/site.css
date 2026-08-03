@@ -1,12 +1,14 @@
 /* The marketing site's stylesheet. Tokens come from two places: the app's
-   tokens.css (imported in Base.astro through the app-tokens-media plugin, so
-   the .dark block also lands under prefers-color-scheme) and the site-only
-   families in site-tokens.css. Every colour below is a var() into one of
-   those files; a literal colour here is a defect, because the contrast gate
-   audits tokens, not stylesheets. */
+   tokens.css and the site-only families in site-tokens.css. Both are imported
+   by Base.astro rather than from here, because the tokens-theme plugin has to
+   see each of them as its own module to map its dark values onto both the OS
+   preference and the header toggle. An `@import` of site-tokens.css here would
+   be inlined by Tailwind's pipeline before the transform ran, which is exactly
+   the bug that made the quick-start block illegible in chosen-light. Every
+   colour below is a var() into one of those files; a literal colour here is a
+   defect, because the contrast gate audits tokens, not stylesheets. */
 
 @import "tailwindcss";
-@import "./site-tokens.css";
 
 /* Geist, self-hosted. A font CDN request from a page whose pitch is "nothing
    leaves your server" would undercut the point; the latin variable subsets
