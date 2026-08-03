@@ -452,9 +452,16 @@ liability: `Base.astro` builds its canonical from `Astro.site` and so pointed cr
 at `www.nojoin.co.uk`, but that is mitigation rather than a reason to keep it. Reviewing an
 unmerged change is what `npm run serve` and a quick tunnel are for.
 
-**Rolling back is `git revert` of the commit that added the route, then letting CI deploy.**
-Deleting the route in the Cloudflare dashboard is not the rollback path: the weekly scheduled
-deploy from `main` re-applies whatever `wrangler.jsonc` says.
+**Fixing a bad deploy means rolling `site/` forward, not backwards.** There is no revert that
+lands on a working site, and reverting the commit that added the route takes the site down
+rather than restoring it — the reasoning is two paragraphs below, and it is the single
+easiest thing to get wrong here under pressure. Deleting the route in the Cloudflare
+dashboard is not a rollback either: the weekly scheduled deploy from `main` re-applies
+whatever `wrangler.jsonc` says.
+
+`git revert` of an ordinary `site/` commit is fine, and is just another way of rolling
+forward — the deploy publishes whatever `main` holds. What is not survivable is reverting
+the route itself.
 
 That rollback used to land on a live GitHub Pages origin. It no longer does. Pages served
 the previous Jekyll site from `main` as a `build_type: legacy` build — no workflow, just a
