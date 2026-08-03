@@ -47,11 +47,16 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
 - **Every screenshot sits in a minimal browser-chrome frame**: three dots, a muted
   `nojoin.your-server.net` URL pill, an orange edge, 14px radius and `--lift-strong`. The
   frame signals "a web app you self-host", which is half the pitch.
-- **Feature rows stack**: copy at reading width, screenshot beneath it in a container wider
-  than the rest of the page. The rhythm survives as the copy block changing sides down the
-  page; the text itself stays left-aligned. This replaces a side-by-side layout, which gave
-  the screenshot half of a 72rem wrap and so rendered a 1920px capture at about 28% —
-  unreadable, which defeats the point of showing the interface at all.
+- **Feature rows put the copy beside the shot**, alternating sides down the page. This
+  reverses the stacked layout, which itself replaced a side-by-side one, so the reasoning
+  matters more than the arrangement. Side-by-side failed the first time because it gave a
+  1920px full-app capture half of a 72rem wrap and rendered the interface at about 28% —
+  unreadable, which defeats the point of showing it. Stacking fixed that by giving the shot
+  the full width. **What changed is the captures, not the layout.** Each shot is now cropped
+  to the thing its row is about — 540 to 810 logical pixels rather than 1600 — so half a wrap
+  shows it at roughly life size. The stack had started to look like four identical pictures
+  of the same window, each too big for what it was saying. If a future shot goes back to
+  being a whole window, this layout breaks again, and **the fix is the crop, not the grid.**
 - **A feature row earns its place with its screenshot.** The Calendar row was cut: its
   capture was the dashboard shot scrolled down a little, so the row spent a full section of
   vertical rhythm showing something the page had already shown. Calendar sync is not
@@ -76,6 +81,19 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   numbers.
 - **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
   orange-700 band at the foot. No cream tints and no glass.
+- **The closer is the managed offer, and there is no repeat-CTA band.** The foot of the page
+  used to carry "Your meetings, on your own server, tonight" with Get started and Star on
+  GitHub — the same two calls the hero already makes, one screen further down a page that had
+  grown too long. It went. The managed teaser took the orange treatment in its place, so the
+  page still ends on a deliberate surface rather than trailing off, and the last thing a
+  visitor reads is the one offer the hero does not make. A page that has to ask twice is
+  usually too long, which is what the rest of this pass was about.
+- **The landing page carries no privacy section.** It had one, and it was cut when the page
+  was shortened: those claims are made better elsewhere. Self-hosting and local inference
+  lead the three-up strip, the licence is in the footer, telemetry has a footer link on every
+  page, and `/compare/` argues the whole privacy case in sourced rows rather than assertions.
+  A section repeating them on the apex page was the fourth time a visitor met the same
+  argument.
 - **Three marketing effects, and no more.** The app's flat canon governs the product,
   where a lifted control is noise in a workspace someone stares at all day. The site is a
   page whose job is to be looked at once, so it takes three departures, all site-only and
@@ -137,32 +155,33 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   the word, and the subhead immediately spells it out in plain terms for one who does not.
   The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
   No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
-- **The agents section now carries a screenshot, and it is Nojoin's own screen.** This
-  reverses the earlier decision to leave it without one. That decision was right at the time
-  and for a reason worth keeping: the capability happens in Claude's or ChatGPT's window, not
-  Nojoin's, and the frame chrome reads `nojoin.your-server.net` — so a framed capture of
+- **The agents section carries no screenshot, and this has now been tried both ways.** The
+  original reason still stands: the capability happens in Claude's or ChatGPT's window, not
+  Nojoin's, and the frame chrome reads `nojoin.your-server.net`, so a framed capture of
   someone else's interface would be a false image on a page that argues from checkable ones.
-  What changed is that Nojoin's own surface now shows the result. The transcript labels an
-  utterance an assistant edited as `AI corrected text` or `AI corrected speaker`, distinct
-  from the plain `Edited` a web correction earns, so a transcript capture is honest evidence
-  of an assistant changing the record rather than a picture of somebody else's chat window.
-  The shot is that, and nothing else. The three devices stay: the flow card, the tool
-  showcase and the bridge card each carry a claim the capture does not — thirty tools, the
-  actors in a real post-meeting job, and the CRM reconciliation. **The rest of the surface is
-  still not there.** A task list an assistant filed is indistinguishable from a typed one, so
-  the band does not claim it in an image.
-- **Screenshots are cropped to the thing the row is about.** Every capture used to be the
-  whole app, which meant four rows showed four nearly identical pictures and the detail that
-  made each row's point rendered too small to read. Each shot is now framed on its own claim:
-  the agent band on the provenance labels, the transcripts row on a speaker change with the
-  speaker list beside it, the documents row on the attached PDFs and the answer citing a page
-  of one, Meeting Edge on the live transcript beside the guidance panel. The hero keeps the
-  full-app view deliberately — it is the one place a visitor should see the whole interface,
-  and it is what the browser-chrome frame is arguing for. Two consequences worth holding on
-  to: **a crop must not duplicate another crop** — the transcripts shot deliberately sits on
-  a different passage from the agent shot, because two rows showing the same picture is the
-  problem this solved, not a smaller version of it — and **a crop must still be a real
-  capture**, not a zoom that hides context which would change how it reads.
+  A shot of Nojoin's *own* transcript showing the `AI corrected text` and `AI corrected
+  speaker` labels is honest, so it was added — and then removed, because in place it said the
+  same thing as the transcripts row two sections below it and sat under the bridge card with
+  no copy beside it. Honest is not the same as earning its place. The three devices carry the
+  band instead: the flow card, the tool showcase and the bridge card, each with a claim no
+  capture makes — the actors in a real post-meeting job, thirty tools, the CRM
+  reconciliation. **The rest of the surface still has none.** A task list an assistant filed
+  is indistinguishable from a typed one, so the band does not claim it in an image.
+- **Screenshots are cropped to the thing the row is about, and sized for half a wrap.** Every
+  capture used to be the whole app, so four rows showed four near-identical pictures and the
+  detail each row argued from rendered too small to read. Each shot is now framed on its own
+  claim: Meeting Edge on the guidance panel, transcripts on a speaker handover, documents on
+  the attached files. The hero keeps the full-app view deliberately — it is the one place a
+  visitor should see the whole interface, and it is what the browser-chrome frame is arguing
+  for. Three rules keep this working:
+  - **Crop to roughly 550–800 logical pixels wide.** That is what renders near life size in
+    half a wrap. A crop of 1000+ is a stacked-layout crop and will be too small beside copy.
+  - **Capture at the width the crop wants**, rather than cropping a wide window. The
+    transcripts shot is taken at a 1280px viewport so the utterance bubbles wrap inside the
+    frame; cropping the same column out of a 1600px capture cut every line in half.
+  - **A crop must not duplicate another crop.** The transcripts shot sits on a different
+    passage from anything else for this reason, and it is why the agent band ended up with
+    no shot at all.
 - **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
   behind the text. If nothing on a page earns it, that is a finding about the page, not a
   reason to lower the bar. The highlight and the closer are separate devices; a page never

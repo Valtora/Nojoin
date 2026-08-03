@@ -521,16 +521,54 @@ section[id] {
    the whole point of showing it. The alternating rhythm survives as the copy
    block changing sides; the text itself stays left-aligned, because ragged-left
    prose is harder to read than the rhythm is worth. */
+/* Copy beside the shot, alternating sides down the page.
+
+   This reverses the stacked layout, and the reason the stack existed is worth
+   keeping in mind: side-by-side used to give a 1920px full-app capture half of
+   a 72rem wrap, which rendered the interface at about 28% and made it
+   unreadable. What changed is the captures. Each shot is now cropped to the
+   thing its row is about -- 540 to 810 logical pixels rather than 1600 -- so
+   half a wrap shows it at roughly life size instead of a quarter of it. If a
+   future shot goes back to being a whole window, this layout stops working
+   again, and the fix is the crop rather than the grid. */
 .feature {
-  display: block;
+  display: grid;
+  gap: clamp(2rem, 4vw, 3.5rem);
+  align-items: center;
 }
 
 .feature-copy {
   max-width: 52ch;
 }
 
-.feature[data-side="right"] .feature-copy {
-  margin-inline-start: auto;
+@media (min-width: 60rem) {
+  /* The shot always takes the wider track, whichever side it is on. Declaring
+     one ratio and only reordering gives the left-hand shot the narrow column,
+     which shrank it by 80px and made the alternating rows visibly uneven. */
+  .feature {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+  }
+
+  .feature[data-shot="left"] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+  }
+
+  /* data-shot names the side the screenshot sits on, which is what a reader
+     sees; the copy takes the other. Ordering rather than column assignment so
+     the DOM stays copy-first for a screen reader and for narrow layouts. */
+  .feature[data-shot="left"] .feature-copy {
+    order: 2;
+  }
+
+  .feature[data-shot="left"] .feature-shot {
+    order: 1;
+  }
+}
+
+/* A grid item's min-width defaults to auto, so the framed shot would refuse to
+   shrink below its intrinsic width and push the row wider than the page. */
+.feature-shot {
+  min-width: 0;
 }
 
 /* Wider than .wrap so the screenshots dominate. At 1920 the frame lands near
