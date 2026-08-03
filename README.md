@@ -42,6 +42,14 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 - Search across recordings, notes, and documents
 - Dedicated Task workspace
 
+## Managed Nojoin
+
+Nojoin is free, and running it yourself means a machine with a GPU, a compose file, and the upgrades that follow. If you'd rather not, the developer who built Nojoin will scope the hardware, set an instance up on a machine you own, and keep it patched, watched and backed up.
+
+£24.99 a person a month, from five people. You buy and own the hardware directly, so the fee covers labour and nothing else. Nothing is capped: no monthly allowance, no ceiling on call length, no history that expires.
+
+[Managed Nojoin](https://www.nojoin.co.uk/managed/)
+
 ## Supported Browsers and OSes
 
 - Chrome for Windows, Linux, and macOS (shared-audio recording)

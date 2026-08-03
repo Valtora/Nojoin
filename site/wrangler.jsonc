@@ -13,12 +13,19 @@
 // Rollback is reverting the commit that added this block and letting CI deploy.
 // Deleting the route in the Cloudflare dashboard is NOT the rollback path: the
 // weekly scheduled deploy from main would silently re-add it.
+//
+// workers_dev is off. It was on while the site was being built, so it could be
+// reviewed before the route existed, and it served a complete public duplicate
+// of every page on nojoin-site.taylan-d.workers.dev. The route is live now, so
+// the duplicate has no job and a second indexable copy of a marketing site is a
+// liability rather than a convenience. Preview locally through `npm run serve`
+// and a quick tunnel instead (see docs/SITE.md).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nojoin-site",
   "compatibility_date": "2026-08-01",
   "account_id": "54b2d24ea54cb676eea55814237b88c9",
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [{ "pattern": "www.nojoin.co.uk/*", "zone_name": "nojoin.co.uk" }],
   "main": "worker/index.js",
   "assets": {
