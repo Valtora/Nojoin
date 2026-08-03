@@ -662,11 +662,13 @@ button:focus-visible {
   margin-top: 3.5rem;
 }
 
-/* Narrower than the detailed table: these cells are a mark and a few words, so
-   they do not need the horizontal scroll the prose table earns. */
-.glance-table {
-  min-width: 32rem;
-}
+/* This carries .compare-table as well, and takes that rule's min-width: the two
+   selectors have equal specificity and .compare-table is declared later, so a
+   min-width here is dead whatever it says. It used to say 32rem, with a comment
+   claiming the glance table was narrower than the prose one -- it never was.
+   Leaving it as intent-that-does-nothing is worse than not saying it: the two
+   tables share a column count and a label column, so sharing a floor is right,
+   and 32rem across five columns would squeeze the notes to about 80px anyway. */
 
 /* Positioned so the visually-hidden verdict inside it is contained here rather
    than by the initial containing block. Left to escape, an absolutely
@@ -734,10 +736,21 @@ button:focus-visible {
   border-bottom: 1px solid var(--surface-divider);
 }
 
+/* The row label wraps rather than forcing its own width. It used to be
+   white-space: nowrap, which let "What an assistant can do with your meetings"
+   claim about 300px of a table whose whole job is the prose to the right of
+   it. A two-line label costs nothing; a squeezed cell costs a claim. */
 .compare-table tbody th {
   color: var(--foreground);
   font-weight: 600;
-  white-space: nowrap;
+  /* An explicit width, not just a min-width. The label used to be
+     white-space: nowrap, which let "What an assistant can do with your
+     meetings" claim ~385px of a table whose whole job is the prose to its
+     right. min-width alone does not fix that: auto table layout sizes a column
+     from its content and will happily overshoot a minimum. A width is a hint
+     the algorithm actually follows, so the labels wrap to two lines and the
+     product columns get the space back. */
+  width: 12rem;
 }
 
 .compare-table td {
