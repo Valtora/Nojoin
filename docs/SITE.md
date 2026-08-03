@@ -211,6 +211,21 @@ credibility of every checkable one.
 Every claim on the site is traceable to `README.md` or a file in `docs/`; nothing is
 invented for marketing effect.
 
+**Three competitors, and which three is a decision.** The page compares Nojoin against
+Jamie, Otter and Granola. Fireflies was dropped when Jamie was added rather than running a
+fifth column: the detailed table is already the widest thing on the site, and another column
+either squeezes every cell or pushes one somewhere nobody scrolls to. Fireflies went because
+it is the least like Nojoin on the axes this page argues — bot-by-default capture, a US
+cloud, no self-hosting to concede against — and Jamie is the opposite on all three, which
+makes it the harder comparison and the more useful one. Jamie sits second, directly after
+Nojoin, because column order decides which competitor actually gets read.
+
+**Dropping a competitor is not a licence to pick easy ones.** The set has to stay honest, and
+the test is whether the table still contains rows a competitor wins. Jamie takes an outright
+yes on no-bot capture and on remembering speakers, and a partial on assistant write access —
+the row Nojoin leads with. If a future edit leaves Nojoin sweeping every row, the problem is
+the competitor set, not the product.
+
 The comparison page holds itself to the standard it would want applied to it:
 
 - Every competitor claim is verified against **that vendor's own current documentation**,
@@ -262,8 +277,9 @@ rather than the technology.
   length, no history that expires while the customer is still paying. There is no meter in
   the software to hit. Every competitor has a tier where something runs out, which the
   comparison page now shows in a sourced row rather than asserting — Otter meters minutes
-  below its upper plans, Fireflies caps storage and AI credits, Granola limits history on
-  its entry plan. Fireflies transcribes without limit on every plan, and the row says so.
+  below its upper plans, Granola limits history on its entry plan, and Jamie charges a
+  credit a meeting and locks the notes you already have when they run out. Where a
+  competitor's upper plans lift a limit, the row says so.
 - **Nothing on the page is a promise that breaks on a bad week.** No uptime figure, no SLA,
   no capacity claim. Same day if the instance is down, next working day otherwise, UK hours,
   and the limit named rather than implied. Monitoring is listed as part of the fee because
