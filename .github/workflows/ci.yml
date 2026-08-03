@@ -59,11 +59,13 @@ jobs:
               - 'frontend/**'
             site:
               - 'site/**'
-              # The marketing stylesheet is audited by frontend/scripts/check-contrast.mjs,
-              # which reads its token block as a marketing theme. The site job runs
-              # that gate, so a stylesheet-only change must trigger it here rather
-              # than dragging in the full frontend suite.
-              - 'assets/css/**'
+              # The site imports the app's tokens by relative path and is audited
+              # as two of the contrast gate's four themes, so a change to either
+              # can break the site without touching site/. This replaces a filter
+              # on assets/css/**, which was the Jekyll stylesheet's home and was
+              # deleted with the rest of that site.
+              - 'frontend/src/app/tokens.css'
+              - 'frontend/scripts/check-contrast.mjs'
             scripts:
               - 'scripts/**'
             deployment:

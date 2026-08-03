@@ -305,6 +305,22 @@ both, and on this host `pkill` patterns also match the shell wrapper that invoke
 preview tunnels by PID, or by matching the binary path `~/.local/bin/cloudflared`, and tidy
 them up when the review is done rather than leaving a fleet running.
 
+### The Open Graph card
+
+`site/public/images/og-card.png` is the single card every page shares, and it carries the
+hero headline. It was hand-made once and then drifted through two headline rewrites, so
+every share advertised a tagline the site had stopped using — invisible from the site
+itself, because nothing on the page renders it.
+
+`site/scripts/build-og-card.mjs` regenerates it. **Run it whenever the headline changes, and
+update `og:image:alt` in `Base.astro` to match.** Playwright is deliberately not a dependency
+of this repository, the same call the screenshot pipeline made for a job that runs about once
+a year, so the script takes a Chromium path from `PLAYWRIGHT_CHROMIUM` and expects
+`playwright-core` to be resolvable from outside the repo.
+
+The card's colours are the app's dark-theme tokens, quoted in the script rather than imported:
+it renders a bitmap, out of the stylesheet's reach. No gate catches a drift between the two.
+
 ### What a static preview cannot show you
 
 `/docs/*` redirects do not fire. They live in `site/worker/index.js` and only run on a real
