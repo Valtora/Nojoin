@@ -124,7 +124,15 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   deliberately: its instructions carry literal commands and paths (`codex mcp logout`,
   `~/.codex/config.toml`, the "Codex MCP Credentials" keychain entry) that the rename did not
   change, and its troubleshooting section records behaviour observed on a specific Codex
-  build that nobody has re-tested since.
+  build that nobody has re-tested since. **One part of that has now been re-tested and is
+  settled, and it was never a naming question at all**: the name on Nojoin's consent screen
+  is whatever the connecting client sends as `client_name` when it registers. Nojoin stores
+  and displays it verbatim, so any client that speaks the protocol can appear under any name
+  it chooses. The OpenAI app still registers as `Codex` after its rename — checked on a
+  freshly built instance with a newly added server, so neither a stale image nor a cached
+  registration — but that is a fact about the client, not about Nojoin, and no release here
+  can change it. `docs/MCP.md` now explains the mechanism where a reader meets the screen,
+  including the part that matters for safety: the name is a claim, the redirect host is not.
 - **The headline concedes the commodity and claims the hard part**: "Transcription is
   easy. Agentic meeting intelligence isn't." This reverses the earlier no-bot headline
   deliberately, and then reverses its first agent-led replacement too. Not joining the call
