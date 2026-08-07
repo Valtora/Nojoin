@@ -114,7 +114,12 @@ The browser capture stack is responsible for:
 - Exposing analyser output to the live waveform UI.
 - Moving recordings to `PAUSED` on real tab unload (pagehide/beforeunload) only, then requiring resume, stop-and-process, or discard before another capture starts. In-app page navigation does not pause capture.
 - Bounding every stage of the stop sequence and reporting which stage it is on, so a stalled recorder or uploader degrades to a retryable finalize rather than leaving the recording unfinishable.
-- Comparing stored audio against elapsed recording time and warning when they diverge. A tab suspended by the browser or the operating system stops feeding the recorder without raising an error, so coverage is the only signal that audio is being lost.
+- Holding a screen wake lock for the duration of a capture, re-taking it whenever the page returns to the foreground, since the browser drops the lock on every visibility change. This addresses device sleep only. Nothing in a web page can prevent the browser suspending a tab, or read whether Memory Saver is enabled, so that half is handled by guidance before the meeting rather than by code during it.
+- Comparing the audio the server holds against elapsed recording time and warning when they diverge. A tab suspended by the browser or the operating system stops feeding the recorder without raising an error, so coverage is the only signal that audio is being lost.
+
+The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the transcoded segments and polled every 15 seconds while capture is open. The client cannot derive it: a segment carries slightly more than the nominal timeslice, because each roll flushes whatever accumulated while the recorder was stopping, and multiplying the sequence number by the timeslice under-counts by around 10% over an hour. That estimate produced coverage warnings on recordings that had lost nothing. The backend figure carries the opposite bias, running 2-3% high because each decoded segment includes codec priming that concatenation later trims, which is left uncorrected on purpose: it can only make a shortfall look smaller, never invent one.
+
+The warning also carries a cause, because a shortfall means opposite things depending on why. `backend-unreachable` when the connectivity monitor reports the API down, and the queued audio will upload on reconnect. `tab-suspended` when the page was seen to thaw or the recorder watchdog caught it stalled, and the audio is gone. `unknown` when neither signal is present, with copy that describes the gap without diagnosing it. It is dismissible, and re-arms only when the shortfall grows materially past the value dismissed.
 
 ## Recording Flow
 
@@ -241,6 +246,18 @@ runs:
    resolves a separate provider-specific live model when one is set. If no
    Meeting Edge model is configured for that provider, the worker falls back to
    the provider's main model instead of failing the live guidance path.
+7. A Redis single-flight guard keyed on the recording admits one refresh at a
+   time. Refreshes are triggered as the transcript grows, so during a live
+   meeting a trigger arrives every few seconds while a run takes 20-45 seconds,
+   and neither existing brake stops them overlapping: the staleness check reads
+   a timestamp written only when a run finishes, and the signature check only
+   suppresses input identical to a run already in flight, which a growing
+   transcript never is. Surplus triggers are dropped rather than queued, since
+   the next one carries fresher transcript, and each drop is recorded as a
+   `meeting_edge_refresh_skipped` pipeline metric. The guard is a Redis key with
+   a TTL rather than a database column so a worker killed mid-refresh releases
+   it on expiry instead of wedging the feature, and it fails open so an
+   unreachable broker cannot silently switch Meeting Edge off.
 
 Segments are numbered sequentially starting at 0 but uploaded concurrently, so the lane uses
 a **sequence-gated buffer**. Each task reads `next_expected` from a per-recording
@@ -300,6 +317,17 @@ meetings rather than a frontend-driven migration workflow.
 6. Only meetings created or explicitly rebuilt through the unified pipeline are
    marked `unified` and treated as fully supported for transcript and speaker
    mutation flows.
+
+## Stall Detection
+
+A live recording is the one workload where a stall is unrecoverable. The browser keeps counting wall-clock time while nothing reaches the server, and audio for that stretch is lost. Nojoin had no signal for it: an outage in August 2026 froze the API three times for about two minutes each, and the only evidence was requests that completed late.
+
+The API therefore runs a watchdog (`backend/utils/stall_watchdog.py`) on its event loop, reporting two things:
+
+- **Event-loop lag**, measured as the overshoot on a fixed sleep. Whatever froze the process shows up here, because the sleep cannot return on time: a blocked event loop, a throttled cgroup, and a host paging the process out are indistinguishable from inside and all detected. Reported as an `event_loop_stalled` pipeline metric when the overshoot exceeds the threshold.
+- **Pressure Stall Information**, read from `/proc/pressure` at the moment lag is detected. This is what names the cause, since PSI's `avg10` window still reflects a stall that has just ended. Absent on non-Linux hosts and PSI-less kernels, where the lag signal survives without attribution. Sustained high pressure without a stall is reported separately as `host_pressure_high`, rate-limited so a persistently degraded machine does not bury the moment it started.
+
+Nothing is sampled into the log on a schedule; a quiet system stays quiet. Tuning and switches are listed in [DEPLOYMENT.md](DEPLOYMENT.md#stall-detection).
 
 ## Anonymous Telemetry
 

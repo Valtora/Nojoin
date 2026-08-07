@@ -123,7 +123,9 @@ Refreshing or closing the Nojoin tab (actual tab unload) during a recording move
 
 Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
 
-Not pausing is not the same as being safe in the background. If the browser or the operating system suspends the Nojoin tab, browser capture stops receiving audio for as long as the suspension lasts, and that audio cannot be recovered afterwards. The recording is not paused and no error is raised, because nothing in a web page can prevent or undo being suspended. Nojoin detects the shortfall by comparing the audio it has stored against elapsed recording time, and shows a warning naming how much was captured. Keep the Nojoin tab open, keep the device awake, and do not rely on a background tab for a long meeting. See [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting).
+Not pausing is not the same as being safe in the background. If the browser or the operating system suspends the Nojoin tab, browser capture stops receiving audio for as long as the suspension lasts, and that audio cannot be recovered afterwards. The recording is not paused and no error is raised, because nothing in a web page can prevent or undo being suspended. Nojoin detects the shortfall by comparing the audio the server holds against elapsed recording time, and shows a dismissible warning naming how much was captured and, where it can tell, what caused the gap. Keep the Nojoin tab open, keep the device awake, and do not rely on a background tab for a long meeting. See [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting).
+
+While recording, Nojoin holds a screen wake lock so the display does not blank and the machine does not idle to sleep. That covers device sleep only. It does not prevent the browser suspending the tab, which no web page can do.
 
 ## Floating Recording Badge
 
@@ -198,14 +200,30 @@ That is expected. Browsers do not let Nojoin silently recreate shared tab, windo
 
 ### Recorded audio is shorter than the meeting
 
-The browser or the operating system suspended the Nojoin tab during capture. A suspended tab stops feeding audio to the recorder, so that stretch of the meeting was never recorded and cannot be recovered. The recording itself is intact and processes normally; it is only shorter than the elapsed time.
+Nojoin compares the audio the server actually holds against the elapsed recording time, and warns when the two diverge, showing the captured duration next to the elapsed timer. It warns again when the recording is stopped.
 
-Nojoin warns while this is happening, showing the captured duration next to the elapsed timer, and warns again when the recording is stopped. To avoid it:
+The warning names one of three causes, and they need different things from you.
+
+**The tab was suspended.** The browser or the operating system suspended the Nojoin tab during capture. A suspended tab stops feeding audio to the recorder, so that stretch of the meeting was never recorded and cannot be recovered. The recording itself is intact and processes normally; it is only shorter than the elapsed time. To avoid it:
 
 - Keep the Nojoin tab open, and prefer keeping it visible in its own window.
-- Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture.
-- Exempt Nojoin from browser tab-suspension features. In Chrome, add the site to the exceptions under **Settings > Performance > Memory Saver**.
+- Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture. Nojoin holds a screen wake lock while recording, which stops the display blanking, but it cannot stop a lid being closed or the machine being suspended by hand.
+- Exempt Nojoin from browser tab-suspension features. In Chrome, add the site under **Settings > Performance > Memory Saver > Always keep these sites active**. Nojoin shows this address on the Meet Now card before your first recording. See [Keeping the tab awake](#keeping-the-tab-awake).
 - On mobile Chrome, keep Nojoin in the foreground and stop the phone locking.
+
+**Nojoin could not reach the server.** Recording continued and the audio is queued in the browser; it uploads when the connection returns. Nothing is lost as long as the tab stays open, so leave it open until the shortfall clears. This is a server or network problem, not a browser one, and changing browser settings will not help.
+
+**Neither could be established.** The warning says only how much audio is missing. Check both: that the tab has stayed open and the device awake, and that the connection to your Nojoin server is healthy.
+
+The warning can be dismissed with the close control. It stays dismissed unless the shortfall grows substantially further, so a problem that is getting worse will say so again.
+
+Nojoin reports this conservatively. The captured figure it compares against is measured from the audio segments the server has decoded, and that measurement runs slightly high, so a small shortfall may be reported as none at all. It will not report a shortfall that is not there.
+
+### Keeping the tab awake
+
+Before your first recording, the Meet Now card shows a one-time notice asking you to add Nojoin to Chrome's **Always keep these sites active** list, with the address to add and a copy button. Dismissing it is remembered per browser, not per account, because the setting it asks for is itself per browser: doing it on your desktop does not do it on your laptop.
+
+Nojoin cannot do this for you and cannot check whether you have done it. No browser API lets a page opt out of Memory Saver, and none lets a page read whether Memory Saver is switched on. Chrome does exempt tabs that are actively capturing audio or video, which Nojoin is while recording, so this is a precaution rather than a certainty that suspension would otherwise happen.
 
 ### Stop did not finish
 
