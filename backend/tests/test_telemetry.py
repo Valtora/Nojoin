@@ -16,6 +16,15 @@ import pytest
 from backend.utils import telemetry
 from backend.utils.config_manager import ConfigManager
 
+# Imported at module scope deliberately, not inside the tests that use it.
+# Importing the worker package runs load_dotenv(), which repopulates os.environ
+# from the developer's own .env. Done inside a test that would put
+# NOJOIN_TELEMETRY_ENABLED back *after* _no_env_override cleared it, so a
+# machine whose .env disables telemetry would silently turn every send test into
+# a no-op that still passes. At module scope the load happens during collection,
+# and the per-test delenv wins.
+from backend.worker.tasks.system import send_telemetry_ping_task
+
 
 class _Scalar:
     def __init__(self, value):
@@ -60,6 +69,26 @@ def data_dir(tmp_path, monkeypatch):
 def _no_env_override(monkeypatch):
     monkeypatch.delenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, raising=False)
     monkeypatch.delenv(telemetry.TELEMETRY_ENDPOINT_ENV_KEY, raising=False)
+
+
+class FakeRedis:
+    """The two operations the send markers use, backed by a dict."""
+
+    def __init__(self):
+        self.values: dict[str, str] = {}
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def set(self, key, value):
+        self.values[key] = value
+
+
+@pytest.fixture
+def redis_stub(monkeypatch):
+    client = FakeRedis()
+    monkeypatch.setattr(telemetry, "_redis_client", lambda: client)
+    return client
 
 
 # --- Install identity -------------------------------------------------------
@@ -126,13 +155,34 @@ def test_telemetry_is_enabled_by_default(config) -> None:
     assert telemetry.is_telemetry_enabled() is True
 
 
+@pytest.mark.parametrize("raw", ["false", "true"])
 def test_notice_is_never_shown_when_the_environment_pins_the_value(
-    config, monkeypatch
+    config, monkeypatch, raw
 ) -> None:
-    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, "false")
+    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, raw)
 
     # Nothing the admin could do about it, so there is nothing to tell them.
     assert telemetry.notice_pending() is False
+
+
+def test_env_true_is_itself_consent_on_an_upgraded_install(config, monkeypatch) -> None:
+    # No acknowledgement and no shown-notice stamp: the upgraded-install state.
+    # The banner that would write either is suppressed while the environment
+    # pins the value, so waiting for it would leave an operator who explicitly
+    # opted in silent forever.
+    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, "true")
+
+    assert telemetry.consent_granted() is True
+    assert telemetry.should_send() is True
+
+
+def test_env_false_still_blocks_sending_whatever_consent_says(
+    config, monkeypatch
+) -> None:
+    config.set(telemetry.ACKNOWLEDGED_CONFIG_KEY, True)
+    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, "false")
+
+    assert telemetry.should_send() is False
 
 
 # --- Consent ----------------------------------------------------------------
@@ -284,7 +334,40 @@ def test_send_failure_is_swallowed_rather_than_raised(monkeypatch) -> None:
 
     monkeypatch.setattr(httpx, "post", explode)
 
-    assert telemetry.send_payload({"schema": 1}) is False
+    result = telemetry.send_payload({"schema": 1})
+
+    assert result.ok is False
+    assert "could not be reached" in result.detail
+
+
+def test_a_timeout_is_reported_differently_from_an_unreachable_host(
+    monkeypatch,
+) -> None:
+    import httpx
+
+    def stall(*_args, **_kwargs):
+        raise httpx.ReadTimeout("too slow")
+
+    monkeypatch.setattr(httpx, "post", stall)
+
+    # The remedies differ, so the two must not collapse into one message.
+    assert "did not respond" in telemetry.send_payload({"schema": 1}).detail
+
+
+def test_an_unexpected_transport_failure_is_named_rather_than_swallowed(
+    monkeypatch,
+) -> None:
+    import httpx
+
+    def explode(*_args, **_kwargs):
+        raise httpx.TooManyRedirects("looping")
+
+    monkeypatch.setattr(httpx, "post", explode)
+
+    result = telemetry.send_payload({"schema": 1})
+
+    assert result.ok is False
+    assert "TooManyRedirects" in result.detail
 
 
 def test_rejected_ping_reports_failure(monkeypatch) -> None:
@@ -296,7 +379,10 @@ def test_rejected_ping_reports_failure(monkeypatch) -> None:
         lambda *a, **k: httpx.Response(400, request=httpx.Request("POST", "https://x")),
     )
 
-    assert telemetry.send_payload({"schema": 1}) is False
+    result = telemetry.send_payload({"schema": 1})
+
+    assert result.ok is False
+    assert "400" in result.detail
 
 
 def test_accepted_ping_reports_success(monkeypatch) -> None:
@@ -308,7 +394,95 @@ def test_accepted_ping_reports_success(monkeypatch) -> None:
         lambda *a, **k: httpx.Response(204, request=httpx.Request("POST", "https://x")),
     )
 
-    assert telemetry.send_payload({"schema": 1}) is True
+    result = telemetry.send_payload({"schema": 1})
+
+    assert result.ok is True
+    assert result.detail is None
+
+
+# --- Send bookkeeping -------------------------------------------------------
+
+
+def test_a_failed_attempt_is_recorded_without_advancing_last_sent(redis_stub) -> None:
+    moment = datetime.now(timezone.utc)
+
+    telemetry.record_attempt(moment, telemetry.SendResult(False, "Nope."))
+
+    # The whole point: an install that has been failing must not read as one
+    # that has never tried, and must not claim to have sent anything either.
+    assert telemetry.get_last_attempt() == {
+        "at": moment.isoformat(),
+        "ok": False,
+        "detail": "Nope.",
+    }
+    assert telemetry.get_last_sent_at() is None
+
+
+def test_a_successful_attempt_advances_both_markers(redis_stub) -> None:
+    moment = datetime.now(timezone.utc)
+
+    telemetry.record_attempt(moment, telemetry.SendResult(True))
+
+    assert telemetry.get_last_attempt() == {
+        "at": moment.isoformat(),
+        "ok": True,
+        "detail": None,
+    }
+    assert telemetry.get_last_sent_at() == moment
+
+
+def test_an_untried_install_reports_no_attempt(redis_stub) -> None:
+    assert telemetry.get_last_attempt() is None
+
+
+def test_a_corrupt_attempt_marker_reads_as_untried(redis_stub) -> None:
+    redis_stub.values[telemetry.LAST_ATTEMPT_REDIS_KEY] = "not json"
+
+    # Falls back to what the consent state alone can say, rather than raising
+    # on a display-only path.
+    assert telemetry.get_last_attempt() is None
+
+
+def test_status_reports_the_failed_attempt_alongside_the_silent_last_sent(
+    config, data_dir, redis_stub
+) -> None:
+    moment = datetime.now(timezone.utc)
+    telemetry.record_attempt(
+        moment, telemetry.SendResult(False, "The collector could not be reached.")
+    )
+
+    status = telemetry.telemetry_status()
+
+    assert status["last_sent_at"] is None
+    assert status["last_attempt_at"] == moment.isoformat()
+    assert status["last_attempt_ok"] is False
+    assert status["last_attempt_detail"] == "The collector could not be reached."
+
+
+def test_the_task_records_an_attempt_that_the_collector_rejected(
+    config, data_dir, redis_stub, monkeypatch
+) -> None:
+    import httpx
+
+    config.set(telemetry.ACKNOWLEDGED_CONFIG_KEY, True)
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: httpx.Response(400, request=httpx.Request("POST", "https://x")),
+    )
+    # The task reaches the database only to assemble the payload, which is
+    # covered on its own elsewhere. Stand both in so this exercises the path
+    # from a rejected response to the marker an admin reads.
+    monkeypatch.setattr(send_telemetry_ping_task, "_session", FakeSession())
+    monkeypatch.setattr(telemetry, "build_payload", lambda _session: {"schema": 1})
+
+    send_telemetry_ping_task.run()
+
+    attempt = telemetry.get_last_attempt()
+    assert attempt is not None
+    assert attempt["ok"] is False
+    assert "400" in attempt["detail"]
+    assert telemetry.get_last_sent_at() is None
 
 
 def test_endpoint_is_overridable_by_environment(monkeypatch) -> None:
@@ -325,8 +499,6 @@ def test_task_sends_nothing_when_consent_is_absent(
 ) -> None:
     import httpx
 
-    from backend.worker.tasks.system import send_telemetry_ping_task
-
     def explode(*_args, **_kwargs):  # pragma: no cover - must never run
         raise AssertionError("telemetry must not be sent without consent")
 
@@ -339,12 +511,15 @@ def test_task_sends_nothing_when_consent_is_absent(
 # --- Beat wiring ------------------------------------------------------------
 
 
-def test_telemetry_ping_is_scheduled_daily_on_the_io_lane() -> None:
+def test_telemetry_ping_is_scheduled_six_hourly_on_the_io_lane() -> None:
     from backend.celery_app import TASK_ROUTES, celery_app
 
-    entry = celery_app.conf.beat_schedule["send-telemetry-ping-every-24h"]
+    entry = celery_app.conf.beat_schedule["send-telemetry-ping-every-6h"]
     assert entry["task"] == "backend.worker.tasks.send_telemetry_ping_task"
-    assert entry["schedule"] == 86400.0
+    # Six hours, not a day: beat re-anchors an interval on every worker restart,
+    # so a daily interval can skip a calendar day outright and read downstream
+    # as the install having gone quiet.
+    assert entry["schedule"] == 21600.0
 
     # Must stay off the single-slot GPU lane: a network call has no business
     # occupying the worker that holds the card.

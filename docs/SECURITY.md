@@ -106,7 +106,7 @@ Nojoin makes a small number of outbound connections from the server. Operators r
 - **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings.
 - **AI providers**: only when a non-local provider is configured; local Ollama keeps inference on your own network.
 - **Calendar providers**: only when a user connects a Google or Microsoft account.
-- **Anonymous telemetry**: one daily ping to `telemetry.nojoin.co.uk` from the `worker-io` lane.
+- **Anonymous telemetry**: one ping every six hours to `telemetry.nojoin.co.uk` from the `worker-io` lane.
 
 The telemetry ping is anonymous by construction rather than by policy. It is identified only by a UUID4 generated on your own server, and it carries counts and configuration shape — never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
 

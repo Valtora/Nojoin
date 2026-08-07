@@ -23,9 +23,11 @@
       "database_id": "9ea9c413-8a9d-44d3-86ac-cbe9ba91d6db"
     }
   ],
-  // Flood guard only. A legitimate install sends one request per day, so this
-  // is orders of magnitude above real use and exists to stop a script from
-  // burning the daily Workers quota and taking real installs offline.
+  // Flood guard only. A legitimate install sends four requests per day, one
+  // every six hours, so this is orders of magnitude above real use and exists
+  // to stop a script from burning the daily Workers quota and taking real
+  // installs offline. The key is the connecting address, so it also has to
+  // tolerate several installs sharing one NAT egress.
   "ratelimits": [
     {
       "name": "PING_LIMITER",
@@ -38,7 +40,8 @@
   ],
   // Retention sweep: roll raw rows older than 13 months into daily aggregates
   // and delete them. 03:00 UTC is chosen to sit well away from the clustering
-  // of client pings, which follow each install's own worker start time.
+  // of client pings, which follow each install's own worker start time and are
+  // spread further by the six-hour send interval never aligning to a fixed hour.
   "triggers": {
     "crons": ["0 3 * * *"]
   }

@@ -1,6 +1,6 @@
 # Anonymous Usage Data
 
-Nojoin sends one small, anonymous ping per day describing how the installation is configured and how much it is used. This page is the complete and canonical description of that: what is sent, what is never sent, when it is sent, and how to turn it off.
+Nojoin sends one small, anonymous ping every six hours describing how the installation is configured and how much it is used. This page is the complete and canonical description of that: what is sent, what is never sent, when it is sent, and how to turn it off.
 
 If you would rather not read the whole page: it is anonymous, it contains none of your meeting content, it can be switched off in **Settings > Privacy**, and the data is never sold.
 
@@ -20,7 +20,7 @@ The data is used to guide development. **It is never sold, and it is never share
 
 ## What Is Sent
 
-One `POST` per day to `https://telemetry.nojoin.co.uk/v1/ping`, containing exactly this:
+One `POST` every six hours to `https://telemetry.nojoin.co.uk/v1/ping`, containing exactly this:
 
 ```json
 {
@@ -71,6 +71,8 @@ One `POST` per day to `https://telemetry.nojoin.co.uk/v1/ping`, containing exact
 
 There is no timestamp in the payload. The receiving service uses its own clock to decide which day a ping belongs to, so a wrong clock on your server cannot corrupt the data.
 
+Each ping replaces the previous one for the same day rather than adding to it. The receiving service keys a row on your install ID and the UTC date, so the four pings a day leave **one stored row per install per day**, holding whatever the most recent one said. Sending four times is about reliability, not about recording more: see [When It Is Sent](#when-it-is-sent).
+
 ## What Is Never Sent
 
 Nothing about your meetings, your people, or your server's identity ever leaves your installation:
@@ -85,11 +87,15 @@ The receiving service additionally stores **nothing derived from the connection*
 
 ## When It Is Sent
 
-This differs depending on whether you installed Nojoin fresh or upgraded into this feature.
+A scheduled task on the `worker-io` container attempts a ping every six hours, counted from when that container last started. Nothing is aligned to a fixed hour, so installs are spread across the clock rather than arriving together.
+
+**Why six hours and not a day.** The scheduler measures the interval from its own last run, which means restarting the container restarts the clock. On a daily interval a single restart moves the send time and can skip a calendar day entirely, and a day with no ping is indistinguishable from an install that was switched off. Four attempts a day bound that gap to a few hours. Because the receiving service keeps one row per install per day regardless, this changes how reliably a day is recorded and not how much is recorded.
+
+Whether anything is sent at all differs depending on whether you installed Nojoin fresh or upgraded into this feature.
 
 ### New installations
 
-The first-run setup wizard shows a checkbox, ticked by default, on the same screen as the legal disclaimer. That tick is your consent, and pings begin from the next daily cycle. Unticking it means nothing is ever sent.
+The first-run setup wizard shows a checkbox, ticked by default, on the same screen as the legal disclaimer. That tick is your consent, and pings begin from the next cycle. Unticking it means nothing is ever sent.
 
 ### Existing installations that upgraded
 
@@ -109,7 +115,7 @@ One consequence is deliberate and worth stating plainly: **if nobody ever signs 
 
 Any one of these is sufficient.
 
-**In the app.** Go to **Settings > Privacy** and switch it off. This takes effect immediately — the next daily cycle sends nothing. You do not need to restart.
+**In the app.** Go to **Settings > Privacy** and switch it off. This takes effect immediately — the next cycle sends nothing. You do not need to restart.
 
 **Before you ever start Nojoin.** Set this in `.env`:
 
@@ -118,6 +124,8 @@ NOJOIN_TELEMETRY_ENABLED=false
 ```
 
 This is a hard switch. It overrides the in-app setting, cannot be overridden from the UI, and the Settings toggle shows as read-only. Use it when telemetry must be off as a matter of policy rather than preference.
+
+The same variable set to `true` is the opposite instruction, and it is treated as consent in its own right: pings start on the next cycle without waiting for the notice, because the notice is suppressed while the environment pins the setting and would otherwise never be answered. Leaving the variable empty, which is the default, leaves the decision to the app.
 
 **At the network layer.** Block or null-route `telemetry.nojoin.co.uk`. Sending is best-effort and failures are ignored, so nothing else in Nojoin is affected.
 
@@ -131,9 +139,9 @@ You do not have to take this page's word for it.
 
 **Read the receiving code.** The collector is open source in the [telemetry/](../telemetry/) directory of this repository, including the database schema. What is stored is therefore verifiable rather than a promise.
 
-**Watch the traffic.** The request goes to `telemetry.nojoin.co.uk` over HTTPS, once a day, from the `worker-io` container. It is an ordinary JSON POST and you can inspect it with any network tool.
+**Watch the traffic.** The request goes to `telemetry.nojoin.co.uk` over HTTPS, every six hours, from the `worker-io` container. It is an ordinary JSON POST and you can inspect it with any network tool.
 
-**Check the app.** Settings shows your install ID, the endpoint, and when the last ping was sent.
+**Check the app.** Settings shows your install ID, the endpoint, and when the last ping was sent. If an attempt failed it says so there too, with the reason — a rejection, a timeout, or an unreachable host. Blocking the endpoint at the network layer will show up here as a failure, which is the expected result of doing that rather than a fault.
 
 ## Retention
 

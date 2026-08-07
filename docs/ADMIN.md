@@ -118,7 +118,7 @@ Notes-language choices include British and American English, the transcription l
 
 ### Anonymous Usage Data
 
-Use **Settings > Privacy** to turn the daily anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. The panel also lists exactly what the ping contains.
+Use **Settings > Privacy** to turn the six-hourly anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. A failed attempt is reported there with its reason, so a "Last sent: Never" that means "never tried" can be told apart from one that means "tried and blocked". The panel also lists exactly what the ping contains.
 
 On an installation upgraded into this feature, nothing is sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
 

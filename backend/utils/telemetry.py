@@ -1,17 +1,24 @@
 """Anonymous, opt-out telemetry.
 
-Nojoin sends one small anonymous ping per day describing how many deployments
-exist, how they are configured, and how much they are used. See
+Nojoin sends one small anonymous ping every six hours describing how many
+deployments exist, how they are configured, and how much they are used. See
 ``docs/TELEMETRY.md`` for the user-facing disclosure this module must remain
 true to.
+
+The ingest keys on ``(install_id, day)`` and upserts, so the four sends a day
+collapse to a single stored row. The cadence exists to survive worker restarts,
+not to record more: a daily interval re-anchors on every restart and can skip a
+calendar day, which reads downstream as the install having gone quiet.
 
 Three invariants are load-bearing and are locked by tests:
 
 1. **The payload carries nothing identifying.** No hostname, URL, IP, username,
    meeting title, transcript text, key, or model name. Only the fields built by
    :func:`build_payload` are ever sent.
-2. **The environment kill switch outranks everything.** An operator who sets
-   ``NOJOIN_TELEMETRY_ENABLED=false`` cannot have that overridden from the UI.
+2. **The environment outranks everything.** An operator who sets
+   ``NOJOIN_TELEMETRY_ENABLED`` cannot have it overridden from the UI, in
+   either direction: ``false`` is an absolute kill switch, and ``true`` is an
+   explicit opt-in that needs no further consent.
 3. **Nothing is sent without consent.** A new install consents through the
    first-run wizard; an upgraded install sends nothing at all until the admin
    notice has actually been shown, and then only after acknowledgement or the
@@ -25,6 +32,7 @@ State                        Written by            Read by
 ``config.json`` keys         API only              API, worker
 ``.install_id``              whoever mints it      API, worker (write-once)
 Redis ``last_sent_at``       worker only           API (display only)
+Redis ``last_attempt``       worker only           API (display only)
 ===========================  ====================  =========================
 
 Making the worker a second writer of ``config.json`` would let a stale worker
@@ -39,7 +47,7 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlparse
 
 from backend.utils.config_manager import config_manager, get_configured_web_origin
@@ -59,6 +67,12 @@ NOTICE_SHOWN_CONFIG_KEY = "telemetry_notice_first_shown_at"
 
 LAST_SENT_REDIS_KEY = "nojoin:telemetry:last_sent_at"
 
+#: Every attempt, successful or not. Kept separate from ``last_sent_at`` because
+#: the two answer different questions: an admin looking at a "Last sent: Never"
+#: needs to know whether nothing was ever tried or everything tried has failed,
+#: and one timestamp cannot say both.
+LAST_ATTEMPT_REDIS_KEY = "nojoin:telemetry:last_attempt"
+
 INSTALL_ID_FILENAME = ".install_id"
 
 #: Silence is treated as consent only after the admin notice has been on screen
@@ -70,6 +84,20 @@ GRACE_PERIOD_DAYS = 7
 ACTIVITY_WINDOW_DAYS = 28
 
 SEND_TIMEOUT_SECONDS = 10.0
+
+
+class SendResult(NamedTuple):
+    """Outcome of one attempt, with a reason an admin can act on.
+
+    ``detail`` is a short sentence written here rather than a raw exception
+    string: it is rendered verbatim in Settings, and an exception repr is both
+    poor copy and an uncontrolled channel for whatever a library chose to put in
+    it. It is ``None`` when the ping succeeded.
+    """
+
+    ok: bool
+    detail: str | None = None
+
 
 _FALSY = {"0", "false", "no", "off"}
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -195,6 +223,19 @@ def consent_granted(now: datetime | None = None) -> bool:
     for the grace period counts as consent. This is why a deployment nobody
     signs into never pings — a documented, accepted undercount.
     """
+    # An operator who set the environment variable to true opted in explicitly,
+    # in the one place that outranks the UI. Waiting for the notice as well
+    # would be a deadlock rather than a safeguard: notice_pending() suppresses
+    # the banner precisely because the environment is pinned, so the
+    # acknowledgement this would wait for could never be written.
+    #
+    # This early return is also what keeps the worker's view of consent fresh.
+    # should_send() reaches here through is_telemetry_enabled(), which returns
+    # before its reload() whenever the environment pins the value, and the
+    # worker's config map is otherwise frozen at process start.
+    if env_override() is True:
+        return True
+
     if bool(config_manager.get(ACKNOWLEDGED_CONFIG_KEY, False)):
         return True
 
@@ -268,6 +309,7 @@ def telemetry_status() -> dict[str, Any]:
     config_manager.reload()
     install_id, _ = load_install_identity()
     last_sent = get_last_sent_at()
+    last_attempt = get_last_attempt()
     shown_at = _config_datetime(NOTICE_SHOWN_CONFIG_KEY)
 
     return {
@@ -280,6 +322,13 @@ def telemetry_status() -> dict[str, Any]:
         "install_id": install_id,
         "endpoint": telemetry_endpoint(),
         "last_sent_at": last_sent.isoformat() if last_sent else None,
+        # Reported alongside last_sent_at rather than folded into it. "Last
+        # sent: Never" is ambiguous on its own -- never tried, or tried and
+        # failed every time -- and only the second is a problem an admin can do
+        # something about.
+        "last_attempt_at": last_attempt["at"] if last_attempt else None,
+        "last_attempt_ok": last_attempt["ok"] if last_attempt else None,
+        "last_attempt_detail": last_attempt["detail"] if last_attempt else None,
         "grace_period_days": GRACE_PERIOD_DAYS,
     }
 
@@ -295,7 +344,7 @@ def is_local_origin() -> bool:
     return (hostname or "").lower() in _LOCAL_HOSTNAMES
 
 
-# --- Last-sent bookkeeping (worker-owned, Redis) ----------------------------
+# --- Send bookkeeping (worker-owned, Redis) ---------------------------------
 
 
 def _redis_client():
@@ -306,30 +355,75 @@ def _redis_client():
     return redis.from_url(REDIS_URL)
 
 
-def get_last_sent_at() -> datetime | None:
+def _redis_text(key: str) -> str | None:
     try:
-        raw = _redis_client().get(LAST_SENT_REDIS_KEY)
+        raw = _redis_client().get(key)
     except Exception as exc:  # noqa: BLE001 -- boundary: display-only, never fail a request
-        logger.debug("Could not read telemetry last-sent marker: %s", exc)
+        logger.debug("Could not read telemetry marker %s: %s", key, exc)
         return None
 
     if not raw:
         return None
+    return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+
+
+def get_last_sent_at() -> datetime | None:
+    raw = _redis_text(LAST_SENT_REDIS_KEY)
+    if raw is None:
+        return None
     try:
-        return datetime.fromisoformat(
-            raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-        )
+        return datetime.fromisoformat(raw)
     except ValueError:
         return None
 
 
-def record_sent_at(moment: datetime) -> None:
-    """Only the worker calls this. Losing it costs one duplicate ping, which the
-    ingest deduplicates on ``(install_id, day)`` anyway."""
+def get_last_attempt() -> dict[str, Any] | None:
+    """The most recent send attempt, successful or not, or ``None`` if untried.
+
+    Read for display only. A missing or unparseable value is indistinguishable
+    from never having tried, which is the safe reading: the panel then falls
+    back to what the consent state alone can say.
+    """
+    raw = _redis_text(LAST_ATTEMPT_REDIS_KEY)
+    if raw is None:
+        return None
     try:
-        _redis_client().set(LAST_SENT_REDIS_KEY, moment.isoformat())
+        stored = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(stored, dict) or not stored.get("at"):
+        return None
+
+    return {
+        "at": str(stored["at"]),
+        "ok": bool(stored.get("ok")),
+        "detail": str(stored["detail"]) if stored.get("detail") else None,
+    }
+
+
+def record_attempt(moment: datetime, result: SendResult) -> None:
+    """Record one send attempt. Only the worker calls this.
+
+    Writes the attempt unconditionally and the last-sent marker only on success,
+    because the two answer different questions and collapsing them would lose
+    exactly the case worth reporting: an install that consented and has been
+    failing ever since looks identical to one that never tried.
+
+    Losing either costs nothing but the display. A missing last-sent marker at
+    most causes one duplicate ping, which the ingest deduplicates on
+    ``(install_id, day)`` anyway.
+    """
+    stamp = moment.isoformat()
+    try:
+        client = _redis_client()
+        client.set(
+            LAST_ATTEMPT_REDIS_KEY,
+            json.dumps({"at": stamp, "ok": result.ok, "detail": result.detail}),
+        )
+        if result.ok:
+            client.set(LAST_SENT_REDIS_KEY, stamp)
     except Exception as exc:  # noqa: BLE001 -- boundary: bookkeeping must not fail the task
-        logger.debug("Could not persist telemetry last-sent marker: %s", exc)
+        logger.debug("Could not persist telemetry send markers: %s", exc)
 
 
 # --- Payload ----------------------------------------------------------------
@@ -496,13 +590,19 @@ def _installed_version() -> str | None:
     return get_installed_version() or None
 
 
-def send_payload(payload: dict[str, Any]) -> bool:
-    """POST the ping. Returns whether the ingest accepted it.
+def send_payload(payload: dict[str, Any]) -> SendResult:
+    """POST the ping, and say what happened.
 
     Best-effort by contract: an unreachable endpoint, a DNS failure, or a
-    non-2xx response is logged at debug and the day is simply skipped. There is
-    no retry and no backfill, so a flaky network can never turn into a storm
-    against our own endpoint.
+    non-2xx response returns rather than raises, and the cycle is simply
+    skipped. There is no retry and no backfill, so a flaky network can never
+    turn into a storm against our own endpoint.
+
+    Failures stay at debug rather than warning. Blocking the endpoint at the
+    network layer is a documented, supported way to opt out (docs/TELEMETRY.md),
+    and an operator who did that deliberately should not have their logs filled
+    for it. The outcome reaches the admin through Settings instead, which is
+    where someone actually asking the question will be looking.
     """
     import httpx
 
@@ -515,10 +615,32 @@ def send_payload(payload: dict[str, Any]) -> bool:
         )
     except Exception as exc:  # noqa: BLE001 -- boundary: telemetry must never disrupt the worker
         logger.debug("Telemetry ping failed: %s", exc)
-        return False
+        return SendResult(False, _failure_detail(exc))
 
     if response.status_code >= 400:
         logger.debug("Telemetry ping rejected with status %s", response.status_code)
-        return False
+        return SendResult(
+            False,
+            f"The collector rejected the ping with HTTP {response.status_code}.",
+        )
 
-    return True
+    return SendResult(True)
+
+
+def _failure_detail(exc: Exception) -> str:
+    """Turn a transport failure into something an admin can act on.
+
+    The three cases are separated because the remedies differ: a timeout is
+    usually transient, an unreachable host is usually a firewall or a
+    deliberate DNS block, and anything else is worth naming so it can be
+    searched for.
+    """
+    import httpx
+
+    if isinstance(exc, httpx.TimeoutException):
+        return (
+            f"The collector did not respond within {SEND_TIMEOUT_SECONDS:.0f} seconds."
+        )
+    if isinstance(exc, httpx.ConnectError):
+        return "The collector could not be reached. It may be blocked by a firewall or DNS."
+    return f"The ping failed: {type(exc).__name__}."

@@ -804,6 +804,15 @@ export interface TelemetryStatus {
   install_id: string;
   endpoint: string;
   last_sent_at: string | null;
+  /**
+   * The most recent attempt, successful or not, and null if none was ever made.
+   * Reported separately from last_sent_at because "Last sent: Never" cannot say
+   * on its own whether nothing was tried or everything tried has failed.
+   */
+  last_attempt_at: string | null;
+  last_attempt_ok: boolean | null;
+  /** A short sentence naming the failure, written by the backend. Null on success. */
+  last_attempt_detail: string | null;
   grace_period_days: number;
 }
 

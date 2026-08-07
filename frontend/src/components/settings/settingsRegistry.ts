@@ -539,7 +539,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     id: "privacy-telemetry",
     label: "Anonymous usage data",
     description:
-      "A daily anonymous ping describing this installation. It contains no meeting content.",
+      "A six-hourly anonymous ping describing this installation. It contains no meeting content.",
     category: "privacy",
     access: "admin",
     keywords: ["telemetry", "anonymous", "usage data", "analytics", "privacy", "opt out", "phone home", "tracking", "statistics"],

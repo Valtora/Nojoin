@@ -389,13 +389,14 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
     name="backend.worker.tasks.send_telemetry_ping_task", base=DatabaseTask, bind=True
 )
 def send_telemetry_ping_task(self):
-    """Send the daily anonymous telemetry ping, if the install consents.
+    """Send the anonymous telemetry ping, if the install consents.
 
     Best-effort throughout: a disabled install, an install still inside its
     consent grace period, an unreachable endpoint, or a rejected payload all
     return quietly. Nothing here retries, so a network fault cannot escalate
-    into repeated calls against our own endpoint; the next daily beat tick is
-    the only retry. See backend/utils/telemetry.py for the consent rules.
+    into repeated calls against our own endpoint; the next six-hourly beat tick
+    is the only retry. See backend/utils/telemetry.py for the consent rules and
+    for why the cadence is six hours rather than a day.
     """
     from backend.utils import telemetry
 
@@ -409,8 +410,13 @@ def send_telemetry_ping_task(self):
         logger.debug("Telemetry payload could not be built: %s", exc)
         return
 
-    if telemetry.send_payload(payload):
-        telemetry.record_sent_at(datetime.now(UTC))
+    result = telemetry.send_payload(payload)
+    # Recorded either way. A failure that leaves no trace is why an admin
+    # staring at "Last sent: Never" cannot tell a silent install from a broken
+    # one; Settings reads this to say which it is.
+    telemetry.record_attempt(datetime.now(UTC), result)
+
+    if result.ok:
         logger.info("Telemetry ping sent.")
 
 

@@ -331,7 +331,7 @@ Nothing is sampled into the log on a schedule; a quiet system stays quiet. Tunin
 
 ## Anonymous Telemetry
 
-An opt-out daily Celery Beat task on the IO lane sends one anonymous ping describing deployment scale, configuration shape, and feature adoption. It is identified only by a random install id held in `data/.install_id`, and carries no meeting content, names, or addresses.
+An opt-out Celery Beat task on the IO lane sends one anonymous ping every six hours describing deployment scale, configuration shape, and feature adoption. The receiving service upserts on install id and UTC day, so the cadence buys resilience against a restart re-anchoring the beat interval rather than extra rows. It is identified only by a random install id held in `data/.install_id`, and carries no meeting content, names, or addresses.
 
 State ownership is split deliberately so no two processes write the same value: the API is the only writer of the `telemetry_*` keys in `config.json`, the worker is the only writer of the Redis last-sent marker, and the install id file is write-once. The worker reloads configuration before every consent check, so an operator's opt-out takes effect on the next cycle rather than on the next container restart. Sending is best-effort with no retry, so a network fault can never escalate into repeated calls.
 

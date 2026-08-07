@@ -70,7 +70,7 @@ export default function LegalStep({
               Share anonymous usage data
             </span>
             <span className="block text-contrast-helper mt-1">
-              Sends one anonymous ping a day with a random install ID, your
+              Sends one anonymous ping every six hours with a random install ID, your
               Nojoin version, how many users and recordings this server has, and
               which features are switched on. It never includes your recordings,
               transcripts, notes, names, or API keys, and the data is never

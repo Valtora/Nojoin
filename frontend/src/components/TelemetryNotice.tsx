@@ -95,10 +95,11 @@ export default function TelemetryNotice() {
             Nojoin can now share anonymous usage data
           </p>
           <p className="mt-1 text-contrast-helper">
-            One anonymous ping a day: a random install ID, your version, how many
-            users and recordings this server has, and which features are on. It
-            never includes recordings, transcripts, notes, names, or API keys,
-            and the data is never sold. Nothing has been sent yet.
+            One anonymous ping every six hours: a random install ID, your
+            version, how many users and recordings this server has, and which
+            features are on. It never includes recordings, transcripts, notes,
+            names, or API keys, and the data is never sold. Nothing has been
+            sent yet.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
