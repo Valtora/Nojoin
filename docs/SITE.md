@@ -76,13 +76,6 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   faint, so two `.band`s in a row do not look like a seam, they look like nothing at all, and
   the rhythm quietly disappears. Removing the privacy section left three consecutive bands
   before anyone noticed.
-- **The spell check is in the notes screenshot on purpose.** The generated demo notes use
-  American spellings and the editor underlines them, which read as errors in Nojoin's output
-  until the copy beside the shot claimed them: the row now points at the red line under
-  "emphasizing" and says the spell check reads British English. That turns an artefact into
-  the feature it actually is. It is also the honest reading — nothing was retouched, and four
-  attempts to suppress the underlines failed because the editor re-renders through DOM and
-  stylesheet overrides alike.
 - **The quick-start code block is dark in both themes**, and it is the only surface that
   ignores the theme toggle. It followed the theme until a reader pointed out it was still
   hard to look at in light: the syntax colours were legible on the measurements, but the
@@ -99,6 +92,11 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   page still ends on a deliberate surface rather than trailing off, and the last thing a
   visitor reads is the one offer the hero does not make. A page that has to ask twice is
   usually too long, which is what the rest of this pass was about.
+- **The landing page carries no three-up strip.** It had one under the hero — no bot, any
+  platform, your hardware — and two of those three were the hero's own claims, restated
+  before the reader had scrolled past them. Its one unique line, that any platform works with
+  nothing to install, moved into the hero. `/managed/` keeps a strip of its own, where the
+  three cards say things that page says nowhere else.
 - **The landing page carries no privacy section.** It had one, and it was cut when the page
   was shortened: those claims are made better elsewhere. Self-hosting and local inference
   lead the three-up strip, the licence is in the footer, telemetry has a footer link on every
@@ -139,11 +137,13 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
 - **The header is sticky**, with a solid fill rather than a blurred scrim. Glass is out by
   the flat canon, and `backdrop-filter` over text this dense costs a repaint per scroll
   frame for an effect the design does not want.
-- **The agent band sits directly under the strip**, on the page surface with the hero's
+- **The agent band sits directly under the hero**, on the page surface with the hero's
   wash. It carries three devices rather than prose. A flow card walks one real post-meeting
   job and tags each step with the actor who performs it, chevrons between the steps so it
   reads downward as a sequence rather than as a table. A six-card showcase groups the thirty
-  tools by what they touch, each led by a glyph. A wider card carries the CRM bridge on its
+  tools by what they touch, each led by a glyph and carrying its count. The cards used to
+  name every tool in the group; that is an inventory, not an argument, and the six counts add
+  to thirty on their own. A wider card carries the CRM bridge on its
   own, because an assistant reconciling your People library with anything it can already
   reach is the claim with no equivalent in the comparison, and it was a clause in a
   paragraph. The actor pills say "Agent", never a vendor name: more than one assistant is
@@ -173,7 +173,7 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   "Agentic" is jargon and stays anyway: on the landing page it flatters a reader who knows
   the word, and the subhead immediately spells it out in plain terms for one who does not.
   The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
-  No-bot did not disappear; it opens the subhead and leads the strip beneath the hero.
+  No-bot did not disappear; it opens the subhead.
 - **The agents section carries no screenshot, and this has now been tried both ways.** The
   original reason still stands: the capability happens in Claude's or ChatGPT's window, not
   Nojoin's, and the frame chrome reads `nojoin.your-server.net`, so a framed capture of
@@ -283,8 +283,24 @@ The rules:
 - **Parallel closers.** Paired elements end on matched short sentences.
 - **Whole jobs, not first drafts.** Every feature example ends with something genuinely
   delivered: the transcript attributed, the notes written, the task filed.
-- **A word budget**: 400–600 words of prose in the skim layer (headlines, ledes, labels).
-  Devices, screenshots and the table carry the rest.
+- **Say each idea once, on the page where it lands hardest.** The landing page had drifted
+  into a sequence of self-contained pitches: no-bot appeared three times, "your own server"
+  three times, CRM six times, and one thirteen-word clause about plain primitives ran
+  verbatim in two places a screen apart. Repetition does not reinforce a claim, it tells a
+  reader the page has nothing further to say. The page argues **one** thing — an agentic
+  meeting intelligence platform on hardware you own — and every section below the hero is
+  evidence for it rather than a fresh advert. When a claim appears twice, delete the weaker
+  instance rather than rewording it.
+- **Do not inventory the product.** The tool showcase used to name all thirty MCP tools; the
+  goal is not to have every feature listed, it is to pitch one platform. A count carries the
+  same claim without the reader having to audit a list.
+- **A word budget, and it is a ceiling rather than a range.** No more than about 400 words of
+  prose in the skim layer (headlines, ledes, labels) across the site; devices, screenshots and
+  the table carry the rest. This replaces a 400–600 range, which had a floor for no good
+  reason. Two deliberate passes — cutting the privacy section and the repeat-CTA closer, then
+  distilling the copy so each idea appears once — took the real figure to about 300, and a
+  floor would have argued for padding it back up. Fewer words are not a defect. Repetition
+  is.
 
 **Banned everywhere**: seamless, powerful, robust, enterprise-grade, best-in-class,
 cutting-edge, unlock, empower, leverage, revolutionise, game-changing, AI-powered,

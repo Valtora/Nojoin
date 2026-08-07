@@ -13,7 +13,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
 <Base
   title="Nojoin"
   ogTitle="Nojoin — agentic meeting intelligence on your own server"
-  description="Transcripts, speaker attribution, notes and search on hardware you own, with no bot in the call. Thirty MCP tools let Claude or ChatGPT correct the record, file the actions and reconcile your people with any CRM. Nothing is capped."
+  description="Meeting intelligence on hardware you own, with no bot in the call. Nojoin hands your whole meeting library to Claude or ChatGPT through thirty tools that change the record rather than just read it. Nothing is capped."
 >
   <main>
     <section class="hero">
@@ -27,9 +27,8 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
           <span>Agentic meeting intelligence isn't.</span>
         </h1>
         <p class="lead">
-          No bot joins the call, and nothing leaves your server. Then Nojoin hands the whole
-          library to Claude or ChatGPT: thirty tools that correct the record, file the actions,
-          and reconcile your people with any CRM your agent already reaches.
+          No bot joins the call — Meet, Teams or Zoom, with nothing to install — and nothing
+          leaves your server. Then Nojoin hands the whole library to the assistant you already use.
           <mark class="hl">It was built to be that bridge, and nothing about it is metered.</mark>
         </p>
         <div class="ctas">
@@ -47,45 +46,12 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       </div>
     </section>
 
-    <section class="strip" aria-label="What makes Nojoin different">
-      <div class="wrap">
-        <div class="strip-grid">
-          <div class="strip-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="22"></line>
-            </svg>
-            <h2>No Bot Joins the Call</h2>
-            <p>Capture happens in your browser tab, so nothing ever sits in the participant list.</p>
-          </div>
-          <div class="strip-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10"></circle>
-              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
-              <path d="M2 12h20"></path>
-            </svg>
-            <h2>Works With Any Platform</h2>
-            <p>Google Meet, Microsoft Teams and Zoom, with no integration to install and no meeting links to hand over.</p>
-          </div>
-          <div class="strip-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect width="20" height="8" x="2" y="2" rx="2"></rect>
-              <rect width="20" height="8" x="2" y="14" rx="2"></rect>
-              <line x1="6" x2="6.01" y1="6" y2="6"></line>
-              <line x1="6" x2="6.01" y1="18" y2="18"></line>
-            </svg>
-            <h2>Runs on Your Hardware</h2>
-            <p>Recordings, transcripts and models stay on a server you control, with optional fully local AI through Ollama.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    {/* The agent band. Promoted to just under the strip because the MCP surface
-        is the capability with no equivalent elsewhere, and it sat five sections
-        down as prose. No screenshot, deliberately, and it has now been tried
-        both ways: the work happens in Claude's or ChatGPT's window, and a
+    {/* The agent band, directly under the hero: the MCP surface is the
+        capability with no equivalent elsewhere, so the page argues it first and
+        everything below is evidence for it. The three-up strip that used to sit
+        between them is gone -- it restated two of the hero's own claims before
+        the reader had scrolled past them. No screenshot, deliberately, and it
+        has now been tried both ways: the work happens in Claude's or ChatGPT's window, and a
         capture of Nojoin's own transcript showing the AI-corrected labels
         turned out to say the same thing as the transcripts row two sections
         below. Three devices carry it instead, each with a claim no capture
@@ -97,17 +63,9 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <p class="eyebrow">Agents</p>
             <h2 class="heading-2">An Assistant That Changes the Record, Not Just Reads It</h2>
             <p>
-              Connect Claude or ChatGPT to your own instance. Thirty tools, eighteen of them
-              writing, authorised per user and on by default — no API key, no configuration,
-              nothing to paste.
-            </p>
-            <p>
-              The CRM sync needs no CRM integration in Nojoin. An assistant already connected
-              to HubSpot or Airtable reconciles both sides itself, because what Nojoin exposes
-              are plain primitives over its own data rather than a fixed list of partners.
-            </p>
-            <p>
-              Every change it makes is reversible. The bin is the strongest delete it has.
+              Connect Claude or ChatGPT to your own instance. Eighteen of the thirty tools
+              write, authorised per user and on by default — no API key, nothing to paste.
+              Every change is reversible, and the bin is the strongest delete it has.
             </p>
             <a class="text-link" href={`${docs}/MCP.md`}>
               The connector, tool by tool →
@@ -135,7 +93,6 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
               <line x1="12" y1="19" x2="12" y2="22"></line>
             </svg>
             <h3>Recordings <span class="n">8</span></h3>
-            <p>List, rename, tag, untag, archive, restore, bin, reprocess.</p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -144,7 +101,6 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
               <path d="M8 13h8M8 17h5"></path>
             </svg>
             <h3>Transcript <span class="n">5</span></h3>
-            <p>Read it, read it as utterances, correct the text, correct the speaker, unlock.</p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -153,7 +109,6 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
               <path d="M18.4 13.6a2 2 0 0 1 2.8 2.8L17 20.6l-3 .7.7-3Z"></path>
             </svg>
             <h3>Notes and Documents <span class="n">5</span></h3>
-            <p>Read the notes, regenerate them, append your own, read documents, attach one.</p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -163,7 +118,6 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
             <h3>People and Speakers <span class="n">5</span></h3>
-            <p>List, read one, import, read a meeting's speakers, name one.</p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -172,7 +126,6 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
               <path d="m9 14 2 2 4-4"></path>
             </svg>
             <h3>Tasks <span class="n">3</span></h3>
-            <p>List them, create them, complete them.</p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -180,7 +133,6 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
               <path d="m21 21-4.3-4.3"></path>
             </svg>
             <h3>Calendar, Search and Tags <span class="n">4</span></h3>
-            <p>List events, link one to a recording, search everything, list tags.</p>
           </li>
         </ul>
 
@@ -195,9 +147,9 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <h3>The Bridge Between Your Meetings and Any CRM</h3>
             <p>
               Nojoin ships no CRM integration and needs none. An assistant already connected
-              to something else reads both sides and reconciles them, because what Nojoin
-              exposes are plain primitives over its own data rather than a fixed list of
-              partners. Nothing to wait for, and nothing to be dropped from.
+              to HubSpot or Airtable reconciles both sides itself, because Nojoin exposes plain
+              primitives rather than a partner list. Nothing to wait for, nothing to be dropped
+              from.
             </p>
             <div class="bridge-chips">
               <span>HubSpot</span><span>Airtable</span><span>Salesforce</span>
@@ -215,8 +167,8 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <p class="eyebrow">Meeting Edge</p>
             <h2 class="heading-2">Guidance While the Meeting Is Still Happening</h2>
             <p>
-              Live in-meeting help with questions worth asking, points you've missed, and
-              concepts explained as they come up, grounded in what's been said so far.
+              Questions worth asking, points you've missed and concepts explained as they come
+              up — grounded in what has actually been said so far.
             </p>
             <a class="text-link" href={`${docs}/USAGE.md`}>How it works in practice →</a>
           </div>
@@ -239,9 +191,8 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <p class="eyebrow">Transcripts</p>
             <h2 class="heading-2">Every Word, Attributed to the Right Person</h2>
             <p>
-              Built-in transcription with speaker attribution, backed by a global speaker
-              library. Voiceprints match the people you've named across every future
-              meeting. Corrections take one click.
+              Voiceprints, not name tags. Name someone once and they stay named across every
+              future meeting. Corrections take one click.
             </p>
             <a class="text-link" href={`${docs}/USAGE.md`}>Speakers and voiceprints →</a>
           </div>
@@ -264,9 +215,9 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
             <p class="eyebrow">Notes</p>
             <h2 class="heading-2">Notes Written From What Was Actually Said</h2>
             <p>
-              A summary, the decisions and the actions, generated from the transcript rather
-              than from memory. Meeting Chat is grounded in all of it — the notes, the
-              transcript and the documents you attach — and one query searches all three.
+              A summary, the decisions and the actions, written from the transcript by a model
+              you choose — your own API key, or Ollama on the same machine. One query searches
+              the notes, the transcript and your documents together.
             </p>
             <a class="text-link" href={`${docs}/USAGE.md`}>Notes, search and Meeting Chat →</a>
           </div>
@@ -312,8 +263,7 @@ const docs = "https://github.com/Valtora/Nojoin/blob/main/docs";
       <div class="wrap">
         <h2 class="heading-2">How It Compares</h2>
         <p class="lead">
-          Jamie, Otter and Granola, on the axes that matter for ownership and privacy,
-          with every claim sourced and dated.
+          Jamie, Otter and Granola, on the axes that decide who owns the meeting.
         </p>
         <div class="ctas">
           <a class="btn btn-secondary" href="/compare/">See the comparison</a>
