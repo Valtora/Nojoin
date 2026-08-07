@@ -16,7 +16,7 @@ import SettingsRow from "./SettingsRow";
 import SettingsCard from "./SettingsCard";
 
 /**
- * The exact fields the daily ping carries. Mirrored from build_payload in
+ * The exact fields the ping carries. Mirrored from build_payload in
  * backend/utils/telemetry.py, which is the single place the payload is
  * assembled, and locked there by test_payload_contains_exactly_the_documented_fields.
  */
@@ -131,7 +131,7 @@ export default function TelemetrySection() {
         label="Share anonymous usage data"
         description={
           status.enabled
-            ? "A ping is sent once a day."
+            ? "A ping is sent every six hours."
             : "Nothing is sent."
         }
         controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
@@ -153,8 +153,21 @@ export default function TelemetrySection() {
         </SettingsBlock>
       )}
 
+      {/* Only when consent is in place. Before that, silence is the intended
+          behaviour and the callout above already explains it; reporting a
+          failed send as well would be two warnings for one situation. */}
+      {status.enabled && status.consent_granted && status.last_attempt_ok === false && (
+        <SettingsBlock>
+          <SettingsCallout
+            tone="warning"
+            title="The last ping did not arrive"
+            message={`${status.last_attempt_detail ?? "The ping failed."} Attempted ${formatTimestamp(status.last_attempt_at)}. Nothing else in Nojoin is affected, and the next attempt is in at most six hours. If you block this endpoint deliberately, this is expected.`}
+          />
+        </SettingsBlock>
+      )}
+
       <SettingsBlock
-        label="Exactly what is sent, once a day"
+        label="Exactly what is sent, every six hours"
         contentClassName="settings-inset rounded-xl p-4"
       >
         <dl className="space-y-2 text-sm">

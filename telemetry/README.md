@@ -10,6 +10,7 @@ This code is public on purpose. The claim in [docs/TELEMETRY.md](../docs/TELEMET
 | --- | --- |
 | Endpoint | `POST https://telemetry.nojoin.co.uk/v1/ping` |
 | Response | `204` with no body. Anything else returns `400`, `404`, `405`, `413`, `429`, or `500`, all with empty bodies |
+| Cadence | Four pings per install per day, one every six hours |
 | Storage | Cloudflare D1, one row per install per UTC day |
 | Retention | Raw rows for 13 months, then rolled up into daily aggregates and deleted |
 
@@ -29,7 +30,9 @@ Every request is anonymous. The ingest stores only the fields the client sent pl
 
 ## Design notes
 
-**The primary key is the dedupe strategy.** `PRIMARY KEY (install_id, day)` with an upsert means a retried ping rewrites its own row rather than appending. That is simultaneously the deduplication, the cost control (D1 bills by rows), and the reason a network retry cannot inflate the install count. Last write wins for a given day.
+**The primary key is the dedupe strategy.** `PRIMARY KEY (install_id, day)` with an upsert means a repeated ping rewrites its own row rather than appending. That is simultaneously the deduplication, the cost control (D1 bills by rows), and the reason a network retry cannot inflate the install count. Last write wins for a given day.
+
+It is also what makes the client's six-hour cadence free of consequence here. The client sends four times a day because its scheduler re-anchors on every worker restart and a daily interval could therefore skip a calendar day outright; the fourfold sending arrives as the same single row, four times overwritten. Storage and the install count are unchanged. Only the request and write budgets move, and the table below already accounts for that.
 
 **Unknown fields are never rejected.** A newer Nojoin will always ship fields before this Worker is redeployed. Rejecting them would turn a routine client release into an outage of our own telemetry, so unknown fields are stored verbatim in the `payload` JSON column and can be queried retroactively with `json_extract`. The same applies to unknown *enum values*: the typed column gets `NULL`, the raw payload keeps the real value.
 
@@ -138,11 +141,13 @@ SELECT day, value AS version, installs
 
 ## Free-tier headroom
 
-At one ping per install per day, the binding constraint is the Workers request limit rather than D1.
+At four pings per install per day, the binding constraint is D1 writes rather than the Workers request limit.
 
 | Limit | Free tier | Meaning here |
 | --- | --- | --- |
-| Workers requests | 100,000 / day | ~100,000 installs |
-| D1 rows written | 100,000 / day | ~50,000 installs (the `day` index doubles each write) |
+| Workers requests | 100,000 / day | ~25,000 installs |
+| D1 rows written | 100,000 / day | ~12,500 installs (the `day` index doubles each write) |
 | D1 rows read | 5,000,000 / day | Well clear at this scale |
-| D1 storage | 5 GB total | Roughly 365,000 rows per year per 1,000 installs |
+| D1 storage | 5 GB total | Roughly 365,000 rows per year per 1,000 installs, unaffected by the cadence |
+
+Storage is the only figure the six-hour cadence leaves alone, because the upsert overwrites rather than appends. The other two divide by four. If the fleet ever approaches five figures, the cheap move is to lengthen the client interval again rather than to change anything here.

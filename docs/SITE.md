@@ -261,7 +261,7 @@ The rules:
   the single strongest tell that a machine wrote it.
 - **Vary sentence length deliberately.** A three-word sentence next to a thirty-word one.
 - **Numbers instead of adjectives**, wherever a true number exists. One compose file, one
-  daily ping, one setting, four steps, one click. A technical reader takes numbers as
+  anonymous ping, one setting, four steps, one click. A technical reader takes numbers as
   evidence and adjectives as sales.
 - **Name the actor.** Never a bare "it" where two subjects are in play.
 - **Do not guess at the reader.** No "you probably", no assumptions about their setup or

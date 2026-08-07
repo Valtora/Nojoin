@@ -263,11 +263,24 @@ celery_app.conf.update(
         },
         # Anonymous opt-out telemetry (docs/TELEMETRY.md). The task itself is a
         # no-op unless the install is enabled and has consented, so scheduling it
-        # unconditionally is safe. Beat runs on the io lane only, so exactly one
-        # ping is attempted per day per install regardless of worker count.
-        "send-telemetry-ping-every-24h": {
+        # unconditionally is safe. Beat runs on the io lane only, so pings are
+        # attempted once per interval per install regardless of worker count.
+        #
+        # Six hours rather than twenty-four. Beat anchors an interval on its own
+        # last_run_at, so every worker restart re-anchors the clock: at a daily
+        # interval a single restart moves the send time and can skip a calendar
+        # day outright, which the ingest records as the install having gone
+        # quiet. Four attempts a day bound that to a few hours. The extra sends
+        # cost nothing downstream, because the ingest upserts on
+        # (install_id, day) and still holds exactly one row per install per day.
+        #
+        # Deliberately an interval and not a crontab: an interval stays anchored
+        # to each install's own worker start time, which spreads the fleet
+        # across the clock. A crontab would land every install on the same four
+        # instants.
+        "send-telemetry-ping-every-6h": {
             "task": "backend.worker.tasks.send_telemetry_ping_task",
-            "schedule": 86400.0,
+            "schedule": 21600.0,
         },
         # Repairs voiceprints stranded by an extraction-method upgrade. Stale
         # voiceprints stop contributing to speaker identification silently, so
