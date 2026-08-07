@@ -1,13 +1,11 @@
 // The comparison data. Rules, from the plan:
 // - Every competitor claim is verified against that vendor's own current
-//   documentation, carries the exact URL read and the date it was checked,
-//   and renders as a footnote. A claim that cannot be sourced does not go on
-//   the page: it appears as the explicit "Not stated in current docs" cell.
-// - No competitor pricing, ever.
-// - Nojoin's claims cite the repository documentation the same way.
-//
-// All vendor pages below were fetched and read on the checked date, and each
-// URL was re-verified to return 200 before this file was committed.
+//   documentation before it goes up. The page no longer displays the URL or the
+//   date read, but the standard behind the cell has not changed. A claim that
+//   cannot be checked does not go on the page: it appears as the explicit
+//   "Not stated in current docs" cell.
+// - No competitor pricing, ever. Limits and caps are fine.
+// - Nojoin's claims trace to README.md or a file in docs/.
 //
 // THREE COMPETITORS, NOT FOUR. Fireflies was dropped when Jamie was added,
 // rather than running five columns of prose. The table is already the widest
@@ -43,6 +41,9 @@ const UNSOURCED: Cell = { text: "Not stated in current docs" };
 
 export const rows: Row[] = [
   {
+    // This row carries a truth the summary table compresses. "No bot joins the
+    // call" is one summary row, so Otter's bot-free desktop, mobile and web
+    // recording has nowhere else to appear. It appears here, in full.
     key: "capture",
     label: "How audio is captured",
     cells: {
@@ -50,10 +51,10 @@ export const rows: Row[] = [
         text: "Your browser captures the call. Nothing joins the meeting or appears in the participant list."
       },
       jamie: {
-        text: "A native macOS or Windows app captures the audio on your machine, online or in the room. No bot joins the call."
+        text: "A native macOS or Windows app captures audio on your machine, online or in the room. No bot joins the call."
       },
       otter: {
-        text: "An AI meeting agent joins Zoom, Teams and Meet calls; bot-free recording is also available from the desktop, mobile or web app."
+        text: "An AI agent joins Zoom, Teams and Meet calls. Bot-free recording is also available from the desktop, mobile or web app."
       },
       granola: {
         text: "No bot. Desktop apps for macOS and Windows, plus an iPhone app, capture system audio and microphone."
@@ -61,20 +62,29 @@ export const rows: Row[] = [
     },
   },
   {
+    // Two summary rows come from this one detailed row, because there are two
+    // questions in it and they have different answers. Whether speakers are
+    // remembered: Jamie and Otter both do it, and both say so here. Whether you
+    // hold the voice models: that is Nojoin's, and it is argued from USAGE.md
+    // (a library you can open, recalibration from better samples, automatic
+    // rebuilds after an upgrade, deletion that removes the voiceprint) rather
+    // than from any competitor being worse than they are. No cell below claims
+    // a competitor cannot match speakers between meetings, because all three
+    // vendors document that they can.
     key: "attribution",
     label: "Speaker attribution",
     cells: {
       nojoin: {
-        text: "Built-in diarisation plus a global speaker library: voiceprints keep people named across future meetings."
+        text: "A speaker library you can open. Voiceprints recalibrate from better samples and rebuild after an upgrade."
       },
       jamie: {
-        text: "You name each speaker once from an audio clip after the meeting, and Jamie identifies them automatically in future ones. No voiceprint library is documented."
+        text: "Name each speaker once from an audio clip; Jamie identifies them in later meetings. No voiceprint library documented."
       },
       otter: {
-        text: "Speaker identification recognises tagged speakers and auto-tags their names in future transcripts."
+        text: "Speaker identification recognises tagged speakers and auto-tags them in later transcripts."
       },
       granola: {
-        text: "Speaker tags use platform display names on Meet and Zoom; no cross-meeting speaker memory documented."
+        text: "Speaker tags come from platform display names on Meet and Zoom. No cross-meeting memory documented."
       },
     },
   },
@@ -84,7 +94,7 @@ export const rows: Row[] = [
     cells: {
       nojoin: { text: "On your own server." },
       jamie: {
-        text: "Entirely within the EU: audio goes to Frankfurt and is transcribed on Modal's serverless GPUs, with notes generated through the Anthropic or OpenAI APIs."
+        text: "Entirely in the EU: audio to Frankfurt, transcribed on Modal's GPUs, notes through the Anthropic or OpenAI APIs."
       },
       otter: {
         text: "In Otter's cloud, principally on AWS in the United States."
@@ -100,7 +110,7 @@ export const rows: Row[] = [
     cells: {
       nojoin: { text: "On your own server." },
       jamie: {
-        text: "Transcripts sit on a server in Frankfurt; the audio is deleted permanently once the transcript is ready."
+        text: "Transcripts sit on a server in Frankfurt; audio is deleted permanently once the transcript is ready."
       },
       otter: {
         text: "In Otter's cloud on AWS S3, with server-side encryption."
@@ -130,7 +140,7 @@ export const rows: Row[] = [
     cells: {
       nojoin: { text: "Open source under AGPLv3." },
       jamie: {
-        text: "Closed source, proprietary licence: a non-exclusive, non-transferable right to use, lasting only as long as the contract."
+        text: "Closed source: a non-transferable right to use, lasting as long as the contract."
       },
       otter: {
         text: "Closed source, proprietary licence."
@@ -148,7 +158,7 @@ export const rows: Row[] = [
         text: "Bring your own API keys, or run fully local inference with Ollama."
       },
       jamie: {
-        text: "Vendor-chosen: notes come from the Anthropic or OpenAI APIs, and no bring-your-own-key or local option is documented."
+        text: "Vendor-chosen: notes come from the Anthropic or OpenAI APIs. No bring-your-own-key or local option documented."
       },
       otter: {
         text: "Otter's own AI plus vendor-chosen third-party providers; no bring-your-own-key or local option documented."
@@ -171,7 +181,7 @@ export const rows: Row[] = [
         text: "Meeting Edge: live questions worth asking, missed points, and concept help."
       },
       jamie: {
-        text: "The in-meeting widget is a private scratchpad for your own notes. Notes and transcript are generated after you stop recording."
+        text: "The in-meeting widget is a scratchpad for your own notes. Notes and transcript come after you stop recording."
       },
       otter: {
         text: "The meeting agent gives real-time transcription, takeaways and action items, and answers questions live."
@@ -187,7 +197,7 @@ export const rows: Row[] = [
     cells: {
       nojoin: { text: "Google and Outlook sync, with meeting context in the dashboard." },
       jamie: {
-        text: "Google Calendar or Outlook, used for reminders, automatic meeting titles and better speaker identification."
+        text: "Google Calendar or Outlook, for reminders, meeting titles and better speaker identification."
       },
       otter: {
         text: "Google Calendar, Microsoft Outlook and iOS Calendar."
@@ -203,7 +213,7 @@ export const rows: Row[] = [
     cells: {
       nojoin: { text: "One query across recordings, notes and documents." },
       jamie: {
-        text: "Semantic search across your meeting content, reachable from the app, the API and the MCP server."
+        text: "Semantic search across your meeting content, from the app, the API and the MCP server."
       },
       otter: {
         text: "Search and AI chat across meetings and connected apps, by keyword, speaker and date."
@@ -214,13 +224,14 @@ export const rows: Row[] = [
     },
   },
   {
-    // All four ship an MCP server, so "we have one" is not the claim. The line
-    // that survives sourcing is what an assistant can actually do once it is
-    // connected: three of them read the meeting and act elsewhere or on its
-    // filing, and Nojoin's acts on the meeting itself. Every cell states what
-    // that vendor documents and stops there. In particular no cell asserts
-    // that a competitor *cannot* write back -- that is an unsourced negative,
-    // and the gap is visible from the positives alone.
+    // All four ship an MCP server, so "we have one" is not the claim, and no
+    // row on this page should imply otherwise. The line that survives sourcing
+    // is what an assistant can actually do once it is connected: three of them
+    // read the meeting and act elsewhere or on its filing, and Nojoin's acts on
+    // the meeting itself. Every cell states what that vendor documents and
+    // stops there. In particular no cell asserts that a competitor *cannot*
+    // write back -- that is an unsourced negative, and the gap is visible from
+    // the positives alone.
     //
     // Jamie is the closest of the three and the reason this row still earns
     // its place: it writes, but only to tags.
@@ -228,16 +239,16 @@ export const rows: Row[] = [
     label: "What an assistant can do with your meetings",
     cells: {
       nojoin: {
-        text: "Thirty tools on your own deployment, authorised per user and on by default. An assistant corrects a misheard line, names the speaker, re-runs the notes, files the tasks, and syncs your People library with a CRM it's separately connected to — with no CRM integration in Nojoin at all."
+        text: "Thirty tools on your deployment: correct a line, name a speaker, re-run the notes, file the tasks. Every change is labelled and reversible."
       },
       jamie: {
-        text: "Thirteen tools for Claude, ChatGPT, Cursor, Windsurf and Copilot: nine read meetings, transcripts, tasks and people, and four change tags — create, rename, delete and apply them."
+        text: "Thirteen tools for Claude, ChatGPT, Cursor and Copilot. Nine read meetings, transcripts, tasks and people; four create and apply tags."
       },
       otter: {
-        text: "Reads Otter's transcripts to search across time, analyse themes and generate content. Writes outward into Google Docs, Slides, Jira, Salesforce and Slack. Part of Otter for Enterprise."
+        text: "Reads transcripts to search, analyse themes and generate content. Writes outward into Docs, Jira, Salesforce and Slack. Otter for Enterprise."
       },
       granola: {
-        text: "Reads notes and transcripts on paid plans: list meetings, read a meeting, search the history. On Enterprise it's early-access beta and stays off until an admin enables it."
+        text: "Reads notes and transcripts on paid plans: list, read and search meetings. On Enterprise it's beta, off until an admin enables it."
       },
     },
   },
@@ -251,28 +262,33 @@ export const rows: Row[] = [
     label: "Limits on how much you process",
     cells: {
       nojoin: {
-        text: "None in the software. No monthly allowance, no per-meeting ceiling, no history that expires. How much you get through is a question about your hardware."
+        text: "None. No allowance, no per-meeting ceiling, no history that expires. What you get through is a hardware question."
       },
       jamie: {
-        text: "One credit a meeting whatever its length: 10 a month and 30-minute meetings on the free plan, 20 and two hours on the next. Above that the count goes but a three-hour ceiling stays. Run out and existing notes lock until you upgrade."
+        text: "One credit a meeting. 10 a month and 30-minute meetings free; 20 and two hours next. Higher plans drop the count, keep a three-hour cap."
       },
       otter: {
-        text: "300 minutes a month and 30 minutes per conversation on the entry plan; 1,200 and 90 on the next. The upper plans lift the monthly cap and hold a four-hour ceiling per meeting."
+        text: "300 minutes a month, 30 per conversation, on the entry plan; 1,200 and 90 next. Upper plans lift the monthly cap but keep a four-hour ceiling."
       },
       granola: {
-        text: "Meeting history is limited on the entry plan, by an amount the pricing page doesn't state. Unlimited notes and history above it."
+        text: "Meeting history is limited on the entry plan, by an amount the pricing page doesn't state. Unlimited above it."
       },
     },
   },
   {
+    // Otter takes an outright yes in the summary off the back of this row: it
+    // exports more file formats than Nojoin does, SRT among them. That stands.
+    // Nojoin's answer to SRT is that every transcript export is already
+    // timestamped line by line (USAGE.md, "Transcript And Playback"), so the
+    // cell states what the export contains rather than disputing the format.
     key: "export",
     label: "Export and portability",
     cells: {
       nojoin: {
-        text: "Transcript, notes or combined output as DOCX, PDF or plain text, plus full-instance backup archives."
+        text: "Transcript, notes or both as TXT, PDF or DOCX, timestamped per line, plus MP3 audio and full-instance backups."
       },
       jamie: {
-        text: "Summary, transcript and tasks sync into Notion, Google Docs, OneNote, HubSpot, Salesforce, Dynamics 365, Attio and Asana, with an API and webhooks behind them. No file download is documented."
+        text: "Summary, transcript and tasks sync into Notion, Google Docs, HubSpot, Salesforce, Asana and more, with an API and webhooks. No file download documented."
       },
       otter: {
         text: "TXT, DOCX, PDF and SRT, plus audio export."
@@ -284,19 +300,27 @@ export const rows: Row[] = [
   },
 ];
 
-// The at-a-glance summary. Every verdict here is the short form of a row in
-// `rows` above, so the sourcing lives in one place: the detailed table carries
-// the URL and checked date for each claim, and this table says so rather than
-// repeating footnotes that could drift out of step with it.
+// The at-a-glance summary. Every verdict here is the short form of one or more
+// rows in `rows` above, so the claim and its sourcing live in one place.
 //
-// The rows were chosen because their answers are structural -- where the
-// software runs, who holds the recordings, what the licence permits -- rather
-// than roadmap-sensitive. Nojoin does not sweep the table, deliberately:
-// Granola and Jamie also record without a bot, Otter and Jamie also remember
-// speakers between meetings, and saying otherwise would cost the credibility
-// of the rows where the difference is real. Live in-meeting guidance is absent
-// for the same reason: Otter and Granola both document some form of it, so it
-// is not a distinction, whatever Meeting Edge is worth on its own merits.
+// WHY THIS TABLE IS EIGHT ROWS AND NOT TEN. It used to run five separate rows
+// for one argument -- self-hosting, processing, storage, licence, model choice
+// -- which all read Nojoin yes and three crosses. That inflated the win count
+// without adding an idea, and the site's own rule is to say each idea once.
+// They are now two rows. The rows recovered went to axes that discriminate:
+// who holds the voice models, and whether your data comes out whole.
+//
+// Nojoin does not sweep this table on the competitors' side of it, and that is
+// deliberate. Granola and Jamie also record without a bot. Otter and Jamie also
+// remember speakers between meetings, which is why the speaker question is two
+// rows: the first concedes it plainly, and the second asks the question only
+// the second one answers differently. Otter exports more file formats than
+// Nojoin does. Every one of those is a tie or a competitor win, and removing
+// them would cost the credibility of the rows where the difference is real.
+//
+// Live in-meeting guidance stays out for the same reason it always did: Otter
+// and Granola both document some form of it, so it is not a line between Nojoin
+// and the field, whatever Meeting Edge is worth on its own merits.
 
 export type Verdict = "yes" | "partial" | "no";
 
@@ -317,68 +341,50 @@ const no = (note: string): SummaryCell => ({ verdict: "no", note });
 
 export const summaryRows: SummaryRow[] = [
   {
-    key: "selfhost",
-    label: "Runs on your own hardware",
+    // Collapsed from three rows (self-hosting, processing, storage) that gave
+    // the same answer three times. Merging them also resolves Otter's
+    // "not stated in docs" self-hosting cell: where its processing and storage
+    // run is documented, so the merged row can say so.
+    key: "ownership",
+    label: "Runs on your hardware, and stays there",
     cells: {
       nojoin: yes("One compose file"),
-      jamie: no("Vendor cloud, EU"),
-      otter: no("Not stated in docs"),
-      granola: no("Vendor cloud"),
-    },
-  },
-  {
-    key: "processing",
-    label: "Processing stays on your infrastructure",
-    cells: {
-      nojoin: yes("Your server"),
       jamie: no("Jamie's EU cloud"),
-      otter: no("Otter's cloud"),
-      granola: no("Granola's cloud"),
+      otter: no("Otter's US cloud"),
+      granola: no("Granola's US cloud"),
     },
   },
   {
-    key: "storage",
-    label: "Recordings and transcripts stay yours",
+    // Collapsed from two rows. The licence and the model are one question to a
+    // buyer: how much of this stack is yours to change.
+    key: "open",
+    label: "Open source, and your choice of model",
     cells: {
-      nojoin: yes("Your server"),
-      jamie: no("Frankfurt-hosted"),
-      otter: no("Otter's cloud"),
-      granola: no("Vendor-hosted"),
+      nojoin: yes("AGPLv3, your keys or Ollama"),
+      jamie: no("Proprietary, vendor-chosen"),
+      otter: no("Proprietary, vendor-chosen"),
+      granola: no("Proprietary, vendor-chosen"),
     },
   },
   {
-    key: "source",
-    label: "Source available and auditable",
-    cells: {
-      nojoin: yes("AGPLv3"),
-      jamie: no("Proprietary"),
-      otter: no("Proprietary"),
-      granola: no("Proprietary"),
-    },
-  },
-  {
-    key: "models",
-    label: "Your choice of model, including fully local",
-    cells: {
-      nojoin: yes("Your keys, or Ollama"),
-      jamie: no("Vendor-chosen"),
-      otter: no("Vendor-chosen"),
-      granola: no("Vendor-chosen"),
-    },
-  },
-  {
+    // Merged with the old "capture without a desktop app" row. Nojoin's note
+    // carries both halves. Jamie and Granola keep their outright yes: neither
+    // sends a bot either, and pretending otherwise would be false.
     key: "nobot",
     label: "No bot joins the call",
     cells: {
-      nojoin: yes("Never a participant"),
+      nojoin: yes("Any browser, never a participant"),
       jamie: yes("Captures locally"),
       otter: partial("Bot by default"),
       granola: yes("Captures locally"),
     },
   },
   {
-    // Jamie earns a yes: the naming is manual the first time, but it carries
-    // forward on its own after that, which is what the row asks.
+    // This row concedes the point, deliberately. Jamie and Otter both
+    // genuinely match speakers across meetings -- Otter's help centre describes
+    // acoustic enrolment, not a name lookup. Stated plainly here, the row below
+    // reads as the specific claim it is rather than as a claim about speaker
+    // memory that a reader would rightly disbelieve.
     key: "speakers",
     label: "Speakers remembered between meetings",
     cells: {
@@ -389,17 +395,48 @@ export const summaryRows: SummaryRow[] = [
     },
   },
   {
+    // The row above concedes that everyone remembers speakers. This one asks
+    // what happens to the voice model afterwards, and it is argued entirely
+    // from USAGE.md: a library you can open, recalibration from a better
+    // sample, background rebuilds from the original audio after an upgrade,
+    // and deletion that removes the voiceprint. The competitor cells say what
+    // was looked for and not found. They do not assert that no such feature
+    // exists, because that is an unsourced negative.
+    key: "voiceprints",
+    label: "Voice models you hold and can rebuild",
+    cells: {
+      nojoin: yes("Recalibrate, rebuild, delete"),
+      jamie: no("Not stated in docs"),
+      otter: no("Not stated in docs"),
+      granola: no("Not stated in docs"),
+    },
+  },
+  {
     // Jamie earns a partial rather than a no: four of its thirteen tools
     // genuinely change something, they just change the filing rather than the
     // record. Otter writes too, but outward into other products, so on this
     // axis -- what happens to the meeting itself -- it is a no.
     key: "agents",
-    label: "An assistant can change the record, not just read it",
+    label: "An assistant can change the record",
     cells: {
-      nojoin: yes("Thirty tools, on your server"),
+      nojoin: yes("Thirty tools, your server"),
       jamie: partial("Creates and applies tags"),
       otter: no("Reads Otter, writes elsewhere"),
       granola: no("Reads notes and transcripts"),
+    },
+  },
+  {
+    // Otter takes an outright yes here and keeps it. It exports more file
+    // formats than Nojoin does. Jamie's partial is not a slight: it syncs into
+    // eight products and documents no file download at all, which is a
+    // different shape of portability rather than a lesser amount of it.
+    key: "portability",
+    label: "Your data comes out whole",
+    cells: {
+      nojoin: yes("Documents, audio, backups"),
+      jamie: partial("Syncs to apps, no download"),
+      otter: yes("Documents and audio"),
+      granola: partial("CSV of notes"),
     },
   },
   {
@@ -413,16 +450,6 @@ export const summaryRows: SummaryRow[] = [
       jamie: partial("Credits, and a length cap"),
       otter: partial("Capped below Business"),
       granola: partial("History capped on free"),
-    },
-  },
-  {
-    key: "browser",
-    label: "Capture without a desktop app",
-    cells: {
-      nojoin: yes("Any browser"),
-      jamie: no("Desktop or mobile app"),
-      otter: yes("Web app"),
-      granola: no("Desktop app"),
     },
   },
 ];
