@@ -198,7 +198,10 @@ Within a processed recording you can:
 - Follow synced transcript highlighting.
 - Click transcript text to seek playback.
 - Edit transcript text and speaker assignments.
-- Export transcript-only, notes-only, or combined text output.
+- Export transcript-only, notes-only, or combined output as TXT, PDF, or DOCX.
+- Export the recording's audio as MP3.
+
+Exported transcripts carry a `[MM:SS]` timestamp and the resolved speaker name on every line, in all three document formats, so an export stays navigable against the audio without a separate subtitle file. Notes-only exports carry the meeting notes as written. Every export is headed with the meeting name, date, duration, and speaker list.
 
 Historical recordings carried forward from before the unified pipeline cutover may open in a read-only compatibility state. Playback, transcript viewing, and export remain available, but transcript or speaker edits require explicit reprocess first.
 
@@ -316,7 +319,7 @@ Calendar events can provide meeting context, dashboard agenda views, linked reco
 
 ## AI Assistant Connections (MCP)
 
-Nojoin includes a read-only MCP connector so AI assistants such as Claude can search your recordings and read transcripts, meeting notes, and tags on your behalf. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Integrations → Connected apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
+Nojoin includes a built-in MCP connector so AI assistants such as Claude can work with your meeting library on your behalf. It has two access tiers: read tools cover the whole library including semantic search across every meeting and document, and write tools cover recoverable changes such as organising recordings, managing tasks, correcting transcripts, regenerating notes, and maintaining People records. Permanent deletion is not available through the connector at all. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Integrations → Connected apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
 
 ## Settings
 

@@ -329,6 +329,45 @@ As it stands Jamie takes an outright yes on no-bot capture and on remembering sp
 partial on assistant write access — the row Nojoin leads with. A table Nojoin swept would be
 worth a second look for that reason alone.
 
+**What that sweep test actually catches, revised.** The summary table was audited and it was
+swept: ten rows, ten Nojoin yeses. The cause was not generous verdicts. It was row selection.
+Four detailed rows — live guidance, calendar, search, export — never had a summary verdict,
+and those were exactly the axes where Nojoin ties or trails. Every axis Nojoin led got a
+summary row and every axis it did not was left in the prose table. So the test needs
+sharpening: **count the axes you left out, not just the verdicts you put in.** A summary table
+that is a filtered subset of the detailed one will always sweep, whatever the verdicts say.
+
+Two things came out of that audit, and the second reverses a decision this document recorded.
+
+- **Five rows were saying one thing.** Self-hosting, processing, storage, licence and model
+  choice all read Nojoin yes against three crosses. That is one argument — how much of the
+  stack is yours to change — counted five times, which inflated the win count without adding
+  an idea and broke the site's own rule that each idea appears once. They are now two rows:
+  "Runs on your hardware, and stays there" and "Open source, and your choice of model".
+  Merging the first three also resolved Otter's "not stated in docs" self-hosting cell, since
+  where its processing and storage run *is* documented. The detailed table keeps all five rows;
+  it is the place for detail, and nothing was deleted from it.
+- **The rows recovered went to axes that discriminate.** "Voice models you hold and can
+  rebuild" is new, and "Your data comes out whole" replaces the four missing portability
+  verdicts with one. The summary is eight rows rather than ten and covers more ground.
+
+**Nojoin still takes a yes on every summary row, and that is now a decision rather than an
+oversight.** The earlier framing treated a sweep as a defect in itself. It is not: the defect
+is a sweep produced by hiding the axes where you lose. Every concession on the page is a tie
+rather than a loss — Nojoin is a yes on no-bot capture, on speaker memory and on portability,
+alongside a competitor who is also a yes — so conceding costs nothing and buys the wins their
+meaning. What the page must never do is manufacture a Nojoin cross to look even-handed, or
+delete a competitor's tick to look ahead. On this page the concessions carry the argument
+without either.
+
+**The speaker question is two rows, and the first one exists to make the second legible.**
+"Speakers remembered between meetings" concedes Jamie's and Otter's outright yes. "Voice
+models you hold and can rebuild" then asks what happens to the voice model afterwards, which
+is where `USAGE.md` has an answer nobody else documents. Run alone, the second row would read
+to a buyer as *Nojoin remembers speakers and the others do not* — a claim Otter's own
+marketing contradicts, and one that would discredit the rows around it. The concession is what
+makes the sharper row a specific claim rather than a dubious one. Do not collapse the pair.
+
 **The page no longer shows its sources.** It used to carry a numbered footnote under every
 competitor cell with the exact URL and the date it was read, plus a weekly CI job that
 re-checked each link. All of it is gone: the footnotes, the `source` field on `Cell`, and the
@@ -364,7 +403,20 @@ What has *not* changed is the standard the claims themselves are held to:
   open, voiceprints you can recalibrate from better samples, automatic rebuilds after an
   upgrade, and deletion that actually removes the voiceprint — none of which any competitor
   documents, all of it in `USAGE.md`. Argue from that rather than from a competitor being
-  worse than they are.
+  worse than they are. That argument is now on the page as its own summary row, sitting under
+  the row that concedes the matching. The competitor cells there read "Not stated in docs" —
+  the sanctioned wording — because each vendor's own documentation was searched for voiceprint
+  management and none was found. They do not assert that no such feature exists.
+- **Some vendor documentation cannot be fetched, and that constrains what can be claimed.**
+  `help.otter.ai` returns 403 to an automated fetch and `docs.meetjamie.ai` returned 404 on
+  the speaker page during this pass. Search indexes still surface the text, but a search
+  engine's extract is not the same as having read the page. Where that gap applies, write
+  "Not stated in current docs" and claim nothing sharper. An axis that would need a competitor
+  cross to work, and whose source cannot be opened, does not go on the page at all: that is
+  why an edit-provenance row was drafted and dropped. Nojoin's own edit labelling is a real
+  differentiator, but neither Otter's nor Jamie's editing docs could be read to check it, and
+  three "not stated" cells on a row about editing would imply those products cannot be edited,
+  which is a false impression even when every individual cell is defensible.
 
 ## The managed service
 
