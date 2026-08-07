@@ -47,6 +47,7 @@ import {
   writePausedCaptureContext,
 } from "./shared";
 import { createSegmentUploader, type SegmentUploader } from "./uploader";
+import { createCaptureWakeLock, type CaptureWakeLock } from "./wakeLock";
 import { createWaveformMonitor, type WaveformMonitor } from "./waveform";
 
 type StateListener = (state: CaptureState) => void;
@@ -227,6 +228,8 @@ export class CaptureController {
    * being attributed to it.
    */
   private sawCaptureFreeze = false;
+
+  private readonly wakeLock: CaptureWakeLock = createCaptureWakeLock();
 
   constructor() {
     const pausedContext = readPausedCaptureContext();
@@ -1263,6 +1266,7 @@ export class CaptureController {
   private startElapsedTimer(initialElapsedSeconds: number) {
     this.stopElapsedTimer();
     this.startCoveragePoll();
+    void this.wakeLock.acquire();
     this.elapsedTimerBaseSeconds = initialElapsedSeconds;
     this.elapsedTimerStartedAt = Date.now();
     this.setState({ elapsedSeconds: initialElapsedSeconds });
@@ -1276,6 +1280,7 @@ export class CaptureController {
 
   private stopElapsedTimer() {
     this.stopCoveragePoll();
+    void this.wakeLock.release();
     if (this.elapsedTimerId) {
       clearInterval(this.elapsedTimerId);
       this.elapsedTimerId = null;
