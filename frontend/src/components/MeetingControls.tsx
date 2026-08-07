@@ -9,7 +9,6 @@ import { useNotificationStore } from "@/lib/notificationStore";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
-import TabSuspensionNotice from "./TabSuspensionNotice";
 
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;
@@ -49,9 +48,6 @@ export default function MeetingControls({
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
-  // Shared-audio capture only ever resolves on Chromium desktop, which is
-  // exactly where the Memory Saver guidance applies.
-  const sharedAudioCapture = support.supported && support.mode === "shared_audio";
 
   // Naming the stage keeps a slow stop legible instead of looking hung.
   const stopStageLabel = !stopStage
@@ -176,11 +172,6 @@ export default function MeetingControls({
               </p>
             </div>
           ) : null}
-
-          {/* Only where it is actionable: the Memory Saver setting it names is
-              Chromium-desktop, and the mobile path has its own advice above.
-              Not shown mid-recording, where it is too late to be useful. */}
-          {sharedAudioCapture && !hasLiveRecording ? <TabSuspensionNotice /> : null}
 
           {!hasLiveRecording ? (
             // The label is sized from the button's own width rather than fixed

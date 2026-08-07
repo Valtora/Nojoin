@@ -9,10 +9,12 @@
  *
  * It does NOT stop tab freezing or discarding. There is no API for that -- a
  * page cannot opt out of Chrome's Memory Saver, and cannot read whether it is
- * on. That half stays a matter of telling the user, in the tour and the
- * pre-flight notice. This module addresses device sleep and nothing else, and
- * saying so here is the point: it would be easy to read the presence of a wake
- * lock as meaning suspension is handled.
+ * on. Chrome exempts tabs actively using the microphone or sharing a screen,
+ * which a recording tab is throughout, so that half needs no code and no
+ * up-front warning; docs/CAPTURE.md carries it as troubleshooting. This module
+ * addresses device sleep and nothing else, and saying so here is the point: it
+ * would be easy to read the presence of a wake lock as meaning suspension is
+ * handled.
  *
  * The browser releases the lock whenever the page stops being visible, so
  * getting it back on return to the foreground is required rather than optional.

@@ -27,17 +27,6 @@ export const dashboardSteps: DriveStep[] = [
     }
   },
   {
-    // Anchored to the same card as the step above: the point belongs next to
-    // the button it affects, and the notice it refers to may already have been
-    // dismissed on this browser.
-    element: '#dashboard-meeting-controls',
-    popover: {
-      title: 'Keep The Tab Awake',
-      description: 'If Chrome suspends this tab during a meeting, the audio for that stretch is never recorded and cannot be recovered afterwards. Add Nojoin to Settings > Performance > Memory Saver > Always keep these sites active, and keep the device from sleeping.',
-      side: 'left',
-    }
-  },
-  {
     element: '#dashboard-task-cards',
     popover: {
       title: 'Task Cards',

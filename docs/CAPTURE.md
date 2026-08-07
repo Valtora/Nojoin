@@ -208,8 +208,8 @@ The warning names one of three causes, and they need different things from you.
 
 - Keep the Nojoin tab open, and prefer keeping it visible in its own window.
 - Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture. Nojoin holds a screen wake lock while recording, which stops the display blanking, but it cannot stop a lid being closed or the machine being suspended by hand.
-- Exempt Nojoin from browser tab-suspension features. In Chrome, add the site under **Settings > Performance > Memory Saver > Always keep these sites active**. Nojoin shows this address on the Meet Now card before your first recording. See [Keeping the tab awake](#keeping-the-tab-awake).
 - On mobile Chrome, keep Nojoin in the foreground and stop the phone locking.
+- If it happens repeatedly on Chrome for desktop, exempt Nojoin from tab suspension. See [Chrome Memory Saver](#chrome-memory-saver).
 
 **Nojoin could not reach the server.** Recording continued and the audio is queued in the browser; it uploads when the connection returns. Nothing is lost as long as the tab stays open, so leave it open until the shortfall clears. This is a server or network problem, not a browser one, and changing browser settings will not help.
 
@@ -219,11 +219,19 @@ The warning can be dismissed with the close control. It stays dismissed unless t
 
 Nojoin reports this conservatively. The captured figure it compares against is measured from the audio segments the server has decoded, and that measurement runs slightly high, so a small shortfall may be reported as none at all. It will not report a shortfall that is not there.
 
-### Keeping the tab awake
+### Chrome Memory Saver
 
-Before your first recording, the Meet Now card shows a one-time notice asking you to add Nojoin to Chrome's **Always keep these sites active** list, with the address to add and a copy button. Dismissing it is remembered per browser, not per account, because the setting it asks for is itself per browser: doing it on your desktop does not do it on your laptop.
+Chrome's Memory Saver puts inactive tabs to sleep to reclaim memory. **You should not normally need to do anything about this for Nojoin.** Memory Saver exempts tabs that are actively using the microphone or camera or sharing a screen, and Nojoin holds those for the whole of a recording, so a recording tab is exempt for as long as it is recording.
 
-Nojoin cannot do this for you and cannot check whether you have done it. No browser API lets a page opt out of Memory Saver, and none lets a page read whether Memory Saver is switched on. Chrome does exempt tabs that are actively capturing audio or video, which Nojoin is while recording, so this is a precaution rather than a certainty that suspension would otherwise happen.
+If you do see repeated shortfalls attributed to tab suspension on Chrome for desktop, add Nojoin to the exemption list by hand:
+
+1. Open **Settings > Performance > Memory Saver**.
+2. Under **Always keep these sites active**, select **Add**.
+3. Enter the address you use to reach Nojoin, for example `nojoin.example.com`.
+
+Nojoin cannot do this for you and cannot check whether it is done. No browser API lets a page opt out of Memory Saver, and none lets a page read whether Memory Saver is switched on. This is why the shortfall warning describes what it can measure rather than asserting a cause it cannot observe.
+
+Chrome documents the feature at [Memory Saver in Chrome](https://support.google.com/chrome/answer/12929150).
 
 ### Stop did not finish
 
