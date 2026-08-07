@@ -59,20 +59,23 @@ The sign-in page deliberately does not link to the setup wizard, and the server 
 
 Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every unlock failure shows the same generic denial — if you are certain the password is correct, confirm `FIRST_RUN_PASSWORD` is set and the stack was restarted after setting it, and check the API logs for the specific reason.
 
-The first user becomes the Owner account.
+The wizard runs in five steps after the unlock gate.
 
-The legal step also carries an **anonymous usage data** checkbox, ticked by default. Leaving it ticked sends one anonymous ping every six hours with counts and configuration settings — never your recordings, transcripts, notes, names, or keys. Unticking it means nothing is ever sent. You can change this later in **Settings > Privacy**; see [TELEMETRY.md](TELEMETRY.md).
+1. **Terms.** The legal disclaimer, plus an **anonymous usage data** checkbox, ticked by default. Leaving it ticked sends one anonymous ping every six hours with counts and configuration settings — never your recordings, transcripts, notes, names, or keys. Unticking it means nothing is ever sent. You can change this later in **Settings > Privacy**; see [TELEMETRY.md](TELEMETRY.md).
+2. **Transcription.** Choose the Whisper model. Turbo (the default) suits a server with an NVIDIA GPU; Small or Base is far faster on a CPU-only deployment, and you can change it later in **Settings > AI**. This step also reports whether speaker diarisation can run, by detecting either an `HF_TOKEN` in the environment or Pyannote assets already present on the server.
+3. **Account.** Create the Owner account. Submitting this step creates the account, signs you in, and queues preparation of the transcription and speaker models in the background, so the download runs while you finish the remaining steps. Everything after this point is authenticated, and the wizard cannot be stepped back past it.
+4. **AI.** Choose how AI runs. See below.
+5. **Finish.** A summary of what was configured, a check that this browser and origin can actually record, and the remaining model-preparation progress.
 
-During setup, the system automatically detects configured API keys and Hugging Face tokens from the environment variables (set in `.env` before starting the stack). The setup wizard will:
+### Choosing an AI route
 
-- Detect active AI provider credentials and Hugging Face tokens.
-- Detect whether the bundled local Pyannote speaker models are already present.
-- Let you select the default model for your configured AI provider.
-- Let you choose the Whisper transcription model. Turbo (default) suits GPU servers; Small or Base is much faster on CPU-only deployments. You can change it later in Settings > Transcription.
-- Let you choose whether to include the "Welcome to Nojoin" sample meeting. You can remove or recreate it later in Settings > Help.
-- Warn you if no AI provider credentials are configured, explaining the loss of core intelligence features (Meeting Edge, Notes, and Speaker Inference), and allow you to proceed or reload the configuration.
+Nojoin supports three routes, and the wizard offers all three rather than assuming a server-side API key:
 
-If you skip AI configuration, Nojoin still records, transcribes, and diarises meetings. The automatic AI enhancement step is simply skipped until you configure a provider later by setting environment variables in `.env` and restarting the server.
+- **This server's AI provider.** Uses whatever provider credential is present in the server's `.env` (`LLM_PROVIDER` plus the matching key, or `OLLAMA_API_URL` for a local Ollama). The wizard validates the credential, lists the provider's models, and lets you pick the default. Shared by every account on the server.
+- **Your own Claude or ChatGPT subscription.** Connect a Claude Pro/Max or ChatGPT Plus/Pro plan directly in the wizard and route AI through it, with no API key anywhere. This is a per-user choice: every other account on the server picks its own. See [Your own subscription (CLI OAuth)](USAGE.md#your-own-subscription-cli-oauth).
+- **Decide later.** A supported configuration, not a failure. Recording, transcription, speaker separation and the speaker library, search, tags, tasks, documents, calendar sync, and the sample meeting with its notes all work with no AI provider at all. Generated notes and titles, meeting chat, automatic speaker inference, and Meeting Edge wait until you configure AI, and can then be run against meetings recorded before that.
+
+You can change the route at any time in **Settings > Your AI**. If you add or correct a provider key in `.env` while the wizard is open, restart the stack and use **Check config again**: keep the tab open and the wizard keeps your progress.
 
 You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
 
@@ -98,7 +101,7 @@ See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes
 7. Open the recording in the `/recordings` workspace.
 8. Wait for transcription and diarisation to complete.
 9. If AI is configured, Nojoin then runs one automatic meeting-intelligence pass that can name unresolved speakers, set a meeting title, and write Markdown meeting notes. Inferred speaker names are applied automatically; you can rename any speaker afterwards.
-10. If AI is not configured, the meeting still completes normally and remains available for transcript review. You can configure AI later before using Generate Notes, meeting chat, or Retry Speaker Inference.
+10. If AI is not configured, the meeting still completes normally and remains available for transcript review. Set a route up in **Settings > Your AI** — either your own Claude or ChatGPT subscription, or a provider key in the server's `.env` — before using Generate Notes, meeting chat, or Retry Speaker Inference. Meetings recorded beforehand can be enhanced afterwards.
 
 ## 6. Recommended Next Steps
 

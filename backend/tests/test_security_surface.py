@@ -248,49 +248,6 @@ async def test_authenticated_setup_validation_hides_provider_errors(
 
 
 @pytest.mark.anyio
-async def test_authenticated_setup_hf_validation_hides_provider_errors(
-    monkeypatch, caplog
-) -> None:
-    app, _ = _build_app(initialized=True)
-    secret_detail = "hf validation failed for account secret-user@example.com"
-
-    class _BrokenHFClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def get(self, *args, **kwargs):
-            raise RuntimeError(secret_detail)
-
-    monkeypatch.setattr(
-        setup, "get_authenticated_user_from_token", _authenticated_setup_user
-    )
-    monkeypatch.setattr(
-        setup, "enforce_password_change_policy", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(setup.httpx, "AsyncClient", _BrokenHFClient)
-
-    with caplog.at_level(logging.ERROR, logger=setup.logger.name):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
-        ) as client:
-            response = await client.post(
-                "/api/v1/setup/validate-hf",
-                json={"token": "hf_test_token"},
-                headers=_authenticated_setup_headers(),
-            )
-
-    assert response.status_code == 400
-    assert response.json() == {
-        "detail": setup.PUBLIC_HF_VALIDATION_ERROR_DETAIL,
-    }
-    assert secret_detail not in response.text
-    assert secret_detail in caplog.text
-
-
-@pytest.mark.anyio
 async def test_authenticated_setup_model_listing_hides_provider_errors(
     monkeypatch, caplog
 ) -> None:
@@ -327,48 +284,6 @@ async def test_authenticated_setup_model_listing_hides_provider_errors(
     }
     assert secret_detail not in response.text
     assert secret_detail in caplog.text
-
-
-@pytest.mark.anyio
-async def test_setup_hf_validation_does_not_disclose_account_identity(
-    monkeypatch,
-) -> None:
-    app, _ = _build_app(initialized=False)
-    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
-
-    class _FakeHFResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"name": "sensitive-user-name"}
-
-    class _FakeHFClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def get(self, *args, **kwargs):
-            return _FakeHFResponse()
-
-    monkeypatch.setattr(setup.httpx, "AsyncClient", _FakeHFClient)
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
-    ) as client:
-        response = await client.post(
-            "/api/v1/setup/validate-hf",
-            json={"token": "hf_test_token"},
-            headers=_bootstrap_auth_headers(),
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "valid": True,
-        "message": "Hugging Face token is valid.",
-    }
 
 
 @pytest.mark.anyio
@@ -641,8 +556,37 @@ async def test_initial_config_masks_prefilled_secrets(monkeypatch) -> None:
     assert response.json()["gemini_api_key"] == "gem...alue"
     assert response.json()["hf_token"] == "hf_...alue"
     assert response.json()["selected_model"] is not None
+    assert response.json()["llm_provider_selected"] is True
     assert "gemini-secret-value" not in response.text
     assert "hf_super_secret_value" not in response.text
+
+
+@pytest.mark.anyio
+async def test_initial_config_reports_no_provider_when_none_was_chosen(
+    monkeypatch,
+) -> None:
+    """`llm_provider` always resolves to gemini, so the wizard needs a separate
+    signal to tell "the operator chose gemini" from "the operator chose
+    nothing". Without it, an install with an empty LLM_PROVIDER (which is what
+    .env.example ships) was told its gemini key was missing."""
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setitem(setup.config_manager.config, "llm_provider", None)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        response = await client.get(
+            "/api/v1/setup/initial-config",
+            headers=_bootstrap_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["llm_provider_selected"] is False
+    assert body["gemini_api_key"] is None
 
 
 @pytest.mark.anyio

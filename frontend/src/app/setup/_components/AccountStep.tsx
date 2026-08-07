@@ -1,4 +1,7 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+
+import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
 
 interface AccountStepProps {
   formData: {
@@ -8,20 +11,29 @@ interface AccountStepProps {
   };
   error: string;
   includeDemoRecording: boolean;
+  creatingAccount: boolean;
   onSubmit: (e: React.FormEvent) => void;
   onInputChange: (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => void;
   onIncludeDemoRecordingChange: (include: boolean) => void;
+  onBack: () => void;
 }
 
+/**
+ * Creates the owner account. This is the wizard's point of no return: the
+ * submit handler creates the account and signs in, so every later step runs
+ * authenticated and the Back button disappears from here on.
+ */
 export default function AccountStep({
   formData,
   error,
   includeDemoRecording,
+  creatingAccount,
   onSubmit,
   onInputChange,
   onIncludeDemoRecordingChange,
+  onBack,
 }: AccountStepProps) {
   return (
     <form
@@ -41,70 +53,56 @@ export default function AccountStep({
         </p>
       </div>
 
-      <div>
-        <label htmlFor="setup-admin-username" className="block text-sm font-medium text-contrast-muted mb-1">
-          Username
-        </label>
-        <input
-          id="setup-admin-username"
-          type="text"
-          name="setup-admin-username"
-          data-field-key="username"
-          autoComplete="username"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-describedby={error ? "setup-error" : undefined}
-          aria-invalid={Boolean(error)}
-          required
-          value={formData.username}
-          onChange={onInputChange}
-          className="w-full px-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
-          placeholder="admin"
-        />
-      </div>
+      <Input
+        id="setup-admin-username"
+        type="text"
+        name="setup-admin-username"
+        data-field-key="username"
+        label="Username"
+        autoComplete="username"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        aria-describedby={error ? "setup-error" : undefined}
+        aria-invalid={Boolean(error)}
+        required
+        value={formData.username}
+        onChange={onInputChange}
+        placeholder="admin"
+      />
 
-      <div>
-        <label htmlFor="setup-admin-new-password" className="block text-sm font-medium text-contrast-muted mb-1">
-          Password
-        </label>
-        <input
-          id="setup-admin-new-password"
-          type="password"
-          name="setup-admin-new-password"
-          data-field-key="password"
-          autoComplete="new-password"
-          aria-describedby={error ? "setup-error" : undefined}
-          aria-invalid={Boolean(error)}
-          required
-          minLength={8}
-          value={formData.password}
-          onChange={onInputChange}
-          className="w-full px-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
-          placeholder="••••••••"
-        />
-      </div>
+      <Input
+        id="setup-admin-new-password"
+        type="password"
+        name="setup-admin-new-password"
+        data-field-key="password"
+        label="Password"
+        autoComplete="new-password"
+        aria-describedby={error ? "setup-error" : undefined}
+        aria-invalid={Boolean(error)}
+        required
+        minLength={8}
+        value={formData.password}
+        onChange={onInputChange}
+        placeholder="••••••••"
+        hint="At least 8 characters."
+      />
 
-      <div>
-        <label htmlFor="setup-admin-confirm-password" className="block text-sm font-medium text-contrast-muted mb-1">
-          Confirm Password
-        </label>
-        <input
-          id="setup-admin-confirm-password"
-          type="password"
-          name="setup-admin-confirm-password"
-          data-field-key="confirmPassword"
-          autoComplete="new-password"
-          aria-describedby={error ? "setup-error" : undefined}
-          aria-invalid={Boolean(error)}
-          required
-          minLength={8}
-          value={formData.confirmPassword}
-          onChange={onInputChange}
-          className="w-full px-4 py-2 rounded-lg border border-control-border bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
-          placeholder="••••••••"
-        />
-      </div>
+      <Input
+        id="setup-admin-confirm-password"
+        type="password"
+        name="setup-admin-confirm-password"
+        data-field-key="confirmPassword"
+        label="Confirm Password"
+        autoComplete="new-password"
+        aria-describedby={error ? "setup-error" : undefined}
+        aria-invalid={Boolean(error)}
+        required
+        minLength={8}
+        value={formData.confirmPassword}
+        onChange={onInputChange}
+        placeholder="••••••••"
+      />
 
       <label
         htmlFor="setup-include-demo-recording"
@@ -116,24 +114,37 @@ export default function AccountStep({
           name="setup-include-demo-recording"
           checked={includeDemoRecording}
           onChange={(e) => onIncludeDemoRecordingChange(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-control-border text-action-text focus-visible:outline-focus-ring"
+          className="mt-0.5 h-4 w-4 rounded border-control-border text-action-text accent-action focus-visible:outline-focus-ring"
         />
         <span className="text-sm text-contrast-muted">
           Include a sample meeting
           <span className="block text-xs text-contrast-helper mt-0.5">
-            Adds a short &quot;Welcome to Nojoin&quot; recording so you can
-            explore transcripts, notes, and speakers. You can remove or
-            recreate it later in Settings &gt; Help.
+            A short recording with its transcript, notes, and chat already in
+            place. Needs no AI provider. Removable in Settings &gt; Help.
           </span>
         </span>
       </label>
 
-      <button
-        type="submit"
-        className="w-full mt-6 bg-action hover:bg-action-hover text-action-on font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        Next Step <ArrowRight className="w-4 h-4" />
-      </button>
+      <div className="flex gap-3 pt-2">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onBack}
+          disabled={creatingAccount}
+          iconLeft={<ArrowLeft className="w-4 h-4" />}
+        >
+          Back
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          className="flex-1"
+          loading={creatingAccount}
+          iconRight={<ArrowRight className="w-4 h-4" />}
+        >
+          {creatingAccount ? "Creating account..." : "Create account"}
+        </Button>
+      </div>
     </form>
   );
 }

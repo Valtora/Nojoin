@@ -78,6 +78,8 @@ Nojoin is free, and running it yourself means a machine with a GPU, a compose fi
    - `DATA_ENCRYPTION_KEY` (for any persistent deployment)
    - And other API keys as needed for your desired features.
 
+   No AI provider key is required here. The setup wizard also lets you route AI through your own Claude or ChatGPT subscription, or leave AI unconfigured and set it up later.
+
 4. Start Nojoin.
 
    ```bash
@@ -90,7 +92,7 @@ Nojoin is free, and running it yourself means a machine with a GPU, a compose fi
    https://localhost:14443/setup
    ```
 
-6. Unlock the wizard with your `FIRST_RUN_PASSWORD` and complete the first-run setup. The sign-in page does not link to setup; the wizard is only reachable at `/setup`.
+6. Unlock the wizard with your `FIRST_RUN_PASSWORD` and complete the first-run setup: terms, transcription model, owner account, AI route, and a finish screen that checks this browser can record. The sign-in page does not link to setup; the wizard is only reachable at `/setup`.
 
 7. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, in another Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only recording, then start a short test meeting. Other Chromium-family browsers on macOS are best-effort. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
 

@@ -3,7 +3,6 @@ import logging
 import os
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,8 +38,8 @@ SETUP_RATE_LIMIT = 60
 SETUP_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 SETUP_RATE_LIMIT_DETAIL = "Too many setup requests. Please try again later."
 PUBLIC_LLM_VALIDATION_ERROR_DETAIL = "Unable to validate the AI provider configuration."
-PUBLIC_HF_VALIDATION_ERROR_DETAIL = "Unable to validate the Hugging Face token."
 PUBLIC_MODEL_LIST_ERROR_DETAIL = "Unable to list AI provider models."
+LLM_PROVIDER_ENV_KEY = "LLM_PROVIDER"
 
 
 def _raise_setup_validation_error(
@@ -80,10 +79,6 @@ class ValidateLLMRequest(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
     api_url: Optional[str] = None
-
-
-class ValidateHFRequest(BaseModel):
-    token: str
 
 
 class ListModelsRequest(BaseModel):
@@ -226,6 +221,13 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
 
     system_keys = await async_get_system_api_keys(db)
     llm_provider = config_manager.get("llm_provider", "gemini")
+    # `llm_provider` always resolves to something (gemini is the default), so on
+    # its own it cannot tell the wizard apart from an operator who chose gemini
+    # and one who set nothing at all. .env.example ships LLM_PROVIDER empty and
+    # empty env values are ignored, which made the wizard report a missing
+    # gemini key to operators who never picked gemini.
+    llm_provider_selected = bool(os.getenv(LLM_PROVIDER_ENV_KEY, "").strip())
+    secondary_llm_provider = config_manager.get("secondary_llm_provider") or None
     selected_model_key = (
         "ollama_model" if llm_provider == "ollama" else f"{llm_provider}_model"
     )
@@ -240,10 +242,17 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
 
     return {
         "llm_provider": llm_provider,
+        "llm_provider_selected": llm_provider_selected,
         "gemini_api_key": mask_key(system_keys.get("gemini_api_key")),
         "openai_api_key": mask_key(system_keys.get("openai_api_key")),
         "anthropic_api_key": mask_key(system_keys.get("anthropic_api_key")),
         "ollama_api_url": config_manager.get("ollama_api_url"),
+        "secondary_llm_provider": secondary_llm_provider,
+        "secondary_api_key": mask_key(
+            system_keys.get(f"secondary_{secondary_llm_provider}_api_key")
+            if secondary_llm_provider
+            else None
+        ),
         "hf_token": mask_key(system_keys.get("hf_token")),
         "selected_model": config_manager.get(selected_model_key),
         "pyannote_models_ready": pyannote_models_ready,
@@ -310,48 +319,6 @@ async def validate_llm(
                 if is_public_request
                 else "Authenticated setup LLM validation failed for provider "
                 f"'{request.provider}'."
-            ),
-            exc=exc,
-        )
-
-
-@router.post("/validate-hf")
-async def validate_hf(
-    request: ValidateHFRequest, req: Request, db: AsyncSession = Depends(get_db)
-):
-    """
-    Validate Hugging Face Token.
-    """
-    user = await check_setup_permission(db, req)
-    is_public_request = user is None
-
-    try:
-        token = request.token.strip()
-        if not token:
-            raise ValueError("Hugging Face token is not set.")
-
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://huggingface.co/api/whoami-v2",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            response.raise_for_status()
-            response.json()
-            return {"valid": True, "message": "Hugging Face token is valid."}
-    except HTTPException:
-        if is_public_request:
-            logger.warning("Public setup Hugging Face validation failed.")
-            raise HTTPException(
-                status_code=400, detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL
-            )
-        raise
-    except Exception as exc:  # noqa: BLE001
-        _raise_setup_validation_error(
-            client_detail=PUBLIC_HF_VALIDATION_ERROR_DETAIL,
-            log_message=(
-                "Public setup Hugging Face validation failed."
-                if is_public_request
-                else "Authenticated setup Hugging Face validation failed."
             ),
             exc=exc,
         )

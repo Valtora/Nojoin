@@ -15,7 +15,7 @@ Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first succes
 - If `FIRST_RUN_PASSWORD` is missing, first-run setup fails closed until the operator sets it and restarts or redeploys.
 - The setup surface does not disclose initialisation state. The sign-in page never references setup, the `/setup` page renders the same unlock gate in every state, and every anonymous setup denial returns the same `403` with the detail `First-run setup access denied.` whether the bootstrap password is wrong, `FIRST_RUN_PASSWORD` is unset, or the system is already initialised. The specific reason is written to the server log only, and the API startup log points operators at `/setup` while the system is uninitialised.
 - Setup endpoints are rate limited per client address before any state-dependent processing, so throttling behaviour is also identical across states and the bootstrap password cannot be brute-forced quickly.
-- After initialisation, normal authenticated admin operations do not use the bootstrap password path.
+- After initialisation, normal authenticated admin operations do not use the bootstrap password path. The setup wizard creates the owner account partway through and signs in, so its remaining steps are ordinary authenticated admin requests carrying the session cookie; the client stops sending the bootstrap credential from that point, and the server would refuse it anyway.
 - The bootstrap password is never returned by the API or persisted into Nojoin configuration.
 - Application log output redacts `Authorization`, cookies, bootstrap credentials, passwords, tokens, and API-key fields if they are accidentally included in a log record.
 

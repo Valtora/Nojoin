@@ -200,7 +200,6 @@ describe("api public surface", () => {
         "uploadBackupChunked",
         "uploadDocument",
         "uploadRecordingSegment",
-        "validateHF",
         "validateInvitation",
         "validateLLM",
       ]
