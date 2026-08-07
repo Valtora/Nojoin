@@ -303,7 +303,8 @@ def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
     config_data = config_manager.get_all()
     config_data.update(install_wide_updates)
     config_manager.save_config(config_data)
-    config_manager.reload()
+    # Forced: this process just wrote the file and must read back its own write.
+    config_manager.reload(force=True)
 
 
 async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:

@@ -342,11 +342,29 @@ class ConfigManager:
             path_manager.migrate_from_project_directory()
             config_path = CONFIG_PATH
         self.config_path = config_path
+        self._loaded_stat = None
         self.config = self._load_config()
+
+    def _config_stat(self):
+        """Identity of the file the current `config` was parsed from.
+
+        `(mtime_ns, size)` is enough to tell "unchanged" from "rewritten", and
+        nanosecond mtime means two writes in the same second still differ.
+        Returns None when the file is absent, which is itself a distinct state.
+        """
+        try:
+            stat = os.stat(self.config_path)
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
 
     def _load_config(self):
         """Loads configuration from file, applying defaults for missing keys."""
         config = DEFAULT_SYSTEM_CONFIG.copy()
+        # Record what we are about to parse, before parsing. Stamping it after
+        # would lose a write that lands mid-read, and the next reload would
+        # believe it already had that version.
+        self._loaded_stat = self._config_stat()
         try:
             if os.path.exists(self.config_path):
                 with open(self.config_path, "r", encoding="utf-8") as f:
@@ -462,8 +480,13 @@ class ConfigManager:
                 recordings_dir
             )
             try:
+                existed = abs_recordings_dir.is_dir()
                 abs_recordings_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Created directory: {abs_recordings_dir}")
+                # Only announce a directory we actually made. This used to log
+                # on every load, which read as repeated directory creation in
+                # the container logs and buried the events that mattered.
+                if not existed:
+                    logger.info(f"Created directory: {abs_recordings_dir}")
             except OSError as e:
                 logger.error(
                     f"Failed to create directory {abs_recordings_dir}: {e}",
@@ -577,8 +600,23 @@ class ConfigManager:
         if key == "recordings_directory":
             self._ensure_dirs_exist(self.config)
 
-    def reload(self):
-        """Reloads configuration from disk. Call this to pick up changes made by other processes."""
+    def reload(self, *, force: bool = False):
+        """Reload configuration from disk to pick up another process's changes.
+
+        Skips the re-read when the file has not changed since the copy in
+        memory was parsed. Callers reload defensively -- telemetry does it on
+        every status poll so an operator's opt-out cannot go unnoticed -- and
+        that put a JSON parse and a directory probe on a request path served
+        several times a minute. Comparing the file's identity keeps the
+        guarantee those callers want and costs one stat.
+
+        `force=True` re-reads unconditionally, for callers that have just
+        written the file themselves and must not race their own mtime.
+        """
+        if not force and self._loaded_stat is not None:
+            if self._config_stat() == self._loaded_stat:
+                return
+
         self.config = self._load_config()
         logger.info("Configuration reloaded from disk")
 

@@ -140,6 +140,7 @@ from backend.utils.config_manager import (
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
 from backend.utils.rate_limit import log_trusted_proxy_warnings
+from backend.utils.stall_watchdog import start_stall_watchdog
 
 
 async def ensure_owner_exists():
@@ -273,13 +274,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 
-    if is_mcp_enabled():
-        # The MCP streamable-HTTP session manager must run for the lifetime
-        # of the app or requests to the /mcp mount fail.
-        async with mcp_session_manager_context():
+    # Started last, so it measures the loop that actually serves requests rather
+    # than the one still working through startup migrations.
+    watchdog = start_stall_watchdog(process="api")
+
+    try:
+        if is_mcp_enabled():
+            # The MCP streamable-HTTP session manager must run for the lifetime
+            # of the app or requests to the /mcp mount fail.
+            async with mcp_session_manager_context():
+                yield
+        else:
             yield
-    else:
-        yield
+    finally:
+        if watchdog is not None:
+            await watchdog.stop()
 
 
 def create_app(*, app_lifespan=lifespan) -> FastAPI:

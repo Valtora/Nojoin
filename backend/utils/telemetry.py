@@ -237,7 +237,9 @@ def _write_config(updates: dict[str, Any]) -> None:
     data = config_manager.get_all()
     data.update(updates)
     config_manager.save_config(data)
-    config_manager.reload()
+    # Forced: this process just wrote the file, so it must not be talked out of
+    # re-reading by a same-instant mtime matching what it last parsed.
+    config_manager.reload(force=True)
 
 
 def set_enabled(enabled: bool, *, acknowledge: bool = True) -> None:
