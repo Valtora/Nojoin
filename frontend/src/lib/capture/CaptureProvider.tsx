@@ -88,6 +88,7 @@ export function useCapture() {
     cancel: controller.cancel,
     refreshPausedRecording: controller.refreshPausedRecording,
     updateSettings: controller.updateSettings,
+    dismissCoverageWarning: controller.dismissCoverageWarning,
     status: state.status,
     levels: state.levels,
     error: state.error,

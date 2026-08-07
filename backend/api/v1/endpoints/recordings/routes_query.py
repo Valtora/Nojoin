@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 from sqlmodel import col, or_, select
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -18,6 +19,7 @@ from backend.models.calendar import (
     CalendarEvent,
     CalendarSource,
 )
+from backend.models.pipeline import RecordingAudioChunk
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.recording_public import (
     CalendarEventLinkRead,
@@ -53,6 +55,11 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+# Capture is still open, so the live view is watching for audio going missing.
+# A paused recording counts: it can be resumed, and the shortfall accrued before
+# the pause is still what the user needs told.
+_CAPTURE_IN_PROGRESS_STATUSES = {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}
 
 
 @router.get("", response_model=List[RecordingPublicRead])
@@ -362,6 +369,21 @@ async def get_recording(
     if recording.calendar_event_id is not None:
         linked_event = await db.get(CalendarEvent, recording.calendar_event_id)
 
+    # Only for a recording still being captured. That is the one moment the
+    # figure is acted on -- the live view compares it against its wall clock to
+    # warn about audio going missing -- and it costs an aggregate the finished
+    # recordings, which already carry duration_seconds, have no use for.
+    captured_audio_seconds: float | None = None
+    if recording.status in _CAPTURE_IN_PROGRESS_STATUSES:
+        captured_result = await db.execute(
+            select(func.sum(RecordingAudioChunk.duration_ms)).where(
+                RecordingAudioChunk.recording_id == recording.id
+            )
+        )
+        captured_ms = captured_result.scalar_one_or_none()
+        if captured_ms is not None:
+            captured_audio_seconds = float(captured_ms) / 1000.0
+
     transcript_segments_override: list[dict] | None = None
     transcript_text_override: str | None = None
     speakers_override = None
@@ -406,6 +428,7 @@ async def get_recording(
         transcript_segments_override=transcript_segments_override,
         transcript_text_override=transcript_text_override,
         speakers_override=speakers_override,
+        captured_audio_seconds=captured_audio_seconds,
     )
 
 

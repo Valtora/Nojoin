@@ -4,12 +4,15 @@ import {
   discardRecordingCapture,
   finalizeRecordingCapture,
   getPausedRecordings,
+  getRecording,
   initRecording,
   isActiveRecordingConflictDetail,
   pauseRecordingCapture,
   reportRecordingCaptureSources,
   resumeRecordingCapture,
 } from "@/lib/api";
+import { useConnectivityStore } from "@/lib/connectivity/monitor";
+import { isReachable } from "@/lib/connectivity/reducer";
 import { useNotificationStore } from "@/lib/notificationStore";
 import type { Recording, RecordingId } from "@/types";
 
@@ -31,6 +34,7 @@ import {
 import {
   clearPausedCaptureContext,
   DEFAULT_CAPTURE_LEVELS,
+  type CaptureCoverageCause,
   type CaptureCoverageWarning,
   type CaptureSettings,
   type CaptureState,
@@ -90,14 +94,39 @@ const RECORDER_STOP_TIMEOUT_MS = 8_000;
 const UPLOAD_FLUSH_TIMEOUT_MS = 60_000;
 
 /**
- * Coverage thresholds for the suspended-tab warning. Both must be exceeded, so
- * the ordinary couple of seconds of trailing segment latency stays quiet.
+ * Coverage thresholds. Both must be exceeded, so the ordinary few seconds of
+ * trailing segment latency stays quiet.
+ *
+ * The ratio is low because the figure it judges cannot invent a shortfall: the
+ * backend's captured-audio total runs slightly high, so a healthy recording
+ * reports zero missing rather than a small positive number. It used to be 10%,
+ * set to defend against a client-side estimate that under-counted captured
+ * audio by about that much and warned on recordings that had lost nothing.
+ * Against an honest figure that tolerance only hid real losses: four minutes
+ * missing from an 81-minute meeting is 5%, and worth saying.
  */
 const COVERAGE_WARNING_MIN_MISSING_SECONDS = 60;
 
-const COVERAGE_WARNING_MIN_RATIO = 0.1;
+const COVERAGE_WARNING_MIN_RATIO = 0.02;
 
 const COVERAGE_WARNING_INTERVAL_MS = 5 * 60_000;
+
+/**
+ * How much further a dismissed shortfall must grow before the warning returns.
+ * Enough that ordinary drift cannot undo a dismissal, small enough that a
+ * genuinely worsening problem is not silenced for the rest of the meeting.
+ */
+const COVERAGE_WARNING_REARM_SECONDS = 60;
+
+/**
+ * How often to ask the backend how much audio it holds.
+ *
+ * Only the server knows: it is the one that decodes each segment. Far cheaper
+ * than the segment uploads happening alongside it, and slow enough that a
+ * shortfall is reported in tens of seconds rather than instantly, which is the
+ * right trade for a warning about minutes of lost audio.
+ */
+const COVERAGE_POLL_INTERVAL_MS = 15_000;
 
 const withStageTimeout = async <T>(
   stage: CaptureStopStage,
@@ -186,6 +215,19 @@ export class CaptureController {
 
   private lastCoverageNotifiedAt = 0;
 
+  private coveragePollTimerId: ReturnType<typeof setInterval> | null = null;
+
+  /** Server-reported captured audio; null until the first poll succeeds. */
+  private capturedAudioSeconds: number | null = null;
+
+  /**
+   * Whether the browser has been seen to stop feeding the recorder during this
+   * capture. Latched rather than momentary: a freeze is reported once, but the
+   * shortfall it caused persists for the rest of the meeting and should keep
+   * being attributed to it.
+   */
+  private sawCaptureFreeze = false;
+
   constructor() {
     const pausedContext = readPausedCaptureContext();
     this.state = {
@@ -202,6 +244,7 @@ export class CaptureController {
       finalizeRetry: null,
       stopStage: null,
       coverageWarning: null,
+      coverageWarningDismissedAt: null,
     };
 
     this.lifecycle = new CaptureLifecycle({
@@ -313,7 +356,7 @@ export class CaptureController {
       throw error;
     }
 
-    this.lastCoverageNotifiedAt = 0;
+    this.resetCoverageTracking();
     this.setState({
       recordingId: initResponse.id,
       lastSequence: -1,
@@ -713,6 +756,7 @@ export class CaptureController {
 
     await discardRecordingCapture(targetRecordingId);
     clearPausedCaptureContext();
+    this.resetCoverageTracking();
     this.setState({
       status: "idle",
       error: null,
@@ -890,19 +934,99 @@ export class CaptureController {
   };
 
   /**
-   * Compares captured audio against wall-clock recording time.
+   * Asks the backend how much audio it holds, and re-judges coverage.
    *
-   * When the browser or the OS suspends the tab, the MediaRecorder stops
-   * receiving audio while the recorder still reports "recording" and the elapsed
-   * timer keeps counting. Measured at ~52% coverage across a 20s freeze, so the
-   * shortfall is real data loss and the only client-side signal is this gap.
+   * The client cannot answer this itself. It used to try, multiplying the last
+   * sequence number by the timeslice, but a segment carries slightly more than
+   * the nominal timeslice because each roll flushes whatever accumulated while
+   * it was stopping. That under-counted captured audio by around 10% over an
+   * hour and reported minutes missing from recordings that had lost nothing.
+   */
+  private pollCapturedAudio = async () => {
+    const recordingId = this.state.recordingId;
+    if (!recordingId || this.state.status !== "recording") {
+      return;
+    }
+
+    try {
+      const recording = await getRecording(recordingId);
+      const captured = recording.captured_audio_seconds;
+      if (typeof captured !== "number") {
+        return;
+      }
+      this.capturedAudioSeconds = captured;
+      this.evaluateCoverage();
+    } catch {
+      // A failed poll is not evidence of anything. The connectivity monitor
+      // already owns "is the backend reachable"; this one just goes quiet.
+    }
+  };
+
+  /**
+   * Classifies a shortfall, so the warning can say what to do about it.
+   *
+   * Deliberately conservative about blaming the tab. A page-freeze event or a
+   * recorder-watchdog stall is direct evidence the browser stopped feeding the
+   * recorder; an unreachable backend is direct evidence of the opposite. With
+   * neither, `unknown` is honest, and the copy describes the gap without
+   * diagnosing it. Blaming tab suspension by default is what sent someone to
+   * check a Chrome setting during an outage that was entirely server-side.
+   */
+  private classifyCoverageCause = (): CaptureCoverageCause => {
+    if (!isReachable(useConnectivityStore.getState().status)) {
+      return "backend-unreachable";
+    }
+    if (this.sawCaptureFreeze) {
+      return "tab-suspended";
+    }
+    return "unknown";
+  };
+
+  private coverageMessage = (warning: CaptureCoverageWarning): string => {
+    const captured = Math.round(warning.capturedSeconds / 60);
+    const elapsed = Math.round(warning.elapsedSeconds / 60);
+    const missing = Math.round(warning.missingSeconds / 60);
+    const headline =
+      `Nojoin has ${captured} of ${elapsed} minutes of audio, so around ` +
+      `${missing} minutes are missing. `;
+
+    if (warning.cause === "backend-unreachable") {
+      return (
+        headline +
+        "Nojoin cannot reach the server at the moment. Recording is continuing, " +
+        "and queued audio uploads when the connection returns."
+      );
+    }
+    if (warning.cause === "tab-suspended") {
+      return (
+        headline +
+        "This tab was suspended by the browser or the device slept, and audio " +
+        "from that period was not recorded. Keep the Nojoin tab open and the " +
+        "device awake."
+      );
+    }
+    return (
+      headline +
+      "Keep the Nojoin tab open and the device awake, and check your connection " +
+      "to the Nojoin server."
+    );
+  };
+
+  /**
+   * Compares the audio the server holds against wall-clock recording time.
    */
   private evaluateCoverage = () => {
     if (this.state.status !== "recording") {
       return;
     }
 
-    const capturedSeconds = sequenceToElapsedSeconds(this.state.lastSequence);
+    const capturedSeconds = this.capturedAudioSeconds;
+    // Nothing to compare against until the first segment has been transcoded.
+    // Silence beats guessing: guessing is what produced the false warnings.
+    if (capturedSeconds === null) {
+      return;
+    }
+
     const elapsedSeconds = this.state.elapsedSeconds;
     const missingSeconds = Math.max(0, elapsedSeconds - capturedSeconds);
     if (
@@ -913,12 +1037,21 @@ export class CaptureController {
       return;
     }
 
+    const dismissedAt = this.state.coverageWarningDismissedAt;
+    if (
+      dismissedAt !== null &&
+      missingSeconds < dismissedAt + COVERAGE_WARNING_REARM_SECONDS
+    ) {
+      return;
+    }
+
     const warning: CaptureCoverageWarning = {
       capturedSeconds,
       elapsedSeconds,
       missingSeconds,
+      cause: this.classifyCoverageCause(),
     };
-    this.setState({ coverageWarning: warning });
+    this.setState({ coverageWarning: warning, coverageWarningDismissedAt: null });
 
     const now = Date.now();
     if (now - this.lastCoverageNotifiedAt < COVERAGE_WARNING_INTERVAL_MS) {
@@ -926,15 +1059,28 @@ export class CaptureController {
     }
 
     this.lastCoverageNotifiedAt = now;
-    const missingMinutes = Math.round(missingSeconds / 60);
     console.warn("[capture] captured audio is behind elapsed time", warning);
     useNotificationStore.getState().addNotification({
       type: "warning",
-      message:
-        `Nojoin has captured ${Math.round(capturedSeconds / 60)} of ` +
-        `${Math.round(elapsedSeconds / 60)} minutes. Around ${missingMinutes} ` +
-        "minutes are missing, which usually means this tab was suspended by the " +
-        "browser or the device slept. Keep the Nojoin tab open and the device awake.",
+      message: this.coverageMessage(warning),
+    });
+  };
+
+  /**
+   * Dismisses the coverage warning, remembering the shortfall it was showing.
+   *
+   * The warning used to have no way out: once raised it stayed for the rest of
+   * the meeting, including when its diagnosis was wrong.
+   */
+  dismissCoverageWarning = () => {
+    const warning = this.state.coverageWarning;
+    if (!warning) {
+      return;
+    }
+
+    this.setState({
+      coverageWarning: null,
+      coverageWarningDismissedAt: warning.missingSeconds,
     });
   };
 
@@ -949,12 +1095,16 @@ export class CaptureController {
       recording.id,
       warning,
     );
+    const captured = Math.round(warning.capturedSeconds / 60);
+    const elapsed = Math.round(warning.elapsedSeconds / 60);
     useNotificationStore.getState().addNotification({
       type: "warning",
       message:
-        `This recording captured ${Math.round(warning.capturedSeconds / 60)} of ` +
-        `${Math.round(warning.elapsedSeconds / 60)} minutes of the session. The ` +
-        "missing audio was not recorded because the tab or device was suspended.",
+        `This recording holds ${captured} of ${elapsed} minutes of the session. ` +
+        (warning.cause === "backend-unreachable"
+          ? "Nojoin lost contact with the server during the meeting; anything " +
+            "that finished uploading has been kept."
+          : "The missing audio was not recorded."),
     });
   };
 
@@ -964,8 +1114,10 @@ export class CaptureController {
     }
 
     // Advisory: the watchdog in the recorder is what actually restarts the
-    // segment chain. This only records that a thaw happened.
+    // segment chain. This only records that a thaw happened, which is the
+    // evidence that lets a shortfall be blamed on the tab rather than guessed at.
     console.warn("[capture] page resumed from a frozen state during capture");
+    this.sawCaptureFreeze = true;
     this.evaluateCoverage();
   };
 
@@ -974,6 +1126,9 @@ export class CaptureController {
       "[capture] recorder stalled; restarting the segment chain",
       info,
     );
+    // The recorder went quiet while still recording, which no network problem
+    // can cause: segment production does not wait on uploads.
+    this.sawCaptureFreeze = true;
     this.evaluateCoverage();
   };
 
@@ -1080,8 +1235,34 @@ export class CaptureController {
     this.setState({ levels: DEFAULT_CAPTURE_LEVELS, runtimeActive: false });
   };
 
+  /** Clears everything tracked per-recording, so nothing carries over. */
+  private resetCoverageTracking() {
+    this.lastCoverageNotifiedAt = 0;
+    this.capturedAudioSeconds = null;
+    this.sawCaptureFreeze = false;
+  }
+
+  private startCoveragePoll() {
+    this.stopCoveragePoll();
+    // Fire once immediately so a resumed recording is judged against the audio
+    // already banked, rather than waiting a full interval to notice a shortfall
+    // that predates this session.
+    void this.pollCapturedAudio();
+    this.coveragePollTimerId = setInterval(() => {
+      void this.pollCapturedAudio();
+    }, COVERAGE_POLL_INTERVAL_MS);
+  }
+
+  private stopCoveragePoll() {
+    if (this.coveragePollTimerId) {
+      clearInterval(this.coveragePollTimerId);
+      this.coveragePollTimerId = null;
+    }
+  }
+
   private startElapsedTimer(initialElapsedSeconds: number) {
     this.stopElapsedTimer();
+    this.startCoveragePoll();
     this.elapsedTimerBaseSeconds = initialElapsedSeconds;
     this.elapsedTimerStartedAt = Date.now();
     this.setState({ elapsedSeconds: initialElapsedSeconds });
@@ -1094,6 +1275,7 @@ export class CaptureController {
   }
 
   private stopElapsedTimer() {
+    this.stopCoveragePoll();
     if (this.elapsedTimerId) {
       clearInterval(this.elapsedTimerId);
       this.elapsedTimerId = null;
