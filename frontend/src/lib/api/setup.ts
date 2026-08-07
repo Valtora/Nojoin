@@ -34,17 +34,30 @@ export const checkFFmpeg = async (): Promise<{
   return response.data;
 };
 
-export const getInitialConfig = async (bootstrapPassword?: string): Promise<{
+export interface InitialSetupConfig {
   llm_provider?: string;
+  /**
+   * Whether the operator actually chose a provider. `llm_provider` always
+   * resolves (gemini is the server default), so it cannot answer this on its
+   * own and the wizard must not present the default as a choice the operator
+   * made.
+   */
+  llm_provider_selected?: boolean;
   gemini_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;
   ollama_api_url?: string;
+  secondary_llm_provider?: string | null;
+  secondary_api_key?: string | null;
   hf_token?: string;
   selected_model?: string;
   pyannote_models_ready?: boolean;
   bundled_pyannote_models_ready?: boolean;
-}> => {
+}
+
+export const getInitialConfig = async (
+  bootstrapPassword?: string,
+): Promise<InitialSetupConfig> => {
   const response = await api.get(
     "/setup/initial-config",
     buildFirstRunRequestConfig(bootstrapPassword),
@@ -71,18 +84,6 @@ export const validateLLM = async (
       api_url: apiUrl,
       model,
     },
-    buildFirstRunRequestConfig(bootstrapPassword),
-  );
-  return response.data;
-};
-
-export const validateHF = async (
-  token: string,
-  bootstrapPassword?: string,
-): Promise<{ valid: boolean; message?: string }> => {
-  const response = await api.post<{ valid: boolean; message?: string }>(
-    "/setup/validate-hf",
-    { token },
     buildFirstRunRequestConfig(bootstrapPassword),
   );
   return response.data;

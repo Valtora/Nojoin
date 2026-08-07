@@ -86,23 +86,6 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(
         def list_models(self):
             return ["gemini-2.5-flash"]
 
-    class _FakeHFResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"name": "masked"}
-
-    class _FakeHFClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def get(self, *args, **kwargs):
-            return _FakeHFResponse()
-
     async def _fake_seed_demo_data(*args, **kwargs):
         return None
 
@@ -114,7 +97,6 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(
     monkeypatch.setattr(
         setup, "get_llm_backend", lambda *args, **kwargs: _ValidBackend()
     )
-    monkeypatch.setattr(setup.httpx, "AsyncClient", _FakeHFClient)
     monkeypatch.setattr(system, "seed_demo_data", _fake_seed_demo_data)
 
     headers = _bootstrap_auth_headers()
@@ -127,11 +109,6 @@ async def test_setup_endpoints_do_not_redirect_or_emit_location_headers(
             await client.post(
                 "/api/v1/setup/validate-llm",
                 json={"provider": "openai", "api_key": "test-key"},
-                headers=headers,
-            ),
-            await client.post(
-                "/api/v1/setup/validate-hf",
-                json={"token": "hf_test_token"},
                 headers=headers,
             ),
             await client.post(
