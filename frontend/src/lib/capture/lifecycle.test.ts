@@ -8,7 +8,7 @@ describe("capture lifecycle", () => {
     const windowRef = new EventTarget() as Window;
 
     const lifecycle = new CaptureLifecycle({
-      getRecordingId: () => 99,
+      getRecordingId: () => "99",
       shouldGuardExit: () => true,
       onGuardedExit,
       windowRef,
@@ -35,7 +35,7 @@ describe("capture lifecycle", () => {
     });
 
     const lifecycle = new CaptureLifecycle({
-      getRecordingId: () => 99,
+      getRecordingId: () => "99",
       shouldGuardExit: () => true,
       onGuardedExit,
       windowRef: new EventTarget() as Window,
@@ -51,7 +51,7 @@ describe("capture lifecycle", () => {
   it("does not dispatch a guarded exit on route change", () => {
     const onGuardedExit = vi.fn();
     const lifecycle = new CaptureLifecycle({
-      getRecordingId: () => 99,
+      getRecordingId: () => "99",
       shouldGuardExit: () => true,
       onGuardedExit,
       windowRef: new EventTarget() as Window,

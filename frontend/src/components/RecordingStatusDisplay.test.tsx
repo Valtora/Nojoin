@@ -100,7 +100,7 @@ describe("RecordingStatusDisplay", () => {
     render(
       <RecordingStatusDisplay
         recording={buildRecording({
-          status: RecordingStatus.RECORDING,
+          status: RecordingStatus.UPLOADING,
           client_status: ClientStatus.RECORDING,
         })}
         onSaveProcessingNotes={vi.fn()}

@@ -132,10 +132,10 @@ describe("capture source picker", () => {
         mediaDevices,
         settings: DEFAULT_CAPTURE_SETTINGS,
       }),
-    ).rejects.toMatchObject<Partial<PickSourceError>>({
+    ).rejects.toMatchObject({
       code: "display_cancelled",
       message: "Display capture was cancelled before the recording started.",
-    });
+    } satisfies Partial<PickSourceError>);
 
     expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
@@ -160,11 +160,11 @@ describe("capture source picker", () => {
         microphoneDeviceId: "mic-1",
         settings: DEFAULT_CAPTURE_SETTINGS,
       }),
-    ).rejects.toMatchObject<Partial<PickSourceError>>({
+    ).rejects.toMatchObject({
       code: "selected_microphone_unavailable",
       message:
         "The selected microphone is not available to the browser. Choose another microphone in Settings > Capture before starting the recording.",
-    });
+    } satisfies Partial<PickSourceError>);
 
     expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
   });
