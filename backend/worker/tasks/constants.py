@@ -18,12 +18,12 @@ from sqlmodel import select
 
 from backend.celery_app import celery_app
 from backend.core.db import get_sync_session
-from backend.core.single_flight import single_flight
 from backend.core.exceptions import (
     AudioFormatError,
     AudioProcessingError,
     VADNoSpeechError,
 )
+from backend.core.single_flight import single_flight
 from backend.models.calendar import CalendarEvent
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk

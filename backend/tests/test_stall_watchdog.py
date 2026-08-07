@@ -13,6 +13,7 @@ import pytest
 from backend.utils import stall_watchdog
 from backend.utils.stall_watchdog import (
     StallWatchdog,
+    WatchdogEnvironment,
     _parse_pressure_file,
     peak_pressure,
     read_pressure,
@@ -44,9 +45,11 @@ def build_watchdog(*, actual_sleep, pressure=None, **kwargs):
         interval_seconds=5.0,
         lag_threshold_seconds=1.0,
         pressure_threshold=20.0,
-        monotonic=clock.monotonic,
-        sleep=clock.sleep,
-        pressure_reader=lambda: pressure,
+        environment=WatchdogEnvironment(
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+            pressure_reader=lambda: pressure,
+        ),
         **kwargs,
     )
     return watchdog, clock
@@ -81,7 +84,10 @@ class TestPressureParsing:
         assert _parse_pressure_file("\n\nsome avg10=1.00\n\n") == {"some": 1.0}
 
     def test_peak_is_the_worst_resource(self):
-        assert peak_pressure({"cpu_some": 1.0, "memory_some": 44.2, "io_some": 3.0}) == 44.2
+        assert (
+            peak_pressure({"cpu_some": 1.0, "memory_some": 44.2, "io_some": 3.0})
+            == 44.2
+        )
 
     def test_peak_of_missing_pressure_is_zero(self):
         # None means "the kernel does not tell us", which must never be read as
@@ -216,9 +222,11 @@ class TestLifecycle:
 
         watchdog = StallWatchdog(
             interval_seconds=5.0,
-            monotonic=lambda: 0.0,
-            sleep=exploding_sleep,
-            pressure_reader=lambda: None,
+            environment=WatchdogEnvironment(
+                monotonic=lambda: 0.0,
+                sleep=exploding_sleep,
+                pressure_reader=lambda: None,
+            ),
         )
         with pytest.raises(asyncio.CancelledError):
             await watchdog.run()
@@ -227,14 +235,16 @@ class TestLifecycle:
 
     @pytest.mark.anyio
     async def test_stop_is_safe_when_never_started(self):
-        watchdog = StallWatchdog(pressure_reader=lambda: None)
+        watchdog = StallWatchdog(
+            environment=WatchdogEnvironment(pressure_reader=lambda: None)
+        )
         await watchdog.stop()
 
     @pytest.mark.anyio
     async def test_start_then_stop_cancels_the_task(self):
         watchdog = StallWatchdog(
             interval_seconds=0.01,
-            pressure_reader=lambda: None,
+            environment=WatchdogEnvironment(pressure_reader=lambda: None),
         )
         watchdog.start()
         await asyncio.sleep(0)
@@ -253,7 +263,9 @@ class TestLifecycle:
     def test_bad_env_values_fall_back_to_defaults(self, monkeypatch):
         monkeypatch.setenv(stall_watchdog.INTERVAL_ENV, "not-a-number")
         monkeypatch.setenv(stall_watchdog.LAG_THRESHOLD_ENV, "-5")
-        watchdog = StallWatchdog(pressure_reader=lambda: None)
+        watchdog = StallWatchdog(
+            environment=WatchdogEnvironment(pressure_reader=lambda: None)
+        )
         assert watchdog.interval_seconds == stall_watchdog.DEFAULT_INTERVAL_SECONDS
         assert (
             watchdog.lag_threshold_seconds

@@ -6,9 +6,9 @@ from typing import Any, List, Optional
 import aiofiles
 from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
 from sqlmodel import col, or_, select
 
 import backend.api.v1.endpoints.recordings as recordings_module

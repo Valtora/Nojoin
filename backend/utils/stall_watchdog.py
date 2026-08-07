@@ -28,6 +28,8 @@ import asyncio
 import logging
 import os
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -132,12 +134,22 @@ def peak_pressure(pressure: dict[str, float] | None) -> float:
     return max(pressure.values())
 
 
-class StallWatchdog:
-    """Reports event-loop stalls and host pressure on the loop it is started on.
+@dataclass(frozen=True)
+class WatchdogEnvironment:
+    """Everything the watchdog reads from outside itself.
 
-    Injectable clock and sleep so the detection logic is testable without
-    actually stalling a test run for a second.
+    Grouped so a test can supply a clock that jumps, a sleep that lies about how
+    long it took, and a fixed pressure reading, without stalling a test run for
+    a real second to prove a real second was detected.
     """
+
+    monotonic: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    pressure_reader: Callable[[], dict[str, float] | None] = read_pressure
+
+
+class StallWatchdog:
+    """Reports event-loop stalls and host pressure on the loop it is started on."""
 
     def __init__(
         self,
@@ -146,12 +158,13 @@ class StallWatchdog:
         lag_threshold_seconds: float | None = None,
         pressure_threshold: float | None = None,
         process: str = "api",
-        monotonic=time.monotonic,
-        sleep=asyncio.sleep,
-        pressure_reader=read_pressure,
+        environment: WatchdogEnvironment | None = None,
     ) -> None:
-        self.interval_seconds = interval_seconds if interval_seconds is not None else _env_float(
-            INTERVAL_ENV, DEFAULT_INTERVAL_SECONDS
+        environment = environment or WatchdogEnvironment()
+        self.interval_seconds = (
+            interval_seconds
+            if interval_seconds is not None
+            else _env_float(INTERVAL_ENV, DEFAULT_INTERVAL_SECONDS)
         )
         self.lag_threshold_seconds = (
             lag_threshold_seconds
@@ -164,9 +177,9 @@ class StallWatchdog:
             else _env_float(PRESSURE_THRESHOLD_ENV, DEFAULT_PRESSURE_THRESHOLD)
         )
         self.process = process
-        self._monotonic = monotonic
-        self._sleep = sleep
-        self._pressure_reader = pressure_reader
+        self._monotonic = environment.monotonic
+        self._sleep = environment.sleep
+        self._pressure_reader = environment.pressure_reader
         self._task: asyncio.Task | None = None
         self._last_pressure_report_at: float | None = None
 
