@@ -37,7 +37,7 @@ function makeRecording(
   overrides: Partial<CalendarDashboardRecording> = {},
 ): CalendarDashboardRecording {
   return {
-    id: 100,
+    id: "100",
     name: "Recorded sync",
     starts_at: "2026-06-15T08:00:00.000Z",
     ends_at: "2026-06-15T08:45:00.000Z",
@@ -133,7 +133,7 @@ describe("splitMonthAgendaItems", () => {
           ends_at: "2026-06-20T10:00:00.000Z",
         }),
       ],
-      [makeRecording({ id: 100 })],
+      [makeRecording({ id: "100" })],
     );
 
     const { pastItems, upcomingItems } = splitMonthAgendaItems(items, now);

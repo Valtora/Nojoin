@@ -208,7 +208,7 @@ describe("api public surface", () => {
 
   it("preserves the default axios instance export", async () => {
     const api = await import("./api");
-    const instance = api.default as Record<string, unknown>;
+    const instance = api.default as unknown as Record<string, unknown>;
 
     expect(typeof instance.get).toBe("function");
     expect(typeof instance.post).toBe("function");

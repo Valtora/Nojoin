@@ -85,7 +85,7 @@ function makeRecording(
   overrides: Partial<CalendarDashboardRecording> = {},
 ): CalendarDashboardRecording {
   return {
-    id: 100,
+    id: "100",
     name: "Recorded sync",
     starts_at: "2026-06-15T11:00:00.000Z",
     ends_at: "2026-06-15T11:45:00.000Z",
@@ -194,7 +194,7 @@ describe("calendar dashboard modules", () => {
     getCalendarDashboardSummary.mockResolvedValue(
       makeSummary({
         agenda_items: [makeEvent({ id: 1, title: "Planning meeting" })],
-        recording_items: [makeRecording({ id: 100, name: "Recorded sync" })],
+        recording_items: [makeRecording({ id: "100", name: "Recorded sync" })],
       }),
     );
 
@@ -225,7 +225,7 @@ describe("calendar dashboard modules", () => {
   it("links a recording card to its recording detail page", async () => {
     getCalendarDashboardSummary.mockResolvedValue(
       makeSummary({
-        recording_items: [makeRecording({ id: 100, name: "Recorded sync" })],
+        recording_items: [makeRecording({ id: "100", name: "Recorded sync" })],
       }),
     );
 

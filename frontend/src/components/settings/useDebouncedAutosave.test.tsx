@@ -70,7 +70,7 @@ describe("useDebouncedAutosave", () => {
       resolveFirstSave = resolve;
     });
     const save = vi
-      .fn<({ theme: string }) => Promise<void>>()
+      .fn<(value: { theme: string }) => Promise<void>>()
       .mockImplementationOnce(() => firstSave)
       .mockResolvedValueOnce(undefined);
 

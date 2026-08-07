@@ -2,21 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createSegmentUploader } from "./uploader";
 
+/** Mirrors what uploadRecordingSegment resolves to on a successful upload. */
+const accepted = (sequence: number) => ({ status: "ok", segment: sequence });
+
 describe("capture uploader", () => {
   it("uploads queued segments in sequence and retries with backoff", async () => {
     const attempts: number[] = [];
     const uploaded: number[] = [];
     const wait = vi.fn(async () => {});
-    const uploadSegment = vi.fn(async (_recordingId: number, sequence: number) => {
+    const uploadSegment = vi.fn(async (_recordingId: string, sequence: number) => {
       attempts.push(sequence);
 
       if (sequence === 0 && attempts.filter((value) => value === 0).length === 1) {
         throw new Error("retry first segment");
       }
+
+      return accepted(sequence);
     });
 
     const uploader = createSegmentUploader({
-      recordingId: 42,
+      recordingId: "42",
       uploadSegment,
       wait,
       retryDelaysMs: [25, 50],
@@ -44,7 +49,7 @@ describe("capture uploader", () => {
     });
 
     const uploader = createSegmentUploader({
-      recordingId: 7,
+      recordingId: "7",
       uploadSegment,
       wait,
       retryDelaysMs: [10, 20],
@@ -57,9 +62,9 @@ describe("capture uploader", () => {
     await expect(uploader.waitForIdle()).rejects.toThrow("stalled upload failure");
 
     expect(uploadSegment).toHaveBeenCalledTimes(3);
-    expect(uploadSegment).toHaveBeenNthCalledWith(1, 7, 0, expect.any(Blob));
-    expect(uploadSegment).toHaveBeenNthCalledWith(2, 7, 0, expect.any(Blob));
-    expect(uploadSegment).toHaveBeenNthCalledWith(3, 7, 0, expect.any(Blob));
+    expect(uploadSegment).toHaveBeenNthCalledWith(1, "7", 0, expect.any(Blob));
+    expect(uploadSegment).toHaveBeenNthCalledWith(2, "7", 0, expect.any(Blob));
+    expect(uploadSegment).toHaveBeenNthCalledWith(3, "7", 0, expect.any(Blob));
     expect(wait).toHaveBeenCalledTimes(2);
     expect(onStalled).toHaveBeenCalledTimes(1);
     expect(onStalled).toHaveBeenCalledWith(stallError);
@@ -70,15 +75,17 @@ describe("capture uploader", () => {
     const onStalled = vi.fn(async () => {});
     const wait = vi.fn(async () => {});
     let networkDown = true;
-    const uploadSegment = vi.fn(async (_recordingId: number, sequence: number) => {
+    const uploadSegment = vi.fn(async (_recordingId: string, sequence: number) => {
       if (networkDown) {
         throw new Error("network outage");
       }
       uploaded.push(sequence);
+
+      return accepted(sequence);
     });
 
     const uploader = createSegmentUploader({
-      recordingId: 7,
+      recordingId: "7",
       uploadSegment,
       wait,
       retryDelaysMs: [10],
@@ -104,7 +111,7 @@ describe("capture uploader", () => {
 
   it("refuses to recover once disposed", () => {
     const uploader = createSegmentUploader({
-      recordingId: 7,
+      recordingId: "7",
       uploadSegment: vi.fn(),
     });
 
@@ -122,8 +129,10 @@ describe("capture uploader", () => {
     });
 
     const uploader = createSegmentUploader({
-      recordingId: 7,
-      uploadSegment: vi.fn(async () => {}),
+      recordingId: "7",
+      uploadSegment: vi.fn(async (_recordingId: string, sequence: number) =>
+        accepted(sequence),
+      ),
       wait,
       now: () => clock,
     });
@@ -148,8 +157,10 @@ describe("capture uploader", () => {
     });
 
     const uploader = createSegmentUploader({
-      recordingId: 7,
-      uploadSegment: vi.fn(async () => {}),
+      recordingId: "7",
+      uploadSegment: vi.fn(async (_recordingId: string, sequence: number) =>
+        accepted(sequence),
+      ),
       wait,
       now: () => clock,
     });
@@ -165,8 +176,10 @@ describe("capture uploader", () => {
   it("still drains cleanly within its deadline", async () => {
     const uploaded: number[] = [];
     const uploader = createSegmentUploader({
-      recordingId: 7,
-      uploadSegment: vi.fn(async () => {}),
+      recordingId: "7",
+      uploadSegment: vi.fn(async (_recordingId: string, sequence: number) =>
+        accepted(sequence),
+      ),
       onUploaded: (sequence) => uploaded.push(sequence),
     });
 
