@@ -117,3 +117,53 @@ def stub_meeting_edge_dispatch(monkeypatch):
     # A stub that patches nothing is the failure this fixture exists to prevent.
     assert patched, "No _dispatch_meeting_edge_refresh binding found to stub"
     return patched
+
+
+class FakeSingleFlightRedis:
+    """Just enough Redis for the single-flight guard, in memory.
+
+    Only `SET NX EX` and the compare-and-delete release script are modelled,
+    because those are the only two operations the guard performs. TTLs are
+    recorded rather than enforced: no test wants to wait one out, and the ones
+    that care about expiry drop the key directly.
+    """
+
+    def __init__(self) -> None:
+        self.keys: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.closed = 0
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.keys:
+            return None
+        self.keys[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
+        return True
+
+    def eval(self, _script, _numkeys, key, token):
+        # The guard's release: delete only if we still hold the token.
+        if self.keys.get(key) == token:
+            del self.keys[key]
+            self.ttls.pop(key, None)
+            return 1
+        return 0
+
+    def close(self):
+        self.closed += 1
+
+
+@pytest.fixture
+def fake_single_flight(monkeypatch):
+    """Give the single-flight guard an in-memory Redis.
+
+    Without this the guard hits the connection refusal above, falls through to
+    its fail-open path, and the test silently exercises "Redis is down" instead
+    of the behaviour it means to check. Yields the fake so a test can inspect
+    or pre-seed the held keys.
+    """
+    from backend.core import single_flight as single_flight_module
+
+    fake = FakeSingleFlightRedis()
+    monkeypatch.setattr(single_flight_module, "_open_client", lambda: fake)
+    return fake

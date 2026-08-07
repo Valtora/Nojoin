@@ -191,6 +191,37 @@ def _set_meeting_edge_state(
     name="backend.worker.tasks.refresh_meeting_edge_task", base=DatabaseTask, bind=True
 )
 def refresh_meeting_edge_task(self, recording_id: int):
+    """Refresh Meeting Edge for one recording, one run at a time.
+
+    A refresh is queued as the transcript grows, so during a live meeting a
+    trigger arrives every few seconds while a run takes 20-45 seconds. Nothing
+    used to stop them overlapping: the staleness check reads a timestamp only
+    written when a run *finishes*, and the signature check only suppresses an
+    input identical to one already in flight, which a live transcript never is.
+    Four concurrent runs were observed on a single recording, each spawning its
+    own LLM subprocess and all but the last immediately superseded.
+
+    Dropping the surplus rather than queueing it is deliberate. Another trigger
+    is seconds away and will carry fresher transcript than the one skipped, so
+    waiting would spend an LLM call to produce a staler answer.
+    """
+    with single_flight(
+        f"meeting-edge:{recording_id}",
+        ttl_seconds=MEETING_EDGE_SINGLE_FLIGHT_TTL_SECONDS,
+    ) as acquired:
+        if not acquired:
+            record_pipeline_metric(
+                stage="meeting_edge_refresh_skipped",
+                recording_id=recording_id,
+                payload={"reason": "already_running"},
+                log=logger,
+            )
+            return None
+
+        return _refresh_meeting_edge(self, recording_id)
+
+
+def _refresh_meeting_edge(self, recording_id: int):
     session = self.session
 
     try:

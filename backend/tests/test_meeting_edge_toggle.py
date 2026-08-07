@@ -48,7 +48,9 @@ class _FakeSession:
         return None
 
 
-def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(monkeypatch):
+def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(
+    monkeypatch, fake_single_flight
+):
     recording = SimpleNamespace(
         id=1,
         status=tasks_module.RecordingStatus.UPLOADING,
@@ -93,7 +95,7 @@ def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(monkey
 
 
 def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestions(
-    monkeypatch,
+    monkeypatch, fake_single_flight
 ):
     recording = SimpleNamespace(
         id=1,
@@ -240,7 +242,7 @@ def test_meeting_edge_source_signature_includes_context_level():
 
 
 def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_empty(
-    monkeypatch,
+    monkeypatch, fake_single_flight
 ):
     recording = SimpleNamespace(
         id=1,
@@ -322,3 +324,94 @@ def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_em
     assert "Canonical agenda update" in captured["recent_transcript"]
     assert transcript.meeting_edge_status == tasks_module.MEETING_EDGE_STATUS_READY
     assert transcript.meeting_edge_payload["summary"] == "Canonical guidance"
+
+
+def test_refresh_is_skipped_while_another_run_holds_the_guard(
+    monkeypatch, fake_single_flight, caplog
+):
+    """A second trigger during a live meeting must not start a second LLM run.
+
+    The staleness check reads a timestamp written only when a run finishes, and
+    the signature check only suppresses an input identical to one already in
+    flight, which a growing transcript never is. Four concurrent runs were
+    observed on a single recording before the guard existed.
+    """
+    from backend.core.single_flight import KEY_PREFIX
+
+    recording = SimpleNamespace(
+        id=1,
+        status=tasks_module.RecordingStatus.UPLOADING,
+        user_id=7,
+    )
+    transcript = SimpleNamespace(
+        meeting_edge_status=tasks_module.MEETING_EDGE_STATUS_UPDATING,
+        meeting_edge_error_message=None,
+        meeting_edge_payload={},
+        meeting_edge_source_signature="abc123",
+        segments=[{"text": "Plenty of signal here to justify a refresh."}],
+        meeting_edge_focus=None,
+        user_notes=None,
+    )
+    user = SimpleNamespace(id=7, settings={"enable_meeting_edge": True})
+    session = _FakeSession(recording, transcript, user)
+
+    # Stand in for a run already in flight on another worker.
+    fake_single_flight.keys[f"{KEY_PREFIX}meeting-edge:1"] = "in-flight-elsewhere"
+
+    monkeypatch.setattr(
+        tasks_module,
+        "resolve_llm_config",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("A skipped refresh must not reach the LLM")
+        ),
+    )
+
+    task = tasks_module.refresh_meeting_edge_task
+    original_session = task._session
+    task._session = session
+    try:
+        with caplog.at_level("INFO"):
+            result = task.run(1)
+    finally:
+        task._session = original_session
+
+    assert result is None
+    # The skip must not touch transcript state: the in-flight run owns it.
+    assert session.commit_count == 0
+    assert '"stage":"meeting_edge_refresh_skipped"' in caplog.text
+    assert '"reason":"already_running"' in caplog.text
+
+
+def test_the_guard_is_released_so_the_next_trigger_can_run(
+    monkeypatch, fake_single_flight
+):
+    from backend.core.single_flight import KEY_PREFIX
+
+    recording = SimpleNamespace(
+        id=1,
+        status=tasks_module.RecordingStatus.UPLOADING,
+        user_id=7,
+    )
+    transcript = SimpleNamespace(
+        meeting_edge_status=tasks_module.MEETING_EDGE_STATUS_READY,
+        meeting_edge_error_message=None,
+        meeting_edge_payload={},
+        meeting_edge_source_signature="abc123",
+        segments=[{"text": "Short."}],
+        meeting_edge_focus=None,
+        user_notes=None,
+    )
+    user = SimpleNamespace(id=7, settings={"enable_meeting_edge": False})
+    session = _FakeSession(recording, transcript, user)
+
+    monkeypatch.setattr(tasks_module, "flag_modified", lambda *args, **kwargs: None)
+
+    task = tasks_module.refresh_meeting_edge_task
+    original_session = task._session
+    task._session = session
+    try:
+        task.run(1)
+    finally:
+        task._session = original_session
+
+    assert f"{KEY_PREFIX}meeting-edge:1" not in fake_single_flight.keys
