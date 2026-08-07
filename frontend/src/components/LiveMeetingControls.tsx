@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Pause, Play, Square, Trash2 } from "lucide-react";
+import { AlertTriangle, Pause, Play, Square, Trash2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
@@ -45,6 +45,7 @@ export default function LiveMeetingControls({
     cancel,
     controller,
     coverageWarning,
+    dismissCoverageWarning,
     elapsedSeconds,
     pause,
     recordingId,
@@ -164,23 +165,40 @@ export default function LiveMeetingControls({
 
   const statusLabel = isRecording ? "Recording" : "Paused";
 
-  // The timer is wall clock, so it keeps counting while a suspended tab records
-  // nothing. This badge appears only when the two diverge, naming what was
-  // actually captured rather than quietly overstating the recording (issue #166).
+  // The timer is wall clock, so it keeps counting whether or not audio is
+  // reaching the server. This badge appears only when the two diverge, naming
+  // what the server actually holds rather than quietly overstating the
+  // recording (issue #166).
+  //
+  // The cause comes from the controller, which has the evidence to tell a
+  // suspended tab from an unreachable backend. This used to assert suspension
+  // unconditionally, which sent people to check browser settings during a
+  // server-side outage.
   const coverageBadge = coverageWarning ? (
     <div
       className="density-surface-panel flex items-start gap-2 border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
       role="status"
     >
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <span>
+      <span className="flex-1">
         <span className="font-semibold">
           {formatTime(coverageWarning.capturedSeconds)} captured
         </span>{" "}
-        of {formatTime(coverageWarning.elapsedSeconds)} elapsed. Audio is being
-        lost because this tab is being suspended. Keep the Nojoin tab open and
-        the device awake.
+        of {formatTime(coverageWarning.elapsedSeconds)} elapsed.{" "}
+        {coverageWarning.cause === "backend-unreachable"
+          ? "Nojoin cannot reach the server at the moment. Recording is continuing, and queued audio uploads when the connection returns."
+          : coverageWarning.cause === "tab-suspended"
+            ? "Audio is being lost because this tab is being suspended. Keep the Nojoin tab open and the device awake."
+            : "Keep the Nojoin tab open and the device awake, and check your connection to the Nojoin server."}
       </span>
+      <button
+        type="button"
+        onClick={dismissCoverageWarning}
+        className="-mr-1 -mt-1 shrink-0 rounded p-1 text-status-warning-fg/70 transition-colors hover:bg-status-warning-border/40 hover:text-status-warning-fg"
+        aria-label="Dismiss the capture coverage warning"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   ) : null;
 

@@ -340,6 +340,16 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   processing_eta_sample_size?: number;
   /** Optional upper bound on diarized speakers. null means auto-detect. */
   max_speakers?: number | null;
+  /**
+   * Seconds of audio the server actually holds, summed from the transcoded
+   * segments. Present only while capture is open; the detail endpoint omits it
+   * once a recording is finished, where `duration_seconds` is the better figure.
+   *
+   * Runs 2-3% high because each segment's decoded audio carries codec priming
+   * that concatenation later trims, so a shortfall derived from it is
+   * understated rather than invented.
+   */
+  captured_audio_seconds?: number | null;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

@@ -59,15 +59,37 @@ export type CaptureStopStage =
   | "finalizing";
 
 /**
- * Divergence between wall-clock recording time and the audio actually captured.
+ * Why the audio on the server is behind the clock.
  *
- * A suspended tab stops feeding the MediaRecorder without raising an error, so
- * this is the only client-side signal that audio is being lost.
+ * The shortfall is the same measurement either way, but the two causes need
+ * opposite things from the user, so the warning must not guess. A suspended tab
+ * means audio is gone for good and they should change something now. An
+ * unreachable backend means uploads are queued and will catch up, and telling
+ * someone their tab is being suspended when the server was down sends them off
+ * to check browser settings that were never the problem.
+ *
+ * `unknown` is the honest answer when neither signal is present, and gets copy
+ * that describes the shortfall without diagnosing it.
+ */
+export type CaptureCoverageCause =
+  | "tab-suspended"
+  | "backend-unreachable"
+  | "unknown";
+
+/**
+ * Divergence between wall-clock recording time and the audio the server holds.
+ *
+ * `capturedSeconds` comes from the backend's sum of transcoded segment
+ * durations, not from multiplying the sequence number by the timeslice: a
+ * segment carries slightly more than the nominal timeslice, and assuming
+ * otherwise under-counted captured audio by around 10% over an hour, which was
+ * enough to report a shortfall on a recording that had lost nothing.
  */
 export interface CaptureCoverageWarning {
   capturedSeconds: number;
   elapsedSeconds: number;
   missingSeconds: number;
+  cause: CaptureCoverageCause;
 }
 
 export interface CaptureState {
@@ -84,6 +106,13 @@ export interface CaptureState {
   finalizeRetry: FinalizeRetryProgress | null;
   stopStage: CaptureStopStage | null;
   coverageWarning: CaptureCoverageWarning | null;
+  /**
+   * Shortfall the user has already dismissed, in seconds, or null if they have
+   * not. Kept as a number rather than a flag so a shortfall that keeps growing
+   * can raise the warning again instead of staying hidden for the rest of the
+   * meeting.
+   */
+  coverageWarningDismissedAt: number | null;
 }
 
 export interface StartCaptureResult {

@@ -165,6 +165,21 @@ class RecordingPublicRead(PublicModel):
     processing_eta_learning: bool = False
     processing_eta_sample_size: int = 0
     max_speakers: Optional[int] = None
+    # How much audio the server actually holds, summed from the transcoded
+    # segments. The live view compares this against its own wall clock to tell
+    # whether capture is keeping up; it cannot derive the figure itself, because
+    # a segment carries slightly more than the nominal timeslice and assuming
+    # otherwise under-counts by around 10% over an hour.
+    #
+    # Runs about 2-3% high, because each segment's decoded WAV carries codec
+    # priming that concatenation later trims. That bias is deliberate rather
+    # than corrected for: it can only ever make a shortfall look smaller, so it
+    # cannot manufacture a warning, which is the failure this figure replaced.
+    #
+    # None until the first segment is transcoded, and on the list endpoint,
+    # where summing per row would be a query per recording for a figure no list
+    # view shows.
+    captured_audio_seconds: Optional[float] = None
     is_archived: bool = False
     is_deleted: bool = False
     last_activity_at: Optional[datetime] = None
@@ -308,6 +323,7 @@ def serialize_recording(
     transcript_segments_override: Optional[list[dict]] = None,
     transcript_text_override: Optional[str] = None,
     speakers_override: Optional[list[RecordingSpeaker]] = None,
+    captured_audio_seconds: Optional[float] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
@@ -364,6 +380,7 @@ def serialize_recording(
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
         max_speakers=getattr(recording, "max_speakers", None),
+        captured_audio_seconds=captured_audio_seconds,
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,

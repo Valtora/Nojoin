@@ -130,7 +130,7 @@ def test_persist_install_wide_ai_settings_only_writes_install_wide_fields(
     monkeypatch.setattr(
         config_manager,
         "reload",
-        lambda: captured.setdefault("reloaded", True),
+        lambda **_kwargs: captured.setdefault("reloaded", True),
     )
 
     _persist_install_wide_ai_settings(

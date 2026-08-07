@@ -49,7 +49,7 @@ class _FakeConfigManager:
             raise OSError("Read-only file system")
         self.config = dict(config_data)
 
-    def reload(self):
+    def reload(self, *, force: bool = False):
         self.reloads += 1
 
     def validate_config_value(self, key, value):

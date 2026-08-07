@@ -377,6 +377,10 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft calendar OAuth client secret.
 - `MICROSOFT_OAUTH_TENANT_ID`: Microsoft tenant ID. Use `common` only when the app registration supports the intended sign-in model.
 - `NOJOIN_UMASK`: Custom umask for the application processes. Defaults to `0077` (owner-only access: `0600`/`0700` permissions on files/directories).
+- `NOJOIN_STALL_WATCHDOG_ENABLED`: Master switch for stall detection (see [Stall Detection](#stall-detection)). Defaults to `true`.
+- `NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS`: How often the watchdog measures event-loop lag. Defaults to `5`.
+- `NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS`: Overshoot above which a stall is reported. Defaults to `1`. Lowering it below a second produces noise from ordinary event-loop scheduling.
+- `NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD`: Percentage of the last ten seconds spent blocked, above which host pressure is reported on its own. Defaults to `20`.
 
 ### DATA_ENCRYPTION_KEY Guidance
 
@@ -392,6 +396,21 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `NEXT_PUBLIC_API_URL`: Only set this when building a custom frontend image and the frontend is not using the default same-origin `/api` path.
 
 For calendar-specific registration detail, read [CALENDAR.md](CALENDAR.md).
+
+## Stall Detection
+
+The API watches for stalls in its own process and reports them as pipeline metrics in the container log. A live recording is the workload that cannot survive one: the browser keeps counting wall-clock time while nothing reaches the server, and the audio for that stretch is lost. See [ARCHITECTURE.md](ARCHITECTURE.md#stall-detection) for how it works.
+
+Two events appear in `docker compose logs api`:
+
+- `event_loop_stalled` carries `lag_s`, the number of seconds by which a fixed sleep overshot, and `pressure_avg10` where the kernel exposes it. Any lag over a second or two means requests were queueing behind something. If `memory_some` or `io_some` is high alongside it, the host was the cause rather than the API.
+- `host_pressure_high` means the machine spent a meaningful share of the last ten seconds with tasks blocked, without the API stalling outright. Treat it as an early warning that the host is under-resourced. Rate-limited to once a minute while the condition persists.
+
+Both are quiet on a healthy deployment. If either appears during meetings, check host memory and swap first: the outage this was built for came from a machine running with almost all of its swap in use.
+
+Pressure figures need `/proc/pressure`, which is Linux-only and absent from kernels built without PSI. Lag detection works everywhere; only the attribution is lost.
+
+Tuning and the off switch are under [Common Optional Values](#common-optional-values).
 
 ## Configuration Model
 

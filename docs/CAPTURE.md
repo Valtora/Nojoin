@@ -123,7 +123,9 @@ Refreshing or closing the Nojoin tab (actual tab unload) during a recording move
 
 Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
 
-Not pausing is not the same as being safe in the background. If the browser or the operating system suspends the Nojoin tab, browser capture stops receiving audio for as long as the suspension lasts, and that audio cannot be recovered afterwards. The recording is not paused and no error is raised, because nothing in a web page can prevent or undo being suspended. Nojoin detects the shortfall by comparing the audio it has stored against elapsed recording time, and shows a warning naming how much was captured. Keep the Nojoin tab open, keep the device awake, and do not rely on a background tab for a long meeting. See [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting).
+Not pausing is not the same as being safe in the background. If the browser or the operating system suspends the Nojoin tab, browser capture stops receiving audio for as long as the suspension lasts, and that audio cannot be recovered afterwards. The recording is not paused and no error is raised, because nothing in a web page can prevent or undo being suspended. Nojoin detects the shortfall by comparing the audio the server holds against elapsed recording time, and shows a dismissible warning naming how much was captured and, where it can tell, what caused the gap. Keep the Nojoin tab open, keep the device awake, and do not rely on a background tab for a long meeting. See [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting).
+
+While recording, Nojoin holds a screen wake lock so the display does not blank and the machine does not idle to sleep. That covers device sleep only. It does not prevent the browser suspending the tab, which no web page can do.
 
 ## Floating Recording Badge
 
@@ -198,14 +200,38 @@ That is expected. Browsers do not let Nojoin silently recreate shared tab, windo
 
 ### Recorded audio is shorter than the meeting
 
-The browser or the operating system suspended the Nojoin tab during capture. A suspended tab stops feeding audio to the recorder, so that stretch of the meeting was never recorded and cannot be recovered. The recording itself is intact and processes normally; it is only shorter than the elapsed time.
+Nojoin compares the audio the server actually holds against the elapsed recording time, and warns when the two diverge, showing the captured duration next to the elapsed timer. It warns again when the recording is stopped.
 
-Nojoin warns while this is happening, showing the captured duration next to the elapsed timer, and warns again when the recording is stopped. To avoid it:
+The warning names one of three causes, and they need different things from you.
+
+**The tab was suspended.** The browser or the operating system suspended the Nojoin tab during capture. A suspended tab stops feeding audio to the recorder, so that stretch of the meeting was never recorded and cannot be recovered. The recording itself is intact and processes normally; it is only shorter than the elapsed time. To avoid it:
 
 - Keep the Nojoin tab open, and prefer keeping it visible in its own window.
-- Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture.
-- Exempt Nojoin from browser tab-suspension features. In Chrome, add the site to the exceptions under **Settings > Performance > Memory Saver**.
+- Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture. Nojoin holds a screen wake lock while recording, which stops the display blanking, but it cannot stop a lid being closed or the machine being suspended by hand.
 - On mobile Chrome, keep Nojoin in the foreground and stop the phone locking.
+- If it happens repeatedly on Chrome for desktop, exempt Nojoin from tab suspension. See [Chrome Memory Saver](#chrome-memory-saver).
+
+**Nojoin could not reach the server.** Recording continued and the audio is queued in the browser; it uploads when the connection returns. Nothing is lost as long as the tab stays open, so leave it open until the shortfall clears. This is a server or network problem, not a browser one, and changing browser settings will not help.
+
+**Neither could be established.** The warning says only how much audio is missing. Check both: that the tab has stayed open and the device awake, and that the connection to your Nojoin server is healthy.
+
+The warning can be dismissed with the close control. It stays dismissed unless the shortfall grows substantially further, so a problem that is getting worse will say so again.
+
+Nojoin reports this conservatively. The captured figure it compares against is measured from the audio segments the server has decoded, and that measurement runs slightly high, so a small shortfall may be reported as none at all. It will not report a shortfall that is not there.
+
+### Chrome Memory Saver
+
+Chrome's Memory Saver puts inactive tabs to sleep to reclaim memory. **You should not normally need to do anything about this for Nojoin.** Memory Saver exempts tabs that are actively using the microphone or camera or sharing a screen, and Nojoin holds those for the whole of a recording, so a recording tab is exempt for as long as it is recording.
+
+If you do see repeated shortfalls attributed to tab suspension on Chrome for desktop, add Nojoin to the exemption list by hand:
+
+1. Open **Settings > Performance > Memory Saver**.
+2. Under **Always keep these sites active**, select **Add**.
+3. Enter the address you use to reach Nojoin, for example `nojoin.example.com`.
+
+Nojoin cannot do this for you and cannot check whether it is done. No browser API lets a page opt out of Memory Saver, and none lets a page read whether Memory Saver is switched on. This is why the shortfall warning describes what it can measure rather than asserting a cause it cannot observe.
+
+Chrome documents the feature at [Memory Saver in Chrome](https://support.google.com/chrome/answer/12929150).
 
 ### Stop did not finish
 

@@ -6,6 +6,7 @@ import { PickSourceError } from "./pickSource";
 
 const apiMocks = vi.hoisted(() => ({
   discardRecordingCapture: vi.fn(),
+  getRecording: vi.fn(),
   finalizeRecordingCapture: vi.fn(),
   pauseRecordingCapture: vi.fn(),
   getPausedRecordings: vi.fn(),
@@ -22,15 +23,23 @@ const pickSourceMocks = vi.hoisted(() => ({
   pickCaptureSource: vi.fn(),
 }));
 
+// Mutable so a test can put the backend "down" without rebuilding the store.
+const connectivityMocks = vi.hoisted(() => ({ status: "online" as string }));
+
 vi.mock("@/lib/api", () => ({
   discardRecordingCapture: apiMocks.discardRecordingCapture,
   finalizeRecordingCapture: apiMocks.finalizeRecordingCapture,
   getPausedRecordings: apiMocks.getPausedRecordings,
+  getRecording: apiMocks.getRecording,
   initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
   reportRecordingCaptureSources: apiMocks.reportRecordingCaptureSources,
   resumeRecordingCapture: apiMocks.resumeRecordingCapture,
+}));
+
+vi.mock("@/lib/connectivity/monitor", () => ({
+  useConnectivityStore: { getState: () => ({ status: connectivityMocks.status }) },
 }));
 
 vi.mock("./featureDetect", () => ({
@@ -159,6 +168,9 @@ describe("capture controller", () => {
     });
     pickSourceMocks.pickCaptureSource.mockReset();
     notificationMocks.addNotification.mockReset();
+    apiMocks.getRecording.mockReset();
+    apiMocks.getRecording.mockResolvedValue({ id: "rec-1" });
+    connectivityMocks.status = "online";
   });
 
   afterEach(() => {
@@ -800,42 +812,166 @@ describe("capture controller", () => {
     expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1");
   });
 
-  it("warns when captured audio falls behind elapsed recording time", async () => {
-    // Measured at ~52% coverage across a 20s tab freeze; the wall-clock timer
-    // keeps counting while nothing is being recorded.
+  /**
+   * Coverage is judged against the audio the server reports holding, never
+   * against sequence arithmetic. Multiplying the last sequence by the timeslice
+   * under-counted captured audio by ~10% over an hour, because each segment
+   * carries a little more than the nominal timeslice, and that alone was enough
+   * to report minutes missing from a recording that had lost nothing.
+   */
+  const recordingWithCapturedAudio = (capturedSeconds: number, elapsedSeconds: number) => {
     const controller = new CaptureController() as any;
     controller.state = {
       ...controller.getState(),
       status: "recording",
       recordingId: "rec-1",
-      lastSequence: 1_266,
-      elapsedSeconds: 5_455,
+      elapsedSeconds,
     };
+    controller.capturedAudioSeconds = capturedSeconds;
+    return controller;
+  };
+
+  it("warns when the audio the server holds falls behind elapsed time", () => {
+    // The 6 August 2026 shape: 81 minutes elapsed, 77 minutes of audio.
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
 
     controller.evaluateCoverage();
 
     const warning = controller.getState().coverageWarning;
     expect(warning).not.toBeNull();
-    expect(warning.capturedSeconds).toBe(2_534);
-    expect(warning.missingSeconds).toBe(2_921);
+    expect(warning.capturedSeconds).toBe(4_618);
+    expect(warning.missingSeconds).toBe(256);
     expect(notificationMocks.addNotification).toHaveBeenCalledWith(
       expect.objectContaining({ type: "warning" }),
     );
   });
 
-  it("stays quiet when captured audio only trails by upload latency", async () => {
-    const controller = new CaptureController() as any;
-    controller.state = {
-      ...controller.getState(),
-      status: "recording",
-      recordingId: "rec-1",
-      lastSequence: 299,
-      elapsedSeconds: 604,
-    };
+  it("stays quiet when captured audio only trails by upload latency", () => {
+    const controller = recordingWithCapturedAudio(598, 604);
 
     controller.evaluateCoverage();
 
     expect(controller.getState().coverageWarning).toBeNull();
     expect(notificationMocks.addNotification).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet before the server has reported any captured audio", () => {
+    // Silence beats guessing. Guessing is what produced the false warnings.
+    const controller = new CaptureController() as any;
+    controller.state = {
+      ...controller.getState(),
+      status: "recording",
+      recordingId: "rec-1",
+      elapsedSeconds: 4_874,
+    };
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning).toBeNull();
+  });
+
+  it("blames the backend when it is unreachable", () => {
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    connectivityMocks.status = "unreachable";
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning.cause).toBe("backend-unreachable");
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("cannot reach the server"),
+      }),
+    );
+  });
+
+  it("blames the tab only when the recorder was seen to stall", () => {
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.handleRecorderStall({ sinceLastChunkMs: 120_000, abandonedSegment: false });
+
+    expect(controller.getState().coverageWarning.cause).toBe("tab-suspended");
+  });
+
+  it("does not blame the tab without evidence", () => {
+    // A shortfall with neither signal present is reported without a diagnosis,
+    // rather than asserting suspension and sending someone to browser settings.
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning.cause).toBe("unknown");
+  });
+
+  it("an unreachable backend outranks an earlier tab freeze", () => {
+    // Both can be true at once; the actionable one is the live condition.
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.sawCaptureFreeze = true;
+    connectivityMocks.status = "unreachable";
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning.cause).toBe("backend-unreachable");
+  });
+
+  it("clears the warning when dismissed", () => {
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.evaluateCoverage();
+
+    controller.dismissCoverageWarning();
+
+    expect(controller.getState().coverageWarning).toBeNull();
+    expect(controller.getState().coverageWarningDismissedAt).toBe(256);
+  });
+
+  it("stays dismissed while the shortfall holds steady", () => {
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.evaluateCoverage();
+    controller.dismissCoverageWarning();
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning).toBeNull();
+  });
+
+  it("returns when the shortfall grows materially past the dismissal", () => {
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.evaluateCoverage();
+    controller.dismissCoverageWarning();
+
+    // Another two minutes lost.
+    controller.state = { ...controller.getState(), elapsedSeconds: 5_000 };
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning).not.toBeNull();
+    expect(controller.getState().coverageWarningDismissedAt).toBeNull();
+  });
+
+  it("polls the backend for captured audio and re-judges", async () => {
+    apiMocks.getRecording.mockResolvedValue({
+      id: "rec-1",
+      captured_audio_seconds: 4_618,
+    });
+    const controller = new CaptureController() as any;
+    controller.state = {
+      ...controller.getState(),
+      status: "recording",
+      recordingId: "rec-1",
+      elapsedSeconds: 4_874,
+    };
+
+    await controller.pollCapturedAudio();
+
+    expect(apiMocks.getRecording).toHaveBeenCalledWith("rec-1");
+    expect(controller.getState().coverageWarning.missingSeconds).toBe(256);
+  });
+
+  it("a failed poll changes nothing", async () => {
+    // The connectivity monitor owns "is the backend reachable"; a failed poll
+    // here is not evidence of a shortfall.
+    apiMocks.getRecording.mockRejectedValue(new Error("network"));
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+
+    await controller.pollCapturedAudio();
+
+    expect(controller.getState().coverageWarning).toBeNull();
   });
 });
