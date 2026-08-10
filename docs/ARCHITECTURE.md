@@ -89,12 +89,54 @@ widens that — a model transcribing a page reproduces any instruction printed o
 it — so both prompt sinks fence it in `<attached_document>` delimiters with an
 explicit data-not-instructions rule.
 
+### Meeting Analytics
+
+Speaking-dynamics analytics for a recording — talk-time share, turn structure,
+directional interruptions, turn-taking and response latency, a talk-share
+timeline, and silence and overlap totals — are derived on read from the
+canonical `transcript_utterances` rows rather than computed by the pipeline and
+stored.
+
+That is a deliberate trade. The derivation is arithmetic over a few thousand
+rows, so per-request cost is negligible, and paying it buys two properties a
+cached table would have to earn back with code. Every recording that predates
+the feature has analytics immediately, with no migration, no backfill sweep,
+and no reprocess — which matters because reprocess rebuilds the transcript and
+clears hand-set speaker names, so making it the price of analytics would cost
+users their corrections. And a speaker merge, rename, or transcript edit is
+reflected on the next read, with no invalidation path that can be got wrong.
+Speaker figures are grouped by `recording_speaker_id` precisely so a merge
+redirects utterances onto the surviving row and the numbers follow.
+
+The derivation lives in `backend/services/meeting_analytics/`, deliberately free
+of ORM and ML imports below its query layer so it can run in the API process and
+be tested as pure functions. Its thresholds — what counts as a turn boundary, an
+interruption rather than turn-boundary bleed, or a measurable response gap — are
+centralised in that package's `constants.py` for the same reason the speaker
+thresholds are centralised in `backend/processing/embedding.py`: they are one
+tuning decision, not several.
+
+Two definitions are load-bearing anywhere the numbers are consumed. Per-speaker
+talk time counts overlapping speech once for each speaker, so shares are
+reported against total speech rather than against duration and the two
+denominators are carried separately. And anything excluded from a statistic is
+counted rather than dropped, so a median over four samples is distinguishable
+from a median over ninety.
+
+Because every figure is attached to a speaker, the surface discloses when that
+attribution is doubtful rather than presenting a confidently wrong number: a
+structured warning is returned when several clusters hold a negligible share,
+overlap is high, the speaker cap bound, or speakers are unnamed. Reasons are
+codes, so the web client owns the wording and the MCP surface stays stable for
+an assistant to branch on.
+
 ### Web Client
 
 The web client is responsible for:
 
 - Dashboard workflows.
 - Recordings workspace and transcript review.
+- Meeting analytics.
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.

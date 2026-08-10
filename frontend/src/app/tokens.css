@@ -179,6 +179,33 @@
   --surface-divider: rgba(203, 213, 225, 0.42);
   --surface-card-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04);
   --surface-inset: rgba(241, 245, 249, 0.75);
+
+  /* Chart series, light. A categorical palette: these encode identity (which
+     speaker), never magnitude, so they are assigned in fixed slot order and
+     never cycled. A meeting with more speakers than slots folds the remainder
+     into --chart-other rather than generating a ninth hue, because a repeated
+     hue reads as the same person.
+
+     Validated as a set rather than chosen: the eight clear the colour-vision
+     separation and normal-vision floors on the adjacent pairlist in both
+     themes. Three of the light steps sit below 3:1 on the card, which is
+     permitted only because identity here is never carried by colour alone --
+     every series is directly labelled and the same figures are available as
+     text. Do not reuse these for a chart that drops its labels.
+
+     The dark block re-steps the same eight hues for the dark surface. It is
+     not an automatic lightening of these values, and the two sets must be
+     re-validated together if either moves. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-7: #4a3aa7;
+  --chart-8: #e34948;
+  --chart-other: #94a3b8;
+  --chart-grid: rgba(148, 163, 184, 0.28);
 }
 
 .dark {
@@ -291,6 +318,21 @@
   --surface-float: #2a2a2a;
   --surface-float-border: rgba(148, 163, 184, 0.22);
   --float-shadow: 0 10px 24px -6px rgb(0 0 0 / 0.6), 0 4px 10px -4px rgb(0 0 0 / 0.5);
+
+  /* Chart series, dark. The same eight hues as light, re-stepped for the dark
+     surface and validated against it as a set. All eight clear 3:1 here, so
+     the light block's labelling obligation is a light-mode constraint that
+     this block does not relax -- the labels are shared by both themes. */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #008300;
+  --chart-7: #9085e9;
+  --chart-8: #e66767;
+  --chart-other: #64748b;
+  --chart-grid: rgba(148, 163, 184, 0.2);
 }
 
 html[data-ui-density="compact"] {

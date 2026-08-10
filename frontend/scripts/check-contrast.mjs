@@ -138,6 +138,24 @@ const PAIRINGS = [
   { label: "tooltip text on tooltip", fg: "tooltip-fg", bg: ["tooltip-bg"], min: AA_TEXT },
   { label: "tooltip vs card", fg: "tooltip-bg", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
 
+  // Chart series. HAIRLINE rather than AA_NON_TEXT, and the distinction is
+  // load-bearing: 1.4.11 covers what is *required* to identify a component,
+  // and a series fill is not that here. Every series carries a direct label
+  // and a legend entry, and the same figures are available as text, so colour
+  // reinforces identity rather than conveying it. The floor these are held to
+  // is visibility. If a chart is ever added that drops its labels, these
+  // pairings move to AA_NON_TEXT and three of the light steps stop passing.
+  { label: "chart series 1 vs card", fg: "chart-1", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 2 vs card", fg: "chart-2", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 3 vs card", fg: "chart-3", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 4 vs card", fg: "chart-4", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 5 vs card", fg: "chart-5", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 6 vs card", fg: "chart-6", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 7 vs card", fg: "chart-7", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart series 8 vs card", fg: "chart-8", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart other vs card", fg: "chart-other", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+  { label: "chart grid vs card", fg: "chart-grid", bg: ["surface-page", "surface-card"], min: HAIRLINE },
+
   // Rails. Their own surface, so nothing here is measured against the page.
   { label: "rail text on rail", fg: "rail-fg", bg: ["rail-bg"], min: AA_TEXT },
   { label: "rail muted text on rail", fg: "rail-fg-muted", bg: ["rail-bg"], min: AA_TEXT },

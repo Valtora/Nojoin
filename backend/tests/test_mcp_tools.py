@@ -2116,3 +2116,213 @@ async def test_unlock_utterance_requires_write_scope(
     bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
     with pytest.raises(ToolError):
         await unlock_utterance("any-id", "u-1")
+
+
+async def seed_analytics_transcript(session_maker, *, recording_id: int = 1) -> None:
+    """A transcript whose timings exercise every analytics figure.
+
+    Dana holds the floor for 40s across two turns, Guest for 10s across two,
+    and Guest cuts across Dana once. The numbers are chosen so every assertion
+    below can be checked by hand from these rows alone.
+    """
+    async with session_maker() as session:
+        session.add(
+            Transcript(
+                recording_id=recording_id,
+                segments=[],
+                notes_status="completed",
+                transcript_status="completed",
+            )
+        )
+        session.add_all(
+            [
+                # Dana, 30s.
+                TranscriptUtterance(
+                    id=1,
+                    public_id="a-1",
+                    recording_id=recording_id,
+                    sort_key="0001",
+                    start_ms=0,
+                    end_ms=30_000,
+                    text="Long opening.",
+                    speaker_label="SPEAKER_00",
+                    recording_speaker_id=1,
+                    state=TranscriptUtteranceState.STABLE,
+                    source_kind="final",
+                ),
+                # Guest cuts in 5s before Dana finishes, for 5s.
+                TranscriptUtterance(
+                    id=2,
+                    public_id="a-2",
+                    recording_id=recording_id,
+                    sort_key="0002",
+                    start_ms=25_000,
+                    end_ms=30_000,
+                    text="Sorry, quick point.",
+                    speaker_label="SPEAKER_01",
+                    recording_speaker_id=2,
+                    state=TranscriptUtteranceState.STABLE,
+                    source_kind="final",
+                ),
+                # Dana again after a clean gap, 10s.
+                TranscriptUtterance(
+                    id=3,
+                    public_id="a-3",
+                    recording_id=recording_id,
+                    sort_key="0003",
+                    start_ms=40_000,
+                    end_ms=50_000,
+                    text="As I was saying.",
+                    speaker_label="SPEAKER_00",
+                    recording_speaker_id=1,
+                    state=TranscriptUtteranceState.STABLE,
+                    source_kind="final",
+                ),
+                # Guest replies after a 5s pause, 5s.
+                TranscriptUtterance(
+                    id=4,
+                    public_id="a-4",
+                    recording_id=recording_id,
+                    sort_key="0004",
+                    start_ms=55_000,
+                    end_ms=60_000,
+                    text="Understood.",
+                    speaker_label="SPEAKER_01",
+                    recording_speaker_id=2,
+                    state=TranscriptUtteranceState.STABLE,
+                    source_kind="final",
+                ),
+                # Superseded rows must not reach any figure.
+                TranscriptUtterance(
+                    id=5,
+                    public_id="a-5",
+                    recording_id=recording_id,
+                    sort_key="0005",
+                    start_ms=0,
+                    end_ms=60_000,
+                    text="Replaced.",
+                    speaker_label="SPEAKER_00",
+                    recording_speaker_id=1,
+                    state=TranscriptUtteranceState.SUPERSEDED,
+                    source_kind="final",
+                ),
+            ]
+        )
+        session.add(
+            TranscriptUtteranceEvent(
+                id=1,
+                recording_id=recording_id,
+                utterance_id=1,
+                event_type="create",
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_reports_measured_figures(
+    session_maker, test_user: User, mcp_context
+):
+    """The tool answers "who spoke, for how long, and how did it move"."""
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    result = await get_meeting_analytics(public_id)
+
+    by_name = {speaker["name"]: speaker for speaker in result["speakers"]}
+    assert set(by_name) == {"Dana", "Guest"}
+
+    # Dana: 30s + 10s. Guest: 5s + 5s. Shares are of total speech (50s).
+    assert by_name["Dana"]["speaking_seconds"] == 40.0
+    assert by_name["Guest"]["speaking_seconds"] == 10.0
+    assert by_name["Dana"]["share_of_speech"] == 0.8
+    assert by_name["Guest"]["share_of_speech"] == 0.2
+
+    # Guest cut across Dana once; Dana never cut across Guest.
+    assert by_name["Guest"]["interruptions_made"] == 1
+    assert by_name["Dana"]["interruptions_received"] == 1
+    assert by_name["Dana"]["interruptions_made"] == 0
+
+    assert by_name["Dana"]["longest_turn_seconds"] == 30.0
+    assert by_name["Dana"]["longest_turn_at_seconds"] == 0.0
+
+    # Superseded utterances are excluded: including a-5 would double Dana.
+    assert result["utterance_count"] == 4
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_names_speakers_rather_than_ids(
+    session_maker, test_user: User, mcp_context
+):
+    """An assistant must never have to join two collections to read a figure."""
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    result = await get_meeting_analytics(public_id)
+
+    transitions = result["conversation"]["transitions"]
+    assert transitions
+    for transition in transitions:
+        assert transition["from_speaker"] in {"Dana", "Guest"}
+        assert transition["to_speaker"] in {"Dana", "Guest"}
+    for bucket in result["timeline"]:
+        assert set(bucket["speaking_seconds"]) <= {"Dana", "Guest"}
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_discloses_unnamed_speakers(
+    session_maker, test_user: User, mcp_context
+):
+    """An unnamed speaker is a caveat the assistant has to be able to relay.
+
+    No person is seeded here, so SPEAKER_00's person link dangles and the
+    speaker resolves back to its diarisation label. That is the case that
+    proves the flag follows the resolved name rather than the link.
+    """
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    result = await get_meeting_analytics(public_id)
+
+    codes = {reason["code"] for reason in result["attribution_warnings"]}
+    assert "unnamed_speakers" in codes
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_rejects_other_users_recording(
+    session_maker, test_user: User, mcp_context
+):
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=999)
+    await seed_analytics_transcript(session_maker)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_meeting_analytics(public_id)
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_explains_a_recording_with_no_transcript(
+    session_maker, test_user: User, mcp_context
+):
+    """Still processing is a normal state, not a tool failure to paper over."""
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    with pytest.raises(ToolError, match="no transcript"):
+        await get_meeting_analytics(public_id)

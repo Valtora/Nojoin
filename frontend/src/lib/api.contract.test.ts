@@ -109,6 +109,7 @@ describe("api public surface", () => {
         "getPeopleTags",
         "getPersonalDictionary",
         "getRecording",
+        "getRecordingAnalytics",
         "getRecordingCalendarEventCandidates",
         "getRecordingInfo",
         "getRecordingStreamUrl",

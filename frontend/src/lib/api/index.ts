@@ -28,6 +28,7 @@ export * from "./system";
 export * from "./users";
 export * from "./documents";
 export * from "./chat";
+export * from "./analytics";
 export * from "./backup";
 export * from "./version";
 

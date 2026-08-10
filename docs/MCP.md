@@ -2,7 +2,7 @@
 
 Nojoin ships a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so AI assistants such as Claude can work with your meeting library — recordings, transcripts, meeting notes, attached documents, speakers, tags, and your People library — directly from your own deployment.
 
-The connector is a full agentic interface with two access tiers. **Read** tools (`mcp:read`) cover the whole library, including semantic search across every meeting and document. **Write** tools (`mcp:write`) cover recoverable changes: organising recordings (rename, tag, archive, bin, restore), managing tasks, correcting transcripts, regenerating notes, attaching text documents, appending user notes, and maintaining People records. Everything an assistant changes stays recoverable by you: archived and binned items restore, transcript edits are tracked in the edit log, and the assistant never authors AI-note content directly. **Permanent deletion is not possible through the connector at all** — the strongest deletion verb is moving a recording to the bin, and emptying the bin exists only in the web app. Because Nojoin exposes clean primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
+The connector is a full agentic interface with two access tiers. **Read** tools (`mcp:read`) cover the whole library, including semantic search across every meeting and document and measured speaking-dynamics analytics for any processed meeting. **Write** tools (`mcp:write`) cover recoverable changes: organising recordings (rename, tag, archive, bin, restore), managing tasks, correcting transcripts, regenerating notes, attaching text documents, appending user notes, and maintaining People records. Everything an assistant changes stays recoverable by you: archived and binned items restore, transcript edits are tracked in the edit log, and the assistant never authors AI-note content directly. **Permanent deletion is not possible through the connector at all** — the strongest deletion verb is moving a recording to the bin, and emptying the bin exists only in the web app. Because Nojoin exposes clean primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
 
 ## Requirements
 
@@ -76,7 +76,7 @@ Known upstream issue: some Codex Desktop builds (observed on 0.125.0-alpha.3) co
 
 ## Available Tools
 
-Thirty tools. Twelve read and eighteen write; the table below pairs a few of them onto one
+Thirty-one tools. Thirteen read and eighteen write; the table below pairs a few of them onto one
 row where they are opposites of each other, so it has fewer rows than there are tools.
 
 | Tool | Scope | Description |
@@ -87,6 +87,7 @@ row where they are opposites of each other, so it has fewer rows than there are 
 | `search_context` | `mcp:read` | Semantic search across every transcript and attached document, with recording, timestamp, and page provenance on each hit. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
+| `get_meeting_analytics` | `mcp:read` | Speaking dynamics for one meeting: talk-time share, turn counts, median and longest turn, directional interruption counts, median response time, a talk-share timeline, and silence and overlap totals. Every figure is measured from the transcript's timings, never inferred by a model, and matches the app's Analytics tab exactly. Carries `attribution_warnings` when speaker attribution for that recording looks unreliable. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
 | `list_tags` | `mcp:read` | Your tag list, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes, and tags. |

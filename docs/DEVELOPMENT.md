@@ -496,6 +496,26 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 - **Routing & Framework**: Use the Next.js App Router ([frontend/src/app/](../frontend/src/app/)) and Tailwind CSS for styling. Prefer functional components inside [frontend/src/components/](../frontend/src/components/).
 - **Strict TypeScript**: Avoid the use of `any` types. Ensure TS interfaces in `frontend/src/types/index.ts` are updated first when adding settings or model fields.
 
+### Charts
+
+Chart colour comes from the `--chart-1` … `--chart-8` tokens in
+[frontend/src/app/tokens.css](../frontend/src/app/tokens.css), with `--chart-other`
+for anything past the last slot. Three rules hold:
+
+- **Slots are assigned by fixed position and never cycled.** Colour identifies an
+  entity, so a filter that changes how many series are on screen must not repaint
+  the survivors, and a ninth series folds into `--chart-other` rather than wrapping
+  back to slot 1 — a repeated hue reads as the same entity.
+- **The two themes are separate selected sets, not a lightening of one another.**
+  They were validated together against their own surfaces for colour-vision
+  separation and normal-vision separation. Moving either means re-validating both.
+- **Three of the light steps sit below 3:1 on the card, which is why the pairings in
+  [check-contrast.mjs](../frontend/scripts/check-contrast.mjs) are held to `HAIRLINE`
+  rather than `AA_NON_TEXT`.** That is only defensible while identity is never
+  carried by colour alone: every series is directly labelled and the same figures
+  appear as text. A chart that drops its labels has to move those pairings up, and
+  three steps then fail.
+
 ### UI Duplication Rules
 - **Recording actions**: rename, reprocess, archive, discard and the rest are defined once, in
   [frontend/src/components/recordings/_hooks/useRecordingActions.ts](../frontend/src/components/recordings/_hooks/useRecordingActions.ts). Surfaces consume that hook rather than defining their own, and

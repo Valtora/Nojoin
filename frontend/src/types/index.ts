@@ -939,3 +939,107 @@ export interface AxiosErrorLike {
   };
   message?: string;
 }
+
+// Meeting analytics. Every figure below is measured from the transcript's
+// timings rather than inferred by a model, so the interface can present them
+// without hedging. Durations are milliseconds throughout, matching the
+// canonical utterance timings they derive from.
+export interface AnalyticsSpeaker {
+  speaker_key: string;
+  public_id: string | null;
+  name: string;
+  diarization_label: string | null;
+  color: string | null;
+  global_speaker_id: number | null;
+  is_named: boolean;
+}
+
+export interface AnalyticsTalkTime {
+  speech_ms: number;
+  // Fraction of all speaking time. Sums to 1.0 across speakers even when
+  // people talked over each other, which share_of_duration does not.
+  share_of_speech: number;
+  share_of_duration: number;
+}
+
+export interface AnalyticsTurnStructure {
+  turn_count: number;
+  median_turn_ms: number;
+  longest_turn_ms: number;
+  longest_turn_start_ms: number;
+  excluded_short_turns: number;
+}
+
+export interface AnalyticsInterruptions {
+  made: number;
+  received: number;
+}
+
+export interface AnalyticsTransition {
+  from_speaker: string;
+  to_speaker: string;
+  count: number;
+  median_latency_ms: number | null;
+}
+
+export interface AnalyticsResponseLatency {
+  median_ms: number;
+  sample_count: number;
+}
+
+export interface AnalyticsTurnTaking {
+  transitions: AnalyticsTransition[];
+  response_latency: Record<string, AnalyticsResponseLatency>;
+  excluded_latency_samples: number;
+}
+
+export interface AnalyticsTimelineBucket {
+  start_ms: number;
+  end_ms: number;
+  speech_ms: Record<string, number>;
+}
+
+export interface AnalyticsTimeline {
+  bucket_ms: number;
+  buckets: AnalyticsTimelineBucket[];
+}
+
+export interface AnalyticsMetrics {
+  utterance_count: number;
+  duration_ms: number;
+  talk_time: Record<string, AnalyticsTalkTime>;
+  turn_structure: Record<string, AnalyticsTurnStructure>;
+  interruptions: Record<string, AnalyticsInterruptions>;
+  turn_taking: AnalyticsTurnTaking;
+  timeline: AnalyticsTimeline;
+  silence: { speech_ms: number; silence_ms: number; silence_share: number };
+  overlap: { overlapped_ms: number; overlap_share: number };
+}
+
+// Reasons are codes rather than prose so the interface owns the wording and
+// the MCP surface stays stable for an assistant to branch on.
+export type AnalyticsWarningCode =
+  | "low_share_clusters"
+  | "high_overlap"
+  | "speaker_cap_bound"
+  | "unnamed_speakers";
+
+export interface AnalyticsWarningReason {
+  code: AnalyticsWarningCode;
+  speaker_count?: number;
+  speaker_keys?: string[];
+  overlap_share?: number;
+  max_speakers?: number;
+}
+
+export interface AnalyticsAttributionWarning {
+  reasons: AnalyticsWarningReason[];
+}
+
+export interface RecordingAnalytics {
+  recording_id: RecordingId;
+  transcript_revision: number;
+  speakers: AnalyticsSpeaker[];
+  metrics: AnalyticsMetrics;
+  attribution_warning: AnalyticsAttributionWarning | null;
+}
