@@ -1,4 +1,8 @@
-import type { AnalyticsDelivery, AnalyticsDeliverySpeaker } from "@/types";
+import type {
+  AnalyticsDelivery,
+  AnalyticsDeliveryBaseline,
+  AnalyticsDeliverySpeaker,
+} from "@/types";
 
 /** Plain-language readings of the measured delivery figures.
  *
@@ -9,28 +13,44 @@ import type { AnalyticsDelivery, AnalyticsDeliverySpeaker } from "@/types";
  * evaluative**: "fast" is a property of speech, "rushed" would be a judgement
  * about a person, and nothing here is allowed to become the latter. And a
  * figure is only compared where the comparison means something -- pace has
- * broad anchors in ordinary conversation, whereas pitch movement and pause
- * frequency do not, so those are reported only relative to the other people in
- * the same meeting.
+ * corpus anchors, whereas pitch movement and pause frequency do not, so those
+ * are compared with the other people in the same meeting and, where a person
+ * has enough measured history, with their own usual figures.
  *
  * Pitch *height* is deliberately left uninterpreted. A descriptor there would
  * describe someone's voice rather than how they used it, which is a
  * characteristic of the person and outside what this surface reports.
  */
 
-// Broad anchors for conversational English, not precise boundaries: ordinary
-// conversation sits around 120-150 wpm, presenting and podcasting run faster.
-// They exist to turn a number into a word, and the number stays on screen
-// beside them.
-const PACE_DELIBERATE_MAX = 110;
-const PACE_CONVERSATIONAL_MAX = 150;
-const PACE_BRISK_MAX = 190;
+// Pace bands for the measure Nojoin computes: a median over per-utterance
+// rates on utterances of 1.5s and up, which mostly excludes silent pauses and
+// therefore runs above "speaking rate" folk numbers. Each edge is pinned to a
+// corpus statistic (evidence in docs/ANALYTICS_EVIDENCE.md): 120 sits below
+// the slowest whole conversation in Switchboard (111 wpm); 160 brackets
+// audiobook narration (~155) and radio monologue (150-170); 160-200 spans
+// turn-wise Switchboard (164) through Fisher (193); 200-240 covers CallHome
+// (214) up to the silence-excluded Switchboard mean (236); past 240 is
+// genuinely fast articulation, not merely few pauses. The bands are an
+// English-language calibration -- speaking rates in words are not comparable
+// across languages -- and the panel's footnote says so.
+const PACE_DELIBERATE_MAX = 120;
+const PACE_MEASURED_MAX = 160;
+const PACE_CONVERSATIONAL_MAX = 200;
+const PACE_BRISK_MAX = 240;
 
 // How far from the meeting's own median counts as worth remarking on. Pitch
 // spread is a stable measurement, so a fifth is a real difference; pause counts
-// are noisier and need a wider band before a difference means anything.
+// are noisier and need a wider band before a difference means anything. These
+// remain judgement calls, disclosed as such.
 const PITCH_DEVIATION = 0.2;
 const PAUSE_DEVIATION = 0.3;
+
+// Deviation from a person's own cross-meeting baseline that counts as worth
+// remarking on. Pace varies within a speaker with utterance length and topic,
+// so it gets the wider band. Judgement calls, disclosed as such.
+const BASELINE_PACE_DEVIATION = 0.15;
+const BASELINE_PITCH_DEVIATION = 0.2;
+const BASELINE_PAUSE_DEVIATION = 0.3;
 
 // Below this a speaker's figures rest on too little speech to compare with
 // anyone else's. The absolute pace band still applies; the comparisons do not.
@@ -42,6 +62,8 @@ export interface DeliveryReading {
   pauses: string | null;
   /** Pauses per minute of this speaker's own speech, or null if unknown. */
   pauseRate: number | null;
+  /** How this meeting compares with the person's own measured history. */
+  baseline: string | null;
 }
 
 const median = (values: number[]): number | null => {
@@ -56,6 +78,7 @@ const median = (values: number[]): number | null => {
 const paceBand = (wpm: number | null): string | null => {
   if (wpm === null || wpm <= 0) return null;
   if (wpm < PACE_DELIBERATE_MAX) return "deliberate";
+  if (wpm < PACE_MEASURED_MAX) return "measured";
   if (wpm < PACE_CONVERSATIONAL_MAX) return "conversational";
   if (wpm < PACE_BRISK_MAX) return "brisk";
   return "fast";
@@ -83,6 +106,44 @@ const pauseRateOf = (
   return figures.pause_count / (speechMs / 60_000);
 };
 
+/** One remark against the person's own history, or null when unremarkable.
+ *
+ * At most one remark, in a fixed priority order, so the panel never stacks
+ * three baseline clauses onto one row. Wording stays descriptive and names
+ * the evidence: "across N meetings" is what separates a habit from a sample.
+ */
+const baselineReading = (
+  figures: AnalyticsDeliverySpeaker,
+  pauseRate: number | null,
+  baseline: AnalyticsDeliveryBaseline | undefined,
+): string | null => {
+  if (!baseline) return null;
+  const across = `their usual across ${baseline.meetings} meetings`;
+  const pace = comparedWith(
+    figures.words_per_minute,
+    baseline.words_per_minute,
+    BASELINE_PACE_DEVIATION,
+    `faster than ${across}`,
+    `slower than ${across}`,
+  );
+  if (pace) return pace;
+  const pitch = comparedWith(
+    figures.pitch_spread_semitones,
+    baseline.pitch_spread_semitones,
+    BASELINE_PITCH_DEVIATION,
+    `more varied than ${across}`,
+    `flatter than ${across}`,
+  );
+  if (pitch) return pitch;
+  return comparedWith(
+    pauseRate,
+    baseline.pauses_per_minute,
+    BASELINE_PAUSE_DEVIATION,
+    `pauses more than ${across}`,
+    `pauses less than ${across}`,
+  );
+};
+
 /** Build one reading per measured speaker.
  *
  * `talkTimeMs` carries each speaker's speaking time so a pause *count* becomes
@@ -92,6 +153,7 @@ const pauseRateOf = (
 export const buildDeliveryReadings = (
   delivery: AnalyticsDelivery,
   talkTimeMs: Record<string, number>,
+  baselines: Record<string, AnalyticsDeliveryBaseline> = {},
 ): Record<string, DeliveryReading> => {
   const entries = Object.entries(delivery.speakers);
   const comparable = entries.filter(
@@ -137,6 +199,9 @@ export const buildDeliveryReadings = (
           )
         : null,
       pauseRate: rate,
+      baseline: enoughSpeech
+        ? baselineReading(figures, rate, baselines[key])
+        : null,
     };
   }
   return readings;

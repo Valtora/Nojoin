@@ -26,24 +26,39 @@ logger = logging.getLogger(__name__)
 # extraction procedure is not comparable with one produced by another, and a
 # mixed set is worse than a missing one. Change it whenever anything below
 # alters the numbers.
-DELIVERY_METHOD_VERSION = 1
+#
+# Version 2 replaced the plain autocorrelation peak-picker with the YIN
+# difference function and added the per-speaker two-pass pitch range. Plain
+# autocorrelation carries a ~10% gross-error rate (mostly octave errors) that
+# a median shrugs off but a spread statistic does not; YIN's
+# cumulative-mean-normalised difference reduces that to under 1% on the same
+# benchmark (de Cheveigne & Kawahara 2002, Table I), and it is closed-form
+# numpy, so the no-model constraint holds. Evidence and validation protocol:
+# docs/ANALYTICS_EVIDENCE.md.
+DELIVERY_METHOD_VERSION = 2
 
 # Analysis frame geometry. 40ms is long enough to hold two periods of the
-# lowest pitch searched for, which an autocorrelation estimator needs, and
-# short enough that pitch is roughly stationary across it.
+# lowest pitch searched for, which a lag-domain estimator needs, and short
+# enough that pitch is roughly stationary across it.
 FRAME_MS = 40
 HOP_MS = 10
 
-# Human speaking pitch. Wider than a typical adult range on purpose: clipping
-# the search band biases the estimate towards the band's edge rather than
-# reporting an honest miss.
-MIN_F0_HZ = 70.0
-MAX_F0_HZ = 400.0
+# First-pass search band, deliberately wider than any adult speaking range.
+# The band is not the claim: per-speaker bounds are re-derived from the
+# first pass (0.75 x Q1 to 1.5 x Q3, the De Looze & Hirst two-pass rule), so
+# a wide band costs nothing while a clipped one deflates the measured spread
+# for creaky and for expressive high voices alike.
+MIN_F0_HZ = 60.0
+MAX_F0_HZ = 500.0
 
-# A frame counts as voiced when its normalised autocorrelation peak clears
-# this. Below it the frame is noise, a consonant, or silence, and the lag of
-# its strongest peak means nothing.
-VOICING_CORRELATION_FLOOR = 0.35
+# A frame counts as voiced when its cumulative-mean-normalised difference
+# dips below this aperiodicity ceiling. YIN's published default is 0.10;
+# 0.15 was chosen by measurement on PTDB-TUG laryngograph ground truth,
+# where it kept the harmful direction rare (false-voiced 1.1% of frames)
+# while recovering enough marginally-periodic speech (creak, breathy
+# endings) to halve the median bias the stricter value showed on creaky
+# speakers. The full sweep is recorded in docs/ANALYTICS_EVIDENCE.md.
+YIN_APERIODICITY_THRESHOLD = 0.15
 
 # Frames quieter than this contribute no pitch or loudness reading. -50 dBFS
 # is well under speech but above the noise floor of a 16-bit capture.
@@ -92,41 +107,67 @@ def _frame_signal(samples, frame_length: int, hop_length: int):
 
 
 def _estimate_frame_f0(frame, sample_rate: int) -> float | None:
-    """Autocorrelation pitch estimate for one frame, or None if unvoiced.
+    """YIN pitch estimate for one frame, or None if unvoiced.
 
-    Autocorrelation rather than a learned estimator because this has to run
-    with no model on the CPU lane. Its known weakness is octave error, which
-    is why the caller takes a median over many frames rather than trusting any
-    single one, and why pitch is reported as a distribution rather than a
-    value.
+    YIN's cumulative-mean-normalised difference rather than a raw
+    autocorrelation peak, for a measured reason: on laryngograph ground truth
+    the plain autocorrelation picker carries ~10% gross (mostly octave)
+    error, which a median survives but a spread statistic inflates; the
+    difference-function chain reduces that to under 1% (de Cheveigne &
+    Kawahara 2002, Table I) and needs nothing beyond numpy, so the
+    no-model, no-torch constraint holds. No window is applied -- YIN's
+    difference function does not need one, and the taper is itself a source
+    of octave bias in the autocorrelation formulation.
     """
     import numpy as np
 
-    windowed = frame - frame.mean()
-    energy = float(np.dot(windowed, windowed))
-    if energy <= 0:
+    signal = frame - frame.mean()
+    n = signal.size
+    energy_total = float(np.dot(signal, signal))
+    if energy_total <= 0:
         return None
 
-    # Autocorrelation via FFT: cheaper than the direct form at this size, and
-    # this runs over every frame of every utterance.
-    padded = int(2 ** math.ceil(math.log2(len(windowed) * 2)))
-    spectrum = np.fft.rfft(windowed * np.hanning(len(windowed)), padded)
-    autocorr = np.fft.irfft(spectrum * np.conjugate(spectrum), padded)[: len(windowed)]
-    if autocorr[0] <= 0:
-        return None
-
-    min_lag = max(1, int(sample_rate / MAX_F0_HZ))
-    max_lag = min(len(autocorr) - 1, int(sample_rate / MIN_F0_HZ))
+    min_lag = max(2, int(sample_rate / MAX_F0_HZ))
+    max_lag = min(n // 2, int(math.ceil(sample_rate / MIN_F0_HZ)))
     if max_lag <= min_lag:
         return None
 
-    search = autocorr[min_lag : max_lag + 1]
-    peak_index = int(np.argmax(search))
-    peak_value = float(search[peak_index]) / float(autocorr[0])
-    if peak_value < VOICING_CORRELATION_FLOOR:
-        return None
+    # Difference function via FFT autocorrelation:
+    # d(tau) = e(0, n-tau) + e(tau, n) - 2 r(tau), with e from a cumulative
+    # sum, so the whole frame costs one FFT round trip.
+    padded = int(2 ** math.ceil(math.log2(2 * n)))
+    spectrum = np.fft.rfft(signal, padded)
+    autocorr = np.fft.irfft(spectrum * np.conjugate(spectrum), padded)[: max_lag + 1]
+    squares = np.concatenate(([0.0], np.cumsum(signal * signal)))
+    lags = np.arange(max_lag + 1)
+    difference = squares[n - lags] + (squares[n] - squares[lags]) - 2.0 * autocorr
+    difference[0] = 0.0
 
-    lag = min_lag + peak_index
+    # Cumulative-mean normalisation: d'(tau) = d(tau) * tau / sum_1..tau d(j).
+    running = np.cumsum(difference[1:])
+    normalised = np.ones(max_lag + 1)
+    valid = running > 0
+    normalised[1:][valid] = difference[1:][valid] * lags[1:][valid] / running[valid]
+
+    band = normalised[min_lag : max_lag + 1]
+    below = np.flatnonzero(band < YIN_APERIODICITY_THRESHOLD)
+    if below.size == 0:
+        return None
+    # First dip under the threshold, descended to its local minimum, per the
+    # original algorithm: the global minimum is often the octave below.
+    index = int(below[0])
+    while index + 1 < band.size and band[index + 1] < band[index]:
+        index += 1
+    lag = min_lag + index
+
+    # Parabolic interpolation for sub-sample lag accuracy.
+    if 0 < lag < max_lag:
+        left, centre, right = normalised[lag - 1 : lag + 2]
+        denominator = left - 2.0 * centre + right
+        if abs(denominator) > 1e-12:
+            offset = 0.5 * (left - right) / denominator
+            lag = lag + float(np.clip(offset, -0.5, 0.5))
+
     return float(sample_rate) / float(lag)
 
 
@@ -253,6 +294,27 @@ def _pause_structure(
     }
 
 
+def _two_pass_f0(f0_values: list[float]) -> tuple[list[float], int]:
+    """Per-speaker pitch range re-derived from the data itself.
+
+    De Looze & Hirst's two-pass rule: keep values in [0.75 x Q1, 1.5 x Q3] of
+    the first pass. This is the published mitigation for the residual octave
+    errors that a wide search band admits, and it removes the need to guess a
+    per-speaker range up front. Returns the kept values and how many were
+    excluded, because anything excluded from a statistic is counted.
+    """
+    import numpy as np
+
+    if len(f0_values) < 8:
+        return f0_values, 0
+    values = np.asarray(f0_values, dtype=np.float64)
+    q1, q3 = np.percentile(values, 25), np.percentile(values, 75)
+    kept = values[(values >= 0.75 * q1) & (values <= 1.5 * q3)]
+    if kept.size < 8:
+        return f0_values, 0
+    return [float(v) for v in kept], int(values.size - kept.size)
+
+
 def _aggregate_speaker(readings: list[dict[str, Any]]) -> dict[str, Any] | None:
     import numpy as np
 
@@ -261,7 +323,8 @@ def _aggregate_speaker(readings: list[dict[str, Any]]) -> dict[str, Any] | None:
 
     speech_rates = [r["words_per_minute"] for r in readings if r["words_per_minute"]]
     loudness = [r["loudness_dbfs"] for r in readings]
-    f0_values = [value for reading in readings for value in reading["f0_hz"]]
+    raw_f0 = [value for reading in readings for value in reading["f0_hz"]]
+    f0_values, excluded_f0 = _two_pass_f0(raw_f0)
     sources = {r["source"] for r in readings if r["source"]}
 
     return {
@@ -277,6 +340,9 @@ def _aggregate_speaker(readings: list[dict[str, Any]]) -> dict[str, Any] | None:
             if (spread := _semitone_spread(f0_values)) is not None
             else None
         ),
+        # Frames outside the speaker's own two-pass range: octave errors and
+        # tracker junk, excluded from the pitch statistics and counted here.
+        "excluded_f0_outliers": excluded_f0,
         "median_loudness_dbfs": round(float(np.median(loudness)), 1),
         "loudness_range_db": round(
             float(np.percentile(loudness, 75) - np.percentile(loudness, 25)), 1
@@ -286,6 +352,21 @@ def _aggregate_speaker(readings: list[dict[str, Any]]) -> dict[str, Any] | None:
         # for someone in the room on a call with shared audio.
         "capture_sources": sorted(sources),
     }
+
+
+def _speech_totals(utterances: Sequence[DeliveryUtterance]) -> dict[str, int]:
+    """Each speaker's total speech time, over every utterance.
+
+    Includes the utterances excluded from measurement. Stored so a pause count
+    can become a pause rate, and so cross-meeting comparison does not need the
+    derived tier, whose figures move with later transcript edits.
+    """
+    totals: dict[str, int] = {}
+    for utterance in utterances:
+        totals[utterance.speaker_key] = totals.get(utterance.speaker_key, 0) + max(
+            0, utterance.end_ms - utterance.start_ms
+        )
+    return totals
 
 
 def analyse_delivery(
@@ -349,12 +430,15 @@ def analyse_delivery(
             )
 
     pauses = _pause_structure(utterances)
+    speech_totals = _speech_totals(utterances)
+
     speakers: dict[str, Any] = {}
     for speaker_key, speaker_readings in readings.items():
         aggregate = _aggregate_speaker(speaker_readings)
         if aggregate is None:
             continue
         aggregate.update(pauses.get(speaker_key, {"pause_count": 0}))
+        aggregate["speech_ms"] = speech_totals.get(speaker_key, 0)
         speakers[speaker_key] = aggregate
 
     # Loudness is only comparable between speakers who arrived through the same

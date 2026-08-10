@@ -2247,10 +2247,13 @@ async def test_get_meeting_analytics_reports_measured_figures(
     assert by_name["Dana"]["share_of_speech"] == 0.8
     assert by_name["Guest"]["share_of_speech"] == 0.2
 
-    # Guest cut across Dana once; Dana never cut across Guest.
-    assert by_name["Guest"]["interruptions_made"] == 1
-    assert by_name["Dana"]["interruptions_received"] == 1
-    assert by_name["Dana"]["interruptions_made"] == 0
+    # No interruption counts are reported: transcript-derived interruption
+    # figures are zero by construction on real recordings, and per-event
+    # attribution from a single audio channel is not defensible. Overlap is
+    # reported as its own measured block instead.
+    assert "interruptions_made" not in by_name["Guest"]
+    assert "interruptions_received" not in by_name["Dana"]
+    assert "overlap" in result
 
     assert by_name["Dana"]["longest_turn_seconds"] == 30.0
     assert by_name["Dana"]["longest_turn_at_seconds"] == 0.0

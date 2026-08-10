@@ -179,3 +179,47 @@ def compute_delivery_analytics_task(recording_id: int) -> dict[str, Any]:
         session.commit()
 
     return {"status": "success", "recording_id": recording_id}
+
+
+@celery_app.task(name="backend.worker.tasks.remeasure_outdated_delivery_task")
+def remeasure_outdated_delivery_task(limit: int) -> dict[str, Any]:
+    """Re-measure delivery payloads produced by a superseded method version.
+
+    Mirrors the voiceprint rebuild, and for the same reason: a method bump is
+    Nojoin's own maintenance obligation, not user-triggered staleness. Figures
+    from different method versions are not comparable, so until a recording is
+    re-measured it cannot contribute to cross-meeting baselines. Each tick is
+    bounded so a large library converges over several runs instead of queueing
+    one unbounded pile of audio reads; the steady state -- nothing outdated --
+    costs one query. This never touches transcript-edit staleness, which stays
+    a banner and a button: that regeneration is the user's to ask for.
+    """
+    from backend.processing.delivery_descriptors import DELIVERY_METHOD_VERSION
+
+    outdated: list[int] = []
+    with get_sync_session() as session:
+        rows = session.exec(
+            select(Transcript.recording_id, Transcript.analytics_payload).where(
+                Transcript.analytics_status == "completed"
+            )
+        ).all()
+        # Filtered in Python rather than with a JSON operator so the same
+        # query runs on the SQLite the tests use and the JSONB production
+        # column alike.
+        for recording_id, payload in rows:
+            version = (payload or {}).get("method_version")
+            if version != DELIVERY_METHOD_VERSION:
+                outdated.append(recording_id)
+            if len(outdated) >= limit:
+                break
+
+    for recording_id in outdated:
+        compute_delivery_analytics_task.delay(recording_id)
+
+    if outdated:
+        logger.info(
+            "Queued delivery re-measurement for %d recording(s) on method v%d",
+            len(outdated),
+            DELIVERY_METHOD_VERSION,
+        )
+    return {"status": "success", "queued": len(outdated)}

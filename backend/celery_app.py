@@ -186,6 +186,13 @@ TASK_ROUTES = {
     # model, so it belongs beside the other local-disk audio work rather
     # than on the lane finalise is holding.
     "backend.worker.tasks.compute_delivery_analytics_task": {"queue": CPU_QUEUE},
+    # GPU lane: it runs the segmentation model the finalise pipeline already
+    # keeps resident there. A CPU-only install runs it on the same lane,
+    # slower, like the rest of the model work.
+    "backend.worker.tasks.compute_overlap_analytics_task": {"queue": GPU_QUEUE},
+    # Light bookkeeping: one query, then per-recording dispatches to the CPU
+    # lane. The heavy work happens in the tasks it queues, not here.
+    "backend.worker.tasks.remeasure_outdated_delivery_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
     # Orchestrates post-restore rebuilds; dispatches the ffmpeg work to the cpu lane.
     "backend.worker.tasks.finalize_restored_recording_task": {"queue": IO_QUEUE},
@@ -231,6 +238,13 @@ TASK_ROUTES = {
 # GPU that stays responsive; the sweep repeats, so a large library still
 # converges, just over several ticks rather than one.
 AUTOMATIC_VOICEPRINT_REBUILD_LIMIT = 25
+
+# Recordings re-measured by one delivery-method sweep tick. Same rationale as
+# the voiceprint bound, on the CPU lane: the sweep exists because delivery
+# figures from different method versions are not comparable (so cross-meeting
+# baselines stall on old payloads), and re-reading audio across a whole
+# library must trickle rather than flood.
+AUTOMATIC_DELIVERY_REMEASURE_LIMIT = 25
 
 celery_app.conf.update(
     task_serializer="json",
@@ -300,6 +314,14 @@ celery_app.conf.update(
             "task": "backend.worker.tasks.rebuild_voiceprints_task",
             "schedule": 21600.0,
             "kwargs": {"limit": AUTOMATIC_VOICEPRINT_REBUILD_LIMIT},
+        },
+        # Re-measures delivery payloads left behind by a method-version bump,
+        # a few recordings per tick, exactly as the voiceprint sweep repairs
+        # embeddings. Returns in milliseconds when nothing is outdated.
+        "remeasure-outdated-delivery-every-6h": {
+            "task": "backend.worker.tasks.remeasure_outdated_delivery_task",
+            "schedule": 21600.0,
+            "kwargs": {"limit": AUTOMATIC_DELIVERY_REMEASURE_LIMIT},
         },
     },
 )

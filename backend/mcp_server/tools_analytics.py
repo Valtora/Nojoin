@@ -35,7 +35,6 @@ def _speaker_rows(analytics: dict[str, Any]) -> list[dict[str, Any]]:
     metrics = analytics["metrics"]
     talk_time = metrics["talk_time"]
     turn_structure = metrics["turn_structure"]
-    interruptions = metrics["interruptions"]
     latency = metrics["turn_taking"]["response_latency"]
 
     rows = []
@@ -43,7 +42,6 @@ def _speaker_rows(analytics: dict[str, Any]) -> list[dict[str, Any]]:
         key = speaker["speaker_key"]
         figures = talk_time.get(key, {})
         structure = turn_structure.get(key, {})
-        interrupt = interruptions.get(key, {})
         response = latency.get(key, {})
         rows.append(
             {
@@ -59,10 +57,11 @@ def _speaker_rows(analytics: dict[str, Any]) -> list[dict[str, Any]]:
                 "longest_turn_at_seconds": _ms_to_seconds(
                     structure.get("longest_turn_start_ms")
                 ),
-                "interruptions_made": interrupt.get("made", 0),
-                "interruptions_received": interrupt.get("received", 0),
                 "median_response_seconds": _ms_to_seconds(response.get("median_ms")),
                 "response_sample_count": response.get("sample_count", 0),
+                # Handovers under the measurement collar (~250ms), including
+                # any that overlapped: taking the floor the moment it opens.
+                "immediate_handovers": response.get("immediate_count", 0),
             }
         )
     return rows
@@ -100,8 +99,43 @@ def _warning_rows(
     return rows
 
 
+def _overlap_rows(stored: dict[str, Any]) -> dict[str, Any]:
+    """Measured overlapping speech, reported as a status when absent.
+
+    The total is a floor: detection misses some overlap and never invents
+    any, so "at least" is the honest reading and the field name says so.
+    """
+    block = stored.get("audio_overlap") or {}
+    status = block.get("status") or "pending"
+    if status != "completed":
+        return {"status": status}
+    return {
+        "status": "completed",
+        "at_least_overlap_seconds": _ms_to_seconds(block.get("total_overlap_ms")),
+        "overlap_share_of_meeting": block.get("overlap_share_of_audio"),
+        "region_count": block.get("region_count"),
+    }
+
+
+def _baseline_rows(
+    baselines: dict[str, dict[str, Any]], names: dict[str, str]
+) -> dict[str, Any]:
+    return {
+        names.get(key, key): {
+            "meetings": figures.get("meetings"),
+            "usual_words_per_minute": figures.get("words_per_minute"),
+            "usual_pitch_variation_semitones": figures.get("pitch_spread_semitones"),
+            "usual_pauses_per_minute": figures.get("pauses_per_minute"),
+        }
+        for key, figures in (baselines or {}).items()
+    }
+
+
 def _delivery_rows(
-    stored: dict[str, Any], names: dict[str, str], status: str
+    stored: dict[str, Any],
+    names: dict[str, str],
+    status: str,
+    baselines: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The measured delivery tier, keyed by speaker name.
 
@@ -115,6 +149,7 @@ def _delivery_rows(
 
     return {
         "status": "completed",
+        "baselines": _baseline_rows(baselines or {}, names),
         # Loudness is only comparable between speakers who came through the
         # same signal chain. Where they did not, this is false, and comparing
         # two speakers' loudness compares codecs rather than people.
@@ -241,12 +276,35 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     """Get speaking-dynamics analytics for one meeting.
 
     Returns who spoke for how long and how the conversation moved between
-    people: talk-time share, turn counts, median and longest turn,
-    directional interruption counts, median response time, a talk-share
-    timeline across the meeting, and totals for silence and overlapping
-    speech. Every figure is measured from the transcript's timings, not
-    inferred by a model, and matches exactly what the app's Analytics tab
-    shows for the same meeting.
+    people: talk-time share, turn counts, median and longest turn, response
+    behaviour at speaker changes, a talk-share timeline across the meeting,
+    and totals for silence and overlapping speech. Every figure is measured
+    from the transcript's timings or the audio, not inferred by a model, and
+    matches exactly what the app's Analytics tab shows for the same meeting.
+
+    Response behaviour comes in two disclosed parts, because the underlying
+    timestamps carry roughly a quarter-second of noise. Each speaker's
+    `immediate_handovers` counts the turns they took within that measurement
+    collar of the previous speaker stopping -- taking the floor the moment it
+    opened. `median_response_seconds` is the median over their measurable
+    replies only (a quarter-second to five seconds); turns taken after longer
+    silences are lapses in the conversation, not replies, and are excluded
+    and counted in `conversation.lapse_transitions`. Treat the median as
+    coarse -- differences under about a quarter of a second are below what
+    the timestamps can support.
+
+    There are deliberately no per-speaker interruption counts. Nojoin's
+    transcripts serialise all speech, so transcript-derived interruption
+    figures would be zero on every recording by construction, and "who
+    interrupted whom" cannot be recovered from a single audio channel with
+    accuracy worth attaching to a named colleague. What the audio does
+    support is `overlap`: when it has been measured for this recording it
+    reports the total time people spent talking over each other (a floor --
+    detection misses some events, never invents them), its share of the
+    meeting, and the regions where it clustered. Present it as overlapping
+    speech, never as interruption counts: overlap includes supportive
+    back-channel talk as well as competition for the floor, and no method,
+    human or machine, reliably tells those apart.
 
     Also returns `delivery` when it has been measured for this recording:
     speaking pace, pitch height and how much it moved, loudness and its
@@ -256,13 +314,10 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     loud speaker is not necessarily an enthusiastic one. When
     `delivery.status` is not "completed", delivery has not been measured for
     this meeting; say so rather than treating it as absent evidence.
-
-    When `conversation.overlapping_speech_present` is false, this transcript
-    contains no overlapping speech anywhere, so every `interruptions_made` and
-    `interruptions_received` count is zero because overlap was never
-    representable in it -- most often an imported single-channel recording. Say
-    that interruptions cannot be measured for this meeting rather than that
-    nobody interrupted anyone.
+    `delivery.baselines` carries, per named speaker with enough measured
+    history, their usual pace, pitch movement, and pausing across this
+    user's other meetings, with the meeting count behind each figure; it
+    supports "faster than their usual" statements and nothing stronger.
 
     Three things to respect when using this. Shares are reported against total
     speech rather than against the meeting's duration, so they sum to 1.0
@@ -275,7 +330,9 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     `delivery.cross_speaker_loudness_comparable` is false, the speakers
     reached the recording through different signal chains, so comparing their
     loudness compares codecs and microphone gain rather than how loudly they
-    actually spoke.
+    actually spoke; even when it is true, loudness reflects the recording
+    chain's gain and any automatic level control as much as the person, so
+    prefer the other delivery figures.
 
     Also returns `ai_analysis` when the meeting has been analysed by an AI
     model: the topics it moved through and who drove each, a reading of each
@@ -309,6 +366,9 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     )
     from backend.core.db import async_session_maker
     from backend.services.meeting_analytics import compute_recording_analytics
+    from backend.services.meeting_analytics.baselines import (
+        compute_delivery_baselines,
+    )
     from backend.utils.canonical_pipeline import (
         ensure_canonical_backfill,
         get_canonical_transcript_revision,
@@ -326,12 +386,19 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
 
         def _compute(sync_session):
             ensure_canonical_backfill(sync_session, recording.id)
+            computed = compute_recording_analytics(sync_session, recording)
             return (
-                compute_recording_analytics(sync_session, recording),
+                computed,
                 get_canonical_transcript_revision(sync_session, recording.id),
+                compute_delivery_baselines(
+                    sync_session,
+                    user_id=recording.user_id,
+                    recording_id=recording.id,
+                    speakers=computed["speakers"],
+                ),
             )
 
-        analytics, revision = await db.run_sync(_compute)
+        analytics, revision, baselines = await db.run_sync(_compute)
         await db.commit()
         stored = transcript.analytics_payload or {}
         delivery_status = transcript.analytics_status
@@ -371,16 +438,20 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
             ],
             "silence_seconds": _ms_to_seconds(metrics["silence"]["silence_ms"]),
             "silence_share": metrics["silence"]["silence_share"],
-            "overlapped_seconds": _ms_to_seconds(metrics["overlap"]["overlapped_ms"]),
-            "overlap_share": metrics["overlap"]["overlap_share"],
-            # False means this transcript holds no overlapping speech at all,
-            # so the interruption counts above are not measurements of zero.
+            # Immediate handovers and lapses at speaker changes, across the
+            # whole meeting; the per-speaker rows carry their own splits.
+            "immediate_transitions": metrics["turn_taking"]["immediate_transitions"],
+            "lapse_transitions": metrics["turn_taking"]["lapse_transitions"],
+            # Whether the transcript itself represents any overlapping
+            # speech. False on effectively every Nojoin transcript, which is
+            # why the measured `overlap` block below exists.
             "overlapping_speech_present": metrics["overlap"][
                 "overlapping_speech_present"
             ],
         },
         "attribution_warnings": _warning_rows(analytics, names),
-        "delivery": _delivery_rows(stored, names, delivery_status),
+        "overlap": _overlap_rows(stored),
+        "delivery": _delivery_rows(stored, names, delivery_status, baselines),
         "ai_analysis": _ai_rows(stored, names, ai_status, ai_stale),
     }
 

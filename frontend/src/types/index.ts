@@ -983,14 +983,23 @@ export interface AnalyticsTransition {
 }
 
 export interface AnalyticsResponseLatency {
-  median_ms: number;
+  // Median over measurable replies only (a quarter-second to five seconds).
+  // Null when every handover was immediate or a lapse. Treat as coarse: the
+  // timestamps carry roughly a quarter-second of noise.
+  median_ms: number | null;
   sample_count: number;
+  // Turns taken within the measurement collar of the previous speaker
+  // stopping: taking the floor the moment it opened.
+  immediate_count: number;
 }
 
 export interface AnalyticsTurnTaking {
   transitions: AnalyticsTransition[];
   response_latency: Record<string, AnalyticsResponseLatency>;
-  excluded_latency_samples: number;
+  immediate_transitions: number;
+  // Turns taken after a silence too long to be a reply. Excluded from every
+  // reply-time figure and counted here, per the tier's convention.
+  lapse_transitions: number;
 }
 
 export interface AnalyticsTimelineBucket {
@@ -1062,6 +1071,14 @@ export interface RecordingAnalytics {
   // As delivery_stale, but tracked separately: each tier carries its own
   // watermark, so editing the transcript between the two does not mark both.
   ai_stale: boolean;
+  // No staleness field: overlap depends only on the audio, which never
+  // changes after processing.
+  audio_overlap: AnalyticsAudioOverlap | null;
+  audio_overlap_status: AnalyticsAudioOverlapStatus;
+  audio_overlap_error_message: string | null;
+  // Keyed by speaker_key; only speakers linked to a person with enough
+  // measured history appear.
+  delivery_baselines: Record<string, AnalyticsDeliveryBaseline>;
 }
 
 // Measured vocal delivery. These describe how someone spoke, not how they
@@ -1072,12 +1089,49 @@ export interface AnalyticsDeliverySpeaker {
   words_per_minute: number | null;
   median_f0_hz: number | null;
   pitch_spread_semitones: number | null;
+  // Pitch frames outside the speaker's own two-pass range: octave errors and
+  // tracker junk, excluded from the figures and counted.
+  excluded_f0_outliers?: number;
   median_loudness_dbfs: number;
   loudness_range_db: number;
   capture_sources: string[];
   pause_count: number;
   median_pause_ms?: number;
+  // This speaker's total speech time at measurement, stored so pause counts
+  // become rates and so cross-meeting baselines need no derived figures.
+  speech_ms?: number;
 }
+
+// One person's usual delivery across this user's other measured meetings.
+// Medians over per-meeting figures, only ever from the same method version,
+// with the meeting count carried so the interface can say how much history
+// stands behind "their usual".
+export interface AnalyticsDeliveryBaseline {
+  meetings: number;
+  words_per_minute: number | null;
+  pitch_spread_semitones: number | null;
+  pauses_per_minute: number | null;
+}
+
+// Overlapping speech measured from the audio. The total is a floor:
+// detection misses some overlap and never invents any, so the interface
+// presents it as "at least". Deliberately carries no per-speaker attribution
+// and no "interruption" framing -- see docs/ANALYTICS_EVIDENCE.md.
+export interface AnalyticsAudioOverlap {
+  method_version: number;
+  total_overlap_ms: number;
+  overlap_share_of_audio: number;
+  region_count: number;
+  regions: [number, number][];
+  regions_truncated: boolean;
+  duration_ms: number;
+}
+
+export type AnalyticsAudioOverlapStatus =
+  | "pending"
+  | "generating"
+  | "completed"
+  | "error";
 
 export interface AnalyticsDelivery {
   method_version: number;

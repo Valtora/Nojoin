@@ -3,6 +3,7 @@
 import { Info, Loader2 } from "lucide-react";
 
 import type {
+  AnalyticsDeliveryBaseline,
   AnalyticsDelivery,
   AnalyticsDeliveryStatus,
   AnalyticsSpeaker,
@@ -19,6 +20,8 @@ interface DeliveryPanelProps {
   speakers: AnalyticsSpeaker[];
   /** Speaking time per speaker, so a pause count can become a pause rate. */
   talkTimeMs: Record<string, number>;
+  /** Each linked person's usual figures across their other measured meetings. */
+  baselines: Record<string, AnalyticsDeliveryBaseline>;
   onGenerate: () => void;
   generating: boolean;
 }
@@ -69,6 +72,7 @@ export default function DeliveryPanel({
   stale,
   speakers,
   talkTimeMs,
+  baselines,
   onGenerate,
   generating,
 }: DeliveryPanelProps) {
@@ -119,7 +123,7 @@ export default function DeliveryPanel({
     );
   }
 
-  const readings = buildDeliveryReadings(delivery, talkTimeMs);
+  const readings = buildDeliveryReadings(delivery, talkTimeMs, baselines);
 
   return (
     <div className="space-y-3">
@@ -181,6 +185,11 @@ export default function DeliveryPanel({
                         {speaker.name}
                       </span>
                     </span>
+                    {reading.baseline && (
+                      <span className="mt-0.5 block text-xs text-contrast-helper">
+                        {reading.baseline}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 text-right align-top">
                     <Figure
@@ -247,12 +256,15 @@ export default function DeliveryPanel({
         Measured from the audio: pace is words per minute, pitch movement is the
         spread in semitones, and pauses are silences within a speaker&apos;s own
         turn, shown as a rate so a long contribution does not look like a
-        hesitant one. Pace is described against ordinary conversation, which
-        runs at roughly 120 to 150 words a minute. Pitch movement and pausing
-        have no such yardstick &mdash; the same expressive range measures wider
-        on a high voice than a low one &mdash; so those are compared only with
-        the other people in this meeting. All of it describes how someone spoke,
-        not how they felt.
+        hesitant one. The pace words are anchored on measured English speech:
+        recorded conversation runs at roughly 160 to 200 words a minute by this
+        measure, presentations and narration slower, so treat the words as a
+        rough guide for meetings held in other languages. Pitch movement and
+        pausing have no such yardstick &mdash; the same expressive range
+        measures wider on a high voice than a low one &mdash; so those are
+        compared with the other people in this meeting and, where Nojoin has
+        measured enough of a person&apos;s meetings, with their own usual
+        figures. All of it describes how someone spoke, not how they felt.
       </p>
     </div>
   );

@@ -23,7 +23,8 @@ from statistics import median
 from typing import Iterable, Sequence
 
 from .constants import (
-    LATENCY_FLOOR_MS,
+    LATENCY_COLLAR_MS,
+    LATENCY_LAPSE_MS,
     MIN_UTTERANCE_MS_FOR_TURN_STATS,
     OVERLAP_FLOOR_MS,
     TIMELINE_MIN_BUCKET_MS,
@@ -259,17 +260,32 @@ def compute_interruptions(
 
 
 def compute_transitions(turns: Sequence[Turn]) -> dict:
-    """Who follows whom, and how long they leave before answering.
+    """Who follows whom, and how they take the floor from each other.
 
-    Latency samples below ``LATENCY_FLOOR_MS`` (including the negatives that
-    overlapping speech produces) are excluded and counted, not clamped: a gap
-    of -400ms is an interruption, already reported as one, and folding it into
-    a response-time median would describe a conversation that did not happen.
+    Transition gaps are split into three populations rather than filtered to
+    one, because the excluded tails carry meaning of their own:
+
+    * **Immediate handovers** -- gaps under ``LATENCY_COLLAR_MS``, including
+      any negatives. The response-offset mode in conversation is 0-200ms, so
+      these are real behaviour, but the timestamps cannot resolve them (the
+      collar is the human-annotator disagreement on where a boundary lies),
+      so they are reported as a count rather than fed into a median that
+      would claim precision the measurement lacks.
+    * **Measured replies** -- gaps in [collar, lapse). The median is over
+      these alone.
+    * **Lapses** -- gaps at or beyond ``LATENCY_LAPSE_MS``. A turn taken
+      after a long silence is a resumption, not a reply, and folding it in
+      once produced 30-second "reply times" on real recordings.
+
+    Every population is counted, so a median over few samples is
+    distinguishable from one over many, per the module convention.
     """
     pair_counts: dict[tuple[str, str], int] = {}
     pair_latencies: dict[tuple[str, str], list[int]] = {}
     speaker_latencies: dict[str, list[int]] = {}
-    excluded = 0
+    speaker_immediate: dict[str, int] = {}
+    immediate = 0
+    lapses = 0
 
     for previous, current in zip(turns, turns[1:]):
         if previous.speaker_key == current.speaker_key:
@@ -277,12 +293,19 @@ def compute_transitions(turns: Sequence[Turn]) -> dict:
         pair = (previous.speaker_key, current.speaker_key)
         pair_counts[pair] = pair_counts.get(pair, 0) + 1
         gap_ms = current.start_ms - previous.end_ms
-        if gap_ms < LATENCY_FLOOR_MS:
-            excluded += 1
+        if gap_ms >= LATENCY_LAPSE_MS:
+            lapses += 1
+            continue
+        if gap_ms < LATENCY_COLLAR_MS:
+            immediate += 1
+            speaker_immediate[current.speaker_key] = (
+                speaker_immediate.get(current.speaker_key, 0) + 1
+            )
             continue
         pair_latencies.setdefault(pair, []).append(gap_ms)
         speaker_latencies.setdefault(current.speaker_key, []).append(gap_ms)
 
+    speaker_keys = set(speaker_latencies) | set(speaker_immediate)
     return {
         "transitions": [
             {
@@ -301,12 +324,18 @@ def compute_transitions(turns: Sequence[Turn]) -> dict:
         ],
         "response_latency": {
             speaker_key: {
-                "median_ms": int(median(samples)),
-                "sample_count": len(samples),
+                "median_ms": (
+                    int(median(speaker_latencies[speaker_key]))
+                    if speaker_latencies.get(speaker_key)
+                    else None
+                ),
+                "sample_count": len(speaker_latencies.get(speaker_key, [])),
+                "immediate_count": speaker_immediate.get(speaker_key, 0),
             }
-            for speaker_key, samples in speaker_latencies.items()
+            for speaker_key in speaker_keys
         },
-        "excluded_latency_samples": excluded,
+        "immediate_transitions": immediate,
+        "lapse_transitions": lapses,
     }
 
 

@@ -45,6 +45,17 @@ class RecordingAnalyticsRead(BaseModel):
     ai_status: str = "pending"
     ai_error_message: str | None = None
     ai_stale: bool = False
+    # Overlapping speech measured from the audio. It has no staleness story:
+    # it depends only on the audio, which never changes after processing. Its
+    # status lives inside the block because the block is the whole lifecycle.
+    audio_overlap: dict | None = None
+    audio_overlap_status: str = "pending"
+    audio_overlap_error_message: str | None = None
+    # Each linked person's usual delivery across this user's other measured
+    # meetings, keyed by speaker_key. Only speakers linked to a person with
+    # enough comparable history appear; sample counts ride along so the
+    # interface can say how much stands behind "their usual".
+    delivery_baselines: dict = {}
 
 
 class AnalyticsGenerateResponse(BaseModel):
@@ -72,12 +83,22 @@ def _is_stale(block: dict | None, watermark: object, revision: int) -> bool:
         return False
 
 
-def _backfill_and_compute(sync_session, recording) -> tuple[int, dict]:
+def _backfill_and_compute(sync_session, recording) -> tuple[int, dict, dict]:
     """Backfill, derive, and read the cursor in one synchronous block."""
+    from backend.services.meeting_analytics.baselines import (
+        compute_delivery_baselines,
+    )
+
     ensure_canonical_backfill(sync_session, recording.id)
     analytics = compute_recording_analytics(sync_session, recording)
     revision = get_canonical_transcript_revision(sync_session, recording.id)
-    return revision, analytics
+    baselines = compute_delivery_baselines(
+        sync_session,
+        user_id=recording.user_id,
+        recording_id=recording.id,
+        speakers=analytics["speakers"],
+    )
+    return revision, analytics, baselines
 
 
 @router.get("/{recording_id}/analytics", response_model=RecordingAnalyticsRead)
@@ -100,7 +121,7 @@ async def get_recording_analytics(
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    revision, analytics = await db.run_sync(
+    revision, analytics, baselines = await db.run_sync(
         lambda sync_session: _backfill_and_compute(sync_session, recording)
     )
     await db.commit()
@@ -108,6 +129,7 @@ async def get_recording_analytics(
     payload = transcript.analytics_payload or {}
     delivery = payload.get("delivery")
     ai = payload.get("ai")
+    audio_overlap = payload.get("audio_overlap")
 
     return RecordingAnalyticsRead(
         recording_id=recording.public_id,
@@ -126,6 +148,14 @@ async def get_recording_analytics(
         # measuring delivery but before analysing does not mark the analysis
         # stale as well.
         ai_stale=_is_stale(ai, (ai or {}).get("event_watermark"), revision),
+        audio_overlap=(
+            audio_overlap
+            if (audio_overlap or {}).get("status") == "completed"
+            else None
+        ),
+        audio_overlap_status=(audio_overlap or {}).get("status", "pending"),
+        audio_overlap_error_message=(audio_overlap or {}).get("error_message"),
+        delivery_baselines=baselines,
     )
 
 
@@ -137,12 +167,14 @@ async def generate_recording_analytics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Measure delivery descriptors for a recording, or refresh stale ones.
+    """Measure a recording's audio: delivery descriptors and overlap.
 
-    Manual rather than automatic for meetings that predate the feature: the
+    Manual rather than automatic for meetings that predate the features: the
     alternative is a sweep that reads every recording's audio in every library
-    at upgrade time, on hardware the user owns, for a tier most meetings will
-    never be asked about.
+    at upgrade time, on hardware the user owns, for tiers most meetings will
+    never be asked about. One button dispatches both measured tiers because
+    they answer the same request -- "measure this meeting's audio" -- even
+    though they run on different lanes.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     transcript = await _get_recording_transcript(db, recording.id)
@@ -170,6 +202,15 @@ async def generate_recording_analytics(
             status_code=503,
             detail="Analytics could not be queued because the task broker is unreachable",
         )
+
+    # Overlap is genuinely best-effort on top: the delivery dispatch above
+    # succeeded, so the broker is reachable, and a failure here should not
+    # fail a request whose primary work is already queued.
+    await dispatch_task_best_effort(
+        "backend.worker.tasks.compute_overlap_analytics_task",
+        args=[recording.id],
+        context="overlap analytics",
+    )
 
     return AnalyticsGenerateResponse(
         recording_id=recording.public_id, delivery_status="generating"

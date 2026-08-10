@@ -10,7 +10,8 @@ moved.
 from __future__ import annotations
 
 from backend.services.meeting_analytics.constants import (
-    LATENCY_FLOOR_MS,
+    LATENCY_COLLAR_MS,
+    LATENCY_LAPSE_MS,
     OVERLAP_FLOOR_MS,
     TIMELINE_MIN_BUCKET_MS,
     TURN_GAP_MS,
@@ -208,28 +209,50 @@ class TestTransitionsAndLatency:
 
         assert pairs == {("a", "b"): 1, ("b", "a"): 1}
 
-    def test_samples_below_the_floor_are_excluded_and_counted(self):
+    def test_sub_collar_gaps_count_as_immediate_handovers(self):
+        # The timestamps cannot resolve gaps under the collar (250ms is the
+        # human-annotator disagreement on boundary placement), but a fast
+        # handover is real behaviour, so it is counted rather than discarded.
         utterances = [
             row("a", 0, 5_000),
-            row("b", 5_000 + LATENCY_FLOOR_MS - 10, 9_000),
+            row("b", 5_000 + LATENCY_COLLAR_MS - 10, 9_000),
         ]
 
         result = compute_transitions(build_turns(utterances))
 
-        assert result["excluded_latency_samples"] == 1
-        assert "b" not in result["response_latency"]
+        assert result["immediate_transitions"] == 1
+        assert result["response_latency"]["b"]["immediate_count"] == 1
+        assert result["response_latency"]["b"]["median_ms"] is None
+        assert result["response_latency"]["b"]["sample_count"] == 0
         # The transition itself is still recorded; only its timing is unusable.
         assert result["transitions"][0]["count"] == 1
 
-    def test_negative_gaps_are_dropped_rather_than_clamped(self):
-        # An overlapping handover is an interruption, already counted as one.
-        # Clamping it to the floor would invent a fast responder.
+    def test_negative_gaps_count_as_immediate_rather_than_clamped(self):
+        # An overlapping handover would produce a negative gap. Clamping it
+        # into the median would invent a measured reply time; it is an
+        # immediate handover like any other sub-collar transition.
         utterances = [row("a", 0, 10_000), row("b", 4_000, 14_000)]
 
         result = compute_transitions(build_turns(utterances))
 
-        assert result["excluded_latency_samples"] == 1
-        assert result["response_latency"] == {}
+        assert result["immediate_transitions"] == 1
+        assert result["response_latency"]["b"]["immediate_count"] == 1
+        assert result["response_latency"]["b"]["median_ms"] is None
+
+    def test_lapses_are_excluded_from_reply_time_and_counted(self):
+        # A turn taken after a long silence is a resumption, not a reply.
+        # Without the bound, a 30-second lull once reported as a 30-second
+        # "reply time" on a real recording.
+        utterances = [
+            row("a", 0, 5_000),
+            row("b", 5_000 + LATENCY_LAPSE_MS, 12_000 + LATENCY_LAPSE_MS),
+        ]
+
+        result = compute_transitions(build_turns(utterances))
+
+        assert result["lapse_transitions"] == 1
+        assert "b" not in result["response_latency"]
+        assert result["transitions"][0]["count"] == 1
 
     def test_median_latency_is_reported_with_its_sample_count(self):
         utterances = [

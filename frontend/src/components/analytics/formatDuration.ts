@@ -24,15 +24,15 @@ export const formatTimestamp = (ms: number): string => {
 export const formatShare = (share: number): string =>
   `${Math.round(share * 1000) / 10}%`;
 
-/** A reply gap, which is usually shorter than a second.
+/** A reply gap, which is usually around a second.
  *
- * formatDuration is second-granular and collapses every one of these to "0s":
- * real medians on a normal conversation sit between 200ms and 800ms, so the
- * only figure it could ever show was zero. Reply time is the one metric here
- * where sub-second resolution is the whole point.
+ * formatDuration is second-granular and collapses every one of these to "0s",
+ * while millisecond precision would overclaim: the timestamps behind these
+ * gaps carry roughly a quarter-second of noise (the same reason diarisation
+ * scoring uses a 250ms collar), so tenths of a second is the finest display
+ * the measurement supports.
  */
 export const formatLatency = (ms: number): string => {
-  if (ms < 1000) return `${Math.round(ms / 10) * 10}ms`;
   if (ms < 10_000) return `${(Math.round(ms / 100) / 10).toFixed(1)}s`;
   return formatDuration(ms);
 };

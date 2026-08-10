@@ -16,6 +16,7 @@ from typing import Any, Mapping
 # the AI tier and is left there so existing payloads keep reading.
 DELIVERY_KEY = "delivery"
 AI_KEY = "ai"
+AUDIO_OVERLAP_KEY = "audio_overlap"
 
 
 def merge_analytics_payload(

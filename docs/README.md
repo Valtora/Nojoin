@@ -20,6 +20,7 @@ Use the links below by task rather than treating the root README as the source o
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md): Backup contents, restore behaviour, conflict modes, and sensitivity model.
 - [TELEMETRY.md](TELEMETRY.md): What the anonymous usage ping contains, when it is sent, and how to turn it off.
 - [ARCHITECTURE.md](ARCHITECTURE.md): System overview, processing pipeline, auth model, and release model.
+- [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md): The evidence and calibration behind every Meeting Analytics figure and threshold.
 - [DESIGN.md](DESIGN.md): The web client's design tokens, themes, density model, and accessibility posture.
 - [SITE.md](SITE.md): The marketing site's design direction, voice rules, claim standards, and maintenance.
 

@@ -103,8 +103,11 @@ const analytics = (
           median_latency_ms: 5_000,
         },
       ],
-      response_latency: { "rs:2": { median_ms: 5_000, sample_count: 1 } },
-      excluded_latency_samples: 0,
+      response_latency: {
+        "rs:2": { median_ms: 1_200, sample_count: 3, immediate_count: 2 },
+      },
+      immediate_transitions: 2,
+      lapse_transitions: 1,
     },
     timeline: {
       bucket_ms: 60_000,
@@ -126,6 +129,10 @@ const analytics = (
   ai_status: "pending",
   ai_error_message: null,
   ai_stale: false,
+  audio_overlap: null,
+  audio_overlap_status: "pending",
+  audio_overlap_error_message: null,
+  delivery_baselines: {},
   ...overrides,
 });
 
@@ -139,18 +146,23 @@ describe("AnalyticsView", () => {
     renderWithProviders(<AnalyticsView recordingId="rec-1" />);
 
     await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
-    // Silence and overlap are shares of different denominators; both appear.
     expect(screen.getByText("25%")).toBeInTheDocument();
-    expect(screen.getByText("10%")).toBeInTheDocument();
+    // The talked-over tile shows a dash until overlap has been measured from
+    // the audio: the transcript's own overlap figure is zero by construction.
+    expect(screen.getByText("–")).toBeInTheDocument();
     expect(screen.getByText("Guest")).toBeInTheDocument();
   });
 
-  it("reports interruptions directionally rather than as one overlap count", async () => {
+  it("shows floor-taking as instant handovers, never as interruption counts", async () => {
+    // Per-speaker interruption counts are indefensible from a single audio
+    // channel, so the surface reports how often each speaker took the floor
+    // the instant it opened, which the timestamps do support.
     renderWithProviders(<AnalyticsView recordingId="rec-1" />);
 
     await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
-    expect(screen.getByText("Interrupted")).toBeInTheDocument();
-    expect(screen.getByText("Was interrupted")).toBeInTheDocument();
+    expect(screen.getByText("Instant handovers")).toBeInTheDocument();
+    expect(screen.queryByText("Interrupted")).not.toBeInTheDocument();
+    expect(screen.queryByText("Was interrupted")).not.toBeInTheDocument();
   });
 
   it("offers no attribution warning when nothing suggests a problem", async () => {
@@ -295,8 +307,9 @@ describe("AnalyticsView", () => {
       screen.getByText(/describes how someone spoke, not how they felt/),
     ).toBeInTheDocument();
     // The raw figure keeps its plain-language reading beside it rather than
-    // being replaced by one.
-    expect(screen.getByText("brisk")).toBeInTheDocument();
+    // being replaced by one. 168 wpm sits in the corpus-calibrated
+    // conversational band (160-200 by this measure).
+    expect(screen.getByText("conversational")).toBeInTheDocument();
   });
 
   it("says why loudness is not compared when the sources differ", async () => {
@@ -336,15 +349,18 @@ describe("AnalyticsView", () => {
     );
   });
 
-  it("shows a sub-second reply time rather than rounding it to zero", async () => {
+  it("shows a sub-second reply time at the resolution the timing supports", async () => {
     getRecordingAnalytics.mockResolvedValue(
       analytics({
         metrics: {
           ...analytics().metrics,
           turn_taking: {
             transitions: [],
-            response_latency: { "rs:1": { median_ms: 280, sample_count: 35 } },
-            excluded_latency_samples: 0,
+            response_latency: {
+              "rs:1": { median_ms: 280, sample_count: 35, immediate_count: 12 },
+            },
+            immediate_transitions: 12,
+            lapse_transitions: 0,
           },
         },
       }),
@@ -352,21 +368,36 @@ describe("AnalyticsView", () => {
 
     renderWithProviders(<AnalyticsView recordingId="rec-1" />);
 
-    await waitFor(() => expect(screen.getByText("280ms")).toBeInTheDocument());
+    // Not "0s" (which hides it) and not "280ms" (which overclaims precision
+    // the timestamps do not have).
+    await waitFor(() => expect(screen.getByText("0.3s")).toBeInTheDocument());
+    expect(screen.getByText("12")).toBeInTheDocument();
   });
 
-  it("withholds interruptions when the transcript holds no overlapping speech", async () => {
-    // Every count would be zero by construction. Printing zeros would assert
-    // that nobody interrupted, which this transcript cannot support.
+  it("offers overlap measurement rather than showing it as absent", async () => {
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Talking over each other")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Not measured yet/)).toBeInTheDocument();
+  });
+
+  it("presents measured overlap as a floor, without naming who overlapped", async () => {
     getRecordingAnalytics.mockResolvedValue(
       analytics({
-        metrics: {
-          ...analytics().metrics,
-          overlap: {
-            overlapped_ms: 0,
-            overlap_share: 0,
-            overlapping_speech_present: false,
-          },
+        audio_overlap_status: "completed",
+        audio_overlap: {
+          method_version: 1,
+          total_overlap_ms: 84_000,
+          overlap_share_of_audio: 0.042,
+          region_count: 37,
+          regions: [
+            [10_000, 14_000],
+            [30_000, 34_000],
+          ],
+          regions_truncated: false,
+          duration_ms: 2_000_000,
         },
       }),
     );
@@ -374,28 +405,16 @@ describe("AnalyticsView", () => {
     renderWithProviders(<AnalyticsView recordingId="rec-1" />);
 
     await waitFor(() =>
-      expect(
-        screen.getByText(/Interruptions cannot be measured for this meeting/),
-      ).toBeInTheDocument(),
+      expect(screen.getByText(/at least/)).toBeInTheDocument(),
     );
+    expect(screen.getByText("1m 24s")).toBeInTheDocument();
+    expect(screen.getByText("≥4.2%")).toBeInTheDocument();
+    // The measured floor is disclosed, and nothing on the surface claims to
+    // know who overlapped whom or calls it interruption.
     expect(
-      screen.queryByText(
-        /An interruption is starting to speak while someone else/,
-      ),
-    ).not.toBeInTheDocument();
-  });
-
-  it("counts interruptions normally when the transcript can express overlap", async () => {
-    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
-
-    await waitFor(() =>
-      expect(
-        screen.getByText(/An interruption is starting to speak/),
-      ).toBeInTheDocument(),
-    );
-    expect(
-      screen.queryByText(/cannot be measured for this meeting/),
-    ).not.toBeInTheDocument();
+      screen.getByText(/does not guess who did it to whom/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/interruption count/i)).not.toBeInTheDocument();
   });
 
   it("reports a stale measurement rather than quietly serving old figures", async () => {
