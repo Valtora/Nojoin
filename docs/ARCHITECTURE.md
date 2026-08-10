@@ -123,6 +123,16 @@ denominators are carried separately. And anything excluded from a statistic is
 counted rather than dropped, so a median over four samples is distinguishable
 from a median over ninety.
 
+A third follows from the same principle but is easy to miss, because the metric
+that trips over it returns a number rather than nothing. Some transcripts hold
+no overlapping speech at all: an imported single-channel recording is
+transcribed as strictly sequential segments, so two people talking at once is
+not representable in it whatever happened in the room. Every interruption count
+is then zero by construction, which reads identically to a meeting where nobody
+interrupted. `compute_overlap` therefore reports
+`overlapping_speech_present`, and both the interface and the MCP tool withhold
+the interruption figures rather than printing zeros when it is false.
+
 Because every figure is attached to a speaker, the surface discloses when that
 attribution is doubtful rather than presenting a confidently wrong number: a
 structured warning is returned when several clusters hold a negligible share,

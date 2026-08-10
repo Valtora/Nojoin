@@ -11,7 +11,12 @@ import DeliveryPanel from "./DeliveryPanel";
 import TalkShareChart from "./TalkShareChart";
 import TalkShareTimeline from "./TalkShareTimeline";
 import { chartColor } from "./chartPalette";
-import { formatDuration, formatShare, formatTimestamp } from "./formatDuration";
+import {
+  formatDuration,
+  formatLatency,
+  formatShare,
+  formatTimestamp,
+} from "./formatDuration";
 
 interface AnalyticsViewProps {
   recordingId: RecordingId;
@@ -138,6 +143,16 @@ export default function AnalyticsView({
   }
 
   const { metrics, speakers } = analytics;
+  // A transcript with no overlapping speech anywhere cannot express two people
+  // talking at once, so its interruption counts are all zero by construction.
+  // Reporting them as measurements would assert that nobody interrupted.
+  const overlapMeasurable = metrics.overlap.overlapping_speech_present;
+  const talkTimeMs = Object.fromEntries(
+    Object.entries(metrics.talk_time).map(([key, figures]) => [
+      key,
+      figures.speech_ms,
+    ]),
+  );
 
   return (
     <div className="custom-scrollbar h-full space-y-3 overflow-y-auto p-4">
@@ -191,6 +206,7 @@ export default function AnalyticsView({
           errorMessage={analytics.delivery_error_message}
           stale={analytics.delivery_stale}
           speakers={speakers}
+          talkTimeMs={talkTimeMs}
           onGenerate={() => void handleGenerate()}
           generating={generating}
         />
@@ -275,13 +291,13 @@ export default function AnalyticsView({
                       )}
                     </td>
                     <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {interrupts?.made ?? 0}
+                      {overlapMeasurable ? (interrupts?.made ?? 0) : "-"}
                     </td>
                     <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {interrupts?.received ?? 0}
+                      {overlapMeasurable ? (interrupts?.received ?? 0) : "-"}
                     </td>
                     <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {latency ? formatDuration(latency.median_ms) : "-"}
+                      {latency ? formatLatency(latency.median_ms) : "-"}
                     </td>
                   </tr>
                 );
@@ -289,11 +305,23 @@ export default function AnalyticsView({
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-xs text-contrast-helper">
-          An interruption is starting to speak while someone else still has more
-          than a moment left to say. Reply time ignores gaps too short to be a
-          decision, so it is blank where there were none to measure.
-        </p>
+        {overlapMeasurable ? (
+          <p className="mt-2 text-xs text-contrast-helper">
+            An interruption is starting to speak while someone else still has
+            more than a moment left to say. Reply time ignores gaps too short to
+            be a decision, so it is blank where there were none to measure.
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-contrast-helper">
+            Interruptions cannot be measured for this meeting. Its transcript
+            holds no overlapping speech at all, which happens when a recording
+            is transcribed as one continuous channel: two people talking at once
+            cannot be represented in it, so there is nothing to count. That is
+            not the same as nobody having interrupted, which is why no figure is
+            shown. Reply time ignores gaps too short to be a decision, so it is
+            blank where there were none to measure.
+          </p>
+        )}
       </Panel>
     </div>
   );

@@ -107,7 +107,11 @@ const analytics = (
       buckets: [{ start_ms: 0, end_ms: 60_000, speech_ms: { "rs:1": 40_000 } }],
     },
     silence: { speech_ms: 45_000, silence_ms: 15_000, silence_share: 0.25 },
-    overlap: { overlapped_ms: 5_000, overlap_share: 0.1 },
+    overlap: {
+      overlapped_ms: 5_000,
+      overlap_share: 0.1,
+      overlapping_speech_present: true,
+    },
   },
   attribution_warning: null,
   delivery: null,
@@ -280,8 +284,11 @@ describe("AnalyticsView", () => {
     );
     expect(screen.getByText("3.4 st")).toBeInTheDocument();
     expect(
-      screen.getByText(/describe how someone spoke, not how they felt/),
+      screen.getByText(/describes how someone spoke, not how they felt/),
     ).toBeInTheDocument();
+    // The raw figure keeps its plain-language reading beside it rather than
+    // being replaced by one.
+    expect(screen.getByText("brisk")).toBeInTheDocument();
   });
 
   it("says why loudness is not compared when the sources differ", async () => {
@@ -319,6 +326,68 @@ describe("AnalyticsView", () => {
         screen.getByText(/different audio\s+sources/),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("shows a sub-second reply time rather than rounding it to zero", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        metrics: {
+          ...analytics().metrics,
+          turn_taking: {
+            transitions: [],
+            response_latency: { "rs:1": { median_ms: 280, sample_count: 35 } },
+            excluded_latency_samples: 0,
+          },
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("280ms")).toBeInTheDocument());
+  });
+
+  it("withholds interruptions when the transcript holds no overlapping speech", async () => {
+    // Every count would be zero by construction. Printing zeros would assert
+    // that nobody interrupted, which this transcript cannot support.
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        metrics: {
+          ...analytics().metrics,
+          overlap: {
+            overlapped_ms: 0,
+            overlap_share: 0,
+            overlapping_speech_present: false,
+          },
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Interruptions cannot be measured for this meeting/),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(
+        /An interruption is starting to speak while someone else/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("counts interruptions normally when the transcript can express overlap", async () => {
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/An interruption is starting to speak/),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(/cannot be measured for this meeting/),
+    ).not.toBeInTheDocument();
   });
 
   it("reports a stale measurement rather than quietly serving old figures", async () => {

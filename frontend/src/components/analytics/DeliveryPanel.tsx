@@ -9,6 +9,7 @@ import type {
 } from "@/types";
 
 import { chartColor } from "./chartPalette";
+import { buildDeliveryReadings } from "./deliveryInsights";
 
 interface DeliveryPanelProps {
   delivery: AnalyticsDelivery | null;
@@ -16,9 +17,23 @@ interface DeliveryPanelProps {
   errorMessage: string | null;
   stale: boolean;
   speakers: AnalyticsSpeaker[];
+  /** Speaking time per speaker, so a pause count can become a pause rate. */
+  talkTimeMs: Record<string, number>;
   onGenerate: () => void;
   generating: boolean;
 }
+
+/** A figure with its plain-language reading underneath. */
+const Figure = ({ value, reading }: { value: string; reading?: string | null }) => (
+  <>
+    <span className="tabular-nums text-contrast-muted">{value}</span>
+    {reading && (
+      <span className="mt-0.5 block text-xs font-normal text-contrast-helper">
+        {reading}
+      </span>
+    )}
+  </>
+);
 
 const Empty = ({
   message,
@@ -53,12 +68,23 @@ export default function DeliveryPanel({
   errorMessage,
   stale,
   speakers,
+  talkTimeMs,
   onGenerate,
   generating,
 }: DeliveryPanelProps) {
   if (status === "generating" || generating) {
     return (
-      <Empty message="Measuring how people spoke. This reads the meeting's audio and takes a moment." />
+      <p
+        className="flex items-center gap-2 text-xs text-contrast-helper"
+        role="status"
+      >
+        <Loader2
+          className="h-3.5 w-3.5 shrink-0 animate-spin text-action-text"
+          aria-hidden="true"
+        />
+        Measuring how people spoke. This reads the meeting&apos;s audio and takes
+        a moment.
+      </p>
     );
   }
 
@@ -92,6 +118,8 @@ export default function DeliveryPanel({
       <Empty message="Nobody in this meeting had enough uninterrupted speech to measure delivery from." />
     );
   }
+
+  const readings = buildDeliveryReadings(delivery, talkTimeMs);
 
   return (
     <div className="space-y-3">
@@ -131,13 +159,14 @@ export default function DeliveryPanel({
           </thead>
           <tbody>
             {measured.map((speaker) => {
-              const figures = delivery.speakers[speaker.speaker_key];
+              const figures = delivery.speakers[speaker.speaker_key]!;
+              const reading = readings[speaker.speaker_key]!;
               return (
                 <tr
                   key={speaker.speaker_key}
                   className="border-b border-surface-divider last:border-0"
                 >
-                  <td className="py-2">
+                  <td className="py-2 align-top">
                     <span className="flex items-center gap-2">
                       <span
                         className="h-2 w-2 shrink-0 rounded-full"
@@ -153,21 +182,44 @@ export default function DeliveryPanel({
                       </span>
                     </span>
                   </td>
-                  <td className="py-2 text-right tabular-nums text-contrast-muted">
-                    {figures.words_per_minute
-                      ? `${figures.words_per_minute} wpm`
-                      : "-"}
+                  <td className="py-2 text-right align-top">
+                    <Figure
+                      value={
+                        figures.words_per_minute
+                          ? `${figures.words_per_minute} wpm`
+                          : "-"
+                      }
+                      reading={reading.pace}
+                    />
                   </td>
-                  <td className="py-2 text-right tabular-nums text-contrast-muted">
-                    {figures.median_f0_hz ? `${figures.median_f0_hz} Hz` : "-"}
+                  <td className="py-2 text-right align-top">
+                    {/* No reading: a descriptor here would characterise
+                        someone's voice rather than how they used it. */}
+                    <Figure
+                      value={
+                        figures.median_f0_hz ? `${figures.median_f0_hz} Hz` : "-"
+                      }
+                    />
                   </td>
-                  <td className="py-2 text-right tabular-nums text-contrast-muted">
-                    {figures.pitch_spread_semitones
-                      ? `${figures.pitch_spread_semitones} st`
-                      : "-"}
+                  <td className="py-2 text-right align-top">
+                    <Figure
+                      value={
+                        figures.pitch_spread_semitones
+                          ? `${figures.pitch_spread_semitones} st`
+                          : "-"
+                      }
+                      reading={reading.pitchMovement}
+                    />
                   </td>
-                  <td className="py-2 text-right tabular-nums text-contrast-muted">
-                    {figures.pause_count}
+                  <td className="py-2 text-right align-top">
+                    <Figure
+                      value={
+                        reading.pauseRate === null
+                          ? String(figures.pause_count)
+                          : `${figures.pause_count} (${reading.pauseRate.toFixed(1)}/min)`
+                      }
+                      reading={reading.pauses}
+                    />
                   </td>
                 </tr>
               );
@@ -194,7 +246,13 @@ export default function DeliveryPanel({
       <p className="text-xs text-contrast-helper">
         Measured from the audio: pace is words per minute, pitch movement is the
         spread in semitones, and pauses are silences within a speaker&apos;s own
-        turn. These describe how someone spoke, not how they felt.
+        turn, shown as a rate so a long contribution does not look like a
+        hesitant one. Pace is described against ordinary conversation, which
+        runs at roughly 120 to 150 words a minute. Pitch movement and pausing
+        have no such yardstick &mdash; the same expressive range measures wider
+        on a high voice than a low one &mdash; so those are compared only with
+        the other people in this meeting. All of it describes how someone spoke,
+        not how they felt.
       </p>
     </div>
   );

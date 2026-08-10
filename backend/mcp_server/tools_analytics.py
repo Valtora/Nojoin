@@ -152,6 +152,13 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     `delivery.status` is not "completed", delivery has not been measured for
     this meeting; say so rather than treating it as absent evidence.
 
+    When `conversation.overlapping_speech_present` is false, this transcript
+    contains no overlapping speech anywhere, so every `interruptions_made` and
+    `interruptions_received` count is zero because overlap was never
+    representable in it -- most often an imported single-channel recording. Say
+    that interruptions cannot be measured for this meeting rather than that
+    nobody interrupted anyone.
+
     Three things to respect when using this. Shares are reported against total
     speech rather than against the meeting's duration, so they sum to 1.0
     even when people talked over each other; each speaker's
@@ -234,6 +241,11 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
             "silence_share": metrics["silence"]["silence_share"],
             "overlapped_seconds": _ms_to_seconds(metrics["overlap"]["overlapped_ms"]),
             "overlap_share": metrics["overlap"]["overlap_share"],
+            # False means this transcript holds no overlapping speech at all,
+            # so the interruption counts above are not measurements of zero.
+            "overlapping_speech_present": metrics["overlap"][
+                "overlapping_speech_present"
+            ],
         },
         "attribution_warnings": _warning_rows(analytics, names),
         "delivery": _delivery_rows(stored, names, delivery_status),

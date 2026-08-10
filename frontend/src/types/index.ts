@@ -1013,7 +1013,15 @@ export interface AnalyticsMetrics {
   turn_taking: AnalyticsTurnTaking;
   timeline: AnalyticsTimeline;
   silence: { speech_ms: number; silence_ms: number; silence_share: number };
-  overlap: { overlapped_ms: number; overlap_share: number };
+  overlap: {
+    overlapped_ms: number;
+    overlap_share: number;
+    // False when the transcript holds no overlapping speech anywhere, which
+    // makes every interruption count zero by construction rather than by
+    // measurement. The interface withholds the figure rather than reporting
+    // that nobody interrupted.
+    overlapping_speech_present: boolean;
+  };
 }
 
 // Reasons are codes rather than prose so the interface owns the wording and

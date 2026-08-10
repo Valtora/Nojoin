@@ -271,6 +271,37 @@ class TestSilenceAndOverlap:
 
         assert result["overlapped_ms"] == 5_000
         assert result["overlap_share"] == round(5_000 / 15_000, 4)
+        assert result["overlapping_speech_present"] is True
+
+    def test_a_transcript_with_no_overlap_at_all_says_so(self):
+        # A single-channel transcript emits strictly sequential segments, so
+        # two people talking at once cannot be represented in it whatever
+        # happened in the room. Every interruption count is then zero by
+        # construction, and consumers must be able to tell that apart from a
+        # measurement that nobody interrupted.
+        utterances = [
+            row("a", 0, 10_000),
+            row("b", 10_000, 20_000),
+            row("a", 20_000, 30_000),
+        ]
+
+        overlap = compute_overlap(utterances)
+        interruptions = compute_interruptions(utterances)
+
+        assert overlap["overlapped_ms"] == 0
+        assert overlap["overlapping_speech_present"] is False
+        assert all(counts["made"] == 0 for counts in interruptions.values())
+        assert all(counts["received"] == 0 for counts in interruptions.values())
+
+    def test_touching_utterances_are_not_overlap(self):
+        # One utterance ending exactly where the next begins is contiguous
+        # speech, not simultaneous speech. Treating a shared boundary
+        # millisecond as overlap would make almost every imported transcript
+        # claim overlapping speech it does not contain.
+        result = compute_overlap([row("a", 0, 10_000), row("b", 10_000, 20_000)])
+
+        assert result["overlapped_ms"] == 0
+        assert result["overlapping_speech_present"] is False
 
     def test_silence_is_not_invented_when_duration_is_unknown(self):
         result = compute_silence([row("a", 0, 10_000)], duration_ms=0)

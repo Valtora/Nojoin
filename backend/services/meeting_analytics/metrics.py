@@ -189,7 +189,17 @@ def compute_silence(utterances: Sequence[UtteranceRow], duration_ms: int) -> dic
 
 
 def compute_overlap(utterances: Sequence[UtteranceRow]) -> dict:
-    """Total overlapped speech, as an absolute figure and a share."""
+    """Total overlapped speech, as an absolute figure and a share.
+
+    ``overlapping_speech_present`` is load-bearing rather than decorative.
+    Some transcripts contain no overlap at all -- an imported single-channel
+    recording whose diarisation emitted strictly sequential segments cannot
+    represent two people talking at once, whatever happened in the room. On
+    those, every interruption count is zero because overlap was never
+    expressible, not because nobody interrupted, and reporting "0 interruptions"
+    would assert something the transcript cannot support. Consumers use this to
+    withhold the figure instead.
+    """
     ordered = sort_utterances(utterances)
     total_speech_ms = sum(utterance.duration_ms for utterance in ordered)
     merged_ms = sum(end - start for start, end in merge_intervals(ordered))
@@ -199,6 +209,7 @@ def compute_overlap(utterances: Sequence[UtteranceRow]) -> dict:
         "overlap_share": (
             round(overlapped_ms / total_speech_ms, 4) if total_speech_ms else 0.0
         ),
+        "overlapping_speech_present": overlapped_ms > 0,
     }
 
 
