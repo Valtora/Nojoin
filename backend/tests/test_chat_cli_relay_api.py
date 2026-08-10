@@ -54,7 +54,10 @@ CREATE TABLE transcripts (
     meeting_edge_source_signature TEXT, speaker_name_suggestions JSON,
     notes_template_id INTEGER, notes_template_sections TEXT, notes_status VARCHAR NOT NULL,
     notes_stale_documents BOOLEAN NOT NULL DEFAULT 0,
-    transcript_status VARCHAR NOT NULL, error_message TEXT
+    transcript_status VARCHAR NOT NULL, error_message TEXT,
+    analytics_payload JSON,
+    analytics_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_error_message TEXT
 );
 CREATE TABLE chat_messages (
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,

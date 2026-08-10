@@ -1,3 +1,4 @@
+from .analytics import *
 from .calendar import *
 from .catch_up_diarization import *
 from .chat import *

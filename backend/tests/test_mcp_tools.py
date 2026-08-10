@@ -210,7 +210,10 @@ SCHEMA_STATEMENTS = [
         notes_status VARCHAR,
         notes_stale_documents BOOLEAN DEFAULT 0,
         transcript_status VARCHAR,
-        error_message TEXT
+        error_message TEXT,
+        analytics_payload JSON,
+        analytics_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        analytics_error_message TEXT
     )
     """,
     """
@@ -2326,3 +2329,72 @@ async def test_get_meeting_analytics_explains_a_recording_with_no_transcript(
 
     with pytest.raises(ToolError, match="no transcript"):
         await get_meeting_analytics(public_id)
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_reports_unmeasured_delivery_as_a_status(
+    session_maker, test_user: User, mcp_context
+):
+    """Not measured must be distinguishable from measured-and-featureless."""
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    result = await get_meeting_analytics(public_id)
+
+    assert result["delivery"]["status"] == "pending"
+    assert result["delivery"]["speakers"] == {}
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_returns_measured_delivery_by_name(
+    session_maker, test_user: User, mcp_context
+):
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    async with session_maker() as session:
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
+        transcript.analytics_status = "completed"
+        transcript.analytics_payload = {
+            "method_version": 1,
+            "event_watermark": 1,
+            "delivery": {
+                "cross_speaker_loudness_comparable": False,
+                "speakers": {
+                    "rs:1": {
+                        "words_per_minute": 168,
+                        "median_f0_hz": 112,
+                        "pitch_spread_semitones": 3.4,
+                        "median_loudness_dbfs": -22.5,
+                        "loudness_range_db": 6.1,
+                        "pause_count": 12,
+                        "median_pause_ms": 620,
+                        "analysed_utterances": 40,
+                    }
+                },
+            },
+        }
+        session.add(transcript)
+        await session.commit()
+
+    result = await get_meeting_analytics(public_id)
+
+    delivery = result["delivery"]
+    assert delivery["status"] == "completed"
+    assert delivery["speakers"]["Dana"]["words_per_minute"] == 168
+    assert delivery["speakers"]["Dana"]["pitch_variation_semitones"] == 3.4
+    # The caveat has to travel with the figures, not be inferred from them.
+    assert delivery["cross_speaker_loudness_comparable"] is False
+    assert "rs:1" not in delivery["speakers"]

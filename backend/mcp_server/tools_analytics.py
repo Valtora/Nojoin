@@ -94,6 +94,43 @@ def _warning_rows(
     return rows
 
 
+def _delivery_rows(
+    stored: dict[str, Any], names: dict[str, str], status: str
+) -> dict[str, Any]:
+    """The measured delivery tier, keyed by speaker name.
+
+    Reported as a status rather than omitted when absent, so an assistant can
+    say "not measured yet" instead of inferring that a meeting had no
+    discernible delivery.
+    """
+    delivery = stored.get("delivery")
+    if not delivery or status != "completed":
+        return {"status": status, "speakers": {}}
+
+    return {
+        "status": "completed",
+        # Loudness is only comparable between speakers who came through the
+        # same signal chain. Where they did not, this is false, and comparing
+        # two speakers' loudness compares codecs rather than people.
+        "cross_speaker_loudness_comparable": delivery.get(
+            "cross_speaker_loudness_comparable", True
+        ),
+        "speakers": {
+            names.get(key, key): {
+                "words_per_minute": figures.get("words_per_minute"),
+                "median_pitch_hz": figures.get("median_f0_hz"),
+                "pitch_variation_semitones": figures.get("pitch_spread_semitones"),
+                "median_loudness_dbfs": figures.get("median_loudness_dbfs"),
+                "loudness_range_db": figures.get("loudness_range_db"),
+                "within_turn_pauses": figures.get("pause_count"),
+                "median_pause_ms": figures.get("median_pause_ms"),
+                "measured_from_utterances": figures.get("analysed_utterances"),
+            }
+            for key, figures in delivery.get("speakers", {}).items()
+        },
+    }
+
+
 @mcp_tool()
 async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     """Get speaking-dynamics analytics for one meeting.
@@ -106,14 +143,27 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     inferred by a model, and matches exactly what the app's Analytics tab
     shows for the same meeting.
 
-    Two things to respect when using this. Shares are reported against total
+    Also returns `delivery` when it has been measured for this recording:
+    speaking pace, pitch height and how much it moved, loudness and its
+    range, and within-turn pausing. These describe *how* someone spoke and
+    make no claim about how they felt -- there is no emotion model here, and
+    they must not be relayed as mood, sentiment, or engagement. A fast,
+    loud speaker is not necessarily an enthusiastic one. When
+    `delivery.status` is not "completed", delivery has not been measured for
+    this meeting; say so rather than treating it as absent evidence.
+
+    Three things to respect when using this. Shares are reported against total
     speech rather than against the meeting's duration, so they sum to 1.0
     even when people talked over each other; each speaker's
-    share_of_speech is the fraction of all speaking time they held. And when
+    share_of_speech is the fraction of all speaking time they held. When
     attribution_warnings is present, speaker attribution for this recording
     may be unreliable -- most often because one person was split into
     several speakers by diarisation -- so say so rather than quoting the
-    figures flatly.
+    figures flatly. And when
+    `delivery.cross_speaker_loudness_comparable` is false, the speakers
+    reached the recording through different signal chains, so comparing their
+    loudness compares codecs and microphone gain rather than how loudly they
+    actually spoke.
 
     Only meetings that have finished processing have analytics: a recording
     still capturing or processing has no speaker attribution yet, because
@@ -148,6 +198,8 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
 
         analytics = await db.run_sync(_compute)
         await db.commit()
+        stored = transcript.analytics_payload or {}
+        delivery_status = transcript.analytics_status
 
     metrics = analytics["metrics"]
     names = _name_lookup(analytics["speakers"])
@@ -184,4 +236,5 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
             "overlap_share": metrics["overlap"]["overlap_share"],
         },
         "attribution_warnings": _warning_rows(analytics, names),
+        "delivery": _delivery_rows(stored, names, delivery_status),
     }

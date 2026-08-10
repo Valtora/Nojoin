@@ -1042,4 +1042,43 @@ export interface RecordingAnalytics {
   speakers: AnalyticsSpeaker[];
   metrics: AnalyticsMetrics;
   attribution_warning: AnalyticsAttributionWarning | null;
+  delivery: AnalyticsDelivery | null;
+  delivery_status: AnalyticsDeliveryStatus;
+  delivery_error_message: string | null;
+  // The transcript moved after delivery was measured, so those figures
+  // describe a transcript that no longer exists.
+  delivery_stale: boolean;
 }
+
+// Measured vocal delivery. These describe how someone spoke, not how they
+// felt: there is no emotion model behind them and the interface must never
+// present them as mood, sentiment, or engagement.
+export interface AnalyticsDeliverySpeaker {
+  analysed_utterances: number;
+  words_per_minute: number | null;
+  median_f0_hz: number | null;
+  pitch_spread_semitones: number | null;
+  median_loudness_dbfs: number;
+  loudness_range_db: number;
+  capture_sources: string[];
+  pause_count: number;
+  median_pause_ms?: number;
+}
+
+export interface AnalyticsDelivery {
+  method_version: number;
+  speakers: Record<string, AnalyticsDeliverySpeaker>;
+  // False when speakers reached the recording through different signal
+  // chains, which makes their loudness figures incomparable with each other.
+  cross_speaker_loudness_comparable: boolean;
+  channel_layout: "browser_live" | "single_source";
+  skipped_overlapping: number;
+  skipped_short: number;
+  ambiguous_channel: number;
+}
+
+export type AnalyticsDeliveryStatus =
+  | "pending"
+  | "generating"
+  | "completed"
+  | "error";

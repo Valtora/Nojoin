@@ -85,6 +85,7 @@ describe("api public surface", () => {
         "findAndReplaceNotes",
         "generateNotes",
         "generateNotesStructure",
+        "generateRecordingAnalytics",
         "getAdminHealth",
         "getBackupStatus",
         "getCalendarAuthorisationStartUrl",

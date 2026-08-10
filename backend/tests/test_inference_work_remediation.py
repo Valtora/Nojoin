@@ -87,7 +87,10 @@ SCHEMA_STATEMENTS = [
         notes_status VARCHAR,
         notes_stale_documents BOOLEAN DEFAULT 0,
         transcript_status VARCHAR,
-        error_message TEXT
+        error_message TEXT,
+        analytics_payload JSON,
+        analytics_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        analytics_error_message TEXT
     )
     """,
     """

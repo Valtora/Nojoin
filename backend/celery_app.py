@@ -182,6 +182,10 @@ TASK_ROUTES = {
     # CPU lane: ffmpeg transcode/proxy and local disk work.
     "backend.processing.segment_transcode.transcode_segment_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.generate_proxy_task": {"queue": CPU_QUEUE},
+    # Reads and analyses the recording's WAV with numpy. No GPU and no
+    # model, so it belongs beside the other local-disk audio work rather
+    # than on the lane finalise is holding.
+    "backend.worker.tasks.compute_delivery_analytics_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
     # Orchestrates post-restore rebuilds; dispatches the ffmpeg work to the cpu lane.
     "backend.worker.tasks.finalize_restored_recording_task": {"queue": IO_QUEUE},

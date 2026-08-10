@@ -63,4 +63,22 @@ class Transcript(BaseDBModel, table=True):
     )  # pending, processing, completed, error
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
 
+    # Measured vocal-delivery descriptors (pace, pitch movement, loudness,
+    # pausing). Only the tiers that cost something to produce are stored: the
+    # rest of the analytics surface is derived per read from the canonical
+    # utterances, so it needs no invalidation and no backfill.
+    #
+    # The payload carries the method version that produced it and the
+    # transcript event watermark it was computed against. The watermark is what
+    # makes staleness detectable without a second column, and stale never means
+    # regenerate automatically -- reading the audio again is work the user
+    # should ask for, exactly as with notes_stale_documents.
+    analytics_payload: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSONB)
+    )
+    analytics_status: str = Field(
+        default="pending"
+    )  # pending, generating, completed, error
+    analytics_error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+
     recording: "Recording" = Relationship(back_populates="transcript")

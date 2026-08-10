@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { BarChart3 } from "lucide-react";
 
-import { getRecordingAnalytics } from "@/lib/api";
+import { generateRecordingAnalytics, getRecordingAnalytics } from "@/lib/api";
 import type { RecordingAnalytics, RecordingId } from "@/types";
 
 import AttributionWarning from "./AttributionWarning";
+import DeliveryPanel from "./DeliveryPanel";
 import TalkShareChart from "./TalkShareChart";
 import TalkShareTimeline from "./TalkShareTimeline";
 import { chartColor } from "./chartPalette";
@@ -54,6 +55,7 @@ export default function AnalyticsView({
   const [analytics, setAnalytics] = useState<RecordingAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,6 +72,29 @@ export default function AnalyticsView({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The delivery pass reads the meeting's audio on a worker, so the result
+  // arrives after the request that asked for it. Poll until it settles rather
+  // than leaving the user to refresh.
+  useEffect(() => {
+    if (analytics?.delivery_status !== "generating") return;
+    const timer = setInterval(() => {
+      void getRecordingAnalytics(recordingId).then(setAnalytics).catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [analytics?.delivery_status, recordingId]);
+
+  const handleGenerate = useCallback(async () => {
+    setGenerating(true);
+    try {
+      await generateRecordingAnalytics(recordingId);
+      setAnalytics(await getRecordingAnalytics(recordingId));
+    } catch {
+      setError("Delivery analysis could not be started.");
+    } finally {
+      setGenerating(false);
+    }
+  }, [recordingId]);
 
   if (loading) {
     return (
@@ -155,6 +180,21 @@ export default function AnalyticsView({
           <TalkShareTimeline speakers={speakers} metrics={metrics} />
         </Panel>
       )}
+
+      <Panel
+        title="How people spoke"
+        description="Measured from the audio. This describes delivery, not mood."
+      >
+        <DeliveryPanel
+          delivery={analytics.delivery}
+          status={analytics.delivery_status}
+          errorMessage={analytics.delivery_error_message}
+          stale={analytics.delivery_stale}
+          speakers={speakers}
+          onGenerate={() => void handleGenerate()}
+          generating={generating}
+        />
+      </Panel>
 
       <Panel
         title="How the conversation moved"

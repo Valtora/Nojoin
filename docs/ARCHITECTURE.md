@@ -130,6 +130,53 @@ overlap is high, the speaker cap bound, or speakers are unnamed. Reasons are
 codes, so the web client owns the wording and the MCP surface stays stable for
 an assistant to branch on.
 
+#### Delivery Descriptors
+
+One analytics tier is measured rather than derived, and is therefore stored:
+vocal delivery (speaking pace, pitch height and movement, loudness, within-turn
+pausing), computed in
+[backend/processing/delivery_descriptors.py](../backend/processing/delivery_descriptors.py)
+and persisted on the transcript's `analytics_payload`.
+
+It measures *how* people spoke and makes no claim about how they felt. No
+emotion model is involved, and none should be added: speech-emotion recognition
+is unreliable across the accents and languages Nojoin transcribes, and a wrong
+inference attached to a named colleague is the worst output this surface can
+produce. Every figure here is an arithmetic property of the waveform, which is
+what lets the interface present it without hedging and lets a user check it
+against the audio.
+
+Deliberately numpy and soundfile only, with an autocorrelation pitch estimator
+rather than a learned one, so it holds no model and never pulls torch in. Pitch
+spread is reported in semitones rather than hertz because hertz is not
+comparable between voices: the same expressive range measures about twice as
+wide on a high voice as on a low one.
+
+It runs on the **CPU lane**, dispatched at the end of `process_recording_task`
+rather than inline. It needs no GPU, so holding the single-slot GPU lane to read
+a WAV would delay the next meeting for nothing, and a failure must never reach a
+recording that has otherwise finished. The same task backs the interface's
+per-recording "Measure delivery" action, so a meeting recorded before the
+feature existed takes exactly the path a new one does.
+
+Channel selection is meaning-aware. For a browser capture the transcode contract
+fixes channel 0 as shared audio and channel 1 as the microphone, so the
+dominant channel per utterance identifies the capture source, using the same
+dominance thresholds as the live lane. An imported stereo file's channels are
+left and right, so those are downmixed instead — reading them as sources would
+invent provenance. Because a remote voice has been through a codec and the far
+end's gain control and a local microphone has not, loudness is reported as
+comparable across speakers only when they shared a signal chain, and the
+interface withholds the comparison rather than inviting a false one.
+
+`DELIVERY_METHOD_VERSION` versions the extraction procedure exactly as
+`EMBEDDING_METHOD_VERSION` versions a voiceprint, and for the same reason: a
+figure produced by one procedure is not comparable with one produced by
+another. The stored payload also carries the transcript event watermark it was
+measured against, which is what makes staleness detectable without a second
+column. Stale never means regenerate automatically — rereading a recording's
+audio is work the user should ask for.
+
 ### Web Client
 
 The web client is responsible for:

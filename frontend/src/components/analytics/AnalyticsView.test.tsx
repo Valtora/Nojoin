@@ -9,8 +9,12 @@ import type { RecordingAnalytics } from "@/types";
 
 const getRecordingAnalytics = vi.fn();
 
+const generateRecordingAnalytics = vi.fn();
+
 vi.mock("@/lib/api", () => ({
   getRecordingAnalytics: (...args: unknown[]) => getRecordingAnalytics(...args),
+  generateRecordingAnalytics: (...args: unknown[]) =>
+    generateRecordingAnalytics(...args),
 }));
 
 // Recharts measures its container, which jsdom reports as 0x0, so the SVG
@@ -106,6 +110,10 @@ const analytics = (
     overlap: { overlapped_ms: 5_000, overlap_share: 0.1 },
   },
   attribution_warning: null,
+  delivery: null,
+  delivery_status: "pending",
+  delivery_error_message: null,
+  delivery_stale: false,
   ...overrides,
 });
 
@@ -211,5 +219,143 @@ describe("AnalyticsView", () => {
     screen.getByTitle("Play from 0:05").click();
 
     expect(onPlaySegment).toHaveBeenCalledWith(5_000);
+  });
+
+  it("offers to measure delivery rather than showing it as absent", async () => {
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Measure delivery" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts a delivery measurement on request", async () => {
+    generateRecordingAnalytics.mockResolvedValue({
+      recording_id: "rec-1",
+      delivery_status: "generating",
+    });
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    screen.getByRole("button", { name: "Measure delivery" }).click();
+
+    await waitFor(() =>
+      expect(generateRecordingAnalytics).toHaveBeenCalledWith("rec-1"),
+    );
+  });
+
+  it("shows measured delivery as pace and pitch, never as mood", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        delivery_status: "completed",
+        delivery: {
+          method_version: 1,
+          cross_speaker_loudness_comparable: true,
+          channel_layout: "single_source",
+          skipped_overlapping: 0,
+          skipped_short: 0,
+          ambiguous_channel: 0,
+          speakers: {
+            "rs:1": {
+              analysed_utterances: 40,
+              words_per_minute: 168,
+              median_f0_hz: 112,
+              pitch_spread_semitones: 3.4,
+              median_loudness_dbfs: -22.5,
+              loudness_range_db: 6.1,
+              capture_sources: [],
+              pause_count: 12,
+              median_pause_ms: 620,
+            },
+          },
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText("168 wpm")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("3.4 st")).toBeInTheDocument();
+    expect(
+      screen.getByText(/describe how someone spoke, not how they felt/),
+    ).toBeInTheDocument();
+  });
+
+  it("says why loudness is not compared when the sources differ", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        delivery_status: "completed",
+        delivery: {
+          method_version: 1,
+          cross_speaker_loudness_comparable: false,
+          channel_layout: "browser_live",
+          skipped_overlapping: 0,
+          skipped_short: 0,
+          ambiguous_channel: 0,
+          speakers: {
+            "rs:1": {
+              analysed_utterances: 40,
+              words_per_minute: 168,
+              median_f0_hz: 112,
+              pitch_spread_semitones: 3.4,
+              median_loudness_dbfs: -22.5,
+              loudness_range_db: 6.1,
+              capture_sources: ["microphone"],
+              pause_count: 12,
+              median_pause_ms: 620,
+            },
+          },
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/different audio\s+sources/),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("reports a stale measurement rather than quietly serving old figures", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        delivery_status: "completed",
+        delivery_stale: true,
+        delivery: {
+          method_version: 1,
+          cross_speaker_loudness_comparable: true,
+          channel_layout: "single_source",
+          skipped_overlapping: 0,
+          skipped_short: 0,
+          ambiguous_channel: 0,
+          speakers: {
+            "rs:1": {
+              analysed_utterances: 40,
+              words_per_minute: 168,
+              median_f0_hz: 112,
+              pitch_spread_semitones: 3.4,
+              median_loudness_dbfs: -22.5,
+              loudness_range_db: 6.1,
+              capture_sources: [],
+              pause_count: 12,
+              median_pause_ms: 620,
+            },
+          },
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/transcript has changed since this was measured/),
+      ).toBeInTheDocument(),
+    );
   });
 });

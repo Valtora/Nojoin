@@ -577,11 +577,9 @@ def _finalize_transcript_and_notes(
     merged_config = ctx.merged_config
     recording_id = ctx.recording_id
 
-    # Keep the diarization_label in the segments to maintain the link to RecordingSpeaker
-    # The frontend will resolve the display name using the speaker map
-    updated_segments = []
-    for seg in final_segments:
-        updated_segments.append(seg)
+    # Keep the diarization_label in the segments to maintain the link to
+    # RecordingSpeaker; the frontend resolves the display name from the map.
+    updated_segments = list(final_segments)
 
     ctx.task.update_state(
         state="PROCESSING", meta={"progress": 92, "stage": "Finalizing"}
@@ -998,11 +996,11 @@ def process_recording_task(
             f"Recording: [{recording_id}] processing succeeded in {elapsed_time:.2f} seconds"
         )
 
-        # Trigger Transcript Indexing for RAG
-        # Triggers transcript indexing after all data is committed.
-        from backend.worker.tasks import index_transcript_task
+        from backend.worker.tasks.followups import (
+            dispatch_post_processing_followups,
+        )
 
-        index_transcript_task.delay(recording_id)
+        dispatch_post_processing_followups(recording_id)
 
         return {"status": "success", "recording_id": recording_id}
 

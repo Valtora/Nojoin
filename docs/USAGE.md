@@ -282,6 +282,19 @@ Two things are worth understanding about the numbers.
 
 **An interruption means starting to speak while someone else still had more than a moment left to say.** It is counted in both directions, because interrupting and being interrupted are different things. Reply times ignore gaps too short to be a decision, so a speaker who only ever replied instantly shows no reply time rather than a misleading zero.
 
+#### How People Spoke
+
+Alongside the measured conversation figures, Nojoin can measure **delivery**: each person's speaking pace in words per minute, how high their voice sat, how much it moved (in semitones, so a low voice and a high voice are compared fairly), and how often they paused inside their own turns.
+
+This one reads the meeting's audio, so it is done on request rather than for every meeting. Select **Measure delivery** on the Analytics tab. Meetings recorded after this feature was added have it measured automatically when processing finishes; older meetings, and any meeting whose transcript you have edited since, offer the button.
+
+**Delivery describes how someone spoke, not how they felt.** There is no emotion detection in Nojoin, and these numbers are not sentiment, mood, or engagement scores. Someone speaking quickly and loudly may be enthusiastic, rushed, or annoyed, and nothing here can tell you which. They are useful for noticing that one person consistently speaks twice as fast as everyone else, or that a normally animated speaker was flat in a particular meeting, and for nothing stronger than that.
+
+Two limits worth knowing:
+
+- **Loudness is only compared when it can be.** On a call, someone in your room arrives through your microphone and everyone else arrives through the meeting's audio, having been through a codec and the far end's automatic volume control. Comparing those tells you about equipment, not people, so Nojoin does not compare them and says why.
+- **Quiet participants may be missing.** A speaker needs a reasonable amount of uninterrupted speech before these figures mean anything, so someone who only said a few words is left out rather than described from three seconds of audio.
+
 #### When The Figures Depend On Speaker Attribution
 
 Every figure is attached to a speaker, so a figure is only as good as the speaker separation behind it. When one person is split into two, their talk share is split too, and nothing about the number itself looks wrong.
