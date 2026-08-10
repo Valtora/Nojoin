@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3 } from "lucide-react";
 
 import {
@@ -16,52 +16,30 @@ import MeetingAnalysisPanel from "./MeetingAnalysisPanel";
 import OverlapPanel from "./OverlapPanel";
 import TalkShareChart from "./TalkShareChart";
 import TalkShareTimeline from "./TalkShareTimeline";
-import { chartColor } from "./chartPalette";
-import {
-  formatDuration,
-  formatLatency,
-  formatShare,
-  formatTimestamp,
-} from "./formatDuration";
+import TurnsPanel from "./TurnsPanel";
+import { Band, Section, StatTile } from "./Section";
+import { buildSpeakerColors } from "./speakerPalette";
+import { formatDuration, formatShare } from "./formatDuration";
 
 interface AnalyticsViewProps {
   recordingId: RecordingId;
   /** Seek the player, so a named monologue can be listened to. */
   onPlaySegment?: (startMs: number) => void;
   onReviewSpeakers?: () => void;
+  /**
+   * The meeting's speaker colours, keyed by every alias a speaker answers to.
+   * Supplied by the recording view, which is the only place they exist: they
+   * are derived from the transcript client-side, and the payload's own `color`
+   * field carries one only once a user has chosen it explicitly.
+   */
+  speakerColors?: Record<string, string>;
 }
-
-const Panel = ({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) => (
-  <section className="rounded-lg border border-surface-border bg-surface-card p-4">
-    <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-    {description && (
-      <p className="mt-0.5 text-xs text-contrast-helper">{description}</p>
-    )}
-    <div className="mt-3">{children}</div>
-  </section>
-);
-
-const StatTile = ({ label, value }: { label: string; value: string }) => (
-  <div className="rounded-lg border border-surface-border bg-surface-card p-3">
-    <p className="text-xs text-contrast-helper">{label}</p>
-    <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
-      {value}
-    </p>
-  </div>
-);
 
 export default function AnalyticsView({
   recordingId,
   onPlaySegment,
   onReviewSpeakers,
+  speakerColors,
 }: AnalyticsViewProps) {
   const [analytics, setAnalytics] = useState<RecordingAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,6 +109,15 @@ export default function AnalyticsView({
     }
   }, [recordingId]);
 
+  const speakers = analytics?.speakers;
+  // Colour identifies a person, so it is resolved once for the whole tab and
+  // handed to every panel. Deriving it per panel is how the tab ended up
+  // disagreeing with the rest of the meeting view in the first place.
+  const colors = useMemo(
+    () => buildSpeakerColors(speakers ?? [], speakerColors),
+    [speakers, speakerColors],
+  );
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-contrast-helper">
@@ -172,30 +159,34 @@ export default function AnalyticsView({
     );
   }
 
-  const { metrics, speakers } = analytics;
+  const { metrics } = analytics;
   const talkTimeMs = Object.fromEntries(
     Object.entries(metrics.talk_time).map(([key, figures]) => [
       key,
       figures.speech_ms,
     ]),
   );
+  const hasTimeline = metrics.timeline.buckets.length >= 2;
 
   return (
-    <div className="custom-scrollbar h-full space-y-3 overflow-y-auto p-4">
+    // A container, not a viewport breakpoint. This tab lives in a resizable
+    // panel between two collapsible rails, so how much width it has is the
+    // window minus a number it cannot see. See DESIGN.md.
+    <div className="custom-scrollbar @container/tab h-full space-y-5 overflow-y-auto p-4">
       {analytics.attribution_warning && (
         <AttributionWarning
           warning={analytics.attribution_warning}
-          speakers={speakers}
+          speakers={analytics.speakers}
           onReviewSpeakers={onReviewSpeakers}
         />
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Band className="grid-cols-2 gap-3 @lg/tab:grid-cols-4">
         <StatTile
           label="Speaking time"
           value={formatDuration(metrics.silence.speech_ms)}
         />
-        <StatTile label="Speakers" value={String(speakers.length)} />
+        <StatTile label="Speakers" value={String(analytics.speakers.length)} />
         <StatTile
           label="Silence"
           value={formatShare(metrics.silence.silence_share)}
@@ -208,167 +199,100 @@ export default function AnalyticsView({
               : "–"
           }
         />
-      </div>
+      </Band>
 
-      <Panel
-        title="Who spoke"
-        description="Share of everyone's speaking time. Overlapping speech counts for each person, so this is a share of speech rather than of the meeting's length."
-      >
-        <TalkShareChart speakers={speakers} metrics={metrics} />
-      </Panel>
-
-      {metrics.timeline.buckets.length >= 2 && (
-        <Panel
-          title="Who spoke when"
-          description="Speaking time per speaker across the meeting."
+      {/* Share, and share over time: two views of one subject, so they share a
+          row. The timeline takes the larger share of it because it carries a
+          time axis, while a bar and its label read at any width. */}
+      <Band className={hasTimeline ? "@4xl/tab:grid-cols-12" : undefined}>
+        <Section
+          title="Who spoke"
+          hint="Share of everyone's speaking time. Overlapping speech counts for each person, so this is a share of speech rather than of the meeting's length."
+          className={hasTimeline ? "@4xl/tab:col-span-5" : undefined}
         >
-          <TalkShareTimeline speakers={speakers} metrics={metrics} />
-        </Panel>
-      )}
+          <TalkShareChart
+            speakers={analytics.speakers}
+            metrics={metrics}
+            colors={colors}
+          />
+        </Section>
 
-      <Panel
-        title="How people spoke"
-        description="Measured from the audio. This describes delivery, not mood."
-      >
-        <DeliveryPanel
-          delivery={analytics.delivery}
-          status={analytics.delivery_status}
-          errorMessage={analytics.delivery_error_message}
-          stale={analytics.delivery_stale}
-          speakers={speakers}
-          talkTimeMs={talkTimeMs}
-          baselines={analytics.delivery_baselines}
-          onGenerate={() => void handleGenerate()}
-          generating={deliveryBusy}
-        />
-      </Panel>
+        {hasTimeline && (
+          <Section
+            title="Who spoke when"
+            hint="Speaking time per speaker across the meeting."
+            className="@4xl/tab:col-span-7"
+          >
+            <TalkShareTimeline
+              speakers={analytics.speakers}
+              metrics={metrics}
+              colors={colors}
+            />
+          </Section>
+        )}
+      </Band>
 
-      <Panel
-        title="How the conversation moved"
-        description="A long median turn means holding the floor; a short one means dialogue."
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-sm">
-            <thead>
-              <tr className="border-b border-surface-divider text-left text-xs text-contrast-helper">
-                <th scope="col" className="pb-2 font-medium">
-                  Speaker
-                </th>
-                <th scope="col" className="pb-2 text-right font-medium">
-                  Turns
-                </th>
-                <th scope="col" className="pb-2 text-right font-medium">
-                  Median turn
-                </th>
-                <th scope="col" className="pb-2 text-right font-medium">
-                  Longest turn
-                </th>
-                <th scope="col" className="pb-2 text-right font-medium">
-                  Instant handovers
-                </th>
-                <th scope="col" className="pb-2 text-right font-medium">
-                  Replies after
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {speakers.map((speaker, index) => {
-                const structure = metrics.turn_structure[speaker.speaker_key];
-                const latency =
-                  metrics.turn_taking.response_latency[speaker.speaker_key];
-                return (
-                  <tr
-                    key={speaker.speaker_key}
-                    className="border-b border-surface-divider last:border-0"
-                  >
-                    <td className="py-2">
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: chartColor(index) }}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate text-foreground">
-                          {speaker.name}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {structure?.turn_count ?? 0}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {formatDuration(structure?.median_turn_ms ?? 0)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {structure && onPlaySegment ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onPlaySegment(structure.longest_turn_start_ms)
-                          }
-                          className="text-action-text hover:text-action-text-hover hover:underline"
-                          title={`Play from ${formatTimestamp(structure.longest_turn_start_ms)}`}
-                        >
-                          {formatDuration(structure.longest_turn_ms)}
-                        </button>
-                      ) : (
-                        <span className="text-contrast-muted">
-                          {formatDuration(structure?.longest_turn_ms ?? 0)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {latency?.immediate_count ?? 0}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-contrast-muted">
-                      {latency?.median_ms != null
-                        ? formatLatency(latency.median_ms)
-                        : "-"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-xs text-contrast-helper">
-          An instant handover is taking the floor within a quarter of a second
-          of the previous speaker stopping — quicker than the timing can
-          measure, and usually a reply prepared while the other person was
-          still talking. Reply time is the median over gaps long enough to
-          measure; turns taken after more than five seconds of silence are a
-          fresh start rather than a reply, so they are left out. Treat
-          differences under a quarter of a second as noise.
-        </p>
-      </Panel>
+      {/* Both sides of how the floor changed hands: who took it and how
+          quickly, and how much of the meeting had two people holding it. */}
+      <Band className="@5xl/tab:grid-cols-12">
+        <Section
+          title="How the conversation moved"
+          hint="A long median turn means holding the floor; a short one means dialogue."
+          className="@5xl/tab:col-span-7"
+        >
+          <TurnsPanel
+            speakers={analytics.speakers}
+            metrics={metrics}
+            colors={colors}
+            onPlaySegment={onPlaySegment}
+          />
+        </Section>
 
-      <Panel
-        title="Talking over each other"
-        description="Detected from the audio, because the transcript writes speech down one line at a time."
-      >
-        <OverlapPanel
-          overlap={analytics.audio_overlap}
-          status={analytics.audio_overlap_status}
-          errorMessage={analytics.audio_overlap_error_message}
-          generating={deliveryBusy}
-        />
-      </Panel>
+        <Section
+          title="Talking over each other"
+          hint="Detected from the audio, because the transcript writes speech down one line at a time."
+          className="@5xl/tab:col-span-5"
+        >
+          <OverlapPanel
+            overlap={analytics.audio_overlap}
+            status={analytics.audio_overlap_status}
+            errorMessage={analytics.audio_overlap_error_message}
+            generating={deliveryBusy}
+          />
+        </Section>
+      </Band>
 
-      <Panel
-        title="What was discussed"
-        description="Read from the transcript by AI, with quotes you can check. Everything above is measured; this is not."
-      >
-        <MeetingAnalysisPanel
-          ai={analytics.ai}
-          status={analytics.ai_status}
-          errorMessage={analytics.ai_error_message}
-          stale={analytics.ai_stale}
-          speakers={speakers}
-          onGenerate={() => void handleAnalyse()}
-          generating={aiBusy}
-          onPlaySegment={onPlaySegment}
-        />
-      </Panel>
+      <Band>
+        <Section
+          title="How people spoke"
+          hint="Measured from the audio. This describes how someone spoke, not how they felt."
+        >
+          <DeliveryPanel
+            delivery={analytics.delivery}
+            status={analytics.delivery_status}
+            errorMessage={analytics.delivery_error_message}
+            stale={analytics.delivery_stale}
+            speakers={analytics.speakers}
+            talkTimeMs={talkTimeMs}
+            baselines={analytics.delivery_baselines}
+            colors={colors}
+            onGenerate={() => void handleGenerate()}
+            generating={deliveryBusy}
+          />
+        </Section>
+      </Band>
+
+      <MeetingAnalysisPanel
+        ai={analytics.ai}
+        status={analytics.ai_status}
+        errorMessage={analytics.ai_error_message}
+        stale={analytics.ai_stale}
+        speakers={analytics.speakers}
+        colors={colors}
+        onGenerate={() => void handleAnalyse()}
+        generating={aiBusy}
+        onPlaySegment={onPlaySegment}
+      />
     </div>
   );
 }

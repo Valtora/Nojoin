@@ -206,6 +206,46 @@
   --chart-8: #e34948;
   --chart-other: #94a3b8;
   --chart-grid: rgba(148, 163, 184, 0.28);
+
+  /* Meeting speaker colours, as a chart can consume them.
+
+     A speaker's colour is chosen per meeting by buildMeetingSpeakerColors and
+     is changeable by the user, and the transcript, the speaker panel and the
+     assignment popover have always drawn it from COLOR_PALETTE in
+     lib/constants.ts. Analytics used the --chart-* slots instead, keyed by
+     position in a differently sorted list, so the same person was two colours
+     in one meeting. These tokens are the bridge: the same seventeen keys, at
+     the same step the palette's dots already use, in a form a chart fill can
+     resolve. Charts must not reach for a Tailwind class, and the audit script
+     cannot parse Tailwind's oklch, so these are its sRGB form -- change one
+     only if the palette step it mirrors changes.
+
+     One value per key in both themes, unlike --chart-*, because the dot beside
+     a name in the speaker panel is one value in both themes and the whole
+     point of these is to match it. The floor they answer to is visibility, on
+     the same reasoning as the chart slots: every series here is directly
+     labelled and every figure is also present as text.
+
+     --chart-* is not dead. It remains the fallback for a speaker with no
+     assigned colour, which is what a payload read before the colour map has
+     loaded still gets. */
+  --speaker-red: #fb2c36;
+  --speaker-rose: #ff2056;
+  --speaker-pink: #f6339a;
+  --speaker-orange: #ff6900;
+  --speaker-amber: #fe9a00;
+  --speaker-yellow: #f0b100;
+  --speaker-lime: #7ccf00;
+  --speaker-green: #00c950;
+  --speaker-emerald: #00bc7d;
+  --speaker-teal: #00bba7;
+  --speaker-cyan: #00b8db;
+  --speaker-sky: #00a6f4;
+  --speaker-blue: #2b7fff;
+  --speaker-indigo: #615fff;
+  --speaker-violet: #8e51ff;
+  --speaker-purple: #ad46ff;
+  --speaker-fuchsia: #e12afb;
 }
 
 .dark {

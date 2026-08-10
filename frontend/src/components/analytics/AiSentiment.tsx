@@ -4,17 +4,18 @@ import type { AnalyticsAiSentiment, AnalyticsSpeaker } from "@/types";
 
 import Citations from "./Citations";
 import { buildSpeakerLookup, toneClass, toneLabel } from "./aiTone";
-import { chartColor } from "./chartPalette";
 
 interface AiSentimentProps {
   sentiment: AnalyticsAiSentiment[];
   speakers: AnalyticsSpeaker[];
+  colors: Record<string, string>;
   onPlaySegment?: (startMs: number) => void;
 }
 
 export default function AiSentiment({
   sentiment,
   speakers,
+  colors,
   onPlaySegment,
 }: AiSentimentProps) {
   if (!sentiment.length) {
@@ -26,7 +27,7 @@ export default function AiSentiment({
     );
   }
 
-  const lookup = buildSpeakerLookup(speakers);
+  const lookup = buildSpeakerLookup(speakers, colors);
 
   return (
     <div className="space-y-3">
@@ -36,9 +37,7 @@ export default function AiSentiment({
             <span className="flex items-center gap-2">
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
-                style={{
-                  backgroundColor: chartColor(lookup.index(item.speaker_key)),
-                }}
+                style={{ backgroundColor: lookup.color(item.speaker_key) }}
                 aria-hidden="true"
               />
               <span className="text-sm text-foreground">

@@ -8,12 +8,14 @@ import { buildSpeakerLookup, consensusClass, consensusLabel } from "./aiTone";
 interface AiDecisionsProps {
   decisions: AnalyticsAiDecision[];
   speakers: AnalyticsSpeaker[];
+  colors: Record<string, string>;
   onPlaySegment?: (startMs: number) => void;
 }
 
 export default function AiDecisions({
   decisions,
   speakers,
+  colors,
   onPlaySegment,
 }: AiDecisionsProps) {
   if (!decisions.length) {
@@ -25,7 +27,7 @@ export default function AiDecisions({
     );
   }
 
-  const lookup = buildSpeakerLookup(speakers);
+  const lookup = buildSpeakerLookup(speakers, colors);
   const names = (keys: string[]) => keys.map(lookup.name).join(", ");
 
   return (

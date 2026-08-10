@@ -156,6 +156,24 @@ const PAIRINGS = [
   { label: "chart other vs card", fg: "chart-other", bg: ["surface-page", "surface-card"], min: HAIRLINE },
   { label: "chart grid vs card", fg: "chart-grid", bg: ["surface-page", "surface-card"], min: HAIRLINE },
 
+  // Meeting speaker colours, which the analytics charts draw a speaker's bars
+  // and bands in so that the person is one colour across the whole meeting
+  // view. Same threshold and same reasoning as the chart slots above: these
+  // are series fills beside a direct label, never the sole carrier of
+  // identity. They are one value in both themes on purpose -- they mirror the
+  // speaker panel's dots, which are also one value -- so each is measured
+  // against both surfaces of the stack in each theme.
+  ...[
+    "red", "rose", "pink", "orange", "amber", "yellow", "lime", "green",
+    "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple",
+    "fuchsia",
+  ].map((key) => ({
+    label: `speaker ${key} vs card`,
+    fg: `speaker-${key}`,
+    bg: ["surface-page", "surface-card"],
+    min: HAIRLINE,
+  })),
+
   // Rails. Their own surface, so nothing here is measured against the page.
   { label: "rail text on rail", fg: "rail-fg", bg: ["rail-bg"], min: AA_TEXT },
   { label: "rail muted text on rail", fg: "rail-fg-muted", bg: ["rail-bg"], min: AA_TEXT },

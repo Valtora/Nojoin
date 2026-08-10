@@ -8,12 +8,14 @@ import { formatTimestamp } from "./formatDuration";
 interface AiQuestionsProps {
   questions: AnalyticsAiQuestion[];
   speakers: AnalyticsSpeaker[];
+  colors: Record<string, string>;
   onPlaySegment?: (startMs: number) => void;
 }
 
 export default function AiQuestions({
   questions,
   speakers,
+  colors,
   onPlaySegment,
 }: AiQuestionsProps) {
   if (!questions.length) {
@@ -24,7 +26,7 @@ export default function AiQuestions({
     );
   }
 
-  const lookup = buildSpeakerLookup(speakers);
+  const lookup = buildSpeakerLookup(speakers, colors);
   // Unanswered questions lead. They are the reason to look at this section,
   // and burying them under answered ones defeats the point of the section.
   const ordered = [
@@ -50,6 +52,11 @@ export default function AiQuestions({
           >
             <p className="text-sm text-foreground">{question.question}</p>
             <p className="mt-0.5 text-xs text-contrast-helper">
+              <span
+                className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
+                style={{ backgroundColor: lookup.color(question.asked_by) }}
+                aria-hidden="true"
+              />
               Asked by {lookup.name(question.asked_by)}
               {question.asked_at_ms !== null &&
                 (onPlaySegment ? (

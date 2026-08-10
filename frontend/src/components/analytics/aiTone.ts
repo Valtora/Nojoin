@@ -52,30 +52,29 @@ export const consensusLabel = (consensus: AnalyticsConsensus): string =>
 
 export interface SpeakerLookup {
   name: (speakerKey: string | null) => string;
-  index: (speakerKey: string | null) => number;
+  color: (speakerKey: string | null) => string | undefined;
 }
 
 /** Resolve stored speaker keys to the names and colours already on screen.
  *
  * The payload stores keys rather than names precisely so renaming a speaker
- * updates a stored analysis instead of orphaning it.
+ * updates a stored analysis instead of orphaning it. The colours come from the
+ * meeting's own speaker colours, so somebody named here is the same colour as
+ * they are in the transcript, the speaker panel and every chart above.
  */
 export const buildSpeakerLookup = (
   speakers: AnalyticsSpeaker[],
+  colors: Record<string, string> = {},
 ): SpeakerLookup => {
-  const positions = new Map<string, number>();
-  speakers.forEach((speaker, position) =>
-    positions.set(speaker.speaker_key, position),
+  const namesByKey = new Map(
+    speakers.map((speaker) => [speaker.speaker_key, speaker.name]),
   );
   return {
-    name: (speakerKey) => {
-      if (!speakerKey) return "Unattributed";
-      const position = positions.get(speakerKey);
-      return position === undefined
-        ? "Unattributed"
-        : speakers[position]!.name;
-    },
-    index: (speakerKey) =>
-      speakerKey ? (positions.get(speakerKey) ?? 0) : 0,
+    name: (speakerKey) =>
+      (speakerKey ? namesByKey.get(speakerKey) : undefined) ?? "Unattributed",
+    // Undefined rather than a fallback colour: a key that resolves to nobody
+    // has no identity to carry, and borrowing one would attach a real
+    // speaker's colour to an unattributed item.
+    color: (speakerKey) => (speakerKey ? colors[speakerKey] : undefined),
   };
 };

@@ -2,7 +2,7 @@
 
 import type { AnalyticsAudioOverlap, AnalyticsAudioOverlapStatus } from "@/types";
 
-import { chartColor } from "./chartPalette";
+import { Note, Working } from "./Section";
 import { formatDuration, formatShare } from "./formatDuration";
 
 /** Overlapping speech measured from the audio, shown without attribution.
@@ -52,10 +52,7 @@ export default function OverlapPanel({
 }: OverlapPanelProps) {
   if (status === "generating" || generating) {
     return (
-      <p className="text-xs text-contrast-helper" role="status">
-        Listening for overlapping speech. This reads the meeting&apos;s audio
-        and takes a moment.
-      </p>
+      <Working message="Listening for overlapping speech. This reads the meeting's audio and takes a moment." />
     );
   }
 
@@ -70,9 +67,9 @@ export default function OverlapPanel({
 
   if (!overlap || status !== "completed") {
     return (
-      <p className="text-xs text-contrast-helper">
-        Not measured yet. <strong>Measure delivery</strong> above also listens
-        for overlapping speech.
+      <p className="rounded-surface-subtle bg-surface-inset px-3 py-3 text-xs text-contrast-helper">
+        Not measured yet. <strong>Measure delivery</strong> also listens for
+        overlapping speech.
       </p>
     );
   }
@@ -80,7 +77,7 @@ export default function OverlapPanel({
   const bins = densityBins(overlap);
 
   return (
-    <div className="space-y-3">
+    <div>
       <p className="text-sm text-contrast-muted">
         People spoke over each other for at least{" "}
         <span className="font-semibold tabular-nums text-foreground">
@@ -95,9 +92,12 @@ export default function OverlapPanel({
         {overlap.region_count === 1 ? "" : "s"}.
       </p>
       {overlap.region_count > 0 && (
-        <div>
+        <div className="mt-3">
+          {/* Neutral, not a series colour. This strip carries no attribution,
+              and painting it in slot 1 gave it the first speaker's colour --
+              the one thing the figure explicitly refuses to say. */}
           <div
-            className="flex h-8 items-end gap-px"
+            className="flex h-9 items-end gap-px"
             role="img"
             aria-label="Where overlapping speech clustered across the meeting"
           >
@@ -108,7 +108,7 @@ export default function OverlapPanel({
                 style={{
                   height: `${Math.round(value * 100)}%`,
                   backgroundColor:
-                    value > 0 ? chartColor(0) : "transparent",
+                    value > 0 ? "var(--chart-other)" : "transparent",
                 }}
               />
             ))}
@@ -119,14 +119,19 @@ export default function OverlapPanel({
           </p>
         </div>
       )}
-      <p className="text-xs text-contrast-helper">
-        Detected from the audio itself, so it works even though the transcript
-        writes speech down one line at a time. The figure is a floor: detection
-        misses some overlap and never invents any. Talking over each other is
-        not the same as interrupting — it includes agreement, encouragement,
-        and finishing each other&apos;s sentences — so Nojoin reports where it
-        happened and does not guess who did it to whom.
-      </p>
+      <Note label="What this figure does and does not say">
+        <p>
+          Detected from the audio itself, so it works even though the transcript
+          writes speech down one line at a time. The figure is a floor:
+          detection misses some overlap and never invents any.
+        </p>
+        <p>
+          Talking over each other is not the same as interrupting &mdash; it
+          includes agreement, encouragement, and finishing each other&apos;s
+          sentences &mdash; so Nojoin reports where it happened and does not
+          guess who did it to whom.
+        </p>
+      </Note>
     </div>
   );
 }

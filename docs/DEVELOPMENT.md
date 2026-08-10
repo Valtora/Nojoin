@@ -498,23 +498,45 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 
 ### Charts
 
-Chart colour comes from the `--chart-1` … `--chart-8` tokens in
-[frontend/src/app/tokens.css](../frontend/src/app/tokens.css), with `--chart-other`
-for anything past the last slot. Three rules hold:
+**A series that is a person takes that person's meeting colour.** A speaker is
+assigned one by `buildMeetingSpeakerColors` in
+[frontend/src/lib/recordingSpeakerUtils.ts](../frontend/src/lib/recordingSpeakerUtils.ts),
+the user can change it, and the transcript, the speaker panel and the assignment
+popover all draw it. Charts resolve it through the `--speaker-*` tokens, which are
+the same seventeen palette keys at the step the panel's dots already use, in a form
+a fill can consume — a chart must never reach for a Tailwind colour class. Resolve
+them once per surface with `buildSpeakerColors`, never per component. The Analytics
+tab keyed its series off each speaker's index in its own list, which is sorted by
+talking time while the speaker panel is sorted alphabetically, so the same person
+was reliably two different colours in one meeting.
+
+`--chart-1` … `--chart-8` remain the fallback for a series with no assigned colour,
+with `--chart-other` for anything past the last slot. Three rules hold for both
+families:
 
 - **Slots are assigned by fixed position and never cycled.** Colour identifies an
   entity, so a filter that changes how many series are on screen must not repaint
   the survivors, and a ninth series folds into `--chart-other` rather than wrapping
   back to slot 1 — a repeated hue reads as the same entity.
 - **The two themes are separate selected sets, not a lightening of one another.**
-  They were validated together against their own surfaces for colour-vision
-  separation and normal-vision separation. Moving either means re-validating both.
-- **Three of the light steps sit below 3:1 on the card, which is why the pairings in
-  [check-contrast.mjs](../frontend/scripts/check-contrast.mjs) are held to `HAIRLINE`
-  rather than `AA_NON_TEXT`.** That is only defensible while identity is never
-  carried by colour alone: every series is directly labelled and the same figures
-  appear as text. A chart that drops its labels has to move those pairings up, and
-  three steps then fail.
+  The chart slots were validated together against their own surfaces for
+  colour-vision separation and normal-vision separation; moving either means
+  re-validating both. The `--speaker-*` tokens are deliberately one value in both
+  themes, because they mirror a dot that is also one value in both, and separation
+  between the speakers actually in a meeting is the assigner's job — it picks each
+  new speaker's colour to maximise hue distance from the ones already used.
+- **Several steps in both families sit below 3:1 on the card, which is why the
+  pairings in [check-contrast.mjs](../frontend/scripts/check-contrast.mjs) are held
+  to `HAIRLINE` rather than `AA_NON_TEXT`.** That is only defensible while identity
+  is never carried by colour alone: every series is directly labelled and the same
+  figures appear as text. A chart that drops its labels has to move those pairings
+  up, and several steps then fail.
+
+This is also why the talk-share bars are hand-rolled rather than a library's
+horizontal bar chart. A charting bar reserves a category axis and a label gutter,
+which left about 90px of drawable bar once that panel had to share a row; a bar
+whose track is the panel's full width keeps its direct label at any width the tab
+can be.
 
 ### UI Duplication Rules
 - **Recording actions**: rename, reprocess, archive, discard and the rest are defined once, in

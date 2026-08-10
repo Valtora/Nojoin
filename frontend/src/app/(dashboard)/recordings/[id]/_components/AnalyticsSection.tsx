@@ -12,6 +12,12 @@ const AnalyticsView = lazy(() => import("@/components/analytics/AnalyticsView"))
 interface AnalyticsSectionProps {
   active: boolean;
   recordingId: RecordingId;
+  /**
+   * The meeting's speaker colours, so a person is the same colour here as in
+   * the transcript and the speaker panel. They are derived client-side from
+   * the transcript, so the analytics payload cannot supply them on its own.
+   */
+  speakerColors: Record<string, string>;
   onPlaySegment?: (startMs: number) => void;
   onReviewSpeakers?: () => void;
 }
@@ -19,6 +25,7 @@ interface AnalyticsSectionProps {
 export default function AnalyticsSection({
   active,
   recordingId,
+  speakerColors,
   onPlaySegment,
   onReviewSpeakers,
 }: AnalyticsSectionProps) {
@@ -38,6 +45,7 @@ export default function AnalyticsSection({
         >
           <AnalyticsView
             recordingId={recordingId}
+            speakerColors={speakerColors}
             onPlaySegment={onPlaySegment}
             onReviewSpeakers={onReviewSpeakers}
           />

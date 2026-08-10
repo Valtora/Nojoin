@@ -417,6 +417,92 @@ describe("AnalyticsView", () => {
     expect(screen.queryByText(/interruption count/i)).not.toBeInTheDocument();
   });
 
+  it("keeps every disclosure attached to the figure it qualifies", async () => {
+    // The explanatory notes are collapsed, not deleted. Each one is what stops
+    // the figure above it claiming more than it measures, so this pins both
+    // halves: the disclosure is reachable from its own section, and the claim
+    // is still there to read.
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        audio_overlap_status: "completed",
+        audio_overlap: {
+          method_version: 1,
+          total_overlap_ms: 84_000,
+          overlap_share_of_audio: 0.042,
+          region_count: 37,
+          regions: [[10_000, 14_000]],
+          regions_truncated: false,
+          duration_ms: 2_000_000,
+        },
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+
+    for (const label of [
+      "How turns and reply times are measured",
+      "What this figure does and does not say",
+    ]) {
+      const summary = screen.getByText(label);
+      expect(summary.tagName).toBe("SUMMARY");
+      expect(summary.closest("details")).not.toHaveAttribute("open");
+    }
+
+    expect(
+      screen.getByText(/a reply prepared while the other person was still/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not guess who did it to whom/),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the delivery figures' own disclaimer in plain sight", async () => {
+    // This one does not collapse. It is the line that separates measured
+    // delivery from an emotion reading, and it qualifies the whole section
+    // rather than any single figure in it.
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    const disclaimer = screen.getByText(
+      /describes how someone spoke, not how they felt/,
+    );
+    expect(disclaimer.closest("details")).toBeNull();
+  });
+
+  it("paints a speaker in the colour the rest of the meeting gives them", async () => {
+    // Colour identifies a person here, and the transcript and speaker panel
+    // have already assigned them one. Keying off a position in this tab's own
+    // list made the same person two colours in one meeting.
+    renderWithProviders(
+      <AnalyticsView
+        recordingId="rec-1"
+        speakerColors={{ SPEAKER_00: "violet", SPEAKER_01: "teal" }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(screen.getByText("Dana").previousElementSibling).toHaveAttribute(
+      "style",
+      expect.stringContaining("var(--speaker-violet)"),
+    );
+    expect(screen.getByText("Guest").previousElementSibling).toHaveAttribute(
+      "style",
+      expect.stringContaining("var(--speaker-teal)"),
+    );
+  });
+
+  it("falls back to a chart slot for a speaker with no assigned colour", async () => {
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(screen.getByText("Dana").previousElementSibling).toHaveAttribute(
+      "style",
+      expect.stringContaining("var(--chart-1)"),
+    );
+  });
+
   it("reports a stale measurement rather than quietly serving old figures", async () => {
     getRecordingAnalytics.mockResolvedValue(
       analytics({

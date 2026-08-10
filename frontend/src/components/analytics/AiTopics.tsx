@@ -2,19 +2,20 @@
 
 import type { AnalyticsAiTopic, AnalyticsSpeaker } from "@/types";
 
-import { chartColor } from "./chartPalette";
 import { formatDuration, formatTimestamp } from "./formatDuration";
 import { buildSpeakerLookup } from "./aiTone";
 
 interface AiTopicsProps {
   topics: AnalyticsAiTopic[];
   speakers: AnalyticsSpeaker[];
+  colors: Record<string, string>;
   onPlaySegment?: (startMs: number) => void;
 }
 
 export default function AiTopics({
   topics,
   speakers,
+  colors,
   onPlaySegment,
 }: AiTopicsProps) {
   if (!topics.length) {
@@ -25,7 +26,7 @@ export default function AiTopics({
     );
   }
 
-  const lookup = buildSpeakerLookup(speakers);
+  const lookup = buildSpeakerLookup(speakers, colors);
 
   return (
     <ol className="space-y-3">
@@ -79,9 +80,7 @@ export default function AiTopics({
                 <>
                   <span
                     className="h-2 w-2 shrink-0 rounded-full"
-                    style={{
-                      backgroundColor: chartColor(lookup.index(topic.led_by)),
-                    }}
+                    style={{ backgroundColor: lookup.color(topic.led_by) }}
                     aria-hidden="true"
                   />
                   <span>Led by {lookup.name(topic.led_by)}</span>

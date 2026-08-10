@@ -259,6 +259,7 @@ export default function RecordingMainContent({
         <AnalyticsSection
           active={activePanel === "analytics"}
           recordingId={recording.id}
+          speakerColors={speakerColors}
           onPlaySegment={(startMs) => onPlaySegment(startMs / 1000)}
           // Two routes to one panel: mobile switches to it, desktop reveals it
           // in the side column, which may have been collapsed away.
