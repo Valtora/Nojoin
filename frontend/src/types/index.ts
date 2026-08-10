@@ -939,3 +939,304 @@ export interface AxiosErrorLike {
   };
   message?: string;
 }
+
+// Meeting analytics. Every figure below is measured from the transcript's
+// timings rather than inferred by a model, so the interface can present them
+// without hedging. Durations are milliseconds throughout, matching the
+// canonical utterance timings they derive from.
+export interface AnalyticsSpeaker {
+  speaker_key: string;
+  public_id: string | null;
+  name: string;
+  diarization_label: string | null;
+  color: string | null;
+  global_speaker_id: number | null;
+  is_named: boolean;
+}
+
+export interface AnalyticsTalkTime {
+  speech_ms: number;
+  // Fraction of all speaking time. Sums to 1.0 across speakers even when
+  // people talked over each other, which share_of_duration does not.
+  share_of_speech: number;
+  share_of_duration: number;
+}
+
+export interface AnalyticsTurnStructure {
+  turn_count: number;
+  median_turn_ms: number;
+  longest_turn_ms: number;
+  longest_turn_start_ms: number;
+  excluded_short_turns: number;
+}
+
+export interface AnalyticsInterruptions {
+  made: number;
+  received: number;
+}
+
+export interface AnalyticsTransition {
+  from_speaker: string;
+  to_speaker: string;
+  count: number;
+  median_latency_ms: number | null;
+}
+
+export interface AnalyticsResponseLatency {
+  // Median over measurable replies only (a quarter-second to five seconds).
+  // Null when every handover was immediate or a lapse. Treat as coarse: the
+  // timestamps carry roughly a quarter-second of noise.
+  median_ms: number | null;
+  sample_count: number;
+  // Turns taken within the measurement collar of the previous speaker
+  // stopping: taking the floor the moment it opened.
+  immediate_count: number;
+}
+
+export interface AnalyticsTurnTaking {
+  transitions: AnalyticsTransition[];
+  response_latency: Record<string, AnalyticsResponseLatency>;
+  immediate_transitions: number;
+  // Turns taken after a silence too long to be a reply. Excluded from every
+  // reply-time figure and counted here, per the tier's convention.
+  lapse_transitions: number;
+}
+
+export interface AnalyticsTimelineBucket {
+  start_ms: number;
+  end_ms: number;
+  speech_ms: Record<string, number>;
+}
+
+export interface AnalyticsTimeline {
+  bucket_ms: number;
+  buckets: AnalyticsTimelineBucket[];
+}
+
+export interface AnalyticsMetrics {
+  utterance_count: number;
+  duration_ms: number;
+  talk_time: Record<string, AnalyticsTalkTime>;
+  turn_structure: Record<string, AnalyticsTurnStructure>;
+  interruptions: Record<string, AnalyticsInterruptions>;
+  turn_taking: AnalyticsTurnTaking;
+  timeline: AnalyticsTimeline;
+  silence: { speech_ms: number; silence_ms: number; silence_share: number };
+  overlap: {
+    overlapped_ms: number;
+    overlap_share: number;
+    // False when the transcript holds no overlapping speech anywhere, which
+    // makes every interruption count zero by construction rather than by
+    // measurement. The interface withholds the figure rather than reporting
+    // that nobody interrupted.
+    overlapping_speech_present: boolean;
+  };
+}
+
+// Reasons are codes rather than prose so the interface owns the wording and
+// the MCP surface stays stable for an assistant to branch on.
+export type AnalyticsWarningCode =
+  | "low_share_clusters"
+  | "high_overlap"
+  | "speaker_cap_bound"
+  | "unnamed_speakers";
+
+export interface AnalyticsWarningReason {
+  code: AnalyticsWarningCode;
+  speaker_count?: number;
+  speaker_keys?: string[];
+  overlap_share?: number;
+  max_speakers?: number;
+}
+
+export interface AnalyticsAttributionWarning {
+  reasons: AnalyticsWarningReason[];
+}
+
+export interface RecordingAnalytics {
+  recording_id: RecordingId;
+  transcript_revision: number;
+  speakers: AnalyticsSpeaker[];
+  metrics: AnalyticsMetrics;
+  attribution_warning: AnalyticsAttributionWarning | null;
+  delivery: AnalyticsDelivery | null;
+  delivery_status: AnalyticsDeliveryStatus;
+  delivery_error_message: string | null;
+  // The transcript moved after delivery was measured, so those figures
+  // describe a transcript that no longer exists.
+  delivery_stale: boolean;
+  ai: AnalyticsAi | null;
+  ai_status: AnalyticsAiStatus;
+  ai_error_message: string | null;
+  // As delivery_stale, but tracked separately: each tier carries its own
+  // watermark, so editing the transcript between the two does not mark both.
+  ai_stale: boolean;
+  // No staleness field: overlap depends only on the audio, which never
+  // changes after processing.
+  audio_overlap: AnalyticsAudioOverlap | null;
+  audio_overlap_status: AnalyticsAudioOverlapStatus;
+  audio_overlap_error_message: string | null;
+  // Keyed by speaker_key; only speakers linked to a person with enough
+  // measured history appear.
+  delivery_baselines: Record<string, AnalyticsDeliveryBaseline>;
+}
+
+// Measured vocal delivery. These describe how someone spoke, not how they
+// felt: there is no emotion model behind them and the interface must never
+// present them as mood, sentiment, or engagement.
+export interface AnalyticsDeliverySpeaker {
+  analysed_utterances: number;
+  words_per_minute: number | null;
+  median_f0_hz: number | null;
+  pitch_spread_semitones: number | null;
+  // Pitch frames outside the speaker's own two-pass range: octave errors and
+  // tracker junk, excluded from the figures and counted.
+  excluded_f0_outliers?: number;
+  median_loudness_dbfs: number;
+  loudness_range_db: number;
+  capture_sources: string[];
+  pause_count: number;
+  median_pause_ms?: number;
+  // This speaker's total speech time at measurement, stored so pause counts
+  // become rates and so cross-meeting baselines need no derived figures.
+  speech_ms?: number;
+}
+
+// One person's usual delivery across this user's other measured meetings.
+// Medians over per-meeting figures, only ever from the same method version,
+// with the meeting count carried so the interface can say how much history
+// stands behind "their usual".
+export interface AnalyticsDeliveryBaseline {
+  meetings: number;
+  words_per_minute: number | null;
+  pitch_spread_semitones: number | null;
+  pauses_per_minute: number | null;
+}
+
+// Overlapping speech measured from the audio. The total is a floor:
+// detection misses some overlap and never invents any, so the interface
+// presents it as "at least". Deliberately carries no per-speaker attribution
+// and no "interruption" framing -- see docs/ANALYTICS_EVIDENCE.md.
+export interface AnalyticsAudioOverlap {
+  method_version: number;
+  total_overlap_ms: number;
+  overlap_share_of_audio: number;
+  region_count: number;
+  regions: [number, number][];
+  regions_truncated: boolean;
+  duration_ms: number;
+}
+
+export type AnalyticsAudioOverlapStatus =
+  | "pending"
+  | "generating"
+  | "completed"
+  | "error";
+
+export interface AnalyticsDelivery {
+  method_version: number;
+  speakers: Record<string, AnalyticsDeliverySpeaker>;
+  // False when speakers reached the recording through different signal
+  // chains, which makes their loudness figures incomparable with each other.
+  cross_speaker_loudness_comparable: boolean;
+  channel_layout: "browser_live" | "single_source";
+  skipped_overlapping: number;
+  skipped_short: number;
+  ambiguous_channel: number;
+}
+
+export type AnalyticsDeliveryStatus =
+  | "pending"
+  | "generating"
+  | "completed"
+  | "error";
+
+// The AI tier. Unlike everything above, these are a model's reading of the
+// transcript rather than a measurement, which is why every sentiment and
+// decision item carries quotes: an item whose quote could not be found in the
+// transcript was discarded by the backend before it reached here.
+//
+// Sentiment is read from the words alone and is deliberately never combined
+// with AnalyticsDelivery, which measures the sound of a voice. The two are
+// different kinds of evidence and are presented separately.
+export type AnalyticsAiStatus =
+  | "pending"
+  | "generating"
+  | "completed"
+  | "error"
+  // No AI provider is configured on this install. A normal state, not a fault.
+  | "unavailable";
+
+export type AnalyticsTone = "positive" | "negative" | "neutral" | "mixed";
+
+export type AnalyticsConsensus = "stated" | "assumed" | "none";
+
+export interface AnalyticsCitation {
+  quote: string;
+  start_ms: number | null;
+  speaker_key: string | null;
+}
+
+export interface AnalyticsAiTopic {
+  title: string;
+  start_ms: number | null;
+  end_ms: number | null;
+  summary: string;
+  // A speaker key, or null when nobody could be attributed.
+  led_by: string | null;
+  // Two or more speakers drove it roughly equally, or nobody did.
+  contested: boolean;
+  leadership_basis: string | null;
+}
+
+export interface AnalyticsAiSentiment {
+  speaker_key: string;
+  tone: AnalyticsTone;
+  summary: string;
+  citations: AnalyticsCitation[];
+}
+
+export interface AnalyticsAiQuestion {
+  question: string;
+  asked_by: string;
+  asked_at_ms: number | null;
+  answered_by: string | null;
+  answered_at_ms: number | null;
+  answer_summary: string | null;
+}
+
+export interface AnalyticsAiDecision {
+  decision: string;
+  proposed_by: string | null;
+  agreed_by: string[];
+  objected_by: string[];
+  consensus: AnalyticsConsensus;
+  citations: AnalyticsCitation[];
+}
+
+// Counts of what the evidence rules threw away, so a thin result is
+// distinguishable from a quiet meeting.
+export interface AnalyticsAiExclusions {
+  unknown_speaker_items: number;
+  uncited_sentiment: number;
+  uncited_decisions: number;
+  unverifiable_citations: number;
+  out_of_range_citations: number;
+  malformed_items: number;
+  ambiguous_speaker_names: number;
+}
+
+export interface AnalyticsAi {
+  method_version: number;
+  computed_at: string;
+  event_watermark: number;
+  topics: AnalyticsAiTopic[];
+  sentiment: AnalyticsAiSentiment[];
+  questions: AnalyticsAiQuestion[];
+  decisions: AnalyticsAiDecision[];
+  excluded: AnalyticsAiExclusions;
+  // True when the meeting was too long to send in full, so the analysis
+  // covers only up to analysed_through_ms.
+  transcript_truncated: boolean;
+  analysed_through_ms: number;
+}

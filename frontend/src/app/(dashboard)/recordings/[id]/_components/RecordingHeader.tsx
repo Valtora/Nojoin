@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Edit2, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, Edit2, MoreHorizontal, Users } from "lucide-react";
 import type { RefObject } from "react";
 
 import IconButton from "@/components/ui/IconButton";
@@ -31,6 +31,8 @@ interface RecordingHeaderProps {
   onTimeUpdate: () => void;
   onPlay: () => void;
   onPause: () => void;
+  /** Mobile only: opens the speaker panel, which has no tab at this width. */
+  onShowSpeakers?: () => void;
 }
 
 export default function RecordingHeader({
@@ -50,9 +52,20 @@ export default function RecordingHeader({
   onTimeUpdate,
   onPlay,
   onPause,
+  onShowSpeakers,
 }: RecordingHeaderProps) {
   const renderMobileHeaderActions = () => (
     <div className="flex flex-wrap items-center gap-2">
+      {onShowSpeakers && (
+        <button
+          type="button"
+          onClick={onShowSpeakers}
+          className="inline-flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-inset"
+        >
+          <Users className="h-4 w-4 text-action-text" aria-hidden="true" />
+          Speakers
+        </button>
+      )}
       <RecordingTagEditor
         recordingId={recording.id}
         tags={recording.tags || []}

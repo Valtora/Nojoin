@@ -1073,6 +1073,8 @@ async def test_mcp_protocol_tools_list_end_to_end(  # noqa: PLR0913 - one fixtur
         "get_transcript",
         "get_transcript_utterances",
         "get_meeting_notes",
+        "get_meeting_analytics",
+        "analyse_meeting",
         "list_tags",
         "get_speakers",
         "list_people",

@@ -63,4 +63,36 @@ class Transcript(BaseDBModel, table=True):
     )  # pending, processing, completed, error
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
 
+    # Measured vocal-delivery descriptors (pace, pitch movement, loudness,
+    # pausing). Only the tiers that cost something to produce are stored: the
+    # rest of the analytics surface is derived per read from the canonical
+    # utterances, so it needs no invalidation and no backfill.
+    #
+    # The payload carries the method version that produced it and the
+    # transcript event watermark it was computed against. The watermark is what
+    # makes staleness detectable without a second column, and stale never means
+    # regenerate automatically -- reading the audio again is work the user
+    # should ask for, exactly as with notes_stale_documents.
+    analytics_payload: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSONB)
+    )
+    analytics_status: str = Field(
+        default="pending"
+    )  # pending, generating, completed, error
+    analytics_error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # The AI analytics tier (topics and who led them, sentiment from the words,
+    # question/answer mapping, decision ownership) has its own status because it
+    # has a state the measured tier does not: 'unavailable', meaning no AI
+    # provider is configured. That is a normal condition on a perfectly healthy
+    # install, and reporting it as 'error' would tell the user something is
+    # broken when nothing is. Its payload lives under the 'ai' key of
+    # analytics_payload above, carrying its own method version and watermark.
+    analytics_ai_status: str = Field(
+        default="pending"
+    )  # pending, generating, completed, error, unavailable
+    analytics_ai_error_message: Optional[str] = Field(
+        default=None, sa_column=Column(Text)
+    )
+
     recording: "Recording" = Relationship(back_populates="transcript")

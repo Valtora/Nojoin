@@ -3,7 +3,14 @@ import { persist } from "zustand/middleware";
 import type { RecordingId } from "@/types";
 
 export type ViewType = "recordings" | "archived" | "deleted";
-export type ActivePanel = "transcript" | "notes" | "documents" | "speakers";
+export type ActivePanel =
+  | "transcript"
+  | "notes"
+  | "documents"
+  | "analytics"
+  // Mobile only. On desktop the speaker panel lives in the side column, and on
+  // mobile it is reached from the header's actions menu rather than a tab.
+  | "speakers";
 
 interface NavigationState {
   // View State

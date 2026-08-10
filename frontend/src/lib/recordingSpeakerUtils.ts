@@ -64,7 +64,14 @@ const getGenericSpeakerAliasesForLabel = (label: string): string[] => {
   return [];
 };
 
-const normalisePaletteColorKey = (
+/** A palette key if the value is one, and undefined otherwise.
+ *
+ * Deliberately strict, unlike `getColorByKey`, which falls back to the first
+ * palette entry. A caller here is asking "has this speaker been given a
+ * colour?", and answering "yes, red" for an unset value would paint every
+ * uncoloured speaker the same.
+ */
+export const normalisePaletteColorKey = (
   color: string | null | undefined,
 ): MeetingColorKey | undefined => {
   if (!color) {

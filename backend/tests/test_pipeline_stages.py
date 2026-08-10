@@ -263,6 +263,21 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
         types.SimpleNamespace(delay=lambda *a, **k: index_calls.append(a)),
         raising=False,
     )
+    # Same shape, same reason: the measured-analytics dispatches are resolved
+    # from the package inside the success branch, and an unstubbed .delay()
+    # opens a real broker connection.
+    monkeypatch.setattr(
+        tasks_module,
+        "compute_delivery_analytics_task",
+        types.SimpleNamespace(delay=lambda *a, **k: None),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tasks_module,
+        "compute_overlap_analytics_task",
+        types.SimpleNamespace(delay=lambda *a, **k: None),
+        raising=False,
+    )
     return index_calls
 
 

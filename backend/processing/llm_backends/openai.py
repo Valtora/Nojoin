@@ -7,6 +7,10 @@ from backend.utils.chat_prompt import (
     build_chat_messages,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.meeting_analysis import (
+    MeetingAnalysisRequest,
+    MeetingAnalysisResult,
+)
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -338,6 +342,47 @@ class OpenAILLMBackend(LLMBackend):
                 )
             logger.error(f"OpenAI API error (Meeting Edge): {e}")
             raise RuntimeError(f"OpenAI API error (Meeting Edge): {e}")
+
+    def generate_meeting_analysis(
+        self,
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+        timeout: int = 300,
+    ) -> MeetingAnalysisResult:
+        prompt = self.build_meeting_analysis_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError(
+                "No OpenAI model configured. Please select a model in Settings."
+            )
+
+        request_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "timeout": timeout,
+        }
+        if self.model.startswith("gpt") or "gpt" in self.model:
+            request_kwargs["temperature"] = 0.2
+
+        try:
+            try:
+                response = self.client.chat.completions.create(
+                    **request_kwargs,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as json_mode_error:  # noqa: BLE001
+                # OpenAI-compatible endpoints may reject response_format; the
+                # prompt already mandates a bare JSON object and the parser is
+                # tolerant of fencing, so a plain retry is worth one round trip.
+                logger.warning(
+                    "OpenAI JSON mode failed for meeting analysis (%s); retrying without response_format.",
+                    json_mode_error,
+                )
+                response = self.client.chat.completions.create(**request_kwargs)
+            text = response.choices[0].message.content or ""
+            return self.parse_meeting_analysis_result(text, request)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"OpenAI API error (meeting analysis): {e}")
+            raise RuntimeError(f"OpenAI API error (meeting analysis): {e}")
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 

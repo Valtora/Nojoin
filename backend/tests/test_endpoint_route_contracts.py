@@ -27,6 +27,24 @@ def _route_contract(router):
 
 
 TRANSCRIPTS_ROUTE_CONTRACT = [
+    (
+        "/{recording_id}/analytics",
+        ("GET",),
+        "get_recording_analytics",
+        "RecordingAnalyticsRead",
+    ),
+    (
+        "/{recording_id}/analytics/ai/generate",
+        ("POST",),
+        "generate_recording_ai_analytics",
+        "AnalyticsAiGenerateResponse",
+    ),
+    (
+        "/{recording_id}/analytics/generate",
+        ("POST",),
+        "generate_recording_analytics",
+        "AnalyticsGenerateResponse",
+    ),
     ("/{recording_id}/chat", ("DELETE",), "clear_chat_history", None),
     ("/{recording_id}/chat", ("GET",), "get_chat_history", "List"),
     ("/{recording_id}/chat", ("POST",), "chat_with_meeting", None),

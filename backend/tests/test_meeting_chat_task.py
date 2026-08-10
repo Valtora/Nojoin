@@ -79,7 +79,12 @@ CREATE TABLE transcripts (
     notes_status VARCHAR NOT NULL,
     notes_stale_documents BOOLEAN DEFAULT 0,
     transcript_status VARCHAR NOT NULL,
-    error_message TEXT
+    error_message TEXT,
+    analytics_payload JSON,
+    analytics_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    analytics_ai_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    analytics_ai_error_message TEXT,
+    analytics_error_message TEXT
 );
 CREATE TABLE chat_messages (
     id INTEGER PRIMARY KEY,

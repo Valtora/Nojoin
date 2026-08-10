@@ -8,6 +8,7 @@ from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 
 # Import submodules to ensure routes are registered on the router
 from . import (
+    routes_analytics,
     routes_chat,
     routes_export,
     routes_notes,

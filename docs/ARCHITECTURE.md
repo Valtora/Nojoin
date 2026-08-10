@@ -89,12 +89,242 @@ widens that — a model transcribing a page reproduces any instruction printed o
 it — so both prompt sinks fence it in `<attached_document>` delimiters with an
 explicit data-not-instructions rule.
 
+### Meeting Analytics
+
+Speaking-dynamics analytics for a recording — talk-time share, turn structure,
+directional interruptions, turn-taking and response latency, a talk-share
+timeline, and silence and overlap totals — are derived on read from the
+canonical `transcript_utterances` rows rather than computed by the pipeline and
+stored.
+
+That is a deliberate trade. The derivation is arithmetic over a few thousand
+rows, so per-request cost is negligible, and paying it buys two properties a
+cached table would have to earn back with code. Every recording that predates
+the feature has analytics immediately, with no migration, no backfill sweep,
+and no reprocess — which matters because reprocess rebuilds the transcript and
+clears hand-set speaker names, so making it the price of analytics would cost
+users their corrections. And a speaker merge, rename, or transcript edit is
+reflected on the next read, with no invalidation path that can be got wrong.
+Speaker figures are grouped by `recording_speaker_id` precisely so a merge
+redirects utterances onto the surviving row and the numbers follow.
+
+The derivation lives in `backend/services/meeting_analytics/`, deliberately free
+of ORM and ML imports below its query layer so it can run in the API process and
+be tested as pure functions. Its thresholds — what counts as a turn boundary, an
+interruption rather than turn-boundary bleed, or a measurable response gap — are
+centralised in that package's `constants.py` for the same reason the speaker
+thresholds are centralised in `backend/processing/embedding.py`: they are one
+tuning decision, not several.
+
+Two definitions are load-bearing anywhere the numbers are consumed. Per-speaker
+talk time counts overlapping speech once for each speaker, so shares are
+reported against total speech rather than against duration and the two
+denominators are carried separately. And anything excluded from a statistic is
+counted rather than dropped, so a median over four samples is distinguishable
+from a median over ninety.
+
+A third follows from the same principle and reshaped the surface. Nojoin's
+transcripts hold no overlapping speech at all — the merge assigns each
+transcribed segment one speaker from one mixed stream, so two people talking
+at once is not representable in the transcript whatever happened in the room,
+on live captures and imports alike. Every transcript-derived interruption
+count is therefore zero by construction, and the surface carries **no
+interruption counts at all**: overlapping speech is measured from the audio
+instead (below), reported as overlap rather than interruption, because
+attributing who cut across whom from a single channel is not defensible and
+the interruption category itself is one human annotators barely agree on.
+The evidence for both halves of that decision is in
+[ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md).
+
+Response behaviour at speaker changes is reported in three disclosed parts
+rather than one filtered median, because the underlying timestamps carry
+roughly a quarter-second of noise: **immediate handovers** (gaps under the
+250ms measurement collar — real behaviour, the cross-language response mode
+is 0-200ms, but unresolvable timing), a **reply-time median** over gaps the
+timestamps can support (collar to five seconds), and **lapses** (longer
+silences, which are resumptions rather than replies and once produced
+30-second "reply times" on real recordings). Each population is counted.
+
+Because every figure is attached to a speaker, the surface discloses when that
+attribution is doubtful rather than presenting a confidently wrong number: a
+structured warning is returned when several clusters hold a negligible share,
+overlap is high, the speaker cap bound, or speakers are unnamed. Reasons are
+codes, so the web client owns the wording and the MCP surface stays stable for
+an assistant to branch on.
+
+#### Delivery Descriptors
+
+One analytics tier is measured rather than derived, and is therefore stored:
+vocal delivery (speaking pace, pitch height and movement, loudness, within-turn
+pausing), computed in
+[backend/processing/delivery_descriptors.py](../backend/processing/delivery_descriptors.py)
+and persisted on the transcript's `analytics_payload`.
+
+It measures *how* people spoke and makes no claim about how they felt. No
+emotion model is involved, and none should be added. That decision was
+re-examined against the current literature and stands on stronger grounds
+than when first made: speech-emotion recognition collapses on naturalistic
+conversational speech (22-43% accuracy on every real conversational corpus
+tested, against 90%+ on acted ones), its generalisation across speaker
+populations is unproven, a wrong inference attached to a named colleague is
+the worst output this surface can produce — and since February 2025 the EU AI
+Act prohibits emotion inference from voice in the workplace for products
+placed on the EU market, while explicitly excluding sentiment read from
+transcript text, which is exactly the split Nojoin already makes. The full
+evidence review is in [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md). Every
+figure here is an arithmetic property of the waveform, which is what lets the
+interface present it without hedging and lets a user check it against the
+audio.
+
+Deliberately numpy and soundfile only, so it holds no model and never pulls
+torch in. The pitch estimator is YIN's cumulative-mean-normalised difference
+function — closed-form numpy, chosen after the original autocorrelation
+picker measured a 4% gross-error rate against laryngograph ground truth,
+enough to inflate the pitch-movement spread; the replacement halves every
+product-level error and was validated on the same ground truth, clean and
+after MP3 degradation. Pitch spread is reported in semitones rather than
+hertz because hertz is not comparable between voices: the same expressive
+range measures about twice as wide on a high voice as on a low one. The
+plain-language readings beside the figures are calibrated against corpus
+measurements rather than folk numbers — conversational speech runs at
+160-200 words a minute by the measure Nojoin computes, not the oft-quoted
+120-150 — and the pace bands are an English calibration, disclosed as such.
+
+It runs on the **CPU lane**, dispatched at the end of `process_recording_task`
+rather than inline. It needs no GPU, so holding the single-slot GPU lane to read
+a WAV would delay the next meeting for nothing, and a failure must never reach a
+recording that has otherwise finished. The same task backs the interface's
+per-recording "Measure delivery" action, so a meeting recorded before the
+feature existed takes exactly the path a new one does.
+
+Channel selection is meaning-aware. For a browser capture the transcode contract
+fixes channel 0 as shared audio and channel 1 as the microphone, so the
+dominant channel per utterance identifies the capture source, using the same
+dominance thresholds as the live lane. An imported stereo file's channels are
+left and right, so those are downmixed instead — reading them as sources would
+invent provenance. Because a remote voice has been through a codec and the far
+end's gain control and a local microphone has not, loudness is reported as
+comparable across speakers only when they shared a signal chain, and the
+interface withholds the comparison rather than inviting a false one.
+
+`DELIVERY_METHOD_VERSION` versions the extraction procedure exactly as
+`EMBEDDING_METHOD_VERSION` versions a voiceprint, and for the same reason: a
+figure produced by one procedure is not comparable with one produced by
+another. The stored payload also carries the transcript event watermark it was
+measured against, which is what makes staleness detectable without a second
+column. Stale never means regenerate automatically — rereading a recording's
+audio is work the user should ask for. A **method-version bump** is different:
+that is Nojoin's own maintenance obligation, not user-triggered staleness, so
+a bounded scheduled sweep (`remeasure_outdated_delivery_task`, mirroring the
+voiceprint rebuild) re-measures a few outdated recordings per tick until the
+library is comparable again.
+
+Stored delivery figures also feed **cross-meeting baselines**: for a speaker
+linked to a person, the analytics read derives that person's usual pace,
+pitch movement, and pausing as medians across the user's other measured
+meetings, and the interface says "faster than their usual across N meetings"
+with the count always shown. Derived on read like the deterministic tier, so
+a speaker merge or rename redirects the person link and the baseline follows;
+only same-method-version figures are compared, and a person needs at least
+three measured meetings before "their usual" is claimed. The wording is
+delivery, never affect — a baseline framed as emotional state would be both
+unsupported and, in the EU, prohibited.
+
+#### Measured Overlap
+
+Overlapping speech is measured from the recording's audio by
+[backend/processing/audio_overlap.py](../backend/processing/audio_overlap.py)
+and [backend/worker/tasks/analytics_overlap.py](../backend/worker/tasks/analytics_overlap.py),
+reusing `pyannote/segmentation-3.0` — already a pipeline dependency for
+boundary refinement, so this adds no model and no image growth. It runs on
+the **GPU lane**, where the finalise pipeline keeps that model resident,
+dispatched with the other post-processing follow-ups for new recordings and
+from the same "Measure delivery" action for old ones. The result stores under
+the `audio_overlap` key of `analytics_payload` with its own method version
+and its status inside the block — it needs no column and no staleness story,
+because it depends only on the audio, which never changes after processing.
+
+What it reports is deliberately narrow: that people talked over each other,
+for at least how long, and where in the meeting — never who overlapped whom.
+The detection procedure was validated against AMI ground truth (precision
+0.71-0.95, recall 0.62-0.85 with a 250ms collar, stable on far-field audio
+and through 64kbps MP3), and its totals systematically underestimate, which
+is why the interface presents the figure as a floor. Attribution and
+"interruption" framing are withheld on evidence, not caution: speaker
+attribution inside overlap has no published accuracy figure, and human
+annotators agree on what counts as an interruption at kappa ~0.31. See
+[ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md).
+
+#### AI Analysis
+
+The third analytics tier is neither derived nor measured: it is a model reading
+the transcript. It reports the topics the meeting moved through and who drove
+each, how each speaker's *words* read, which questions were asked and which went
+unanswered, and who proposed, agreed with, or objected to each decision. It
+lives in [backend/utils/meeting_analysis/](../backend/utils/meeting_analysis/)
+(prompt and contract) and
+[backend/worker/tasks/analytics_ai.py](../backend/worker/tasks/analytics_ai.py)
+(the task), and stores under the `ai` key of the same `analytics_payload`.
+
+The tier is **optional**, which is why it has its own `analytics_ai_status`
+column rather than sharing the delivery tier's. It needs a fifth state the
+measured tier does not have — `unavailable`, meaning no AI provider is
+configured — and that is a normal condition on a healthy install rather than an
+error. Sharing one column would also let an AI failure mark measured delivery as
+broken, when the two are produced by different lanes from different inputs.
+
+It is **never dispatched automatically**, unlike the delivery tier. One run is
+one long call against the user's own AI quota, answering questions most meetings
+are never asked, so it runs from the Analytics tab's button or the MCP
+`analyse_meeting` tool. It is network-bound, so it runs on the **IO lane**,
+matching how finalise already hands meeting intelligence there for non-local
+providers. Both stored tiers therefore write one JSONB column from two lanes,
+which is why each merges under a row lock through
+[backend/utils/analytics_payload.py](../backend/utils/analytics_payload.py)
+rather than assigning the column.
+
+Three rules make a model's reading safe to attach to a named colleague, and all
+three are enforced in the parser rather than trusted to the prompt. **Speakers
+are an allowlist**: the model is given the meeting's own display names and
+anything attributed to a name it was not given is discarded, because a name it
+was not given is a name it invented. **Citations are verified, not accepted**: a
+quote must appear in the transcript that was actually sent, normalised for case
+and punctuation and checked against the whole corpus so a quote spanning a turn
+boundary still passes, and its timestamp must fall inside the meeting. A
+sentiment or decision item left with no surviving citation is **dropped**, not
+shown — an unfalsifiable claim about a person is the worst output this feature
+can produce, and decision ownership holds to that rule precisely because naming
+who pushed back against a colleague is the most consequential thing here. And
+**everything discarded is counted**, so a thin result is distinguishable from a
+quiet meeting.
+
+Sentiment is read from the words and nothing else. It is deliberately **not
+fused** with the delivery descriptors above: those measure the sound of a voice,
+these read language, and combining them into one score would manufacture a
+confidence neither source supports. The two are presented as separate,
+differently-sourced things, and no emotion model is involved in either.
+
+The boundary with meeting notes is deliberate and stated to the model in the
+prompt as well as enforced by what the schema can express. Notes remain the
+record of *what* was decided and what happens next; this tier answers *who* —
+who drove a topic, whose question went unanswered, who owned a decision — and
+never authors a decision log. Consensus is reported as `stated`, `assumed`, or
+`none`, and `assumed` means the decision merely went unchallenged, which the
+interface must never render as agreement.
+
+A very long meeting is truncated rather than refused, and the payload records
+that it was along with how far the analysis reached. As with delivery, the
+stored block carries a method version and a transcript event watermark, and
+staleness shows a banner with a regenerate button rather than triggering another
+call the user did not ask for.
+
 ### Web Client
 
 The web client is responsible for:
 
 - Dashboard workflows.
 - Recordings workspace and transcript review.
+- Meeting analytics.
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.

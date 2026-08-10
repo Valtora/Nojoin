@@ -40,7 +40,12 @@ CREATE TABLE transcripts (
     meeting_edge_status VARCHAR DEFAULT 'idle', meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT, speaker_name_suggestions JSON,
     notes_template_id INTEGER, notes_template_sections TEXT, notes_status VARCHAR,
-    notes_stale_documents BOOLEAN DEFAULT 0, transcript_status VARCHAR, error_message TEXT
+    notes_stale_documents BOOLEAN DEFAULT 0, transcript_status VARCHAR, error_message TEXT,
+    analytics_payload JSON,
+    analytics_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_ai_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_ai_error_message TEXT,
+    analytics_error_message TEXT
 );
 CREATE TABLE context_chunks (
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,

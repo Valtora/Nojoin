@@ -21,6 +21,10 @@ from backend.processing.cli.manager import (
     CliOAuthUnavailableError,
 )
 from backend.processing.llm_services import LLMBackend
+from backend.utils.meeting_analysis import (
+    MeetingAnalysisRequest,
+    MeetingAnalysisResult,
+)
 from backend.utils.meeting_edge import MeetingEdgeRequest, MeetingEdgeResult
 from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
@@ -183,6 +187,22 @@ class CliLLMBackend(LLMBackend):
             self.user_id, prompt, model=self.model, timeout=timeout
         )
         return self.parse_meeting_edge_result(text, request)
+
+    def generate_meeting_analysis(
+        self,
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+        timeout: int = 300,
+    ) -> MeetingAnalysisResult:
+        # No provider-native JSON mode exists here: a subscription CLI returns
+        # whatever the model wrote. The prompt mandates a bare JSON object and
+        # the tolerant fenced/inline parser handles the rest, which is the same
+        # arrangement every other structured call on this backend uses.
+        prompt = self.build_meeting_analysis_prompt(request, prompt_template)
+        text = self._manager.run_single_turn(
+            self.user_id, prompt, model=self.model, timeout=timeout
+        )
+        return self.parse_meeting_analysis_result(text, request)
 
     def infer_meeting_title(
         self,

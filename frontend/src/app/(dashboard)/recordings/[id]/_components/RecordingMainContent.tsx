@@ -2,7 +2,7 @@
 
 import type { RefObject } from "react";
 
-import type { ActivePanel } from "@/lib/store";
+import { useNavigationStore, type ActivePanel } from "@/lib/store";
 import {
   GlobalSpeaker,
   Recording,
@@ -16,6 +16,7 @@ import RecordingHeader from "./RecordingHeader";
 import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
 import DocumentsSection from "./DocumentsSection";
+import AnalyticsSection from "./AnalyticsSection";
 
 interface RecordingMainContentProps {
   recording: Recording;
@@ -136,6 +137,10 @@ export default function RecordingMainContent({
   onNotesUndo,
   onNotesRedo,
 }: RecordingMainContentProps) {
+  const setSpeakerPanelCollapsed = useNavigationStore(
+    (state) => state.setSpeakerPanelCollapsed,
+  );
+
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
       {/* Header (Title, Tags, Audio Player). On mobile it also carries the
@@ -158,14 +163,22 @@ export default function RecordingMainContent({
         onTimeUpdate={onTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        onShowSpeakers={
+          isMobile
+            ? () => {
+                setActivePanel("speakers");
+                setIsMobileHeaderActionsOpen(false);
+              }
+            : undefined
+        }
       />
 
-      {/* Panel Tabs. The Speakers tab is mobile-only; on desktop the speaker
-          panel lives in the side column. */}
+      {/* Panel Tabs. Four on every viewport: Speakers used to hold a
+          mobile-only fifth tab, but five labels do not fit legibly at 360px,
+          so on mobile the speaker panel is reached from the header's actions
+          menu instead. On desktop it lives in the side column as before. */}
       <div className="shrink-0 bg-surface-inset">
-        <div
-          className={`grid ${isMobile ? "grid-cols-4" : "grid-cols-3"} border-b-2 border-surface-border`}
-        >
+        <div className="grid grid-cols-4 border-b-2 border-surface-border">
           <button
             id="tab-transcript"
             onClick={() => setActivePanel("transcript")}
@@ -187,15 +200,13 @@ export default function RecordingMainContent({
           >
             <span className="truncate">Documents</span>
           </button>
-          {isMobile && (
-            <button
-              id="tab-speakers"
-              onClick={() => setActivePanel("speakers")}
-              className={tabClassName(activePanel === "speakers")}
-            >
-              <span className="truncate">Speakers</span>
-            </button>
-          )}
+          <button
+            id="tab-analytics"
+            onClick={() => setActivePanel("analytics")}
+            className={tabClassName(activePanel === "analytics")}
+          >
+            <span className="truncate">Analytics</span>
+          </button>
         </div>
       </div>
 
@@ -243,6 +254,20 @@ export default function RecordingMainContent({
         <DocumentsSection
           active={activePanel === "documents"}
           recordingId={recording.id}
+        />
+
+        <AnalyticsSection
+          active={activePanel === "analytics"}
+          recordingId={recording.id}
+          speakerColors={speakerColors}
+          onPlaySegment={(startMs) => onPlaySegment(startMs / 1000)}
+          // Two routes to one panel: mobile switches to it, desktop reveals it
+          // in the side column, which may have been collapsed away.
+          onReviewSpeakers={
+            isMobile
+              ? () => setActivePanel("speakers")
+              : () => setSpeakerPanelCollapsed(false)
+          }
         />
 
         {isMobile && (

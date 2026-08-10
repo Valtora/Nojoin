@@ -284,6 +284,15 @@ than re-laying out the page. The second, slightly wider, is guidance. This is al
 moved off the 64rem feature cap: it is a console, not a page of prose, and a reading measure is
 what forced five panels into one long scroll.
 
+The meeting view's Analytics tab is the third surface that spends width on columns, and it does so
+entirely through container queries on its own scroll region, because it lives inside a resizable
+panel between two collapsible rails and its width is the window minus two numbers it cannot see. It
+pairs by subject, not by size: talk share beside the same share over time, then how the floor
+changed hands beside how much of it was held by two people at once. The per-speaker tables reflow
+rather than scroll, through `.analytics-table` in `globals.css` — one DOM at every width, with the
+narrow layout's labels coming from `content: attr(data-label)` rather than from a second copy of
+the markup, so nothing is rendered twice and no width has to be measured in JavaScript.
+
 **A panel that subdivides must query itself, not the window.** Meeting Edge splits into two lists
 side by side, and did so at the `xl` *viewport* breakpoint: at a 1280px window it subdivided a
 400px column and wrapped both lists to three words a line. Any `grid-cols` inside a panel that can

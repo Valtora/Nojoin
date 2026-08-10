@@ -271,6 +271,54 @@ html {
     background-color: var(--surface-inset);
   }
 
+  /* A per-speaker figures table that becomes a list of speakers when its own
+     container is too narrow for the columns.
+
+     The analytics tab sits in a resizable panel between two collapsible rails,
+     so its width is not the window's and this queries the wrapper rather than
+     the viewport, as every subdividing panel in this product does.
+
+     There is one DOM at every width: the narrow labels come from the cells'
+     data-label attribute through generated content, not from a second copy of
+     the markup behind a `hidden` class. That is what makes the switch free --
+     nothing is rendered twice, nothing is measured in JavaScript, and a test
+     querying for a column heading finds exactly one of it. The header row goes
+     rather than being visually hidden, because keeping it would have every
+     figure announced twice: once from the header association and once from the
+     generated label. */
+  @container (max-width: 34rem) {
+    .analytics-table thead {
+      display: none;
+    }
+
+    .analytics-table tr {
+      display: block;
+      padding: 0.5rem 0;
+    }
+
+    .analytics-table td {
+      padding: 0.125rem 0;
+      text-align: left;
+    }
+
+    .analytics-table td[data-label] {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      text-align: right;
+    }
+
+    .analytics-table td[data-label]::before {
+      content: attr(data-label);
+      flex: none;
+      color: var(--contrast-helper);
+      font-size: 0.75rem;
+      line-height: 1rem;
+      text-align: left;
+    }
+  }
+
   .settings-divider {
     border-color: var(--surface-divider);
   }
