@@ -213,6 +213,8 @@ SCHEMA_STATEMENTS = [
         error_message TEXT,
         analytics_payload JSON,
         analytics_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        analytics_ai_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        analytics_ai_error_message TEXT,
         analytics_error_message TEXT
     )
     """,
@@ -2398,3 +2400,179 @@ async def test_get_meeting_analytics_returns_measured_delivery_by_name(
     # The caveat has to travel with the figures, not be inferred from them.
     assert delivery["cross_speaker_loudness_comparable"] is False
     assert "rs:1" not in delivery["speakers"]
+
+
+AI_ANALYSIS_BLOCK = {
+    "method_version": 1,
+    "computed_at": "2026-08-10T09:00:00Z",
+    "event_watermark": 1,
+    "transcript_truncated": False,
+    "analysed_through_ms": 60_000,
+    "topics": [
+        {
+            "title": "Rollout",
+            "start_ms": 0,
+            "end_ms": 30_000,
+            "summary": "How widely to ship.",
+            "led_by": "rs:1",
+            "contested": False,
+            "leadership_basis": "Introduced it.",
+        },
+        {
+            "title": "Timeline",
+            "start_ms": 30_000,
+            "end_ms": 60_000,
+            "summary": "Whether March holds.",
+            "led_by": None,
+            "contested": True,
+            "leadership_basis": None,
+        },
+    ],
+    "sentiment": [
+        {
+            "speaker_key": "rs:1",
+            "tone": "mixed",
+            "summary": "Backed it, doubted the date.",
+            "citations": [
+                {"quote": "Not by March.", "start_ms": 12_000, "speaker_key": "rs:1"}
+            ],
+        }
+    ],
+    "questions": [
+        {
+            "question": "Who owns the migration?",
+            "asked_by": "rs:1",
+            "asked_at_ms": 20_000,
+            "answered_by": None,
+            "answered_at_ms": None,
+            "answer_summary": None,
+        }
+    ],
+    "decisions": [
+        {
+            "decision": "Pilot with two customers.",
+            "proposed_by": "rs:1",
+            "agreed_by": [],
+            "objected_by": [],
+            "consensus": "assumed",
+            "citations": [
+                {"quote": "Two first.", "start_ms": 4_000, "speaker_key": "rs:1"}
+            ],
+        }
+    ],
+    "excluded": {"uncited_sentiment": 2, "unverifiable_citations": 3},
+}
+
+
+async def _store_ai_analysis(session_maker, status: str = "completed") -> None:
+    async with session_maker() as session:
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
+        transcript.analytics_ai_status = status
+        transcript.analytics_payload = {"ai": AI_ANALYSIS_BLOCK}
+        session.add(transcript)
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_reports_unanalysed_ai_as_a_status(
+    session_maker, test_user: User, mcp_context
+):
+    """Never analysed must not read as a meeting with no decisions."""
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    result = await get_meeting_analytics(public_id)
+
+    assert result["ai_analysis"]["status"] == "pending"
+    assert result["ai_analysis"]["decisions"] == []
+
+
+@pytest.mark.anyio
+async def test_get_meeting_analytics_returns_ai_analysis_by_name(
+    session_maker, test_user: User, mcp_context
+):
+    from backend.mcp_server.tools_analytics import get_meeting_analytics
+
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+    await _store_ai_analysis(session_maker)
+
+    analysis = (await get_meeting_analytics(public_id))["ai_analysis"]
+
+    assert analysis["status"] == "completed"
+    assert analysis["topics"][0]["led_by"] == "Dana"
+    # A topic nobody owned says so rather than naming somebody.
+    assert analysis["topics"][1]["led_by"] == "contested"
+    assert analysis["sentiment"][0]["speaker"] == "Dana"
+    # The evidence has to reach the assistant, not just the app.
+    assert analysis["sentiment"][0]["citations"][0]["quote"] == "Not by March."
+    assert analysis["sentiment"][0]["citations"][0]["at_seconds"] == 12.0
+    assert analysis["questions"][0]["answered_by"] is None
+    # Silence is not agreement, and the wire format has to keep saying so.
+    assert analysis["decisions"][0]["consensus"] == "assumed"
+    assert analysis["decisions"][0]["agreed_by"] == []
+    # What was discarded travels with the result, so a thin answer is
+    # distinguishable from a quiet meeting.
+    assert analysis["excluded"]["uncited_sentiment"] == 2
+    assert "rs:1" not in str(analysis["topics"])
+
+
+@pytest.mark.anyio
+async def test_analyse_meeting_requires_the_write_scope(
+    session_maker, test_user: User, mcp_context
+):
+    """A grant issued before this tool existed is told to reconnect rather than
+    failing opaquely."""
+    from backend.mcp_server.tools_analytics import analyse_meeting
+
+    bind_mcp_identity(test_user, scopes=frozenset({MCP_READ_SCOPE}))
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    with pytest.raises(ToolError, match="read-only"):
+        await analyse_meeting(public_id)
+
+
+@pytest.mark.anyio
+async def test_analyse_meeting_queues_the_analysis(
+    session_maker, test_user: User, mcp_context, stub_celery_dispatch
+):
+    from backend.mcp_server.tools_analytics import analyse_meeting
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+
+    result = await analyse_meeting(public_id)
+
+    assert result["ai_status"] == "generating"
+    assert any(
+        call[0] == "backend.worker.tasks.compute_meeting_analysis_task"
+        for call in stub_celery_dispatch
+    )
+
+
+@pytest.mark.anyio
+async def test_analyse_meeting_refuses_a_run_already_in_flight(
+    session_maker, test_user: User, mcp_context, stub_celery_dispatch
+):
+    """A second call would spend the user's quota twice for one answer."""
+    from backend.mcp_server.tools_analytics import analyse_meeting
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_analytics_transcript(session_maker)
+    await _store_ai_analysis(session_maker, status="generating")
+
+    with pytest.raises(ToolError, match="already being analysed"):
+        await analyse_meeting(public_id)

@@ -6,6 +6,14 @@ from backend.utils.chat_prompt import (
     build_chat_prompt,
 )
 from backend.utils.languages import build_output_language_prompt_section
+from backend.utils.meeting_analysis import (
+    MeetingAnalysisContractError,
+    MeetingAnalysisRequest,
+    MeetingAnalysisResult,
+    build_meeting_analysis_prompt,
+    build_meeting_analysis_prompt_parts,
+    parse_meeting_analysis_response,
+)
 from backend.utils.meeting_edge import (
     MeetingEdgeContractError,
     MeetingEdgeRequest,
@@ -56,7 +64,11 @@ from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
-JSON_CONTRACT_ERRORS = (MeetingIntelligenceContractError, MeetingEdgeContractError)
+JSON_CONTRACT_ERRORS = (
+    MeetingIntelligenceContractError,
+    MeetingEdgeContractError,
+    MeetingAnalysisContractError,
+)
 
 # Output ceiling for the two note-producing calls, tried in order.
 #
@@ -307,6 +319,21 @@ class LLMBackend:
     ) -> MeetingEdgeResult:
         """
         Generate live Meeting Edge guidance from the current meeting context.
+        """
+        raise NotImplementedError
+
+    def generate_meeting_analysis(
+        self,
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+        timeout: int = 300,
+    ) -> MeetingAnalysisResult:
+        """Produce the AI analytics tier for one finished meeting.
+
+        One call for all four analyses, because they share a topic spine: a
+        sentiment reading and a decision's ownership both refer to the part of
+        the meeting the topics divide, and four independent calls would let
+        those disagree with each other as well as costing four times the quota.
         """
         raise NotImplementedError
 
@@ -603,6 +630,37 @@ class LLMBackend:
         prompt_template: str = None,
     ) -> Tuple[str, str]:
         return build_meeting_edge_prompt_parts_text(request, prompt_template)
+
+    @staticmethod
+    def build_meeting_analysis_prompt(
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+    ) -> str:
+        return build_meeting_analysis_prompt(
+            transcript=request.transcript,
+            speaker_names=request.allowlist.names,
+            output_language_instruction=request.output_language_instruction,
+            prompt_override=prompt_template,
+        )
+
+    @staticmethod
+    def build_meeting_analysis_prompt_parts(
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+    ) -> Tuple[str, str]:
+        return build_meeting_analysis_prompt_parts(
+            transcript=request.transcript,
+            speaker_names=request.allowlist.names,
+            output_language_instruction=request.output_language_instruction,
+            prompt_override=prompt_template,
+        )
+
+    @staticmethod
+    def parse_meeting_analysis_result(
+        response_text: str,
+        request: MeetingAnalysisRequest,
+    ) -> MeetingAnalysisResult:
+        return parse_meeting_analysis_response(response_text, request=request)
 
     @staticmethod
     def finalise_meeting_notes(notes: str, user_notes: Optional[str] = None) -> str:

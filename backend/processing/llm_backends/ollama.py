@@ -2,6 +2,10 @@ import logging
 from typing import Dict, Generator, List, Optional, Sequence
 
 from backend.utils.config_manager import config_manager
+from backend.utils.meeting_analysis import (
+    MeetingAnalysisRequest,
+    MeetingAnalysisResult,
+)
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -419,6 +423,59 @@ class OllamaLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (Meeting Edge): {e}")
             raise RuntimeError(f"Ollama API error (Meeting Edge): {e}")
+
+    def _chat_json(self, prompt: str, timeout: int) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "format": "json",
+            "options": self._chat_options(temperature=0.2),
+        }
+        resp = self._post("/api/chat", json=payload, timeout=timeout)
+        resp.raise_for_status()
+        response_json = resp.json()
+        self._raise_if_truncated(response_json)
+        return response_json.get("message", {}).get("content", "")
+
+    def generate_meeting_analysis(
+        self,
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+        timeout: int = 300,
+    ) -> MeetingAnalysisResult:
+        prompt = self.build_meeting_analysis_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError(
+                "No Ollama model configured. Please select a model in Settings."
+            )
+
+        try:
+            text = self._chat_json(prompt, timeout)
+            try:
+                return self.parse_meeting_analysis_result(text, request)
+            except JSON_CONTRACT_ERRORS as parse_error:
+                # Only a broken envelope reaches here. A model that returned
+                # valid JSON with unusable items has already had them dropped
+                # and counted, and repairing that would be asking it to try
+                # harder at inventing evidence.
+                logger.warning(
+                    "Ollama meeting analysis failed the JSON contract; retrying repair: %s; response_shape=%s",
+                    parse_error,
+                    summarize_llm_response_shape(text),
+                )
+                repair_text = self._chat_json(
+                    self.build_json_repair_prompt(
+                        original_prompt=prompt,
+                        invalid_response=text,
+                        validation_error=parse_error,
+                    ),
+                    timeout,
+                )
+                return self.parse_meeting_analysis_result(repair_text, request)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Ollama API error (meeting analysis): {e}")
+            raise RuntimeError(f"Ollama API error (meeting analysis): {e}")
 
     def ask_question_about_meeting(
         self,

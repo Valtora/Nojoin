@@ -87,6 +87,8 @@ CREATE TABLE transcripts (
     error_message TEXT,
     analytics_payload JSON,
     analytics_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    analytics_ai_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    analytics_ai_error_message TEXT,
     analytics_error_message TEXT
 );
 

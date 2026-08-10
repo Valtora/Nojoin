@@ -19,3 +19,14 @@ export const generateRecordingAnalytics = async (
   }>(`/transcripts/${recordingId}/analytics/generate`);
   return response.data;
 };
+
+/** Run the AI analysis pass. Spends the user's AI quota, so it is on request. */
+export const generateRecordingAiAnalytics = async (
+  recordingId: RecordingId,
+): Promise<{ recording_id: string; ai_status: string }> => {
+  const response = await api.post<{
+    recording_id: string;
+    ai_status: string;
+  }>(`/transcripts/${recordingId}/analytics/ai/generate`);
+  return response.data;
+};

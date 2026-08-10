@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { BarChart3 } from "lucide-react";
 
-import { generateRecordingAnalytics, getRecordingAnalytics } from "@/lib/api";
+import {
+  generateRecordingAiAnalytics,
+  generateRecordingAnalytics,
+  getRecordingAnalytics,
+} from "@/lib/api";
 import type { RecordingAnalytics, RecordingId } from "@/types";
 
 import AttributionWarning from "./AttributionWarning";
 import DeliveryPanel from "./DeliveryPanel";
+import MeetingAnalysisPanel from "./MeetingAnalysisPanel";
 import TalkShareChart from "./TalkShareChart";
 import TalkShareTimeline from "./TalkShareTimeline";
 import { chartColor } from "./chartPalette";
@@ -61,6 +66,7 @@ export default function AnalyticsView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [analysing, setAnalysing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,16 +84,29 @@ export default function AnalyticsView({
     void load();
   }, [load]);
 
-  // The delivery pass reads the meeting's audio on a worker, so the result
-  // arrives after the request that asked for it. Poll until it settles rather
-  // than leaving the user to refresh.
+  // Both generated tiers run on a worker, so the POST returns as soon as the
+  // task is queued -- before the worker has claimed it and written
+  // "generating". Clearing the local flag on the POST's own response therefore
+  // dropped the user back to the button for however long that took, with no
+  // sign anything was happening, and left nothing polling. The flag is instead
+  // held until the server reports a status that is not "pending", so the busy
+  // state covers the whole gap.
+  const deliveryBusy = generating || analytics?.delivery_status === "generating";
+  const aiBusy = analysing || analytics?.ai_status === "generating";
+
   useEffect(() => {
-    if (analytics?.delivery_status !== "generating") return;
+    if (!deliveryBusy && !aiBusy) return;
     const timer = setInterval(() => {
-      void getRecordingAnalytics(recordingId).then(setAnalytics).catch(() => {});
+      void getRecordingAnalytics(recordingId)
+        .then((next) => {
+          setAnalytics(next);
+          if (next.delivery_status !== "pending") setGenerating(false);
+          if (next.ai_status !== "pending") setAnalysing(false);
+        })
+        .catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
-  }, [analytics?.delivery_status, recordingId]);
+  }, [deliveryBusy, aiBusy, recordingId]);
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
@@ -96,8 +115,18 @@ export default function AnalyticsView({
       setAnalytics(await getRecordingAnalytics(recordingId));
     } catch {
       setError("Delivery analysis could not be started.");
-    } finally {
       setGenerating(false);
+    }
+  }, [recordingId]);
+
+  const handleAnalyse = useCallback(async () => {
+    setAnalysing(true);
+    try {
+      await generateRecordingAiAnalytics(recordingId);
+      setAnalytics(await getRecordingAnalytics(recordingId));
+    } catch {
+      setError("The meeting analysis could not be started.");
+      setAnalysing(false);
     }
   }, [recordingId]);
 
@@ -208,7 +237,7 @@ export default function AnalyticsView({
           speakers={speakers}
           talkTimeMs={talkTimeMs}
           onGenerate={() => void handleGenerate()}
-          generating={generating}
+          generating={deliveryBusy}
         />
       </Panel>
 
@@ -322,6 +351,22 @@ export default function AnalyticsView({
             blank where there were none to measure.
           </p>
         )}
+      </Panel>
+
+      <Panel
+        title="What was discussed"
+        description="Read from the transcript by AI, with quotes you can check. Everything above is measured; this is not."
+      >
+        <MeetingAnalysisPanel
+          ai={analytics.ai}
+          status={analytics.ai_status}
+          errorMessage={analytics.ai_error_message}
+          stale={analytics.ai_stale}
+          speakers={speakers}
+          onGenerate={() => void handleAnalyse()}
+          generating={aiBusy}
+          onPlaySegment={onPlaySegment}
+        />
       </Panel>
     </div>
   );

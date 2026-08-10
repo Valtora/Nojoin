@@ -57,6 +57,8 @@ CREATE TABLE transcripts (
     transcript_status VARCHAR NOT NULL, error_message TEXT,
     analytics_payload JSON,
     analytics_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_ai_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_ai_error_message TEXT,
     analytics_error_message TEXT
 );
 CREATE TABLE chat_messages (

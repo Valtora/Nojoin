@@ -34,6 +34,12 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
         "RecordingAnalyticsRead",
     ),
     (
+        "/{recording_id}/analytics/ai/generate",
+        ("POST",),
+        "generate_recording_ai_analytics",
+        "AnalyticsAiGenerateResponse",
+    ),
+    (
         "/{recording_id}/analytics/generate",
         ("POST",),
         "generate_recording_analytics",

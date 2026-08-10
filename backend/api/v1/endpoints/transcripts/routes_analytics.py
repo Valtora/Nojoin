@@ -37,11 +37,39 @@ class RecordingAnalyticsRead(BaseModel):
     # figures describe a transcript that no longer exists. Never regenerated
     # automatically: rereading the audio is work the user should ask for.
     delivery_stale: bool = False
+    # The AI tier: topics and who led them, sentiment read from the words,
+    # question/answer mapping, and decision ownership. Absent is normal; so is
+    # a status of "unavailable", which means the install has no AI provider
+    # configured rather than that anything failed.
+    ai: dict | None = None
+    ai_status: str = "pending"
+    ai_error_message: str | None = None
+    ai_stale: bool = False
 
 
 class AnalyticsGenerateResponse(BaseModel):
     recording_id: str
     delivery_status: str
+
+
+class AnalyticsAiGenerateResponse(BaseModel):
+    recording_id: str
+    ai_status: str
+
+
+def _is_stale(block: dict | None, watermark: object, revision: int) -> bool:
+    """Whether a stored tier was produced against an older transcript.
+
+    Staleness is disclosed, never acted on: regenerating either tier costs the
+    user something (audio analysis, or AI quota), so the interface offers the
+    button and the user decides.
+    """
+    if block is None or watermark is None:
+        return False
+    try:
+        return revision > int(watermark)
+    except (TypeError, ValueError):
+        return False
 
 
 def _backfill_and_compute(sync_session, recording) -> tuple[int, dict]:
@@ -79,7 +107,7 @@ async def get_recording_analytics(
 
     payload = transcript.analytics_payload or {}
     delivery = payload.get("delivery")
-    watermark = payload.get("event_watermark")
+    ai = payload.get("ai")
 
     return RecordingAnalyticsRead(
         recording_id=recording.public_id,
@@ -90,9 +118,14 @@ async def get_recording_analytics(
         delivery=delivery,
         delivery_status=transcript.analytics_status,
         delivery_error_message=transcript.analytics_error_message,
-        delivery_stale=bool(
-            delivery is not None and watermark is not None and revision > int(watermark)
-        ),
+        delivery_stale=_is_stale(delivery, payload.get("event_watermark"), revision),
+        ai=ai,
+        ai_status=transcript.analytics_ai_status,
+        ai_error_message=transcript.analytics_ai_error_message,
+        # Each tier carries its own watermark, so editing the transcript after
+        # measuring delivery but before analysing does not mark the analysis
+        # stale as well.
+        ai_stale=_is_stale(ai, (ai or {}).get("event_watermark"), revision),
     )
 
 
@@ -140,4 +173,49 @@ async def generate_recording_analytics(
 
     return AnalyticsGenerateResponse(
         recording_id=recording.public_id, delivery_status="generating"
+    )
+
+
+@router.post(
+    "/{recording_id}/analytics/ai/generate", response_model=AnalyticsAiGenerateResponse
+)
+async def generate_recording_ai_analytics(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Run the AI analytics pass for a recording.
+
+    Always on request. This one call spends the user's own AI quota, and the
+    questions it answers are not asked of most meetings, so running it for
+    every recording at finalise would charge everyone for something few would
+    read. A meeting that has never been analysed simply reports so.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    transcript = await _get_recording_transcript(db, recording.id)
+
+    if transcript is None:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    if transcript.analytics_ai_status == "generating":
+        raise HTTPException(
+            status_code=409, detail="This meeting is already being analysed"
+        )
+
+    # As with delivery, the worker owns the status from here. Setting it in the
+    # handler would strand the transcript in "generating" when a dispatch never
+    # reaches the broker, and could overwrite a run that finished first.
+    dispatched = await dispatch_task_best_effort(
+        "backend.worker.tasks.compute_meeting_analysis_task",
+        args=[recording.id],
+        context="meeting analysis",
+    )
+    if dispatched is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Analysis could not be queued because the task broker is unreachable",
+        )
+
+    return AnalyticsAiGenerateResponse(
+        recording_id=recording.public_id, ai_status="generating"
     )

@@ -5,16 +5,20 @@ import {
   screen,
   waitFor,
 } from "@/test/renderWithProviders";
-import type { RecordingAnalytics } from "@/types";
+import type { AnalyticsAi, RecordingAnalytics } from "@/types";
 
 const getRecordingAnalytics = vi.fn();
 
 const generateRecordingAnalytics = vi.fn();
 
+const generateRecordingAiAnalytics = vi.fn();
+
 vi.mock("@/lib/api", () => ({
   getRecordingAnalytics: (...args: unknown[]) => getRecordingAnalytics(...args),
   generateRecordingAnalytics: (...args: unknown[]) =>
     generateRecordingAnalytics(...args),
+  generateRecordingAiAnalytics: (...args: unknown[]) =>
+    generateRecordingAiAnalytics(...args),
 }));
 
 // Recharts measures its container, which jsdom reports as 0x0, so the SVG
@@ -118,6 +122,10 @@ const analytics = (
   delivery_status: "pending",
   delivery_error_message: null,
   delivery_stale: false,
+  ai: null,
+  ai_status: "pending",
+  ai_error_message: null,
+  ai_stale: false,
   ...overrides,
 });
 
@@ -426,5 +434,288 @@ describe("AnalyticsView", () => {
         screen.getByText(/transcript has changed since this was measured/),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+const aiPayload = (overrides: Partial<AnalyticsAi> = {}): AnalyticsAi => ({
+  method_version: 1,
+  computed_at: "2026-08-10T09:00:00Z",
+  event_watermark: 7,
+  topics: [
+    {
+      title: "Rollout plan",
+      start_ms: 0,
+      end_ms: 30_000,
+      summary: "How widely to ship the pilot.",
+      led_by: "rs:1",
+      contested: false,
+      leadership_basis: "Proposed the pilot.",
+    },
+    {
+      title: "Timeline",
+      start_ms: 30_000,
+      end_ms: 60_000,
+      summary: "Whether March is reachable.",
+      led_by: null,
+      contested: true,
+      leadership_basis: null,
+    },
+  ],
+  sentiment: [
+    {
+      speaker_key: "rs:2",
+      tone: "mixed",
+      summary: "Backed the approach, doubted the date.",
+      citations: [
+        { quote: "Not by March.", start_ms: 12_000, speaker_key: "rs:2" },
+      ],
+    },
+  ],
+  questions: [
+    {
+      question: "Who owns the migration?",
+      asked_by: "rs:1",
+      asked_at_ms: 20_000,
+      answered_by: null,
+      answered_at_ms: null,
+      answer_summary: null,
+    },
+  ],
+  decisions: [
+    {
+      decision: "Pilot with two customers first.",
+      proposed_by: "rs:1",
+      agreed_by: [],
+      objected_by: ["rs:2"],
+      consensus: "assumed",
+      citations: [
+        { quote: "Two customers first.", start_ms: 4_000, speaker_key: "rs:1" },
+      ],
+    },
+  ],
+  excluded: {
+    unknown_speaker_items: 0,
+    uncited_sentiment: 0,
+    uncited_decisions: 0,
+    unverifiable_citations: 0,
+    out_of_range_citations: 0,
+    malformed_items: 0,
+    ambiguous_speaker_names: 0,
+  },
+  transcript_truncated: false,
+  analysed_through_ms: 60_000,
+  ...overrides,
+});
+
+describe("AnalyticsView AI tier", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getRecordingAnalytics.mockResolvedValue(analytics());
+  });
+
+  it("offers the analysis rather than showing it as missing", async () => {
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Analyse meeting" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts the analysis on request", async () => {
+    generateRecordingAiAnalytics.mockResolvedValue({
+      recording_id: "rec-1",
+      ai_status: "generating",
+    });
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    screen.getByRole("button", { name: "Analyse meeting" }).click();
+
+    await waitFor(() =>
+      expect(generateRecordingAiAnalytics).toHaveBeenCalledWith("rec-1"),
+    );
+  });
+
+  it("stays visibly busy while the worker has not yet claimed the task", async () => {
+    // The POST returns as soon as the task is queued, so the read that follows
+    // it still reports "pending". Clearing the busy state on that read dropped
+    // the user back to the button with nothing happening, and invited a second
+    // click that would spend the AI quota twice.
+    generateRecordingAiAnalytics.mockResolvedValue({
+      recording_id: "rec-1",
+      ai_status: "generating",
+    });
+    getRecordingAnalytics.mockResolvedValue(analytics({ ai_status: "pending" }));
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    screen.getByRole("button", { name: "Analyse meeting" }).click();
+
+    await waitFor(() =>
+      expect(screen.getByText(/Analysing the meeting/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Analyse meeting" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("treats a missing AI provider as normal rather than as a failure", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "unavailable" }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/needs an AI provider, and none is configured/),
+      ).toBeInTheDocument(),
+    );
+    // No retry button: there is nothing here for the user to retry.
+    expect(
+      screen.queryByRole("button", { name: "Analyse meeting" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Try again" }),
+    ).not.toBeInTheDocument();
+    // The measured tiers are unaffected by the AI tier being unavailable.
+    expect(screen.getByText("Dana")).toBeInTheDocument();
+  });
+
+  it("reports a failed analysis with a way to retry", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        ai_status: "error",
+        ai_error_message: "This meeting could not be analysed.",
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("This meeting could not be analysed."),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says the analysis is running while it is", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "generating" }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Analysing the meeting/)).toBeInTheDocument(),
+    );
+  });
+
+  it("shows topics, sentiment, questions and decision ownership", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "completed", ai: aiPayload() }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Rollout plan")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Led by Dana")).toBeInTheDocument();
+    // A topic nobody owned says so rather than picking somebody.
+    expect(
+      screen.getByText("Led jointly, or by no one in particular"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Mixed")).toBeInTheDocument();
+    expect(screen.getByText("Unanswered")).toBeInTheDocument();
+    expect(screen.getByText("Pilot with two customers first.")).toBeInTheDocument();
+    // "Assumed" consensus must never read as agreement. It appears twice: as
+    // the badge on the decision, and in the note explaining what it means.
+    expect(screen.getAllByText("Unchallenged")).toHaveLength(2);
+    expect(
+      screen.getByText(/means nobody objected, which is not the same as agreement/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Pushed back")).toBeInTheDocument();
+  });
+
+  it("shows the quote behind every claim about a person", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "completed", ai: aiPayload() }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Not by March\./)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Two customers first\./)).toBeInTheDocument();
+  });
+
+  it("plays back the quote behind a claim so it can be checked", async () => {
+    const onPlaySegment = vi.fn();
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "completed", ai: aiPayload() }),
+    );
+
+    renderWithProviders(
+      <AnalyticsView recordingId="rec-1" onPlaySegment={onPlaySegment} />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/Not by March\./)).toBeInTheDocument(),
+    );
+    screen.getByTitle("Play from 0:12").click();
+
+    expect(onPlaySegment).toHaveBeenCalledWith(12_000);
+  });
+
+  it("keeps sentiment and measured delivery visibly separate", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "completed", ai: aiPayload() }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/not combined with the measured delivery figures/),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("reports a stale analysis rather than quietly serving an old one", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ ai_status: "completed", ai_stale: true, ai: aiPayload() }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/transcript has changed since this was written/),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("discloses a meeting that was too long to analyse in full", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        ai_status: "completed",
+        ai: aiPayload({ transcript_truncated: true, analysed_through_ms: 45_000 }),
+      }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/too long to analyse in full/),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/0:45 only/)).toBeInTheDocument();
   });
 });

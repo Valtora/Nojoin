@@ -36,7 +36,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 - Optional fully local AI with Ollama
 - `Meeting Edge` live meeting guidance with questions, missed points, and concept help
 - AI-generated meeting notes
-- Meeting analytics measured from the transcript: talk-time share, turn structure, interruptions, and how the balance shifted through the call
+- Meeting analytics measured from the transcript: talk-time share, turn structure, interruptions, and how the balance shifted through the call, plus an optional AI reading of the topics, the questions nobody answered, and who owned each decision
 - AI-powered Meeting Chat grounded in the transcript, notes, and uploaded documents
 - Global speaker library with voiceprints and speaker matching
 - Google and Outlook calendar sync with meeting context in the dashboard

@@ -81,4 +81,18 @@ class Transcript(BaseDBModel, table=True):
     )  # pending, generating, completed, error
     analytics_error_message: Optional[str] = Field(default=None, sa_column=Column(Text))
 
+    # The AI analytics tier (topics and who led them, sentiment from the words,
+    # question/answer mapping, decision ownership) has its own status because it
+    # has a state the measured tier does not: 'unavailable', meaning no AI
+    # provider is configured. That is a normal condition on a perfectly healthy
+    # install, and reporting it as 'error' would tell the user something is
+    # broken when nothing is. Its payload lives under the 'ai' key of
+    # analytics_payload above, carrying its own method version and watermark.
+    analytics_ai_status: str = Field(
+        default="pending"
+    )  # pending, generating, completed, error, unavailable
+    analytics_ai_error_message: Optional[str] = Field(
+        default=None, sa_column=Column(Text)
+    )
+
     recording: "Recording" = Relationship(back_populates="transcript")

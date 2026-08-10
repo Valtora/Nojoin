@@ -8,6 +8,10 @@ from backend.utils.chat_prompt import (
     build_chat_messages,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.meeting_analysis import (
+    MeetingAnalysisRequest,
+    MeetingAnalysisResult,
+)
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -402,6 +406,66 @@ class AnthropicLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
             raise RuntimeError(f"Anthropic API error (Meeting Edge): {e}")
+
+    # Fixed rather than laddered. The analysis schema is bounded (a capped
+    # number of topics, sentiment entries, questions and decisions), so this is
+    # several times the largest legitimate response, and it stays under the
+    # roughly 21,000-token point at which the SDK refuses a non-streaming
+    # request outright.
+    MEETING_ANALYSIS_MAX_OUTPUT_TOKENS = 16_000
+
+    def generate_meeting_analysis(
+        self,
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+        timeout: int = 300,
+    ) -> MeetingAnalysisResult:
+        # The instruction half is identical for every meeting on an install, so
+        # it carries the cache breakpoint; the meeting's own speakers and
+        # transcript follow it. The two concatenate to the same prompt.
+        prefix, suffix = self.build_meeting_analysis_prompt_parts(
+            request, prompt_template
+        )
+        if prefix:
+            user_content = [
+                {
+                    "type": "text",
+                    "text": prefix,
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {"type": "text", "text": suffix},
+            ]
+        else:
+            user_content = suffix
+        if not self.model:
+            raise ValueError(
+                "No Anthropic model configured. Please select a model in Settings."
+            )
+        try:
+            # No assistant prefill: a last-assistant-turn prefill 400s on
+            # current Claude models. The prompt mandates a bare JSON object and
+            # the parser tolerates fencing, so nothing is lost.
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.MEETING_ANALYSIS_MAX_OUTPUT_TOKENS,
+                messages=[{"role": "user", "content": user_content}],
+                temperature=0.2,
+                timeout=timeout,
+            )
+            if str(getattr(response, "stop_reason", "") or "").lower() == "max_tokens":
+                raise RuntimeError(
+                    "Anthropic stopped generating before the analysis was "
+                    "complete, so it would have been cut off mid-item."
+                )
+            text = (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else response.content[0]
+            )
+            return self.parse_meeting_analysis_result(text, request)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Anthropic API error (meeting analysis): {e}")
+            raise RuntimeError(f"Anthropic API error (meeting analysis): {e}")
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 

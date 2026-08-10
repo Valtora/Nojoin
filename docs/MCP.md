@@ -2,7 +2,7 @@
 
 Nojoin ships a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so AI assistants such as Claude can work with your meeting library — recordings, transcripts, meeting notes, attached documents, speakers, tags, and your People library — directly from your own deployment.
 
-The connector is a full agentic interface with two access tiers. **Read** tools (`mcp:read`) cover the whole library, including semantic search across every meeting and document and measured speaking-dynamics analytics for any processed meeting. **Write** tools (`mcp:write`) cover recoverable changes: organising recordings (rename, tag, archive, bin, restore), managing tasks, correcting transcripts, regenerating notes, attaching text documents, appending user notes, and maintaining People records. Everything an assistant changes stays recoverable by you: archived and binned items restore, transcript edits are tracked in the edit log, and the assistant never authors AI-note content directly. **Permanent deletion is not possible through the connector at all** — the strongest deletion verb is moving a recording to the bin, and emptying the bin exists only in the web app. Because Nojoin exposes clean primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
+The connector is a full agentic interface with two access tiers. **Read** tools (`mcp:read`) cover the whole library, including semantic search across every meeting and document and measured speaking-dynamics analytics for any processed meeting. **Write** tools (`mcp:write`) cover recoverable changes: organising recordings (rename, tag, archive, bin, restore), managing tasks, correcting transcripts, regenerating notes, running the AI analysis of a meeting, attaching text documents, appending user notes, and maintaining People records. Everything an assistant changes stays recoverable by you: archived and binned items restore, transcript edits are tracked in the edit log, and the assistant never authors AI-note content directly. Two of them — `regenerate_notes` and `analyse_meeting` — spend your AI provider quota, which is the one cost a write tool here can impose that undoing the change does not refund. **Permanent deletion is not possible through the connector at all** — the strongest deletion verb is moving a recording to the bin, and emptying the bin exists only in the web app. Because Nojoin exposes clean primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
 
 ## Requirements
 
@@ -76,8 +76,12 @@ Known upstream issue: some Codex Desktop builds (observed on 0.125.0-alpha.3) co
 
 ## Available Tools
 
-Thirty-one tools. Thirteen read and eighteen write; the table below pairs a few of them onto one
+Thirty-two tools. Thirteen read and nineteen write; the table below pairs a few of them onto one
 row where they are opposites of each other, so it has fewer rows than there are tools.
+
+One write tool, `analyse_meeting`, is unlike the rest: it spends your AI provider quota rather than
+making a free, reversible edit. Its description says so, so an assistant knows to ask rather than
+run it speculatively.
 
 | Tool | Scope | Description |
 | --- | --- | --- |
@@ -87,7 +91,7 @@ row where they are opposites of each other, so it has fewer rows than there are 
 | `search_context` | `mcp:read` | Semantic search across every transcript and attached document, with recording, timestamp, and page provenance on each hit. |
 | `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
-| `get_meeting_analytics` | `mcp:read` | Speaking dynamics for one meeting: talk-time share, turn counts, median and longest turn, directional interruption counts, median response time, a talk-share timeline, and silence and overlap totals, plus measured delivery (pace, pitch and its movement, pausing) where that has been generated. Every figure here is measured from the transcript's timings or the audio, never inferred by a model, and matches the app's Analytics tab exactly. Delivery describes how someone spoke and is explicitly not sentiment or mood. When `conversation.overlapping_speech_present` is false the transcript holds no overlapping speech at all, so the interruption counts are zero by construction rather than measured. Carries `attribution_warnings` when speaker attribution for that recording looks unreliable. |
+| `get_meeting_analytics` | `mcp:read` | Speaking dynamics for one meeting: talk-time share, turn counts, median and longest turn, directional interruption counts, median response time, a talk-share timeline, and silence and overlap totals, plus measured delivery (pace, pitch and its movement, pausing) where that has been generated. Every figure here is measured from the transcript's timings or the audio, never inferred by a model, and matches the app's Analytics tab exactly. Delivery describes how someone spoke and is explicitly not sentiment or mood. When `conversation.overlapping_speech_present` is false the transcript holds no overlapping speech at all, so the interruption counts are zero by construction rather than measured. Also returns `ai_analysis` where a meeting has been analysed: topics and who led them, sentiment read from the words, question/answer mapping, and decision ownership, each claim carrying timestamped quotes. Carries `attribution_warnings` when speaker attribution for that recording looks unreliable. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
 | `list_tags` | `mcp:read` | Your tag list, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes, and tags. |
@@ -100,6 +104,7 @@ row where they are opposites of each other, so it has fewer rows than there are 
 | `trash_recording` | `mcp:write` | Move a recording to the bin (soft delete, reversible). |
 | `reprocess_recording` | `mcp:write` | Re-run the processing pipeline for a recording. |
 | `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline; the assistant never writes note content itself. |
+| `analyse_meeting` | `mcp:write` | Run the AI analysis of a meeting's dynamics for a meeting that has none, then read it with `get_meeting_analytics`. **This one spends your AI provider quota**, unlike every other write tool here, and the tool description tells the assistant to ask first rather than run it speculatively. Claims it cannot evidence with a quote from the transcript are discarded rather than returned. |
 | `attach_document` | `mcp:write` | Attach assistant-authored text as a markdown document; binary uploads stay in the web app. |
 | `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. The app labels the result `AI corrected text` or `AI corrected speaker`, so an assistant's correction is visibly distinct from one made in the web app, and stays so across reprocessing. |
 | `unlock_utterance` | `mcp:write` | Release an utterance's manual-edit locks so reprocessing may overwrite it again; the clearing is itself an audited event. |

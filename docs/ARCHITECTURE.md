@@ -187,6 +187,69 @@ measured against, which is what makes staleness detectable without a second
 column. Stale never means regenerate automatically — rereading a recording's
 audio is work the user should ask for.
 
+#### AI Analysis
+
+The third analytics tier is neither derived nor measured: it is a model reading
+the transcript. It reports the topics the meeting moved through and who drove
+each, how each speaker's *words* read, which questions were asked and which went
+unanswered, and who proposed, agreed with, or objected to each decision. It
+lives in [backend/utils/meeting_analysis/](../backend/utils/meeting_analysis/)
+(prompt and contract) and
+[backend/worker/tasks/analytics_ai.py](../backend/worker/tasks/analytics_ai.py)
+(the task), and stores under the `ai` key of the same `analytics_payload`.
+
+The tier is **optional**, which is why it has its own `analytics_ai_status`
+column rather than sharing the delivery tier's. It needs a fifth state the
+measured tier does not have — `unavailable`, meaning no AI provider is
+configured — and that is a normal condition on a healthy install rather than an
+error. Sharing one column would also let an AI failure mark measured delivery as
+broken, when the two are produced by different lanes from different inputs.
+
+It is **never dispatched automatically**, unlike the delivery tier. One run is
+one long call against the user's own AI quota, answering questions most meetings
+are never asked, so it runs from the Analytics tab's button or the MCP
+`analyse_meeting` tool. It is network-bound, so it runs on the **IO lane**,
+matching how finalise already hands meeting intelligence there for non-local
+providers. Both stored tiers therefore write one JSONB column from two lanes,
+which is why each merges under a row lock through
+[backend/utils/analytics_payload.py](../backend/utils/analytics_payload.py)
+rather than assigning the column.
+
+Three rules make a model's reading safe to attach to a named colleague, and all
+three are enforced in the parser rather than trusted to the prompt. **Speakers
+are an allowlist**: the model is given the meeting's own display names and
+anything attributed to a name it was not given is discarded, because a name it
+was not given is a name it invented. **Citations are verified, not accepted**: a
+quote must appear in the transcript that was actually sent, normalised for case
+and punctuation and checked against the whole corpus so a quote spanning a turn
+boundary still passes, and its timestamp must fall inside the meeting. A
+sentiment or decision item left with no surviving citation is **dropped**, not
+shown — an unfalsifiable claim about a person is the worst output this feature
+can produce, and decision ownership holds to that rule precisely because naming
+who pushed back against a colleague is the most consequential thing here. And
+**everything discarded is counted**, so a thin result is distinguishable from a
+quiet meeting.
+
+Sentiment is read from the words and nothing else. It is deliberately **not
+fused** with the delivery descriptors above: those measure the sound of a voice,
+these read language, and combining them into one score would manufacture a
+confidence neither source supports. The two are presented as separate,
+differently-sourced things, and no emotion model is involved in either.
+
+The boundary with meeting notes is deliberate and stated to the model in the
+prompt as well as enforced by what the schema can express. Notes remain the
+record of *what* was decided and what happens next; this tier answers *who* —
+who drove a topic, whose question went unanswered, who owned a decision — and
+never authors a decision log. Consensus is reported as `stated`, `assumed`, or
+`none`, and `assumed` means the decision merely went unchallenged, which the
+interface must never render as agreement.
+
+A very long meeting is truncated rather than refused, and the payload records
+that it was along with how far the analysis reached. As with delivery, the
+stored block carries a method version and a transcript event watermark, and
+staleness shows a banner with a regenerate button rather than triggering another
+call the user did not ask for.
+
 ### Web Client
 
 The web client is responsible for:

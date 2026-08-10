@@ -210,6 +210,11 @@ class SecondaryLLMBackend(LLMBackend):
             "generate_meeting_edge", request, prompt_template, timeout
         )
 
+    def generate_meeting_analysis(self, request, prompt_template=None, timeout=300):
+        return self._call_with_secondary(
+            "generate_meeting_analysis", request, prompt_template, timeout
+        )
+
     def generate_meeting_notes(  # noqa: PLR0913 - matches the LLMBackend contract
         self,
         transcript,

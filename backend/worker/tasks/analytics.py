@@ -13,6 +13,7 @@ import logging
 import os
 from typing import Any
 
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.celery_app import celery_app
@@ -20,6 +21,7 @@ from backend.core.db import get_sync_session
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
+from backend.utils.analytics_payload import DELIVERY_KEY, merge_analytics_payload
 from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -146,16 +148,31 @@ def compute_delivery_analytics_task(recording_id: int) -> dict[str, Any]:
                 session.commit()
             return {"status": "error", "recording_id": recording_id}
 
-        transcript.analytics_payload = {
-            "delivery": delivery,
-            "method_version": delivery["method_version"],
-            "computed_at": utc_now().isoformat(),
-            # The cursor this was measured against. A later cursor means the
-            # transcript moved underneath it, which the interface reports as
-            # stale rather than silently recomputing: rereading the audio is
-            # work the user should ask for.
-            "event_watermark": watermark,
-        }
+        # Merged under a row lock rather than assigned. The AI tier writes the
+        # same column from the IO lane, so assigning the whole payload here
+        # would drop its block whenever the two ran close together.
+        transcript = session.exec(
+            select(Transcript)
+            .where(Transcript.recording_id == recording_id)
+            .with_for_update()
+        ).first()
+        if transcript is None:
+            return {"status": "skipped", "reason": "transcript_not_found"}
+
+        transcript.analytics_payload = merge_analytics_payload(
+            transcript.analytics_payload,
+            {
+                DELIVERY_KEY: delivery,
+                "method_version": delivery["method_version"],
+                "computed_at": utc_now().isoformat(),
+                # The cursor this was measured against. A later cursor means the
+                # transcript moved underneath it, which the interface reports as
+                # stale rather than silently recomputing: rereading the audio is
+                # work the user should ask for.
+                "event_watermark": watermark,
+            },
+        )
+        flag_modified(transcript, "analytics_payload")
         transcript.analytics_status = "completed"
         transcript.analytics_error_message = None
         session.add(transcript)

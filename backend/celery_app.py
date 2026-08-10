@@ -195,6 +195,10 @@ TASK_ROUTES = {
     "backend.worker.tasks.cleanup_backup_artifacts": {"queue": IO_QUEUE},
     # IO/LLM lane: network-bound (LLM APIs, calendar) and light bookkeeping.
     "backend.worker.tasks.refresh_meeting_edge_task": {"queue": IO_QUEUE},
+    # One long LLM call over a finished transcript. Network-bound for every
+    # provider but local Ollama, so it belongs with the rest of the meeting
+    # intelligence rather than on a lane a live meeting is waiting for.
+    "backend.worker.tasks.compute_meeting_analysis_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_notes_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.generate_meeting_intelligence_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.infer_speakers_task": {"queue": IO_QUEUE},

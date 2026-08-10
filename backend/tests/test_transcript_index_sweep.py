@@ -43,6 +43,8 @@ CREATE TABLE transcripts (
     notes_stale_documents BOOLEAN DEFAULT 0, transcript_status VARCHAR, error_message TEXT,
     analytics_payload JSON,
     analytics_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_ai_status VARCHAR NOT NULL DEFAULT 'pending',
+    analytics_ai_error_message TEXT,
     analytics_error_message TEXT
 );
 CREATE TABLE context_chunks (

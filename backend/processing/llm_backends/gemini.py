@@ -2,6 +2,10 @@ import logging
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
 from backend.utils.config_manager import config_manager
+from backend.utils.meeting_analysis import (
+    MeetingAnalysisRequest,
+    MeetingAnalysisResult,
+)
 from backend.utils.meeting_edge import (
     MeetingEdgeRequest,
     MeetingEdgeResult,
@@ -317,6 +321,39 @@ class GeminiLLMBackend(LLMBackend):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Gemini API error (Meeting Edge): {e}")
             raise RuntimeError(f"Gemini API error (Meeting Edge): {e}")
+
+    def generate_meeting_analysis(
+        self,
+        request: MeetingAnalysisRequest,
+        prompt_template: str = None,
+        timeout: int = 300,
+    ) -> MeetingAnalysisResult:
+        prompt = self.build_meeting_analysis_prompt(request, prompt_template)
+        if not self.model:
+            raise ValueError(
+                "No Gemini model configured. Please select a model in Settings."
+            )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=self.genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    # Low but not zero: the analysis has to choose between
+                    # defensible readings of the same exchange, and greedy
+                    # decoding on a long structured output degrades rather
+                    # than stabilises it.
+                    temperature=0.2,
+                    http_options=self.genai.types.HttpOptions(
+                        timeout=int(timeout * 1000),
+                    ),
+                ),
+            )
+            text = self._extract_text_from_response(response)
+            return self.parse_meeting_analysis_result(text, request)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Gemini API error (meeting analysis): {e}")
+            raise RuntimeError(f"Gemini API error (meeting analysis): {e}")
 
     # infer_speakers_and_generate_notes is inherited and calls the above two methods
 

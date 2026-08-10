@@ -1056,6 +1056,12 @@ export interface RecordingAnalytics {
   // The transcript moved after delivery was measured, so those figures
   // describe a transcript that no longer exists.
   delivery_stale: boolean;
+  ai: AnalyticsAi | null;
+  ai_status: AnalyticsAiStatus;
+  ai_error_message: string | null;
+  // As delivery_stale, but tracked separately: each tier carries its own
+  // watermark, so editing the transcript between the two does not mark both.
+  ai_stale: boolean;
 }
 
 // Measured vocal delivery. These describe how someone spoke, not how they
@@ -1090,3 +1096,93 @@ export type AnalyticsDeliveryStatus =
   | "generating"
   | "completed"
   | "error";
+
+// The AI tier. Unlike everything above, these are a model's reading of the
+// transcript rather than a measurement, which is why every sentiment and
+// decision item carries quotes: an item whose quote could not be found in the
+// transcript was discarded by the backend before it reached here.
+//
+// Sentiment is read from the words alone and is deliberately never combined
+// with AnalyticsDelivery, which measures the sound of a voice. The two are
+// different kinds of evidence and are presented separately.
+export type AnalyticsAiStatus =
+  | "pending"
+  | "generating"
+  | "completed"
+  | "error"
+  // No AI provider is configured on this install. A normal state, not a fault.
+  | "unavailable";
+
+export type AnalyticsTone = "positive" | "negative" | "neutral" | "mixed";
+
+export type AnalyticsConsensus = "stated" | "assumed" | "none";
+
+export interface AnalyticsCitation {
+  quote: string;
+  start_ms: number | null;
+  speaker_key: string | null;
+}
+
+export interface AnalyticsAiTopic {
+  title: string;
+  start_ms: number | null;
+  end_ms: number | null;
+  summary: string;
+  // A speaker key, or null when nobody could be attributed.
+  led_by: string | null;
+  // Two or more speakers drove it roughly equally, or nobody did.
+  contested: boolean;
+  leadership_basis: string | null;
+}
+
+export interface AnalyticsAiSentiment {
+  speaker_key: string;
+  tone: AnalyticsTone;
+  summary: string;
+  citations: AnalyticsCitation[];
+}
+
+export interface AnalyticsAiQuestion {
+  question: string;
+  asked_by: string;
+  asked_at_ms: number | null;
+  answered_by: string | null;
+  answered_at_ms: number | null;
+  answer_summary: string | null;
+}
+
+export interface AnalyticsAiDecision {
+  decision: string;
+  proposed_by: string | null;
+  agreed_by: string[];
+  objected_by: string[];
+  consensus: AnalyticsConsensus;
+  citations: AnalyticsCitation[];
+}
+
+// Counts of what the evidence rules threw away, so a thin result is
+// distinguishable from a quiet meeting.
+export interface AnalyticsAiExclusions {
+  unknown_speaker_items: number;
+  uncited_sentiment: number;
+  uncited_decisions: number;
+  unverifiable_citations: number;
+  out_of_range_citations: number;
+  malformed_items: number;
+  ambiguous_speaker_names: number;
+}
+
+export interface AnalyticsAi {
+  method_version: number;
+  computed_at: string;
+  event_watermark: number;
+  topics: AnalyticsAiTopic[];
+  sentiment: AnalyticsAiSentiment[];
+  questions: AnalyticsAiQuestion[];
+  decisions: AnalyticsAiDecision[];
+  excluded: AnalyticsAiExclusions;
+  // True when the meeting was too long to send in full, so the analysis
+  // covers only up to analysed_through_ms.
+  transcript_truncated: boolean;
+  analysed_through_ms: number;
+}
