@@ -5,12 +5,10 @@ import os
 from contextlib import contextmanager
 from importlib import import_module
 
-from sqlalchemy import or_, text
-from sqlmodel import Session, select
+from sqlalchemy import text
+from sqlmodel import Session
 
 from backend.core.db import sync_engine
-from backend.models.task import UserTask
-from backend.models.user import User
 from backend.startup_migrations import wait_for_database_connection
 from backend.utils.canonical_pipeline import (
     list_pending_startup_cutover_recording_ids,
@@ -25,9 +23,6 @@ STARTUP_CANONICAL_CUTOVER_BATCH_SIZE_ENV_VAR = (
 )
 STARTUP_CANONICAL_CUTOVER_ADVISORY_LOCK_ID = 640_227_114_901_337_251
 TRUE_VALUES = {"1", "true", "yes", "on"}
-COMPANION_RETIREMENT_NOTICE_TITLE = (
-    "Companion app retired. Recording is now browser-only. See docs/CAPTURE.md."
-)
 MODEL_MODULES = (
     "backend.models.recording",
     "backend.models.speaker",
@@ -62,35 +57,6 @@ def _batch_size() -> int:
     except ValueError:
         return 100
     return max(parsed, 1)
-
-
-def _ensure_companion_retirement_notice(session: Session) -> int:
-    # Delivery is tracked on the user, not by looking for the notice task. The task
-    # is the message, not the receipt: dismissing it deletes the row outright, so
-    # keying off its presence re-delivered the notice on every subsequent boot.
-    admin_users = session.exec(
-        select(User).where(
-            or_(
-                User.role.in_(["owner", "admin"]),
-                User.is_superuser == True,
-            ),
-            User.has_seen_companion_retirement_notice == False,
-        )
-    ).all()
-
-    created = 0
-    for admin_user in admin_users:
-        session.add(
-            UserTask(
-                title=COMPANION_RETIREMENT_NOTICE_TITLE,
-                user_id=admin_user.id,
-            )
-        )
-        admin_user.has_seen_companion_retirement_notice = True
-        session.add(admin_user)
-        created += 1
-
-    return created
 
 
 @contextmanager
@@ -132,7 +98,6 @@ def run_startup_canonical_cutover() -> dict[str, int]:
         "already_reprocess_required": 0,
         "skipped_unified": 0,
         "missing": 0,
-        "retirement_notices": 0,
     }
 
     # The advisory lock is held on a dedicated autocommit connection so no
@@ -143,13 +108,6 @@ def run_startup_canonical_cutover() -> dict[str, int]:
         isolation_level="AUTOCOMMIT"
     ) as lock_connection:
         with _advisory_lock(lock_connection):
-            with Session(sync_engine) as session:
-                summary["retirement_notices"] = _ensure_companion_retirement_notice(
-                    session
-                )
-                if summary["retirement_notices"]:
-                    session.commit()
-
             processed_ids: set[int] = set()
             while True:
                 with Session(sync_engine) as session:

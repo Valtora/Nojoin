@@ -4,11 +4,11 @@ The driver previously bound its sessions to the same connection that held
 the Postgres advisory lock. Acquiring the lock autobegan a connection-level
 transaction, every session then joined it via savepoints, and the whole
 sweep was rolled back when the connection closed on exit -- classifications
-and retirement notices never persisted, so each boot re-ran the entire
-sweep. These tests run the driver end to end against a file-backed SQLite
-database, patch the advisory lock helper so it executes a statement on the
-lock connection exactly like the Postgres implementation does, and assert
-durability from fresh connections after the driver returns.
+never persisted, so each boot re-ran the entire sweep. These tests run the
+driver end to end against a file-backed SQLite database, patch the advisory
+lock helper so it executes a statement on the lock connection exactly like
+the Postgres implementation does, and assert durability from fresh
+connections after the driver returns.
 """
 
 from __future__ import annotations
@@ -155,7 +155,6 @@ def test_cutover_results_survive_connection_close(tmp_path, monkeypatch) -> None
     summary = cutover.run_startup_canonical_cutover()
 
     assert summary["backfilled"] == 1
-    assert summary["retirement_notices"] == 1
 
     # Read back through fresh connections: the driver has fully returned, so
     # anything visible now genuinely committed.
@@ -163,18 +162,11 @@ def test_cutover_results_survive_connection_close(tmp_path, monkeypatch) -> None
         generation = connection.execute(
             text("SELECT pipeline_generation FROM recordings WHERE id = 1")
         ).scalar_one()
-        notices = connection.execute(
-            text(
-                "SELECT COUNT(*) FROM user_tasks "
-                "WHERE title LIKE 'Companion app retired%'"
-            )
-        ).scalar_one()
         utterances = connection.execute(
             text("SELECT COUNT(*) FROM transcript_utterances WHERE recording_id = 1")
         ).scalar_one()
 
     assert generation == "legacy_backfilled"
-    assert notices == 1
     assert utterances == 1
 
 
@@ -189,86 +181,20 @@ def test_cutover_second_run_is_a_noop(tmp_path, monkeypatch) -> None:
     assert first_summary["backfilled"] == 1
     assert second_summary["backfilled"] == 0
     assert second_summary["already_canonical"] == 0
-    assert second_summary["retirement_notices"] == 0
-
-    with engine.connect() as connection:
-        notices = connection.execute(
-            text(
-                "SELECT COUNT(*) FROM user_tasks "
-                "WHERE title LIKE 'Companion app retired%'"
-            )
-        ).scalar_one()
-
-    assert notices == 1
 
 
-def _count_notices(engine: Engine) -> int:
-    with engine.connect() as connection:
-        return connection.execute(
-            text(
-                "SELECT COUNT(*) FROM user_tasks "
-                "WHERE title LIKE 'Companion app retired%'"
-            )
-        ).scalar_one()
-
-
-def test_dismissed_retirement_notice_is_not_redelivered(tmp_path, monkeypatch) -> None:
-    # Dismissing a task hard-deletes the row, so the notice's own presence cannot
-    # be the record that it was delivered -- the boot after a dismissal used to
-    # recreate it, and it came back on every rebuild thereafter.
-    engine = _build_engine(tmp_path)
-    _seed_admin_and_legacy_recording(engine)
-    _patch_driver(monkeypatch, engine)
-
-    assert cutover.run_startup_canonical_cutover()["retirement_notices"] == 1
-    assert _count_notices(engine) == 1
-
-    with engine.begin() as connection:
-        connection.execute(
-            text("DELETE FROM user_tasks WHERE title LIKE 'Companion app retired%'")
-        )
-
-    summary = cutover.run_startup_canonical_cutover()
-
-    assert summary["retirement_notices"] == 0
-    assert _count_notices(engine) == 0
-
-
-def test_retirement_notice_delivery_is_recorded_on_the_user(
-    tmp_path, monkeypatch
-) -> None:
+def test_cutover_creates_no_tasks(tmp_path, monkeypatch) -> None:
+    # The sweep used to hand admins a companion-retirement notice at every boot
+    # until they had been marked as having seen it. That announcement is gone;
+    # booting must not put anything in anybody's task list.
     engine = _build_engine(tmp_path)
     _seed_admin_and_legacy_recording(engine)
     _patch_driver(monkeypatch, engine)
 
     cutover.run_startup_canonical_cutover()
+    cutover.run_startup_canonical_cutover()
 
     with engine.connect() as connection:
-        seen = connection.execute(
-            text("SELECT has_seen_companion_retirement_notice FROM users WHERE id = 1")
-        ).scalar_one()
+        tasks = connection.execute(text("SELECT COUNT(*) FROM user_tasks")).scalar_one()
 
-    assert seen
-
-
-def test_completed_retirement_notice_is_not_duplicated(tmp_path, monkeypatch) -> None:
-    # Completing rather than deleting leaves the row in place; the notice must not
-    # be delivered a second time alongside the completed one.
-    engine = _build_engine(tmp_path)
-    _seed_admin_and_legacy_recording(engine)
-    _patch_driver(monkeypatch, engine)
-
-    cutover.run_startup_canonical_cutover()
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "UPDATE user_tasks SET completed_at = :now "
-                "WHERE title LIKE 'Companion app retired%'"
-            ),
-            {"now": "2026-05-20 00:00:00"},
-        )
-
-    summary = cutover.run_startup_canonical_cutover()
-
-    assert summary["retirement_notices"] == 0
-    assert _count_notices(engine) == 1
+    assert tasks == 0

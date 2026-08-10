@@ -29,7 +29,6 @@ CREATE TABLE users (
     token_version INTEGER NOT NULL,
     settings JSON,
     has_seen_demo_recording BOOLEAN NOT NULL,
-    has_seen_companion_retirement_notice BOOLEAN NOT NULL DEFAULT 0,
     invitation_id INTEGER
 );
 CREATE TABLE recordings (

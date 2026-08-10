@@ -88,9 +88,8 @@ def _seed(connection, *, audio_path: str, utterance_count: int = 6) -> None:
         text(
             "INSERT INTO users (id, created_at, updated_at, username, "
             "hashed_password, is_active, is_superuser, force_password_change, "
-            "role, token_version, has_seen_demo_recording, "
-            "has_seen_companion_retirement_notice) VALUES "
-            "(1, :ts, :ts, 'alice', 'x', 1, 0, 0, 'user', 0, 0, 0)"
+            "role, token_version, has_seen_demo_recording) VALUES "
+            "(1, :ts, :ts, 'alice', 'x', 1, 0, 0, 'user', 0, 0)"
         ),
         {"ts": _now()},
     )
