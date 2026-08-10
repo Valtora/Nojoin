@@ -54,9 +54,8 @@ def _seed_user(connection, user_id: int = 1, username: str = "alice") -> None:
         text(
             "INSERT INTO users (id, created_at, updated_at, username, "
             "hashed_password, is_active, is_superuser, force_password_change, "
-            "role, token_version, has_seen_demo_recording, "
-            "has_seen_companion_retirement_notice) VALUES "
-            "(:id, :ts, :ts, :name, 'x', 1, 0, 0, 'user', 0, 0, 0)"
+            "role, token_version, has_seen_demo_recording) VALUES "
+            "(:id, :ts, :ts, :name, 'x', 1, 0, 0, 'user', 0, 0)"
         ),
         {"id": user_id, "name": username, "ts": _now()},
     )

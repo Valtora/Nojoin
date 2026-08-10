@@ -31,10 +31,6 @@ class User(BaseDBModel, table=True):
     token_version: int = Field(default=0, nullable=False)
     settings: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB))
     has_seen_demo_recording: bool = Field(default=False)
-    # Durable record that the one-time companion-retirement notice was delivered.
-    # The notice task itself cannot carry this: deleting it is how a user dismisses
-    # it, which would otherwise erase the evidence and re-deliver on next boot.
-    has_seen_companion_retirement_notice: bool = Field(default=False)
 
     invitation_id: Optional[int] = Field(default=None, foreign_key="invitations.id")
 
