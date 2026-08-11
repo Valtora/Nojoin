@@ -33,6 +33,7 @@ import {
   getRecordingsCalendar,
 } from "@/lib/api";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
+import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
 import { getUserTimeZone, localDayRangeToUtc } from "@/lib/timezone";
 import { format, startOfMonth } from "date-fns";
@@ -371,6 +372,17 @@ export default function Sidebar() {
       window.removeEventListener("tags-updated", handleUpdate);
     };
   }, [fetchRecordings]);
+
+  // A discard from anywhere (live controls, floating badge, resume modal, the
+  // processing view) drops the row here immediately rather than leaving it on
+  // screen until the 15s poll comes round.
+  useEffect(
+    () =>
+      subscribeRecordingRemoved((id) => {
+        setRecordings((prev) => prev.filter((r) => r.id !== id));
+      }),
+    [],
+  );
 
   // Clear selection when view changes
   useEffect(() => {

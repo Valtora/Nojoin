@@ -14,6 +14,7 @@ import {
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import type { Recording, RecordingId } from "@/types";
 
 import { detectCaptureSupport } from "./featureDetect";
@@ -773,7 +774,58 @@ export class CaptureController {
       stopStage: null,
     });
     this.lifecycle.updateRecordingId(null);
+    dispatchRecordingRemoved(targetRecordingId);
     await this.refreshPausedRecording().catch(() => {});
+  };
+
+  /**
+   * Discards a paused recording this tab lost before it banked any audio.
+   *
+   * A document unload during capture is guarded: `handleGuardedExit` pauses the
+   * recording so the audio already uploaded survives. That is right in the
+   * middle of a meeting and wrong immediately after one starts, which is where
+   * it kept landing. A `router.push` degrades to a full-document navigation
+   * whenever Next.js finds the tab running a different build from the server
+   * (any upgrade under an open tab does it), and the app performs exactly such
+   * a push a second after `start()` resolves. The guard then paused a recording
+   * that was seconds old and the reloaded page opened the resume-or-discard
+   * modal over a meeting the user had only just started.
+   *
+   * The guard itself has to stay: `beforeunload`/`pagehide` fire only for a real
+   * unload, so skipping the pause would strand the recording in `UPLOADING`
+   * with no client, where `POST /init` rejects every later start with
+   * `active_recording_exists` and no modal offers a way out.
+   *
+   * So the pause stands and the prompt goes. `lastSequence` in the persisted
+   * context is the uploader's own count of segments the server acknowledged;
+   * below zero means nothing was banked and there is nothing for the user to
+   * decide about. The context is per-tab `sessionStorage`, so this only ever
+   * acts on a capture this tab owned and lost. A recording paused any other way
+   * still goes to the modal.
+   */
+  discardEmptyInterruptedRecording = async (): Promise<boolean> => {
+    const paused = this.state.pausedRecording;
+    if (!paused || this.runtime) {
+      return false;
+    }
+
+    const context = readPausedCaptureContext();
+    if (
+      !context ||
+      context.recordingId !== paused.id ||
+      context.lastSequence >= 0
+    ) {
+      return false;
+    }
+
+    await this.cancel(paused.id);
+    useNotificationStore.getState().addNotification({
+      type: "warning",
+      message:
+        "The last recording was interrupted before any audio was captured, " +
+        "so it was discarded. Start the meeting again to record.",
+    });
+    return true;
   };
 
   private activateRuntime = async (options: {
@@ -1177,6 +1229,18 @@ export class CaptureController {
     const lastSequence = this.state.lastSequence;
     const wasAlreadyPaused = this.state.status === "paused";
 
+    // Written before anything is awaited. This runs during an unload, so the
+    // document can be torn down at the first yield and everything after it may
+    // never execute; the context used to be written in the `finally`, three
+    // awaits later. It is the only record of what this tab was capturing, and
+    // discardEmptyInterruptedRecording needs its sequence count on the next
+    // load to tell an interruption worth resuming from one worth clearing.
+    writePausedCaptureContext({
+      recordingId,
+      lastSequence,
+      persistedAt: Date.now(),
+    });
+
     try {
       await this.runtime.recorder.stop({ emitTail: false });
 
@@ -1194,11 +1258,6 @@ export class CaptureController {
         }
       }
     } finally {
-      writePausedCaptureContext({
-        recordingId,
-        lastSequence,
-        persistedAt: Date.now(),
-      });
       await this.disposeRuntime();
       this.setState({
         status: "paused",

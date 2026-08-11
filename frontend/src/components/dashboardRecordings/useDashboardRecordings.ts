@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getRecordings } from "@/lib/api";
+import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import { Recording, RecordingStatus } from "@/types";
 
 /**
@@ -71,7 +72,15 @@ export function useDashboardRecordings(): DashboardRecordings {
 
     const handleUpdate = () => void load();
     window.addEventListener("recording-updated", handleUpdate);
-    return () => window.removeEventListener("recording-updated", handleUpdate);
+    // A discard is explicit and irreversible, so the row goes now rather than
+    // after the re-fetch a generic update would need.
+    const unsubscribeRemoved = subscribeRecordingRemoved((id) => {
+      setRecordings((prev) => prev.filter((recording) => recording.id !== id));
+    });
+    return () => {
+      window.removeEventListener("recording-updated", handleUpdate);
+      unsubscribeRemoved();
+    };
   }, [load]);
 
   const sorted = sortByNewest(recordings);

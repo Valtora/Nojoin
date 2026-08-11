@@ -29,6 +29,7 @@ import {
   DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
 } from "@/lib/meetingEdgeContext";
 import { getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
+import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import {
   Recording,
   RecordingStatus,
@@ -494,6 +495,19 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     window.addEventListener("recording-updated", handleUpdate);
     return () => window.removeEventListener("recording-updated", handleUpdate);
   }, [recording, isEditingTitle, refreshRecordingView]);
+
+  // Discarding the open recording deletes it, so this page has nothing left to
+  // show. Leaving centrally means every discard surface gets the redirect, not
+  // just the two that happened to wire up their own.
+  useEffect(
+    () =>
+      subscribeRecordingRemoved((removedId) => {
+        if (recording && removedId === recording.id) {
+          navigateToRecordings();
+        }
+      }),
+    [navigateToRecordings, recording],
+  );
 
   // Listen for tour events to switch panels
   useEffect(() => {
