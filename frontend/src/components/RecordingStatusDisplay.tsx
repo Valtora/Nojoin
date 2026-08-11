@@ -289,7 +289,15 @@ export default function RecordingStatusDisplay({
               attached. The transcript takes the height and scrolls; the notes
               sit under it at their own size. */}
           <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
-          <div className="order-1 flex min-h-0 flex-1 flex-col">
+          {/* The transcript card's viewport-relative ceiling. It sits here
+              rather than inside the panel so the card stops growing at the same
+              point its contents do: capping only the inner window let the card
+              follow the grid row down past it whenever the guidance column
+              outgrew the viewport, and the difference showed as dead space
+              between the transcript and the notes. 18rem covers the toolbar
+              above, the workspace padding and the gap, so the notes card below
+              stays on screen. */}
+          <div className="order-1 flex min-h-0 flex-1 flex-col @min-[54rem]:max-h-[calc(100dvh-18rem)]">
             {isActiveRecording ? (
               <LiveTranscriptPanel
                 segments={liveTranscript.segments}
