@@ -70,6 +70,10 @@ vi.mock("./lifecycle", () => ({
   sendPauseBeacon: vi.fn(() => false),
 }));
 
+const sharedMocks = vi.hoisted(() => ({
+  readPausedCaptureContext: vi.fn(() => null as unknown),
+}));
+
 vi.mock("./shared", () => ({
   clearPausedCaptureContext: vi.fn(),
   DEFAULT_CAPTURE_LEVELS: { system: 0, microphone: 0, mixed: 0 },
@@ -81,7 +85,7 @@ vi.mock("./shared", () => ({
     noiseSuppression: true,
     autoGainControl: true,
   })),
-  readPausedCaptureContext: vi.fn(() => null),
+  readPausedCaptureContext: sharedMocks.readPausedCaptureContext,
   writeCaptureSettings: vi.fn(),
   writePausedCaptureContext: vi.fn(),
 }));
@@ -170,6 +174,8 @@ describe("capture controller", () => {
     notificationMocks.addNotification.mockReset();
     apiMocks.getRecording.mockReset();
     apiMocks.getRecording.mockResolvedValue({ id: "rec-1" });
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
     connectivityMocks.status = "online";
   });
 
@@ -973,5 +979,102 @@ describe("capture controller", () => {
     await controller.pollCapturedAudio();
 
     expect(controller.getState().coverageWarning).toBeNull();
+  });
+});
+
+describe("recovering an interrupted capture", () => {
+  const PAUSED = { id: "rec-1", name: "Meeting" };
+
+  const controllerWithPaused = () => {
+    const controller = new CaptureController() as any;
+    controller.state = { ...controller.getState(), pausedRecording: PAUSED };
+    return controller;
+  };
+
+  beforeEach(() => {
+    apiMocks.discardRecordingCapture.mockReset();
+    apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
+    apiMocks.getPausedRecordings.mockReset();
+    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
+    notificationMocks.addNotification.mockReset();
+  });
+
+  it("discards a capture this tab lost before banking any audio", async () => {
+    // What a guarded exit leaves behind when the app's own post-start
+    // navigation unloads the page a second after the recording began.
+    sharedMocks.readPausedCaptureContext.mockReturnValue({
+      recordingId: "rec-1",
+      lastSequence: -1,
+      persistedAt: 1,
+    });
+    const controller = controllerWithPaused();
+
+    await expect(controller.discardEmptyInterruptedRecording()).resolves.toBe(
+      true,
+    );
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(controller.getState().pausedRecording).toBeNull();
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "warning" }),
+    );
+  });
+
+  it("keeps a capture that banked a segment for the user to decide about", async () => {
+    sharedMocks.readPausedCaptureContext.mockReturnValue({
+      recordingId: "rec-1",
+      lastSequence: 0,
+      persistedAt: 1,
+    });
+    const controller = controllerWithPaused();
+
+    await expect(controller.discardEmptyInterruptedRecording()).resolves.toBe(
+      false,
+    );
+    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
+    expect(controller.getState().pausedRecording).toEqual(PAUSED);
+  });
+
+  it("leaves a paused recording this tab never owned alone", async () => {
+    // No persisted context: the pause came from another tab, another device, or
+    // an explicit pause, none of which this tab may resolve on the user's behalf.
+    const controller = controllerWithPaused();
+
+    await expect(controller.discardEmptyInterruptedRecording()).resolves.toBe(
+      false,
+    );
+    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("ignores a context naming a different recording", async () => {
+    sharedMocks.readPausedCaptureContext.mockReturnValue({
+      recordingId: "rec-other",
+      lastSequence: -1,
+      persistedAt: 1,
+    });
+    const controller = controllerWithPaused();
+
+    await expect(controller.discardEmptyInterruptedRecording()).resolves.toBe(
+      false,
+    );
+    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("announces the removal so every list drops the row at once", async () => {
+    const removed: string[] = [];
+    const listener = (event: Event) => {
+      removed.push((event as CustomEvent<{ id: string }>).detail.id);
+    };
+    window.addEventListener("recording-removed", listener);
+
+    try {
+      const controller = new CaptureController() as any;
+      await controller.cancel("rec-1");
+    } finally {
+      window.removeEventListener("recording-removed", listener);
+    }
+
+    expect(removed).toEqual(["rec-1"]);
   });
 });

@@ -141,6 +141,8 @@ Discard is available from the live recording controls, the floating recording ba
 
 If the browser is closed, refreshed, or loses the active recording page during capture, Nojoin pauses the recording to protect already uploaded data. When you return, Nojoin requires you to deal with that recording before starting anything else, offering three choices: resume it, **Stop and process** to keep the audio already captured and start processing, or discard it. Stopping this way does not reopen the browser share picker, so it works even though the original capture session is gone.
 
+If the interruption happened before any audio reached the server, Nojoin discards that recording instead of asking, and tells you to start the meeting again. There is nothing in it to resume or keep, so there is nothing to decide. See [Pause, Resume, Stop, And Discard](CAPTURE.md#pause-resume-stop-and-discard).
+
 Paused recordings are retained indefinitely until you resume, stop, or discard them.
 
 ### Live Transcription

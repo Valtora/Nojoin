@@ -113,13 +113,17 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 - **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button names the current stage during that wait (stopping the recorder, uploading the last segments, releasing the microphone, finalizing). Stop works on a paused recording too, and does not need the original browser capture session to still be active.
 - **Discard** permanently removes a recording in one step. It works for any recording that has not finished: uploading, paused, queued, or processing. Discard revokes any running processing task, releases the capture lock, deletes the captured audio and derived files, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
 
-Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu.
+Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu. Wherever you discard from, the meeting leaves the recordings list and the dashboard immediately, and the recording page closes if you were on it.
 
 Closing the browser share picker with **Cancel** is different from Nojoin's in-app **Discard** action. Picker cancel simply backs out of starting or resuming capture without creating a visible error in the UI, and never deletes an existing recording.
 
 If you are recording in a shared-audio capture mode and click the browser's native **Stop sharing** button (or close the sharing indicator), Nojoin automatically detects that the sharing stream has ended. It will immediately stop and finalise the recording, saving all audio captured up to that point, and display a notification informing you that screen sharing ended and the recording was saved.
 
 Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
+
+An interruption that happened before any audio reached the server is cleared instead of being put to you as a decision. There is nothing to resume and nothing to keep, so Nojoin discards the empty recording, releases the capture lock, and tells you the recording was interrupted and needs starting again. This only applies to a capture the same browser tab lost: a recording paused any other way, or one that banked even a single segment, always goes to the modal.
+
+The case this covers is an upgrade under an open tab. When the Nojoin server is updated while you have the app open, the browser is still running the previous version, so the next page transition reloads the whole app rather than moving within it. If that transition happens to be the one Nojoin makes after **Start Meeting**, the reload unloads the page a second into the recording and the guard pauses it. Nojoin now clears that recording rather than asking about a meeting you have only just started. Press **Start Meeting** again.
 
 Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
 
@@ -145,7 +149,7 @@ Nojoin allows one active browser capture per user. If a paused recording exists,
 - **Stop and process** to finalize the audio already uploaded and queue processing, without recording any more. Use this when the meeting is over, or when the browser capture session was lost and you only want to keep what was captured. It does not reopen the share picker.
 - **Discard recording** to remove the partial upload and start fresh.
 
-Paused recordings are retained indefinitely. They are not cleaned up automatically, and Nojoin never finalizes one on your behalf.
+Paused recordings are retained indefinitely. They are not cleaned up automatically, and Nojoin never finalizes one on your behalf. The one exception is a capture the tab lost before any audio reached the server, which is discarded rather than offered, because it holds nothing to resume or keep. See [Pause, Resume, Stop, And Discard](#pause-resume-stop-and-discard).
 
 ## Capture Settings
 

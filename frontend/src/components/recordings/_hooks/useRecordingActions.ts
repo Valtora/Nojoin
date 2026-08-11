@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { RecordingId } from "@/types";
 
 /**
@@ -150,9 +151,12 @@ export function useRecordingActions(): RecordingActions {
             runtimeActive && captureRecordingId === id;
           const ownsPausedCapture = pausedRecording?.id === id;
           if (ownsLiveCapture || ownsPausedCapture) {
+            // The controller announces the removal itself once the capture is
+            // torn down, so this branch must not announce it a second time.
             await cancelCapture(id);
           } else {
             await discardRecordingCapture(id, "user_discarded");
+            dispatchRecordingRemoved(id);
           }
           addNotification({
             message: "Recording discarded.",
