@@ -138,21 +138,24 @@ export default function LiveTranscriptPanel({
         ) : null}
       </div>
 
-      {/* The window fills its column between a floor and a ceiling, and the
-          ceiling is measured against the viewport rather than in fixed rem.
+      {/* The window fills the card. The viewport-relative ceiling that keeps
+          this panel independent of its neighbour lives on the card instead --
+          see the order-1 wrapper in RecordingStatusDisplay.
 
-          That distinction is the whole fix. This panel is a grid item beside
-          the guidance column, so a plain `flex-1` takes its height from
-          whatever the neighbour's content happens to be: several screens tall
-          when the guidance is long, and back down toward the floor when its
-          sections are collapsed. Neither is about the transcript. Sizing the
-          ceiling from the window decouples the two, so the panel fills the
-          space the page actually has and scrolls past it, which is what a live
-          transcript does anyway.
+          That ceiling's purpose is unchanged: this panel is a grid item beside
+          the guidance column, so a plain `flex-1` would take its height from
+          whatever the neighbour's content happens to be, several screens tall
+          when the guidance is long and back down toward the floor when its
+          sections are collapsed. Neither is about the transcript.
 
-          The 18rem covers the toolbar above it, the workspace padding and the
-          gap, so the notes card underneath stays on screen. */}
-      <div className="relative mt-4 flex min-h-0 max-h-[calc(100dvh-18rem)] flex-1 flex-col">
+          What moved is where it applies. Capping this inner window while the
+          card around it still stretched to the grid row put the dead space
+          *inside* the card: whenever the guidance column outgrew the viewport,
+          the card followed the row down and the window stopped at its own
+          ceiling, leaving a gap between the transcript and the notes below.
+          Capping the card keeps the decoupling and lets the window fill
+          whatever the card actually is. */}
+      <div className="relative mt-4 flex min-h-0 flex-1 flex-col">
         {/* The transcript window is painted by this overlay rather than by the
             scrolling element, and stops short of the right edge by
             SCROLLBAR_GUTTER. A scroll container always draws its scrollbar
