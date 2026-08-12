@@ -16,7 +16,7 @@ Container images for this release. All images are cosign-signed and ship build-p
 - **API stall detection.** Event-loop lag is reported to the container log with Pressure Stall Information naming the cause.
 - **Seven documented environment variables now reach the containers.** One manual step for operators with their own compose file, under Migration.
 - **A denser live workspace**, bounded against the window, and notes tables without their unused ID columns.
-- **A new site at nojoin.io**, replacing the GitHub Pages site.
+- **A new site at www.nojoin.co.uk**, replacing the GitHub Pages site.
 
 ### Upgrade
 
