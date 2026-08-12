@@ -291,10 +291,21 @@ progress bar and two lines of status, which cannot use height at all, so the not
 instead and the progress card keeps its own size. Guidance absorbs in its own column in both states,
 scrolling inside its cell from 54rem, and that is what stops however much guidance has accumulated
 from setting the grid row for the whole surface. Below 54rem it is one item in a stack and the page
-scrolls, so it keeps its natural height there. The alternative was tried twice and does not work: a
-`max-height` on the transcript module capped it against the viewport, which relocated the surplus
-row height rather than removing it, first inside the transcript card and then below it. See the rule
-on capping below.
+scrolls, so it keeps its natural height there.
+
+**This is the one surface whose shell hands down a definite height rather than a floor**, and that
+is what the rest of it rests on. `Workspace` is given `h-full` instead of the dashboard's
+`min-h-full`, with `min-h-0` down the chain to the grid and `grid-template-rows: minmax(0, 1fr)` on
+the row itself, because an `auto` row takes the max-content of its items whatever height the grid
+has. Without all four, whichever column holds the most content sizes the row and drags the other
+with it, and no panel can scroll, because a scroll container needs a height to scroll against.
+Deciding which module absorbs is only meaningful once there is a bounded amount to absorb.
+
+Two things do *not* work here and have both been tried. A `max-height` on the transcript module caps
+it against the viewport, which relocates the surplus row height rather than removing it, first
+inside the transcript card and then below it; see the rule on capping below. Removing that cap
+without bounding the row is the same defect pointing the other way, and the transcript grows without
+limit instead of Meeting Edge.
 
 The meeting view's Analytics tab is the third surface that spends width on columns, and it does so
 entirely through container queries on its own scroll region, because it lives inside a resizable

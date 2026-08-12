@@ -323,6 +323,28 @@ describe("RecordingStatusDisplay", () => {
       );
     });
 
+    it("bounds the grid row against the window", () => {
+      render(
+        <RecordingStatusDisplay
+          recording={buildRecording({
+            status: RecordingStatus.UPLOADING,
+            client_status: ClientStatus.RECORDING,
+          })}
+          onSaveProcessingNotes={vi.fn()}
+          onSaveMeetingEdgeFocus={vi.fn()}
+        />,
+      );
+
+      // Neither column can bound the other without this. A scroll container
+      // needs a definite height to scroll against, and an auto grid row takes
+      // the max-content of its items, so removing the ceiling on one column
+      // without bounding the row just moves which panel grows without limit.
+      const grid = wrapperOf("meeting-edge-panel").parentElement as HTMLElement;
+
+      expect(grid.className).toContain("@min-[54rem]:min-h-0");
+      expect(grid.className).toContain("@min-[54rem]:grid-rows-[minmax(0,1fr)]");
+    });
+
     it("caps no module against the viewport", () => {
       render(
         <RecordingStatusDisplay

@@ -156,12 +156,26 @@ export default function RecordingStatusDisplay({
     // The dense shell, not the feature one. This is a console rather than a
     // page of prose: it has a waveform, a transcript, a guidance panel and two
     // editors, and capping it at a reading measure is what forced all five into
-    // one long scroll. The `grow` chain hands the window's leftover height down
-    // to the grid, exactly as the dashboard does.
+    // one long scroll.
+    //
+    // `h-full` rather than the dashboard's `min-h-full`, and that one word is
+    // what makes the two-column layout below a console at all. `min-h-full`
+    // hands down a floor, so the grid row is still sized by whichever column
+    // has the most content and the taller one drags the shorter one with it.
+    // A definite height means the row is the window's leftover and neither
+    // column can push it, which is the only arrangement in which a panel can
+    // decide to scroll: a scroll container needs a height to scroll against.
+    //
+    // The `min-h-0` chain below it is the other half. Without it every flex
+    // item keeps `min-height: auto` and refuses to shrink to that height, so
+    // the definite height is inherited and then ignored. It stops at the grid
+    // section, which takes it only from 54rem: below that this is one stacked
+    // column that should overflow and let the page scroll, so its content is
+    // allowed to push past the bottom rather than being squeezed into it.
     <Workspace
-      wrapperClassName="flex min-h-full flex-col overflow-visible"
-      backgroundClassName="bg-transparent flex grow flex-col"
-      contentClassName="workspace-shell workspace-shell-dense grow"
+      wrapperClassName="flex h-full min-h-0 flex-col overflow-visible"
+      backgroundClassName="bg-transparent flex grow min-h-0 flex-col"
+      contentClassName="workspace-shell workspace-shell-dense grow min-h-0"
     >
       {showMobileBackButton && onBack ? (
         <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[var(--z-sticky)] lg:hidden">
@@ -189,7 +203,7 @@ export default function RecordingStatusDisplay({
           it; guidance takes the second and slightly wider one, since it
           subdivides again internally. */}
       <div
-        className={`@container flex grow flex-col gap-[var(--workspace-gap)] ${
+        className={`@container flex min-h-0 grow flex-col gap-[var(--workspace-gap)] ${
           showMobileBackButton && onBack
             ? "pt-[calc(env(safe-area-inset-top)+4.75rem)] lg:pt-0"
             : ""
@@ -284,10 +298,10 @@ export default function RecordingStatusDisplay({
             three too narrow to read comfortably: Meeting Edge subdivides again
             internally, so it was carrying four columns of text inside a third
             of the page. Notes moves under the transcript, which scrolls. */}
-        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(24rem,1.1fr)] @min-[54rem]:items-stretch">
+        <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:min-h-0 @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(24rem,1.1fr)] @min-[54rem]:grid-rows-[minmax(0,1fr)] @min-[54rem]:items-stretch">
           {/* The meeting's record: what was said, what you wrote, what you
               attached. */}
-          <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
+          <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-h-0 @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
           {/* Exactly one module in this column absorbs the leftover height, and
               which one it is depends on the state. While recording it is the
               transcript, because it scrolls and there is always more of it.
