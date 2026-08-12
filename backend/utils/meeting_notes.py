@@ -30,7 +30,7 @@ NOTES_SPEC_PREAMBLE = """Structure the notes for fast follow-through, not verbat
 
 # The editable half. Bump NOTES_SECTIONS_VERSION whenever this changes so
 # templates forked from an older wording can tell the user their copy is stale.
-NOTES_SECTIONS_VERSION = 1
+NOTES_SECTIONS_VERSION = 2
 
 DEFAULT_NOTES_SECTIONS = """## Summary
 Two to four sentences the reader can scan first: why the meeting happened and what came out of it. Lead with outcomes, not chronology.
@@ -38,20 +38,20 @@ Two to four sentences the reader can scan first: why the meeting happened and wh
 ## Key Decisions
 Each decision the meeting actually reached, one row per decision, paired with the reasoning behind it so it is not re-litigated later. Use exactly this Markdown table, keeping the header row and the delimiter row:
 
-| ID | Decision | Rationale |
-| --- | --- | --- |
-| DEC-001 | The decision that was reached | The reasoning or trade-off behind it |
+| Decision | Rationale |
+| --- | --- |
+| The decision that was reached | The reasoning or trade-off behind it |
 
-Number the IDs sequentially from DEC-001. Omit this entire section if no decisions were reached. Never record a decision that was not made.
+Omit this entire section if no decisions were reached. Never record a decision that was not made.
 
 ## Action Items / Tasks
 Every task, commitment, or follow-up that was actually raised, one row per item. Use exactly this Markdown table, keeping the header row and the delimiter row:
 
-| ID | Action | Owner | Due |
-| --- | --- | --- | --- |
-| ACT-001 | The task that was committed to | A single named person, or Unassigned | A date, or TBD |
+| Action | Owner | Due |
+| --- | --- | --- |
+| The task that was committed to | A single named person, or Unassigned | A date, or TBD |
 
-Number the IDs sequentially from ACT-001. Give each item exactly one owner; never assign a task to the team as a whole. If none were raised, omit the table and write a single line stating that no action items were identified.
+Give each item exactly one owner; never assign a task to the team as a whole. If none were raised, omit the table and write a single line stating that no action items were identified.
 
 ## Detailed Notes
 One ### subsection per major topic, in the order discussed, with the subheading naming the topic. Under each, include only what applies:

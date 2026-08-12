@@ -186,8 +186,8 @@ def test_notes_body_spec_prescribes_tables_for_decisions_and_actions() -> None:
     actions = NOTES_BODY_SPEC.index("## Action Items / Tasks")
     detail = NOTES_BODY_SPEC.index("## Detailed Notes")
 
-    assert "| ID | Decision | Rationale |" in NOTES_BODY_SPEC[decisions:actions]
-    assert "| ID | Action | Owner | Due |" in NOTES_BODY_SPEC[actions:detail]
+    assert "| Decision | Rationale |" in NOTES_BODY_SPEC[decisions:actions]
+    assert "| Action | Owner | Due |" in NOTES_BODY_SPEC[actions:detail]
     # Both tables need the delimiter row or they are not tables at all.
     assert NOTES_BODY_SPEC.count("| --- |") >= 1
 
