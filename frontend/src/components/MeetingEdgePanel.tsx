@@ -260,7 +260,7 @@ function MeetingEdgePanel({
           : "Autosaves";
 
   return (
-    <section className="@container density-surface flex min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <section className="@container density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           {status === "updating" ? (
@@ -277,82 +277,98 @@ function MeetingEdgePanel({
         ) : null}
       </div>
 
-      {hasPayload ? (
-        <div className="mt-5 space-y-4">
-          {payload?.summary ? (
-            <div className="density-surface-panel bg-surface-inset p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-                Current Read
+      {/* Everything below the badge scrolls as one region, which is what lets
+          this panel fill the height it is given rather than set it. The badge
+          stays put, so the card keeps its own border and header at the edges of
+          the cell.
+
+          `flex-auto` rather than `flex-1`, and the distinction is load-bearing:
+          `flex-1` sets a basis of zero, and in the single-column layout below
+          54rem the parent has no definite height to distribute, so a zero basis
+          collapses this to nothing and the panel renders as a badge over an
+          empty card. A basis of auto takes the content height when there is
+          nothing to distribute and shrinks to the cell when there is. */}
+      <div className="mt-5 min-h-0 flex-auto overflow-y-auto">
+        {hasPayload ? (
+          <div className="space-y-4">
+            {payload?.summary ? (
+              <div className="density-surface-panel bg-surface-inset p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
+                  Current Read
+                </div>
+                <p className="mt-2 text-sm leading-6 text-contrast-muted">
+                  {payload.summary}
+                </p>
               </div>
-              <p className="mt-2 text-sm leading-6 text-contrast-muted">
-                {payload.summary}
-              </p>
+            ) : null}
+
+            {/* Side by side only when this panel is wide enough to carry two
+                columns of prose, which is a question about the panel and not
+                about the window. On `xl:` these split at a 1280px viewport even
+                when the panel itself was 400px, which is what wrapped these
+                lists to three words a line. */}
+            {/* These two fold together. They are grid siblings, so collapsing
+                one alone leaves its cell hollow while the other still sets the
+                row height: the space is not recovered, it just moves. They are
+                also one thought, read across rather than down. */}
+            <div className="grid gap-4 @min-[34rem]:grid-cols-2">
+              <EdgeSection
+                title="Questions to Ask"
+                icon={<MessageSquareQuote className="h-4 w-4 shrink-0 text-action-text" />}
+                open={isGuidanceOpen}
+                onToggle={toggleGuidance}
+              >
+                <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
+                  {questions.length > 0 ? (
+                    questions.map((question, index) => (
+                      <li key={`${question}-${index}`} className="rounded-xl bg-action-tint px-3 py-2">
+                        {question}
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-contrast-helper">
+                      Meeting Edge is still gathering enough context to suggest questions.
+                    </li>
+                  )}
+                </ul>
+              </EdgeSection>
+
+              <EdgeSection
+                title="Points to Raise"
+                icon={<Lightbulb className="h-4 w-4 shrink-0 text-action-text" />}
+                open={isGuidanceOpen}
+                onToggle={toggleGuidance}
+              >
+                <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
+                  {points.length > 0 ? (
+                    points.map((point, index) => (
+                      <li key={`${point}-${index}`} className="rounded-xl bg-status-warning-bg px-3 py-2">
+                        {point}
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-contrast-helper">
+                      No overlooked points identified yet.
+                    </li>
+                  )}
+                </ul>
+              </EdgeSection>
             </div>
-          ) : null}
 
-          {/* Side by side only when this panel is wide enough to carry two
-              columns of prose, which is a question about the panel and not
-              about the window. On `xl:` these split at a 1280px viewport even
-              when the panel itself was 400px, which is what wrapped these
-              lists to three words a line. */}
-          {/* These two fold together. They are grid siblings, so collapsing one
-              alone leaves its cell hollow while the other still sets the row
-              height: the space is not recovered, it just moves. They are also
-              one thought, read across rather than down. */}
-          <div className="grid gap-4 @min-[34rem]:grid-cols-2">
-            <EdgeSection
-              title="Questions to Ask"
-              icon={<MessageSquareQuote className="h-4 w-4 shrink-0 text-action-text" />}
-              open={isGuidanceOpen}
-              onToggle={toggleGuidance}
-            >
-              <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
-                {questions.length > 0 ? (
-                  questions.map((question, index) => (
-                    <li key={`${question}-${index}`} className="rounded-xl bg-action-tint px-3 py-2">
-                      {question}
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-contrast-helper">
-                    Meeting Edge is still gathering enough context to suggest questions.
-                  </li>
-                )}
-              </ul>
-            </EdgeSection>
-
-            <EdgeSection
-              title="Points to Raise"
-              icon={<Lightbulb className="h-4 w-4 shrink-0 text-action-text" />}
-              open={isGuidanceOpen}
-              onToggle={toggleGuidance}
-            >
-              <ul className="space-y-2 text-sm leading-6 text-contrast-muted">
-                {points.length > 0 ? (
-                  points.map((point, index) => (
-                    <li key={`${point}-${index}`} className="rounded-xl bg-status-warning-bg px-3 py-2">
-                      {point}
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-contrast-helper">
-                    No overlooked points identified yet.
-                  </li>
-                )}
-              </ul>
-            </EdgeSection>
-          </div>
-
-          {conceptHistory.length > 0 ? (
-            <EdgeSection
-              title="Technical Context"
-              meta={
-                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-                  {conceptHistory.length} term{conceptHistory.length === 1 ? "" : "s"} tracked
-                </span>
-              }
-            >
-              <div className="max-h-[22rem] overflow-y-auto pr-1">
+            {conceptHistory.length > 0 ? (
+              <EdgeSection
+                title="Technical Context"
+                meta={
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
+                    {conceptHistory.length} term{conceptHistory.length === 1 ? "" : "s"} tracked
+                  </span>
+                }
+              >
+                {/* No inner scroller. This list used to cap itself at 22rem and
+                    scroll, which was the only way it could stop growing the
+                    card. The card scrolls as a whole now, so a second scroll
+                    region inside the first would only make the list harder to
+                    read than the sections above it. */}
                 <div className="grid gap-3 @min-[34rem]:grid-cols-2">
                   {conceptHistory.map((concept, index) => (
                     <div
@@ -368,91 +384,91 @@ function MeetingEdgePanel({
                     </div>
                   ))}
                 </div>
+              </EdgeSection>
+            ) : null}
+          </div>
+        ) : (
+          <div className="density-surface-panel border border-dashed border-action-border bg-surface-inset px-4 py-5 text-sm leading-6 text-contrast-helper">
+            {status === "updating"
+              ? "Meeting Edge is building the first guidance pass from the live meeting."
+              : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
+          </div>
+        )}
+
+        <div className="mt-5 rounded-[1.5rem] border border-action-border bg-action-tint p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Target className="h-4 w-4 text-action-text" />
+              Guide Meeting Edge
+            </div>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
+              {saveMessage}
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-contrast-helper">
+            Add a short goal, concern, or angle you want this guidance to optimize for.
+          </p>
+          <textarea
+            value={draftFocus}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            placeholder="Example: Help me ask sharper timeline questions and flag hidden risks or missing owners."
+            className="mt-3 min-h-[6rem] w-full resize-none rounded-[1.25rem] border border-surface-border bg-surface-card px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-action focus:ring-2 focus:ring-action"
+          />
+        </div>
+
+        {/* Last, and closed. It is a setting rather than guidance: once it is
+            set for a recording it is rarely touched again, and it was sitting
+            between the guidance and the box you type into. */}
+        {onSaveContextLevel ? (
+          <div className="mt-5">
+            <EdgeSection
+              title="Meeting Edge Technical Context"
+              tone="tint"
+              defaultOpen={false}
+            >
+              <p className="text-xs leading-5 text-contrast-helper">
+                Adjust how readily live guidance explains technical language on this recording page.
+              </p>
+
+              <input
+                type="range"
+                min={1}
+                max={5}
+                step={1}
+                value={draftContextLevel}
+                onChange={(event) => {
+                  void handleContextLevelChange(event);
+                }}
+                aria-label="Meeting Edge Technical Context sensitivity"
+                className="mt-5 w-full accent-action"
+              />
+
+              <div className="relative mt-5 h-4 text-[11px] font-medium text-contrast-helper">
+                {MEETING_EDGE_CONTEXT_OPTIONS.map((option, index) => {
+                  const position = `${(index / contextStepCount) * 100}%`;
+                  const alignmentClass =
+                    index === 0
+                      ? "-translate-x-0 text-left"
+                      : index === contextStepCount
+                        ? "-translate-x-full text-right"
+                        : "-translate-x-1/2 text-center";
+
+                  return (
+                    <span
+                      key={option.value}
+                      className={`absolute top-0 whitespace-nowrap ${alignmentClass}`}
+                      style={{ left: position }}
+                    >
+                      {option.label}
+                    </span>
+                  );
+                })}
               </div>
             </EdgeSection>
-          ) : null}
-        </div>
-      ) : (
-        <div className="density-surface-panel mt-5 border border-dashed border-action-border bg-surface-inset px-4 py-5 text-sm leading-6 text-contrast-helper">
-          {status === "updating"
-            ? "Meeting Edge is building the first guidance pass from the live meeting."
-            : "Meeting Edge will start suggesting questions and overlooked points once the meeting has enough signal."}
-        </div>
-      )}
-
-      <div className="mt-5 rounded-[1.5rem] border border-action-border bg-action-tint p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Target className="h-4 w-4 text-action-text" />
-            Guide Meeting Edge
           </div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-contrast-helper">
-            {saveMessage}
-          </span>
-        </div>
-        <p className="mt-2 text-sm leading-6 text-contrast-helper">
-          Add a short goal, concern, or angle you want this guidance to optimize for.
-        </p>
-        <textarea
-          value={draftFocus}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          placeholder="Example: Help me ask sharper timeline questions and flag hidden risks or missing owners."
-          className="mt-3 min-h-[6rem] w-full resize-none rounded-[1.25rem] border border-surface-border bg-surface-card px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-action focus:ring-2 focus:ring-action"
-        />
+        ) : null}
       </div>
-
-      {/* Last, and closed. It is a setting rather than guidance: once it is set
-          for a recording it is rarely touched again, and it was sitting between
-          the guidance and the box you type into. */}
-      {onSaveContextLevel ? (
-        <div className="mt-5">
-          <EdgeSection
-            title="Meeting Edge Technical Context"
-            tone="tint"
-            defaultOpen={false}
-          >
-            <p className="text-xs leading-5 text-contrast-helper">
-              Adjust how readily live guidance explains technical language on this recording page.
-            </p>
-
-            <input
-            type="range"
-            min={1}
-            max={5}
-            step={1}
-            value={draftContextLevel}
-            onChange={(event) => {
-              void handleContextLevelChange(event);
-            }}
-              aria-label="Meeting Edge Technical Context sensitivity"
-              className="mt-5 w-full accent-action"
-            />
-
-            <div className="relative mt-5 h-4 text-[11px] font-medium text-contrast-helper">
-              {MEETING_EDGE_CONTEXT_OPTIONS.map((option, index) => {
-                const position = `${(index / contextStepCount) * 100}%`;
-                const alignmentClass =
-                  index === 0
-                    ? "-translate-x-0 text-left"
-                    : index === contextStepCount
-                      ? "-translate-x-full text-right"
-                      : "-translate-x-1/2 text-center";
-
-                return (
-                  <span
-                    key={option.value}
-                    className={`absolute top-0 whitespace-nowrap ${alignmentClass}`}
-                    style={{ left: position }}
-                  >
-                    {option.label}
-                  </span>
-                );
-              })}
-            </div>
-          </EdgeSection>
-        </div>
-      ) : null}
     </section>
   );
 }

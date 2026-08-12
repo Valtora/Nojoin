@@ -259,4 +259,112 @@ describe("RecordingStatusDisplay", () => {
 
     expect(screen.getByTestId("live-transcript-panel")).toBeInTheDocument();
   });
+
+  // DESIGN.md gives every column exactly one module that absorbs the leftover
+  // height. On the left, which module that is changes with the state, and
+  // getting it wrong is what stretched a progress bar and two lines of status
+  // into a box most of a screen tall. Asserted against the class rather than a
+  // measurement because jsdom lays nothing out, and the class is the contract.
+  describe("column height absorption", () => {
+    const wrapperOf = (testId: string) =>
+      screen.getByTestId(testId).parentElement as HTMLElement;
+
+    it("gives the transcript the leftover height while recording", () => {
+      render(
+        <RecordingStatusDisplay
+          recording={buildRecording({
+            status: RecordingStatus.UPLOADING,
+            client_status: ClientStatus.RECORDING,
+          })}
+          onSaveProcessingNotes={vi.fn()}
+          onSaveMeetingEdgeFocus={vi.fn()}
+        />,
+      );
+
+      expect(wrapperOf("live-transcript-panel").className).toContain("flex-1");
+      expect(wrapperOf("processing-notes-panel").className).not.toContain(
+        "flex-1",
+      );
+    });
+
+    it("hands it to the notes editor once recording stops", () => {
+      render(
+        <RecordingStatusDisplay
+          recording={buildRecording({
+            status: RecordingStatus.PROCESSING,
+            client_status: undefined,
+          })}
+          onSaveProcessingNotes={vi.fn()}
+          onSaveMeetingEdgeFocus={vi.fn()}
+        />,
+      );
+
+      expect(wrapperOf("processing-notes-panel").className).toContain("flex-1");
+      // The progress card cannot use height: it is a bar and two lines.
+      expect(
+        screen.getByText("Progress").closest("section")?.parentElement
+          ?.className,
+      ).not.toContain("flex-1");
+    });
+
+    it("lets Meeting Edge absorb rather than set the row", () => {
+      render(
+        <RecordingStatusDisplay
+          recording={buildRecording()}
+          onSaveProcessingNotes={vi.fn()}
+          onSaveMeetingEdgeFocus={vi.fn()}
+        />,
+      );
+
+      // Only from 54rem: below it this is one item in a stack, and the page
+      // scrolls rather than the panel.
+      expect(wrapperOf("meeting-edge-panel").className).toContain(
+        "@min-[54rem]:flex-1",
+      );
+    });
+
+    it("bounds the grid row against the window", () => {
+      render(
+        <RecordingStatusDisplay
+          recording={buildRecording({
+            status: RecordingStatus.UPLOADING,
+            client_status: ClientStatus.RECORDING,
+          })}
+          onSaveProcessingNotes={vi.fn()}
+          onSaveMeetingEdgeFocus={vi.fn()}
+        />,
+      );
+
+      // Neither column can bound the other without this. A scroll container
+      // needs a definite height to scroll against, and an auto grid row takes
+      // the max-content of its items, so removing the ceiling on one column
+      // without bounding the row just moves which panel grows without limit.
+      const grid = wrapperOf("meeting-edge-panel").parentElement as HTMLElement;
+
+      expect(grid.className).toContain("@min-[54rem]:min-h-0");
+      expect(grid.className).toContain("@min-[54rem]:grid-rows-[minmax(0,1fr)]");
+    });
+
+    it("caps no module against the viewport", () => {
+      render(
+        <RecordingStatusDisplay
+          recording={buildRecording({
+            status: RecordingStatus.UPLOADING,
+            client_status: ClientStatus.RECORDING,
+          })}
+          onSaveProcessingNotes={vi.fn()}
+          onSaveMeetingEdgeFocus={vi.fn()}
+        />,
+      );
+
+      // A max-height on a module in an items-stretch grid relocates the surplus
+      // row height instead of removing it, which is the dead corner the column
+      // model exists to prevent.
+      expect(wrapperOf("live-transcript-panel").className).not.toMatch(/max-h-/);
+      expect(wrapperOf("meeting-edge-panel").className).not.toMatch(/max-h-/);
+      expect(wrapperOf("processing-notes-panel").className).not.toMatch(
+        /max-h-/,
+      );
+    });
+  });
 });

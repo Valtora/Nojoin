@@ -174,4 +174,33 @@ describe("LiveTranscriptPanel", () => {
 
     expect(container.scrollTop).toBe(500);
   });
+
+  it("follows a provisional line that grows without adding a line", () => {
+    const { rerender } = renderPanel([
+      buildLine("a", 0, "first"),
+      buildLine("b", 5, "second"),
+    ]);
+    const container = screen.getByTestId("live-transcript-scroll");
+
+    setScrollGeometry(container, {
+      scrollTop: 0,
+      scrollHeight: 500,
+      clientHeight: 300,
+    });
+
+    // An utterance is rewritten in place as it finalises, so the text wraps to
+    // more rows while the count stays put. Keying the follow on the line count
+    // missed this and let the tail drift below the fold.
+    rerender(
+      <LiveTranscriptPanel
+        segments={[
+          buildLine("a", 0, "first"),
+          buildLine("b", 5, "second, and then a good deal more of it"),
+        ]}
+        hasLoaded
+      />,
+    );
+
+    expect(container.scrollTop).toBe(500);
+  });
 });

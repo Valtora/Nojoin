@@ -284,6 +284,29 @@ than re-laying out the page. The second, slightly wider, is guidance. This is al
 moved off the 64rem feature cap: it is a console, not a page of prose, and a reading measure is
 what forced five panels into one long scroll.
 
+This is the one surface where *which* module absorbs the leftover height changes with the state,
+rather than being fixed as it is on the dashboard. While recording the transcript absorbs, because
+it scrolls and there is always more of it. Once recording stops the transcript is replaced by a
+progress bar and two lines of status, which cannot use height at all, so the notes editor absorbs
+instead and the progress card keeps its own size. Guidance absorbs in its own column in both states,
+scrolling inside its cell from 54rem, and that is what stops however much guidance has accumulated
+from setting the grid row for the whole surface. Below 54rem it is one item in a stack and the page
+scrolls, so it keeps its natural height there.
+
+**This is the one surface whose shell hands down a definite height rather than a floor**, and that
+is what the rest of it rests on. `Workspace` is given `h-full` instead of the dashboard's
+`min-h-full`, with `min-h-0` down the chain to the grid and `grid-template-rows: minmax(0, 1fr)` on
+the row itself, because an `auto` row takes the max-content of its items whatever height the grid
+has. Without all four, whichever column holds the most content sizes the row and drags the other
+with it, and no panel can scroll, because a scroll container needs a height to scroll against.
+Deciding which module absorbs is only meaningful once there is a bounded amount to absorb.
+
+Two things do *not* work here and have both been tried. A `max-height` on the transcript module caps
+it against the viewport, which relocates the surplus row height rather than removing it, first
+inside the transcript card and then below it; see the rule on capping below. Removing that cap
+without bounding the row is the same defect pointing the other way, and the transcript grows without
+limit instead of Meeting Edge.
+
 The meeting view's Analytics tab is the third surface that spends width on columns, and it does so
 entirely through container queries on its own scroll region, because it lives inside a resizable
 panel between two collapsible rails and its width is the window minus two numbers it cannot see. It
