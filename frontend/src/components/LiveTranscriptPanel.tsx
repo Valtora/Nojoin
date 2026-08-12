@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArrowDown, Radio } from "lucide-react";
 
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
@@ -111,11 +117,23 @@ export default function LiveTranscriptPanel({
 
   // Follow new text only while the user has not scrolled away. Reading back
   // through the meeting must never be yanked out from under them.
-  useEffect(() => {
+  //
+  // Before the paint, not after it. On a plain effect the browser painted the
+  // grown transcript at the old scroll position and corrected it a frame later,
+  // which reads as the text spilling past the bottom of the window and then
+  // snapping back into it. The finished transcript's scroll hook uses a layout
+  // effect for the same reason.
+  //
+  // Keyed on `lines` rather than `lines.length`, because a provisional
+  // utterance is rewritten in place as it finalises: the text grows, it wraps
+  // to more rows, and the count never changes, so a length-keyed effect never
+  // ran and the tail drifted out of view. `lines` is memoised on `segments`, so
+  // a poll that returned nothing new still does nothing here.
+  useLayoutEffect(() => {
     if (isPinnedToBottom) {
       scrollToBottom();
     }
-  }, [lines.length, isPinnedToBottom, scrollToBottom]);
+  }, [lines, isPinnedToBottom, scrollToBottom]);
 
   const jumpToLatest = useCallback(() => {
     setIsPinnedToBottom(true);
