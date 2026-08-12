@@ -286,18 +286,34 @@ export default function RecordingStatusDisplay({
             of the page. Notes moves under the transcript, which scrolls. */}
         <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(24rem,1.1fr)] @min-[54rem]:items-stretch">
           {/* The meeting's record: what was said, what you wrote, what you
-              attached. The transcript takes the height and scrolls; the notes
-              sit under it at their own size. */}
+              attached. */}
           <div className="contents @min-[54rem]:col-start-1 @min-[54rem]:row-start-1 @min-[54rem]:flex @min-[54rem]:min-w-0 @min-[54rem]:flex-col @min-[54rem]:gap-[var(--workspace-gap)]">
-          {/* The transcript card's viewport-relative ceiling. It sits here
-              rather than inside the panel so the card stops growing at the same
-              point its contents do: capping only the inner window let the card
-              follow the grid row down past it whenever the guidance column
-              outgrew the viewport, and the difference showed as dead space
-              between the transcript and the notes. 18rem covers the toolbar
-              above, the workspace padding and the gap, so the notes card below
-              stays on screen. */}
-          <div className="order-1 flex min-h-0 flex-1 flex-col @min-[54rem]:max-h-[calc(100dvh-18rem)]">
+          {/* Exactly one module in this column absorbs the leftover height, and
+              which one it is depends on the state. While recording it is the
+              transcript, because it scrolls and there is always more of it.
+              Once recording stops the transcript is replaced by a progress bar
+              and two lines of status, which cannot use height at all, so the
+              notes editor absorbs instead and the progress card keeps its own
+              size. Stretched, that card was most of a screen tall around three
+              lines of content.
+
+              What was here instead was a max-height on this module, sized as
+              `calc(100dvh-18rem)`. DESIGN.md rules that out: a max-height on a
+              module in an items-stretch grid makes one column's cards end above
+              the other's, which is the dead corner the column model exists to
+              remove. The 18rem was a budget for the toolbar, the workspace
+              padding and the gap, and none of the three hold still. The toolbar
+              carries an extra row of controls while recording, compact density
+              moves the gap and the padding and the root font size while 100dvh
+              does not move with them, and the documents card was never in the
+              budget at all. */}
+          <div
+            className={
+              isActiveRecording
+                ? "order-1 flex min-h-0 flex-1 flex-col"
+                : "order-1 flex min-w-0 flex-col"
+            }
+          >
             {isActiveRecording ? (
               <LiveTranscriptPanel
                 segments={liveTranscript.segments}
@@ -305,7 +321,7 @@ export default function RecordingStatusDisplay({
                 isPaused={isPaused}
               />
             ) : (
-              <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+              <section className="density-surface flex flex-col border border-surface-border bg-surface-card shadow-card">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <Loader2 className="h-5 w-5 shrink-0 animate-spin text-action-text" />
                   {/* Not "Processing": the console beside this already carries
@@ -355,7 +371,18 @@ export default function RecordingStatusDisplay({
             )}
           </div>
 
-            <div className="order-2 flex min-w-0 flex-col">
+            {/* The other half of the swap above. The editor is already built to
+                absorb, `h-full min-h-0` on the card with `flex-1` on the
+                textarea, it was simply never given any height to absorb. A
+                taller box to type into while a meeting processes is worth
+                having; a taller progress bar is not. */}
+            <div
+              className={
+                isActiveRecording
+                  ? "order-2 flex min-w-0 flex-col"
+                  : "order-2 flex min-h-0 min-w-0 flex-1 flex-col"
+              }
+            >
               <ProcessingNotesPanel
                 value={recording.transcript?.user_notes}
                 onSave={onSaveProcessingNotes}
@@ -375,9 +402,23 @@ export default function RecordingStatusDisplay({
 
           {/* Guidance takes the wider column. It is two lists of prose that
               subdivide again internally, so it is the panel that suffers most
-              from a narrow one. */}
+              from a narrow one.
+
+              It is also this column's absorbing module, which it was not
+              before. Sitting alone in a stretched column at its own content
+              height, it set the grid row for the whole surface, and the column
+              beside it had to find something to do with the surplus. Given a
+              definite height here it scrolls inside its own cell instead, so
+              the row comes from the window rather than from how much guidance
+              has accumulated. Collapsing its sections stops resizing the
+              transcript as a side effect, which is what the ceiling opposite
+              was there to prevent.
+
+              Only from 54rem, where the two columns exist. Below that this is
+              one item in a stack and the page scrolls, so a scroll box inside
+              a scrolling page would be the wrong shape. */}
           {showMeetingEdge ? (
-            <div className="order-4 flex min-h-0 flex-1 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1">
+            <div className="order-4 flex min-w-0 flex-col @min-[54rem]:col-start-2 @min-[54rem]:row-start-1 @min-[54rem]:min-h-0 @min-[54rem]:flex-1">
               <MeetingEdgePanel
                 payload={recording.transcript?.meeting_edge_payload}
                 focusText={recording.transcript?.meeting_edge_focus}

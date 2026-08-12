@@ -284,6 +284,18 @@ than re-laying out the page. The second, slightly wider, is guidance. This is al
 moved off the 64rem feature cap: it is a console, not a page of prose, and a reading measure is
 what forced five panels into one long scroll.
 
+This is the one surface where *which* module absorbs the leftover height changes with the state,
+rather than being fixed as it is on the dashboard. While recording the transcript absorbs, because
+it scrolls and there is always more of it. Once recording stops the transcript is replaced by a
+progress bar and two lines of status, which cannot use height at all, so the notes editor absorbs
+instead and the progress card keeps its own size. Guidance absorbs in its own column in both states,
+scrolling inside its cell from 54rem, and that is what stops however much guidance has accumulated
+from setting the grid row for the whole surface. Below 54rem it is one item in a stack and the page
+scrolls, so it keeps its natural height there. The alternative was tried twice and does not work: a
+`max-height` on the transcript module capped it against the viewport, which relocated the surplus
+row height rather than removing it, first inside the transcript card and then below it. See the rule
+on capping below.
+
 The meeting view's Analytics tab is the third surface that spends width on columns, and it does so
 entirely through container queries on its own scroll region, because it lives inside a resizable
 panel between two collapsible rails and its width is the window minus two numbers it cannot see. It

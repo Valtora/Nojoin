@@ -138,23 +138,22 @@ export default function LiveTranscriptPanel({
         ) : null}
       </div>
 
-      {/* The window fills the card. The viewport-relative ceiling that keeps
-          this panel independent of its neighbour lives on the card instead --
-          see the order-1 wrapper in RecordingStatusDisplay.
+      {/* The window fills the card, and the card fills what the column has
+          left. Neither carries a ceiling any more.
 
-          That ceiling's purpose is unchanged: this panel is a grid item beside
-          the guidance column, so a plain `flex-1` would take its height from
-          whatever the neighbour's content happens to be, several screens tall
-          when the guidance is long and back down toward the floor when its
-          sections are collapsed. Neither is about the transcript.
+          One used to sit here, then on the card in RecordingStatusDisplay. It
+          existed to keep this panel independent of the guidance column beside
+          it, which would otherwise have set the height: several screens tall
+          while the guidance was long, back toward the floor once its sections
+          were collapsed, neither of them anything to do with the transcript.
+          That independence is worth having, but a fixed ceiling was the wrong
+          way to buy it. A capped module in an items-stretch grid has to leave
+          the surplus row height somewhere, so both attempts only moved the dead
+          space around, first inside this window and then below the card.
 
-          What moved is where it applies. Capping this inner window while the
-          card around it still stretched to the grid row put the dead space
-          *inside* the card: whenever the guidance column outgrew the viewport,
-          the card followed the row down and the window stopped at its own
-          ceiling, leaving a gap between the transcript and the notes below.
-          Capping the card keeps the decoupling and lets the window fill
-          whatever the card actually is. */}
+          Meeting Edge scrolls inside its own cell now, so it absorbs height
+          rather than dictating it, and the row comes from the window instead.
+          This panel can just take what is left. */}
       <div className="relative mt-4 flex min-h-0 flex-1 flex-col">
         {/* The transcript window is painted by this overlay rather than by the
             scrolling element, and stops short of the right edge by
