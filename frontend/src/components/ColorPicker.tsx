@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import { COLOR_PALETTE, ColorOption } from '@/lib/constants';
+import { useAnchoredPanel } from '@/components/ui/useAnchoredPanel';
 
 interface ColorPickerProps {
   selectedColor?: string;
@@ -19,6 +20,10 @@ export default function ColorPicker({
 }: ColorPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Anchored to the window rather than to the trigger's scroll box. PersonModal
+  // puts this near the foot of a long form, where an absolutely positioned panel
+  // renders into the part the modal clips and reads as not having opened.
+  const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(isOpen, containerRef);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -71,7 +76,11 @@ export default function ColorPicker({
       )}
 
       {isOpen && (
-        <div className="absolute z-[var(--z-dropdown)] mt-2 p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]">
+        <div
+          ref={panelRef}
+          style={panelStyle}
+          className="z-[var(--z-dropdown)] overflow-y-auto p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]"
+        >
           <div className="grid grid-cols-6 gap-2">
             {COLOR_PALETTE.map((color) => (
               <button
@@ -108,6 +117,9 @@ interface InlineColorPickerProps {
 export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Same reason as above, a different enclosure: this one opens from rows in the
+  // tag rail and the speaker panel, both of which scroll and clip.
+  const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(isOpen, containerRef);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -141,7 +153,9 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
 
       {isOpen && (
         <div
-          className="absolute left-0 top-full mt-1 z-[var(--z-dropdown)] p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
+          ref={panelRef}
+          style={panelStyle}
+          className="z-[var(--z-dropdown)] overflow-y-auto p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="grid grid-cols-6 gap-2">

@@ -512,6 +512,90 @@ html[data-ui-density="compact"] .density-body-copy {
   border-color: var(--contrast-icon-muted);
 }
 
+/* ModernDatePicker measures the room on the side the popover was placed and
+   publishes it here. Without the cap a calendar taller than that room is drawn
+   off the top of the screen, which a narrow phone in landscape can reach. */
+.react-datepicker-popper .react-datepicker {
+  max-height: var(--nj-picker-max-height, none);
+  overflow-y: auto;
+}
+
+/* The popover form of the picker, on a screen too narrow to hold the month and
+   the time list side by side. The library floats them, and a float does not
+   wrap gracefully: below about 340px of usable width the time column drops past
+   the calendar's own box, leaving a tall void beside the weeks and pushing the
+   whole popover off the top of the screen (issue #242). Stack them instead.
+
+   Scoped to the popper, so the inline calendar below -- laid out by its own
+   container, in a modal that already sized itself for it -- is untouched. The
+   breakpoint sits under the common 360px phone on purpose: at that width the
+   library's own layout fits once ModernDatePicker positions it against the
+   viewport, and the side-by-side calendar is the better of the two. */
+@media (max-width: 22rem) {
+  .react-datepicker-popper .react-datepicker {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* width:auto, not 100%: the popper is shrink-to-fit, so a percentage width
+     resolves against a container whose width depends on it and collapses the
+     calendar. The column's stretch alignment already gives both panels the
+     full width the month asks for. */
+  .react-datepicker-popper .react-datepicker__month-container {
+    float: none;
+    width: auto;
+  }
+
+  .react-datepicker-popper .react-datepicker__time-container {
+    float: none;
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--surface-divider);
+  }
+
+  .react-datepicker-popper
+    .react-datepicker__time-container
+    .react-datepicker__time
+    .react-datepicker__time-box {
+    width: auto;
+  }
+
+  /* The library sizes the time list to the month's height from JS, and writes
+     it inline, which is right beside the calendar and doubles the popover when
+     it is underneath. !important is the only thing an inline style loses to,
+     and this file already reaches for it against this vendor. */
+  .react-datepicker-popper .react-datepicker__time-list {
+    height: 4rem !important;
+  }
+
+  /* The next-month arrow is inset by the width of the time column, which is
+     only where it belongs while the column is beside the calendar. Stacked, the
+     arrow lands on top of the month name. */
+  .react-datepicker-popper
+    .react-datepicker__navigation--next--with-time:not(
+      .react-datepicker__navigation--next--with-today-button
+    ) {
+    right: 2px;
+  }
+
+  .react-datepicker-popper .react-datepicker__day-names,
+  .react-datepicker-popper .react-datepicker__week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  /* The grid lets a day fill its column, but a column is only as wide as its
+     content and the popper is shrink-to-fit: without a floor the calendar
+     collapses to the width of two digits. The floor is also a larger tap
+     target than the library's 1.7rem cell. */
+  .react-datepicker-popper .react-datepicker__day-name,
+  .react-datepicker-popper .react-datepicker__day {
+    width: auto;
+    min-width: 2.25rem;
+    margin: 0.166rem 0;
+  }
+}
+
 .task-deadline-calendar.react-datepicker {
   width: 100%;
   border: 0;

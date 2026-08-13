@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { X, Plus, Users, Fingerprint, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -14,6 +14,7 @@ import {
   deleteGlobalSpeakerEmbedding,
 } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import { useAnchoredPanel } from "@/components/ui/useAnchoredPanel";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 interface PersonModalProps {
@@ -58,6 +59,13 @@ export function PersonModal({
   const [showMerge, setShowMerge] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<GlobalSpeaker | null>(null);
   const [speakerSearch, setSpeakerSearch] = useState("");
+  // The merge section is the last thing in this modal, so its results list opens
+  // into the region the modal's panel clips. Anchor it to the window instead.
+  const speakerSearchRef = useRef<HTMLDivElement>(null);
+  const { panelRef: speakerResultsRef, panelStyle: speakerResultsStyle } =
+    useAnchoredPanel<HTMLDivElement>(Boolean(speakerSearch), speakerSearchRef, {
+      matchAnchorWidth: true,
+    });
   const [availableSpeakers, setAvailableSpeakers] = useState<GlobalSpeaker[]>(
     [],
   );
@@ -465,7 +473,7 @@ interface TagNode extends PeopleTag {
                           Target Person (Recipient)
                         </label>
                         {!mergeTarget ? (
-                          <div className="relative">
+                          <div className="relative" ref={speakerSearchRef}>
                             <input
                               type="text"
                               value={speakerSearch}
@@ -474,7 +482,11 @@ interface TagNode extends PeopleTag {
                               placeholder="Search person..."
                             />
                             {speakerSearch && (
-                              <div className="absolute z-10 mt-1 w-full bg-control-bg rounded-md shadow-float border border-surface-border max-h-48 overflow-y-auto">
+                              <div
+                                ref={speakerResultsRef}
+                                style={speakerResultsStyle}
+                                className="z-10 bg-control-bg rounded-md shadow-float border border-surface-border overflow-y-auto"
+                              >
                                 {filteredSpeakers.length === 0 ? (
                                   <div className="px-3 py-2 text-sm text-contrast-helper">
                                     No people found

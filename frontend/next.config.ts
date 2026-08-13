@@ -27,6 +27,12 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactCompiler: true,
+  // `next dev` writes AGENTS.md and CLAUDE.md into frontend/ on every start
+  // when it detects an AI coding agent, to point that agent at the docs bundled
+  // in node_modules. This repository does not carry agent rules files, so the
+  // only thing that arrives is two untracked files in the working tree of
+  // whoever happened to run the dev server.
+  agentRules: false,
   turbopack: {
     root: __dirname,
   },

@@ -39,6 +39,49 @@ const CustomInput = forwardRef<HTMLButtonElement, CustomInputProps>(
 
 CustomInput.displayName = "CustomInput";
 
+/**
+ * Caps the calendar to the space on the side the popover was actually placed,
+ * so it scrolls inside itself rather than off the top of a short window.
+ *
+ * floating-ui ships `size` for this, but importing it here would bind a second
+ * copy of the library: react-datepicker resolves its own nested
+ * @floating-ui/react at 0.27 while the tree hoists 0.26 for Headless UI, and
+ * middleware from the wrong instance is not something to rely on. A middleware
+ * is a plain object, and the rule is one line once the placement is known.
+ *
+ * It reads the trigger's own rect rather than the rects floating-ui passes,
+ * because those are expressed relative to the offset parent while this needs
+ * window coordinates. It runs last, so the placement it sees is final. Writing
+ * a custom property rather than a height keeps the value where the stylesheet
+ * can use it and leaves the popover's own box to the library.
+ */
+const boundToViewport = {
+  name: "nojoinBoundToViewport",
+  fn({
+    placement,
+    elements,
+  }: {
+    placement: string;
+    elements: {
+      // Widened from DOMRect: floating-ui's reference may be a virtual element,
+      // whose rect type is structural rather than a DOMRect.
+      reference: { getBoundingClientRect: () => { top: number; bottom: number } };
+      floating: HTMLElement;
+    };
+  }) {
+    const anchor = elements.reference.getBoundingClientRect();
+    const gap = 16;
+    const available = placement.startsWith("top")
+      ? anchor.top - gap
+      : window.innerHeight - anchor.bottom - gap;
+    elements.floating.style.setProperty(
+      "--nj-picker-max-height",
+      `${Math.max(200, Math.round(available))}px`,
+    );
+    return {};
+  },
+};
+
 export default function ModernDatePicker({
   label,
   className,
@@ -63,6 +106,15 @@ export default function ModernDatePicker({
           onChange={(date: Date | null) => onChange(date)}
           customInput={<CustomInput placeholder={placeholderText} className={inputClassName} />}
           wrapperClassName="w-full"
+          // Position against the viewport, not the nearest scroll box. Every
+          // modal panel hides its own overflow and scrolls its body, so an
+          // absolutely positioned popper is a child of that box: the library
+          // measures the free space inside it, flips the calendar upwards for
+          // want of room, and the panel then clips whatever crosses its header.
+          // The fixed strategy takes the popper out of that box; globals.css
+          // bounds it against the viewport instead.
+          popperProps={{ strategy: "fixed" }}
+          popperModifiers={[boundToViewport]}
           // react-datepicker renders its own DOM, so the calendar is themed by
           // overriding its classes here and in the vendor block in globals.css
           // rather than by composing tokens the way the rest of the UI does.
