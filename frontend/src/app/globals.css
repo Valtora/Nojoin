@@ -512,6 +512,14 @@ html[data-ui-density="compact"] .density-body-copy {
   border-color: var(--contrast-icon-muted);
 }
 
+/* ModernDatePicker measures the room on the side the popover was placed and
+   publishes it here. Without the cap a calendar taller than that room is drawn
+   off the top of the screen, which a narrow phone in landscape can reach. */
+.react-datepicker-popper .react-datepicker {
+  max-height: var(--nj-picker-max-height, none);
+  overflow-y: auto;
+}
+
 /* The popover form of the picker, on a screen too narrow to hold the month and
    the time list side by side. The library floats them, and a float does not
    wrap gracefully: below about 340px of usable width the time column drops past
