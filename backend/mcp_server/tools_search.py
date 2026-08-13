@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Literal, Optional
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 

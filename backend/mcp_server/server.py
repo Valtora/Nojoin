@@ -1,6 +1,6 @@
 """MCP server core for Nojoin.
 
-Holds the FastMCP instance, the registration decorator, the scope guards,
+Holds the MCPServer instance, the registration decorator, the scope guards,
 and the recording/transcript read tools; the rest of the surface lives in
 the ``tools_*`` modules imported at the bottom of this file. Every tool
 delegates to the same endpoint coroutines and helpers the REST API uses
@@ -23,13 +23,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.context import CallNext, ServerRequestContext
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, Icon, TextContent
-from mcp.types import Tool as MCPTool
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
+from starlette.applications import Starlette
 from starlette.types import ASGIApp
 
 from backend.core.security import MCP_READ_SCOPE, MCP_WRITE_SCOPE
@@ -108,39 +109,56 @@ def _authentication_challenge(tool_name: str) -> CallToolResult:
     )
 
 
-class _AuthGatedFastMCP(FastMCP):
-    """FastMCP that answers anonymous tool calls with an in-band challenge.
+class _AuthGatedMCPServer(MCPServer):
+    """MCPServer that answers anonymous tool calls with an in-band challenge.
 
     This override — not the mcp_tool decorator — is the tool gate, for a
-    mechanical reason: FastMCP validates whatever a tool function returns
-    against the tool's output schema, so a challenge CallToolResult
-    returned from inside the function is rejected before it reaches the
-    wire. call_tool runs before the tool manager, and the lowlevel server
-    forwards a ready-made CallToolResult verbatim. Registered here on the
-    instance, it covers every tool with no per-tool code.
+    mechanical reason: the tool manager validates whatever a tool function
+    returns against the tool's output schema, so a challenge
+    CallToolResult returned from inside the function is rejected before it
+    reaches the wire. call_tool runs before the tool manager, and the
+    lowlevel server forwards a ready-made CallToolResult verbatim.
+    Registered here on the instance, it covers every tool with no per-tool
+    code.
     """
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        context: Optional[Context] = None,
+    ) -> Any:
         if current_mcp_user.get() is None:
             return _authentication_challenge(name)
-        return await super().call_tool(name, arguments)
-
-    async def list_tools(self) -> list[MCPTool]:
-        tools = await super().list_tools()
-        if is_mcp_anonymous_discovery_enabled():
-            # Advertises, pre-auth, that every tool needs OAuth and which
-            # scope — the tool-level metadata OAuth-challenged clients key
-            # off. Tool is an extra="allow" model, so the field serialises
-            # as-is.
-            for tool in tools:
-                scope = _TOOL_SCOPES.get(tool.name, MCP_READ_SCOPE)
-                setattr(
-                    tool, "securitySchemes", [{"type": "oauth2", "scopes": [scope]}]
-                )
-        return tools
+        return await super().call_tool(name, arguments, context)
 
 
-mcp = _AuthGatedFastMCP(
+async def _advertise_tool_scopes(ctx: ServerRequestContext, call_next: CallNext) -> Any:
+    """Attach each tool's OAuth scope to the tool listing, pre-auth.
+
+    Advertises that every tool needs OAuth and which scope — the tool-level
+    metadata OAuth-challenged clients key off. ``securitySchemes`` is not a
+    field of the SDK's Tool model: v1 carried it because Tool was
+    ``extra="allow"`` and the listing could be decorated by setattr on the
+    list_tools result, which v2 removed. Middleware is the replacement
+    because it is the last point that still sees the response as data. The
+    runner has already serialised the handler's result to the wire dict by
+    the time the chain runs, and sends a dict returned from here to the
+    transport without re-validating it against Tool, so the extra field
+    survives where a Tool subclass would be silently dropped.
+    """
+    result = await call_next(ctx)
+    if ctx.method != "tools/list" or not is_mcp_anonymous_discovery_enabled():
+        return result
+    if not isinstance(result, dict):  # pragma: no cover - defensive
+        return result
+    for tool in result.get("tools", []):
+        scope = _TOOL_SCOPES.get(tool.get("name"), MCP_READ_SCOPE)
+        tool["securitySchemes"] = [{"type": "oauth2", "scopes": [scope]}]
+    return result
+
+
+mcp = _AuthGatedMCPServer(
     name="Nojoin",
     instructions=MCP_SERVER_INSTRUCTIONS,
     # Surfaced by MCP clients next to the server name (e.g. Claude's
@@ -153,13 +171,7 @@ mcp = _AuthGatedFastMCP(
             sizes=["1024x1024"],
         )
     ],
-    stateless_http=True,
-    json_response=True,
-    streamable_http_path="/",
-    # The SDK's DNS-rebinding Host check only knows localhost defaults and
-    # would reject the deployment's public hostname. Nojoin's own
-    # TrustedHostMiddleware already validates Host for the whole app.
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    middleware=[_advertise_tool_scopes],
 )
 
 
@@ -703,9 +715,40 @@ class NormaliseMcpMountPathMiddleware:
         await self.app(scope, receive, send)
 
 
+_streamable_http_app: Optional[Starlette] = None
+
+
+def _build_streamable_http_app() -> Starlette:
+    """The MCP Starlette app, built exactly once.
+
+    Repeat calls must not reach ``mcp.streamable_http_app()``: it builds a
+    fresh StreamableHTTPSessionManager every time and rebinds
+    ``mcp.session_manager`` to it, so a second call would leave the mounted
+    app holding a manager that nothing ever runs and every request
+    answering 500. Caching here keeps the mount and the lifespan on one
+    manager. The transport settings live here rather than on the
+    constructor because that is where the SDK moved them.
+    """
+    global _streamable_http_app
+    if _streamable_http_app is None:
+        _streamable_http_app = mcp.streamable_http_app(
+            streamable_http_path="/",
+            stateless_http=True,
+            json_response=True,
+            # The SDK's DNS-rebinding Host check only knows localhost
+            # defaults and would reject the deployment's public hostname.
+            # Nojoin's own TrustedHostMiddleware already validates Host for
+            # the whole app.
+            transport_security=TransportSecuritySettings(
+                enable_dns_rebinding_protection=False
+            ),
+        )
+    return _streamable_http_app
+
+
 def build_mcp_asgi_app() -> ASGIApp:
     """The MCP Starlette app wrapped in bearer-token authentication."""
-    return MCPAuthMiddleware(mcp.streamable_http_app())
+    return MCPAuthMiddleware(_build_streamable_http_app())
 
 
 @asynccontextmanager
@@ -716,9 +759,9 @@ async def mcp_session_manager_context():
     returns 500s if requests arrive while the session manager is not
     running.
     """
-    # Ensure the session manager exists (created lazily by
-    # streamable_http_app, which create_app calls before the lifespan runs).
-    mcp.streamable_http_app()
+    # Ensure the session manager exists (created by the app build, which
+    # create_app calls before the lifespan runs).
+    _build_streamable_http_app()
     async with mcp.session_manager.run():
         yield
 

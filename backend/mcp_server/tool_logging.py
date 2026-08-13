@@ -13,7 +13,7 @@ import logging
 import time
 from typing import Any, Callable
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 from backend.mcp_server.auth import current_mcp_user
 
@@ -79,7 +79,7 @@ def logged_tool(func: Callable) -> Callable:
     Emits one INFO line per successful call (tool, user, redacted args,
     result shape, duration), a WARNING for a ToolError (an expected,
     user-facing rejection), and an EXCEPTION for anything unexpected. The
-    signature is preserved via functools.wraps so FastMCP still builds the
+    signature is preserved via functools.wraps so the SDK still builds the
     tool's input schema from the original annotations.
     """
     signature = inspect.signature(func)

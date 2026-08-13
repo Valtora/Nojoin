@@ -933,7 +933,7 @@ async def test_mcp_protocol_tools_list_end_to_end(  # noqa: PLR0913 - one fixtur
     """Full stack: auth middleware -> MCP SDK streamable HTTP -> tools/list.
 
     Also hosts the anonymous-discovery protocol phases: the SDK allows one
-    session-manager .run() per FastMCP instance and therefore one such
+    session-manager .run() per MCPServer instance and therefore one such
     context per test process, so every phase that needs the real MCP app
     shares this test's context. The anonymous sweep below makes one
     tools/call per registered tool, so lift the per-IP anonymous limit out
@@ -1111,7 +1111,7 @@ async def test_mcp_protocol_tools_list_end_to_end(  # noqa: PLR0913 - one fixtur
     # A grant issued before mcp:write existed passes the endpoint gate but
     # the write tool refuses it with an instruction to reconnect. This must
     # share the session-manager context above: the SDK allows only one
-    # .run() per FastMCP instance and therefore one such context per test
+    # .run() per MCPServer instance and therefore one such context per test
     # process.
     assert import_refusal.status_code == 200, import_refusal.text
     result = import_refusal.json()["result"]

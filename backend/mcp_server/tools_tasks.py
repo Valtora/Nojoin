@@ -10,7 +10,7 @@ Task deletion exists only in the web app.
 import logging
 from typing import Any, Literal, Optional
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
