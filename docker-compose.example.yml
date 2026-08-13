@@ -79,6 +79,10 @@ x-worker-environment: &worker-environment
   # io image carry the binary. Declared for all four rather than merged into
   # those two separately: it is inert where codex is absent, and a single
   # declaration cannot drift.
+  # No default here on purpose, as with the context windows above: the codex
+  # modules own /usr/local/bin/codex and skip an empty value, so an unset
+  # variable falls through to them. Repeating the path here would create a
+  # second default to keep in step with the image that installs the binary.
   NOJOIN_CODEX_PATH: ${NOJOIN_CODEX_PATH:-}
   XDG_CACHE_HOME: /home/appuser/.cache
   HF_HOME: /home/appuser/.cache/huggingface

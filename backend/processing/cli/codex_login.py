@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 # Path to the codex binary (kept in sync with codex_driver.CODEX_PATH; duplicated
 # as a literal to avoid importing the driver — and its manager import — here).
-CODEX_PATH = os.environ.get("NOJOIN_CODEX_PATH", "/usr/local/bin/codex")
+# The empty-string guard matters for the same reason it does there: compose sets
+# the variable on every worker lane whether or not the operator filled it in.
+CODEX_PATH = os.environ.get("NOJOIN_CODEX_PATH", "").strip() or "/usr/local/bin/codex"
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _URL = re.compile(r"https://auth\.openai\.com/\S*device\S*")
