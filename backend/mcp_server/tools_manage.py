@@ -12,7 +12,7 @@ the connector at all.
 import logging
 from typing import Any, Optional
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlmodel import select
 
 from backend.core.security import MCP_WRITE_SCOPE

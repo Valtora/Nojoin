@@ -2,7 +2,7 @@
 
 Read tools (get_speakers, list_people, get_documents, get_person) and write
 tools (import_people, set_speaker_name, append_meeting_notes) are called
-directly as the plain coroutines registered on the FastMCP instance, with
+directly as the plain coroutines registered on the MCPServer instance, with
 the authenticated user and granted scopes injected through the same
 contextvars the auth middleware sets.
 """
@@ -14,7 +14,7 @@ from datetime import datetime
 
 import pytest
 from fastapi import HTTPException
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker

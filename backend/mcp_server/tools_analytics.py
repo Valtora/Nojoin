@@ -358,7 +358,7 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
     Args:
         recording_id: The recording's string id from list_recordings.
     """
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     from backend.api.v1.endpoints.transcripts.helpers import (
         _get_owned_recording,
@@ -485,7 +485,7 @@ async def analyse_meeting(recording_id: str) -> dict[str, Any]:
     Args:
         recording_id: The recording's string id from list_recordings.
     """
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     from backend.api.v1.endpoints.transcripts.routes_analytics import (
         generate_recording_ai_analytics,
