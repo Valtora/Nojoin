@@ -63,6 +63,14 @@ export default function ModernDatePicker({
           onChange={(date: Date | null) => onChange(date)}
           customInput={<CustomInput placeholder={placeholderText} className={inputClassName} />}
           wrapperClassName="w-full"
+          // Position against the viewport, not the nearest scroll box. Every
+          // modal panel hides its own overflow and scrolls its body, so an
+          // absolutely positioned popper is a child of that box: the library
+          // measures the free space inside it, flips the calendar upwards for
+          // want of room, and the panel then clips whatever crosses its header.
+          // The fixed strategy takes the popper out of that box; globals.css
+          // bounds it against the viewport instead.
+          popperProps={{ strategy: "fixed" }}
           // react-datepicker renders its own DOM, so the calendar is themed by
           // overriding its classes here and in the vendor block in globals.css
           // rather than by composing tokens the way the rest of the UI does.
