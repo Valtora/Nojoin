@@ -7,7 +7,11 @@ logger = logging.getLogger(__name__)
 def setup_secure_umask():
     # Default secure umask (owner only)
     default_umask_str = "0077"
-    umask_env = os.getenv("NOJOIN_UMASK", default_umask_str).strip()
+    # Compose declares NOJOIN_UMASK on every service, so an operator who leaves
+    # it blank sends an empty string rather than nothing at all. Treat that as
+    # unset: read as a get() default it reached int() and logged an "invalid
+    # value" warning on every start of an otherwise correctly configured stack.
+    umask_env = os.getenv("NOJOIN_UMASK", "").strip() or default_umask_str
 
     try:
         # Support octal strings (e.g. "0077" or "0o077") or decimal integers

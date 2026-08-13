@@ -33,6 +33,7 @@ ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 SHARED_ANCHOR = "x-shared-app-environment"
 
 _ENV_KEY_RE = re.compile(r"^(\s+)([A-Z][A-Z0-9_]*):")
+_BLANK_DEFAULT_RE = re.compile(r"^\s+([A-Z][A-Z0-9_]*):\s*\$\{\1:-\}\s*$", re.MULTILINE)
 
 
 def _shared_anchor_env_keys(text: str) -> set[str]:
@@ -54,6 +55,35 @@ def _shared_anchor_env_keys(text: str) -> set[str]:
         if match:
             keys.add(match.group(2))
     return keys
+
+
+def _blank_default_keys(text: str) -> set[str]:
+    """Variables the compose file declares with no fallback of its own.
+
+    ``FOO: ${FOO:-}`` is the template's way of saying "the code owns this
+    default". Compose still sets the variable, so the process sees an empty
+    string rather than nothing, anywhere in the file — not only in the shared
+    anchor, since the worker lanes carry their own.
+    """
+    return set(_BLANK_DEFAULT_RE.findall(text))
+
+
+def _code_default_reads(key: str) -> list[str]:
+    """Files reading ``key`` with a non-empty fallback passed to get()/getenv().
+
+    That form is only reached when the variable is absent, which under compose
+    it never is, so the fallback is dead and the empty string wins.
+    """
+    pattern = re.compile(
+        r"os\.(?:environ\.get|getenv)\(\s*[\"']"
+        + re.escape(key)
+        + r"[\"']\s*,\s*[\"'][^\"']+[\"']"
+    )
+    return sorted(
+        str(path.relative_to(REPO_ROOT))
+        for path in sorted((REPO_ROOT / "backend").rglob("*.py"))
+        if pattern.search(path.read_text(encoding="utf-8"))
+    )
 
 
 def _env_example_keys(text: str) -> set[str]:
@@ -80,6 +110,35 @@ def test_env_overrides_reach_the_containers() -> None:
         f"{missing} are read by config_manager but no service passes them in. "
         f"Add them to the {SHARED_ANCHOR} anchor in docker-compose.example.yml, "
         "or an operator who sets them gets the application default and no warning."
+    )
+
+
+def test_blank_defaults_are_parsed_at_all() -> None:
+    """Guard the parser: an empty set would make the test below vacuous."""
+    keys = _blank_default_keys(COMPOSE_PATH.read_text(encoding="utf-8"))
+    assert "NOJOIN_CODEX_PATH" in keys
+    assert "OLLAMA_CONTEXT_WINDOW" in keys
+
+
+def test_blank_compose_defaults_do_not_shadow_code_defaults() -> None:
+    """The other half of the plumbing problem, and the more expensive half.
+
+    Passing a variable through fixed the silent-discard failure above but
+    created its mirror image: ``${FOO:-}`` puts an empty string in the
+    environment, so ``os.environ.get("FOO", "a-default")`` stops returning its
+    default the moment the variable is plumbed through. That is how
+    ``NOJOIN_CODEX_PATH`` turned into an empty binary path and took Codex note
+    generation down with it. Read these with ``or`` instead.
+    """
+    offenders = {
+        key: files
+        for key in sorted(_blank_default_keys(COMPOSE_PATH.read_text(encoding="utf-8")))
+        if (files := _code_default_reads(key))
+    }
+    assert not offenders, (
+        f"{offenders} are declared empty in docker-compose.example.yml but read "
+        "with a get() fallback, which compose makes unreachable. Use "
+        'os.environ.get("VAR", "").strip() or "<default>" instead.'
     )
 
 

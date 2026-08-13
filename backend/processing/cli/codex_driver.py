@@ -48,7 +48,11 @@ from backend.utils.vision import VisionImage
 logger = logging.getLogger(__name__)
 
 # Absolute path to the codex binary in the worker-io image (CX-6 installs it).
-CODEX_PATH = os.environ.get("NOJOIN_CODEX_PATH", "/usr/local/bin/codex")
+# Read with ``or`` rather than a get() default: compose declares the variable on
+# the worker lanes so an operator can override it, which means it arrives set but
+# empty whenever they have not, and an empty string is a path the default would
+# otherwise never replace.
+CODEX_PATH = os.environ.get("NOJOIN_CODEX_PATH", "").strip() or "/usr/local/bin/codex"
 DEFAULT_TIMEOUT_SECONDS = 300
 
 _RATE_LIMIT_TOKENS = (
@@ -220,9 +224,14 @@ class CodexExecDriver:
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
-        except FileNotFoundError as exc:
+        except OSError as exc:
+            # Not just FileNotFoundError: a path that exists but is not
+            # executable raises PermissionError, and letting that propagate put
+            # a bare errno in front of the user instead of naming the setting
+            # that produced it.
             raise CliOAuthUnavailableError(
-                f"Codex CLI not found at {CODEX_PATH}."
+                f"Codex CLI could not be run at {CODEX_PATH!r} ({exc}). "
+                "Check NOJOIN_CODEX_PATH."
             ) from exc
         try:
             stdout, stderr = await asyncio.wait_for(
