@@ -26,7 +26,7 @@ ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
 # would find no loader in the Ubuntu base at all. The frontend image has the
 # opposite requirement — it runs Node standalone, so it takes the smaller Alpine
 # base. The two therefore stay different on purpose.
-FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS node
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341 AS node
 
 FROM ${WORKER_BASE_IMAGE}
 
