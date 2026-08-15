@@ -15,5 +15,5 @@ httpx==0.28.1
 #   CVE-2026-40192 (FITS decompression-bomb DoS), CVE-2026-42311.
 urllib3==2.7.0
 pillow==12.3.0
-alembic==1.19.0
+alembic==1.19.1
 pgvector==0.5.0
