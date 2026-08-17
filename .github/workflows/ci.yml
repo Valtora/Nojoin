@@ -428,7 +428,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "0"
-          trivyignores: .trivyignore
+          trivyignores: .github/trivyignore
 
   # Single required status check. It depends on every meaningful job and passes
   # only if none of them failed or were cancelled; a job that was skipped by the

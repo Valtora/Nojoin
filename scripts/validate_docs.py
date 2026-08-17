@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MARKDOWN_FILES = [
     REPO_ROOT / "README.md",
-    REPO_ROOT / "CONTRIBUTING.md",
+    REPO_ROOT / ".github" / "CONTRIBUTING.md",
     *sorted((REPO_ROOT / "docs").rglob("*.md")),
 ]
 LINK_RE = re.compile(r"(!?\[[^\]]*])\(([^)]+)\)")

@@ -331,7 +331,7 @@ jobs:
       # vulnerabilities that have a fix available. ignore-unfixed keeps the
       # CVE-heavy CUDA/PyTorch worker base releasable, because findings with no
       # upstream fix cannot be actioned by us; documented exceptions for fixed
-      # findings we are temporarily accepting live in .trivyignore.
+      # findings we are temporarily accepting live in .github/trivyignore.
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
@@ -343,7 +343,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .github/trivyignore
 
       - name: Sign image with cosign (keyless)
         env:
@@ -436,7 +436,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .github/trivyignore
 
       - name: Sign image with cosign (keyless)
         env:

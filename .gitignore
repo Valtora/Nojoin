@@ -3,8 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Pytest cache
+# Tool caches. pyproject.toml points pytest, ruff and mypy at /.cache/; the bare
+# names are kept so a checkout that predates that (or a tool invoked with an
+# explicit override) still ignores its cache.
+/.cache/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 backend/tests/__pycache__/
 backend/tests/pipeline_fixtures/generated/
 

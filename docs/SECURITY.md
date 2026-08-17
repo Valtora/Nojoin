@@ -120,7 +120,7 @@ Published container images are scanned for known vulnerabilities by [Trivy](http
 
 - The release pipeline scans each image and **fails the release on CRITICAL or HIGH findings that have a fix available** (`ignore-unfixed: true`). Such findings are addressable by us — usually by pulling in a patched base image or dependency — so they block publication.
 - Findings **without an upstream fix** do not block the release. They cannot be actioned by Nojoin and are unavoidable for the GPU worker base image. They remain visible in scan output for tracking.
-- A *fixed* CRITICAL/HIGH finding may be **temporarily accepted only by an explicit, documented exception** in [.trivyignore](../.trivyignore), recording the CVE id, the reason, the owner, and a review-by date. Exceptions are expected to be short-lived and are removed once the fix is pulled in, typically through a Dependabot base-image or dependency update.
+- A *fixed* CRITICAL/HIGH finding may be **temporarily accepted only by an explicit, documented exception** in [.github/trivyignore](../.github/trivyignore), recording the CVE id, the reason, the owner, and a review-by date. Exceptions are expected to be short-lived and are removed once the fix is pulled in, typically through a Dependabot base-image or dependency update.
 - Pull requests additionally run an informational dependency and configuration scan that surfaces CVEs without blocking merges.
 
 ## Supported Versions

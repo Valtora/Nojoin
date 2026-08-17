@@ -156,7 +156,7 @@ PYTHON_DECLARATIONS: tuple[Declaration, ...] = (
         what="the CI interpreter",
     ),
     Declaration(
-        path="CONTRIBUTING.md",
+        path=".github/CONTRIBUTING.md",
         # - Python 3.12   (the contributor prerequisite bullet)
         pattern=re.compile(r"^-\s+Python\s+(\d+\.\d+)", re.MULTILINE),
         what="the documented prerequisite",

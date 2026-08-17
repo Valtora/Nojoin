@@ -30,7 +30,7 @@ We **actively welcome** code contributions, bug fixes, and feature enhancements 
 
 ## Development Setup
 
-Please refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local development setup and core source-build commands.
+Please refer to [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) for local development setup and core source-build commands.
 
 Local contributor prerequisites:
 
@@ -85,7 +85,7 @@ Minimum pull request verification is:
   `cd site && npm ci && npm run build`. Use `npm ci`, never `npm install`: an older npm
   rewrites `package-lock.json` in ways CI rejects. Also run
   `node frontend/scripts/check-contrast.mjs`, and check for horizontal overflow at 360px in
-  both themes. [docs/SITE.md](docs/SITE.md) carries the full runbook, including how to share
+  both themes. [docs/SITE.md](../docs/SITE.md) carries the full runbook, including how to share
   a preview over a Cloudflare quick tunnel.
 - Design token changes (`frontend/src/app/tokens.css`, `site/src/styles/site-tokens.css`):
   `node frontend/scripts/check-contrast.mjs`. The gate only audits pairings registered in
@@ -133,7 +133,7 @@ Use the GitHub issue templates and choose the closest match. Route sensitive rep
 - **Platform or browser-capture failures:** open a platform compatibility report with your operating system, browser, and versions. These are triaged under the `platform-issue` label.
 - **Flaky tests:** open a bug report titled `[flaky]`. Include the test name, the CI job or local command, how often it fails, and a link to a failing run if available. Note whether it reproduces locally or only in CI.
 - **Dependency issues:** open a bug report describing the dependency, the pinned and installed versions, the platform (CPU or CUDA, operating system, Python or Node version), and the exact install or runtime error. State whether it affects `requirements/local.txt`, `requirements/dev.txt`, or the frontend lockfile.
-- **Security vulnerabilities:** do not open a public issue. Use GitHub Private Vulnerability Reporting as described in the [security policy](docs/SECURITY.md).
+- **Security vulnerabilities:** do not open a public issue. Use GitHub Private Vulnerability Reporting as described in the [security policy](../docs/SECURITY.md).
 
 ## Repository Governance
 
@@ -141,7 +141,7 @@ Nojoin is currently maintained by a single maintainer. The governance below is d
 
 ### Code Ownership
 
-Review responsibility is recorded in [.github/CODEOWNERS](.github/CODEOWNERS). GitHub auto-requests a review from the listed owner for every pull request that touches a matched path. The current map is:
+Review responsibility is recorded in [.github/CODEOWNERS](CODEOWNERS). GitHub auto-requests a review from the listed owner for every pull request that touches a matched path. The current map is:
 
 | Area | Paths | Owner |
 | --- | --- | --- |
@@ -162,13 +162,13 @@ Every pull request to `main` must have the required `CI gate` status check green
 - A **deployment** change (`docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/ci.yml`) runs **both** the backend and frontend suites, since it can affect the built images or the test pipeline even without code changes. Other workflow files (such as the release pipeline) are not gated by the unit suites — they run on their own triggers — but remain a sensitive review scope (see below). A `scripts/**` change runs `Python quality` only.
 - `Whitespace check`, `Docs validation`, and `Alembic validation` — always run (cheap). `Whitespace check` is the only trailing-whitespace guard for Markdown, YAML, shell, and config files, so it is never gated.
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.
+See [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.
 
 Sensitive scopes carry an additional review obligation that the maintainer (or, in future, a designated CODEOWNER) must satisfy before merging:
 
 - **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head and never delete or rename a committed revision. Confirm `Alembic validation` is green.
-- **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
-- **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+- **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](../docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
+- **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md).
 - **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
 
 ### Branch Protection (maintainer-action-pending)
@@ -179,7 +179,7 @@ Branch protection and required-reviewer enforcement cannot be applied from the r
 - Require the single `CI gate` status check to pass before merging, with branches required to be up to date. It is enforced for admins too, so nothing merges red. (Only `CI gate` is required, not the individual jobs, because those are skipped by the path filter when irrelevant and a skipped job would otherwise leave a required check pending forever.)
 - Require linear history and disallow force pushes and deletions.
 
-The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#branch-protection-maintainer-action).
+The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection-maintainer-action).
 
 ### Recording Significant Decisions
 
@@ -193,7 +193,7 @@ When a change alters one of Nojoin's core contracts, the reasoning belongs in th
 
 Record the context that forced the decision, the alternatives weighed, and the trade-offs accepted — not just what changed. The test is whether a future maintainer would be surprised by the decision and need to know *why* it was made. A routine bug fix, refactor, dependency bump, or documentation edit needs no such treatment.
 
-Where a decision constrains future work — an invariant that a reasonable-looking change would silently break — say so in the relevant document under [docs/](docs/) as well, so it is found by someone reading the docs rather than only by someone reading history.
+Where a decision constrains future work — an invariant that a reasonable-looking change would silently break — say so in the relevant document under [docs/](../docs/) as well, so it is found by someone reading the docs rather than only by someone reading history.
 
 ### Periodic Re-Audit
 
@@ -209,12 +209,12 @@ The re-audit procedure is to run the required checks from a clean environment, c
 
 To avoid duplication, the remaining policies live in their canonical homes:
 
-- **Triage cadence and labels:** [.github/SUPPORT.md](.github/SUPPORT.md) and [.github/labels.yml](.github/labels.yml).
-- **Dependency-update policy:** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#dependency-update-policy).
-- **Test reliability (duration and flakiness):** [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#test-reliability) and the flaky-test reporting path under [Reporting Issues](#reporting-issues).
+- **Triage cadence and labels:** [.github/SUPPORT.md](SUPPORT.md) and [.github/labels.yml](labels.yml).
+- **Dependency-update policy:** [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#dependency-update-policy).
+- **Test reliability (duration and flakiness):** [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#test-reliability) and the flaky-test reporting path under [Reporting Issues](#reporting-issues).
 
 ## Code of Conduct
 
-Please note that this project is released with a [Code of Conduct](docs/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
+Please note that this project is released with a [Code of Conduct](../docs/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
 Thank you for helping make Nojoin better!
