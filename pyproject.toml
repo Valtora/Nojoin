@@ -2,6 +2,9 @@
 # --durations reports the slowest tests on every local and CI run so duration
 # creep and slow outliers stay visible without extra tooling.
 addopts = "--durations=15"
+# Tool caches are consolidated under .cache/ so the repository root stays
+# readable; ruff and mypy are pointed at siblings of this directory.
+cache_dir = ".cache/pytest"
 pythonpath = [
   "."
 ]
@@ -19,6 +22,7 @@ markers = [
 # security/persistence contracts, and API-facing schemas -- and expand the
 # `files` list as more modules are annotated (see docs/DEVELOPMENT.md).
 python_version = "3.12"
+cache_dir = ".cache/mypy"
 # The Pydantic plugin teaches mypy about SQLModel/Pydantic models, including
 # @computed_field stacked on @property.
 plugins = ["pydantic.mypy"]
@@ -61,6 +65,7 @@ files = [
 
 [tool.ruff]
 target-version = "py312"
+cache-dir = ".cache/ruff"
 # Vendored third-party model cards (e.g. pyannote) ship Markdown with embedded
 # Python snippets. Ruff 0.16+ formats code blocks inside Markdown, so exclude the
 # vendored tree to avoid reformatting upstream content we do not own.

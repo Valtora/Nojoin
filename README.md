@@ -128,7 +128,7 @@ Nojoin is under active development. Back up your instance regularly before upgra
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and contribution expectations.
+Contributions are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the development workflow and contribution expectations.
 
 ## Anonymous Usage Data
 

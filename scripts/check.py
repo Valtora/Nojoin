@@ -9,7 +9,7 @@ can reproduce CI locally before pushing:
     python scripts/check.py lint format # run only the named checks
 
 Frontend checks (lint, test, build) are not run here; run them from frontend/
-with npm as documented in CONTRIBUTING.md.
+with npm as documented in .github/CONTRIBUTING.md.
 """
 
 from __future__ import annotations
