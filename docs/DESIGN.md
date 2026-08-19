@@ -307,6 +307,14 @@ inside the transcript card and then below it; see the rule on capping below. Rem
 without bounding the row is the same defect pointing the other way, and the transcript grows without
 limit instead of Meeting Edge.
 
+A `min-height` inside the absorbing module is the same mistake in miniature. The transcript's scroll
+window carried a 14rem floor, and on a short window the notes and documents cards left the module
+less than that: the window overflowed its own card, the frame drawn behind it stayed at the card's
+height, and the overspill painted across the notes card below. **A child of an absorbing module
+takes the height its card was given**, so from 54rem the window is `min-h-0` and the card clips what
+it cannot hold. The floor survives only in the stacked layout below 54rem, where the page scrolls
+and there is no height to refuse.
+
 The meeting view's Analytics tab is the third surface that spends width on columns, and it does so
 entirely through container queries on its own scroll region, because it lives inside a resizable
 panel between two collapsible rails and its width is the window minus two numbers it cannot see. It

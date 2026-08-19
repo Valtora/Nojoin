@@ -203,4 +203,24 @@ describe("LiveTranscriptPanel", () => {
 
     expect(container.scrollTop).toBe(500);
   });
+
+  it("lets the scroll window shrink to the card it is given", () => {
+    renderPanel([buildLine("a", 0, "first")]);
+    const container = screen.getByTestId("live-transcript-scroll");
+
+    // From 54rem this module absorbs whatever the notes and documents cards
+    // leave, which on a short window is under 14rem. A rigid floor there made
+    // the window taller than its own card: the frame stayed at the card's
+    // height and the overspill painted across the notes card below. The floor
+    // is kept for the stacked layout, where the page scrolls instead.
+    expect(container.className).toContain("min-h-[14rem]");
+    expect(container.className).toContain("@min-[54rem]:min-h-0");
+  });
+
+  it("keeps every line inside the card", () => {
+    const { container } = renderPanel([buildLine("a", 0, "first")]);
+    const card = container.querySelector("section");
+
+    expect(card?.className).toContain("overflow-hidden");
+  });
 });
