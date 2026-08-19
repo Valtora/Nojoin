@@ -332,6 +332,14 @@ The web client is responsible for:
 
 The web client is the only live capture surface. Unsupported browsers retain review, playback, admin, and settings capabilities, but cannot start live recording.
 
+#### Connectivity Monitor
+
+Backend reachability is a state machine in `frontend/src/lib/connectivity/`, and the thing it exists to avoid is claiming an outage that is not happening. Every observed success is proof of life, whether it came from real API traffic, a health poll or an idle liveness probe, so a page doing steady work never probes at all. Only the dedicated prober can escalate, and only after the last success has gone stale and three of its probes have failed.
+
+Two rules keep that threshold meaning what it says. **Probes are serialised**: a tick will not start one while another is in flight. Without that the driver stacked them, because a tick awaiting its probe holds no timer, so every failing request scheduled another tick 500ms later, and each of those started another probe. A tab whose connection stalls fails a burst of requests at once, which is how one production capture put seven probes in flight together, all aborted in the same instant: three times the threshold delivered in one go rather than confirmed over fifteen seconds. **A probe that outlasts its own timeout by a wide margin is not counted**, because a frozen tab suspends the abort timer along with the request and thaws them together, cancelling the fetch without ever having raced it against the network. Returning to the foreground clears the failure streak for the same reason: evidence gathered while the page was not being run is not evidence. The `resume` event cannot be used for any of this, since it is advisory and not dispatched on every Chromium build (issue #166), so the elapsed wall clock is the signal.
+
+This matters beyond the toast. A false `unreachable` also mislabels an audio-coverage shortfall as `backend-unreachable`, which promises the queued audio will upload on reconnect, when the real cause was the suspension that lost it.
+
 ### Browser Capture Stack
 
 The browser capture stack is responsible for:
@@ -349,7 +357,9 @@ The browser capture stack is responsible for:
 
 The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the transcoded segments and polled every 15 seconds while capture is open. The client cannot derive it: a segment carries slightly more than the nominal timeslice, because each roll flushes whatever accumulated while the recorder was stopping, and multiplying the sequence number by the timeslice under-counts by around 10% over an hour. That estimate produced coverage warnings on recordings that had lost nothing. The backend figure carries the opposite bias, running 2-3% high because each decoded segment includes codec priming that concatenation later trims, which is left uncorrected on purpose: it can only make a shortfall look smaller, never invent one.
 
-The warning also carries a cause, because a shortfall means opposite things depending on why. `backend-unreachable` when the connectivity monitor reports the API down, and the queued audio will upload on reconnect. `tab-suspended` when the page was seen to thaw or the recorder watchdog caught it stalled, and the audio is gone. `unknown` when neither signal is present, with copy that describes the gap without diagnosing it. It is dismissible, and re-arms only when the shortfall grows materially past the value dismissed.
+The shortfall is net of the uploader's own queue. Segments recorded but not yet acknowledged are audio the browser is holding, not audio that has been lost, and a server that stops answering for two minutes leaves exactly two minutes of them; counting that as missing told a user their meeting was being lost while it sat in memory waiting to upload. The queue is estimated from its length rather than measured, which biases the warning towards firing rather than towards silence, and it is named separately in the copy so a queue that never drains is still visible.
+
+The warning also carries a cause, because a shortfall means opposite things depending on why. `backend-unreachable` when the connectivity monitor reports the API down, and the queued audio will upload on reconnect. `tab-suspended` when the page was seen to thaw or the recorder watchdog caught it stalled, and the audio is gone. `unknown` when neither signal is present, with copy that describes the gap without diagnosing it. An outage that has just ended still counts, for five minutes: the check polls every fifteen seconds and the shortfall persists while the queue drains, so classifying on the live status alone answered `unknown` for the very case the classifier exists to name. It ranks below a freeze, which is direct evidence the browser stopped recording where an outage is evidence it did not. It is dismissible, and re-arms only when the shortfall grows materially past the value dismissed.
 
 ## Recording Flow
 

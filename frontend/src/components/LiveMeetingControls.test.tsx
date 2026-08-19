@@ -20,6 +20,14 @@ const captureState = {
   status: "recording",
   recordingId: "rec-1" as string | null,
   stop: (...args: unknown[]) => stop(...args),
+  coverageWarning: null as {
+    capturedSeconds: number;
+    elapsedSeconds: number;
+    missingSeconds: number;
+    queuedSeconds: number;
+    cause: string;
+  } | null,
+  dismissCoverageWarning: vi.fn(),
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -45,6 +53,40 @@ describe("LiveMeetingControls", () => {
     captureState.elapsedSeconds = 12;
     captureState.runtimeActive = true;
     captureState.status = "recording";
+    captureState.coverageWarning = null;
+  });
+
+  it("renders the captured figure as a clock, not as a float", () => {
+    // The server sums segment durations in milliseconds, so this arrives
+    // fractional and `seconds % 60` rendered "50:11.099999999999909".
+    captureState.coverageWarning = {
+      capturedSeconds: 3011.099999999999909,
+      elapsedSeconds: 3153,
+      missingSeconds: 142,
+      queuedSeconds: 0,
+      cause: "unknown",
+    };
+
+    render(<LiveMeetingControls size="full" />);
+
+    expect(screen.getByText("50:11 captured")).toBeInTheDocument();
+    expect(screen.queryByText(/\.\d/)).not.toBeInTheDocument();
+  });
+
+  it("says what is queued rather than letting it read as lost", () => {
+    captureState.coverageWarning = {
+      capturedSeconds: 3011,
+      elapsedSeconds: 3153,
+      missingSeconds: 20,
+      queuedSeconds: 122,
+      cause: "backend-unreachable",
+    };
+
+    render(<LiveMeetingControls size="full" />);
+
+    expect(
+      screen.getByText(/Another 02:02 is recorded and waiting to upload/),
+    ).toBeInTheDocument();
   });
 
   it("toasts pause failures instead of rendering them inline", async () => {

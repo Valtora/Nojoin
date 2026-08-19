@@ -92,6 +92,61 @@ describe("ConnectivityMonitor driver", () => {
     monitor.stop();
   });
 
+  it("never runs two probes at once, however many requests fail", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    // A probe that never resolves on its own, standing in for one stalled
+    // across a tab suspension.
+    const release: Array<(ok: boolean) => void> = [];
+    const probe = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          release.push((ok) => {
+            inFlight -= 1;
+            resolve(ok);
+          });
+        }),
+    );
+    const { monitor, getState } = makeHarness(probe);
+
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(1);
+
+    // The resume storm: a burst of failed requests, each asking for a probe.
+    for (let i = 0; i < 8; i += 1) {
+      monitor.recordRequestOutcome({ reachedServer: false });
+      await vi.advanceTimersByTimeAsync(600);
+    }
+
+    expect(maxInFlight).toBe(1);
+    expect(probe).toHaveBeenCalledTimes(1);
+    // Nothing has been confirmed, so nothing is claimed.
+    expect(getState().status).not.toBe("unreachable");
+
+    release.forEach((resolve) => resolve(true));
+    monitor.stop();
+  });
+
+  it("does not count a probe that was suspended rather than answered", async () => {
+    // Fails, but only after far longer than its own timeout, which is what a
+    // tab frozen across the probe looks like: the abort fires on thaw.
+    const probe = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120_000));
+      return false;
+    });
+    const { monitor, getState } = makeHarness(probe);
+
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(STALE_AFTER_MS + 5_000 * PROBE_FAILURES_TO_UNREACHABLE + 200_000);
+
+    expect(probe.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(getState().probeFailureStreak).toBe(0);
+    expect(getState().status).not.toBe("unreachable");
+    monitor.stop();
+  });
+
   it("brings a probe forward when a real request fails", async () => {
     const probe = vi.fn().mockResolvedValue(true);
     const { monitor, getState } = makeHarness(probe);

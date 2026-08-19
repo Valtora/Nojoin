@@ -88,7 +88,18 @@ export type CaptureCoverageCause =
 export interface CaptureCoverageWarning {
   capturedSeconds: number;
   elapsedSeconds: number;
+  /**
+   * Elapsed time the server holds no audio for and the browser is not holding
+   * either, so it is genuinely gone. Net of `queuedSeconds`.
+   */
   missingSeconds: number;
+  /**
+   * Recorded, still queued in the browser, not yet acknowledged by the server.
+   * Estimated from the queue length rather than measured, so it is approximate
+   * in the same direction as the timeslice. This audio is not lost; it uploads
+   * when the server answers again.
+   */
+  queuedSeconds: number;
   cause: CaptureCoverageCause;
 }
 

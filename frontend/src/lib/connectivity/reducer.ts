@@ -129,7 +129,20 @@ export const reduce = (
       return withStatus({ ...state, browserOnline: true }, event.at);
 
     case "visibility-changed":
-      return withStatus({ ...state, visible: event.visible }, event.at);
+      // Returning to the foreground starts the confirmation over. Failures
+      // recorded while the tab was hidden, throttled or frozen were gathered
+      // while the browser was not running the page properly, and holding them
+      // means a tab that comes back after a suspension alarms on evidence
+      // collected in the dark. A backend that really is down is re-confirmed
+      // within seconds by the confirm-cadence prober.
+      return withStatus(
+        {
+          ...state,
+          visible: event.visible,
+          probeFailureStreak: event.visible ? 0 : state.probeFailureStreak,
+        },
+        event.at,
+      );
 
     case "evaluate":
       return withStatus(state, event.at);

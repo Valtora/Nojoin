@@ -16,6 +16,19 @@ const CONFIRM_PROBE_INTERVAL_MS = 5_000;
 const REACTIVE_PROBE_DELAY_MS = 500;
 /** Liveness-probe timeout. Deliberately generous — a slow answer is not an outage. */
 const PROBE_TIMEOUT_MS = 10_000;
+/**
+ * A failed probe is only evidence if it was raced against the network for
+ * roughly its own timeout. Take this much longer and the browser was not
+ * running our code: a frozen or suspended tab stops the abort timer with the
+ * request, and both resume together, so the fetch is cancelled the instant the
+ * tab thaws without ever having been given a fair 10 seconds. Counting that as
+ * a confirmed failure turns a browser suspension into a backend outage.
+ *
+ * The `resume` event is not usable for this. It is advisory and not dispatched
+ * on every Chromium build (issue #166), so the elapsed wall clock is the only
+ * signal that holds everywhere.
+ */
+const SUSPENDED_PROBE_AFTER_MS = PROBE_TIMEOUT_MS * 2;
 
 /**
  * Cheap, unauthenticated, redirect-free liveness endpoint. Mirrors the axios
@@ -63,6 +76,18 @@ export class ConnectivityMonitor {
   private timer: TimerHandle | null = null;
 
   private running = false;
+
+  /**
+   * One probe at a time, always. Without this the driver stacks them: a tick
+   * that is awaiting its probe holds no timer, so every failing request calls
+   * `bringProbeForward` and schedules another tick 500ms later, which starts
+   * another probe. A tab that resumes from suspension fails many requests at
+   * once and produced seven concurrent probes in production, all aborted in the
+   * same instant, which is three times the confirmation threshold delivered in
+   * one go. The threshold means "three probes over ~15 seconds", and only a
+   * serialised prober makes that true.
+   */
+  private probing = false;
 
   private readonly listeners: Array<() => void> = [];
 
@@ -165,7 +190,9 @@ export class ConnectivityMonitor {
 
     const state = this.deps.getState();
     // Never probe a hidden or offline tab: those failures are false negatives.
-    const canProbe = state.browserOnline && state.visible;
+    // Nor a second time while one is still in flight; that is what the probe
+    // is for.
+    const canProbe = state.browserOnline && state.visible && !this.probing;
     // Probe when a real failure forced a verification, or (idle fallback) when
     // we lack fresh proof of reachability. Fresh real traffic already answers
     // the question, so an untriggered tick skips the synthetic load.
@@ -184,16 +211,36 @@ export class ConnectivityMonitor {
   }
 
   private async runProbe(): Promise<void> {
+    const startedAt = this.deps.now();
     let ok = false;
+    this.probing = true;
     try {
       ok = await this.deps.probe();
     } catch {
       ok = false;
+    } finally {
+      this.probing = false;
     }
     const at = this.deps.now();
-    this.deps.dispatch(
-      ok ? { type: "probe-succeeded", at } : { type: "probe-failed", at },
-    );
+
+    if (ok) {
+      this.deps.dispatch({ type: "probe-succeeded", at });
+      return;
+    }
+
+    // A failure the browser cannot vouch for is not counted. Either the tab was
+    // suspended across the probe, so its abort was decided by a timer that
+    // never ran, or it went to the background mid-probe, which the tick guard
+    // already refuses to probe in. `evaluate` still advances the clock, so
+    // staleness and the confirm cadence carry on as normal and the next probe,
+    // run with a fair timeout, decides.
+    const suspended = at - startedAt >= SUSPENDED_PROBE_AFTER_MS;
+    if (suspended || !this.deps.getState().visible) {
+      this.deps.dispatch({ type: "evaluate", at });
+      return;
+    }
+
+    this.deps.dispatch({ type: "probe-failed", at });
   }
 
   private scheduleNext(): void {
@@ -213,6 +260,11 @@ export class ConnectivityMonitor {
     }
     const state = this.deps.getState();
     if (!state.browserOnline || !state.visible) {
+      return;
+    }
+    // A probe already in flight is the verification this would ask for, and
+    // cancelling the tick that owns it would leave the driver with no timer.
+    if (this.probing) {
       return;
     }
     this.clearTimer();

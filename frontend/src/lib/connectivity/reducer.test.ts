@@ -115,6 +115,27 @@ describe("connectivity reducer", () => {
     expect(state.status).not.toBe("unreachable");
   });
 
+  it("clears probe failures gathered in the background when the tab returns", () => {
+    let state = createInitialState();
+    state = reduce(state, { type: "request-succeeded", at: 0 });
+    state = reduce(state, { type: "visibility-changed", at: 1_000, visible: false });
+    state = reduce(state, { type: "probe-failed", at: 40_000 });
+    state = reduce(state, { type: "probe-failed", at: 45_000 });
+    state = reduce(state, { type: "probe-failed", at: 50_000 });
+    expect(state.status).toBe("unreachable");
+
+    state = reduce(state, {
+      type: "visibility-changed",
+      at: 51_000,
+      visible: true,
+    });
+
+    // Evidence collected while the page was not being run is discarded, and
+    // the machine goes back to checking rather than accusing the backend.
+    expect(state.probeFailureStreak).toBe(0);
+    expect(state.status).toBe("checking");
+  });
+
   it("never probes a hidden tab into unreachable (probe failures still counted only when driver runs them)", () => {
     // Sanity: visibility does not itself change reachability derivation.
     const visible = run([{ type: "visibility-changed", at: T0, visible: true }]);

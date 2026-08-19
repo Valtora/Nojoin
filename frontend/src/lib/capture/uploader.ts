@@ -76,6 +76,19 @@ export class SegmentUploader {
     this.nextExpectedSequence = options.initialSequence ?? 0;
   }
 
+  /**
+   * Segments recorded but not yet acknowledged by the server.
+   *
+   * This is audio the browser is holding, not audio that has been lost, and
+   * the coverage check needs the difference: a server that stops answering for
+   * two minutes leaves the queue two minutes long, and counting that as missing
+   * tells the user their meeting is being lost while it is in fact sitting here
+   * waiting to upload.
+   */
+  pendingSegmentCount(): number {
+    return this.pending.size;
+  }
+
   enqueue(sequence: number, blob: Blob) {
     if (this.closed) {
       return;

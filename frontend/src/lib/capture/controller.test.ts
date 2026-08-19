@@ -918,6 +918,56 @@ describe("capture controller", () => {
     expect(controller.getState().coverageWarning.cause).toBe("backend-unreachable");
   });
 
+  it("does not count the upload queue as missing audio", () => {
+    // The production shape: the server stalled for two minutes, the recorder
+    // kept going, and the queue held everything it produced. Nothing was lost,
+    // so nothing should be claimed lost.
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.runtime = {
+      uploader: { pendingSegmentCount: () => 128 },
+    };
+
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning).toBeNull();
+    expect(notificationMocks.addNotification).not.toHaveBeenCalled();
+  });
+
+  it("reports the queue alongside a genuine shortfall", () => {
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    controller.runtime = {
+      uploader: { pendingSegmentCount: () => 15 },
+    };
+
+    controller.evaluateCoverage();
+
+    const warning = controller.getState().coverageWarning;
+    expect(warning.queuedSeconds).toBe(30);
+    expect(warning.missingSeconds).toBe(226);
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("waiting to upload"),
+      }),
+    );
+  });
+
+  it("still blames an outage that ended while the queue was draining", () => {
+    // A shortfall is noticed by a 15-second poll and persists while the queue
+    // drains, so the backend is usually reachable again by the time the warning
+    // is raised. Classifying on the live status alone reported `unknown` for
+    // the one case the classifier exists to name.
+    const controller = recordingWithCapturedAudio(4_618, 4_874);
+    connectivityMocks.status = "unreachable";
+    controller.evaluateCoverage();
+    expect(controller.getState().coverageWarning.cause).toBe("backend-unreachable");
+
+    connectivityMocks.status = "online";
+    controller.setState({ coverageWarning: null });
+    controller.evaluateCoverage();
+
+    expect(controller.getState().coverageWarning.cause).toBe("backend-unreachable");
+  });
+
   it("clears the warning when dismissed", () => {
     const controller = recordingWithCapturedAudio(4_618, 4_874);
     controller.evaluateCoverage();

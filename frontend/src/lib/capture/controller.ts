@@ -65,8 +65,11 @@ interface ActiveRuntime {
   mediaReleased?: boolean;
 }
 
+/** Nominal length of one recorded segment. Matches the recorder's timeslice. */
+const CAPTURE_TIMESLICE_SECONDS = 2;
+
 const sequenceToElapsedSeconds = (lastSequence: number) =>
-  lastSequence >= 0 ? (lastSequence + 1) * 2 : 0;
+  lastSequence >= 0 ? (lastSequence + 1) * CAPTURE_TIMESLICE_SECONDS : 0;
 
 const FINALIZE_UPLOAD_IN_PROGRESS_DETAIL =
   "Recording upload is still in progress; finalize after all segment uploads complete.";
@@ -129,6 +132,19 @@ const COVERAGE_WARNING_REARM_SECONDS = 60;
  * right trade for a warning about minutes of lost audio.
  */
 const COVERAGE_POLL_INTERVAL_MS = 15_000;
+
+/**
+ * How long an outage keeps explaining a shortfall after the server answers
+ * again.
+ *
+ * A shortfall is noticed by a poll that runs every 15 seconds, and it persists
+ * while the upload queue drains, so by the time the warning is raised the
+ * backend is usually reachable once more. Classifying on the live status alone
+ * therefore reported `unknown` for exactly the case the classification exists
+ * to name, and told the user to check their tab and their connection for a
+ * two-minute stall on the server.
+ */
+const COVERAGE_RECENT_OUTAGE_MS = 5 * 60_000;
 
 const withStageTimeout = async <T>(
   stage: CaptureStopStage,
@@ -229,6 +245,9 @@ export class CaptureController {
    * being attributed to it.
    */
   private sawCaptureFreeze = false;
+
+  /** When the backend was last seen to be unreachable, for the classifier. */
+  private lastUnreachableAt: number | null = null;
 
   private readonly wakeLock: CaptureWakeLock = createCaptureWakeLock();
 
@@ -1029,10 +1048,20 @@ export class CaptureController {
    */
   private classifyCoverageCause = (): CaptureCoverageCause => {
     if (!isReachable(useConnectivityStore.getState().status)) {
+      this.lastUnreachableAt = Date.now();
       return "backend-unreachable";
     }
     if (this.sawCaptureFreeze) {
       return "tab-suspended";
+    }
+    // An outage that has just ended still explains the gap it left behind. It
+    // ranks below a freeze, because a freeze is direct evidence the browser
+    // stopped recording while an outage is evidence it did not.
+    if (
+      this.lastUnreachableAt !== null &&
+      Date.now() - this.lastUnreachableAt <= COVERAGE_RECENT_OUTAGE_MS
+    ) {
+      return "backend-unreachable";
     }
     return "unknown";
   };
@@ -1041,9 +1070,13 @@ export class CaptureController {
     const captured = Math.round(warning.capturedSeconds / 60);
     const elapsed = Math.round(warning.elapsedSeconds / 60);
     const missing = Math.round(warning.missingSeconds / 60);
+    const queued = Math.round(warning.queuedSeconds / 60);
     const headline =
       `Nojoin has ${captured} of ${elapsed} minutes of audio, so around ` +
-      `${missing} minutes are missing. `;
+      `${missing} minutes are missing. ` +
+      (queued >= 1
+        ? `A further ${queued} minutes are recorded and waiting to upload. `
+        : "");
 
     if (warning.cause === "backend-unreachable") {
       return (
@@ -1068,6 +1101,19 @@ export class CaptureController {
   };
 
   /**
+   * Recorded audio the browser is still holding, estimated from the queue.
+   *
+   * Approximate for the same reason the captured figure is measured rather than
+   * derived: a segment carries a little more than the nominal timeslice. It is
+   * only ever subtracted from a shortfall, so the bias makes the warning
+   * slightly readier to fire, never readier to stay silent.
+   */
+  private queuedAudioSeconds = (): number => {
+    const pending = this.runtime?.uploader.pendingSegmentCount() ?? 0;
+    return pending * CAPTURE_TIMESLICE_SECONDS;
+  };
+
+  /**
    * Compares the audio the server holds against wall-clock recording time.
    */
   private evaluateCoverage = () => {
@@ -1083,7 +1129,15 @@ export class CaptureController {
     }
 
     const elapsedSeconds = this.state.elapsedSeconds;
-    const missingSeconds = Math.max(0, elapsedSeconds - capturedSeconds);
+    // What the browser is still holding is not missing. Subtracting the queue
+    // is the difference between "the server stopped answering and your audio is
+    // waiting" and "your meeting is being lost", which are the two readings of
+    // the same arithmetic and only one of them is true during an outage.
+    const queuedSeconds = this.queuedAudioSeconds();
+    const missingSeconds = Math.max(
+      0,
+      elapsedSeconds - capturedSeconds - queuedSeconds,
+    );
     if (
       elapsedSeconds <= 0 ||
       missingSeconds < COVERAGE_WARNING_MIN_MISSING_SECONDS ||
@@ -1104,6 +1158,7 @@ export class CaptureController {
       capturedSeconds,
       elapsedSeconds,
       missingSeconds,
+      queuedSeconds,
       cause: this.classifyCoverageCause(),
     };
     this.setState({ coverageWarning: warning, coverageWarningDismissedAt: null });
