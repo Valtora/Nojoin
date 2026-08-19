@@ -116,7 +116,7 @@ Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is
 
 While recording, Nojoin shows recording state, duration, upload state, a live waveform, a live transcript panel, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
 
-The recording workspace lays these out so that on a wide display everything is visible at once rather than down a long scroll. The capture controls sit in a toolbar across the top, carrying the meeting's working name, the transport, **Upload** for attaching a document, and the speaker limit. Below it are two columns: the live transcript with your notes under it on the left, and Meeting Edge on the right. It collapses to a single stack on smaller screens. When you press **Stop**, the transcript becomes pipeline progress and the rest of the layout stays where it is.
+The recording workspace lays these out so that on a wide display everything is visible at once rather than down a long scroll. The capture controls sit in a toolbar across the top, carrying the meeting's working name, the transport, **Attach Docs** for attaching one or more documents, and the speaker limit. Below it are two columns: the live transcript with your notes under it on the left, and Meeting Edge on the right. It collapses to a single stack on smaller screens. When you press **Stop**, the transcript becomes pipeline progress and the rest of the layout stays where it is.
 
 Documents you attach are listed under your notes. The panel appears only once something is attached, since uploading is done from the toolbar.
 
@@ -347,13 +347,15 @@ No warning does not mean the attribution is certainly right, only that nothing o
 
 Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or from the Documents panel that appears below the live transcript while a meeting is still recording or processing.
 
+Several files can be attached at once. Browse to them or drag them onto the dialog, in one go or a few at a time, and each queued file is listed with its own **Analyse visually with AI** switch, so a deck can be read visually while the plain-text agenda beside it is not. Uploads run one after another rather than all at once, and the documents panel fills as they land. If one fails the rest still go through, and the dialog stays open with the failed files listed so they can be retried without re-sending what already uploaded.
+
 Timing matters. Meeting notes are generated once, at the end of processing, and they use every document that has finished parsing by then. A document attached during the meeting is normally ready in time to be included on the first pass. A document attached afterwards cannot be, so the Notes tab shows a banner offering to regenerate. Regenerating is never automatic: it uses your AI provider and overwrites any edits you have made to the notes.
 
 #### Visual Analysis
 
 Text extraction alone misses most of what a slide deck or a scanned report actually carries. **Analyse visually with AI** is therefore on by default: each page is sent to your configured AI model, which transcribes the text, reconstructs tables, and describes charts and diagrams including their values.
 
-- Turn it off per upload for a document that is genuinely plain text, or to avoid using AI provider quota. The file is still parsed, just without visual analysis.
+- Turn it off per file for a document that is genuinely plain text, or to avoid using AI provider quota. The file is still parsed, just without visual analysis. When several files are queued, one control turns it off for all of them.
 - It cannot be turned off for image uploads, which have no text to extract without it.
 - Your model must accept images. Every current hosted model from Anthropic, OpenAI, and Google does. If you use **Ollama**, you must select a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI**; a text-only model cannot read images and Nojoin will fall back to text extraction.
 - If visual analysis is unavailable, Nojoin falls back to local OCR before giving up. OCR runs on your own server, costs nothing, and sends nothing anywhere, so a scanned page stays searchable even with no AI configured at all. What it cannot do is describe a chart or a diagram, only transcribe the words, and the document card says so when it was used.
