@@ -25,10 +25,15 @@ interface LiveMeetingControlsProps {
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
 
+// Floored to whole seconds before anything is split out of it. The captured
+// figure comes from the server as a sum of segment durations in milliseconds,
+// so it arrives fractional, and `seconds % 60` on 3011.1 renders as
+// "50:11.099999999999909" in the coverage badge.
 function formatTime(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  const whole = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = whole % 60;
   if (h > 0) {
     return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   }
@@ -185,6 +190,12 @@ export default function LiveMeetingControls({
           {formatTime(coverageWarning.capturedSeconds)} captured
         </span>{" "}
         of {formatTime(coverageWarning.elapsedSeconds)} elapsed.{" "}
+        {coverageWarning.queuedSeconds > 0 ? (
+          <>
+            Another {formatTime(coverageWarning.queuedSeconds)} is recorded and
+            waiting to upload.{" "}
+          </>
+        ) : null}
         {coverageWarning.cause === "backend-unreachable"
           ? "Nojoin cannot reach the server at the moment. Recording is continuing, and queued audio uploads when the connection returns."
           : coverageWarning.cause === "tab-suspended"

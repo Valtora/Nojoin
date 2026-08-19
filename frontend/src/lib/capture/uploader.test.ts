@@ -6,6 +6,26 @@ import { createSegmentUploader } from "./uploader";
 const accepted = (sequence: number) => ({ status: "ok", segment: sequence });
 
 describe("capture uploader", () => {
+  it("reports how much it is still holding", async () => {
+    // The coverage check subtracts this, so a stalled server reads as a queue
+    // rather than as lost audio.
+    const uploadSegment = vi.fn(async () => {
+      await new Promise(() => {});
+      return accepted(0);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: uploadSegment as never,
+    });
+
+    expect(uploader.pendingSegmentCount()).toBe(0);
+    uploader.enqueue(0, new Blob(["a"]));
+    uploader.enqueue(1, new Blob(["b"]));
+
+    expect(uploader.pendingSegmentCount()).toBe(2);
+    uploader.dispose();
+  });
+
   it("uploads queued segments in sequence and retries with backoff", async () => {
     const attempts: number[] = [];
     const uploaded: number[] = [];

@@ -223,6 +223,10 @@ The warning can be dismissed with the close control. It stays dismissed unless t
 
 Nojoin reports this conservatively. The captured figure it compares against is measured from the audio segments the server has decoded, and that measurement runs slightly high, so a small shortfall may be reported as none at all. It will not report a shortfall that is not there.
 
+Audio still queued in the browser is not counted as missing, and the warning names it separately when there is any. A server that stops answering for two minutes leaves two minutes in the queue, and reporting that as lost would send someone to check a tab and a device over audio that was never at risk. A shortfall that persists after the queue drains is the part that is genuinely gone.
+
+An outage also keeps explaining a shortfall for a few minutes after the server answers again, because the check runs every fifteen seconds and the queue takes longer than that to drain, so the connection has usually recovered by the time the warning appears.
+
 ### Chrome Memory Saver
 
 Chrome's Memory Saver puts inactive tabs to sleep to reclaim memory. **You should not normally need to do anything about this for Nojoin.** Memory Saver exempts tabs that are actively using the microphone or camera or sharing a screen, and Nojoin holds those for the whole of a recording, so a recording tab is exempt for as long as it is recording.

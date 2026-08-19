@@ -137,7 +137,7 @@ export default function RecordingStatusDisplay({
       type="button"
       onClick={() => setIsUploadOpen(true)}
       className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-control-border bg-surface-card px-4 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text"
-      title="Attach an agenda or a deck to this meeting"
+      title="Attach agendas, decks or notes to this meeting"
     >
       <Upload className="h-4 w-4" />
       Attach Docs

@@ -143,7 +143,12 @@ export default function LiveTranscriptPanel({
   const isEmpty = lines.length === 0;
 
   return (
-    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    // `overflow-hidden`, because the card is the boundary of this panel and
+    // nothing inside it may paint over the notes card below. The window sizes
+    // itself to whatever the card is given, so nothing should reach this, but
+    // the failure mode of a future rigid child is then a clipped transcript
+    // rather than text sitting loose on top of the next module.
+    <section className="density-surface flex h-full min-h-0 flex-col overflow-hidden border border-surface-border bg-surface-card shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
@@ -188,7 +193,17 @@ export default function LiveTranscriptPanel({
           ref={scrollContainerRef}
           onScroll={handleScroll}
           data-testid="live-transcript-scroll"
-          className="relative min-h-[14rem] flex-1 overflow-y-auto"
+          // The floor holds only in the stacked layout, where the page scrolls
+          // and a short transcript would simply leave a gap. From 54rem the
+          // column has a definite height and this module absorbs whatever the
+          // notes and documents cards leave, which on a short window is less
+          // than 14rem. A floor there is a child refusing the height its own
+          // card was given: the window overflowed the card, the frame below
+          // stayed at the card's height, and the overspill painted across the
+          // notes card. `min-h-0` lets the window take the card exactly, so a
+          // squeezed transcript is a smaller scroll window rather than text
+          // outside its own panel.
+          className="relative min-h-[14rem] flex-1 overflow-y-auto @min-[54rem]:min-h-0"
         >
           <div className="flex min-h-full flex-col py-4 pl-4 pr-8">
             {isEmpty ? (
