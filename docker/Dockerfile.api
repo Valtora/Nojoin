@@ -9,7 +9,7 @@
 # never runs on. Both stages below must move together, or the venv is built on a
 # different interpreter than it executes on. scripts/check_held_pins.py enforces
 # this, and .github/dependabot.yml holds the base image at 3.12.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS builder
+FROM python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -33,7 +33,7 @@ RUN pip install --no-cache-dir -r requirements/backend.txt
 
 # --- Runtime Stage ---
 # Must be the same image as the builder stage above; see the note there.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime
+FROM python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
