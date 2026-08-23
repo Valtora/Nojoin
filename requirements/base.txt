@@ -1,7 +1,7 @@
 sqlmodel==0.0.39
 psycopg2-binary==2.9.12
 asyncpg==0.31.0
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 python-jose[cryptography]==3.5.0
 argon2-cffi==25.1.0
 python-multipart==0.0.32

@@ -8,9 +8,9 @@ onnx-asr==0.12.0
 silero-vad==6.2.1
 numpy==2.4.6
 pandas==3.0.5
-openai>=3.0.0
-anthropic>=0.121.0
-google-genai>=2.17.0
+openai>=3.2.0
+anthropic>=0.122.0
+google-genai>=2.18.1
 watchdog==6.0.0
 
 # Document parsing. PyMuPDF covers PDF text, table detection and page
