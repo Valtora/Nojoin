@@ -271,14 +271,15 @@ services:
     command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --concurrency=4 --loglevel=info
 
   worker-parse:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --pool=prefork --concurrency=2 --loglevel=info
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --max-tasks-per-child=25 --pool=prefork --concurrency=2 --loglevel=info
 ```
 
-Every lane keeps the `-Q`, `--pool`, and `--concurrency` values it has in the template. Those flags are load-bearing rather than cosmetic:
+Every lane keeps the `-Q`, `--pool`, `--concurrency`, and `--max-tasks-per-child` values it has in the template. Those flags are load-bearing rather than cosmetic:
 
 - A lane that drains the wrong queue either starves that queue or duplicates work another lane is already doing. Anything unrouted falls back to the GPU queue, so a missing `-Q` quietly turns a lane into a second GPU worker.
 - `-B` belongs to `worker-io` alone. A second embedded scheduler double-fires every periodic job.
 - `--pool` is part of the dispatch model, not a tuning knob. Worker code queues follow-on Celery work with a blocking call, which is safe only while one task owns one operating-system process; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes).
+- `--max-tasks-per-child` on `worker-parse` overrides the global recycle limit in `backend/celery_app.py`. Drop it and that lane inherits 500, which is far too high for parses whose per-document cost is unbounded; see [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling).
 
 That patch is optional. It changes the backend feedback loop only. It does not change the frontend contract. If Nginx still proxies the `frontend` container, rebuilding `frontend` remains the way to update `https://localhost:14443`.
 
@@ -992,7 +993,7 @@ services:
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "parse",
+        "-Q", "parse", "--max-tasks-per-child=25",
         "--pool=prefork", "--concurrency=2", "--loglevel=info",
       ]
 

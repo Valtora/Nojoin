@@ -239,8 +239,8 @@ four Celery queues, each drained by its own container:
   calendar sync, and cleanup (`--pool=prefork --concurrency=4`). No GPU. Also
   runs Celery Beat.
 - `worker-parse` — document parsing and RAG index rebuilds
-  (`--pool=prefork --concurrency=2`). No GPU. Runs the **`worker-io` image**,
-  not a separate one: visual parsing may route through a subscription CLI whose
+  (`--pool=prefork --concurrency=2 --max-tasks-per-child=25`). No GPU. Runs
+  the **`worker-io` image**, not a separate one: visual parsing may route through a subscription CLI whose
   binaries ship only there, so this lane adds a container but no extra build and
   no extra image to scan. Separate from `worker-io` because a parse has no page
   cap and one large upload can hold a slot for a long time; sharing the IO lane
@@ -274,6 +274,34 @@ to stall. Switch a lane to a pool that multiplexes tasks within a process and
 that reasoning silently stops holding, with no test to catch it — the guard test
 in the backend only detects inline dispatch inside an `async def`, which is a
 different mistake. Treat a pool change as a change to the dispatch model.
+
+#### Worker Child Recycling
+
+Prefork pool children are retired after a fixed number of tasks and replaced by
+a fresh one. The default is 500 tasks, set once in `backend/celery_app.py`
+(`worker_max_tasks_per_child`) so it applies to every deployment without a
+Compose edit. `worker-parse` overrides it to 25 on its `command:`, because a
+parse has no page cap and one document can leave a child far heavier than any
+other lane's task does; a `--max-tasks-per-child` flag on a lane always wins
+over the global default.
+
+Two things this does not do. It has no effect on `worker-gpu`, which runs
+`--pool=solo` and has no children to recycle: Celery accepts the setting on a
+solo pool and silently ignores it. And it does not disturb Celery Beat, which
+runs as its own process forked by `worker-io`'s main process rather than as a
+pool child, so the periodic schedule is untouched by a recycle.
+
+Recycling is safe at any value. A child delivers its task's result before it
+exits, so a recycle never interrupts a running task or loses one. The cost is
+that the replacement re-imports whatever the next task needs, measured at
+roughly half a second for the IO lane's embedding stack.
+
+Treat this as a backstop rather than a memory optimisation. It bounds how far
+an undetected leak could run before the child holding it is discarded; it is
+not expected to lower steady-state memory, because most of what a recycle
+reclaims is the import working set of the task path, which the replacement
+child re-pays on its first task. Raise the limit if a lane's work is expensive
+to warm up, and lower it if a lane's tasks are unusually memory-hungry.
 
 ### GPU Acceleration
 
