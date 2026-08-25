@@ -67,6 +67,31 @@ def test_prefetch_multiplier_is_one_for_fair_dispatch() -> None:
     assert celery_app.conf.worker_prefetch_multiplier == 1
 
 
+def test_pool_children_are_recycled_as_a_drift_backstop() -> None:
+    """A prefork child must be retired eventually, and not often.
+
+    The limit is a backstop against an undetected leak, not a memory
+    optimisation, so both directions are a regression. Removing it lets a leak
+    run for the life of the container; dropping it low turns every lane into a
+    fork-and-reimport loop, which lands inside live meetings on the cpu and io
+    lanes. worker-parse overrides this on its command line, which wins over the
+    setting here.
+    """
+    assert celery_app.conf.worker_max_tasks_per_child == 500
+
+
+def test_no_memory_based_recycle_limit_is_configured() -> None:
+    """`worker_max_memory_per_child` must stay unset.
+
+    Billiard reads `resource.getrusage(RUSAGE_SELF).ru_maxrss`, which on Linux
+    is a peak high-water mark that never falls. A child that once exceeded the
+    threshold therefore recycles after every subsequent task, and the per-task
+    `malloc_trim` in this module cannot bring the reading back down. Setting one
+    needs a measured per-lane peak to calibrate against; none exists yet.
+    """
+    assert celery_app.conf.worker_max_memory_per_child is None
+
+
 def _llm_config(provider, *, missing=None):
     # The routing decision only reads .provider and .missing_configuration_message().
     return SimpleNamespace(

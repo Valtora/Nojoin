@@ -224,3 +224,60 @@ def test_template_api_carries_every_setting_the_deployment_api_does() -> None:
         f"the template in {GUIDE_PATH.name}, so the development API cannot be "
         "configured the way the deployment documentation describes."
     )
+
+
+PARSE_RECYCLE_FLAG = "--max-tasks-per-child=25"
+
+
+def _parse_lane_blocks(text: str) -> list[str]:
+    """Return the body of every ``worker-parse:`` service block.
+
+    A block runs from the service key to the next line indented at or left of
+    it, which is where the service ends in any valid YAML. Reading the block
+    rather than the whole file is what makes the assertion below mean "the flag
+    is on this lane" rather than "the flag appears somewhere in this file".
+    """
+    blocks: list[str] = []
+    collecting: list[str] | None = None
+    for line in text.splitlines():
+        if collecting is not None:
+            if line.strip() and len(line) - len(line.lstrip(" ")) <= 2:
+                blocks.append("\n".join(collecting))
+                collecting = None
+            else:
+                collecting.append(line)
+                continue
+        if line.rstrip() == "  worker-parse:":
+            collecting = []
+    if collecting is not None:
+        blocks.append("\n".join(collecting))
+    return blocks
+
+
+def test_parse_lane_overrides_the_child_recycle_limit_everywhere() -> None:
+    """The parse lane's `--max-tasks-per-child` must survive in every copy.
+
+    `backend/celery_app.py` sets a global recycle limit of 500 that suits the
+    cpu and io lanes. worker-parse needs a much lower one, because a parse has
+    no page cap and one document can leave a child far heavier than any other
+    lane's task does, and a CLI flag is the only way to give one lane its own
+    value. That flag exists in three tracked places -- the deployment compose,
+    the guide's patch snippet, and the guide's appended template -- and nothing
+    else pins the command strings, so dropping it from one copy would be silent
+    and that deployment would quietly inherit 500.
+    """
+    expected_lanes = {COMPOSE_PATH.name: 1, GUIDE_PATH.name: 2}
+    for path in (COMPOSE_PATH, GUIDE_PATH):
+        blocks = _parse_lane_blocks(path.read_text(encoding="utf-8"))
+        assert len(blocks) == expected_lanes[path.name], (
+            f"{path.name} defines {len(blocks)} worker-parse lanes, expected "
+            f"{expected_lanes[path.name]}; the parser below no longer matches "
+            "the file and would pass without checking anything."
+        )
+        for block in blocks:
+            assert PARSE_RECYCLE_FLAG in block, (
+                f"a worker-parse lane in {path.name} no longer sets "
+                f"{PARSE_RECYCLE_FLAG}, so it falls back to the global limit of "
+                "500 in backend/celery_app.py, which is far too high for a lane "
+                "whose per-document cost is unbounded."
+            )

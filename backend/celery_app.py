@@ -257,6 +257,31 @@ celery_app.conf.update(
     # One reserved message per worker process so a slow task cannot hoard a batch
     # queued behind it; keeps the CPU/IO lanes fair under load.
     worker_prefetch_multiplier=1,
+    # Retire a pool child after this many tasks. Purely a backstop against slow
+    # drift: no leak has been measured, and this is not expected to reduce
+    # steady-state memory. On the reference deployment a child's reclaimable
+    # memory (Private_Dirty) is ~35 MB on the io lane and ~7-38 MB on cpu, most
+    # of it the import working set of the task path, which the replacement child
+    # re-pays on its first task. What the limit actually buys is a bound on how
+    # far an as-yet-unobserved leak could run before it is discarded.
+    #
+    # The value is deliberately high. At the reference task rates (cpu ~590,
+    # io ~176 tasks per child per day) 500 is roughly one recycle per child per
+    # day on cpu and per three days on io -- often enough to bound drift, rare
+    # enough that forks do not land repeatedly inside a live meeting. Recycling
+    # is safe at any value: billiard delivers the task's result before the child
+    # exits, so a recycle never interrupts or loses work. It costs an import,
+    # measured at ~0.5s for the io lane's embedding stack.
+    #
+    # Inert on worker-gpu. That lane runs --pool=solo, which has no children to
+    # recycle; Celery accepts the setting there and silently ignores it. Lanes
+    # that want a different number override it with --max-tasks-per-child on the
+    # command line, which takes precedence over this default. worker-parse does,
+    # because a parse has no page cap and one document can be arbitrarily large.
+    #
+    # Beat is unaffected: it runs as its own process forked by the worker's main
+    # process, not as a pool child, so the periodic schedule is untouched.
+    worker_max_tasks_per_child=500,
     beat_schedule={
         "cleanup-temp-recordings-every-24h": {
             "task": "backend.worker.tasks.cleanup_temp_recordings",

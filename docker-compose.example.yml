@@ -273,6 +273,12 @@ services:
   # meeting. Reuses the worker-io IMAGE (no extra build, no extra image to scan)
   # because visual parsing may route through a subscription CLI, whose binaries
   # ship only there. No -B: worker-io owns the beat schedule.
+  #
+  # The only lane that overrides the global child-recycle limit
+  # (worker_max_tasks_per_child=500 in backend/celery_app.py). A parse has no
+  # page cap, so a single document can leave a child far heavier than any other
+  # lane's task does; retiring these children after 25 tasks bounds that without
+  # needing to know what a given deployment's documents look like.
   worker-parse:
     <<: *worker-base
     container_name: nojoin-worker-parse
@@ -284,7 +290,7 @@ services:
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "parse",
+        "-Q", "parse", "--max-tasks-per-child=25",
         "--pool=prefork", "--concurrency=2", "--loglevel=info",
       ]
 
