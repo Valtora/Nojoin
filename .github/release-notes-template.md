@@ -8,15 +8,14 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **Meeting analytics.** A new Analytics tab on every recording covering talk share, turn structure, reply time and measured overlapping speech. Optional tiers measure vocal delivery from the audio and run a single AI pass over the transcript on request.
-- **The MCP connector becomes agentic.** Thirty-two tools covering semantic search, recording organisation, reprocessing, transcript corrections, tasks and calendar. Nothing in it deletes permanently.
-- **A cross-user fix in meeting chat.** On a multi-user instance, a supplied tag id could pull another user's chunks into chat context. Retrieval is now constrained to the caller's own recordings.
-- **A reworked first-run wizard** offering three AI routes: the server's provider credential, your own Claude or ChatGPT subscription, or no AI for now.
-- **Honest reporting of lost capture audio.** The shortfall is measured on the server rather than estimated, names a cause only where there is evidence for it, and can be dismissed. A pre-flight notice covers Chrome Memory Saver before a meeting starts.
-- **API stall detection.** Event-loop lag is reported to the container log with Pressure Stall Information naming the cause.
-- **Seven documented environment variables now reach the containers.** One manual step for operators with their own compose file, under Migration.
-- **A denser live workspace**, bounded against the window, and notes tables without their unused ID columns.
-- **A new site at www.nojoin.co.uk**, replacing the GitHub Pages site.
+- **Long recordings finalize again.** PostgreSQL accepts at most 32767 bind parameters in one statement, and the window manifest write crossed that after about 1h49m of audio, so finalizing a two-hour recording returned a 500. Bulk statements are now batched from the live column count.
+- **Finalizing no longer stalls the rest of the API.** Audio concatenation ran inline on the event loop and blocked every other request for its duration, measured at 20 seconds on a two-hour recording. It now runs on a worker thread.
+- **Several documents attach in one upload.** The dialog holds a queue, each file carrying its own visual-analysis switch. A failure no longer aborts the batch, and a retry re-sends only what failed.
+- **Capture stops reporting outages the browser cannot confirm.** Connection probes are serialised rather than piling up behind a stalled request, a probe that outlasts its own timeout by a wide margin is treated as suspension, and returning to the foreground clears the streak.
+- **Floating panels inside modals open where they can be seen.** The date picker, the colour picker and the merge-target search in the People modal were clipped or flipped out of view by the modal they opened in, worst at phone widths. They now position against the window.
+- **Note generation recovers on stacks that left `NOJOIN_CODEX_PATH` blank.** Compose puts an empty string in the environment rather than leaving the variable unset, which is a value, so the default path was never reached and note generation failed with a permission error. `NOJOIN_UMASK` had the same shape and logged an invalid value warning at every startup.
+- **Prefork worker children are retired after a fixed number of tasks.** A pool child previously lived for the life of its container. This is a backstop that bounds an undetected leak, not a fix for an observed one, and is not expected to lower steady-state memory.
+- **The MCP connector is rebuilt on version 2 of the MCP SDK.** The tools it exposes and the grants it accepts are unchanged.
 
 ### Upgrade
 
@@ -33,38 +32,36 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- Five Alembic revisions, all automatic. None touches recordings, transcripts or notes. One removes the retired companion app notice and the flag that tracked it.
-- **Action needed if you maintain your own compose file.** Seven documented variables previously never reached the process. Copy them from [docker-compose.example.yml](https://github.com/Valtora/Nojoin/blob/main/docker-compose.example.yml): `OLLAMA_CONTEXT_WINDOW`, `SECONDARY_OLLAMA_CONTEXT_WINDOW`, `BACKUP_EXPORT_DIR`, `NOJOIN_UMASK` and `NOJOIN_TELEMETRY_ENDPOINT` on the shared anchor, `MCP_ANONYMOUS_DISCOVERY` on the api service, and `NOJOIN_CODEX_PATH` on the worker lanes. Deploying from the example file needs no change.
-- Analytics are not backfilled. The derived figures are available on every existing meeting immediately; the delivery and AI tiers start pending and run when asked, per recording.
-- The Ollama context default drops from 131072 to 32768, which fits a 16 GB card and still covers a two-hour meeting. New installs only, since the value is persisted on first start.
-- The notes template version moves to 2. A template forked from the old structure is reported stale and can be reset in Settings.
-- No new service, image or dependency.
+- No Alembic revisions in this release. Nothing about the schema changes, and no first-boot migration runs.
+- **Optional if you maintain your own compose file.** The parse lane gains `--max-tasks-per-child=25` on its `command:`, copied from [docker-compose.example.yml](https://github.com/Valtora/Nojoin/blob/main/docker-compose.example.yml). Without it that lane falls back to the global limit of 500, which is a looser bound rather than a break. Deploying from the example file needs no change.
+- Child recycling has no effect on `worker-gpu`, which runs a solo pool with no children to recycle, and does not disturb the Celery Beat schedule.
+- No new service, image or environment variable.
 
 ### Rollback
 
 <!-- Maintainer: state whether rollback is code-only or requires data steps. Default below. -->
 
 - Code only. Redeploy the previous image tags.
-- Downgrading the schema as well discards stored delivery and AI analytics, which are regenerated on request after a later upgrade.
+- Nothing to downgrade, since this release adds no schema revision.
 - MCP grants issued under this release carry scopes the previous release understands, so connectors keep working.
 
 ### Known Issues
 
 <!-- Maintainer: list known issues affecting this release, or leave the default. -->
 
-- The AI analytics tier spends your own provider quota on every run and is never dispatched automatically. There is no account level cap.
-- Measured delivery does not refresh itself. A transcript edited afterwards is reported stale and re-measured only when asked.
-- Overlapping speech is a floor rather than a total. It underestimates, never the reverse.
-- Carried over: the 120 second GPU window can still be too large when live capture and transcription contend for one card, and the Codex payload in the worker-io image is a stripped static binary that scanners cannot introspect.
+- Carried over from 2.4.0. The AI analytics tier spends your own provider quota on every run, is never dispatched automatically, and has no account level cap.
+- Carried over. Measured delivery does not refresh itself, so a transcript edited afterwards is reported stale and re-measured only when asked, and overlapping speech is a floor rather than a total.
+- Carried over. The 120 second GPU window can be too large when live capture and transcription contend for one card, and the Codex payload in the worker-io image is a stripped static binary that scanners cannot introspect.
+- A document batch uploads one file at a time, because the backend admits two concurrent uploads per user and rejects the rest. A large drop therefore takes as long as the sum of its files.
 
 ### Browser-Capture Compatibility
 
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
 - Supported browsers, operating systems and audio sources are unchanged. Shared-audio capture still resolves on Chromium desktop only.
-- The shortfall warning is measured on the server, classifies its cause, and can be dismissed.
-- A pre-flight notice names the Chrome Memory Saver setting before a meeting starts, dismissed per browser. A screen wake lock is held for the duration of a capture.
-- An interrupted capture that banked no audio is discarded rather than raising a resume-or-discard prompt.
+- The coverage warning is net of audio still queued in the browser, and names the queued part separately. A server that stops answering for two minutes leaves two minutes queued, which was never at risk.
+- An outage keeps explaining a shortfall for a few minutes after the connection recovers, because the check runs every fifteen seconds and the queue takes longer than that to drain.
+- The live transcript window no longer overflows the card it sits in on a short window.
 
 ### Changes
 
