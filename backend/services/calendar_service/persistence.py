@@ -26,6 +26,7 @@ from backend.models.calendar import (
     CalendarSyncStatus,
 )
 from backend.models.user import User
+from backend.utils.db_batching import bind_batches
 from backend.utils.timezones import utc_naive_to_aware
 
 from .models_dto import (
@@ -180,12 +181,16 @@ async def _apply_incremental_calendar_events(
     provider_events: list[ProviderEventRecord],
     deleted_remote_ids: list[str],
 ) -> None:
+    # Both id lists come from the provider rather than from a caller, and the
+    # sync window spans 25 months, so neither has a bound this code controls.
+    # Each id is one bind parameter: batch them so a large sync cannot overflow
+    # the statement limit. See backend/utils/db_batching.py.
     unique_deleted_ids = sorted(set(deleted_remote_ids))
-    if unique_deleted_ids:
+    for deleted_batch in bind_batches(unique_deleted_ids):
         await db.execute(
             delete(CalendarEvent).where(
                 CalendarEvent.calendar_id == calendar_id,
-                CalendarEvent.provider_event_id.in_(unique_deleted_ids),
+                CalendarEvent.provider_event_id.in_(deleted_batch),
             )
         )
 
@@ -195,18 +200,20 @@ async def _apply_incremental_calendar_events(
     changed_remote_ids = sorted(
         {provider_event.remote_id for provider_event in provider_events}
     )
-    existing_events = list(
-        (
-            await db.execute(
-                select(CalendarEvent).where(
-                    CalendarEvent.calendar_id == calendar_id,
-                    CalendarEvent.provider_event_id.in_(changed_remote_ids),
+    existing_events: list[CalendarEvent] = []
+    for changed_batch in bind_batches(changed_remote_ids):
+        existing_events.extend(
+            (
+                await db.execute(
+                    select(CalendarEvent).where(
+                        CalendarEvent.calendar_id == calendar_id,
+                        CalendarEvent.provider_event_id.in_(changed_batch),
+                    )
                 )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
     existing_by_remote_id = {
         existing_event.provider_event_id: existing_event
         for existing_event in existing_events

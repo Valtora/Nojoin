@@ -29,6 +29,7 @@ from backend.utils.audio_windows import (
     build_audio_window_specs,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.db_batching import bind_batches
 from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.utils.time import utc_now
 
@@ -347,17 +348,12 @@ def _build_window_manifest_payloads(
     return payloads
 
 
-def _upsert_window_manifests(
+def _window_manifest_upsert_statement(
     session: Session,
-    *,
-    recording_id: int,
-    manifest_payloads: list[dict[str, Any]],
-) -> list[RecordingAudioWindowManifest]:
-    if not manifest_payloads:
-        return []
-
-    table = RecordingAudioWindowManifest.__table__
-    insert_stmt = _build_insert_statement(session, table).values(manifest_payloads)
+    table,
+    payload_batch: list[dict[str, Any]],
+):
+    insert_stmt = _build_insert_statement(session, table).values(payload_batch)
     excluded = insert_stmt.excluded
     update_columns = {
         "updated_at": excluded.updated_at,
@@ -384,17 +380,36 @@ def _upsert_window_manifests(
     }
     dialect = _dialect_name(session)
     if dialect == "postgresql":
-        statement = insert_stmt.on_conflict_do_update(
+        return insert_stmt.on_conflict_do_update(
             constraint="uq_recording_audio_window_manifests_recording_window",
             set_=update_columns,
         )
-    else:
-        statement = insert_stmt.on_conflict_do_update(
-            index_elements=["recording_id", "window_index"],
-            set_=update_columns,
+    return insert_stmt.on_conflict_do_update(
+        index_elements=["recording_id", "window_index"],
+        set_=update_columns,
+    )
+
+
+def _upsert_window_manifests(
+    session: Session,
+    *,
+    recording_id: int,
+    manifest_payloads: list[dict[str, Any]],
+) -> list[RecordingAudioWindowManifest]:
+    if not manifest_payloads:
+        return []
+
+    table = RecordingAudioWindowManifest.__table__
+    # A multi-row insert binds every column of every row, so a long recording
+    # overflows the statement bind limit without batching: see db_batching.
+    for payload_batch in bind_batches(
+        manifest_payloads,
+        params_per_item=len(manifest_payloads[0]),
+    ):
+        session.execute(
+            _window_manifest_upsert_statement(session, table, list(payload_batch))
         )
 
-    session.execute(statement)
     return list(
         session.execute(
             select(RecordingAudioWindowManifest)
