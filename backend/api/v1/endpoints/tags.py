@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,8 +30,15 @@ async def _get_owned_recording(
     return recording
 
 
+# Far past any real selection and far under the statement bind ceiling, so it
+# never fires in normal use. It exists so one request cannot ask for unbounded
+# work: every id costs a row load and a link write. Without it an oversized
+# payload is accepted and worked through; with it the client gets a 422.
+MAX_BATCH_RECORDING_IDS = 1000
+
+
 class BatchTagOperation(BaseModel):
-    recording_ids: List[str]
+    recording_ids: List[str] = Field(max_length=MAX_BATCH_RECORDING_IDS)
     tag_name: str
 
 
@@ -265,8 +272,8 @@ async def batch_add_tag(
         await db.refresh(tag)
 
     # Iterated rather than expressed as a single set-difference query: batches
-    # are small (typically under 100 recordings), so the clearer loop is worth
-    # more than the round trip it would save.
+    # are capped at MAX_BATCH_RECORDING_IDS, so the clearer loop is worth more
+    # than the round trip it would save.
     recordings = await get_recordings_by_public_ids(
         db,
         batch.recording_ids,

@@ -332,3 +332,35 @@ CREATE TABLE p_tags (
     parent_id INTEGER
 )
 """
+
+RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA = """
+CREATE TABLE recording_audio_window_manifests (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    window_index INTEGER NOT NULL,
+    source_kind VARCHAR(32) NOT NULL,
+    target_window_ms INTEGER NOT NULL,
+    hop_ms INTEGER NOT NULL,
+    window_start_ms INTEGER NOT NULL,
+    window_end_ms INTEGER NOT NULL,
+    chunk_start_sequence INTEGER NOT NULL,
+    chunk_end_sequence INTEGER NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    asr_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    asr_processing_run_id INTEGER,
+    asr_last_error TEXT,
+    diarization_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    diarization_processing_run_id INTEGER,
+    diarization_config_hash VARCHAR(255),
+    diarization_window_result_id INTEGER,
+    diarization_last_error TEXT,
+    is_partial BOOLEAN NOT NULL,
+    is_sealed BOOLEAN NOT NULL,
+    processing_run_id INTEGER,
+    last_error TEXT,
+    UNIQUE(recording_id, window_index)
+)
+"""

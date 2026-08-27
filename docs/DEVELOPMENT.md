@@ -149,6 +149,7 @@ The release pipeline is instead self-gating through the workflow's own `needs:` 
 ## Verification By Change Scope
 
 - Backend or worker code: run `pytest`.
+- Bulk database writes or reads whose size follows the data: see [Bind Parameter Limits](#bind-parameter-limits) below, and run `pytest` with `NOJOIN_TEST_POSTGRES_URL` set.
 - Frontend code: run `npm run lint`, `npm run check:contrast`, `npm run test`, and `npm run build`.
 - Design token changes in `frontend/src/app/globals.css`: `npm run check:contrast` measures the declared pairings in both themes and fails on any that drops below its threshold. Adding a token that participates in a foreground/background relationship means adding that pairing to `frontend/scripts/check-contrast.mjs`; see [DESIGN.md](DESIGN.md#accessibility) for the thresholds and what they apply to.
 - Marketing site changes under `site/`: source nvm first (`. ~/.nvm/nvm.sh`) so the shell has Node 26 and npm 11, matching CI and the deploy job; a distro npm rewrites `site/package-lock.json` in ways CI rejects. Then `cd site && npm ci && npm run build`. Preview the built output with `npm run serve` on port 4322 rather than `npm run dev`, and check horizontal overflow at 360px and 1920px in both themes. [SITE.md](SITE.md) carries the full runbook, including sharing a preview through a Cloudflare quick tunnel and which `cloudflared` process must never be touched.
@@ -158,6 +159,52 @@ The release pipeline is instead self-gating through the workflow's own `needs:` 
 - Deployment or release workflow changes: run the backend, frontend, docs, and Alembic validation set together before opening the pull request.
 - Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behaviour changes.
 - Recording action changes: add them to `frontend/src/components/recordings/_hooks/useRecordingActions.ts` rather than to a surface, then run the full frontend lint, test, and build set.
+
+## Bind Parameter Limits
+
+PostgreSQL carries the bind parameter count of a statement in a signed 16-bit
+field, so one statement accepts at most 32767 of them. SQLAlchemy does not
+enforce this. A multi-row insert or a large `IN` clause builds without complaint
+and fails at execution time once the row or item count is high enough, so the
+failure lands in production on the first large recording, calendar or batch
+rather than in review.
+
+Two things make it easy to miss.
+
+**The limit is driver-dependent.** The Celery workers reach Postgres through
+psycopg2, which interpolates parameters client-side and sends literal SQL, so no
+bind limit applies to them. The API reaches it through asyncpg, which always
+uses the extended query protocol, so the limit does apply. Shared code that a
+worker exercises constantly can be broken on the API path while passing every
+test the worker path has. This is exactly how the window manifest upsert shipped:
+the rolling sync wrote 1522 rows through the worker without complaint, and the
+same function then failed at finalize through the API.
+
+**SQLite does not reproduce it.** The suite runs on SQLite, whose builds accept
+far more variables than Postgres will, so a SQLite test passes on the statement
+that fails in production. Tests that need the real ceiling take the
+`postgres_test_url` fixture, which skips unless `NOJOIN_TEST_POSTGRES_URL` names
+a server. CI sets it for the backend job; a plain `pytest` locally skips them.
+To run them by hand, point the variable at a throwaway Postgres:
+
+```bash
+docker run -d --rm --name nojoin-test-pg \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=nojoin_test \
+  -p 55432:5432 pgvector/pgvector:pg18-trixie
+
+NOJOIN_TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/nojoin_test pytest
+```
+
+When the number of rows or items comes from the data rather than from a
+fixed-size literal, batch it with `bind_batches` from
+[backend/utils/db_batching.py](../backend/utils/db_batching.py). Pass
+`params_per_item` for multi-row inserts, where each row binds every column; the
+default of 1 is right for an `IN` clause. Deriving the batch size from the
+parameter width rather than hardcoding a row count keeps the bound correct when
+a table gains a column.
+
+A list supplied in a request body counts as data-sized: nothing stops a client
+sending more ids than the statement can bind.
 
 ## Compose Files
 

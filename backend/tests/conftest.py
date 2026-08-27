@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import UTC, date, datetime
 
@@ -167,3 +168,28 @@ def fake_single_flight(monkeypatch):
     fake = FakeSingleFlightRedis()
     monkeypatch.setattr(single_flight_module, "_open_client", lambda: fake)
     return fake
+
+
+POSTGRES_TEST_URL_ENV = "NOJOIN_TEST_POSTGRES_URL"
+
+
+@pytest.fixture(scope="session")
+def postgres_test_url() -> str:
+    """URL of a real PostgreSQL to run driver-specific tests against.
+
+    Most of the suite runs on SQLite, which cannot stand in for Postgres on
+    everything: the bind parameter ceiling that broke finalize on a two-hour
+    recording is a limit of the Postgres wire protocol and of asyncpg's use of
+    it, and SQLite builds accept far more variables than Postgres will. A test
+    that needs the real ceiling has to talk to a real server.
+
+    Skips when the environment names no server, so a plain `pytest` on a host
+    without Postgres still passes. CI sets this for the backend suite, so the
+    tests that depend on it do run before merge.
+    """
+    url = os.getenv(POSTGRES_TEST_URL_ENV)
+    if not url:
+        pytest.skip(
+            f"{POSTGRES_TEST_URL_ENV} is not set; skipping PostgreSQL-specific test"
+        )
+    return url

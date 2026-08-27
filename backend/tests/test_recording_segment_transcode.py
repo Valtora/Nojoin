@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import time
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -1403,3 +1404,94 @@ def test_transcode_task_registered_with_celery() -> None:
         "backend.processing.segment_transcode.transcode_segment_task"
         in celery_app.tasks
     )
+
+
+@pytest.mark.anyio
+async def test_finalize_runs_concatenation_off_the_event_loop(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    transcode_dispatches,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Concatenation must not stall the API for the length of the recording.
+
+    ffmpeg is a blocking subprocess and the API serves from one event loop, so
+    an inline call freezes every other request for the whole concatenation:
+    20s measured on a two-hour recording, and linear in duration. This asserts
+    both halves of the fix, because either alone can pass by accident: the work
+    lands on another thread, and the loop keeps running while it does.
+    """
+    import asyncio
+    import threading
+
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+
+    set_session_cookie(client)
+
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Off-loop finalize"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    assert init_response.status_code == 200
+    recording_public_id = init_response.json()["id"]
+
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.webm", b"webm-opus-segment", "audio/webm")},
+    )
+    assert upload_response.status_code == 200
+
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    monkeypatch.setattr(
+        segment_transcode_module,
+        "_run_ffmpeg_transcode",
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
+    )
+
+    loop_thread = threading.current_thread()
+    concat_thread: list[threading.Thread] = []
+
+    def _slow_concatenate(paths, destination):
+        # Stands in for ffmpeg: blocking, and long enough that an event loop
+        # stuck behind it could not tick.
+        concat_thread.append(threading.current_thread())
+        time.sleep(0.3)
+        Path(destination).write_bytes(b"joined-browser-master")
+
+    monkeypatch.setattr(recordings_module, "concatenate_media_files", _slow_concatenate)
+    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(
+        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
+    )
+
+    ticks = 0
+
+    async def _tick() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    ticker = asyncio.create_task(_tick())
+    try:
+        finalize_response = await client.post(
+            f"/api/v1/recordings/{recording_public_id}/finalize",
+            headers={"Origin": TRUSTED_ORIGIN},
+        )
+    finally:
+        ticker.cancel()
+
+    assert finalize_response.status_code == 200
+    assert concat_thread, "concatenation never ran"
+    assert concat_thread[0] is not loop_thread, (
+        "concatenation ran on the event loop thread"
+    )
+    assert ticks > 0, "the event loop did not run while concatenating"

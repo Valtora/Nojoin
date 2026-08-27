@@ -86,6 +86,30 @@ jobs:
     if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.deployment == 'true'
     runs-on: ubuntu-latest
 
+    # The suite runs on SQLite, which cannot stand in for Postgres on driver
+    # behaviour. The bind parameter ceiling that broke finalize on a two-hour
+    # recording belongs to the Postgres wire protocol and to asyncpg's use of
+    # it, and SQLite accepts far more variables than Postgres will, so a
+    # SQLite-only suite passes on the exact statement that fails in production.
+    # Tests that need the real ceiling take the postgres_test_url fixture, which
+    # skips when this is absent -- so a developer running plain `pytest` on a
+    # host without Postgres still passes, while CI runs them for real.
+    services:
+      postgres:
+        # Matches the production image, as the migrations job does.
+        image: pgvector/pgvector:pg18-trixie
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nojoin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,6 +127,8 @@ jobs:
           python -m pip install -r requirements/test.txt
 
       - name: Run backend tests
+        env:
+          NOJOIN_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/nojoin_test
         run: pytest
 
   migration-tests:

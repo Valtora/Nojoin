@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from backend.models.recording import Recording, generate_meeting_uid, generate_public_id
+from backend.utils.db_batching import bind_batches
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +74,15 @@ async def get_recordings_by_public_ids(
     if not public_ids:
         return []
 
-    statement = select(Recording).where(
-        Recording.public_id.in_(public_ids),
-        Recording.user_id == user_id,
-    )
-    result = await session.execute(statement)
-    return result.scalars().all()
+    # Callers pass a client-supplied list (batch tagging, MCP search scopes),
+    # which nothing here bounds. Each id is one bind parameter, so batch rather
+    # than let a large selection fail the statement. See backend/utils/db_batching.py.
+    recordings: list[Recording] = []
+    for id_batch in bind_batches(public_ids):
+        statement = select(Recording).where(
+            Recording.public_id.in_(id_batch),
+            Recording.user_id == user_id,
+        )
+        result = await session.execute(statement)
+        recordings.extend(result.scalars().all())
+    return recordings

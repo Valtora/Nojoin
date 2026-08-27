@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -440,7 +441,22 @@ async def finalize_upload(
 
     final_audio_path = recording.audio_path
 
-    try:
+    def _build_master_audio() -> float:
+        """Concatenate the segments, check the bitrate floor, measure the result.
+
+        Every step here shells out to ffmpeg or ffprobe through a blocking
+        `subprocess.run`, and the API serves from a single event loop, so
+        running them inline stalls every other request for the whole
+        concatenation: measured at 20s for a two-hour recording, and linear in
+        duration. Awaited on a worker thread instead, which costs one thread for
+        the length of the concatenation and nothing else.
+
+        Kept as one function rather than three awaits so the thread is entered
+        once, and `final_audio_path` is assigned before the concatenation that
+        writes it, so the failure handlers below still clean up the right file.
+        """
+        nonlocal final_audio_path
+
         master_segment_paths = recordings_module._list_staged_browser_master_segments(
             recording.id
         )
@@ -458,7 +474,10 @@ async def finalize_upload(
             recordings_module.concatenate_wavs(segment_paths, final_audio_path)
 
         recordings_module._enforce_lossy_audio_bitrate_floor(final_audio_path)
-        duration_seconds = recordings_module.get_audio_duration(final_audio_path)
+        return recordings_module.get_audio_duration(final_audio_path)
+
+    try:
+        duration_seconds = await asyncio.to_thread(_build_master_audio)
     except HTTPException as exc:
         failed_root: Path | None = None
         try:
