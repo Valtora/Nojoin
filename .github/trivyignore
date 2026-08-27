@@ -260,3 +260,51 @@ CVE-2026-53072
 CVE-2026-53085
 CVE-2026-53086
 CVE-2026-53130
+
+# linux-libc-dev kernel-header CVEs surfaced by the v2.5.0 build (2026-08-27),
+# newly disclosed since v2.4.0 from the pinned PyTorch/CUDA worker base (also
+# inherited by worker-io, which adds none of its own). Same rationale as every
+# batch above: these flag the kernel *header* package version, not the running
+# kernel, so the in-image linux-libc-dev version is not a runtime exposure for a
+# container (it shares the host kernel). This batch includes one CRITICAL
+# (CVE-2026-53215, mvpp2 RX refill); the remainder are HIGH. The pinned base
+# carries 6.8.0-106.106 and the fixes land between 6.8.0-110.110 and
+# 6.8.0-137.137, none of which is reachable while the PyTorch base bump is held
+# in .github/dependabot.yml until torchaudio ships a 2.12.x release.
+#   Owner: maintainers. Review by: 2026-11-27.
+CVE-2025-40039
+CVE-2025-68741
+CVE-2025-68819
+CVE-2026-43083
+CVE-2026-43198
+CVE-2026-46242
+CVE-2026-46331
+CVE-2026-52914
+CVE-2026-52924
+CVE-2026-53151
+CVE-2026-53176
+CVE-2026-53212
+CVE-2026-53215
+CVE-2026-53224
+CVE-2026-53359
+CVE-2026-64531
+
+# CVE-2026-14456: OpenSSL denial of service via unbounded memory growth in the
+# QUIC server. Unlike every batch above this is an application library rather
+# than a kernel header, and it is accepted on reachability rather than on the
+# absence of a fix.
+#
+# Nojoin terminates no QUIC and serves no HTTP/3. The API is uvicorn over
+# HTTP/1.1, the frontend is Next.js, and the bundled nginx declares no
+# `listen ... quic` or `http3` directive on any server block, so the vulnerable
+# server-side QUIC path is not reachable in any deployment this repository
+# ships. An operator fronting Nojoin with their own HTTP/3 terminator is running
+# that terminator's OpenSSL, not the one in these images.
+#
+# Both distributions have published a fix and neither is reachable yet: Debian
+# needs openssl 3.5.7-1~deb13u2 and the newest python:3.12-slim still carries
+# 3.5.6-1~deb13u2; Alpine needs 3.5.8-r0 and node:26-alpine has not been rebuilt
+# since 2026-08-05. Both clear on a base rebuild rather than on any change here,
+# hence the short review date.
+#   Owner: maintainers. Review by: 2026-09-24.
+CVE-2026-14456
