@@ -1878,8 +1878,18 @@ def resolve_assignment_target(
         if global_speaker is None:
             raise LookupError("Global speaker not found")
 
+        # Merged rows keep their global_speaker_id but are hidden by
+        # filter_recording_speakers_for_public_read, so returning one pins the
+        # utterance to a speaker the transcript cannot render and the UI falls
+        # back to the raw diarization label. Skipping them lands on the survivor
+        # when it holds the same identity, and otherwise falls through to a
+        # fresh manual row below. Following the merge chain would be wrong here:
+        # it leads to whoever the row was merged into, not the person asked for.
         for recording_speaker in recording_speakers:
-            if recording_speaker.global_speaker_id == global_speaker.id:
+            if (
+                recording_speaker.merged_into_id is None
+                and recording_speaker.global_speaker_id == global_speaker.id
+            ):
                 return recording_speaker
 
         label = f"MANUAL_{uuid4().hex[:8]}"

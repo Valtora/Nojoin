@@ -103,6 +103,31 @@ def _merge_is_blocked(a: RecordingSpeaker, b: RecordingSpeaker) -> str | None:
     return None
 
 
+def _local_name_key(speaker: RecordingSpeaker) -> str:
+    return (speaker.local_name or "").strip().casefold()
+
+
+def _union_is_blocked(
+    globals_a: set[int],
+    names_a: set[str],
+    globals_b: set[int],
+    names_b: set[str],
+) -> str | None:
+    """Reject a link whose two *components* carry conflicting identities.
+
+    ``_merge_is_blocked`` only ever sees the pair in front of it, so it cannot
+    stop an anonymous speaker acting as a bridge: X scoring above the threshold
+    against both A and B drags two confirmed people into one component even
+    though the direct A~B link was refused. The guard has to run against the
+    identities of the whole components a union would join, not the endpoints.
+    """
+    if len(globals_a | globals_b) > 1:
+        return "distinct_global_speakers_in_component"
+    if len(names_a | names_b) > 1:
+        return "distinct_manual_names_in_component"
+    return None
+
+
 def _survivor_sort_key(
     speaker: RecordingSpeaker,
     utterance_counts: dict[int, int],
@@ -137,8 +162,17 @@ def _score_and_union_pairs(
     Every pair is recorded, merged or not. The near-miss scores are the whole
     point: they distinguish "these are the same voice and we missed it" from
     "these really are different voices".
+
+    Linking is a second pass over the qualifying pairs in descending score
+    order. Union-find is order-sensitive once a link can be refused: taking the
+    pairs in whatever order the nested loop happened to produce would let an
+    arbitrary weaker link claim a component and push a stronger one out. The
+    strongest evidence should win, so it is applied first.
     """
     scored_pairs: list[dict[str, Any]] = []
+    candidates: list[
+        tuple[float, dict[str, Any], RecordingSpeaker, RecordingSpeaker]
+    ] = []
 
     for i, speaker_a in enumerate(eligible):
         for speaker_b in eligible[i + 1 :]:
@@ -146,19 +180,17 @@ def _score_and_union_pairs(
                 continue
             score = cosine_similarity(speaker_a.embedding, speaker_b.embedding)
             blocked = _merge_is_blocked(speaker_a, speaker_b)
-            merged = score >= threshold and blocked is None
 
-            scored_pairs.append(
-                {
-                    "a_label": speaker_a.diarization_label,
-                    "b_label": speaker_b.diarization_label,
-                    "a_id": int(speaker_a.id),
-                    "b_id": int(speaker_b.id),
-                    "cosine": round(float(score), 4),
-                    "merged": merged,
-                    "blocked_by": blocked,
-                }
-            )
+            pair: dict[str, Any] = {
+                "a_label": speaker_a.diarization_label,
+                "b_label": speaker_b.diarization_label,
+                "a_id": int(speaker_a.id),
+                "b_id": int(speaker_b.id),
+                "cosine": round(float(score), 4),
+                "merged": False,
+                "blocked_by": blocked,
+            }
+            scored_pairs.append(pair)
 
             if blocked is not None:
                 if score >= threshold:
@@ -171,17 +203,68 @@ def _score_and_union_pairs(
                     )
                 continue
 
-            if merged:
-                logger.info(
-                    "[SpeakerMerge] %s (id=%d) ~ %s (id=%d): cosine=%.3f >= %.3f",
-                    speaker_a.diarization_label,
-                    speaker_a.id,
-                    speaker_b.diarization_label,
-                    speaker_b.id,
-                    score,
-                    threshold,
-                )
-                _union(parent, rank, int(speaker_a.id), int(speaker_b.id))
+            if score >= threshold:
+                candidates.append((float(score), pair, speaker_a, speaker_b))
+
+    # The identities each component currently carries. Read through _find, so
+    # only the live root's entry is ever consulted.
+    component_globals: dict[int, set[int]] = {}
+    component_names: dict[int, set[str]] = {}
+    for speaker in eligible:
+        speaker_id = int(speaker.id)
+        component_globals[speaker_id] = (
+            {int(speaker.global_speaker_id)}
+            if speaker.global_speaker_id is not None
+            else set()
+        )
+        name_key = _local_name_key(speaker)
+        component_names[speaker_id] = {name_key} if name_key else set()
+
+    # Descending score, with the id pair as a deterministic tiebreak so two
+    # equally-scoring links never resolve on dict or list ordering.
+    candidates.sort(key=lambda c: (-c[0], c[1]["a_id"], c[1]["b_id"]))
+
+    for score, pair, speaker_a, speaker_b in candidates:
+        root_a = _find(parent, int(speaker_a.id))
+        root_b = _find(parent, int(speaker_b.id))
+
+        if root_a == root_b:
+            # Already the same component by transitivity; nothing to check.
+            pair["merged"] = True
+            continue
+
+        blocked = _union_is_blocked(
+            component_globals[root_a],
+            component_names[root_a],
+            component_globals[root_b],
+            component_names[root_b],
+        )
+        if blocked is not None:
+            pair["blocked_by"] = blocked
+            logger.info(
+                "[SpeakerMerge] %s ~ %s scored %.3f but was not merged (%s).",
+                speaker_a.diarization_label,
+                speaker_b.diarization_label,
+                score,
+                blocked,
+            )
+            continue
+
+        logger.info(
+            "[SpeakerMerge] %s (id=%d) ~ %s (id=%d): cosine=%.3f >= %.3f",
+            speaker_a.diarization_label,
+            speaker_a.id,
+            speaker_b.diarization_label,
+            speaker_b.id,
+            score,
+            threshold,
+        )
+        merged_globals = component_globals[root_a] | component_globals[root_b]
+        merged_names = component_names[root_a] | component_names[root_b]
+        new_root = _union(parent, rank, int(speaker_a.id), int(speaker_b.id))
+        component_globals[new_root] = merged_globals
+        component_names[new_root] = merged_names
+        pair["merged"] = True
 
     return scored_pairs
 
