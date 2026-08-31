@@ -377,3 +377,177 @@ def test_embeddings_from_different_methods_are_never_compared(
     payload = events[0]["payload"]
     assert payload["skipped_version_mismatch"] == 1
     assert payload["reason"] == "fewer_than_two_speakers_with_embeddings"
+
+
+# --- transitive identity collisions -----------------------------------------
+
+# A three-node topology in which no single pair breaks the direct guard but the
+# component does. Cosines: A~X 0.844, X~B 0.813, A~B 0.608, so at the 0.70
+# default the anonymous X bridges two identified speakers that must stay apart.
+BRIDGE_A = [1.0, 0.0, 0.0]
+BRIDGE_X = [0.844, 0.536343, 0.0]
+BRIDGE_B = [0.608, 0.55906, 0.563727]
+
+
+def _components(speakers: list[FakeSpeaker]) -> list[set[int]]:
+    """Group speakers by the survivor each ended up pointing at."""
+    groups: dict[int, set[int]] = {}
+    for speaker in speakers:
+        root = speaker.merged_into_id or speaker.id
+        groups.setdefault(root, set()).add(speaker.id)
+    return list(groups.values())
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_anonymous_speaker_cannot_bridge_two_identified_people(
+    mock_counts: MagicMock, monkeypatch
+) -> None:
+    """An anonymous speaker must not drag two identified people into one group.
+
+    The direct A~B link is refused, but union-find used to reach the same result
+    through X anyway, collapsing one confirmed identification into the other.
+    """
+    events = _captured_metrics(monkeypatch)
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_A",
+            embedding=BRIDGE_A,
+            global_speaker_id=10,
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_X", embedding=BRIDGE_X),
+        FakeSpeaker(
+            id=3,
+            diarization_label="SPEAKER_B",
+            embedding=BRIDGE_B,
+            global_speaker_id=20,
+        ),
+    ]
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers)
+
+    merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    by_id = {s.id: s for s in speakers}
+    for component in _components(speakers):
+        global_ids = {
+            by_id[speaker_id].global_speaker_id
+            for speaker_id in component
+            if by_id[speaker_id].global_speaker_id is not None
+        }
+        assert len(global_ids) <= 1, (
+            f"component {sorted(component)} holds distinct global speakers "
+            f"{sorted(global_ids)}"
+        )
+
+    # The stronger link wins: X joins A at 0.844 rather than B at 0.813.
+    assert by_id[2].merged_into_id == 1
+    assert by_id[3].merged_into_id is None
+
+    pairs = {(p["a_id"], p["b_id"]): p for p in events[0]["payload"]["pairs"]}
+    assert pairs[(1, 3)]["blocked_by"] == "distinct_global_speakers"
+    assert pairs[(2, 3)]["blocked_by"] == "distinct_global_speakers_in_component"
+    assert pairs[(2, 3)]["merged"] is False
+    assert pairs[(1, 2)]["merged"] is True
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_anonymous_speaker_cannot_bridge_two_manually_named_people(
+    mock_counts: MagicMock, monkeypatch
+) -> None:
+    """The same hole exists for manual names, which are equally strong evidence."""
+    events = _captured_metrics(monkeypatch)
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_A",
+            embedding=BRIDGE_A,
+            local_name="Alice",
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_X", embedding=BRIDGE_X),
+        FakeSpeaker(
+            id=3,
+            diarization_label="SPEAKER_B",
+            embedding=BRIDGE_B,
+            local_name="Bob",
+        ),
+    ]
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers)
+
+    merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    by_id = {s.id: s for s in speakers}
+    for component in _components(speakers):
+        names = {
+            by_id[speaker_id].local_name
+            for speaker_id in component
+            if by_id[speaker_id].local_name
+        }
+        assert len(names) <= 1, (
+            f"component {sorted(component)} holds distinct manual names {sorted(names)}"
+        )
+
+    pairs = {(p["a_id"], p["b_id"]): p for p in events[0]["payload"]["pairs"]}
+    assert pairs[(1, 3)]["blocked_by"] == "distinct_manual_names"
+    assert pairs[(2, 3)]["blocked_by"] == "distinct_manual_names_in_component"
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_the_strongest_link_claims_a_contested_anonymous_speaker(
+    mock_counts: MagicMock,
+) -> None:
+    """With B the closer match, X must join B instead of A.
+
+    Mirrors the bridge case with the scores swapped, so the assertion is about
+    the score ordering rather than about speaker or list order.
+    """
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_A",
+            embedding=BRIDGE_B,
+            global_speaker_id=10,
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_X", embedding=BRIDGE_X),
+        FakeSpeaker(
+            id=3,
+            diarization_label="SPEAKER_B",
+            embedding=BRIDGE_A,
+            global_speaker_id=20,
+        ),
+    ]
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers)
+
+    merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    by_id = {s.id: s for s in speakers}
+    assert by_id[2].merged_into_id == 3
+    assert by_id[1].merged_into_id is None
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_a_chain_of_anonymous_speakers_still_merges_transitively(
+    mock_counts: MagicMock,
+) -> None:
+    """The component guard must not cost us ordinary transitive merging."""
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_A",
+            embedding=BRIDGE_A,
+            global_speaker_id=10,
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_X", embedding=BRIDGE_X),
+        FakeSpeaker(id=3, diarization_label="SPEAKER_B", embedding=BRIDGE_B),
+    ]
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers)
+
+    merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    by_id = {s.id: s for s in speakers}
+    assert by_id[1].merged_into_id is None
+    assert by_id[2].merged_into_id == 1
+    assert by_id[3].merged_into_id == 1

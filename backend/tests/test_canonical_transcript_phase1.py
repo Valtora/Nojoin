@@ -3466,6 +3466,141 @@ async def test_recording_speaker_public_read_filter_hides_zero_utterance_speaker
         ]
 
 
+async def _seed_merged_recording_speakers(session_maker: sessionmaker) -> None:
+    """Two rows resolved to one person, the merged one holding the lower id.
+
+    The merge pass leaves the loser's global_speaker_id in place, so a lookup by
+    global speaker that walks the rows in id order reaches the hidden row first.
+    """
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "INSERT INTO global_speakers (id, created_at, updated_at, user_id, name) "
+                "VALUES (10, :now, :now, 1, 'Person A')"
+            ),
+            {"now": "2026-05-20 00:00:00"},
+        )
+        for row_id, label, global_id, merged_into, status in (
+            (1, "SPEAKER_A", 10, 2, "merged"),
+            (2, "SPEAKER_A2", 10, None, "active"),
+            (3, "SPEAKER_C", None, None, "active"),
+        ):
+            await session.execute(
+                text(
+                    "INSERT INTO recording_speakers ("
+                    " id, created_at, updated_at, public_id, recording_id,"
+                    " global_speaker_id, diarization_label, merged_into_id,"
+                    " speaker_status, speaker_kind, identity_locked"
+                    ") VALUES (:id, :now, :now, :public_id, 1, :global_id, :label,"
+                    " :merged_into, :status, 'diarized', 0)"
+                ),
+                {
+                    "id": row_id,
+                    "now": "2026-05-20 00:00:00",
+                    "public_id": f"rs-{row_id}",
+                    "global_id": global_id,
+                    "label": label,
+                    "merged_into": merged_into,
+                    "status": status,
+                },
+            )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_global_speaker_assignment_never_targets_a_merged_recording_speaker(
+    test_session_maker: sessionmaker,
+) -> None:
+    """Assigning to a person must land on a row the transcript can render.
+
+    A merged row keeps its global_speaker_id but is hidden from the public
+    speaker list, so targeting one pins the utterance to a speaker the UI cannot
+    resolve and it falls back to the raw diarization label.
+    """
+    from backend.models.pipeline import SpeakerCorrectionScope
+    from backend.models.speaker import RecordingSpeaker
+    from backend.utils.canonical_pipeline import (
+        append_utterances_from_segments,
+        filter_recording_speakers_for_public_read,
+        update_utterance_speaker,
+    )
+
+    await _seed_uploading_recording(test_session_maker)
+    await _seed_merged_recording_speakers(test_session_maker)
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "utt-1",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "SPEAKER_C",
+                        "text": "hello",
+                        "segment_source": "final",
+                    }
+                ],
+                run_kind=ProcessingRunKind.IMPORT,
+                source="import",
+                state_override=TranscriptUtteranceState.STABLE,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        _, target = await session.run_sync(
+            lambda sync_session: update_utterance_speaker(
+                sync_session,
+                recording_id=1,
+                utterance_public_id="utt-1",
+                new_speaker_name="Person A",
+                global_speaker_id=10,
+                scope=SpeakerCorrectionScope.UTTERANCE_ONLY,
+                actor_user_id=1,
+                source="test",
+            )
+        )
+        await session.commit()
+
+    assert target.merged_into_id is None
+    # The survivor already carries the identity, so no new row is needed.
+    assert target.id == 2
+
+    async with test_session_maker() as session:
+        public_speakers = await session.run_sync(
+            lambda sync_session: filter_recording_speakers_for_public_read(
+                sync_session,
+                1,
+                list(
+                    sync_session.execute(
+                        select(RecordingSpeaker).where(
+                            RecordingSpeaker.recording_id == 1
+                        )
+                    )
+                    .scalars()
+                    .all()
+                ),
+            )
+        )
+        assigned_speaker_id, speaker_label = (
+            await session.execute(
+                text(
+                    "SELECT recording_speaker_id, speaker_label FROM "
+                    "transcript_utterances WHERE recording_id = 1 "
+                    "AND UPPER(state) != 'SUPERSEDED'"
+                )
+            )
+        ).one()
+
+    assert assigned_speaker_id == 2
+    assert speaker_label == "SPEAKER_A2"
+    assert assigned_speaker_id in {speaker.id for speaker in public_speakers}
+
+
 @pytest.mark.anyio
 async def test_append_utterances_from_segments_creates_live_provisional_run_and_projection(
     test_session_maker: sessionmaker,
