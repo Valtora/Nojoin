@@ -657,6 +657,16 @@ Each ecosystem is capped at five open pull requests so the queue stays reviewabl
 
 **Security prioritisation.** Dependabot security alerts and any update that resolves a known CVE take priority over routine version bumps and should be merged promptly once CI is green. Because the release pipeline fails on fixable CRITICAL/HIGH image findings (REL-008), a security update is often the unblocking fix for a release: merge the relevant base-image or dependency update, then re-cut the tag. For a finding with no upstream fix, record a dated, justified entry in [.github/trivyignore](../.github/trivyignore) rather than blocking indefinitely.
 
+### Uncapped AI SDKs
+
+`openai`, `anthropic`, and `google-genai` are the three dependencies deliberately declared with an open lower bound (`>=`) rather than pinned. Provider APIs move quickly and the SDKs are the fastest route to a new model or parameter, so these three are meant to track upstream: whatever is current on PyPI is what an image build installs.
+
+That is the opposite trade to every other pin in `requirements/`, and it has a cost worth stating plainly. There is no lockfile, so a **major** release enters the next image build with no pull request, no review, and nothing in the diff to notice. It has already happened once: `anthropic` 1.0.0 removed `temperature`, `top_p`, and `top_k` from `messages.create` and `messages.stream`, every call in the Anthropic backend passed `temperature`, and the provider raised `TypeError` before a request left the process. The unit tests did not catch it because a fake client taking `**kwargs` accepts arguments the real SDK has dropped.
+
+Capping the three at `<N+1` would have caught it, and was considered and rejected: a cap means the newest model is unavailable until someone lifts it, which is the thing these three exist to avoid. The guard is a test instead. `test_anthropic_kwargs_are_accepted_by_the_installed_sdk` in [backend/tests/test_llm_services_unified.py](../backend/tests/test_llm_services_unified.py) captures the keyword arguments the backend actually sends and binds them against `inspect.signature` of the **installed** SDK, so any parameter a future release removes fails in CI rather than in a built image. It asserts no list of approved names, which is what makes it survive changes nobody predicted.
+
+Two consequences follow. Adding an equivalent guard for the OpenAI and Gemini backends is worthwhile and not yet done. And when one of these three does ship a major, the fix is to update the call sites, never to add a pin that hides the break.
+
 ### Held Pins and Unfixable Advisories
 
 A few dependencies are pinned below their latest release because a companion package has not shipped a matching build, not because we chose to lag. The live example is the PyTorch stack: `pyannote.audio` and `torch-audiomentations` both require `torchaudio`, whose wheels are compiled against a matching `torch` minor, and torchaudio has published nothing above 2.11.0. Upgrading `torch` alone would install a mismatched ABI pair, so 2.11.0 is a ceiling rather than a preference.

@@ -691,3 +691,92 @@ def test_openai_refuses_to_save_notes_the_output_limit_cut_short() -> None:
 
     with pytest.raises(TruncatedNotesError):
         backend.generate_meeting_intelligence(_sample_request())
+
+
+def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
+    """Every Anthropic request must bind against the real SDK signature.
+
+    requirements/backend.txt and worker.txt declare ``anthropic`` with an open
+    lower bound and there is no lockfile, so each image build installs whatever
+    is current on PyPI, majors included. That is deliberate -- the AI SDKs are
+    meant to track upstream -- but it removes the usual safety net: a parameter
+    the SDK drops in a major starts raising ``TypeError`` in a built image with
+    nothing in CI to notice.
+
+    That is not hypothetical. ``anthropic`` 1.0.0 removed ``temperature``,
+    ``top_p`` and ``top_k`` from ``messages.create`` and ``messages.stream``, and
+    every call in this backend passed ``temperature``, so the whole provider
+    failed before a request left the process. The mocks below could not catch it
+    because a fake taking ``**kwargs`` accepts anything.
+
+    So this test captures what the backend actually sends and binds it against
+    the signature of the *installed* SDK. It is deliberately not a list of
+    approved parameter names: any parameter a future release removes fails here,
+    not in production.
+    """
+    import contextlib
+    import inspect
+
+    import anthropic
+
+    real = anthropic.Anthropic(api_key="sk-ant-not-used")
+    signatures = {
+        "create": inspect.signature(real.messages.create),
+        "stream": inspect.signature(real.messages.stream),
+    }
+
+    captured: list[tuple[str, dict]] = []
+
+    class RecordingMessages:
+        def create(self, **kwargs):
+            captured.append(("create", kwargs))
+            return SimpleNamespace(
+                content=[SimpleNamespace(text=_sample_payload())],
+                stop_reason="end_turn",
+            )
+
+        def stream(self, **kwargs):
+            captured.append(("stream", kwargs))
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[SimpleNamespace(text=_sample_payload())],
+                    stop_reason="end_turn",
+                )
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-opus-5"
+    backend.client = SimpleNamespace(messages=RecordingMessages())
+
+    # One call per distinct request shape: the streamed notes ceiling ladder, the
+    # plain create path, and the chat path that also sends system and tools.
+    #
+    # What each call does with the canned response is irrelevant here -- the
+    # assertion is on what went out, not what came back -- so a parse failure
+    # against a payload shaped for a different endpoint is suppressed rather than
+    # papered over by teaching this test three more response schemas.
+    calls = (
+        lambda: backend.generate_meeting_intelligence(_sample_request()),
+        lambda: backend.infer_speaker_suggestions("[00:00 - 00:05] SPEAKER_00: Hi."),
+        lambda: backend.ask_question_about_meeting(
+            "What was decided?",
+            meeting_notes="Notes",
+            diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
+        ),
+    )
+    for call in calls:
+        with contextlib.suppress(Exception):
+            call()
+
+    assert captured, "no Anthropic requests were recorded"
+
+    for method, kwargs in captured:
+        try:
+            signatures[method].bind(**kwargs)
+        except TypeError as exc:
+            pytest.fail(
+                f"messages.{method}() in AnthropicLLMBackend passes arguments that "
+                f"anthropic {anthropic.__version__} does not accept: {exc}. "
+                "The SDK dropped or renamed a parameter -- fix the call sites "
+                "rather than pinning the SDK back."
+            )
