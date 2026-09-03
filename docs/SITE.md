@@ -488,12 +488,12 @@ and an alias can be replaced without moving the mailbox.
 
 ## Working on the site, and previewing it
 
-Everything under `site/` runs in an **nvm-sourced shell**. A non-interactive shell falls back
-to the distro Node and npm, which has silently rewritten `package-lock.json` before — it
-strips `libc` fields and downgrades entries CI then rejects.
+Everything under `site/` builds on **Node 26 with the npm it bundles**, which is what CI and
+the deploy job use. Check `node --version` first on a host with more than one Node: an older
+npm has rewritten `package-lock.json` before, with no error, stripping `libc` fields and
+downgrading entries CI then rejects.
 
 ```bash
-. ~/.nvm/nvm.sh          # Node 26 / npm 11, matching CI and the deploy job
 cd site
 npm ci                   # never `npm install`, for the reason above
 npm run build            # writes site/dist
