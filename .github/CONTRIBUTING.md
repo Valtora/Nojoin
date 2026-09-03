@@ -81,9 +81,9 @@ Minimum pull request verification is:
   the formatter check, mypy, the doc and Alembic validators, and pytest; pass
   `--fix` to auto-fix lint and formatting first)
 - Frontend changes: `cd frontend && npm run lint && npm run test && npm run build`
-- Marketing site changes (`site/**`): `. ~/.nvm/nvm.sh` first, for Node 26 and npm 11, then
-  `cd site && npm ci && npm run build`. Use `npm ci`, never `npm install`: an older npm
-  rewrites `package-lock.json` in ways CI rejects. Also run
+- Marketing site changes (`site/**`): `cd site && npm ci && npm run build`, on Node 26 with
+  the npm it bundles, matching CI and the deploy job. Use `npm ci`, never `npm install`: an
+  older npm rewrites `package-lock.json` in ways CI rejects. Also run
   `node frontend/scripts/check-contrast.mjs`, and check for horizontal overflow at 360px in
   both themes. [docs/SITE.md](../docs/SITE.md) carries the full runbook, including how to share
   a preview over a Cloudflare quick tunnel.
