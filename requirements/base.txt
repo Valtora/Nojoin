@@ -1,4 +1,4 @@
-sqlmodel==0.0.39
+sqlmodel==0.0.42
 psycopg2-binary==2.9.12
 asyncpg==0.31.0
 python-dotenv==1.2.3

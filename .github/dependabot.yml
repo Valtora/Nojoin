@@ -52,6 +52,14 @@ updates:
       # torchcodec stays matched to torch 2.11 (the 0.11.x line).
       - dependency-name: "torchcodec"
         versions: [">=0.12.0"]
+      # torchvision is the third independently numbered companion of the held
+      # torch stack, and the only one whose metadata pins torch *exactly*:
+      # torchvision 0.27.0 declares `torch==2.12.0`. Without this entry a
+      # routine torchvision bump drags torch past the torchaudio ceiling, which
+      # is the same way the API base image walked 3.12 to 3.14 unnoticed.
+      # 0.26.x is the 2.11 pair. Lift this with the torch hold above.
+      - dependency-name: "torchvision"
+        versions: [">=0.27.0"]
       # numpy 2.5 forces an ancient numba that breaks the openai-whisper resolve.
       - dependency-name: "numpy"
         versions: [">=2.5.0"]

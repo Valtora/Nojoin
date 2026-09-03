@@ -120,7 +120,6 @@ class AnthropicLLMBackend(LLMBackend):
             NOTES_MAX_OUTPUT_TOKEN_LADDER,
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
         )
 
     def _open_chat_stream(self, **kwargs):
@@ -179,7 +178,6 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
             )
             text = (
                 response.content[0].text
@@ -298,7 +296,6 @@ class AnthropicLLMBackend(LLMBackend):
                 (max_tokens,),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
             )
             return (
                 response.content[0].text
@@ -341,7 +338,6 @@ class AnthropicLLMBackend(LLMBackend):
                 (max_tokens,),
                 model=self.model,
                 messages=[{"role": "user", "content": content}],
-                temperature=0.0,
             )
             return (
                 response.content[0].text
@@ -394,7 +390,6 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[
                     {"role": "user", "content": user_content},
                 ],
-                temperature=0.2,
                 timeout=timeout,
             )
             text = (
@@ -449,7 +444,6 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 max_tokens=self.MEETING_ANALYSIS_MAX_OUTPUT_TOKENS,
                 messages=[{"role": "user", "content": user_content}],
-                temperature=0.2,
                 timeout=timeout,
             )
             if str(getattr(response, "stop_reason", "") or "").lower() == "max_tokens":
@@ -497,7 +491,6 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 system=anthropic_cached_system(context),
                 messages=messages,
-                temperature=0.2,
             )
             return (
                 response.content[0].text
@@ -550,7 +543,6 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 system=anthropic_cached_system(context),
                 messages=messages,
-                temperature=0.2,
                 tools=[tool_definition],
             )
             try:
@@ -624,7 +616,6 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
             )
             title = self.parse_title(
                 response.content[0].text
