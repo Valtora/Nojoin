@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "astro": "^7.1.1"
+    "astro": "^7.2.8"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
