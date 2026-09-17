@@ -289,6 +289,24 @@ CVE-2026-53224
 CVE-2026-53359
 CVE-2026-64531
 
+# linux-libc-dev kernel-header CVEs surfaced by the local pre-release scan for
+# v2.5.1 (2026-09-17), newly disclosed since v2.5.0 from the pinned PyTorch/CUDA
+# worker base (also inherited by worker-io, which adds none of its own). Same
+# rationale as every batch above: these flag the kernel *header* package version,
+# not the running kernel, so the in-image linux-libc-dev version is not a runtime
+# exposure for a container (it shares the host kernel). All seven are HIGH. The
+# pinned base carries 6.8.0-106.106 and the fixes land in 6.8.0-139.139, which is
+# not reachable while the PyTorch base bump is held in .github/dependabot.yml
+# until torchaudio ships a 2.12.x release.
+#   Owner: maintainers. Review by: 2026-12-17.
+CVE-2026-46275
+CVE-2026-53357
+CVE-2026-64015
+CVE-2026-64018
+CVE-2026-64032
+CVE-2026-64073
+CVE-2026-64115
+
 # CVE-2026-14456: OpenSSL denial of service via unbounded memory growth in the
 # QUIC server. Unlike every batch above this is an application library rather
 # than a kernel header, and it is accepted on reachability rather than on the
@@ -301,10 +319,34 @@ CVE-2026-64531
 # ships. An operator fronting Nojoin with their own HTTP/3 terminator is running
 # that terminator's OpenSSL, not the one in these images.
 #
-# Both distributions have published a fix and neither is reachable yet: Debian
-# needs openssl 3.5.7-1~deb13u2 and the newest python:3.12-slim still carries
-# 3.5.6-1~deb13u2; Alpine needs 3.5.8-r0 and node:26-alpine has not been rebuilt
-# since 2026-08-05. Both clear on a base rebuild rather than on any change here,
-# hence the short review date.
-#   Owner: maintainers. Review by: 2026-09-24.
+# Reviewed 2026-09-17 ahead of v2.5.1. The Debian half has cleared: the api
+# runtime stage now runs `apt-get upgrade`, which installs the patched openssl,
+# and the api image scans clean with this entry removed. The entry stays for the
+# frontend alone. Alpine needs 3.5.8-r0 and the pinned node:26-alpine (Alpine
+# 3.24.1) still carries 3.5.7-r0. It clears on a node base rebuild, hence the
+# short review date.
+#   Owner: maintainers. Review by: 2026-10-15.
 CVE-2026-14456
+
+# CVE-2026-58659: PyTorch Lightning code execution through a checkpoint's
+# `_instantiator` hyperparameter. A false positive against the pinned version,
+# accepted because the advisory's version range is wrong and not because the
+# risk is tolerated.
+#
+# The fix is upstream PR 21832, released in lightning 2.6.6, and
+# requirements/worker.txt pins lightning and pytorch-lightning at 2.6.6. The
+# allowlist it adds (`_ALLOWED_INSTANTIATORS` in lightning/pytorch/core/saving.py)
+# was confirmed present in the 2.6.6 tag and in the installed package, and absent
+# from 2.6.5.
+#
+# GHSA-qqmf-gpg7-g8gw records the affected range for `lightning` as
+# `< 2022.6.15`. PyPI lists no such release, and every 2.x version sorts below
+# it, so no upgrade can clear the finding. The PyPA record for the same CVE,
+# PYSEC-2026-3624, gives the fix as 2.6.6, and OSV lists pytorch-lightning 2.6.6
+# as unaffected. Trivy reads the GitHub range.
+#
+# This file matches on CVE id alone, so the entry would also mask a vulnerable
+# copy if either pin were moved back below 2.6.6. Do not lower them. Remove the
+# entry once the advisory database corrects the range.
+#   Owner: maintainers. Review by: 2026-10-15.
+CVE-2026-58659
