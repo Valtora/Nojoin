@@ -8,14 +8,13 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **Long recordings finalize again.** PostgreSQL accepts at most 32767 bind parameters in one statement, and the window manifest write crossed that after about 1h49m of audio, so finalizing a two-hour recording returned a 500. Bulk statements are now batched from the live column count.
-- **Finalizing no longer stalls the rest of the API.** Audio concatenation ran inline on the event loop and blocked every other request for its duration, measured at 20 seconds on a two-hour recording. It now runs on a worker thread.
-- **Several documents attach in one upload.** The dialog holds a queue, each file carrying its own visual-analysis switch. A failure no longer aborts the batch, and a retry re-sends only what failed.
-- **Capture stops reporting outages the browser cannot confirm.** Connection probes are serialised rather than piling up behind a stalled request, a probe that outlasts its own timeout by a wide margin is treated as suspension, and returning to the foreground clears the streak.
-- **Floating panels inside modals open where they can be seen.** The date picker, the colour picker and the merge-target search in the People modal were clipped or flipped out of view by the modal they opened in, worst at phone widths. They now position against the window.
-- **Note generation recovers on stacks that left `NOJOIN_CODEX_PATH` blank.** Compose puts an empty string in the environment rather than leaving the variable unset, which is a value, so the default path was never reached and note generation failed with a permission error. `NOJOIN_UMASK` had the same shape and logged an invalid value warning at every startup.
-- **Prefork worker children are retired after a fixed number of tasks.** A pool child previously lived for the life of its container. This is a backstop that bounds an undetected leak, not a fix for an observed one, and is not expected to lower steady-state memory.
-- **The MCP connector is rebuilt on version 2 of the MCP SDK.** The tools it exposes and the grants it accepts are unchanged.
+- **Anthropic models work again.** Version 1 of the Anthropic SDK removed the `temperature` parameter, and the 2.5.0 images install that version, so every Anthropic request failed before it left the server. Nojoin no longer sends it (#272).
+- **Merging duplicate speakers no longer joins two identified people.** An unnamed third voice that resembled both could bridge them, collapsing one confirmed identification into the other. The check now covers the whole group a merge would create (#270).
+- **Assigning a line to a person always shows that person.** The assignment could land on a speaker record that an earlier merge had retired, and the transcript then fell back to the raw diarization label (#270).
+- **A code execution flaw in the diarization model loader is closed.** CVE-2026-58659 let a crafted PyTorch Lightning checkpoint run code when loaded. The worker loads pyannote models that ship with Nojoin or come from Hugging Face, so the exposure was a tampered model file. Both Lightning packages move to the fixed 2.6.6 (#288).
+- **The API image carries current Debian security fixes.** Its base image lags the Debian archive by weeks, so the image now applies pending system package updates when it is built. This release picks up fixes to gzip, PCRE2, SQLite, Perl and OpenSSL (#291).
+- **The notes editor is off a vulnerable tiptap release.** GHSA-cp6q-959q-f8rh in `@tiptap/core` is cleared by moving the whole tiptap family together (#272).
+- Routine updates include React 19.3, Next.js 16.3.5 and uvicorn 0.53 (#284, #288, #292).
 
 ### Upgrade
 
@@ -33,9 +32,8 @@ Database migrations run automatically on the first API start after upgrading. Ba
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
 - No Alembic revisions in this release. Nothing about the schema changes, and no first-boot migration runs.
-- **Optional if you maintain your own compose file.** The parse lane gains `--max-tasks-per-child=25` on its `command:`, copied from [docker-compose.example.yml](https://github.com/Valtora/Nojoin/blob/main/docker-compose.example.yml). Without it that lane falls back to the global limit of 500, which is a looser bound rather than a break. Deploying from the example file needs no change.
-- Child recycling has no effect on `worker-gpu`, which runs a solo pool with no children to recycle, and does not disturb the Celery Beat schedule.
-- No new service, image or environment variable.
+- No change to the example compose file, the environment variables or the nginx configuration. Pulling the new images is the whole upgrade.
+- The upgrade does not change recordings whose speakers were already wrongly merged. Reprocessing such a recording runs the corrected merge pass.
 
 ### Rollback
 
@@ -43,25 +41,23 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 - Code only. Redeploy the previous image tags.
 - Nothing to downgrade, since this release adds no schema revision.
-- MCP grants issued under this release carry scopes the previous release understands, so connectors keep working.
+- Rolling back to 2.5.0 brings back the Anthropic failure and the Lightning flaw, so prefer fixing forward.
 
 ### Known Issues
 
 <!-- Maintainer: list known issues affecting this release, or leave the default. -->
 
+- Anthropic models now run at the provider's default sampling, where Nojoin previously set a low fixed temperature. Notes and titles from Anthropic models can vary more between runs than before. Other providers are unchanged.
 - Carried over from 2.4.0. The AI analytics tier spends your own provider quota on every run, is never dispatched automatically, and has no account level cap.
 - Carried over. Measured delivery does not refresh itself, so a transcript edited afterwards is reported stale and re-measured only when asked, and overlapping speech is a floor rather than a total.
 - Carried over. The 120 second GPU window can be too large when live capture and transcription contend for one card, and the Codex payload in the worker-io image is a stripped static binary that scanners cannot introspect.
-- A document batch uploads one file at a time, because the backend admits two concurrent uploads per user and rejects the rest. A large drop therefore takes as long as the sum of its files.
+- Carried over from 2.5.0. A document batch uploads one file at a time, because the backend admits two concurrent uploads per user and rejects the rest.
 
 ### Browser-Capture Compatibility
 
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
-- Supported browsers, operating systems and audio sources are unchanged. Shared-audio capture still resolves on Chromium desktop only.
-- The coverage warning is net of audio still queued in the browser, and names the queued part separately. A server that stops answering for two minutes leaves two minutes queued, which was never at risk.
-- An outage keeps explaining a shortfall for a few minutes after the connection recovers, because the check runs every fifteen seconds and the queue takes longer than that to drain.
-- The live transcript window no longer overflows the card it sits in on a short window.
+- No capture code changed in this release. Supported browsers, operating systems and audio sources are unchanged, and shared-audio capture still resolves on Chromium desktop only.
 
 ### Changes
 
