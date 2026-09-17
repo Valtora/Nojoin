@@ -46,7 +46,16 @@ ENV PATH="/opt/venv/bin:$PATH"
 # gosu drops the entrypoint from root to appuser after the ./data bind-mount
 # ownership repair. Sourced from the distro (Trivy OS-scanner coverage + distro
 # security auto-patch) rather than a hand-copied binary.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# `apt-get upgrade` patches the packages the base image ships, which
+# `apt-get install` alone never touches. The base is pinned by digest and
+# upstream republishes it every few weeks, so Debian security fixes reach the
+# archive well before they reach any digest this file could pin. Ahead of 2.5.1
+# the newest python:3.12-slim (built 2026-09-01) still carried fixable
+# CRITICAL/HIGH findings in gzip, libpcre2, libsqlite3 and perl-base, and the
+# release scan gate fails on those. Only the runtime stage is upgraded: the
+# builder stage contributes /opt/venv and nothing from its OS layer.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
     libpq5 \
     libsndfile1 \
