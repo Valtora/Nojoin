@@ -8,9 +8,9 @@ onnx-asr==0.12.0
 silero-vad==6.2.1
 numpy==2.4.6
 pandas==3.0.5
-openai>=3.8.0
-anthropic>=1.4.0
-google-genai>=2.22.0
+openai>=3.13.0
+anthropic>=1.5.0
+google-genai>=2.23.0
 watchdog==6.0.0
 
 # Document parsing. PyMuPDF covers PDF text, table detection and page
@@ -30,8 +30,15 @@ pytesseract==0.3.13
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks==0.4.0
 einops==0.8.2
-huggingface_hub==1.30.0
-lightning==2.6.5
+huggingface_hub==1.31.0
+# lightning 2.6.6 closes CVE-2026-58659 (GHSA-qqmf-gpg7-g8gw): a checkpoint could
+# name any import path as its `_instantiator` and have it called on load, even
+# under weights_only=True. pyannote.audio loads its checkpoints through
+# lightning.pytorch. pytorch-lightning is the same code shipped as a second
+# package and arrives only as a dependency of lightning, so it is pinned here
+# too: left floating, a resolver is free to keep the vulnerable 2.6.5 copy.
+lightning==2.6.6
+pytorch-lightning==2.6.6
 opentelemetry-api==1.44.0
 opentelemetry-sdk==1.44.0
 opentelemetry-exporter-otlp==1.44.0
@@ -45,7 +52,7 @@ safetensors==0.8.0
 torch-audiomentations==0.12.0
 torchmetrics==1.9.0
 soundfile==0.14.0
-matplotlib==3.11.1
+matplotlib==3.11.2
 pyannoteai-sdk==0.4.0
 torchcodec==0.11.1
 fastembed==0.8.0
