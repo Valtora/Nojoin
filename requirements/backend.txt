@@ -6,9 +6,9 @@ mcp==2.2.0
 docker==7.2.0
 celery[redis]==5.6.3
 numpy==2.4.6
-openai>=3.8.0
-anthropic>=1.4.0
-google-genai>=2.22.0
+openai>=3.13.0
+anthropic>=1.5.0
+google-genai>=2.23.0
 reportlab==5.0.1
 python-docx==1.2.0
 Markdown==3.10.3
