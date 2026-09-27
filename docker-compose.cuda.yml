@@ -19,7 +19,7 @@ services:
       dockerfile: docker/Dockerfile.worker
       args:
         TORCH_BASE_IMAGE: pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33
-        WORKER_GPU_BACKEND: cuda
+        WORKER_INFERENCE_BACKEND: cuda
   worker-io:
     environment:
       NOJOIN_GPU_AVAILABLE: "true"

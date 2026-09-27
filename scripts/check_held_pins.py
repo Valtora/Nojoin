@@ -113,7 +113,8 @@ IMAGE_TAG_PATTERNS = (
     ),
     (
         re.compile(
-            r"^\s+TORCH_BASE_IMAGE:\s+rocm/pytorch:\S+_pytorch_release_(\d+\.\d+\.\d+)@",
+            r"^\s+TORCH_BASE_IMAGE:\s+"
+            r"rocm/pytorch:\S+_pytorch_release_(\d+\.\d+\.\d+)@",
             re.MULTILINE,
         ),
         "rocm/pytorch",
@@ -130,6 +131,26 @@ IMAGE_TAG_PATTERNS = (
         "torchaudio",
     ),
 )
+
+WORKER_PROFILE_SERVICES = {
+    "docker-compose.cpu.yml": "worker-cpu",
+    "docker-compose.cuda.yml": "worker-cuda",
+    "docker-compose.rocm.yml": "worker-rocm",
+}
+WORKER_BUILD_ARGUMENTS = {
+    "TORCH_BASE_IMAGE",
+    "WORKER_INFERENCE_BACKEND",
+    "TORCH_VERSION",
+    "TORCHAUDIO_VERSION",
+}
+PROFILE_BUILD_ARG_PATTERN = re.compile(
+    r"^\s+(TORCH_BASE_IMAGE|WORKER_INFERENCE_BACKEND|TORCH_VERSION|"
+    r"TORCHAUDIO_VERSION):\s*(.*?)\s*$",
+    re.MULTILINE,
+)
+RELEASE_SERVICE_PATTERN = re.compile(r"^\s+- service:\s*(\S+)\s*$")
+RELEASE_BUILD_ARGS_PATTERN = re.compile(r"^\s+build_args:\s*\|\s*$")
+RELEASE_BUILD_ARG_PATTERN = re.compile(r"^\s+([A-Z][A-Z0-9_]*)=(.*?)\s*$")
 
 
 @dataclass(frozen=True)
@@ -268,6 +289,91 @@ def declared_pins(hold: Hold) -> list[tuple[str, int, str, str]]:
                     )
                 )
     return found
+
+
+def _profile_build_args(relative: str) -> dict[str, str]:
+    """Read the worker build arguments encoded by one Compose profile."""
+    text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+    return {
+        match.group(1): match.group(2).strip().strip("\"'")
+        for match in PROFILE_BUILD_ARG_PATTERN.finditer(text)
+    }
+
+
+def _release_worker_build_args() -> dict[str, dict[str, str]]:
+    """Read worker build arguments from the release matrix without a YAML dependency."""
+    release_path = REPO_ROOT / ".github/workflows/release.yml"
+    result: dict[str, dict[str, str]] = {}
+    service: str | None = None
+    in_build_args = False
+    build_args_indent = 0
+
+    for line in release_path.read_text(encoding="utf-8").splitlines():
+        service_match = RELEASE_SERVICE_PATTERN.match(line)
+        if service_match:
+            service = service_match.group(1)
+            in_build_args = False
+            continue
+
+        if service not in WORKER_PROFILE_SERVICES.values():
+            continue
+
+        if RELEASE_BUILD_ARGS_PATTERN.match(line):
+            in_build_args = True
+            build_args_indent = len(line) - len(line.lstrip())
+            result.setdefault(service, {})
+            continue
+
+        if not in_build_args or not line.strip():
+            continue
+
+        indent = len(line) - len(line.lstrip())
+        if indent <= build_args_indent:
+            in_build_args = False
+            continue
+
+        match = RELEASE_BUILD_ARG_PATTERN.match(line)
+        if match and match.group(1) in WORKER_BUILD_ARGUMENTS:
+            result[service][match.group(1)] = match.group(2).strip().strip("\"'")
+
+    return result
+
+
+def check_worker_profile_release_parity() -> list[str]:
+    """Require each published worker build to match its Compose profile pins."""
+    release_args = _release_worker_build_args()
+    problems: list[str] = []
+
+    for profile, service in WORKER_PROFILE_SERVICES.items():
+        profile_args = _profile_build_args(profile)
+        published_args = release_args.get(service)
+        if published_args is None:
+            problems.append(
+                f".github/workflows/release.yml: no worker build_args block for "
+                f"{service}; the published image no longer follows {profile}."
+            )
+            continue
+
+        required = {"TORCH_BASE_IMAGE", "WORKER_INFERENCE_BACKEND"}
+        if profile == "docker-compose.cpu.yml":
+            required.update({"TORCH_VERSION", "TORCHAUDIO_VERSION"})
+
+        for key in sorted(required | profile_args.keys() | published_args.keys()):
+            profile_value = profile_args.get(key)
+            release_value = published_args.get(key)
+            if profile_value != release_value:
+                problems.append(
+                    f"{profile} and .github/workflows/release.yml ({service}) "
+                    f"must agree on {key}: profile={profile_value!r}, "
+                    f"release={release_value!r}."
+                )
+            elif key in required and profile_value is None:
+                problems.append(
+                    f"{profile} and .github/workflows/release.yml ({service}) "
+                    f"must both declare {key}."
+                )
+
+    return problems
 
 
 def check_drift(hold: Hold) -> list[str]:
@@ -476,8 +582,8 @@ def render_text(
         print(f"ERROR: could not check {failure}")
     if not problems:
         print(
-            "Matched-stack pins agree with every recorded hold, and every "
-            f"surface running backend/ declares Python {EXPECTED_PYTHON}."
+            "Matched-stack pins and worker profile/release build args agree, "
+            f"and every surface running backend/ declares Python {EXPECTED_PYTHON}."
         )
 
 
@@ -494,6 +600,7 @@ def main() -> int:
     args = parser.parse_args()
 
     problems = [problem for hold in HOLDS for problem in check_drift(hold)]
+    problems += check_worker_profile_release_parity()
     problems += check_interpreter()
     results, failures = ((), []) if args.offline else check_releases(HOLDS)
     results = list(results)

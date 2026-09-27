@@ -263,7 +263,7 @@ jobs:
             image_suffix: -worker-cpu
             build_args: |
               TORCH_BASE_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
-              WORKER_GPU_BACKEND=cpu
+              WORKER_INFERENCE_BACKEND=cpu
               TORCH_VERSION=2.11.0
               TORCHAUDIO_VERSION=2.11.0
           - service: worker-cuda
@@ -272,14 +272,14 @@ jobs:
             image_suffix: -worker-cuda
             build_args: |
               TORCH_BASE_IMAGE=pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33
-              WORKER_GPU_BACKEND=cuda
+              WORKER_INFERENCE_BACKEND=cuda
           - service: worker-rocm
             context: .
             dockerfile: docker/Dockerfile.worker
             image_suffix: -worker-rocm
             build_args: |
               TORCH_BASE_IMAGE=rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.11.0@sha256:a223aee17aef5d21c3b9f63436dd19d27d1c665ec8b2f40011c9546cabae2a80
-              WORKER_GPU_BACKEND=rocm
+              WORKER_INFERENCE_BACKEND=rocm
           - service: frontend
             context: frontend
             dockerfile: frontend/Dockerfile

@@ -45,7 +45,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 
 ## Managed Nojoin
 
-Nojoin is free, and running it yourself means a machine with a GPU, a compose file, and the upgrades that follow. If you'd rather not, the developer who built Nojoin will scope the hardware, set an instance up on a machine you own, and keep it patched, watched and backed up.
+Nojoin is free, and running it yourself means a machine to host it, a compose file, and the upgrades that follow. CPU inference is the default; NVIDIA/CUDA and AMD/ROCm profiles are available for supported hardware. If you'd rather not, the developer who built Nojoin will scope the hardware, set an instance up on a machine you own, and keep it patched, watched and backed up.
 
 £24.99 a person a month, from five people. You buy and own the hardware directly, so the fee covers labour and nothing else. Nothing is capped: no monthly allowance, no ceiling on call length, no history that expires.
 

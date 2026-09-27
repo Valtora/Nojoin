@@ -17,7 +17,7 @@ services:
       dockerfile: docker/Dockerfile.worker
       args:
         TORCH_BASE_IMAGE: rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.11.0@sha256:a223aee17aef5d21c3b9f63436dd19d27d1c665ec8b2f40011c9546cabae2a80
-        WORKER_GPU_BACKEND: rocm
+        WORKER_INFERENCE_BACKEND: rocm
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri

@@ -787,7 +787,7 @@ Published Nojoin images are built by a hardened, gated release pipeline. Operato
 - **Update policy:** Pinned actions and base images are kept current automatically by Dependabot on a weekly cadence. Each update passes the full CI gate before it can merge, and a new release must be cut to publish updated images.
 - **Signed images:** Every published image is signed with [cosign](https://github.com/sigstore/cosign) using keyless (OIDC) signing. The signature is bound to the release workflow's identity rather than a stored key.
 - **Provenance and SBOM:** Every image carries a build-provenance attestation and a Software Bill of Materials (SBOM) attestation describing how it was built and what it contains.
-- **Pre-publication verification:** Before the rolling `latest` and `major.minor` tags are published, the api and frontend images are booted with their real dependencies and must pass their production healthchecks, and all images are asserted to run as a non-root user at runtime. The api and worker entrypoints enter as root only to repair ownership of the `./data` bind mount (Docker creates a missing bind source as root), then drop to an unprivileged user (uid 1000) via `gosu` before the long-running process starts; the smoke test verifies that dropped runtime uid rather than the image's declared `USER`.
+- **Pre-publication verification:** Every worker image imports its core Python/runtime packages during the final image build and asserts the expected CPU, CUDA, or ROCm PyTorch build. Before rolling `latest` and `major.minor` tags are published, the api and frontend images are booted with their real dependencies and must pass production healthchecks; the health smoke also verifies the CPU worker's entrypoint drops to a non-root user. The api and worker entrypoints enter as root only to repair ownership of the `./data` bind mount (Docker creates a missing bind source as root), then drop to an unprivileged user (uid 1000) via `gosu` before the long-running process starts. Actual CUDA/ROCm device access still needs verification on a host with the corresponding GPU.
 
 ### Verifying an Image Before Deploying
 
@@ -875,12 +875,25 @@ alembic revision --autogenerate -m "message"
 
 ## Updating a Deployment
 
+Keep the same Compose file selection you used to run the deployment. The commands
+without an overlay below are for the default CPU deployment:
+
 ### Pull-First Installations
 
 ```bash
 docker compose down
 docker compose pull
 docker compose up -d --remove-orphans
+```
+
+For CUDA or ROCm deployments, include the selected profile in **each** command so
+the inference worker is not switched back to the default CPU image. For example,
+replace `docker-compose.rocm.yml` with `docker-compose.cuda.yml` for NVIDIA:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml down
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml pull
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --remove-orphans
 ```
 
 `--remove-orphans` removes containers for services renamed or removed in the
@@ -895,6 +908,14 @@ docker compose up -d --remove-orphans
 ```
 
 Use this only if your local `docker-compose.yml` includes custom build directives.
+For a local CUDA or ROCm build, use the same selected profile for all commands,
+including `build`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml down
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml build
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --remove-orphans
+```
 
 `worker-io` is built `FROM` the CPU worker image, so the base must be built
 before `worker-io`; otherwise Compose builds them in parallel and `worker-io` can

@@ -5,8 +5,8 @@
 #   updates those SHAs in place and keeps the trailing `# vX.Y.Z` comment
 #   accurate, so SHA pinning does not mean the actions go stale.
 # - Docker base images are pinned by digest in Dockerfiles and explicit Compose
-#   worker build profiles. Dependabot updates Dockerfile references; the held-pin
-#   checker keeps the PyTorch versions in the CPU, CUDA, and ROCm profiles aligned.
+#   worker build profiles. Dependabot scans all directories recursively; the
+#   held-pin checker keeps worker profiles and release build arguments aligned.
 # - Updates are grouped where practical to keep pull-request volume reviewable.
 # - The `ignore:` blocks below suppress *version-update pull requests* only.
 #   They do NOT suppress Dependabot *security alerts*: those are a separate
@@ -95,9 +95,10 @@ updates:
 
   # --- Container base images ---
   - package-ecosystem: docker
+    # One recursive glob covers root Compose profiles and nested Dockerfiles
+    # without overlapping directory entries.
     directories:
-      - /docker
-      - /frontend
+      - "**/*"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

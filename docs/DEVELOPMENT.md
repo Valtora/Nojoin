@@ -635,7 +635,7 @@ The release pipeline is hardened to make published images reproducible, traceabl
 ### Pinned Actions and Base Images
 
 - Every third-party GitHub Action in [.github/workflows/](../.github/workflows/) is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment. Do not reintroduce floating tags such as `@v5`; a mutable tag can be repointed at malicious code after review.
-- Every container base image in the Dockerfiles is pinned by `@sha256:` digest with the human-readable tag kept as a comment. The digest is the immutable identity of the image; the tag alone is mutable.
+- Every container base image used by the Dockerfiles or worker Compose profiles is pinned by `@sha256:` digest, with the human-readable tag kept alongside it. The digest is the immutable identity of the image; the tag alone is mutable.
 - When you intentionally upgrade an action or base image, update both the SHA/digest and the version comment in the same change.
 
 ### Dependency-Update Policy
@@ -647,11 +647,11 @@ This is the canonical dependency-update policy for Nojoin; the supply-chain cont
 - **GitHub Actions** (`/`): grouped into a single `github-actions` pull request. Dependabot rewrites the pinned commit SHA and the trailing `# vX.Y.Z` comment in place, so SHA pinning does not cause drift.
 - **Python** (`/requirements`): grouped into one `python-dependencies` pull request across the split requirement files.
 - **npm** (`/frontend`): split into `npm-production` and `npm-development` groups so a runtime-affecting update is reviewed separately from tooling churn.
-- **Docker base images** (`/docker`, `/frontend`): grouped into `docker-base-images`. Dependabot bumps the `@sha256:` digest and the human-readable tag comment together.
+- **Docker base images** (`**/*`, recursively): grouped into `docker-base-images`. The recursive glob covers root Compose profiles as well as nested Dockerfiles without overlapping directory entries; Dependabot bumps `@sha256:` digests and human-readable tags.
 
 Each ecosystem is capped at five open pull requests so the queue stays reviewable.
 
-**How pins stay current.** Pinning to SHAs and digests is what makes updates auditable, not what makes them stale: Dependabot edits the pin and its version comment in the same pull request, so the immutable identity always advances deliberately and visibly. Never replace a pinned SHA or digest with a floating tag to "simplify" an update.
+**How pins stay current.** Pinning to SHAs and digests is what makes updates auditable, not what makes them stale: Dependabot edits the pin and its version comment in the same pull request, so the immutable identity always advances deliberately and visibly. Worker profile pins are duplicated in the release build matrix; `scripts/check_held_pins.py` verifies those values match, including the full base-image digests. When Dependabot updates a profile, update the corresponding release matrix entry in the same pull request. Never replace a pinned SHA or digest with a floating tag to "simplify" an update.
 
 **Who reviews, and how.** The maintainer (per [CODEOWNERS](../.github/CODEOWNERS)) reviews and merges update pull requests like any other change. They run the full required CI suite; a green run plus a scan of the changelog for behavioural or breaking changes is the bar for a routine update. Group updates that touch a runtime dependency (`npm-production`, `python-dependencies`, base images) warrant a closer look than tooling-only groups.
 
@@ -679,7 +679,7 @@ Two properties of Dependabot make a held pin more than a one-line comment, and b
 The policy for a hold is therefore:
 
 1. **Record it in code, not just prose.** Add the hold to `HOLDS` in [scripts/check_held_pins.py](../scripts/check_held_pins.py) with the blocking package and the version that resolves the advisory. Add the matching `ignore:` entry to [dependabot.yml](../.github/dependabot.yml) to stop the pointless update pull requests.
-2. **Enforce that the stack moves together.** Every file declaring part of a matched stack must declare the same version. `python scripts/check_held_pins.py --offline` checks this, runs in CI and in `scripts/check.py`, and covers the requirements files and the worker base-image tag. It fails a bump applied to some declarations and not others.
+2. **Enforce that the stack moves together.** Every file declaring part of a matched stack must declare the same version. `python scripts/check_held_pins.py --offline` checks this, runs in CI and in `scripts/check.py`, and covers the requirements files, all worker profile pins, and exact parity between profile build arguments and the release matrix. It fails a version or base-image digest changed in only one place.
 3. **Enforce anything the hold transitively fixes.** A hold can constrain more than its own version string. The PyTorch hold also fixes the worker's **Python minor**, because the interpreter arrives with the base image rather than being chosen, so the API image, CI, mypy, and the documented prerequisite all have to match it. `EXPECTED_PYTHON` and `PYTHON_DECLARATIONS` in [check_held_pins.py](../scripts/check_held_pins.py) record that, and the same `--offline` run fails on any surface that drifts. This is not hypothetical: with no `ignore:` entry for the `python` base image, Dependabot walked the API image from 3.12 to 3.14 on its own, and for a while the interpreter serving every HTTP request was the only one the test suite never ran on. When a hold implies a constraint like this, encode the constraint too, not just the pin.
 4. **Suppress the alerts automatically, not manually.** Add a custom **Dependabot rule** (repository *Settings > Code security > Dependabot rules > New rule*, free on public repositories) matching the held package. For the current hold, set *Target alerts* to `package:torch`, `ecosystem:pip`, and `severity:low` (the filters are ANDed), then tick **Dismiss alerts** and choose **Indefinitely**. The rule re-dismisses on every advisory revision and every new manifest, which is what makes the suppression durable. There is no REST API for these rules; they are configured in the web UI.
 
@@ -730,15 +730,15 @@ Build each image exactly as the release workflow does, then run the same gate ag
 docker build -f docker/Dockerfile.api --build-arg NOJOIN_SERVER_VERSION=<version> -t nojoin-api:scan .
 docker build \
   --build-arg TORCH_BASE_IMAGE=pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 \
-  --build-arg WORKER_GPU_BACKEND=cuda \
+  --build-arg WORKER_INFERENCE_BACKEND=cuda \
   -f docker/Dockerfile.worker -t nojoin-worker-cuda:scan .
 docker build \
   --build-arg TORCH_BASE_IMAGE=rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.11.0@sha256:a223aee17aef5d21c3b9f63436dd19d27d1c665ec8b2f40011c9546cabae2a80 \
-  --build-arg WORKER_GPU_BACKEND=rocm \
+  --build-arg WORKER_INFERENCE_BACKEND=rocm \
   -f docker/Dockerfile.worker -t nojoin-worker-rocm:scan .
 docker build \
   --build-arg TORCH_BASE_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3 \
-  --build-arg WORKER_GPU_BACKEND=cpu \
+  --build-arg WORKER_INFERENCE_BACKEND=cpu \
   --build-arg TORCH_VERSION=2.11.0 \
   --build-arg TORCHAUDIO_VERSION=2.11.0 \
   -f docker/Dockerfile.worker -t nojoin-worker-cpu:scan .
@@ -765,7 +765,7 @@ These flags mirror the gate in [release.yml](../.github/workflows/release.yml). 
 
 ### Health and Non-Root Smoke (REL-012)
 
-The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts the running containers' uids are non-root, including the CPU worker via its entrypoint. No GPU or model download is needed for that worker smoke test. The rolling tags are not published unless this job passes.
+The worker Dockerfile imports Celery, PyTorch, torchaudio, and ONNX Runtime in the final image build and asserts the expected CPU, CUDA, or ROCm PyTorch build. This catches missing runtime libraries without pulling the very large accelerator images a second time. The `health-smoke` job brings up the freshly built api and frontend images with their real Compose dependencies (Postgres, Redis, the socket proxy) and waits for production healthchecks; it also executes the CPU worker entrypoint and verifies its dropped uid. GitHub-hosted runners have no supported GPU hardware, so actual CUDA/ROCm device access still requires a smoke on the target host. The rolling tags are not published unless CI checks pass.
 
 ### Automated Release Notes (REL-013, REL-014)
 
@@ -865,7 +865,7 @@ x-worker-base: &worker-base
     # profile when testing CUDA or ROCm hardware.
     args:
       TORCH_BASE_IMAGE: ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
-      WORKER_GPU_BACKEND: cpu
+      WORKER_INFERENCE_BACKEND: cpu
       TORCH_VERSION: "2.11.0"
       TORCHAUDIO_VERSION: "2.11.0"
   image: nojoin-dev-worker:local

@@ -702,30 +702,29 @@ def _finalize_transcript_and_notes(
 def _release_asr_vram() -> None:
     """Free the ASR models once transcription is done, before diarization runs.
 
-    Only on a GPU host, where VRAM is the contended resource. ONNX Runtime's arena
-    grows with the transcription window and never shrinks, so on a small card a
-    finished ASR session can leave diarization with nothing left to allocate. The
-    engines reload lazily on the next task.
+    Only on a host with a PyTorch accelerator, where GPU memory is contended.
+    ONNX Runtime's arena grows with the transcription window and never shrinks,
+    so a finished ASR session can leave diarization with nothing left to allocate.
+    PyTorch exposes ROCm devices through the ``torch.cuda`` API as well, making
+    this availability check backend-neutral. Engines reload lazily on the next task.
     """
-    from backend.processing.onnx_providers import gpu_is_present
-
-    if not gpu_is_present():
-        return
-
     import gc
 
-    import torch
-
     try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+
         from backend.processing.transcribe import release_model_cache
 
         release_model_cache()
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        logger.info("Released ASR VRAM before diarization.")
-    except Exception as e:  # noqa: BLE001 -- boundary: VRAM release is best-effort
-        logger.error("Error releasing ASR VRAM: %s", e)
+        torch.cuda.empty_cache()
+        logger.info("Released ASR GPU memory before diarization.")
+    except Exception as e:  # noqa: BLE001
+        # Accelerator cleanup is best-effort and must not fail finalization.
+        logger.error("Error releasing ASR GPU memory: %s", e)
 
 
 def _release_pipeline_vram() -> None:

@@ -2,9 +2,9 @@
 # CPU, CUDA/NVIDIA, and ROCm profiles supply a base image and backend explicitly.
 # No vendor-specific accelerator backend is selected implicitly.
 ARG TORCH_BASE_IMAGE
-ARG WORKER_GPU_BACKEND
+ARG WORKER_INFERENCE_BACKEND
 FROM ${TORCH_BASE_IMAGE} AS builder
-ARG WORKER_GPU_BACKEND
+ARG WORKER_INFERENCE_BACKEND
 ARG TORCH_VERSION
 ARG TORCHAUDIO_VERSION
 
@@ -29,11 +29,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     build-essential \
     python3-venv \
-    && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+    && if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
          apt-get install -y --no-install-recommends python3 python-is-python3; \
        fi \
     && python3 -m venv --system-site-packages /opt/venv \
-    && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+    && if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
          test -n "${TORCH_VERSION}" && test -n "${TORCHAUDIO_VERSION}" && \
          pip install --no-cache-dir \
            --extra-index-url https://download.pytorch.org/whl/cpu \
@@ -43,29 +43,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt \
     && pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt \
     && pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt \
-    && if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
+    && if [ "${WORKER_INFERENCE_BACKEND}" = "cuda" ]; then \
          pip uninstall -y onnxruntime onnxruntime-gpu && \
          pip install --no-cache-dir onnxruntime-gpu==1.20.2; \
-       elif [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+       elif [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
          pip uninstall -y onnxruntime-gpu || true; \
          python -c "import onnxruntime as ort; print('ROCm worker ONNX providers:', ort.get_available_providers())"; \
-       elif [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+       elif [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
          python -c "import onnxruntime as ort; print('CPU worker ONNX providers:', ort.get_available_providers())"; \
        else \
-         echo "Unsupported WORKER_GPU_BACKEND=${WORKER_GPU_BACKEND}" >&2; exit 1; \
+         echo "Unsupported WORKER_INFERENCE_BACKEND=${WORKER_INFERENCE_BACKEND}" >&2; exit 1; \
        fi \
-    && if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
+    && if [ "${WORKER_INFERENCE_BACKEND}" = "cuda" ]; then \
          pip install --no-cache-dir triton; \
-       elif [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+       elif [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
          python -c "import triton; print('ROCm Triton:', triton.__version__)"; \
-       elif [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+       elif [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
          echo "CPU worker does not need Triton"; \
        else \
-         echo "Unsupported WORKER_GPU_BACKEND=${WORKER_GPU_BACKEND}" >&2; exit 1; \
+         echo "Unsupported WORKER_INFERENCE_BACKEND=${WORKER_INFERENCE_BACKEND}" >&2; exit 1; \
        fi \
     && apt-get purge --auto-remove -y \
          git libpq-dev libssl-dev libffi-dev build-essential python3-venv \
-    && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+    && if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
          apt-get purge --auto-remove -y python-is-python3; \
        fi \
     && /opt/venv/bin/python -c "import sys; print('Worker Python:', sys.version)" \
@@ -77,7 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # second copy of the base image. This is especially important for AMD's ROCm
 # image, which already stores its ~20 GB PyTorch environment under /opt/venv.
 FROM builder AS runtime
-ARG WORKER_GPU_BACKEND
+ARG WORKER_INFERENCE_BACKEND
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -108,7 +108,7 @@ RUN apt-get update && \
     # MIOpen JIT-compiles HIP kernels at runtime and HIPRTC needs the C++ standard
     # library headers. The builder's cleanup removes these with build-essential;
     # retain only the matching Ubuntu 24.04 headers in the ROCm runtime image.
-    if [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+    if [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
       apt-get install -y --no-install-recommends libstdc++-13-dev && \
       test -f /usr/include/c++/13/utility; \
     fi && \
@@ -126,7 +126,7 @@ RUN apt-get update && \
 # pins in step with requirements/base.txt: pillow==12.3.0 closes the batch of
 # HIGH pillow CVEs disclosed after v1.5.0 (CVE-2026-54058/54059/54060, 55379/55380,
 # 59197/59199/59200/59204/59205); urllib3==2.7.0 closes CVE-2026-44431/44432.
-RUN if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+RUN if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
       echo "CPU base has no preinstalled PyTorch system Python packages to patch"; \
     else \
       /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
@@ -137,7 +137,7 @@ RUN if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
 # discoverable through ldconfig (torch preloads its own copies, ORT does not).
 # ROCm images already provide their runtime libraries and must not run this NVIDIA
 # wheel-discovery step.
-RUN if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
+RUN if [ "${WORKER_INFERENCE_BACKEND}" = "cuda" ]; then \
       /usr/bin/python3 -c \
         "import nvidia, os, glob; \
          print('\\n'.join(sorted(d for p in nvidia.__path__ \
@@ -146,13 +146,23 @@ RUN if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
       ldconfig && \
       ldconfig -p | grep -q libcudnn_adv.so.9 && \
       ldconfig -p | grep -q libcublasLt.so.12; \
-    elif [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+    elif [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
       echo "Using ROCm runtime libraries from the base image"; \
-    elif [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+    elif [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
       echo "Using CPU-only PyTorch and ONNX Runtime"; \
     else \
-      echo "Unsupported WORKER_GPU_BACKEND=${WORKER_GPU_BACKEND}" >&2; exit 1; \
+      echo "Unsupported WORKER_INFERENCE_BACKEND=${WORKER_INFERENCE_BACKEND}" >&2; exit 1; \
     fi
+
+# Exercise the final Python/runtime stack for every backend during image builds.
+# Device discovery itself requires a supported host and is checked at runtime.
+RUN /opt/venv/bin/python -c \
+    "import celery, onnxruntime as ort, torch, torchaudio; \
+     backend='${WORKER_INFERENCE_BACKEND}'; \
+     assert backend != 'cuda' or torch.version.cuda; \
+     assert backend != 'rocm' or torch.version.hip; \
+     assert backend != 'cpu' or (torch.version.cuda is None and torch.version.hip is None); \
+     print('Worker runtime:', backend, torch.__version__, torchaudio.__version__, ort.get_available_providers())"
 
 WORKDIR /app
 

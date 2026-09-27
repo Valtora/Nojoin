@@ -9,7 +9,7 @@ services:
       dockerfile: docker/Dockerfile.worker
       args:
         TORCH_BASE_IMAGE: ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
-        WORKER_GPU_BACKEND: cpu
+        WORKER_INFERENCE_BACKEND: cpu
         TORCH_VERSION: "2.11.0"
         TORCHAUDIO_VERSION: "2.11.0"
   worker-io:
