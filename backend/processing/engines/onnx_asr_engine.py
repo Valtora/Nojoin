@@ -241,9 +241,10 @@ class OnnxAsrEngine(TranscriptionEngine):
             # with SIGSEGV. That is a native fault rather than an exception, so no
             # handler here can catch it and fall back.
             #
-            # The inference lane may have an accelerator, but the CPU-only deployment in
-            # docs/DEPLOYMENT.md drops the compose `deploy` block while keeping the
-            # same onnxruntime-gpu image, which is exactly the crashing shape.
+            # CPU profiles ship CPU-only ONNX Runtime, but a CUDA-enabled worker
+            # image can also start without its device attached. Guard provider
+            # selection so that case falls back to CPU instead of invoking CUDA in
+            # a process where it can terminate with an unrecoverable native fault.
             providers = ["CPUExecutionProvider"]
             if on_gpu:
                 providers.insert(0, "CUDAExecutionProvider")

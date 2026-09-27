@@ -593,6 +593,15 @@ jobs:
             exit 1
           fi
 
+          # Exercise the actual venv interpreter and core runtime imports as the
+          # non-root worker user; this catches a missing base Python executable.
+          docker run --rm --pull=always \
+            "${IMAGE_BASE}-worker-cpu:${VERSION}" \
+            python -c '
+          import celery, torch, torchaudio
+          print("CPU worker Python runtime:", torch.__version__, torchaudio.__version__)
+          '
+
       - name: Tear down stack
         if: always()
         run: |

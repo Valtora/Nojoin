@@ -102,7 +102,7 @@ HOLDS: tuple[Hold, ...] = (
 
 # torch==2.11.0, torchaudio==2.11.0 --index-url https://...
 PIN_RE_TEMPLATE = r"^{package}==([^\s;#]+)"
-# CPU, CUDA, and ROCm profiles encode their matched torch pin.
+# CPU encodes both wheel pins; CUDA/ROCm base tags encode PyTorch.
 IMAGE_TAG_PATTERNS = (
     (
         re.compile(
@@ -121,6 +121,13 @@ IMAGE_TAG_PATTERNS = (
     (
         re.compile(r'^\s+TORCH_VERSION:\s+"?(\d+\.\d+\.\d+)"?\s*$', re.MULTILINE),
         "torch",
+    ),
+    (
+        re.compile(
+            r'^\s+TORCHAUDIO_VERSION:\s+"?(\d+\.\d+\.\d+)"?\s*$',
+            re.MULTILINE,
+        ),
+        "torchaudio",
     ),
 )
 

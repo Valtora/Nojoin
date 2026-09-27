@@ -880,15 +880,18 @@ alembic revision --autogenerate -m "message"
 ```bash
 docker compose down
 docker compose pull
-docker compose up -d
+docker compose up -d --remove-orphans
 ```
+
+`--remove-orphans` removes containers for services renamed or removed in the
+updated Compose template, such as the previous worker service names.
 
 ### Local Custom Builds
 
 ```bash
 docker compose down
 docker compose build
-docker compose up -d
+docker compose up -d --remove-orphans
 ```
 
 Use this only if your local `docker-compose.yml` includes custom build directives.

@@ -19,7 +19,8 @@ COPY requirements/ /app/requirements/
 # Keep the generated venv in this stage so ROCm's existing /opt/venv is reused
 # directly by the final stage rather than copied on top of itself. The CPU base
 # installs CPU-only PyTorch into the same venv; CUDA and ROCm reuse their base
-# image's matched torch/torchaudio. Build tools are removed before runtime.
+# image's matched torch/torchaudio. Keep the CPU base interpreter installed at
+# runtime because the venv links to it; remove only its build-time venv tooling.
 ENV PATH="/opt/venv/bin:$PATH"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -29,9 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-venv \
     && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
-         apt-get install -y --no-install-recommends python-is-python3; \
+         apt-get install -y --no-install-recommends python3 python-is-python3; \
        fi \
-    && python -m venv --system-site-packages /opt/venv \
+    && python3 -m venv --system-site-packages /opt/venv \
     && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
          test -n "${TORCH_VERSION}" && test -n "${TORCHAUDIO_VERSION}" && \
          pip install --no-cache-dir \
@@ -67,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
          apt-get purge --auto-remove -y python-is-python3; \
        fi \
+    && /opt/venv/bin/python -c "import sys; print('Worker Python:', sys.version)" \
     && rm -f constraints.txt \
     && rm -rf /var/lib/apt/lists/*
 
@@ -175,7 +177,7 @@ RUN chmod +x backend/worker_entrypoint.sh
 # the worker process runs as uid 1000 (asserted at runtime by the release smoke).
 ENTRYPOINT ["backend/worker_entrypoint.sh"]
 
-# Default command: a single worker draining all resource lanes (gpu, cpu, io)
+# Default command: a single worker draining all resource lanes (inference, files, io)
 # with embedded Celery Beat (-B), so a standalone `docker run` of this image
 # still processes everything and fires periodic jobs (15-minute calendar sync,
 # 24-hour temp cleanup, calendar push-channel renewal). The beat schedule DB
