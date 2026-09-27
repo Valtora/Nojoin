@@ -189,7 +189,7 @@ def test_asr_engine_requests_cuda_only_when_a_gpu_is_present(monkeypatch):
 
     onnxruntime-gpu loads its CUDA provider library, finds no device, and dies with
     SIGSEGV. A native fault cannot be caught, so this has to be prevented rather
-    than handled. The CPU-only deployment in docs/DEPLOYMENT.md runs the GPU lane
+    than handled. The CPU-only deployment in docs/DEPLOYMENT.md runs the inference lane
     on this image with no device, which is that shape exactly.
     """
     import sys

@@ -1,14 +1,26 @@
 # --- Builder Stage ---
-# Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 AS builder
+# CPU, CUDA/NVIDIA, and ROCm profiles supply a base image and backend explicitly.
+# No vendor-specific accelerator backend is selected implicitly.
+ARG TORCH_BASE_IMAGE
+ARG WORKER_GPU_BACKEND
+FROM ${TORCH_BASE_IMAGE} AS builder
+ARG WORKER_GPU_BACKEND
+ARG TORCH_VERSION
+ARG TORCHAUDIO_VERSION
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build dependencies. python3-venv is required because the PyTorch
-# base image ships a system Python without ensurepip (it dropped the bundled
-# conda environment), so `python -m venv` below cannot bootstrap pip otherwise.
+WORKDIR /app
+
+COPY requirements/ /app/requirements/
+
+# Keep the generated venv in this stage so ROCm's existing /opt/venv is reused
+# directly by the final stage rather than copied on top of itself. The CPU base
+# installs CPU-only PyTorch into the same venv; CUDA and ROCm reuse their base
+# image's matched torch/torchaudio. Build tools are removed before runtime.
+ENV PATH="/opt/venv/bin:$PATH"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
@@ -16,39 +28,54 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     build-essential \
     python3-venv \
+    && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+         apt-get install -y --no-install-recommends python-is-python3; \
+       fi \
+    && python -m venv --system-site-packages /opt/venv \
+    && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+         test -n "${TORCH_VERSION}" && test -n "${TORCHAUDIO_VERSION}" && \
+         pip install --no-cache-dir \
+           --extra-index-url https://download.pytorch.org/whl/cpu \
+           "torch==${TORCH_VERSION}+cpu" "torchaudio==${TORCHAUDIO_VERSION}+cpu"; \
+       fi \
+    && python -c "import torch; print(f'torch=={torch.__version__}')" > constraints.txt \
+    && python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt \
+    && pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt \
+    && pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt \
+    && if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
+         pip uninstall -y onnxruntime onnxruntime-gpu && \
+         pip install --no-cache-dir onnxruntime-gpu==1.20.2; \
+       elif [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+         pip uninstall -y onnxruntime-gpu || true; \
+         python -c "import onnxruntime as ort; print('ROCm worker ONNX providers:', ort.get_available_providers())"; \
+       elif [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+         python -c "import onnxruntime as ort; print('CPU worker ONNX providers:', ort.get_available_providers())"; \
+       else \
+         echo "Unsupported WORKER_GPU_BACKEND=${WORKER_GPU_BACKEND}" >&2; exit 1; \
+       fi \
+    && if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
+         pip install --no-cache-dir triton; \
+       elif [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+         python -c "import triton; print('ROCm Triton:', triton.__version__)"; \
+       elif [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+         echo "CPU worker does not need Triton"; \
+       else \
+         echo "Unsupported WORKER_GPU_BACKEND=${WORKER_GPU_BACKEND}" >&2; exit 1; \
+       fi \
+    && apt-get purge --auto-remove -y \
+         git libpq-dev libssl-dev libffi-dev build-essential python3-venv \
+    && if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+         apt-get purge --auto-remove -y python-is-python3; \
+       fi \
+    && rm -f constraints.txt \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-COPY requirements/ /app/requirements/
-
-# Create a virtual environment that inherits system-site-packages (to use torch/torchaudio)
-RUN python -m venv --system-site-packages /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Capture the system torch/torchaudio versions as pip constraints.
-RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints.txt && \
-    python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt || true
-
-# Install dependencies using the constraints to force usage of system torch
-RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
-
-# Install pyannote.audio without dependencies to use system torch
-RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt
-
-# Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
-# pulls the CPU-only onnxruntime; replace it with a CUDA-12-compatible
-# onnxruntime-gpu build that matches this image's CUDA 12.6 runtime.
-RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
-    pip install --no-cache-dir onnxruntime-gpu==1.20.2
-
-# Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
-# kernels instead of falling back to slower CPU implementations. The base PyTorch
-# image ships Triton as a system package, but the venv may not inherit it correctly.
-RUN pip install --no-cache-dir triton
-
 # --- Runtime Stage ---
-FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 AS runtime
+# Reuse the prepared builder filesystem instead of copying /opt/venv into a
+# second copy of the base image. This is especially important for AMD's ROCm
+# image, which already stores its ~20 GB PyTorch environment under /opt/venv.
+FROM builder AS runtime
+ARG WORKER_GPU_BACKEND
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -70,13 +97,19 @@ RUN apt-get update && \
     # Local OCR for document parsing: the middle tier between a vision model
     # and a format's own text layer, so a scanned page is readable with no AI
     # provider configured. The system binary rather than an ONNX OCR package on
-    # purpose -- those depend on onnxruntime, which the pip step above
-    # deliberately replaces with onnxruntime-gpu, and reintroducing the CPU
-    # build alongside it is the exact conflict that replacement prevents.
+    # purpose, avoiding another onnxruntime dependency alongside the selected
+    # CUDA or CPU ONNX Runtime package.
     # -eng only; other language packs are ~4 MB each and unused.
     tesseract-ocr \
     tesseract-ocr-eng \
     && \
+    # MIOpen JIT-compiles HIP kernels at runtime and HIPRTC needs the C++ standard
+    # library headers. The builder's cleanup removes these with build-essential;
+    # retain only the matching Ubuntu 24.04 headers in the ROCm runtime image.
+    if [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+      apt-get install -y --no-install-recommends libstdc++-13-dev && \
+      test -f /usr/include/c++/13/utility; \
+    fi && \
     # The worker runs Celery and never invokes uv; remove the base image's uv
     # binaries so their bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) is absent
     # from the published runtime image.
@@ -91,36 +124,33 @@ RUN apt-get update && \
 # pins in step with requirements/base.txt: pillow==12.3.0 closes the batch of
 # HIGH pillow CVEs disclosed after v1.5.0 (CVE-2026-54058/54059/54060, 55379/55380,
 # 59197/59199/59200/59204/59205); urllib3==2.7.0 closes CVE-2026-44431/44432.
-RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.7.0
+RUN if [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+      echo "CPU base has no preinstalled PyTorch system Python packages to patch"; \
+    else \
+      /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
+        --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.7.0; \
+    fi
 
-# Put the CUDA wheel libraries on the dynamic loader path. Despite the `cudnn9` tag,
-# this base ships CUDA and cuDNN only as nvidia-*-cu12 wheels under dist-packages,
-# with nothing in a system lib dir or the ldconfig cache. torch copes, because it
-# ctypes-preloads its own wheel libraries with RTLD_GLOBAL, but onnxruntime-gpu does
-# not: libonnxruntime_providers_cuda.so is linked against cuDNN 9's split
-# sub-libraries (libcudnn_adv, _ops, _cnn, _graph, _heuristic, _engines_*), which
-# torch never preloads, plus libcublasLt. Without this the loader cannot resolve
-# them, the CUDA execution provider is silently dropped, and Canary/Parakeet ASR and
-# text embeddings run on CPU while torch still reports CUDA as available.
-#
-# Register every wheel lib directory rather than just cuDNN's, so the CUDA provider
-# loads on its own merits instead of depending on torch being imported first. These
-# are CUDA runtime libraries only; the driver libraries still come from
-# /usr/local/nvidia/lib*, which LD_LIBRARY_PATH resolves ahead of the ldconfig cache.
-# Read paths from __path__ rather than __file__: the nvidia-*-cu12 wheels are PEP 420
-# namespace packages, whose __file__ is None. The greps assert the layout so a future
-# base bump fails the build here instead of degrading to CPU in production.
-RUN /usr/bin/python3 -c \
-      "import nvidia, os, glob; \
-       print('\n'.join(sorted(d for p in nvidia.__path__ \
-             for d in glob.glob(os.path.join(p, '*', 'lib')))))" \
-      > /etc/ld.so.conf.d/nvidia-cuda-wheels.conf && \
-    ldconfig && \
-    ldconfig -p | grep -q libcudnn_adv.so.9 && \
-    ldconfig -p | grep -q libcublasLt.so.12
-
-COPY --from=builder /opt/venv /opt/venv
+# The CUDA base ships CUDA/cuDNN as nvidia-* wheels, which ONNX Runtime needs
+# discoverable through ldconfig (torch preloads its own copies, ORT does not).
+# ROCm images already provide their runtime libraries and must not run this NVIDIA
+# wheel-discovery step.
+RUN if [ "${WORKER_GPU_BACKEND}" = "cuda" ]; then \
+      /usr/bin/python3 -c \
+        "import nvidia, os, glob; \
+         print('\\n'.join(sorted(d for p in nvidia.__path__ \
+               for d in glob.glob(os.path.join(p, '*', 'lib')))))" \
+        > /etc/ld.so.conf.d/nvidia-cuda-wheels.conf && \
+      ldconfig && \
+      ldconfig -p | grep -q libcudnn_adv.so.9 && \
+      ldconfig -p | grep -q libcublasLt.so.12; \
+    elif [ "${WORKER_GPU_BACKEND}" = "rocm" ]; then \
+      echo "Using ROCm runtime libraries from the base image"; \
+    elif [ "${WORKER_GPU_BACKEND}" = "cpu" ]; then \
+      echo "Using CPU-only PyTorch and ONNX Runtime"; \
+    else \
+      echo "Unsupported WORKER_GPU_BACKEND=${WORKER_GPU_BACKEND}" >&2; exit 1; \
+    fi
 
 WORKDIR /app
 
@@ -152,6 +182,6 @@ ENTRYPOINT ["backend/worker_entrypoint.sh"]
 # lives on the persistent ./data volume so the cadence survives restarts.
 #
 # In the Compose deployment this CMD is overridden: work is split across the
-# worker-gpu / worker-cpu / worker-io services, and beat (-B) runs on the io
-# worker ONLY, so periodic jobs cannot double-schedule.
-CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "-B", "-s", "/app/data/celerybeat-schedule", "-Q", "gpu,cpu,io", "--pool=solo", "--concurrency=1", "--loglevel=info"]
+# worker-inference / worker-files / worker-io services, and beat (-B) runs on the
+# io worker ONLY, so periodic jobs cannot double-schedule.
+CMD ["celery", "-A", "backend.celery_app.celery_app", "worker", "-B", "-s", "/app/data/celerybeat-schedule", "-Q", "inference,files,io", "--pool=solo", "--concurrency=1", "--loglevel=info"]

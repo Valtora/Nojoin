@@ -555,7 +555,7 @@ async def _get_device_component(worker_status: str) -> tuple[dict[str, Any], boo
             _build_component(
                 "ok",
                 "GPU ready",
-                f"The worker reports CUDA availability{f' on {gpu_name}' if gpu_name else ''}.",
+                f"The worker reports GPU availability{f' on {gpu_name}' if gpu_name else ''}.",
                 None,
                 requested_device=requested_device,
                 active_device=active_device,
@@ -586,7 +586,7 @@ async def _get_device_component(worker_status: str) -> tuple[dict[str, Any], boo
                 "warning",
                 "CPU fallback",
                 "The worker is processing on CPU, so live and final stages will run more slowly than the normal GPU path.",
-                "Check NVIDIA runtime access if you expect GPU acceleration.",
+                "Check GPU device passthrough and the worker's PyTorch accelerator runtime if you expect GPU acceleration.",
                 requested_device=requested_device,
                 active_device=active_device,
                 gpu_name=None,

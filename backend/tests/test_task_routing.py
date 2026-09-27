@@ -1,9 +1,8 @@
-"""Guards for Celery task routing into resource lanes.
+"""Guards for Celery task routing into work-purpose lanes.
 
-Work is split across ``gpu`` / ``cpu`` / ``io`` queues (see
-``backend/celery_app.py``) so a long GPU job never blocks lightweight CPU or
-network tasks. A regression here would silently re-serialise the worker or route
-a GPU task to a GPU-less lane where it would fail.
+Work is split across ``inference`` / ``files`` / ``io`` queues (see
+``backend/celery_app.py``) so model inference never blocks file or network
+work. A regression here could route a task to a worker with the wrong role.
 """
 
 # Importing the task packages registers every task on the app so the
@@ -14,8 +13,8 @@ import backend.processing.live_transcribe  # noqa: F401
 import backend.processing.segment_transcode  # noqa: F401
 import backend.worker.tasks  # noqa: F401
 from backend.celery_app import (
-    CPU_QUEUE,
-    GPU_QUEUE,
+    FILES_QUEUE,
+    INFERENCE_QUEUE,
     IO_QUEUE,
     TASK_ROUTES,
     celery_app,
@@ -27,22 +26,22 @@ def _queue(task_name: str) -> str:
     return TASK_ROUTES[task_name]["queue"]
 
 
-def test_heavy_gpu_tasks_route_to_gpu_lane() -> None:
+def test_inference_tasks_route_to_inference_lane() -> None:
     for task in (
         "backend.worker.tasks.process_recording_task",
         "backend.processing.live_transcribe.transcribe_segment_live_task",
         "backend.worker.tasks.extract_embedding_task",
         "backend.worker.tasks.update_speaker_embedding_task",
     ):
-        assert _queue(task) == GPU_QUEUE
+        assert _queue(task) == INFERENCE_QUEUE
 
 
-def test_ffmpeg_tasks_route_to_cpu_lane() -> None:
+def test_file_tasks_route_to_files_lane() -> None:
     for task in (
         "backend.processing.segment_transcode.transcode_segment_task",
         "backend.worker.tasks.generate_proxy_task",
     ):
-        assert _queue(task) == CPU_QUEUE
+        assert _queue(task) == FILES_QUEUE
 
 
 def test_network_tasks_route_to_io_lane() -> None:
@@ -57,10 +56,10 @@ def test_network_tasks_route_to_io_lane() -> None:
         assert _queue(task) == IO_QUEUE
 
 
-def test_unrouted_tasks_fall_back_to_gpu_lane() -> None:
-    # Safe default: a mis-routed GPU task still finds the card, whereas a
-    # GPU-less lane would fail it outright.
-    assert celery_app.conf.task_default_queue == GPU_QUEUE
+def test_unrouted_tasks_fall_back_to_inference_lane() -> None:
+    # Safe default: unrouted model work still reaches the inference worker,
+    # whether its selected backend is CPU, CUDA, or ROCm.
+    assert celery_app.conf.task_default_queue == INFERENCE_QUEUE
 
 
 def test_prefetch_multiplier_is_one_for_fair_dispatch() -> None:
@@ -107,7 +106,7 @@ def test_non_local_intelligence_is_deferred_to_the_io_lane() -> None:
         assert _meeting_intelligence_runs_on_io(_llm_config(provider)) is True
 
 
-def test_local_or_unconfigured_intelligence_stays_inline_on_gpu() -> None:
+def test_local_or_unconfigured_intelligence_stays_inline_on_inference_worker() -> None:
     # Local Ollama stays inline; a blank/unconfigured provider is left to the
     # inline stage, which cheaply falls back to rule-based suggestions with no
     # network call (and no risk of a stuck notes_status on the IO lane).
@@ -121,7 +120,7 @@ def test_local_or_unconfigured_intelligence_stays_inline_on_gpu() -> None:
 
 
 def test_every_nojoin_task_has_an_explicit_route() -> None:
-    """A task without a route silently lands on the GPU lane; catch that here."""
+    """A task without a route silently lands on the inference lane; catch that here."""
     unrouted = [
         name
         for name in celery_app.tasks

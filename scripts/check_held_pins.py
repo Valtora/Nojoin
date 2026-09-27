@@ -70,7 +70,7 @@ class Hold:
     # but do not share its version string.
     matched_packages: tuple[str, ...] = ()
     matched_files: tuple[str, ...] = ()
-    # Docker base images whose tag must start with ``pinned``.
+    # Worker profile declarations whose base or build argument encodes ``pinned``.
     matched_images: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -92,14 +92,37 @@ HOLDS: tuple[Hold, ...] = (
             "requirements/test.txt",
             "requirements/local.txt",
         ),
-        matched_images=("docker/Dockerfile.worker",),
+        matched_images=(
+            "docker-compose.cpu.yml",
+            "docker-compose.cuda.yml",
+            "docker-compose.rocm.yml",
+        ),
     ),
 )
 
 # torch==2.11.0, torchaudio==2.11.0 --index-url https://...
 PIN_RE_TEMPLATE = r"^{package}==([^\s;#]+)"
-# FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:...
-IMAGE_TAG_RE = re.compile(r"^FROM\s+pytorch/pytorch:([^\s@]+)", re.MULTILINE)
+# CPU, CUDA, and ROCm profiles encode their matched torch pin.
+IMAGE_TAG_PATTERNS = (
+    (
+        re.compile(
+            r"^\s+TORCH_BASE_IMAGE:\s+pytorch/pytorch:([^\s@]+)@",
+            re.MULTILINE,
+        ),
+        "pytorch/pytorch",
+    ),
+    (
+        re.compile(
+            r"^\s+TORCH_BASE_IMAGE:\s+rocm/pytorch:\S+_pytorch_release_(\d+\.\d+\.\d+)@",
+            re.MULTILINE,
+        ),
+        "rocm/pytorch",
+    ),
+    (
+        re.compile(r'^\s+TORCH_VERSION:\s+"?(\d+\.\d+\.\d+)"?\s*$', re.MULTILINE),
+        "torch",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -119,17 +142,15 @@ class Declaration:
 
 # The Python minor that every surface running backend/ must agree on.
 #
-# This is derived, not chosen. The worker's interpreter comes from the PyTorch
-# base image, which is held at 2.11.x because torchaudio has published nothing
-# above it (see the torch Hold above), and that image ships Python 3.12. The
-# worker's Python is therefore fixed until the torch hold lifts, and everything
-# else has to match it rather than the other way round.
+# This is derived, not chosen. The CPU image uses Python 3.12 from Ubuntu 24.04,
+# while the CUDA and ROCm PyTorch bases also ship Python 3.12. Their torch/torchaudio
+# pair is held at 2.11.x because torchaudio has published nothing above it (see
+# the torch Hold above); the interpreter surfaces must move together with that
+# matched stack rather than being bumped independently.
 #
-# The worker image is the source of truth but cannot be checked statically: the
-# pytorch/pytorch tag encodes the torch version, not the Python one. So this
-# constant records what that base ships, verified by running `python -V` in the
-# built image, and the declarations below are checked against it. Moving it is a
-# deliberate act that should come with the same verification.
+# The worker base tags do not all encode their Python minor, so this constant
+# records the interpreter verified in the built images. The declarations below
+# keep the other backend-running surfaces aligned with it.
 EXPECTED_PYTHON = "3.12"
 
 PYTHON_DECLARATIONS: tuple[Declaration, ...] = (
@@ -229,15 +250,16 @@ def declared_pins(hold: Hold) -> list[tuple[str, int, str, str]]:
                 )
     for relative in hold.matched_images:
         text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-        for match in IMAGE_TAG_RE.finditer(text):
-            found.append(
-                (
-                    relative,
-                    line_of(text, match.start()),
-                    "pytorch/pytorch",
-                    match.group(1),
+        for pattern, image_name in IMAGE_TAG_PATTERNS:
+            for match in pattern.finditer(text):
+                found.append(
+                    (
+                        relative,
+                        line_of(text, match.start()),
+                        image_name,
+                        match.group(1),
+                    )
                 )
-            )
     return found
 
 

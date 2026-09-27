@@ -60,7 +60,7 @@ export default function TranscriptionStep({
         label="Transcription model"
         value={whisperModelSize}
         onChange={onInputChange}
-        hint="Turbo (default) suits a server with an NVIDIA GPU. On a CPU-only deployment, Small or Base processes far faster. You can change this later in Settings > Transcription."
+        hint="Turbo (default) suits a GPU-equipped server. On a CPU-only deployment, Small or Base processes far faster. You can change this later in Settings > Transcription."
       >
         {WHISPER_MODELS.map((model) => (
           <option key={model.id} value={model.id}>

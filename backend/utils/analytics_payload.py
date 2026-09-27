@@ -1,6 +1,6 @@
 """Shared read-modify-write for the transcript's analytics payload.
 
-Two tiers store into one JSONB column: measured delivery on the CPU lane, and
+Two tiers store into one JSONB column: measured delivery on the files lane, and
 the AI analysis on the IO lane. They are dispatched independently, so a task
 that assigned the whole column would drop whatever the other had just written.
 Both go through here instead, and both take a row lock first, so the last

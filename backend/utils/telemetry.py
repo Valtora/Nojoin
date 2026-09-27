@@ -490,7 +490,7 @@ def _ai_shape(session: Any) -> dict[str, Any]:
 def _transcription_shape() -> dict[str, Any]:
     device = str(config_manager.get("processing_device", "auto")).lower()
     if device == "auto":
-        gpu = _cuda_available()
+        gpu = _gpu_available()
     else:
         gpu = device != "cpu"
 
@@ -501,14 +501,28 @@ def _transcription_shape() -> dict[str, Any]:
     }
 
 
-def _cuda_available() -> bool:
+def _gpu_available() -> bool:
     """Report GPU availability without importing torch.
 
-    The API process must stay light, and this runs on the IO worker lane which
-    has no GPU of its own, so the presence of an NVIDIA device node is the
-    honest signal available here.
+    Prefer the deployment declaration when present: telemetry runs on the IO
+    worker, which may not have the device nodes granted to the inference worker. The
+    fallback recognizes both NVIDIA and AMD Linux device markers when they are
+    visible in this process.
     """
-    return Path("/dev/nvidiactl").exists() or Path("/proc/driver/nvidia").exists()
+    configured = os.getenv("NOJOIN_GPU_AVAILABLE")
+    if configured is not None:
+        return configured.strip().lower() in {"1", "true", "yes", "on"}
+
+    if any(
+        marker.exists()
+        for marker in (
+            Path("/dev/nvidiactl"),
+            Path("/proc/driver/nvidia"),
+            Path("/dev/kfd"),
+        )
+    ):
+        return True
+    return any(Path("/dev/dri").glob("renderD*"))
 
 
 def _feature_flags(session: Any, cutoff: datetime) -> dict[str, Any]:

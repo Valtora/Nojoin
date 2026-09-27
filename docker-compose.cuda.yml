@@ -1,0 +1,25 @@
+# Explicit CUDA/NVIDIA image and runtime profile for worker-inference.
+# Apply with: docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+# Add --build to build the profile locally instead of pulling its published image.
+services:
+  worker-inference:
+    image: ghcr.io/valtora/nojoin-worker-cuda:latest
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+      args:
+        TORCH_BASE_IMAGE: pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33
+        WORKER_GPU_BACKEND: cuda
+  worker-io:
+    environment:
+      NOJOIN_GPU_AVAILABLE: "true"

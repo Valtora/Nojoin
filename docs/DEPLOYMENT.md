@@ -6,7 +6,8 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 
 ## Recommended Hardware
 
-- **Recommended:** Linux or Windows with an NVIDIA GPU and CUDA 12.x support.
+- **NVIDIA/CUDA:** Linux or Windows with an NVIDIA GPU and CUDA 12.x support.
+- **Experimental AMD/ROCm:** Linux with a ROCm-supported AMD GPU; the supplied ROCm profile currently targets AMD's `gfx1151` Strix Halo PyTorch image.
 - **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote.
 - **macOS hosting:** Not recommended for the backend because Docker on macOS cannot expose Apple Silicon GPU acceleration to the containers.
 - **Capture browser:** Chrome on Windows, Linux, or macOS for shared-audio live recording; Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux; or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort.
@@ -15,14 +16,15 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 
 - Docker Desktop or Docker Engine.
 - Enough local storage for recordings, derived assets, and models.
-- If using a GPU on Linux, NVIDIA drivers and the NVIDIA Container Toolkit.
+- For NVIDIA/CUDA on Linux, NVIDIA drivers and the NVIDIA Container Toolkit.
+- For experimental AMD/ROCm, a ROCm-capable host kernel/driver and access to `/dev/kfd` and `/dev/dri`.
 
 ## Compose Files
 
 - `docker-compose.example.yml`: Deployment template using the published GHCR images.
 - `docker-compose.yml`: Local working copy created from the template.
 
-The repository does not ship a separate Docker Compose development override.
+The deployment template uses the CPU worker image by default. Start it with `docker compose up -d`; no profile is needed for CPU inference. The optional `docker-compose.cpu.yml`, `docker-compose.cuda.yml`, and `docker-compose.rocm.yml` overlays select `worker-inference`'s matching image and runtime setup, and can also build that image locally with `--build`. Apply at most one overlay: these alternatives are not intended to be combined. Releases publish separate `nojoin-worker-cpu`, `nojoin-worker-cuda`, and `nojoin-worker-rocm` images; `worker-files` and `worker-io` use the CPU image. The Dockerfile itself has no base-image or accelerator-backend default.
 
 ## Quick Deployment
 
@@ -38,12 +40,19 @@ The repository does not ship a separate Docker Compose development override.
 4. Set `DATA_ENCRYPTION_KEY` in `.env` before first production use.
 5. Adjust `WEB_APP_URL` if the deployment is not local-only.
 6. Review `docker-compose.yml` and apply any private or machine-specific changes.
-7. Start the stack:
+7. Start the stack with CPU inference (the default; no profile is needed):
 
    ```bash
    docker compose up -d
    ```
 
+   To use NVIDIA/CUDA or AMD/ROCm instead, add the corresponding single overlay, which selects both the matching worker image and its device setup. For example:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+   ```
+
+   For AMD, use `docker-compose.rocm.yml` instead. To build the CPU worker locally rather than pull it, apply `docker-compose.cpu.yml` and add `--build`.
 8. Open `https://localhost:14443/setup` and unlock the first-run wizard with your `FIRST_RUN_PASSWORD`.
 9. Use Chrome on Windows, Linux, or macOS for shared-audio live recording, another Chromium-family browser on Windows or Linux, or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort. Other browsers can still review and administer Nojoin.
 
@@ -62,7 +71,7 @@ Nojoin now emits startup log warnings and an authenticated frontend warning
 toast. Those warnings are advisory only; operators are still responsible for
 replacing the placeholder secrets in `.env`.
 
-The compose template is already configured for GPU inference.
+The compose template uses the CPU inference image. Each hardware overlay selects the corresponding worker image and, for GPU profiles, passes through matching device access, so there is no separate image/profile choice to mismatch. Apply only one hardware overlay at a time.
 
 The compose files now health-gate the web stack so `frontend` waits for a healthy `api`, and `nginx` waits for healthy `api` plus `frontend` before it is considered ready.
 
@@ -80,6 +89,8 @@ If you are developing from local source instead of operating a deployment, read 
 
 ### Linux
 
+For an NVIDIA/CUDA deployment:
+
 1. Install the proprietary NVIDIA drivers.
 2. Verify GPU visibility with:
 
@@ -94,7 +105,33 @@ If you are developing from local source instead of operating a deployment, read 
    sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
    ```
 
-The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility`.
+Apply the CUDA profile to select the CUDA image and expose the NVIDIA GPU. Add `--build` only when building the worker locally instead of pulling its published image:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+```
+
+The profile supplies the pinned CUDA PyTorch base image, image tag, and NVIDIA device reservation as one selection. It exposes one device by default; Nojoin currently serializes inference on that device rather than spreading a task across multiple GPUs. The AMD profile similarly binds its image to ROCm device access. NVIDIA runtime overrides belong in the CUDA profile or a private Compose override, not in the shared `.env.example`.
+
+### AMD ROCm (experimental)
+
+Apply the ROCm profile to select the AMD image and its device access:
+
+```bash
+ROCM_RENDER_GID="$(getent group render | cut -d: -f3)" \
+  docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d
+```
+
+Add `--build` to build only `worker-inference` on AMD's ROCm-enabled PyTorch image instead of pulling the published image. Whisper, VAD, diarisation, and PyTorch speaker processing can then use the AMD GPU; Parakeet, Canary, and ONNX text embeddings remain on CPU because this image deliberately does not install the CUDA ONNX Runtime wheel. The override sets MIOpen's `MIOPEN_FIND_MODE=FAST`: with the pinned ROCm 7.14 / PyTorch 2.11 image, the default solver search failed on Whisper's Conv1d for `gfx1151`, while FAST mode passed a real Whisper GPU smoke test. The ROCm worker image also retains Ubuntu's matching C++ standard-library headers because MIOpen uses HIPRTC to compile some kernels at runtime. These are workarounds for the current ROCm stack, not a guarantee that every PyTorch model/operator is supported. See the upstream [gfx1151 MIOpen convolution issue](https://github.com/ROCm/TheRock/issues/4954).
+
+The host must expose `/dev/kfd` and `/dev/dri`; the worker also needs the host's numeric `render` group ID. On this Linux host, obtain it with `getent group render` (the profile defaults to GID `991`; set `ROCM_RENDER_GID` if yours differs). The worker entrypoint adds that group to `appuser` before dropping root privileges, so the actual Celery process—not just Docker's root entrypoint—can access the devices. The profile passes those GPU device nodes to `worker-inference` and selects the ROCm PyTorch/CPU-ONNX build path. To verify the accelerator from inside the running worker:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml exec worker-inference \
+  python -c 'import torch; print("HIP:", torch.version.hip, "GPU:", torch.cuda.get_device_name(0), "available:", torch.cuda.is_available())'
+```
+
+PyTorch's ROCm build intentionally uses the `torch.cuda` API, so Nojoin's existing `auto` device selection works without renaming its internal `cuda` device value. This path is experimental: AMD validates specific host OS/kernel combinations, and the ROCm support matrix may not include every host distribution. The worker image itself is based on Ubuntu 24.04. Confirm the matrix for your GPU/host before treating it as a supported production deployment. The ROCm PyTorch image is large; first build/pull can take a while.
 
 ### Windows
 
@@ -188,7 +225,7 @@ design, with a 24-hour lifetime, so take the backup again if you needed it.
 ## Worker Container Startup
 
 The worker container starts Celery without preloading inference models. Nojoin
-keeps GPU memory idle at startup, then queues worker-side model preparation for
+keeps model memory idle at startup, then queues worker-side model preparation for
 the configured Whisper model, Pyannote diarisation, and voice embeddings. The
 worker validates those assets on CPU where possible, caches them on disk, and
 releases model objects and CUDA memory before returning to idle.
@@ -203,7 +240,7 @@ the instance to be reachable from the public internet over HTTPS at
 `WEB_APP_URL`; see [CALENDAR.md](CALENDAR.md).
 
 Changing the transcription model later does not download anything on its own.
-Preparation runs on the GPU lane, so an unannounced download would queue in
+Preparation runs on the inference lane, so an unannounced download would queue in
 front of live work; instead **Settings > AI providers** asks whether to fetch a newly
 selected model now, and **Model dependencies** offers a `Download` action plus
 live progress for anything still missing. A model that is never prepared is
@@ -229,17 +266,17 @@ To stop a long recording finalise from blocking every other user's live
 transcription, notes, chat, and calendar sync, worker tasks are split across
 four Celery queues, each drained by its own container:
 
-- `worker-gpu` — GPU-bound inference (recording finalise, live ASR, speaker
-  embeddings). Single-slot (`--pool=solo --concurrency=1`): with one GPU, heavy
-  work is deliberately serialised to protect VRAM. This is the only worker
-  granted GPU access.
-- `worker-cpu` — ffmpeg segment transcode, proxy generation, and backups
-  (`--pool=prefork --concurrency=3`). No GPU.
+- `worker-inference` — model inference (recording finalise, live ASR, speaker
+  embeddings). Single-slot (`--pool=solo --concurrency=1`): work is deliberately
+  serialised, and when a GPU profile is selected this protects accelerator memory.
+  This is the only service configured to receive accelerator devices.
+- `worker-files` — ffmpeg segment transcode, proxy generation, delivery analytics,
+  and backups (`--pool=prefork --concurrency=3`).
 - `worker-io` — network-bound work: Meeting Edge, notes, chat embeddings,
-  calendar sync, and cleanup (`--pool=prefork --concurrency=4`). No GPU. Also
+  calendar sync, and cleanup (`--pool=prefork --concurrency=4`). Also
   runs Celery Beat.
 - `worker-parse` — document parsing and RAG index rebuilds
-  (`--pool=prefork --concurrency=2 --max-tasks-per-child=25`). No GPU. Runs
+  (`--pool=prefork --concurrency=2 --max-tasks-per-child=25`). Runs
   the **`worker-io` image**, not a separate one: visual parsing may route through a subscription CLI whose
   binaries ship only there, so this lane adds a container but no extra build and
   no extra image to scan. Separate from `worker-io` because a parse has no page
@@ -247,10 +284,10 @@ four Celery queues, each drained by its own container:
   would let that degrade Meeting Edge during a live meeting.
 
 Task-to-queue routing is defined in `backend/celery_app.py` (`TASK_ROUTES`);
-anything unrouted falls back to the GPU lane. Tune the `--concurrency` values in
-`docker-compose.yml` to your host: the CPU and IO lanes are cheap (no model
-memory), while the GPU lane should stay at `--concurrency=1` unless you have
-multiple GPUs, or a single card large enough to hold two concurrent pipelines.
+anything unrouted falls back to the inference queue. Tune the `--concurrency`
+values in `docker-compose.yml` to your host: the files and IO lanes are cheap
+(no model memory), while the inference lane should stay at `--concurrency=1`
+when using an accelerator unless you have enough memory for concurrent pipelines.
 
 With four worker containers plus the API, several worker processes each keep a
 small database connection pool. The default PostgreSQL `max_connections` (100)
@@ -285,7 +322,7 @@ parse has no page cap and one document can leave a child far heavier than any
 other lane's task does; a `--max-tasks-per-child` flag on a lane always wins
 over the global default.
 
-Two things this does not do. It has no effect on `worker-gpu`, which runs
+Two things this does not do. It has no effect on `worker-inference`, which runs
 `--pool=solo` and has no children to recycle: Celery accepts the setting on a
 solo pool and silently ignores it. And it does not disturb Celery Beat, which
 runs as its own process forked by `worker-io`'s main process rather than as a
@@ -305,7 +342,7 @@ to warm up, and lower it if a lane's tasks are unusually memory-hungry.
 
 ### GPU Acceleration
 
-The worker image installs Triton in its virtual environment so Whisper word-level timestamps use GPU-accelerated kernels. Without Triton, `whisper/timing.py` falls back to slower CPU-based implementations for word alignment.
+The CUDA and ROCm worker images install Triton in their virtual environments so Whisper word-level timestamps can use accelerator kernels. The CPU image omits Triton and uses `whisper/timing.py`'s CPU alignment implementation.
 
 Text embedding (used during AI-generated meeting intelligence) uses the ONNX Runtime CUDA execution provider when available, with an automatic CPU fallback.
 
@@ -319,14 +356,14 @@ ONNX Runtime's memory arena grows to fit the largest window and never shrinks, s
 
 #### Diagnosing a silent CPU fallback
 
-ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-gpu` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature.
+ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-inference` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature.
 
 Note that PyTorch and ONNX Runtime resolve their CUDA libraries independently, so they can disagree. `torch.cuda.is_available()` returning `True`, VAD logging `Model loaded successfully on cuda`, and `nvidia-smi` working inside the container all confirm the container's GPU passthrough is intact. None of them say anything about ONNX Runtime.
 
 To check the real state:
 
 ```bash
-docker compose logs worker-gpu | grep -i "execution provider"
+docker compose logs worker-inference | grep -i "execution provider"
 ```
 
 The worker logs which provider each ONNX model actually got after loading. A warning naming `fell back to CPU` means the CUDA provider was dropped. The underlying cause is usually a missing shared library, logged nearby as:
@@ -340,21 +377,14 @@ Failed to load library libonnxruntime_providers_cuda.so with error: libcudnn_*.s
 If a library is missing, confirm the loader can see cuDNN inside the container. The worker image registers the cuDNN wheel's directory with `ldconfig` at build time for exactly this reason:
 
 ```bash
-docker compose exec worker-gpu ldconfig -p | grep libcudnn_adv
+docker compose exec worker-inference ldconfig -p | grep libcudnn_adv
 ```
 
 An empty result means the base image moved cuDNN and the image needs rebuilding against the corrected path.
 
 ## CPU-Only Deployment
 
-If you do not have a compatible NVIDIA GPU:
-
-1. Open `docker-compose.yml`.
-2. Remove the `deploy` section under the `worker-gpu` service.
-3. Start the stack normally with `docker compose up -d`.
-
-Processing will be slower, but the application remains usable. All three worker
-lanes then run on CPU.
+The deployment template uses the CPU-only worker image, and inference runs on CPU without a GPU profile. For a local build of that image, apply `docker-compose.cpu.yml` with `--build`. `worker-files` handles media transcoding, local file work, and backups; `worker-io` handles network/LLM tasks, calendar sync, and scheduling. Neither replaces the `worker-inference` lane.
 
 ## Configure .env
 
@@ -459,9 +489,9 @@ reverting on the next restart. If you see that error, check the ownership of the
 
 ## CLI OAuth (worker-io image)
 
-The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). `docker-compose.example.yml` already points the `worker-io` service at that image through its `image:`/`build:` override, so a deployment made from the tracked template can offer this route out of the box, including from the first-run wizard's AI step; `worker-gpu` and `worker-cpu` stay on the base image. A deployment whose compose file has been changed to run `worker-io` on the base image can still complete the Claude connect flow, which Nojoin drives itself, but inference through the subscription will then fail and fall back to the server's provider chain. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`).
+The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the CPU worker image). `docker-compose.example.yml` already points the `worker-io` service at that image through its `image:`/`build:` override, so a deployment made from the tracked template can offer this route out of the box, including from the first-run wizard's AI step; `worker-inference` uses the CPU image by default or an explicitly selected accelerator image; `worker-files` uses the CPU worker image. A deployment whose compose file has been changed to run `worker-io` on the base image can still complete the Claude connect flow, which Nojoin drives itself, but inference through the subscription will then fail and fall back to the server's provider chain. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`).
 
-The two CLIs carry different supply-chain weight, and the difference matters when reading a scan result. The Claude CLI is JavaScript running on a digest-pinned Node, with npm dropped after install, so `worker-io` shows no vulnerability delta over the shared worker base. The Codex payload is a stripped static-musl binary that Trivy cannot introspect at all. The image still passes the release gate, but for that image it passes because there is nothing to scan rather than because the contents were examined. Operators who need an audited image should leave the ChatGPT provider unused and run `worker-io` for the Claude path only, or skip the lane entirely.
+The two CLIs carry different supply-chain weight, and the difference matters when reading a scan result. The Claude CLI is JavaScript running on a digest-pinned Node, with npm dropped after install, so `worker-io` shows no vulnerability delta over the CPU worker base. The Codex payload is a stripped static-musl binary that Trivy cannot introspect at all. The image still passes the release gate, but for that image it passes because there is nothing to scan rather than because the contents were examined. Operators who need an audited image should leave the ChatGPT provider unused and run `worker-io` for the Claude path only, or skip the lane entirely.
 
 ## Remote Access and Trusted Public Origin
 
@@ -863,14 +893,14 @@ docker compose up -d
 
 Use this only if your local `docker-compose.yml` includes custom build directives.
 
-`worker-io` is built `FROM` the shared worker image, so the base must be built
+`worker-io` is built `FROM` the CPU worker image, so the base must be built
 before `worker-io`; otherwise Compose builds them in parallel and `worker-io` can
 ship stale code layered on the previous base. The compose files wire this ordering
 explicitly: `worker-io`'s build declares the base as a named `additional_contexts`
 entry (`worker_base`), so Compose builds the base first and rebuilds `worker-io`
 whenever it changes. `docker-compose.example.yml` pins that context to the published
-image (`docker-image://…/nojoin-worker:latest`); a full source build points it at the
-base service instead (`service:worker-gpu`, which also needs a `build:` stanza on the
+image (`docker-image://…/nojoin-worker-cpu:latest`); a full source build points it at the
+base service instead (`service:worker-inference`, which also needs a `build:` stanza on the
 worker services). No manual build ordering is required.
 
 Nojoin also exposes installed and latest published version information in **Settings > Updates**. The installed version is read from build metadata embedded into the API image, with local source builds falling back to `docs/VERSION`.

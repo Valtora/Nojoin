@@ -1,7 +1,7 @@
 """Delivery-analytics task: measure how people spoke on a processed recording.
 
-Runs on the CPU lane rather than inline in the finalise pipeline. Finalise
-holds the single-slot GPU lane, and this needs no GPU, so occupying that lane
+Runs on the files lane rather than inline in the finalise pipeline. Finalise
+holds the single-slot inference lane, and this needs no model, so occupying that lane
 to read a WAV would delay the next meeting for no benefit. It is the same task
 the interface's per-recording "Analyse" action dispatches, so a recording made
 before the feature existed and one made after it take the same path.

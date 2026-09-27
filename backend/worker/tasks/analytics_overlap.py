@@ -1,6 +1,6 @@
 """Measured-overlap task: detect overlapping speech in a recording's audio.
 
-Runs on the GPU lane, unlike the delivery task: it runs the segmentation
+Runs on the inference lane, unlike the delivery task: it runs the segmentation
 model, which the finalise pipeline keeps resident there, and a recording
 being measured has already finished processing, so the single slot is not
 holding up a live meeting. On a CPU-only install the same lane runs it more

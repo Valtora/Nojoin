@@ -31,17 +31,17 @@ The bounds are set from measurement rather than taste. Before they existed, a di
 
 Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's own subscription using that provider's CLI in the `worker-io` lane. Two providers are supported: a Claude Pro/Max subscription driven by the Claude Agent SDK, and a ChatGPT subscription driven by the OpenAI Codex CLI. CLI OAuth degrades cleanly through the server's default provider chain, trying the primary provider first and the secondary after it, and is never load-bearing — the subscription path is unsanctioned by both providers and can be broken or enforced against without notice, so nothing is allowed to depend on it. See [SECURITY.md](SECURITY.md) for the trust boundary and the accepted risk.
 
-Celery work is split across four resource lanes so a long recording finalise
-never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
-embeddings), a CPU lane (ffmpeg transcode, proxies, backups), an IO/LLM lane
+Celery work is split across four purpose-named lanes so a long recording finalise
+never blocks lightweight tasks: a single-slot inference lane (finalise, live ASR,
+embeddings), a files lane (ffmpeg transcode, proxies, backups), an IO/LLM lane
 (Meeting Edge, notes, chat, calendar sync) that also runs Celery Beat, and a
-parse lane (document parsing and RAG index rebuilds). Routing
-lives in `backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md)
-for pool sizing. To avoid reloading the live ASR model between segments, the GPU
-lane keeps it resident while a capture is uploading and releases it when idle.
-During finalise the meeting-intelligence step (notes, title, speaker suggestions)
-is handed to the IO lane for non-local providers, so a network-bound LLM call
-never occupies the GPU worker; local Ollama runs it inline.
+parse lane (document parsing and RAG index rebuilds). Routing lives in
+`backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md) for
+pool sizing. To avoid reloading the live ASR model between segments, the
+inference lane keeps it resident while a capture is uploading and releases it
+when idle. During finalise the meeting-intelligence step (notes, title, speaker
+suggestions) is handed to the IO lane for non-local providers, so a network-bound
+LLM call never occupies the inference worker; local Ollama runs it inline.
 
 Document parsing has its own lane because it is unbounded: there is no page
 cap, so one large upload can hold a worker slot for a long time. On the IO lane
@@ -190,8 +190,8 @@ measurements rather than folk numbers — conversational speech runs at
 160-200 words a minute by the measure Nojoin computes, not the oft-quoted
 120-150 — and the pace bands are an English calibration, disclosed as such.
 
-It runs on the **CPU lane**, dispatched at the end of `process_recording_task`
-rather than inline. It needs no GPU, so holding the single-slot GPU lane to read
+It runs on the **files lane**, dispatched at the end of `process_recording_task`
+rather than inline. It needs no model, so holding the single-slot inference lane to read
 a WAV would delay the next meeting for nothing, and a failure must never reach a
 recording that has otherwise finished. The same task backs the interface's
 per-recording "Measure delivery" action, so a meeting recorded before the
@@ -237,7 +237,7 @@ Overlapping speech is measured from the recording's audio by
 and [backend/worker/tasks/analytics_overlap.py](../backend/worker/tasks/analytics_overlap.py),
 reusing `pyannote/segmentation-3.0` — already a pipeline dependency for
 boundary refinement, so this adds no model and no image growth. It runs on
-the **GPU lane**, where the finalise pipeline keeps that model resident,
+the **inference lane**, where the finalise pipeline keeps that model resident,
 dispatched with the other post-processing follow-ups for new recordings and
 from the same "Measure delivery" action for old ones. The result stores under
 the `audio_overlap` key of `analytics_payload` with its own method version
@@ -402,7 +402,7 @@ Voiceprints are only comparable with others produced by the same extraction proc
 
 The versioning exists because the original extraction was measurably wrong rather than merely imperfect. Across this project's own library — 12 people, 2904 same-person pairs — 29% of same-person pairs scored below the 0.70 merge threshold and 37% below the 0.75 identification threshold, with a median of 0.803 but a tenth percentile of 0.363. Different-person pairs were clean by comparison, at a median of 0.073. The embedding space separated people perfectly well; same-person similarity collapsed whenever acoustic conditions changed, which is precisely the condition that makes the diariser split one person in the first place, so the safety net was weakest exactly where it was needed. `DUPLICATE_SPEAKER_MERGE_THRESHOLD` was therefore deliberately left at 0.70: the input to the comparison was wrong, not the threshold, and lowering it causes wrong merges, which a user finds harder to undo than wrong splits.
 
-Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comparing them anyway. The repair is automatic scheduled maintenance, running every six hours from Celery Beat and processing at most `AUTOMATIC_VOICEPRINT_REBUILD_LIMIT` (25) recordings per tick. It is bounded rather than operator-triggered because staleness is not a state a user can act on — it is a maintenance obligation Nojoin owes itself after changing its own extraction method — and because an unbounded re-extraction would run the embedding model over an entire library on hardware the user owns. Bounding each tick keeps the GPU lane responsive; a large library converges over several ticks. A stale voiceprint that cannot be re-extracted, because its audio is gone or its speaker owns no transcript segment, is cleared rather than kept: it could never be scored against anything, and leaving it would stall the sweep on a row it can never repair. Transient extraction failures are counted separately and leave the voiceprint in place so a later run can retry.
+Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comparing them anyway. The repair is automatic scheduled maintenance, running every six hours from Celery Beat and processing at most `AUTOMATIC_VOICEPRINT_REBUILD_LIMIT` (25) recordings per tick. It is bounded rather than operator-triggered because staleness is not a state a user can act on — it is a maintenance obligation Nojoin owes itself after changing its own extraction method — and because an unbounded re-extraction would run the embedding model over an entire library on hardware the user owns. Bounding each tick keeps the inference lane responsive; a large library converges over several ticks. A stale voiceprint that cannot be re-extracted, because its audio is gone or its speaker owns no transcript segment, is cleared rather than kept: it could never be scored against anything, and leaving it would stall the sweep on a row it can never repair. Transient extraction failures are counted separately and leave the voiceprint in place so a later run can retry.
 
 Two `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason), and lists each pair's cosine score. A pass that merged nothing previously logged nothing and was indistinguishable from one that never ran.
 

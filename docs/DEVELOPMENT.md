@@ -242,7 +242,7 @@ In that mode:
 
 5. Open `https://localhost:14443`.
 
-The appended template builds the Nojoin application services locally, keeps PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images.
+The appended template builds the Nojoin application services locally, keeps PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images, and builds worker inference with CPU-only PyTorch. To test GPU acceleration, apply exactly one matching `docker-compose.cuda.yml` or `docker-compose.rocm.yml` profile.
 
 ### Incremental Rebuild Loop
 
@@ -250,14 +250,14 @@ Use the normal container rebuild loop when you are staying in the containerised 
 
 ```bash
 docker compose up -d --build api
-docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse
+docker compose up -d --build worker-inference worker-files worker-io worker-parse
 docker compose up -d --build frontend
 ```
 
 Practical use:
 
 - Run `docker compose up -d --build api` after API changes or shared backend changes.
-- Run `docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse` after worker code, dependency, or worker-image changes. Name all four: they do not all share one image. `worker-gpu` and `worker-cpu` run the shared worker image, `worker-io` layers the subscription-CLI tooling on top of it, and `worker-parse` runs the `worker-io` image without building anything of its own. Compose builds each image once and recreates the four containers.
+- Run `docker compose up -d --build worker-inference worker-files worker-io worker-parse` after worker code, dependency, or worker-image changes. Name all four: they do not all share one image. `worker-inference` and `worker-files` run the shared worker image, `worker-io` layers the subscription-CLI tooling on top of it, and `worker-parse` runs the `worker-io` image without building anything of its own. Compose builds each image once and recreates the four containers.
 - Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
 
 The compose files now gate `frontend` on a healthy `api`, and gate `nginx` (or `nginx-dev` in development) on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
@@ -280,7 +280,7 @@ If you need to discard cached layers or the application services drift out of sy
 
 ```bash
 docker compose down
-docker compose build --no-cache api worker-gpu worker-cpu worker-io frontend
+docker compose build --no-cache api worker-inference worker-files worker-io frontend
 docker compose up -d --force-recreate
 ```
 
@@ -308,11 +308,11 @@ services:
       - ./data:/app/data
       - model_cache:/shared_model_cache:ro
 
-  worker-gpu:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q gpu --pool=solo --concurrency=1 --loglevel=info
+  worker-inference:
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q inference --pool=solo --concurrency=1 --loglevel=info
 
-  worker-cpu:
-    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q cpu --pool=prefork --concurrency=3 --loglevel=info
+  worker-files:
+    command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q files --pool=prefork --concurrency=3 --loglevel=info
 
   worker-io:
     command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q io -B -s /app/data/celerybeat-schedule --pool=prefork --concurrency=4 --loglevel=info
@@ -323,7 +323,7 @@ services:
 
 Every lane keeps the `-Q`, `--pool`, `--concurrency`, and `--max-tasks-per-child` values it has in the template. Those flags are load-bearing rather than cosmetic:
 
-- A lane that drains the wrong queue either starves that queue or duplicates work another lane is already doing. Anything unrouted falls back to the GPU queue, so a missing `-Q` quietly turns a lane into a second GPU worker.
+- A lane that drains the wrong queue either starves that queue or duplicates work another lane is already doing. Anything unrouted falls back to the inference queue, so a missing `-Q` quietly turns a lane into a second inference worker.
 - `-B` belongs to `worker-io` alone. A second embedded scheduler double-fires every periodic job.
 - `--pool` is part of the dispatch model, not a tuning knob. Worker code queues follow-on Celery work with a blocking call, which is safe only while one task owns one operating-system process; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes).
 - `--max-tasks-per-child` on `worker-parse` overrides the global recycle limit in `backend/celery_app.py`. Drop it and that lane inherits 500, which is far too high for parses whose per-document cost is unbounded; see [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling).
@@ -724,26 +724,39 @@ Install Trivy (the maintainer host keeps it at `~/.local/bin/trivy`, installed w
 curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
 ```
 
-Build each image exactly as the release workflow does, then run the same gate against all four:
+Build each image exactly as the release workflow does, then run the same gate against all six:
 
 ```bash
 docker build -f docker/Dockerfile.api --build-arg NOJOIN_SERVER_VERSION=<version> -t nojoin-api:scan .
-docker build -f docker/Dockerfile.worker -t nojoin-worker:scan .
+docker build \
+  --build-arg TORCH_BASE_IMAGE=pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 \
+  --build-arg WORKER_GPU_BACKEND=cuda \
+  -f docker/Dockerfile.worker -t nojoin-worker-cuda:scan .
+docker build \
+  --build-arg TORCH_BASE_IMAGE=rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.11.0@sha256:a223aee17aef5d21c3b9f63436dd19d27d1c665ec8b2f40011c9546cabae2a80 \
+  --build-arg WORKER_GPU_BACKEND=rocm \
+  -f docker/Dockerfile.worker -t nojoin-worker-rocm:scan .
+docker build \
+  --build-arg TORCH_BASE_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3 \
+  --build-arg WORKER_GPU_BACKEND=cpu \
+  --build-arg TORCH_VERSION=2.11.0 \
+  --build-arg TORCHAUDIO_VERSION=2.11.0 \
+  -f docker/Dockerfile.worker -t nojoin-worker-cpu:scan .
 docker build -f frontend/Dockerfile --build-arg NEXT_PUBLIC_API_URL=/api -t nojoin-frontend:scan frontend
-# worker-io (CLI OAuth AI mode) layers the Claude Code CLI onto the worker;
-# build it FROM the local worker:scan, mirroring the release job's dependency.
-docker build -f docker/Dockerfile.worker-io --build-arg WORKER_BASE_IMAGE=nojoin-worker:scan -t nojoin-worker-io:scan .
+# worker-io (CLI OAuth AI mode) layers the Claude Code CLI onto the CPU worker;
+# build it FROM the local worker-cpu:scan, mirroring the release job's dependency.
+docker build -f docker/Dockerfile.worker-io --build-arg WORKER_BASE_IMAGE=nojoin-worker-cpu:scan -t nojoin-worker-io:scan .
 
-for img in nojoin-api:scan nojoin-worker:scan nojoin-worker-io:scan nojoin-frontend:scan; do
+for img in nojoin-api:scan nojoin-worker-cpu:scan nojoin-worker-cuda:scan nojoin-worker-rocm:scan nojoin-worker-io:scan nojoin-frontend:scan; do
   trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .github/trivyignore --exit-code 1 "$img"
 done
 ```
 
-These flags mirror the gate in [release.yml](../.github/workflows/release.yml). Building the worker pulls the large PyTorch/CUDA base on first run. Add `--scanners vuln` to focus on the CVE gate and skip Trivy's secret scanner, which can flag locally generated material (see below).
+These flags mirror the gate in [release.yml](../.github/workflows/release.yml). The CUDA and ROCm builds pull their large accelerator bases; the CPU build installs CPU-only PyTorch wheels into the pinned Ubuntu base. Add `--scanners vuln` to focus on the CVE gate and skip Trivy's secret scanner, which can flag locally generated material (see below).
 
 **Remediation patterns the `requirements/` files and lockfiles do not cover.** Trivy scans files present in the built image, so several classes of finding live outside the dependency graph and need an image-level fix:
 
-- **Base-image system Python (worker).** The worker venv is created with `--system-site-packages` to reuse the base's torch, so the PyTorch base's own system interpreter (`/usr/bin/python3`, packages under `/usr/local/lib/pythonX.Y/dist-packages`) keeps its pre-installed copies of packages such as `pillow` and `urllib3` on disk even after those packages are pinned in [requirements/base.txt](../requirements/base.txt). Upgrade them in place, as root before the `USER` switch, with `pip install --break-system-packages --root-user-action=ignore --upgrade <pkg>==<version>`, keeping the versions in step with the requirements pins. See [docker/Dockerfile.worker](../docker/Dockerfile.worker).
+- **Base-image system Python (accelerator workers).** The CUDA and ROCm worker venvs reuse torch from their PyTorch base via `--system-site-packages`, so the base's own system interpreter (`/usr/bin/python3`, packages under `/usr/local/lib/pythonX.Y/dist-packages`) can keep pre-installed copies of packages such as `pillow` and `urllib3` on disk even after those packages are pinned in [requirements/base.txt](../requirements/base.txt). The CPU image installs PyTorch into its venv and has no such vendor-provided stack. Upgrade any vulnerable system copies in the accelerator images as root before the `USER` switch, keeping the versions in step with requirements. See [docker/Dockerfile.worker](../docker/Dockerfile.worker).
 - **Base-image OS packages (api).** The api base is pinned by digest, and `apt-get install` only adds packages, so everything the base ships stays at the version it was built with. Debian publishes security fixes to the archive days or weeks before upstream republishes `python:3.12-slim`, and in that window the newest available digest still fails the gate, so there is no base bump to merge. The runtime stage of [docker/Dockerfile.api](../docker/Dockerfile.api) therefore runs `apt-get upgrade -y` before its install. Still take the Dependabot digest bumps when they arrive: the upgrade covers the gap between them and does not replace them. The builder stage is left alone because only `/opt/venv` is copied out of it.
 - **An advisory whose version range is wrong.** Trivy and Dependabot both read GitHub's advisory ranges, so an error there outlives the real fix. CVE-2026-58659 in `lightning` is the recorded case: fixed in 2.6.6, with a published range of `< 2022.6.15` that no 2.x release can satisfy. Confirm the fix in the package source, not from the release notes alone, pin every package that ships the affected code, then add a dated entry to [.github/trivyignore](../.github/trivyignore) that cites the evidence, and dismiss the Dependabot alert as `inaccurate`. The ignore file matches on CVE id alone, so the entry also masks a real regression if the pin is later lowered, and the entry should say so.
 - **Build tooling in runtime images.** Remove toolchain the runtime never executes: `npm` (the node base bundles a vulnerable `undici`) from the frontend runner, and `uv`/`uvx` (which bundle `rustls-webpki`) from the worker runtime. Each removal eliminates an inherited finding without affecting the running service.
@@ -752,7 +765,7 @@ These flags mirror the gate in [release.yml](../.github/workflows/release.yml). 
 
 ### Health and Non-Root Smoke (REL-012)
 
-The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts each running container's uid is non-root. The worker requires a GPU and preloaded models to boot, so its non-root `USER` is asserted from the published image config via `docker buildx imagetools inspect` (which reads the config without pulling the large layers) rather than by booting it. The rolling tags are not published unless this job passes.
+The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts the running containers' uids are non-root, including the CPU worker via its entrypoint. No GPU or model download is needed for that worker smoke test. The rolling tags are not published unless this job passes.
 
 ### Automated Release Notes (REL-013, REL-014)
 
@@ -848,6 +861,13 @@ x-worker-base: &worker-base
   build:
     context: .
     dockerfile: docker/Dockerfile.worker
+    # Keep local development vendor-neutral by default. Apply one accelerator
+    # profile when testing CUDA or ROCm hardware.
+    args:
+      TORCH_BASE_IMAGE: ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+      WORKER_GPU_BACKEND: cpu
+      TORCH_VERSION: "2.11.0"
+      TORCHAUDIO_VERSION: "2.11.0"
   image: nojoin-dev-worker:local
   pull_policy: never
 
@@ -970,39 +990,31 @@ services:
   # backend/celery_app.py TASK_ROUTES), so local work is routed exactly as it is
   # live. Worker Concurrency Lanes in docs/DEPLOYMENT.md explains the split.
   #
-  # GPU lane: finalize, live ASR, embeddings. Single-slot (--pool=solo
-  # --concurrency=1). This is the ONLY worker with GPU access; remove the deploy
-  # block on a CPU-only host.
-  worker-gpu:
+  # Inference lane: finalize, live ASR, embeddings. Single-slot (--pool=solo
+  # --concurrency=1). The local dev template builds CPU-only PyTorch by default;
+  # apply a matching accelerator profile to exercise a GPU.
+  worker-inference:
     <<: *worker-base
-    container_name: nojoin-dev-worker-gpu
+    container_name: nojoin-dev-worker-inference
     environment:
       <<: *worker-environment
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
-      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "gpu", "--pool=solo", "--concurrency=1", "--loglevel=info",
+        "-Q", "inference", "--pool=solo", "--concurrency=1", "--loglevel=info",
       ]
 
-  # CPU lane: ffmpeg segment transcode, proxy generation, backups. No GPU.
-  worker-cpu:
+  # Local file/media lane: segment transcode, proxy generation, delivery
+  # analytics, and backup creation.
+  worker-files:
     <<: *worker-base
-    container_name: nojoin-dev-worker-cpu
+    container_name: nojoin-dev-worker-files
     environment: *worker-environment
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "cpu", "--pool=prefork", "--concurrency=3", "--loglevel=info",
+        "-Q", "files", "--pool=prefork", "--concurrency=3", "--loglevel=info",
       ]
 
   # IO/LLM lane: Meeting Edge, notes, chat embeddings, calendar sync, cleanup.
@@ -1021,7 +1033,7 @@ services:
       # this the two builds run in parallel and worker-io can ship stale code on
       # the previous base.
       additional_contexts:
-        worker_base: "service:worker-gpu"
+        worker_base: "service:worker-inference"
       args:
         WORKER_BASE_IMAGE: worker_base
     environment: *worker-environment

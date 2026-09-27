@@ -315,6 +315,49 @@ def test_payload_declares_the_schema_version(config, data_dir) -> None:
     )
 
 
+def test_transcription_shape_honors_declared_rocm_gpu(config, monkeypatch) -> None:
+    monkeypatch.setenv("NOJOIN_GPU_AVAILABLE", "true")
+
+    assert telemetry._transcription_shape()["gpu"] is True
+
+
+def test_transcription_shape_honors_declared_no_gpu(config, monkeypatch) -> None:
+    monkeypatch.setenv("NOJOIN_GPU_AVAILABLE", "false")
+
+    assert telemetry._transcription_shape()["gpu"] is False
+
+
+@pytest.mark.parametrize(
+    "visible_marker",
+    [
+        "/dev/nvidiactl",
+        "/proc/driver/nvidia",
+        "/dev/kfd",
+        "/dev/dri/renderD128",
+    ],
+)
+def test_gpu_detection_recognizes_vendor_device_markers(
+    config, monkeypatch, visible_marker
+) -> None:
+    monkeypatch.delenv("NOJOIN_GPU_AVAILABLE", raising=False)
+    monkeypatch.setattr(
+        telemetry.Path,
+        "exists",
+        lambda path: (
+            str(path) == visible_marker and "/dev/dri/" not in visible_marker
+        ),
+    )
+    monkeypatch.setattr(
+        telemetry.Path,
+        "glob",
+        lambda path, pattern: [telemetry.Path(visible_marker)]
+        if str(path) == "/dev/dri" and pattern == "renderD*"
+        else [],
+    )
+
+    assert telemetry._transcription_shape()["gpu"] is True
+
+
 def test_payload_has_no_client_timestamp(config, data_dir) -> None:
     # The ingest derives the day bucket from its own clock, so a skewed client
     # cannot land a row in the wrong day or the future.
@@ -521,7 +564,7 @@ def test_telemetry_ping_is_scheduled_six_hourly_on_the_io_lane() -> None:
     # as the install having gone quiet.
     assert entry["schedule"] == 21600.0
 
-    # Must stay off the single-slot GPU lane: a network call has no business
+    # Must stay off the single-slot inference lane: a network call has no business
     # occupying the worker that holds the card.
     assert TASK_ROUTES["backend.worker.tasks.send_telemetry_ping_task"] == {
         "queue": "io"

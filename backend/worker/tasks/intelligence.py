@@ -759,7 +759,7 @@ def generate_meeting_intelligence_task(self, recording_id: int):
     on the IO lane.
 
     Dispatched by the GPU pipeline for non-local providers so a network-bound LLM
-    call never occupies the GPU worker (and so CLI OAuth, whose SDK ships only in
+    call never occupies the inference worker (and so CLI OAuth, whose SDK ships only in
     the IO image, can run at all). It rebuilds the same inputs the inline stage
     constructs, then runs the shared stage with update_processing_status disabled:
     the recording is already marked Completed, so only notes_status is driven here.

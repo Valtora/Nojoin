@@ -1,7 +1,7 @@
 """AI analytics task: topics, sentiment, questions, and decision ownership.
 
 Network-bound, so it runs on the **IO lane** beside the other LLM work rather
-than on the GPU lane finalise holds, matching how finalise already hands
+than on the inference lane finalise holds, matching how finalise already hands
 meeting intelligence to that lane for non-local providers.
 
 It is never dispatched automatically. Producing this tier spends the user's own

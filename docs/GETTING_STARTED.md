@@ -7,7 +7,7 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 ## Before You Begin
 
 - Docker must be installed.
-- An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported.
+- A GPU can speed up transcription and diarisation. CPU inference is the vendor-neutral default; explicit NVIDIA/CUDA and experimental AMD/ROCm profiles are also available.
 - Shared-audio live recording requires Chrome on Windows, Linux, or macOS, or Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux. Other Chromium-family browsers on macOS are best-effort.
 - Chrome on Android and iOS can start microphone-only live recordings.
 - Firefox, Safari, and other mobile browsers can review existing recordings but cannot start live capture.
@@ -30,16 +30,17 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 
 3. Set `FIRST_RUN_PASSWORD` in `.env`.
 4. Set `DATA_ENCRYPTION_KEY` in `.env` if this will be a persistent installation.
-
-5. Start Nojoin.
+5. Start Nojoin. The CPU-only worker image is the neutral default:
 
    ```bash
    docker compose up -d
    ```
 
+   To use NVIDIA/CUDA, apply `docker-compose.cuda.yml`; to use AMD/ROCm, apply `docker-compose.rocm.yml` (experimental, supported Linux hosts only). Each GPU profile couples its image with the matching device setup. For a local CPU-image build, apply `docker-compose.cpu.yml` with `--build`. See [DEPLOYMENT.md](DEPLOYMENT.md#gpu-support) for details.
+
 For source development workflows, use [DEVELOPMENT.md](DEVELOPMENT.md).
 
-If you do not have an NVIDIA GPU, see [DEPLOYMENT.md](DEPLOYMENT.md) for CPU-only instructions.
+For AMD ROCm or CPU-only deployments, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 `DATA_ENCRYPTION_KEY` prevents future decryptability issues if the app data directory and database do not move together during restores, host migrations, or partial replacements.
 
@@ -62,7 +63,7 @@ Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every un
 The wizard runs in five steps after the unlock gate.
 
 1. **Terms.** The legal disclaimer, plus an **anonymous usage data** checkbox, ticked by default. Leaving it ticked sends one anonymous ping every six hours with counts and configuration settings — never your recordings, transcripts, notes, names, or keys. Unticking it means nothing is ever sent. You can change this later in **Settings > Privacy**; see [TELEMETRY.md](TELEMETRY.md).
-2. **Transcription.** Choose the Whisper model. Turbo (the default) suits a server with an NVIDIA GPU; Small or Base is far faster on a CPU-only deployment, and you can change it later in **Settings > AI**. This step also reports whether speaker diarisation can run, by detecting either an `HF_TOKEN` in the environment or Pyannote assets already present on the server.
+2. **Transcription.** Choose the Whisper model. Turbo (the default) suits a GPU-equipped server; Small or Base is far faster on a CPU-only deployment, and you can change it later in **Settings > AI**. This step also reports whether speaker diarisation can run, by detecting either an `HF_TOKEN` in the environment or Pyannote assets already present on the server.
 3. **Account.** Create the Owner account. Submitting this step creates the account, signs you in, and queues preparation of the transcription and speaker models in the background, so the download runs while you finish the remaining steps. Everything after this point is authenticated, and the wizard cannot be stepped back past it.
 4. **AI.** Choose how AI runs. See below.
 5. **Finish.** A summary of what was configured, a check that this browser and origin can actually record, and the remaining model-preparation progress.

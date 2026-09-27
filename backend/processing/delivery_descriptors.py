@@ -7,7 +7,7 @@ an arithmetic property of the waveform or of the transcript's own timings, which
 is what lets the interface present them without hedging and lets a user who
 disagrees check them against the audio.
 
-Deliberately numpy and soundfile only. This runs on the CPU lane, so it must not
+Deliberately numpy and soundfile only. This runs on the files lane, so it must not
 pull torch in, and it holds no model, which is why it can also run over a whole
 back catalogue on request without competing with recording or processing.
 """

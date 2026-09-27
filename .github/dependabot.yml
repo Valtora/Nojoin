@@ -4,8 +4,9 @@
 # - GitHub Actions are pinned to commit SHAs in the workflows. Dependabot
 #   updates those SHAs in place and keeps the trailing `# vX.Y.Z` comment
 #   accurate, so SHA pinning does not mean the actions go stale.
-# - Docker base images are pinned by digest in the Dockerfiles. Dependabot
-#   bumps the digest (and tag comment) when a new image is published.
+# - Docker base images are pinned by digest in Dockerfiles and explicit Compose
+#   worker build profiles. Dependabot updates Dockerfile references; the held-pin
+#   checker keeps the PyTorch versions in the CPU, CUDA, and ROCm profiles aligned.
 # - Updates are grouped where practical to keep pull-request volume reviewable.
 # - The `ignore:` blocks below suppress *version-update pull requests* only.
 #   They do NOT suppress Dependabot *security alerts*: those are a separate

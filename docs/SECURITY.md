@@ -116,7 +116,7 @@ The payload is assembled in exactly one function and locked by a test that fails
 
 ## Vulnerability Scanning and Severity Policy
 
-Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before their rolling tags are published. The policy balances strong assurance against the reality that the worker image is built on a large CUDA/PyTorch base with a slow-moving, inherited CVE surface.
+Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before their rolling tags are published. The policy balances strong assurance against the CUDA and ROCm worker images' large accelerator bases and inherited CVE surface; the CPU worker uses a separate pinned Ubuntu base with CPU-only PyTorch wheels.
 
 - The release pipeline scans each image and **fails the release on CRITICAL or HIGH findings that have a fix available** (`ignore-unfixed: true`). Such findings are addressable by us — usually by pulling in a patched base image or dependency — so they block publication.
 - Findings **without an upstream fix** do not block the release. They cannot be actioned by Nojoin and are unavoidable for the GPU worker base image. They remain visible in scan output for tracking.

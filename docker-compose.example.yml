@@ -46,8 +46,8 @@ x-shared-app-environment: &shared-app-environment
   MICROSOFT_OAUTH_CLIENT_SECRET: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
   MICROSOFT_OAUTH_TENANT_ID: ${MICROSOFT_OAUTH_TENANT_ID:-common}
 
-# Shared config for the three worker lanes (worker-gpu / worker-cpu / worker-io).
-# They run the same image and differ only in Celery queue, pool, and GPU access.
+# Shared config for the worker lanes. Files and IO use the vendor-neutral CPU
+# worker image; worker-inference selects its runtime from one explicit profile.
 # No service mounts a shared volume over /tmp. A finished backup archive is the
 # only file that has to pass between containers, and it travels through
 # data/backups on the ./data bind mount that every service already has. Mounting
@@ -56,7 +56,7 @@ x-shared-app-environment: &shared-app-environment
 # life of the deployment. Each container now keeps a private /tmp that is
 # discarded when it is recreated.
 x-worker-base: &worker-base
-  image: ghcr.io/valtora/nojoin-worker:latest
+  image: ghcr.io/valtora/nojoin-worker-cpu:latest
   volumes:
     - ./data:/app/data
     - model_cache:/home/appuser/.cache
@@ -192,45 +192,36 @@ services:
       - nojoin_net
     logging: *default-logging
 
-  # Worker lanes: work is split by resource profile so a long GPU job never
-  # blocks lightweight CPU or network tasks. Each service drains one Celery
-  # queue (see backend/celery_app.py TASK_ROUTES). All three run the same image;
-  # only the queue, pool, and GPU access differ.
+  # Worker lanes are named for their work, not their runtime. The inference
+  # worker may run on CPU, CUDA, or ROCm; each service consumes one Celery queue
+  # (see backend/celery_app.py TASK_ROUTES). Files and IO use the CPU image.
   #
-  # GPU lane: finalize, live ASR, embeddings. Single-slot (--pool=solo
-  # --concurrency=1) so the one 8 GB card only ever runs one model pipeline at a
-  # time. This is the ONLY worker with GPU access.
-  worker-gpu:
+  # Inference lane: finalize, live ASR, embeddings. CPU-only by default. A single
+  # matching GPU profile selects the accelerator image and device access; work is
+  # serialized (--pool=solo --concurrency=1), not spread across multiple GPUs.
+  worker-inference:
     <<: *worker-base
-    container_name: nojoin-worker-gpu
+    image: ghcr.io/valtora/nojoin-worker-cpu:latest
+    container_name: nojoin-worker-inference
     environment:
       <<: *worker-environment
-      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
-      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       WHISPER_ENABLE_WORD_TIMESTAMPS: ${WHISPER_ENABLE_WORD_TIMESTAMPS:-true}
-    # Remove this deploy block for CPU-only deployments.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "gpu", "--pool=solo", "--concurrency=1", "--loglevel=info",
+        "-Q", "inference", "--pool=solo", "--concurrency=1", "--loglevel=info",
       ]
 
-  # CPU lane: ffmpeg segment transcode, proxy generation, backups. No GPU.
-  worker-cpu:
+  # Local file/media lane: segment transcode, proxy generation, delivery
+  # analytics, and backup creation.
+  worker-files:
     <<: *worker-base
-    container_name: nojoin-worker-cpu
+    container_name: nojoin-worker-files
     environment: *worker-environment
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",
-        "-Q", "cpu", "--pool=prefork", "--concurrency=3", "--loglevel=info",
+        "-Q", "files", "--pool=prefork", "--concurrency=3", "--loglevel=info",
       ]
 
   # IO/LLM lane: Meeting Edge, notes, chat embeddings, calendar sync, cleanup.
@@ -242,7 +233,7 @@ services:
     # CLI OAuth AI mode routes inference through a user's Claude subscription via
     # the Claude Code CLI + claude-agent-sdk, which need Node.js. Those live only
     # in this io-specific image (docker/Dockerfile.worker-io) layered on the
-    # shared worker image, keeping worker-gpu / worker-cpu lean. The tag is
+    # CPU worker image, keeping worker-inference / worker-files lean. The tag is
     # published by the release pipeline (M6); until then `docker compose build
     # worker-io` builds it locally from the base image via the build stanza.
     image: ghcr.io/valtora/nojoin-worker-io:latest
@@ -253,13 +244,17 @@ services:
       # context so a local `docker compose build worker-io` can never layer it on
       # a stale or half-built base. Operators who pull the published images ignore
       # this. To build the WHOLE stack from source, give the worker services a
-      # build: stanza and change this to "service:worker-gpu" -- Compose then
+      # build: stanza and change this to "service:worker-inference" -- Compose then
       # builds the base image first, then worker-io on top of it.
       additional_contexts:
-        worker_base: "docker-image://ghcr.io/valtora/nojoin-worker:latest"
+        worker_base: "docker-image://ghcr.io/valtora/nojoin-worker-cpu:latest"
       args:
         WORKER_BASE_IMAGE: worker_base
-    environment: *worker-environment
+    environment:
+      <<: *worker-environment
+      # Telemetry runs on this lane, which intentionally has no GPU device
+      # passthrough. A matching hardware profile overrides this CPU default.
+      NOJOIN_GPU_AVAILABLE: ${NOJOIN_GPU_AVAILABLE:-false}
     command:
       [
         "celery", "-A", "backend.celery_app.celery_app", "worker",

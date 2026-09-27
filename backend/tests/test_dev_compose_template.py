@@ -1,10 +1,9 @@
 """The development compose template has to match the guide that ships it.
 
 ``docs/DEVELOPMENT.md`` appends a compose template and then, earlier in the same
-document, tells a developer which services to rebuild against it. Nothing kept
-the two in step: the rebuild loop named ``worker-gpu worker-cpu worker-io``
-while the template defined a single ``worker``, so following the guide end to
-end produced commands that error on a service that does not exist. The template
+document, tells a developer which services to rebuild against it. Nothing keeps
+the two in step: the rebuild loop and the template must use the same service
+names, or following the guide end to end produces commands for nonexistent services. The template
 had also quietly fallen behind ``docker-compose.example.yml`` by five variables,
 two of them read by ``config_manager`` -- a variable no service passes in is
 read by nobody, the application default wins, and the developer gets no signal
@@ -258,7 +257,7 @@ def test_parse_lane_overrides_the_child_recycle_limit_everywhere() -> None:
     """The parse lane's `--max-tasks-per-child` must survive in every copy.
 
     `backend/celery_app.py` sets a global recycle limit of 500 that suits the
-    cpu and io lanes. worker-parse needs a much lower one, because a parse has
+    files and io lanes. worker-parse needs a much lower one, because a parse has
     no page cap and one document can leave a child far heavier than any other
     lane's task does, and a CLI flag is the only way to give one lane its own
     value. That flag exists in three tracked places -- the deployment compose,

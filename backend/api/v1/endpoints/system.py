@@ -153,8 +153,8 @@ except DockerException as e:
 ALLOWED_CONTAINERS = {
     # Production container names
     "nojoin-api",
-    "nojoin-worker-gpu",
-    "nojoin-worker-cpu",
+    "nojoin-worker-inference",
+    "nojoin-worker-files",
     "nojoin-worker-io",
     "nojoin-worker",  # legacy single-worker deployments
     "nojoin-frontend",
@@ -164,8 +164,8 @@ ALLOWED_CONTAINERS = {
     "nojoin-socket-proxy",
     # Development container names
     "nojoin-dev-api",
-    "nojoin-dev-worker-gpu",
-    "nojoin-dev-worker-cpu",
+    "nojoin-dev-worker-inference",
+    "nojoin-dev-worker-files",
     "nojoin-dev-worker-io",
     "nojoin-dev-worker",  # legacy single-worker deployments
     "nojoin-dev-frontend",
@@ -275,8 +275,8 @@ async def websocket_logs(
             # Filter by name prefix or label if possible. For now, strict list.
             containers_list = [
                 "nojoin-api",
-                "nojoin-worker-gpu",
-                "nojoin-worker-cpu",
+                "nojoin-worker-inference",
+                "nojoin-worker-files",
                 "nojoin-worker-io",
                 "nojoin-frontend",
                 "nojoin-nginx",

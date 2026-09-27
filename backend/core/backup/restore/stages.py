@@ -366,7 +366,7 @@ def _restore_enqueue_finalization(state: "_RestoreState") -> None:
     """Finalization stage: queue the per-recording rebuild of derived artefacts.
 
     One task per recording rather than one per concern. It runs on the io lane and
-    dispatches proxy generation to the cpu lane, so the queue separation survives.
+    dispatches proxy generation to the files lane, so the queue separation survives.
     """
     for recording_id in sorted(state.restored_recording_ids):
         try:

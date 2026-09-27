@@ -522,7 +522,7 @@ async def _save_user_settings(
         await _dispatch_meeting_edge_refresh_for_active_recordings(db, current_user)
 
     # Changing the transcription model deliberately does not download anything.
-    # Preparation runs on the GPU lane, so it is requested explicitly through
+    # Preparation runs on the inference lane, so it is requested explicitly through
     # POST /system/models/prepare after the admin has been asked; a model that is
     # never prepared is still fetched lazily on first use.
 

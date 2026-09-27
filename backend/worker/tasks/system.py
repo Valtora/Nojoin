@@ -108,7 +108,7 @@ def delete_model_task(self, model_name: str, variant: str | None = None):
 @celery_app.task(name="backend.worker.tasks.get_worker_device_status", bind=True)
 def get_worker_device_status(self):
     """
-    Check the worker's available processing device (CUDA/CPU).
+    Check the worker's available processing device (GPU/CPU).
     """
     try:
         import torch
@@ -334,7 +334,7 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
     canonical utterance graph, the RAG index and the playback proxy are all reproducible
     from those, so they are rebuilt here rather than archived.
 
-    Runs on the io lane and dispatches proxy generation to the cpu lane, because ffmpeg
+    Runs on the io lane and dispatches proxy generation to the files lane, because ffmpeg
     belongs on cpu while indexing belongs on io. One task per recording keeps a large
     restore from flooding the queue with four messages per meeting.
     """
@@ -371,7 +371,7 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
             "Failed to queue indexing for restored recording %s: %s", recording_id, e
         )
 
-    # 3. Playback proxy, on the cpu lane where ffmpeg lives.
+    # 3. Playback proxy, on the files lane where ffmpeg lives.
     if needs_proxy:
         try:
             celery_app.send_task(

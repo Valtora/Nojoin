@@ -32,9 +32,9 @@ def test_beat_schedule_rebuilds_stale_voiceprints() -> None:
 
 
 def test_automatic_voiceprint_rebuild_is_bounded_per_run() -> None:
-    """An unbounded sweep would queue the whole library's GPU work at once.
+    """An unbounded sweep would queue the whole library's inference work at once.
 
-    The rebuild shares the GPU lane with live transcription and final
+    The rebuild shares the inference lane with live transcription and final
     processing, so the per-run cap is what keeps an upgrade from starving a
     meeting in progress. Convergence comes from repeating the sweep.
     """

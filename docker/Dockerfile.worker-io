@@ -1,16 +1,15 @@
 # --- io-specific worker image ---
 # The base worker image (docker/Dockerfile.worker) plus Node.js, the Claude Code
 # CLI + Agent SDK, and the OpenAI Codex CLI — used ONLY by the worker-io lane for
-# the CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT
 # subscription). Keeping the Node/CLI tooling here (rather than in the shared
-# worker image) leaves worker-gpu / worker-cpu unchanged — no Node tooling (nor
+# worker image) leaves worker-inference / worker-files lean — no Node tooling (nor
 # the ~336 MB Codex payload) rides along on the GPU-constrained host that never
 # uses it.
 
-# WORKER_BASE_IMAGE lets this layer stack on either the locally-built worker
-# image (nojoin-worker:local) or the published tag in the release pipeline.
+# WORKER_BASE_IMAGE lets this layer stack on either the locally-built CPU worker
+# image (nojoin-worker-cpu:local) or the published tag in the release pipeline.
 # Declared before any FROM (global scope) so the final-stage FROM can use it.
-ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker:latest
+ARG WORKER_BASE_IMAGE=ghcr.io/valtora/nojoin-worker-cpu:latest
 
 # Node.js runtime, PINNED BY DIGEST (supply-chain hardening — replaces the
 # unpinned NodeSource curl|bash install). Bump this digest to move Node

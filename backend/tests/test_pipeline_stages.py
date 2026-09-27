@@ -736,7 +736,7 @@ def _arm_intelligence_routing_probes(monkeypatch):
 
 
 def test_non_local_provider_defers_intelligence_to_io_lane(monkeypatch):
-    """A cloud/CLI provider must not run the LLM call on the GPU worker: the
+    """A cloud/CLI provider must not run the LLM call on the inference worker: the
     pipeline dispatches generate_meeting_intelligence_task to the IO lane and the
     recording still completes (notes finish out-of-band)."""
     recording = _FakeRecording(710)
@@ -752,7 +752,7 @@ def test_non_local_provider_defers_intelligence_to_io_lane(monkeypatch):
     result = _run_task(monkeypatch, session, recording_id=710)
 
     assert result == {"status": "success", "recording_id": 710}
-    assert inline_calls == []  # never ran inline on the GPU worker
+    assert inline_calls == []  # never ran inline on the inference worker
     assert dispatched == [
         ("backend.worker.tasks.generate_meeting_intelligence_task", [710])
     ]
@@ -762,7 +762,7 @@ def test_non_local_provider_defers_intelligence_to_io_lane(monkeypatch):
 
 
 def test_local_provider_runs_intelligence_inline(monkeypatch):
-    """Local Ollama stays inline on the GPU worker (no IO dispatch)."""
+    """Local Ollama stays inline on the inference worker (no IO dispatch)."""
     recording = _FakeRecording(711)
     transcript = _FakeTranscript(711)
     session = _FakeSession(recording, transcript)
@@ -785,4 +785,4 @@ def test_local_provider_runs_intelligence_inline(monkeypatch):
 
     assert result == {"status": "success", "recording_id": 711}
     assert dispatched == []  # not deferred
-    assert len(inline_calls) == 1  # ran inline on the GPU worker
+    assert len(inline_calls) == 1  # ran inline on the inference worker

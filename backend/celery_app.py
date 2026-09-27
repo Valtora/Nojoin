@@ -148,11 +148,11 @@ celery_app = Celery(
     ],
 )
 
-# --- Task routing: resource lanes -------------------------------------------
-# Split work so a long GPU job never blocks lightweight CPU/network tasks. Each
-# worker process consumes one lane (`-Q gpu|cpu|io`); see docker-compose.
-GPU_QUEUE = "gpu"
-CPU_QUEUE = "cpu"
+# --- Task routing: work-purpose lanes ---------------------------------------
+# Split work so heavy inference never blocks local file/media or network tasks.
+# Each worker process consumes one lane (`-Q inference|files|io`); see Compose.
+INFERENCE_QUEUE = "inference"
+FILES_QUEUE = "files"
 IO_QUEUE = "io"
 # Document parsing gets its own lane rather than sharing io. A parse has no page
 # cap, so one large upload can hold a slot for a long time; on the io lane that
@@ -161,40 +161,41 @@ IO_QUEUE = "io"
 # through a subscription CLI, whose binaries ship only there).
 PARSE_QUEUE = "parse"
 
-# Explicit per-task routing. Anything unrouted falls back to the GPU lane
-# (`task_default_queue`), the safe default: a mis-routed GPU task still finds
-# the card, whereas routing it to a GPU-less worker would fail. New tasks must
-# be added here when introduced.
+# Explicit per-task routing. Anything unrouted falls back to the inference lane
+# (`task_default_queue`), the safe default: model work still reaches the worker
+# configured for inference, whether it runs on CPU or an accelerator. New tasks
+# must be added here when introduced.
 TASK_ROUTES = {
-    # GPU lane: heavy ML inference. Serialised — the host has one 8 GB card.
-    "backend.worker.tasks.process_recording_task": {"queue": GPU_QUEUE},
+    # Inference lane: heavy ML work. Serialized to keep model jobs from competing.
+    "backend.worker.tasks.process_recording_task": {"queue": INFERENCE_QUEUE},
     "backend.processing.live_transcribe.transcribe_segment_live_task": {
-        "queue": GPU_QUEUE
+        "queue": INFERENCE_QUEUE
     },
-    "backend.worker.tasks.extract_embedding_task": {"queue": GPU_QUEUE},
-    "backend.worker.tasks.update_speaker_embedding_task": {"queue": GPU_QUEUE},
+    "backend.worker.tasks.extract_embedding_task": {"queue": INFERENCE_QUEUE},
+    "backend.worker.tasks.update_speaker_embedding_task": {"queue": INFERENCE_QUEUE},
     # Re-extracts stored voiceprints after an extraction-method bump. Runs the
-    # embedding model over archived audio, so it belongs on the GPU lane where
-    # it is serialised behind real recordings rather than competing with them.
-    "backend.worker.tasks.rebuild_voiceprints_task": {"queue": GPU_QUEUE},
-    "backend.worker.tasks.download_models_task": {"queue": GPU_QUEUE},
-    "backend.worker.tasks.get_worker_device_status": {"queue": GPU_QUEUE},
-    # CPU lane: ffmpeg transcode/proxy and local disk work.
-    "backend.processing.segment_transcode.transcode_segment_task": {"queue": CPU_QUEUE},
-    "backend.worker.tasks.generate_proxy_task": {"queue": CPU_QUEUE},
+    # embedding model over archived audio, so it belongs on the inference lane
+    # where it is serialised behind real recordings rather than competing with them.
+    "backend.worker.tasks.rebuild_voiceprints_task": {"queue": INFERENCE_QUEUE},
+    "backend.worker.tasks.download_models_task": {"queue": INFERENCE_QUEUE},
+    "backend.worker.tasks.get_worker_device_status": {"queue": INFERENCE_QUEUE},
+    # Files lane: ffmpeg transcode/proxy and local disk work.
+    "backend.processing.segment_transcode.transcode_segment_task": {"queue": FILES_QUEUE},
+    "backend.worker.tasks.generate_proxy_task": {"queue": FILES_QUEUE},
     # Reads and analyses the recording's WAV with numpy. No GPU and no
     # model, so it belongs beside the other local-disk audio work rather
     # than on the lane finalise is holding.
-    "backend.worker.tasks.compute_delivery_analytics_task": {"queue": CPU_QUEUE},
-    # GPU lane: it runs the segmentation model the finalise pipeline already
-    # keeps resident there. A CPU-only install runs it on the same lane,
+    "backend.worker.tasks.compute_delivery_analytics_task": {"queue": FILES_QUEUE},
+    # Inference lane: it runs the segmentation model the finalise pipeline
+    # already keeps resident there. A CPU-only install runs it on this same lane,
     # slower, like the rest of the model work.
-    "backend.worker.tasks.compute_overlap_analytics_task": {"queue": GPU_QUEUE},
-    # Light bookkeeping: one query, then per-recording dispatches to the CPU
+    "backend.worker.tasks.compute_overlap_analytics_task": {"queue": INFERENCE_QUEUE},
+    # Light bookkeeping: one query, then per-recording dispatches to the files
     # lane. The heavy work happens in the tasks it queues, not here.
     "backend.worker.tasks.remeasure_outdated_delivery_task": {"queue": IO_QUEUE},
-    "backend.worker.tasks.create_backup_task": {"queue": CPU_QUEUE},
-    # Orchestrates post-restore rebuilds; dispatches the ffmpeg work to the cpu lane.
+    "backend.worker.tasks.create_backup_task": {"queue": FILES_QUEUE},
+    # Orchestrates post-restore rebuilds; dispatches the ffmpeg work to the
+    # files lane.
     "backend.worker.tasks.finalize_restored_recording_task": {"queue": IO_QUEUE},
     # Restore is IO-bound: unpack an archive and write rows. Running it here rather than
     # in the API keeps job state durable and heavy extraction off the request path.
@@ -232,15 +233,15 @@ TASK_ROUTES = {
 }
 
 # Recordings touched by one automatic voiceprint-rebuild tick. The rebuild runs
-# the embedding model on the GPU lane, which is also where live transcription
+# the embedding model on the inference lane, which is also where live transcription
 # and final processing run, so a sweep must never enqueue an unbounded pile of
 # work ahead of a real meeting. Bounding each tick trades a slower repair for a
-# GPU that stays responsive; the sweep repeats, so a large library still
+# responsive inference lane; the sweep repeats, so a large library still
 # converges, just over several ticks rather than one.
 AUTOMATIC_VOICEPRINT_REBUILD_LIMIT = 25
 
 # Recordings re-measured by one delivery-method sweep tick. Same rationale as
-# the voiceprint bound, on the CPU lane: the sweep exists because delivery
+# the voiceprint bound, on the files lane: the sweep exists because delivery
 # figures from different method versions are not comparable (so cross-meeting
 # baselines stall on old payloads), and re-reading audio across a whole
 # library must trickle rather than flood.
@@ -253,28 +254,28 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_routes=TASK_ROUTES,
-    task_default_queue=GPU_QUEUE,
+    task_default_queue=INFERENCE_QUEUE,
     # One reserved message per worker process so a slow task cannot hoard a batch
-    # queued behind it; keeps the CPU/IO lanes fair under load.
+    # queued behind it; keeps the files/IO lanes fair under load.
     worker_prefetch_multiplier=1,
     # Retire a pool child after this many tasks. Purely a backstop against slow
     # drift: no leak has been measured, and this is not expected to reduce
     # steady-state memory. On the reference deployment a child's reclaimable
-    # memory (Private_Dirty) is ~35 MB on the io lane and ~7-38 MB on cpu, most
+    # memory (Private_Dirty) is ~35 MB on the io lane and ~7-38 MB on files, most
     # of it the import working set of the task path, which the replacement child
     # re-pays on its first task. What the limit actually buys is a bound on how
     # far an as-yet-unobserved leak could run before it is discarded.
     #
-    # The value is deliberately high. At the reference task rates (cpu ~590,
+    # The value is deliberately high. At the reference task rates (files ~590,
     # io ~176 tasks per child per day) 500 is roughly one recycle per child per
-    # day on cpu and per three days on io -- often enough to bound drift, rare
+    # day on files and per three days on io -- often enough to bound drift, rare
     # enough that forks do not land repeatedly inside a live meeting. Recycling
     # is safe at any value: billiard delivers the task's result before the child
     # exits, so a recycle never interrupts or loses work. It costs an import,
     # measured at ~0.5s for the io lane's embedding stack.
     #
-    # Inert on worker-gpu. That lane runs --pool=solo, which has no children to
-    # recycle; Celery accepts the setting there and silently ignores it. Lanes
+    # Inert on worker-inference. That lane runs --pool=solo, which has no
+    # children to recycle; Celery accepts the setting there and silently ignores it. Lanes
     # that want a different number override it with --max-tasks-per-child on the
     # command line, which takes precedence over this default. worker-parse does,
     # because a parse has no page cap and one document can be arbitrarily large.

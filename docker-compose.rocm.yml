@@ -1,0 +1,32 @@
+# Explicit AMD GPU image and runtime profile for worker-inference.
+# Apply with: docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d
+# Add --build to build the profile locally instead of pulling its published image.
+# Other worker lanes and the API remain on the normal published images.
+services:
+  worker-inference:
+    image: ghcr.io/valtora/nojoin-worker-rocm:latest
+    environment:
+      # Pass the host's numeric render GID so the worker entrypoint can preserve
+      # device access when it drops from root to appuser.
+      ROCM_RENDER_GID: "${ROCM_RENDER_GID:-991}"
+      # ROCm 7.14's gfx1151 MIOpen default search currently fails on Whisper's
+      # Conv1d; FAST mode passed the real Whisper GPU smoke test on Strix Halo.
+      MIOPEN_FIND_MODE: FAST
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+      args:
+        TORCH_BASE_IMAGE: rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.11.0@sha256:a223aee17aef5d21c3b9f63436dd19d27d1c665ec8b2f40011c9546cabae2a80
+        WORKER_GPU_BACKEND: rocm
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    # The render device nodes and /dev/kfd are owned by the host's render group.
+    # Override ROCM_RENDER_GID if this host uses a different numeric group ID.
+    group_add:
+      - "${ROCM_RENDER_GID:-991}"
+    ipc: host
+    shm_size: 8gb
+  worker-io:
+    environment:
+      NOJOIN_GPU_AVAILABLE: "true"

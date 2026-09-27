@@ -1,7 +1,7 @@
 """Explicit model preparation (Settings > AI).
 
 Selecting a transcription model used to queue a download as a side effect of
-saving the setting. That download runs on the GPU lane, in front of live work,
+saving the setting. That download runs on the inference lane, in front of live work,
 with no indication in the UI that it had started. Preparation is now requested
 explicitly, so these tests pin both halves: the settings save queues nothing,
 and the dedicated endpoint queues the model the admin actually has selected.

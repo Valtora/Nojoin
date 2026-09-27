@@ -665,7 +665,7 @@ def _finalize_transcript_and_notes(
     if transcript_text.strip() and _meeting_intelligence_runs_on_io(llm_config):
         # Non-local provider (cloud API or CLI OAuth subscription): the LLM call
         # is network-bound and needs no GPU, and the CLI OAuth SDK only lives in
-        # the IO image. Free the GPU lane by generating notes on the IO worker.
+        # the IO image. Free the inference lane by generating notes on the IO worker.
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
         transcript.notes_status = "generating"
@@ -1159,7 +1159,7 @@ def _sweeps_recordings(sender) -> bool:
     does the sweep. When the consumed queues cannot be read, sweep anyway: a
     duplicate run wastes time, but skipping leaves recordings stranded.
     """
-    from backend.celery_app import GPU_QUEUE
+    from backend.celery_app import INFERENCE_QUEUE
 
     try:
         consume_from = getattr(sender.app.amqp.queues, "consume_from", None)
@@ -1169,7 +1169,7 @@ def _sweeps_recordings(sender) -> bool:
     if not consume_from:
         logger.warning("Could not read this worker's queues; sweeping regardless.")
         return True
-    return GPU_QUEUE in set(consume_from)
+    return INFERENCE_QUEUE in set(consume_from)
 
 
 @worker_ready.connect
@@ -1345,7 +1345,7 @@ def _collect_ordered_final_speaker_labels(final_segments: Sequence[dict]) -> lis
 
 
 # Providers that run on the user's own hardware. Their meeting-intelligence
-# generation stays inline on the GPU worker. Every other provider (cloud APIs,
+# generation stays inline on the inference worker. Every other provider (cloud APIs,
 # CLI OAuth subscriptions) is network-bound, needs no GPU, and — for CLI OAuth —
 # relies on the SDK that only ships in the IO image, so its generation is
 # deferred to the IO lane.

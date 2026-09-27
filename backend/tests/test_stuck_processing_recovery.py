@@ -5,7 +5,7 @@ import types
 from backend.models.recording import Recording, RecordingStatus
 from backend.worker.tasks import pipeline
 
-GPU_QUEUE = "gpu"
+INFERENCE_QUEUE = "inference"
 
 
 class FakeSession:
@@ -93,9 +93,9 @@ def test_live_task_ids_flattens_every_worker(monkeypatch):
     def inspect(**_kwargs):
         return types.SimpleNamespace(
             active=lambda: {
-                "celery@gpu": [{"id": "a"}, {"id": "b"}],
+                "celery@inference": [{"id": "a"}, {"id": "b"}],
                 "celery@io": [{"id": "c"}],
-                "celery@cpu": [],
+                "celery@files": [],
             }
         )
 
@@ -121,8 +121,8 @@ def _sender(queues):
 def test_only_the_lane_running_the_task_sweeps():
     # All three lanes import this module, so without the gate each pending recording
     # would be dispatched once per lane.
-    assert pipeline._sweeps_recordings(_sender({GPU_QUEUE: object()}))
-    assert not pipeline._sweeps_recordings(_sender({"cpu": object(), "io": object()}))
+    assert pipeline._sweeps_recordings(_sender({INFERENCE_QUEUE: object()}))
+    assert not pipeline._sweeps_recordings(_sender({"files": object(), "io": object()}))
 
 
 def test_sweeps_when_the_consumed_queues_cannot_be_read():

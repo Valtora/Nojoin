@@ -79,13 +79,15 @@ Nojoin is free, and running it yourself means a machine with a GPU, a compose fi
    - `DATA_ENCRYPTION_KEY` (for any persistent deployment)
    - And other API keys as needed for your desired features.
 
-   No AI provider key is required here. The setup wizard also lets you route AI through your own Claude or ChatGPT subscription, or leave AI unconfigured and set it up later.
+   The template uses a CPU-only worker image by default. Apply exactly one matching profile to select a GPU image and device setup: `docker-compose.cuda.yml` for NVIDIA/CUDA, or `docker-compose.rocm.yml` for AMD/ROCm. `docker-compose.cpu.yml` can build the CPU image locally. No AI provider key is required here. The setup wizard also lets you route AI through your own Claude or ChatGPT subscription, or leave AI unconfigured and set it up later.
 
-4. Start Nojoin.
+4. Start Nojoin. The template runs CPU-only inference by default:
 
    ```bash
    docker compose up -d
    ```
+
+   For NVIDIA/CUDA, apply `docker-compose.cuda.yml`; for AMD/ROCm, apply `docker-compose.rocm.yml` instead.
 
 5. Open the setup wizard.
 
