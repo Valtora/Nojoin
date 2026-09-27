@@ -85,6 +85,21 @@ def _service_names(text: str) -> set[str]:
     return names
 
 
+def _service_block(text: str, service_name: str) -> str:
+    """Return one two-space-indented service block from Compose text."""
+    lines = text.splitlines()
+    marker = f"  {service_name}:"
+    start = next((index for index, line in enumerate(lines) if line == marker), None)
+    assert start is not None, f"service {service_name!r} is missing"
+
+    block = [lines[start]]
+    for line in lines[start + 1 :]:
+        if _SERVICE_RE.match(line):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
 def _block_env_keys(text: str, opening: str, indent: int) -> set[str]:
     """Collect variable names declared under ``opening``.
 
@@ -203,6 +218,32 @@ def test_worker_lanes_match_the_deployment_template() -> None:
         "docker-compose.example.yml have diverged: "
         f"{sorted(template_lanes ^ deployment_lanes)}"
     )
+
+
+def test_accelerator_profiles_keep_io_and_parse_on_the_cpu_worker_base() -> None:
+    """GPU overlays change inference only; utility workers remain CPU-based."""
+    template = _template()
+    worker_files = _service_block(template, "worker-files")
+    worker_io = _service_block(template, "worker-io")
+    worker_parse = _service_block(template, "worker-parse")
+    _, _, after_base_anchor = template.partition("x-worker-base: &worker-base")
+    cpu_base = after_base_anchor.partition("\nx-worker-environment:")[0]
+
+    assert "<<: *worker-base" in worker_files
+    assert "TORCH_BASE_IMAGE: ubuntu:24.04@" in cpu_base
+    assert "WORKER_INFERENCE_BACKEND: cpu" in cpu_base
+    assert 'worker_base: "service:worker-files"' in worker_io
+    assert "image: nojoin-dev-worker-io:local" in worker_parse
+
+    for backend in ("cuda", "rocm"):
+        overlay = (REPO_ROOT / f"docker-compose.{backend}.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "worker-inference" in _service_names(overlay)
+        assert "worker-files" not in _service_names(overlay)
+        overlay_io = _service_block(overlay, "worker-io")
+        assert "build:" not in overlay_io
+        assert "image:" not in overlay_io
 
 
 def test_template_passes_every_shared_setting_the_deployment_template_does() -> None:

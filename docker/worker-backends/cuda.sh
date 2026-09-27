@@ -1,26 +1,9 @@
-# Backend-specific hooks consumed by Dockerfile.worker.
-# The CUDA PyTorch base supplies torch, torchaudio, and CUDA libraries.
-
-worker_install_builder_os_packages() {
-    :
-}
-
-worker_install_torch() {
-    :
-}
+# CUDA-specific hooks consumed by Dockerfile.worker.
 
 worker_install_backend_packages() {
     pip uninstall -y onnxruntime onnxruntime-gpu && \
         pip install --no-cache-dir onnxruntime-gpu==1.20.2 && \
         pip install --no-cache-dir triton
-}
-
-worker_cleanup_builder_os_packages() {
-    :
-}
-
-worker_install_runtime_os_packages() {
-    :
 }
 
 worker_patch_system_python() {

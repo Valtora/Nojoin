@@ -242,7 +242,7 @@ In that mode:
 
 5. Open `https://localhost:14443`.
 
-The appended template builds the Nojoin application services locally, keeps PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images, and builds worker inference with CPU-only PyTorch. To test GPU acceleration, apply exactly one matching `docker-compose.cuda.yml` or `docker-compose.rocm.yml` profile.
+The appended template builds the Nojoin application services locally, keeps PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images, and builds worker inference with CPU-only PyTorch. To test GPU acceleration, apply exactly one matching `docker-compose.cuda.yml` or `docker-compose.rocm.yml` profile. Those overlays select accelerator runtime only for `worker-inference`; `worker-files`, `worker-io`, and `worker-parse` stay on the CPU image. The local `worker-io` image deliberately layers on `worker-files`, not `worker-inference`, so that remains true under a GPU profile.
 
 ### Incremental Rebuild Loop
 
@@ -1029,11 +1029,11 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker-io
-      # Build the shared worker base FIRST, then layer worker-io on it. Without
-      # this the two builds run in parallel and worker-io can ship stale code on
-      # the previous base.
+      # Build the CPU worker-files base FIRST, then layer worker-io on it.
+      # Do not use worker-inference here: a CUDA/ROCm overlay changes that lane's
+      # image, while worker-io and worker-parse intentionally remain CPU workers.
       additional_contexts:
-        worker_base: "service:worker-inference"
+        worker_base: "service:worker-files"
       args:
         WORKER_BASE_IMAGE: worker_base
     environment: *worker-environment

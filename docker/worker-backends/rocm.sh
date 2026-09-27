@@ -1,22 +1,9 @@
-# Backend-specific hooks consumed by Dockerfile.worker.
-# ROCm reuses the matched torch/torchaudio stack from its pinned PyTorch base.
-
-worker_install_builder_os_packages() {
-    :
-}
-
-worker_install_torch() {
-    :
-}
+# ROCm-specific hooks consumed by Dockerfile.worker.
 
 worker_install_backend_packages() {
     pip uninstall -y onnxruntime-gpu || true
     python -c "import onnxruntime as ort; print('ROCm worker ONNX providers:', ort.get_available_providers())" && \
         python -c "import triton; print('ROCm Triton:', triton.__version__)"
-}
-
-worker_cleanup_builder_os_packages() {
-    :
 }
 
 worker_install_runtime_os_packages() {

@@ -1,5 +1,4 @@
-# Backend-specific hooks consumed by Dockerfile.worker.
-# CPU inference is the default profile; the other profiles provide their own hooks.
+# CPU-specific hooks consumed by Dockerfile.worker.
 
 worker_install_builder_os_packages() {
     apt-get install -y --no-install-recommends python3 python-is-python3
@@ -19,10 +18,6 @@ worker_install_backend_packages() {
 
 worker_cleanup_builder_os_packages() {
     apt-get purge --auto-remove -y python-is-python3
-}
-
-worker_install_runtime_os_packages() {
-    :
 }
 
 worker_patch_system_python() {

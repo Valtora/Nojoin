@@ -23,7 +23,7 @@ COPY docker/worker-backends/ /opt/nojoin-worker-backends/
 # image's matched torch/torchaudio. Keep the CPU base interpreter installed at
 # runtime because the venv links to it; remove only its build-time venv tooling.
 ENV PATH="/opt/venv/bin:$PATH"
-RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+RUN . /opt/nojoin-worker-backends/load.sh && \
     apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
@@ -60,7 +60,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV MALLOC_ARENA_MAX=2
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
-RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+RUN . /opt/nojoin-worker-backends/load.sh && \
     apt-get update && \
     # Patch the base image's OpenSSL against CVE-2026-45447 (PKCS7_verify UAF);
     # the pinned PyTorch base predates the Ubuntu fix (3.0.13-0ubuntu3.11).
@@ -95,12 +95,12 @@ RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
 # pins in step with requirements/base.txt: pillow==12.3.0 closes the batch of
 # HIGH pillow CVEs disclosed after v1.5.0 (CVE-2026-54058/54059/54060, 55379/55380,
 # 59197/59199/59200/59204/59205); urllib3==2.7.0 closes CVE-2026-44431/44432.
-RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+RUN . /opt/nojoin-worker-backends/load.sh && \
     worker_patch_system_python
 
 # Backend-specific runtime libraries are configured by the selected profile
 # hook: CUDA discovers its nvidia-* wheel libraries, while ROCm uses the base.
-RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+RUN . /opt/nojoin-worker-backends/load.sh && \
     worker_configure_runtime_libraries && \
     rm -rf /opt/nojoin-worker-backends
 
