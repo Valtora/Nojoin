@@ -180,7 +180,9 @@ TASK_ROUTES = {
     "backend.worker.tasks.download_models_task": {"queue": INFERENCE_QUEUE},
     "backend.worker.tasks.get_worker_device_status": {"queue": INFERENCE_QUEUE},
     # Files lane: ffmpeg transcode/proxy and local disk work.
-    "backend.processing.segment_transcode.transcode_segment_task": {"queue": FILES_QUEUE},
+    "backend.processing.segment_transcode.transcode_segment_task": {
+        "queue": FILES_QUEUE
+    },
     "backend.worker.tasks.generate_proxy_task": {"queue": FILES_QUEUE},
     # Reads and analyses the recording's WAV with numpy. No GPU and no
     # model, so it belongs beside the other local-disk audio work rather

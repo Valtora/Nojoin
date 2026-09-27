@@ -22,8 +22,7 @@ def test_cpu_profile_torchaudio_build_pin_is_checked(tmp_path, monkeypatch):
 
     profiles = {
         "docker-compose.cpu.yml": (
-            '        TORCH_VERSION: "2.11.0"\n'
-            '        TORCHAUDIO_VERSION: "2.10.0"\n'
+            '        TORCH_VERSION: "2.11.0"\n        TORCHAUDIO_VERSION: "2.10.0"\n'
         ),
         "docker-compose.cuda.yml": (
             "        TORCH_BASE_IMAGE: "
@@ -41,8 +40,7 @@ def test_cpu_profile_torchaudio_build_pin_is_checked(tmp_path, monkeypatch):
     problems = checker.check_drift(hold)
 
     assert any(
-        "docker-compose.cpu.yml" in problem
-        and "torchaudio 2.10.0" in problem
+        "docker-compose.cpu.yml" in problem and "torchaudio 2.10.0" in problem
         for problem in problems
     )
 
@@ -51,8 +49,8 @@ def test_profile_base_images_must_match_release_build_args(tmp_path, monkeypatch
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
     profiles = {
         "docker-compose.cpu.yml": (
-            '        TORCH_BASE_IMAGE: ubuntu:24.04@sha256:cpu-digest\n'
-            '        WORKER_INFERENCE_BACKEND: cpu\n'
+            "        TORCH_BASE_IMAGE: ubuntu:24.04@sha256:cpu-digest\n"
+            "        WORKER_INFERENCE_BACKEND: cpu\n"
             '        TORCH_VERSION: "2.11.0"\n'
             '        TORCHAUDIO_VERSION: "2.11.0"\n'
         ),
@@ -70,10 +68,7 @@ def test_profile_base_images_must_match_release_build_args(tmp_path, monkeypatch
     for relative, content in profiles.items():
         (tmp_path / relative).write_text(content, encoding="utf-8")
 
-    rocm_base = (
-        "rocm/pytorch:rocm7.14_pytorch_release_2.11.0@"
-        "sha256:rocm-digest"
-    )
+    rocm_base = "rocm/pytorch:rocm7.14_pytorch_release_2.11.0@sha256:rocm-digest"
     release = f"""
           - service: worker-cpu
             build_args: |

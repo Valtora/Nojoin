@@ -343,16 +343,16 @@ def test_gpu_detection_recognizes_vendor_device_markers(
     monkeypatch.setattr(
         telemetry.Path,
         "exists",
-        lambda path: (
-            str(path) == visible_marker and "/dev/dri/" not in visible_marker
-        ),
+        lambda path: str(path) == visible_marker and "/dev/dri/" not in visible_marker,
     )
     monkeypatch.setattr(
         telemetry.Path,
         "glob",
-        lambda path, pattern: [telemetry.Path(visible_marker)]
-        if str(path) == "/dev/dri" and pattern == "renderD*"
-        else [],
+        lambda path, pattern: (
+            [telemetry.Path(visible_marker)]
+            if str(path) == "/dev/dri" and pattern == "renderD*"
+            else []
+        ),
     )
 
     assert telemetry._transcription_shape()["gpu"] is True

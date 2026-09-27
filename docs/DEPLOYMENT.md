@@ -344,19 +344,19 @@ to warm up, and lower it if a lane's tasks are unusually memory-hungry.
 
 The CUDA and ROCm worker images install Triton in their virtual environments so Whisper word-level timestamps can use accelerator kernels. The CPU image omits Triton and uses `whisper/timing.py`'s CPU alignment implementation.
 
-Text embedding (used during AI-generated meeting intelligence) uses the ONNX Runtime CUDA execution provider when available, with an automatic CPU fallback.
+On the NVIDIA/CUDA profile, text embedding (used during AI-generated meeting intelligence) requests ONNX Runtime's CUDA execution provider when an NVIDIA device is attached, with an automatic CPU fallback. The CPU and AMD/ROCm profiles use CPU ONNX Runtime for text embedding.
 
-The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. They load fp32 weights where a GPU is present and int8 weights where one is not. This is deliberate: int8 is a CPU optimisation, and ONNX Runtime has no CUDA kernels for most quantized operations, so an int8 graph is handed back to the CPU node by node even when the CUDA provider loads cleanly. On Canary 1B that difference is 1046 memcpy nodes and roughly real-time transcription against 66 nodes and a GPU-bound run. The fp32 weights need more VRAM (about 5.4 GB for Canary 1B), which is why the choice follows GPU presence rather than being fixed.
+On the NVIDIA/CUDA profile, the Parakeet and Canary ASR engines use ONNX Runtime's CUDA provider. They load fp32 weights when an NVIDIA GPU is present and int8 weights otherwise. This is deliberate: int8 is a CPU optimisation, and ONNX Runtime has no CUDA kernels for most quantized operations, so an int8 graph is handed back to the CPU node by node even when the CUDA provider loads cleanly. On Canary 1B that difference is 1046 memcpy nodes and roughly real-time transcription against 66 nodes and a GPU-bound run. The fp32 weights need more VRAM (about 5.4 GB for Canary 1B), which is why the choice follows NVIDIA GPU presence rather than being fixed. The CPU and AMD/ROCm profiles use the CPU ONNX Runtime path for Parakeet, Canary, and text embeddings; the ROCm image deliberately does not include the CUDA ONNX Runtime wheel.
 
 A small number of memcpy nodes is normal, since some graph operations are inherently CPU-pinned. A count in the hundreds or thousands is not, and means the graph is not really running on the GPU.
 
-The fp32 weights also constrain the transcription window. Attention activations grow with the square of the window length, so the ASR window is capped at 120 seconds on a GPU host against 240 on CPU (`GPU_MAX_CHUNK_DURATION_S`). On an 8 GB card the 240 second window overflows VRAM outright. If live capture and a transcription job contend for the same card, lower that value further.
+For the NVIDIA/CUDA Parakeet and Canary path, fp32 weights also constrain the transcription window. Attention activations grow with the square of the window length, so that ASR path caps chunks at 120 seconds on an NVIDIA host against 240 on CPU (`GPU_MAX_CHUNK_DURATION_S`). On an 8 GB NVIDIA card the 240-second window overflows VRAM outright. If live capture and a transcription job contend for the same card, lower that value further. The CPU and ROCm ONNX paths use CPU execution, not the fp32 CUDA weights.
 
-ONNX Runtime's memory arena grows to fit the largest window and never shrinks, so the ASR models are released after transcription and before diarization rather than at the end of the task. Without that release, a finished ASR session leaves diarization with no VRAM to allocate and it fails with a CUDA out-of-memory error while the transcript itself succeeds.
+CUDA ONNX Runtime's memory arena grows to fit the largest window and never shrinks. The worker also releases ASR model caches after transcription and before diarization on both CUDA and ROCm: PyTorch exposes ROCm devices through the `torch.cuda` API, and retained ASR weights can compete with diarization for accelerator memory. Without that release, finalization can fail with a device out-of-memory error even though transcription succeeded.
 
-#### Diagnosing a silent CPU fallback
+#### Diagnosing a silent CUDA fallback on NVIDIA
 
-ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-inference` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature.
+ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-inference` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature on NVIDIA hosts.
 
 Note that PyTorch and ONNX Runtime resolve their CUDA libraries independently, so they can disagree. `torch.cuda.is_available()` returning `True`, VAD logging `Model loaded successfully on cuda`, and `nvidia-smi` working inside the container all confirm the container's GPU passthrough is intact. None of them say anything about ONNX Runtime.
 
@@ -897,7 +897,17 @@ docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --remove-o
 ```
 
 `--remove-orphans` removes containers for services renamed or removed in the
-updated Compose template, such as the previous worker service names.
+updated Compose template, such as the previous worker service names; it does not
+move or remove messages in Redis.
+
+The worker queue names changed from `gpu` and `cpu` to `inference` and `files`;
+`io` is unchanged. Celery does not migrate queued messages between those names,
+and this release does not start legacy-queue consumers or drain/requeue messages.
+Before running the `down` command above, let the old workers finish outstanding
+work and confirm the legacy queues are empty using your broker/monitoring tools.
+If old messages remain after deployment, the new workers will not consume them;
+they need to be recovered manually. This is a documented migration limitation,
+not an automatic upgrade step.
 
 ### Local Custom Builds
 

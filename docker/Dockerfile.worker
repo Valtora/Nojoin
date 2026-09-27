@@ -15,6 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 COPY requirements/ /app/requirements/
+COPY docker/worker-backends/ /opt/nojoin-worker-backends/
 
 # Keep the generated venv in this stage so ROCm's existing /opt/venv is reused
 # directly by the final stage rather than copied on top of itself. The CPU base
@@ -22,52 +23,25 @@ COPY requirements/ /app/requirements/
 # image's matched torch/torchaudio. Keep the CPU base interpreter installed at
 # runtime because the venv links to it; remove only its build-time venv tooling.
 ENV PATH="/opt/venv/bin:$PATH"
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
     libssl-dev \
     libffi-dev \
     build-essential \
     python3-venv \
-    && if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-         apt-get install -y --no-install-recommends python3 python-is-python3; \
-       fi \
+    && worker_install_builder_os_packages \
     && python3 -m venv --system-site-packages /opt/venv \
-    && if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-         test -n "${TORCH_VERSION}" && test -n "${TORCHAUDIO_VERSION}" && \
-         pip install --no-cache-dir \
-           --extra-index-url https://download.pytorch.org/whl/cpu \
-           "torch==${TORCH_VERSION}+cpu" "torchaudio==${TORCHAUDIO_VERSION}+cpu"; \
-       fi \
+    && worker_install_torch \
     && python -c "import torch; print(f'torch=={torch.__version__}')" > constraints.txt \
     && python -c "import torchaudio; print(f'torchaudio=={torchaudio.__version__}')" >> constraints.txt \
     && pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt \
     && pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt \
-    && if [ "${WORKER_INFERENCE_BACKEND}" = "cuda" ]; then \
-         pip uninstall -y onnxruntime onnxruntime-gpu && \
-         pip install --no-cache-dir onnxruntime-gpu==1.20.2; \
-       elif [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
-         pip uninstall -y onnxruntime-gpu || true; \
-         python -c "import onnxruntime as ort; print('ROCm worker ONNX providers:', ort.get_available_providers())"; \
-       elif [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-         python -c "import onnxruntime as ort; print('CPU worker ONNX providers:', ort.get_available_providers())"; \
-       else \
-         echo "Unsupported WORKER_INFERENCE_BACKEND=${WORKER_INFERENCE_BACKEND}" >&2; exit 1; \
-       fi \
-    && if [ "${WORKER_INFERENCE_BACKEND}" = "cuda" ]; then \
-         pip install --no-cache-dir triton; \
-       elif [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
-         python -c "import triton; print('ROCm Triton:', triton.__version__)"; \
-       elif [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-         echo "CPU worker does not need Triton"; \
-       else \
-         echo "Unsupported WORKER_INFERENCE_BACKEND=${WORKER_INFERENCE_BACKEND}" >&2; exit 1; \
-       fi \
+    && worker_install_backend_packages \
     && apt-get purge --auto-remove -y \
          git libpq-dev libssl-dev libffi-dev build-essential python3-venv \
-    && if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-         apt-get purge --auto-remove -y python-is-python3; \
-       fi \
+    && worker_cleanup_builder_os_packages \
     && /opt/venv/bin/python -c "import sys; print('Worker Python:', sys.version)" \
     && rm -f constraints.txt \
     && rm -rf /var/lib/apt/lists/*
@@ -86,7 +60,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV MALLOC_ARENA_MAX=2
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
-RUN apt-get update && \
+RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+    apt-get update && \
     # Patch the base image's OpenSSL against CVE-2026-45447 (PKCS7_verify UAF);
     # the pinned PyTorch base predates the Ubuntu fix (3.0.13-0ubuntu3.11).
     apt-get install -y --no-install-recommends --only-upgrade openssl libssl3t64 && \
@@ -104,14 +79,8 @@ RUN apt-get update && \
     # -eng only; other language packs are ~4 MB each and unused.
     tesseract-ocr \
     tesseract-ocr-eng \
+    && worker_install_runtime_os_packages \
     && \
-    # MIOpen JIT-compiles HIP kernels at runtime and HIPRTC needs the C++ standard
-    # library headers. The builder's cleanup removes these with build-essential;
-    # retain only the matching Ubuntu 24.04 headers in the ROCm runtime image.
-    if [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
-      apt-get install -y --no-install-recommends libstdc++-13-dev && \
-      test -f /usr/include/c++/13/utility; \
-    fi && \
     # The worker runs Celery and never invokes uv; remove the base image's uv
     # binaries so their bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) is absent
     # from the published runtime image.
@@ -126,33 +95,14 @@ RUN apt-get update && \
 # pins in step with requirements/base.txt: pillow==12.3.0 closes the batch of
 # HIGH pillow CVEs disclosed after v1.5.0 (CVE-2026-54058/54059/54060, 55379/55380,
 # 59197/59199/59200/59204/59205); urllib3==2.7.0 closes CVE-2026-44431/44432.
-RUN if [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-      echo "CPU base has no preinstalled PyTorch system Python packages to patch"; \
-    else \
-      /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-        --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.7.0; \
-    fi
+RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+    worker_patch_system_python
 
-# The CUDA base ships CUDA/cuDNN as nvidia-* wheels, which ONNX Runtime needs
-# discoverable through ldconfig (torch preloads its own copies, ORT does not).
-# ROCm images already provide their runtime libraries and must not run this NVIDIA
-# wheel-discovery step.
-RUN if [ "${WORKER_INFERENCE_BACKEND}" = "cuda" ]; then \
-      /usr/bin/python3 -c \
-        "import nvidia, os, glob; \
-         print('\\n'.join(sorted(d for p in nvidia.__path__ \
-               for d in glob.glob(os.path.join(p, '*', 'lib')))))" \
-        > /etc/ld.so.conf.d/nvidia-cuda-wheels.conf && \
-      ldconfig && \
-      ldconfig -p | grep -q libcudnn_adv.so.9 && \
-      ldconfig -p | grep -q libcublasLt.so.12; \
-    elif [ "${WORKER_INFERENCE_BACKEND}" = "rocm" ]; then \
-      echo "Using ROCm runtime libraries from the base image"; \
-    elif [ "${WORKER_INFERENCE_BACKEND}" = "cpu" ]; then \
-      echo "Using CPU-only PyTorch and ONNX Runtime"; \
-    else \
-      echo "Unsupported WORKER_INFERENCE_BACKEND=${WORKER_INFERENCE_BACKEND}" >&2; exit 1; \
-    fi
+# Backend-specific runtime libraries are configured by the selected profile
+# hook: CUDA discovers its nvidia-* wheel libraries, while ROCm uses the base.
+RUN . "/opt/nojoin-worker-backends/${WORKER_INFERENCE_BACKEND}.sh" && \
+    worker_configure_runtime_libraries && \
+    rm -rf /opt/nojoin-worker-backends
 
 # Exercise the final Python/runtime stack for every backend during image builds.
 # Device discovery itself requires a supported host and is checked at runtime.

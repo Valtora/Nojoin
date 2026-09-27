@@ -358,7 +358,7 @@ npm run build
 
 If you only need supporting services while running code on the host, start the specific services you need. Examples include `db` and `redis`.
 
-If you do not have an NVIDIA GPU, use CPU-only mode as described in [DEPLOYMENT.md](DEPLOYMENT.md) before starting the stack.
+CPU inference is the default. For supported NVIDIA/CUDA or AMD/ROCm hardware, apply the matching accelerator profile described in [DEPLOYMENT.md](DEPLOYMENT.md); otherwise, start the stack with its default CPU profile.
 
 ## Backend Development Notes
 
@@ -716,7 +716,7 @@ The release flow publishes the immutable `version` and commit-`sha` tags during 
 
 ### Validating Images Locally Before Cutting a Tag
 
-The scan gate fails on *fixable* CRITICAL/HIGH findings and always pulls a fresh vulnerability database, so a previously-green pinned base image can start failing as new CVEs are disclosed — a tag push is not guaranteed to publish even with no code change. Validate the three images locally before pushing (or re-pushing) a `vX.Y.Z` tag to avoid burning tag cycles on a blocked release.
+The scan gate fails on *fixable* CRITICAL/HIGH findings and always pulls a fresh vulnerability database, so a previously-green pinned base image can start failing as new CVEs are disclosed — a tag push is not guaranteed to publish even with no code change. Validate all six published images (API, CPU/CUDA/ROCm workers, IO worker, and frontend) locally before pushing (or re-pushing) a `vX.Y.Z` tag to avoid burning tag cycles on a blocked release.
 
 Install Trivy (the maintainer host keeps it at `~/.local/bin/trivy`, installed without sudo):
 
