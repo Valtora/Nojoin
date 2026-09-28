@@ -1,17 +1,17 @@
 -r base.txt
 fastapi==0.141.1
-uvicorn[standard]==0.53.0
+uvicorn[standard]==0.54.0
 mcp==2.2.0
 # Backend specific dependencies
 docker==7.2.0
 celery[redis]==5.6.3
 numpy==2.4.6
-openai>=3.17.0
-anthropic>=1.7.0
-google-genai>=2.24.0
+openai>=3.19.2
+anthropic>=1.8.0
+google-genai>=2.25.0
 reportlab==5.0.1
 python-docx==1.2.0
-Markdown==3.10.3
+Markdown==3.11
 markdown_pdf==1.13.3
 # Imported directly by backend/utils/markdown_docx.py, not only pulled in by
 # markdown_pdf, so it is pinned here rather than left to a transitive resolve.
