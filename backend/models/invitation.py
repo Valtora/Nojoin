@@ -3,7 +3,7 @@ import string
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, DateTime, ForeignKey, Integer
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, Relationship
 
@@ -30,7 +30,7 @@ class Invitation(BaseDBModel, table=True):
             server_default="user",
         ),
     )
-    expires_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     max_uses: Optional[int] = 1  # None = unlimited
     used_count: int = Field(default=0)
     is_revoked: bool = Field(default=False)

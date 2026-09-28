@@ -518,6 +518,7 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 
 ### Data Access & Dependency Injection
 - **Data Access**: `SQLModel` is used for ORM. All model files are located in [backend/models/](../backend/models/).
+- **Datetimes**: The schema stores naive UTC. Produce values with `backend.utils.time.utc_now`, and give every `datetime` field on a table model an explicit naive type, `sa_type=DateTime` or `sa_column=Column(DateTime, ...)`. From sqlmodel 0.0.45 a bare `datetime` annotation maps to the timezone-aware `UTCDateTime` type. That type does not match the migrations, and it raises `ValueError` on the first naive value written. [test_model_datetime_columns.py](../backend/tests/test_model_datetime_columns.py) fails on any such column.
 - **Dependency Injection**: Use `backend.api.deps` for DB sessions (`SessionDep`) and retrieving the current user (`CurrentUser`).
 
 ### System Configuration
