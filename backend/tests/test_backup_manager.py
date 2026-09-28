@@ -96,9 +96,9 @@ class TestUserTask(TestBase, table=True):
 
     title: str
     body: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    due_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    archived_at: Optional[datetime] = None
+    due_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    archived_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     user_id: int = Field(foreign_key="backup_test_users.id")
 
 
@@ -206,12 +206,12 @@ class TestCalendarConnection(TestBase, table=True):
     granted_scopes: list[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False)
     )
-    token_expires_at: Optional[datetime] = None
+    token_expires_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     sync_status: str = "idle"
     sync_error: Optional[str] = None
-    last_sync_started_at: Optional[datetime] = None
-    last_sync_completed_at: Optional[datetime] = None
-    last_synced_at: Optional[datetime] = None
+    last_sync_started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    last_sync_completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    last_synced_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
 
 class TestCalendarSource(TestBase, table=True):
@@ -230,9 +230,9 @@ class TestCalendarSource(TestBase, table=True):
     sync_cursor: Optional[str] = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
-    last_synced_at: Optional[datetime] = None
-    sync_window_start: Optional[datetime] = None
-    sync_window_end: Optional[datetime] = None
+    last_synced_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    sync_window_start: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    sync_window_end: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
 
 class TestCalendarEvent(TestBase, table=True):
@@ -243,8 +243,8 @@ class TestCalendarEvent(TestBase, table=True):
     title: str
     status: str = "confirmed"
     is_all_day: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
-    starts_at: Optional[datetime] = None
-    ends_at: Optional[datetime] = None
+    starts_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    ends_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     start_date: Optional[date] = Field(
         default=None, sa_column=Column(Date, nullable=True)
     )
@@ -256,7 +256,7 @@ class TestCalendarEvent(TestBase, table=True):
     )
     meeting_url: Optional[str] = None
     source_url: Optional[str] = None
-    external_updated_at: Optional[datetime] = None
+    external_updated_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
 
 class TestRecordingSpeaker(TestBase, table=True):

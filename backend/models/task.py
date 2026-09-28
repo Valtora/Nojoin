@@ -18,7 +18,7 @@ class UserTask(BaseDBModel, table=True):
 
     title: str = Field(max_length=255)
     body: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
-    due_at: Optional[datetime] = None
+    due_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     completed_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime, nullable=True, index=True),

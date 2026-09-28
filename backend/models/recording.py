@@ -3,7 +3,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, ForeignKey, String
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String
 from sqlmodel import Field, Relationship, SQLModel
 
 from .base import BaseDBModel
@@ -86,8 +86,8 @@ class Recording(BaseDBModel, table=True):
     upload_progress: int = Field(default=0)
     processing_progress: int = Field(default=0)
     processing_step: Optional[str] = Field(default=None)
-    processing_started_at: Optional[datetime] = None
-    processing_completed_at: Optional[datetime] = None
+    processing_started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    processing_completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     pipeline_generation: Optional[str] = Field(
         default=RecordingPipelineGeneration.UNIFIED.value,
         sa_column=Column(String(32), nullable=True, index=True),
@@ -102,7 +102,7 @@ class Recording(BaseDBModel, table=True):
     )
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
-    last_activity_at: Optional[datetime] = Field(default=None)
+    last_activity_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
     user_id: Optional[int] = Field(
         default=None,

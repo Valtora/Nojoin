@@ -5,7 +5,15 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
@@ -137,8 +145,8 @@ class RecordingAudioChunk(BaseDBModel, table=True):
     idempotency_key: Optional[str] = Field(
         default=None, sa_column=Column(String(255), index=True)
     )
-    received_at: datetime = Field(default_factory=utc_now)
-    cleanup_eligible_at: Optional[datetime] = None
+    received_at: datetime = Field(default_factory=utc_now, sa_type=DateTime)
+    cleanup_eligible_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
 
 class RecordingAudioWindowManifest(BaseDBModel, table=True):
@@ -295,8 +303,8 @@ class ProcessingRun(BaseDBModel, table=True):
     )
     metrics: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
     error_summary: Optional[str] = Field(default=None, sa_column=Column(Text))
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
 
 class RecordingAsrWindowResult(BaseDBModel, table=True):
@@ -369,8 +377,8 @@ class RecordingAsrWindowResult(BaseDBModel, table=True):
     produced_utterance_public_ids: Optional[list[str]] = Field(
         default=None, sa_column=Column(JSONB)
     )
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 
 
 class TranscriptUtterance(BaseDBModel, table=True):

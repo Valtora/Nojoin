@@ -5,12 +5,12 @@ openai-whisper==20250625
 onnx-asr==0.12.0
 # onnxruntime-gpu (CUDA build) is installed in docker/Dockerfile.worker: it must
 # replace the CPU-only onnxruntime that fastembed pulls in, not coexist with it.
-silero-vad==6.2.1
+silero-vad==6.2.3
 numpy==2.4.6
-pandas==3.0.5
-openai>=3.13.0
-anthropic>=1.5.0
-google-genai>=2.23.0
+pandas==3.0.6
+openai>=3.17.0
+anthropic>=1.7.0
+google-genai>=2.24.0
 watchdog==6.0.0
 
 # Document parsing. PyMuPDF covers PDF text, table detection and page
@@ -30,7 +30,7 @@ pytesseract==0.3.13
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks==0.4.0
 einops==0.8.2
-huggingface_hub==1.31.0
+huggingface_hub==1.32.0
 # lightning 2.6.6 closes CVE-2026-58659 (GHSA-qqmf-gpg7-g8gw): a checkpoint could
 # name any import path as its `_instantiator` and have it called on load, even
 # under weights_only=True. pyannote.audio loads its checkpoints through
