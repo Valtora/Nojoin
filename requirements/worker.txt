@@ -30,7 +30,7 @@ pytesseract==0.3.13
 # pyannote.audio dependencies (installed manually to avoid torch downgrade)
 asteroid-filterbanks==0.4.0
 einops==0.8.2
-huggingface_hub==1.32.0
+huggingface_hub==1.33.0
 # lightning 2.6.6 closes CVE-2026-58659 (GHSA-qqmf-gpg7-g8gw): a checkpoint could
 # name any import path as its `_instantiator` and have it called on load, even
 # under weights_only=True. pyannote.audio loads its checkpoints through
