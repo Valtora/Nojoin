@@ -140,10 +140,13 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
 - **The agent band sits directly under the hero**, on the page surface with the hero's
   wash. It carries three devices rather than prose. A flow card walks one real post-meeting
   job and tags each step with the actor who performs it, chevrons between the steps so it
-  reads downward as a sequence rather than as a table. A six-card showcase groups the thirty
-  tools by what they touch, each led by a glyph and carrying its count. The cards used to
-  name every tool in the group; that is an inventory, not an argument, and the six counts add
-  to thirty on their own. A wider card carries the CRM bridge on its
+  reads downward as a sequence rather than as a table. A six-card showcase groups the
+  thirty-two tools by what they touch, each led by a glyph and carrying its count. The cards
+  used to name every tool in the group; that is an inventory, not an argument, and the six
+  counts add to thirty-two on their own. The counts and the prose beside them are copied by
+  hand from `docs/MCP.md`, and they sat at thirty for three releases after the two analytics
+  tools took the real figure to thirty-two. Re-count against that file whenever a tool is
+  added. A wider card carries the CRM bridge on its
   own, because an assistant reconciling your People library with anything it can already
   reach is the claim with no equivalent in the comparison, and it was a clause in a
   paragraph. The actor pills say "Agent", never a vendor name: more than one assistant is
@@ -162,18 +165,17 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   registration — but that is a fact about the client, not about Nojoin, and no release here
   can change it. `docs/MCP.md` now explains the mechanism where a reader meets the screen,
   including the part that matters for safety: the name is a claim, the redirect host is not.
-- **The headline concedes the commodity and claims the hard part**: "Transcription is
-  easy. Agentic meeting intelligence isn't." This reverses the earlier no-bot headline
-  deliberately, and then reverses its first agent-led replacement too. Not joining the call
-  is a strong feature that three competitors match some version of, and transcription is a
-  solved problem that nobody wins on. What is not solved is being the bridge between
-  whatever agent someone already uses and the rest of their stack, which is what Nojoin was
-  built to be and what none of the three documents. The headline says so by conceding the
-  easy half out loud, which is more convincing than claiming the hard half on its own.
-  "Agentic" is jargon and stays anyway: on the landing page it flatters a reader who knows
-  the word, and the subhead immediately spells it out in plain terms for one who does not.
-  The `/managed/` page, whose reader is far less likely to be technical, avoids it entirely.
-  No-bot did not disappear; it opens the subhead.
+- **The headline says what Nojoin is**: "Open-Source Meeting Notes on a Server You Own".
+  It replaced "Transcription is easy. Agentic meeting intelligence isn't.", which told a
+  visitor what is hard and left them to work out what the product was. Open source and
+  self-hosted are the two facts a visitor needs first, and the two that no product on the
+  comparison page matches, so they take the headline. The lede then explains the rest in
+  order: how capture works, why that keeps a bot out of the call, the licence, and the
+  assistant connection that the agent band below argues in full. "Agentic" is gone from the
+  site. The earlier headline's reasoning about assistants still holds and the agent band
+  still sits directly under the hero; what changed is that the page now names the product
+  before it argues for it. The headline breaks before "on" above 48rem, and the Open Graph
+  card breaks in the same place.
 - **The agents section carries no screenshot, and this has now been tried both ways.** The
   original reason still stands: the capability happens in Claude's or ChatGPT's window, not
   Nojoin's, and the frame chrome reads `nojoin.your-server.net`, so a framed capture of
@@ -183,7 +185,7 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   same thing as the transcripts row two sections below it and sat under the bridge card with
   no copy beside it. Honest is not the same as earning its place. The three devices carry the
   band instead: the flow card, the tool showcase and the bridge card, each with a claim no
-  capture makes — the actors in a real post-meeting job, thirty tools, the CRM
+  capture makes: the actors in a real post-meeting job, thirty-two tools, the CRM
   reconciliation. **The rest of the surface still has none.** A task list an assistant filed
   is indistinguishable from a typed one, so the band does not claim it in an image.
 - **Screenshots are cropped to the thing the row is about, and sized for half a wrap.** Every
@@ -255,11 +257,34 @@ The rules:
   conventional one, not every-word-capitalised: principal words take a capital and short
   function words do not unless they open or close the line — "Every Word, Attributed to the
   Right Person", "£24.99 a Person, a Month", "Four Steps to Running". Body copy, leads,
-  buttons, table cells and alt text stay sentence case. **The hero headline is exempt**: it is
-  set as two sentences and it is baked into the Open Graph card, so changing its case means
-  regenerating that card as well. "It's", "can't", "won't", "you've". The refusal to contract is
-  the single strongest tell that a machine wrote it.
-- **Vary sentence length deliberately.** A three-word sentence next to a thirty-word one.
+  buttons, table cells and alt text stay sentence case. The hero headline follows the same
+  rule now that it is a label and no longer two sentences. It is baked into the Open Graph
+  card, so changing it means regenerating that card as well.
+- **Contract.** "It's", "can't", "won't", "you've". The refusal to contract is one of the
+  strongest tells that a machine wrote it.
+- **Connect the claims.** A sentence carries the reader from one fact to the next with "so",
+  "because" or "when": "transcribes them on your own hardware, so no bot joins the call".
+  Two unrelated facts joined by ", and" for balance read as a slogan, and a run of short
+  declaratives reads as a list being recited. "It was built to be that bridge, and nothing
+  about it is metered" did both, and it is the sentence this rule was written against. This
+  replaces an earlier instruction to put a three-word sentence next to a thirty-word one,
+  which produced a punchline every time it was followed. Sentence length still varies, as a
+  result of what each sentence has to say.
+- **Ration the negatives.** "No bot joins the call" is the product's name and the one
+  negative the site leads with. Other claims are written as what Nojoin does: "how much you
+  record is up to your hardware" in place of "nothing is metered", "each person approves it
+  once from their own account" in place of "no API key, nothing to paste". The landing page
+  once carried 14 negations in about 400 words, and a page that describes itself by what it
+  lacks has a drumbeat that rewording single lines does not remove. The comparison page's
+  opening line keeps its three, because the contrast with funded competitors is that page's
+  argument. Limits on `/managed/` are stated as limits, since a limit is a negative fact.
+- **No punchline closers.** A paragraph ends when its last fact is stated. Cards and
+  paragraphs used to close on an aphorism, such as "A backup nobody has restored is a
+  hypothesis" and "you're buying my time, not access". Once every block did it, the device
+  read as a formula. Say what is done and how it helps the reader. This replaces the earlier
+  "parallel closers" rule.
+- **No em dashes or en dashes in copy.** A comma, a colon or a full stop. Page titles
+  separate with a pipe.
 - **Numbers instead of adjectives**, wherever a true number exists. One compose file, one
   anonymous ping, one setting, four steps, one click. A technical reader takes numbers as
   evidence and adjectives as sales.
@@ -269,38 +294,35 @@ The rules:
 - **Concede facts, not ground.** Where a competitor does something well, say so plainly;
   where a concession has a counterpoint, make it. Candour about checkable limits is what
   buys the credibility of everything else.
-- **Sell, and let the facts do it.** This is a marketing site, not a paper. The register is
-  confident and a little pleased with itself, and it earns that by stacking true things and
-  stating them flatly rather than by reaching for adjectives: no funding, no employees, no
-  bot, no caps, thirty tools, one compose file. A sentence like "Nojoin has taken no
-  funding, employs nobody, and sells nothing you can't download" is doing more work than any
-  superlative would, and it survives being checked, which no superlative does. The banned
-  list below still holds — those words are banned because they carry no information, and
-  swagger without information is just noise. Competitor claims still need a source and a
-  date. Everything else is fair game.
+- **Sell, and let the facts do it.** This is a marketing site and the register is confident.
+  It earns that with true, checkable statements: thirty-two tools, one compose file, four
+  steps, £24.99 a person. A number survives being checked and a superlative does not. The
+  banned list below still holds, because those words carry no information. Competitor claims
+  still need a source and a date.
 - **Plain labels beat clever ones.** A label may be evocative only if its meaning is still
   obvious in half a second.
-- **Parallel closers.** Paired elements end on matched short sentences.
 - **Whole jobs, not first drafts.** Every feature example ends with something genuinely
   delivered: the transcript attributed, the notes written, the task filed.
 - **Say each idea once, on the page where it lands hardest.** The landing page had drifted
   into a sequence of self-contained pitches: no-bot appeared three times, "your own server"
   three times, CRM six times, and one thirteen-word clause about plain primitives ran
   verbatim in two places a screen apart. Repetition does not reinforce a claim, it tells a
-  reader the page has nothing further to say. The page argues **one** thing — an agentic
-  meeting intelligence platform on hardware you own — and every section below the hero is
-  evidence for it rather than a fresh advert. When a claim appears twice, delete the weaker
+  reader the page has nothing further to say. The page argues **one** thing, open-source
+  meeting notes on hardware you own that an assistant can edit, and every section below the
+  hero is evidence for it rather than a fresh advert. When a claim appears twice, delete the weaker
   instance rather than rewording it.
 - **Do not inventory the product.** The tool showcase used to name all thirty MCP tools; the
   goal is not to have every feature listed, it is to pitch one platform. A count carries the
   same claim without the reader having to audit a list.
-- **A word budget, and it is a ceiling rather than a range.** No more than about 400 words of
-  prose in the skim layer (headlines, ledes, labels) across the site; devices, screenshots and
-  the table carry the rest. This replaces a 400–600 range, which had a floor for no good
-  reason. Two deliberate passes — cutting the privacy section and the repeat-CTA closer, then
-  distilling the copy so each idea appears once — took the real figure to about 300, and a
-  floor would have argued for padding it back up. Fewer words are not a defect. Repetition
-  is.
+- **A word budget, and it is a ceiling rather than a range.** No more than about 1,000 words
+  across the three pages, counting every heading, paragraph, list item and definition inside
+  `<main>` and leaving out the comparison tables and the code block. Devices, screenshots
+  and the tables carry the rest. The figure was 876 before the copy was rewritten into
+  connected sentences and 984 after it, because a sentence that gives its reason is longer
+  than a slogan. That 12% was accepted as the price of the change in cadence. The ceiling
+  replaces one of about 400 words for "the skim layer", which nobody could reproduce because
+  the layer was never defined. There is still no floor. Repetition is the defect, and a
+  shorter page is fine.
 
 **Banned everywhere**: seamless, powerful, robust, enterprise-grade, best-in-class,
 cutting-edge, unlock, empower, leverage, revolutionise, game-changing, AI-powered,
@@ -343,7 +365,7 @@ Two things came out of that audit, and the second reverses a decision this docum
   choice all read Nojoin yes against three crosses. That is one argument — how much of the
   stack is yours to change — counted five times, which inflated the win count without adding
   an idea and broke the site's own rule that each idea appears once. They are now two rows:
-  "Runs on your hardware, and stays there" and "Open source, and your choice of model".
+  "Runs and stores everything on your hardware" and "Open source, with your choice of model".
   Merging the first three also resolved Otter's "not stated in docs" self-hosting cell, since
   where its processing and storage run *is* documented. The detailed table keeps all five rows;
   it is the place for detail, and nothing was deleted from it.
@@ -427,10 +449,12 @@ Nojoin rather than by name — the full legal name stays off the site and out of
 repository by decision. The commercial shape below was settled deliberately and the
 reasoning matters more than the numbers, because the numbers will move.
 
-The tagline is "All the control, none of the admin". It replaced "Self-hosted, without
-hosting it yourself", which assumed the reader already knew what self-hosting was — on the
-one page most likely to be read by someone who does not. The replacement names the trade
-rather than the technology.
+The tagline is "Nojoin on Your Hardware, Run by Its Developer". It states the two facts the
+page sells: whose machine it is and who looks after it. It replaced "All the Control, None of
+the Admin", a balanced pair that named the trade and neither party to it, and that went when
+the site stopped closing on matched halves. The tagline before that, "Self-hosted, without
+hosting it yourself", assumed the reader already knew what self-hosting was, on the one page
+most likely to be read by someone who does not. The current one still avoids that.
 
 - **The customer owns the hardware and pays for it directly.** The fee is labour and nothing
   else. That removes idle spend, cost overruns and supplier risk from the offering in one
@@ -530,12 +554,13 @@ them up when the review is done rather than leaving a fleet running.
 prop and were split deliberately. A browser tab wants the shortest thing that identifies the
 site, so the landing page's tab reads `Nojoin` and nothing else. A Slack or LinkedIn card is
 read cold by someone who has never heard of Nojoin and wants the descriptive line, so its
-`og:title` stays "Nojoin — agentic meeting intelligence on your own server". Collapsing them
-back into one prop degrades every share link to the bare word, invisibly from the site
-itself — the same failure mode as the card that advertised a superseded tagline for two
-rewrites.
+`og:title` stays "Nojoin: open-source meeting notes on a server you own". Collapsing them
+back into one prop degrades every share link to the bare word, and nothing on the site
+itself shows that it has happened. The card that advertised a superseded tagline for two
+rewrites failed the same way.
 
-Sub-pages take `Subject — Nojoin`: `Compare — Nojoin`, `Managed — Nojoin`. That keeps three
+Sub-pages take `Subject | Nojoin`: `Compare | Nojoin`, `Managed | Nojoin`. The separator was
+an em dash until the copy stopped using them. That keeps three
 open tabs distinguishable, which flattening every page to `Nojoin` would not, and each keeps
 its own longer `ogTitle`. Only set `ogTitle` on a page where the two genuinely want different
 words; today that is the landing page and `/managed/`.
@@ -548,7 +573,9 @@ every share advertised a tagline the site had stopped using — invisible from t
 itself, because nothing on the page renders it.
 
 `site/scripts/build-og-card.mjs` regenerates it. **Run it whenever the headline changes, and
-update `og:image:alt` in `Base.astro` to match.** Playwright is deliberately not a dependency
+update `og:image:alt` in `Base.astro` to match.** The script takes the headline as one array
+entry per line, so the card breaks where the page does. Left to wrap inside a narrow measure,
+the last word of the current headline sat alone on a third line. Playwright is deliberately not a dependency
 of this repository, the same call the screenshot pipeline made for a job that runs about once
 a year, so the script takes a Chromium path from `PLAYWRIGHT_CHROMIUM` and expects
 `playwright-core` to be resolvable from outside the repo.
