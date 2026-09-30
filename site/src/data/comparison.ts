@@ -239,7 +239,7 @@ export const rows: Row[] = [
     label: "What an assistant can do with your meetings",
     cells: {
       nojoin: {
-        text: "Thirty tools on your deployment: correct a line, name a speaker, re-run the notes, file the tasks. Every change is labelled and reversible."
+        text: "Thirty-two tools on your deployment: correct a line, name a speaker, re-run the notes, file the tasks. Every change is labelled and reversible."
       },
       jamie: {
         text: "Thirteen tools for Claude, ChatGPT, Cursor and Copilot. Nine read meetings, transcripts, tasks and people; four create and apply tags."
@@ -262,7 +262,7 @@ export const rows: Row[] = [
     label: "Limits on how much you process",
     cells: {
       nojoin: {
-        text: "None. No allowance, no per-meeting ceiling, no history that expires. What you get through is a hardware question."
+        text: "Nojoin has no plans or usage meter, so monthly volume, meeting length and history are limited only by your hardware."
       },
       jamie: {
         text: "One credit a meeting. 10 a month and 30-minute meetings free; 20 and two hours next. Higher plans drop the count, keep a three-hour cap."
@@ -346,7 +346,7 @@ export const summaryRows: SummaryRow[] = [
     // "not stated in docs" self-hosting cell: where its processing and storage
     // run is documented, so the merged row can say so.
     key: "ownership",
-    label: "Runs on your hardware, and stays there",
+    label: "Runs and stores everything on your hardware",
     cells: {
       nojoin: yes("One compose file"),
       jamie: no("Jamie's EU cloud"),
@@ -358,7 +358,7 @@ export const summaryRows: SummaryRow[] = [
     // Collapsed from two rows. The licence and the model are one question to a
     // buyer: how much of this stack is yours to change.
     key: "open",
-    label: "Open source, and your choice of model",
+    label: "Open source, with your choice of model",
     cells: {
       nojoin: yes("AGPLv3, your keys or Ollama"),
       jamie: no("Proprietary, vendor-chosen"),
@@ -373,7 +373,7 @@ export const summaryRows: SummaryRow[] = [
     key: "nobot",
     label: "No bot joins the call",
     cells: {
-      nojoin: yes("Any browser, never a participant"),
+      nojoin: yes("Captured in your browser"),
       jamie: yes("Captures locally"),
       otter: partial("Bot by default"),
       granola: yes("Captures locally"),
@@ -417,9 +417,9 @@ export const summaryRows: SummaryRow[] = [
     // record. Otter writes too, but outward into other products, so on this
     // axis -- what happens to the meeting itself -- it is a no.
     key: "agents",
-    label: "An assistant can change the record",
+    label: "An assistant can edit your meetings",
     cells: {
-      nojoin: yes("Thirty tools, your server"),
+      nojoin: yes("Thirty-two tools on your server"),
       jamie: partial("Creates and applies tags"),
       otter: no("Reads Otter, writes elsewhere"),
       granola: no("Reads notes and transcripts"),
@@ -446,7 +446,7 @@ export const summaryRows: SummaryRow[] = [
     key: "caps",
     label: "Nothing runs out",
     cells: {
-      nojoin: yes("No plans, no meters"),
+      nojoin: yes("Limited only by hardware"),
       jamie: partial("Credits, and a length cap"),
       otter: partial("Capped below Business"),
       granola: partial("History capped on free"),

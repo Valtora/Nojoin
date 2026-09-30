@@ -36,8 +36,11 @@ const FOREGROUND = "#ededed";
 const CONTRAST_HELPER = "#d1d5db";
 const ACTION_TEXT = "#fb923c";
 
-const HEADLINE = "Transcription is easy. Agentic meeting intelligence isn't.";
-const SUBTITLE = "No bot in the call. Nothing off your server. Nothing capped.";
+// One line per array entry, matching the break the hero makes on the page.
+// Left to wrap inside a narrow measure, the last word ended up alone on a
+// third line.
+const HEADLINE = ["Open-Source Meeting Notes", "on a Server You Own"];
+const SUBTITLE = "Records Meet, Teams and Zoom from your browser, with no bot in the call.";
 
 const geist = readFileSync(resolve(site, "public/fonts/geist-latin.woff2")).toString("base64");
 
@@ -74,12 +77,12 @@ body {
 h1 {
   color: ${FOREGROUND};
   font-size: 68px; font-weight: 600; line-height: 1.08; letter-spacing: -0.025em;
-  max-width: 15ch;
+  white-space: nowrap;
 }
 p { color: ${CONTRAST_HELPER}; font-size: 27px; margin-top: 34px; line-height: 1.45; }
 </style></head><body>
   <div class="brand">${MARK}<span>Nojoin</span></div>
-  <h1>${HEADLINE}</h1>
+  <h1>${HEADLINE.join("<br>")}</h1>
   <p>${SUBTITLE}</p>
 </body></html>`;
 
@@ -92,5 +95,5 @@ writeFileSync(out, png);
 await browser.close();
 
 console.log(`wrote ${out} (${png.length} bytes)`);
-console.log(`headline: ${HEADLINE}`);
+console.log(`headline: ${HEADLINE.join(" ")}`);
 console.log("Remember: og:image:alt in site/src/layouts/Base.astro must match.");
