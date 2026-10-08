@@ -193,9 +193,18 @@ def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
 @pytest.mark.parametrize("mono", [False, True])
 def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mono):
     """A real child that never finishes: killed at the timeout, reaped, cleaned up."""
-    pid_file = tmp_path / "ffmpeg.pid"
-    _fake_ffmpeg(tmp_path, monkeypatch, f'echo $$ > "{pid_file}"\nexec sleep 30')
+    _fake_ffmpeg(tmp_path, monkeypatch, "exec sleep 30")
     monkeypatch.setattr(audio_preprocessing, "ANALYSIS_DECODE_TIMEOUT_S", 0.5)
+    # Recorded when the child is spawned, so the check below does not depend on
+    # the child getting to run anything before the timeout fires.
+    pids: list[int] = []
+
+    class RecordingPopen(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            pids.append(self.pid)
+
+    monkeypatch.setattr(subprocess, "Popen", RecordingPopen)
     container = tmp_path / "capture.webm"
     container.write_bytes(UNREADABLE)
 
@@ -206,8 +215,9 @@ def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mo
 
     assert time.monotonic() - started < 10
     # The child is gone, not merely abandoned: killed and reaped.
+    (pid,) = pids
     with pytest.raises(ProcessLookupError):
-        os.kill(int(pid_file.read_text()), 0)
+        os.kill(pid, 0)
     assert _analysis_temp_files(scratch) == []
 
 
