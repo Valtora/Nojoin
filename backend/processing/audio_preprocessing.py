@@ -148,8 +148,10 @@ _ANALYSIS_WAV_SUFFIX = "_analysis.wav"
 # time (seconds per hour of audio), so this only ever ends a hung process.
 ANALYSIS_DECODE_TIMEOUT_S = 15 * 60
 
-# An analysis WAV older than this has no measurement left reading it: the decode
-# is bounded above, and the measurement that reads it takes minutes.
+# An analysis WAV older than this was stranded by a dead worker. A file still
+# being written has a fresh mtime (ffmpeg writes it to the end, and the decode is
+# bounded above), and every reader opens it, or loads it, as soon as the decode
+# returns; an open file stays readable after it is unlinked.
 _STRANDED_ANALYSIS_WAV_AGE_HOURS = 6
 
 
