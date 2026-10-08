@@ -80,4 +80,22 @@ describe("useRecordingStatusNotifications transcription failures", () => {
 
     expect(errorToasts()).toEqual([]);
   });
+
+  it("does not present a transcription failure as the notes error", () => {
+    const failed = {
+      transcript_status: "error",
+      error_message: OOM_MESSAGE,
+    } as const;
+    const { rerender } = watch(
+      recording(RecordingStatus.ERROR, { ...failed, notes_status: "generating" }),
+    );
+
+    rerender({
+      recordings: [
+        recording(RecordingStatus.ERROR, { ...failed, notes_status: "error" }),
+      ],
+    });
+
+    expect(errorToasts()).toEqual(['Meeting notes failed for "Weekly sync"']);
+  });
 });
