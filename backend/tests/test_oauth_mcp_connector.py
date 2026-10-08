@@ -4,6 +4,7 @@ bearer-token middleware guarding the /mcp mount."""
 from __future__ import annotations
 
 import hashlib
+import logging
 from base64 import urlsafe_b64encode
 
 import pytest
@@ -476,6 +477,94 @@ async def test_refresh_rotation_and_reuse_revocation(
         },
     )
     assert family_member.status_code == 400
+
+
+def assert_server_error_without_paths(response, data_dir) -> None:
+    assert response.status_code == 500
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["error"] == "server_error"
+    assert body["error_description"]
+    assert str(data_dir) not in response.text
+
+
+@pytest.mark.anyio
+async def test_code_exchange_during_a_keyring_outage_keeps_the_code(
+    client: AsyncClient,
+    fixed_origin,
+    isolated_keyring,
+    anonymous_rate_limit_fallback,
+):
+    client_id = await register_claude_client(client)
+    verifier, challenge = make_pkce_pair()
+    code = await obtain_code(client, client_id, challenge)
+    exchange = {
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "code": code,
+        "redirect_uri": CLAUDE_CALLBACK,
+        "code_verifier": verifier,
+    }
+    keyring_file = isolated_keyring / ".secret_keys.json"
+    # A write cut short leaves the keyring blank.
+    keyring_file.write_text("", encoding="utf-8")
+
+    during = await client.post("/api/v1/oauth/token", data=exchange)
+    assert_server_error_without_paths(during, isolated_keyring)
+
+    # The operator deletes the blank file, so a new key is generated, and
+    # the client's retry with the same code goes through.
+    keyring_file.unlink()
+    after = await client.post("/api/v1/oauth/token", data=exchange)
+    assert after.status_code == 200, after.text
+    assert after.json()["refresh_token"]
+
+
+@pytest.mark.anyio
+async def test_refresh_during_a_keyring_outage_keeps_the_refresh_token(
+    client: AsyncClient,
+    fixed_origin,
+    isolated_keyring,
+    caplog,
+    anonymous_rate_limit_fallback,
+):
+    client_id = await register_claude_client(client)
+    verifier, challenge = make_pkce_pair()
+    code = await obtain_code(client, client_id, challenge)
+    first = (
+        await client.post(
+            "/api/v1/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": client_id,
+                "code": code,
+                "redirect_uri": CLAUDE_CALLBACK,
+                "code_verifier": verifier,
+            },
+        )
+    ).json()
+    refresh = {
+        "grant_type": "refresh_token",
+        "client_id": client_id,
+        "refresh_token": first["refresh_token"],
+    }
+    keyring_file = isolated_keyring / ".secret_keys.json"
+    saved = keyring_file.read_text(encoding="utf-8")
+    keyring_file.write_text("", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        during = await client.post("/api/v1/oauth/token", data=refresh)
+        assert_server_error_without_paths(during, isolated_keyring)
+        assert any(str(keyring_file) in r.getMessage() for r in caplog.records)
+
+        # The same key is restored, and the client retries the same token.
+        keyring_file.write_text(saved, encoding="utf-8")
+        after = await client.post("/api/v1/oauth/token", data=refresh)
+
+    assert after.status_code == 200, after.text
+    assert after.json()["refresh_token"] != first["refresh_token"]
+    assert not any("reuse detected" in r.getMessage() for r in caplog.records)
+    assert len((await client.get("/api/v1/oauth/grants")).json()) == 1
 
 
 @pytest.mark.anyio
