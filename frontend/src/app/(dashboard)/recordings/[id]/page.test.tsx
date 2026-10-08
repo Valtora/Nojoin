@@ -17,13 +17,13 @@ const routerPush = vi.fn();
 const routerRefresh = vi.fn();
 const addNotification = vi.fn();
 const setActivePanel = vi.fn();
+const exportAudio = vi.fn();
 
 const getRecording = vi.fn();
 const getSettings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
-const exportAudio = vi.fn();
 
 let activePanel = "transcript";
 
@@ -188,12 +188,12 @@ describe("RecordingPage (detail)", () => {
     routerRefresh.mockReset();
     addNotification.mockReset();
     setActivePanel.mockReset();
+    exportAudio.mockReset();
     getRecording.mockReset();
     getSettings.mockReset();
     getGlobalSpeakers.mockReset();
     getTranscriptUtterances.mockReset();
     renameRecording.mockReset();
-    exportAudio.mockReset();
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
