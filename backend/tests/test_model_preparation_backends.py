@@ -312,6 +312,74 @@ def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
     assert kwargs == _config_dispatch(monkeypatch)
     assert prepared == ["whisper:turbo", "pyannote"]
     assert "config.json decides" in caplog.text
+    assert "no such table: users" in caplog.text
+    # The health check polls every 30 seconds; it logs the error, not the SQL.
+    assert "SELECT" not in caplog.text
+
+
+def test_a_failed_users_read_keeps_the_callers_pending_work(monkeypatch):
+    """The health check shares the request's session with the rest of the request."""
+    _use_config(monkeypatch, {})
+
+    async def run() -> int:
+        async with _users_db([], with_users_table=False) as maker:
+            async with maker() as session:
+                await session.execute(text("CREATE TABLE marker (id INTEGER)"))
+                await session.commit()
+            async with maker() as session:
+                await session.execute(text("INSERT INTO marker (id) VALUES (1)"))
+                await model_preparation.resolve_install_transcription_selection(session)
+                await session.commit()
+            async with maker() as session:
+                count = await session.execute(text("SELECT count(*) FROM marker"))
+                return int(count.scalar_one())
+
+    assert asyncio.run(run()) == 1
+
+
+def test_a_failed_users_read_leaves_a_postgres_transaction_usable(
+    postgres_test_url, monkeypatch
+):
+    """Postgres aborts the whole transaction on an error; SQLite does not.
+
+    Only a savepoint around the read lets the caller go on using its session
+    after the fallback without losing what it had already written.
+    """
+    _use_config(monkeypatch, {})
+    importlib.import_module("backend.models.registry")
+    schema = "model_preparation_fallback_test"
+
+    async def run() -> int:
+        engine = create_async_engine(
+            postgres_test_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        )
+        try:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+                )
+                await connection.execute(text(f"CREATE SCHEMA {schema}"))
+                await connection.execute(text(f"CREATE TABLE {schema}.marker (id int)"))
+            async with AsyncSession(engine) as session:
+                # The schema holds no users table, so the read fails.
+                await session.execute(text(f"SET search_path TO {schema}"))
+                await session.execute(text("INSERT INTO marker (id) VALUES (1)"))
+                await model_preparation.resolve_install_transcription_selection(session)
+                await session.execute(text("INSERT INTO marker (id) VALUES (2)"))
+                await session.commit()
+            async with engine.connect() as connection:
+                count = await connection.execute(
+                    text(f"SELECT count(*) FROM {schema}.marker")
+                )
+                return int(count.scalar_one())
+        finally:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+                )
+            await engine.dispose()
+
+    assert asyncio.run(run()) == 2
 
 
 @pytest.mark.parametrize(

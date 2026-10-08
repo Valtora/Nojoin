@@ -166,15 +166,21 @@ async def resolve_install_transcription_selection(
     check reports the engine that was actually prepared. When the users cannot
     be read (a database error), the install config decides, as it did before
     startup read the users.
+
+    The read runs in a savepoint, so a failure rolls back only the read: the
+    health check passes the request's session, whose work must survive it.
     """
     try:
-        user_settings = await _read_active_user_settings(session)
+        async with session.begin_nested():
+            user_settings = await _read_active_user_settings(session)
     except (SQLAlchemyError, OSError) as exc:
-        await session.rollback()
+        # The first line names the error; SQLAlchemy appends the statement and
+        # its parameters below it, which a health poll should not repeat.
         logger.warning(
-            "Could not read the users' transcription settings, so config.json "
-            "decides the transcription models: %s",
-            exc,
+            "Could not read the users' transcription settings (%s: %s), so "
+            "config.json decides the transcription models",
+            type(exc).__name__,
+            str(exc).partition("\n")[0],
         )
         user_settings = []
     return resolve_startup_model_selection(user_settings)
