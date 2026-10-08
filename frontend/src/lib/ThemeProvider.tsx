@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 import {
+  APPEARANCE_STORAGE_KEYS,
   applyCornerStyle,
   applyPalette,
   readStoredCornerStyle,
@@ -91,6 +92,36 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [mounted, theme]);
+
+  // Another tab changed an appearance setting. The storage event fires only in
+  // the other tabs of this origin, so re-reading (and re-validating) storage
+  // here keeps every open tab on the same look. A null key means storage was
+  // cleared, which returns everything to its default.
+  useEffect(() => {
+    const keys = APPEARANCE_STORAGE_KEYS;
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === keys.theme) {
+        const nextTheme = readStoredTheme();
+        const resolved = resolveTheme(nextTheme);
+        setThemeState(nextTheme);
+        setResolvedTheme(resolved);
+        applyTheme(resolved);
+      }
+      if (event.key === null || event.key === keys.palette) {
+        const nextPalette = readStoredPalette();
+        setPaletteState(nextPalette);
+        applyPalette(nextPalette);
+      }
+      if (event.key === null || event.key === keys.corners) {
+        const nextCorners = readStoredCornerStyle();
+        setCornerStyleState(nextCorners);
+        applyCornerStyle(nextCorners);
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);

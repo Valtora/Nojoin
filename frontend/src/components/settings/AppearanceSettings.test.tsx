@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
+import { act, fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 
 import AppearanceSettings from "./AppearanceSettings";
 
@@ -155,5 +155,48 @@ describe("AppearanceSettings", () => {
 
     expect(root.dataset.uiDensity).toBe("dense");
     expect(localStorage.getItem("nojoin-density")).toBe("dense");
+  });
+});
+
+describe("AppearanceSettings across tabs", () => {
+  // Another tab writes storage; this tab only hears the storage event.
+  function changeInAnotherTab(key: string, value: string | null) {
+    if (value === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, value);
+    }
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key }));
+    });
+  }
+
+  it("follows theme, palette, corner style and density changed in another tab", () => {
+    renderSettings();
+
+    changeInAnotherTab("nojoin-theme", "dark");
+    changeInAnotherTab("nojoin-palette", "classic");
+    changeInAnotherTab("nojoin-corners", "square");
+    changeInAnotherTab("nojoin-density", "dense");
+
+    expect(root.classList.contains("dark")).toBe(true);
+    expect(root.dataset.palette).toBe("classic");
+    expect(root.dataset.corners).toBe("square");
+    expect(root.dataset.uiDensity).toBe("dense");
+    expect(screen.getByRole("combobox", { name: "Theme" })).toHaveValue("dark");
+    expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("classic");
+    expect(screen.getByRole("combobox", { name: "Corner style" })).toHaveValue("square");
+    expect(screen.getByRole("combobox", { name: "Density" })).toHaveValue("dense");
+  });
+
+  it("returns to the defaults when another tab clears a setting", () => {
+    renderSettings();
+    changeInAnotherTab("nojoin-palette", "graphite");
+    expect(root.dataset.palette).toBe("graphite");
+
+    changeInAnotherTab("nojoin-palette", null);
+
+    expect(root.hasAttribute("data-palette")).toBe(false);
+    expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("default");
   });
 });
