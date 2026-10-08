@@ -189,19 +189,29 @@ design, with a 24-hour lifetime, so take the backup again if you needed it.
 
 The worker container starts Celery without preloading inference models. Nojoin
 keeps GPU memory idle at startup, then queues worker-side model preparation for
-Pyannote diarisation and voice embeddings, plus the transcription engines the
-install's users have chosen. The engine is a per-user setting (**Settings > AI
-providers**), falling back to `transcription_backend` in `config.json` for a user
-who never chose one. Startup prepares the owner's engine (Parakeet or Canary
-model, or Whisper), and Whisper only while at least one active user transcribes
-with it, at that user's model size. Before the first account exists, the config
-decides. The worker validates those assets on CPU where possible, caches them on
-disk, and releases model objects and CUDA memory before returning to idle.
+Pyannote diarisation and voice embeddings, plus the transcription engine the
+install's users actually run. Administrators pick the engine and model under
+**Settings > Transcription**. Nojoin stores that choice on the choosing
+administrator's own settings, not in `config.json`, and every other user runs
+the engine and model named in `config.json` (`transcription_backend`, Whisper
+`turbo` by default). Startup therefore prepares the owner's engine and model
+(the earliest-created active account's while the owner's account is
+deactivated), and Whisper only while at least one active user runs it: at the
+owner's size when the owner runs Whisper, otherwise at the earliest-created such
+account's size. Another Whisper size in use is fetched on first use. Before the
+first account exists, or when the users cannot be read, `config.json` decides.
+The admin health check reports the engine startup prepares.
 
-Any other engine, and any engine chosen after startup, is fetched on its first
-job unless an admin downloads it from **Settings** first. That includes Whisper:
-a user who switches to Whisper on an install the owner runs on Parakeet waits for
-the download on their first recording, and the next startup prepares it.
+The worker validates those assets on CPU where possible, caches them on disk,
+and releases model objects and CUDA memory before returning to idle. For
+Parakeet and Canary, startup prepares the int8 variant the CPU runs; a worker
+with a GPU loads the full-precision weights instead, and fetches them the first
+time it runs that engine.
+
+Anything else, and anything chosen after startup, is fetched on its first job
+unless an admin downloads it first (see below). For example, an administrator
+who switches to Whisper on an install where nobody else runs it waits for the
+download on their first recording, and the next startup prepares it.
 
 One worker lane (`worker-io`) runs the embedded Celery Beat scheduler (`celery
 worker -B`) that drives Nojoin's periodic jobs: calendar sync every 15 minutes,
@@ -214,8 +224,9 @@ the instance to be reachable from the public internet over HTTPS at
 
 Changing the transcription model later does not download anything on its own.
 Preparation runs on the GPU lane, so an unannounced download would queue in
-front of live work; instead **Settings > AI providers** asks whether to fetch a newly
-selected model now, and **Model dependencies** offers a `Download` action plus
+front of live work; instead **Settings > Transcription** asks whether to fetch a
+newly selected model now, and **Model dependencies** under **Settings > AI
+providers** offers a `Download` action plus
 live progress for anything still missing. A model that is never prepared is
 fetched on first use, which delays live transcription and Meeting Edge until it
 is ready. Only one preparation runs at a time; a second request is refused with
