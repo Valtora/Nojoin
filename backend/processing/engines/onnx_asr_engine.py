@@ -198,6 +198,19 @@ def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
     return boundaries
 
 
+def onnx_asr_quantization(on_gpu: bool) -> str | None:
+    """The weight precision the engine loads: fp32 (None) on a GPU, int8 on CPU.
+
+    int8 is a CPU optimisation and defeats CUDA: onnxruntime has no CUDA
+    kernels for most quantized ops, so it claims the session and then hands
+    nearly every node back to CPU, inserting a memcpy at each handoff (1046 of
+    them for canary-1b). The fp32 weights cut that to 66 and keep the graph on
+    the card. Model preparation uses this too, so it fetches the files the
+    engine will open on the same lane.
+    """
+    return None if on_gpu else "int8"
+
+
 class OnnxAsrEngine(TranscriptionEngine):
     """Shared transcription engine backed by onnx-asr.
 
@@ -247,12 +260,7 @@ class OnnxAsrEngine(TranscriptionEngine):
             providers = ["CPUExecutionProvider"]
             if on_gpu:
                 providers.insert(0, "CUDAExecutionProvider")
-            # int8 is a CPU optimisation and defeats CUDA: onnxruntime has no CUDA
-            # kernels for most quantized ops, so it claims the session and then hands
-            # nearly every node back to CPU, inserting a memcpy at each handoff (1046
-            # of them for canary-1b). Load the fp32 weights where a GPU is present,
-            # which cuts that to 66 and keeps the graph on the card.
-            quantization = None if on_gpu else "int8"
+            quantization = onnx_asr_quantization(on_gpu)
             logger.info(
                 f"Loading {self.name} model: {onnx_id} "
                 f"(quantization={quantization or 'none'})"
