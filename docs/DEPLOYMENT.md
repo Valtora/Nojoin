@@ -189,11 +189,19 @@ design, with a 24-hour lifetime, so take the backup again if you needed it.
 
 The worker container starts Celery without preloading inference models. Nojoin
 keeps GPU memory idle at startup, then queues worker-side model preparation for
-the configured transcription model (Whisper, Parakeet or Canary, following
-`transcription_backend`), Pyannote diarisation, and voice embeddings. Whisper is
-not downloaded on an install that transcribes with Parakeet or Canary. The
-worker validates those assets on CPU where possible, caches them on disk, and
-releases model objects and CUDA memory before returning to idle.
+Pyannote diarisation and voice embeddings, plus the transcription engines the
+install's users have chosen. The engine is a per-user setting (**Settings > AI
+providers**), falling back to `transcription_backend` in `config.json` for a user
+who never chose one. Startup prepares the owner's engine (Parakeet or Canary
+model, or Whisper), and Whisper only while at least one active user transcribes
+with it, at that user's model size. Before the first account exists, the config
+decides. The worker validates those assets on CPU where possible, caches them on
+disk, and releases model objects and CUDA memory before returning to idle.
+
+Any other engine, and any engine chosen after startup, is fetched on its first
+job unless an admin downloads it from **Settings** first. That includes Whisper:
+a user who switches to Whisper on an install the owner runs on Parakeet waits for
+the download on their first recording, and the next startup prepares it.
 
 One worker lane (`worker-io`) runs the embedded Celery Beat scheduler (`celery
 worker -B`) that drives Nojoin's periodic jobs: calendar sync every 15 minutes,
