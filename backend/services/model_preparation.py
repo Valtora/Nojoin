@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
 
+# The user-scoped settings that decide which transcription models to prepare.
+TRANSCRIPTION_KEYS = (
+    "transcription_backend",
+    "whisper_model_size",
+    "parakeet_model",
+    "canary_model",
+)
+
 
 async def enqueue_model_preparation(
     *,
@@ -126,19 +134,27 @@ def resolve_startup_model_selection(
 async def _read_active_user_settings(
     session: AsyncSession,
 ) -> list[Mapping[str, Any] | None]:
-    """Every active user's settings, owner first, then by id."""
+    """Every active user's transcription keys, owner first, then by id.
+
+    Only those keys are selected, so the database does not ship and the API
+    does not decode every user's whole settings blob on each health poll. A row
+    whose settings are not a JSON object yields no keys, and a value that is
+    not a string is dropped: that user falls back to config.json for the key,
+    and nobody else's selection changes.
+    """
     result = await session.execute(
-        select(User.settings)
+        select(*(User.settings[key] for key in TRANSCRIPTION_KEYS))
         .where(col(User.is_active).is_(True))
         .order_by(case((User.role == "owner", 0), else_=1), User.id)
     )
-    rows = [row[0] for row in result.all()]
-    for settings in rows:
-        if settings is not None and not isinstance(settings, Mapping):
-            raise ValueError(
-                f"a user's settings hold a {type(settings).__name__}, not an object"
-            )
-    return rows
+    return [
+        {
+            key: value
+            for key, value in zip(TRANSCRIPTION_KEYS, row, strict=True)
+            if isinstance(value, str)
+        }
+        for row in result.all()
+    ]
 
 
 async def resolve_install_transcription_selection(
@@ -148,12 +164,12 @@ async def resolve_install_transcription_selection(
 
     Startup preparation and the admin health check both read it, so the health
     check reports the engine that was actually prepared. When the users cannot
-    be read (a transient database error, a settings row that is not an object),
-    the install config decides, as it did before startup read the users.
+    be read (a database error), the install config decides, as it did before
+    startup read the users.
     """
     try:
         user_settings = await _read_active_user_settings(session)
-    except (SQLAlchemyError, OSError, ValueError) as exc:
+    except (SQLAlchemyError, OSError) as exc:
         await session.rollback()
         logger.warning(
             "Could not read the users' transcription settings, so config.json "

@@ -300,28 +300,50 @@ def test_startup_treats_an_empty_engine_as_the_pipeline_does(prepared, monkeypat
     assert prepared == ["pyannote"]
 
 
-@pytest.mark.parametrize(
-    ("users", "with_users_table"),
-    [
-        ([], False),
-        ([("owner", True, ["transcription_backend", "parakeet"])], True),
-    ],
-    ids=["database-error", "settings-not-an-object"],
-)
 def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
-    prepared, monkeypatch, caplog, users, with_users_table
+    prepared, monkeypatch, caplog
 ):
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
     with caplog.at_level(logging.WARNING, logger=model_preparation.__name__):
-        kwargs = _startup_dispatch(
-            monkeypatch, users, with_users_table=with_users_table
-        )
+        kwargs = _startup_dispatch(monkeypatch, [], with_users_table=False)
     preload_models.download_models(**kwargs)
 
     assert kwargs == _config_dispatch(monkeypatch)
     assert prepared == ["whisper:turbo", "pyannote"]
     assert "config.json decides" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        ["transcription_backend", "whisper"],
+        {"transcription_backend": 7, "whisper_model_size": 3},
+    ],
+    ids=["settings-not-an-object", "values-of-the-wrong-type"],
+)
+def test_a_malformed_settings_row_falls_back_to_the_config_for_that_user_only(
+    prepared, monkeypatch, malformed
+):
+    """One bad row must not move the owner's engine back to config.json's."""
+    _use_config(monkeypatch, {"transcription_backend": "whisper"})
+
+    kwargs = _startup_dispatch(
+        monkeypatch,
+        [
+            ("owner", True, {"transcription_backend": "parakeet"}),
+            ("user", True, malformed),
+        ],
+    )
+    preload_models.download_models(**kwargs)
+
+    # The malformed user runs config.json's Whisper turbo; the owner keeps Parakeet.
+    assert kwargs["transcription_backend"] == "parakeet"
+    assert prepared == [
+        "whisper:turbo",
+        "pyannote",
+        "onnx:parakeet/parakeet-tdt-0.6b-v3",
+    ]
 
 
 # --- Admin health check -------------------------------------------------------
