@@ -30,6 +30,7 @@ from backend.processing.browser_live_audio import (
     LIVE_SOURCE_AUTHORITY_NONE,
     LIVE_SOURCE_AUTHORITY_OVERLAP,
 )
+from backend.processing.engines.errors import TranscriptionError
 from backend.processing.pipeline_metrics import (
     pipeline_metric_timer,
     record_pipeline_metric,
@@ -1180,9 +1181,14 @@ def _transcribe_live_regions(
                             )
                         )
                     raise
-                metric["payload"]["text_chars"] = len((result or {}).get("text") or "")
+                metric["payload"]["text_chars"] = len(result.get("text") or "")
             speaker_label = "UNKNOWN"
 
+        except TranscriptionError:
+            # The engine failed on this region; it is logged and its ledger row
+            # failed above. Lose this region only so the lane keeps moving: the
+            # final pass transcribes the whole recording again.
+            continue
         finally:
             if os.path.exists(clip_path):
                 try:
@@ -1190,23 +1196,6 @@ def _transcribe_live_regions(
                 except OSError:
                     pass
 
-        if not result:
-            if ledger_enabled:
-                _persist_asr_window_result_best_effort(
-                    lambda ledger_session: fail_recording_asr_window_result(
-                        ledger_session,
-                        recording_id=recording_id,
-                        source_kind="live",
-                        span_start_ms=region_start_ms,
-                        span_end_ms=region_end_ms,
-                        chunk_start_sequence=run[0],
-                        chunk_end_sequence=run[-1],
-                        config=live_config,
-                        error_summary="Live ASR returned no result.",
-                        error_payload={"error_type": "empty_result"},
-                    )
-                )
-            continue
         region_segment_payloads = _extract_region_segment_payloads(result, prefix_s)
         text = _strip_repetition(_extract_region_text(result, prefix_s))
         if not text:
@@ -1263,8 +1252,8 @@ def _transcribe_live_regions(
                 "result_payload": {
                     "sequence": sequence,
                     "run": list(run),
-                    "segment_count": len((result or {}).get("segments", [])),
-                    "text_chars": len((result or {}).get("text") or ""),
+                    "segment_count": len(result.get("segments", [])),
+                    "text_chars": len(result.get("text") or ""),
                     "emitted_text_chars": len(text or ""),
                     "prefix_ms": int(round(prefix_s * 1000.0)),
                 },
