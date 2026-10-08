@@ -310,21 +310,10 @@ def _prepare_onnx_asr_model(model_id: str) -> None:
     _suppress_ort_warnings()
     import onnx_asr
 
-    from backend.processing.engines.onnx_asr_engine import onnx_asr_quantization
-    from backend.processing.onnx_providers import gpu_is_present
-
-    # Preparation runs on the same lane as transcription, so this is the
-    # precision the engine will load here. Preparing int8 on a GPU host left
-    # the engine to download the fp32 weights on first use anyway.
-    quantization = onnx_asr_quantization(gpu_is_present())
-    logger.info(
-        "Preparing ONNX ASR model %s (quantization=%s)",
-        model_id,
-        quantization or "none",
-    )
+    logger.info("Preparing ONNX ASR model %s", model_id)
     model = onnx_asr.load_model(
         model_id,
-        quantization=quantization,
+        quantization="int8",
         providers=["CPUExecutionProvider"],
     )
     del model
