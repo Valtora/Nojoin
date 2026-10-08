@@ -1,0 +1,296 @@
+/* Colour palettes, chosen in Settings -> Appearance and stamped on <html> as
+   data-palette by lib/theme-script.ts. The default palette is the absence of
+   the attribute: it is the :root and .dark blocks in tokens.css, untouched.
+
+   What a palette may change, and what it may not:
+
+   - It re-tints the neutrals (page, card, inset, float, rails, text greys,
+     hairlines, control borders) and replaces the action family (fill, text,
+     tint, focus ring). That is the "look".
+   - It never touches status tones, danger, chart series or speaker colours.
+     Those carry meaning -- a red badge is an error in every palette, a speaker
+     is one colour in every palette -- so they stay shared.
+
+   Each palette has a light block and a dark block. The light block is scoped
+   with :not(.dark) on purpose: html[data-palette] alone outranks .dark, so an
+   unscoped light block would leak its light values into dark mode for every
+   token the dark block forgot to repeat. With the scope, dark mode resolves to
+   tokens.css :root < .dark < the palette's dark block, and light mode to
+   :root < the palette's light block, which is exactly what the contrast audit
+   models (frontend/scripts/check-contrast.mjs).
+
+   Every block is audited for the same pairings as the default themes. */
+
+/* Graphite: cool neutral greys and a restrained blue. The professional
+   option: low chroma everywhere except the one colour that means "act". */
+html[data-palette="graphite"]:not(.dark) {
+  --background: #f5f6f8;
+  --surface-page: #f5f6f8;
+  --surface-card: #ffffff;
+  --surface-card-border: rgba(160, 169, 183, 0.5);
+  --surface-divider: rgba(160, 169, 183, 0.36);
+  --surface-inset: rgba(238, 240, 244, 0.85);
+  --surface-float: #ffffff;
+  --surface-float-border: rgba(160, 169, 183, 0.7);
+  --foreground: #14171c;
+  --contrast-muted: #303741;
+  --contrast-helper: #49515e;
+  --contrast-icon-muted: #59616e;
+  --contrast-border: #cfd4db;
+  --contrast-border-strong: #959dab;
+  --control-border: #7b8492;
+  --control-placeholder: #636b78;
+  --scrollbar-thumb-hover: rgba(37, 87, 214, 0.5);
+  --settings-tab-idle-text: #1d222a;
+  --settings-tab-idle-hover: #eceef2;
+
+  --action: #2557d6;
+  --action-hover: #1d47b3;
+  --action-active: #173a91;
+  --action-on: #ffffff;
+  --action-on-muted: #dce6ff;
+  --action-text: #2251c4;
+  --action-text-hover: #1a3f9c;
+  --action-tint: #e8eefc;
+  --action-tint-hover: #d9e3fb;
+  --action-tint-fg: #1a3f9c;
+  --action-border: #a9bff2;
+  --focus-ring: #3b6ef0;
+
+  --rail-bg: #eceef2;
+  --rail-border: #d8dce3;
+  --rail-fg: #1d222a;
+  --rail-fg-muted: #4b5361;
+  --rail-item-hover: #e1e4ea;
+
+  --tooltip-bg: #1d222a;
+  --tooltip-fg: #f5f6f8;
+}
+
+html[data-palette="graphite"].dark {
+  --background: #111317;
+  --surface-page: #111317;
+  --surface-card: #191c21;
+  --surface-card-border: rgba(118, 128, 143, 0.36);
+  --surface-divider: rgba(118, 128, 143, 0.24);
+  --surface-inset: rgba(255, 255, 255, 0.03);
+  --surface-float: #23272d;
+  --surface-float-border: rgba(148, 156, 170, 0.24);
+  --foreground: #e8eaee;
+  --contrast-muted: #d5d9df;
+  --contrast-helper: #b5bbc5;
+  --contrast-icon-muted: #959dab;
+  --contrast-border: #3d434d;
+  --contrast-border-strong: #5b6370;
+  --control-border: #767f8d;
+  --control-placeholder: #969eab;
+  --scrollbar-thumb-hover: rgba(109, 149, 255, 0.6);
+  --settings-tab-idle-text: #e3e6ea;
+  --settings-tab-idle-hover: rgba(255, 255, 255, 0.06);
+
+  --action: #3163de;
+  --action-hover: #2753c4;
+  --action-active: #1f45a8;
+  --action-on: #ffffff;
+  --action-on-muted: #eef3ff;
+  --action-text: #8fb0ff;
+  --action-text-hover: #b5cbff;
+  --action-tint: rgba(77, 124, 255, 0.16);
+  --action-tint-hover: rgba(77, 124, 255, 0.24);
+  --action-tint-fg: #c9d8ff;
+  --action-border: rgba(110, 150, 255, 0.38);
+  --focus-ring: #6d95ff;
+
+  --rail-bg: #16191e;
+  --rail-border: rgba(255, 255, 255, 0.08);
+  --rail-fg: #e3e6ea;
+  --rail-fg-muted: #a3aab5;
+  --rail-item-hover: #20242a;
+
+  --tooltip-bg: #e3e6ea;
+  --tooltip-fg: #111317;
+}
+
+/* Ultraviolet: lavender-tinted surfaces, a magenta action and a cyan focus
+   ring. Deliberately loud; the two hues are far enough apart that focus never
+   reads as selection. */
+html[data-palette="ultraviolet"]:not(.dark) {
+  --background: #f7f4fd;
+  --surface-page: #f7f4fd;
+  --surface-card: #ffffff;
+  --surface-card-border: rgba(180, 160, 230, 0.5);
+  --surface-divider: rgba(180, 160, 230, 0.34);
+  --surface-inset: rgba(242, 236, 253, 0.85);
+  --surface-float: #ffffff;
+  --surface-float-border: rgba(180, 160, 230, 0.7);
+  --foreground: #1c1430;
+  --contrast-muted: #3b2f57;
+  --contrast-helper: #54476f;
+  --contrast-icon-muted: #6b5d88;
+  --contrast-border: #d9cff0;
+  --contrast-border-strong: #a898c9;
+  --control-border: #8a7aa8;
+  --control-placeholder: #6e6189;
+  --scrollbar-thumb-hover: rgba(162, 28, 175, 0.5);
+  --settings-tab-idle-text: #24183d;
+  --settings-tab-idle-hover: #efe8fb;
+
+  --action: #a21caf;
+  --action-hover: #86198f;
+  --action-active: #701a75;
+  --action-on: #ffffff;
+  --action-on-muted: #fbe3ff;
+  --action-text: #a21caf;
+  --action-text-hover: #86198f;
+  --action-tint: #fae8ff;
+  --action-tint-hover: #f5d0fe;
+  --action-tint-fg: #86198f;
+  --action-border: #f0abfc;
+  --focus-ring: #0891b2;
+
+  --rail-bg: #efe7fd;
+  --rail-border: #ddd0f7;
+  --rail-fg: #24183d;
+  --rail-fg-muted: #55486f;
+  --rail-item-hover: #e5d9fb;
+
+  --tooltip-bg: #24183d;
+  --tooltip-fg: #f7f4fd;
+}
+
+html[data-palette="ultraviolet"].dark {
+  --background: #120c20;
+  --surface-page: #120c20;
+  --surface-card: #1b1430;
+  --surface-card-border: rgba(139, 92, 246, 0.3);
+  --surface-divider: rgba(139, 92, 246, 0.2);
+  --surface-inset: rgba(255, 255, 255, 0.035);
+  --surface-float: #251c3e;
+  --surface-float-border: rgba(196, 181, 253, 0.22);
+  --foreground: #f1ebff;
+  --contrast-muted: #ded4f5;
+  --contrast-helper: #c3b6e3;
+  --contrast-icon-muted: #a294c6;
+  --contrast-border: #3c2f5c;
+  --contrast-border-strong: #5d4c85;
+  --control-border: #8a78b8;
+  --control-placeholder: #a294c6;
+  --scrollbar-thumb-hover: rgba(232, 121, 249, 0.6);
+  --settings-tab-idle-text: #ece4ff;
+  --settings-tab-idle-hover: rgba(255, 255, 255, 0.06);
+
+  --action: #b51fc8;
+  --action-hover: #a21caf;
+  --action-active: #86198f;
+  --action-on: #ffffff;
+  --action-on-muted: #fdf2ff;
+  --action-text: #f0abfc;
+  --action-text-hover: #f5d0fe;
+  --action-tint: rgba(217, 70, 239, 0.18);
+  --action-tint-hover: rgba(217, 70, 239, 0.26);
+  --action-tint-fg: #fbd0ff;
+  --action-border: rgba(232, 121, 249, 0.4);
+  --focus-ring: #22d3ee;
+
+  --rail-bg: #0d0818;
+  --rail-border: rgba(196, 181, 253, 0.14);
+  --rail-fg: #ece4ff;
+  --rail-fg-muted: #b3a5d8;
+  --rail-item-hover: #1d1433;
+
+  --tooltip-bg: #ece4ff;
+  --tooltip-fg: #120c20;
+}
+
+/* Marigold: sage and forest surfaces with a gold accent. In light mode the
+   fill is forest green, because a gold fill cannot separate from a pale page
+   at the 3:1 a control boundary owes; gold carries the tints and the rail's
+   active item instead. In dark mode gold becomes the fill and takes a dark
+   label -- the one palette whose primary button inverts. */
+html[data-palette="marigold"]:not(.dark) {
+  --background: #f3f5ec;
+  --surface-page: #f3f5ec;
+  --surface-card: #ffffff;
+  --surface-card-border: rgba(160, 176, 128, 0.5);
+  --surface-divider: rgba(160, 176, 128, 0.34);
+  --surface-inset: rgba(237, 242, 226, 0.85);
+  --surface-float: #ffffff;
+  --surface-float-border: rgba(160, 176, 128, 0.7);
+  --foreground: #161d10;
+  --contrast-muted: #2f3a25;
+  --contrast-helper: #46523a;
+  --contrast-icon-muted: #5a664c;
+  --contrast-border: #cdd6bd;
+  --contrast-border-strong: #9aa889;
+  --control-border: #7a876a;
+  --control-placeholder: #5f6b51;
+  --scrollbar-thumb-hover: rgba(31, 95, 53, 0.5);
+  --settings-tab-idle-text: #1b2414;
+  --settings-tab-idle-hover: #e8eedb;
+
+  --action: #1f5f35;
+  --action-hover: #184b2a;
+  --action-active: #123920;
+  --action-on: #ffffff;
+  --action-on-muted: #fdf1c7;
+  --action-text: #1f5f35;
+  --action-text-hover: #184b2a;
+  --action-tint: #fdf1c7;
+  --action-tint-hover: #fbe7a1;
+  --action-tint-fg: #5a4200;
+  --action-border: #e6c65a;
+  --focus-ring: #9a7000;
+
+  --rail-bg: #e6ecd8;
+  --rail-border: #d0dabd;
+  --rail-fg: #1b2414;
+  --rail-fg-muted: #46523a;
+  --rail-item-hover: #dbe3c8;
+
+  --tooltip-bg: #1b2414;
+  --tooltip-fg: #f3f5ec;
+}
+
+html[data-palette="marigold"].dark {
+  --background: #0f140d;
+  --surface-page: #0f140d;
+  --surface-card: #171e14;
+  --surface-card-border: rgba(132, 152, 104, 0.32);
+  --surface-divider: rgba(132, 152, 104, 0.22);
+  --surface-inset: rgba(255, 255, 255, 0.03);
+  --surface-float: #20291c;
+  --surface-float-border: rgba(170, 190, 140, 0.24);
+  --foreground: #edf2e6;
+  --contrast-muted: #d7dfcc;
+  --contrast-helper: #b9c4ab;
+  --contrast-icon-muted: #97a387;
+  --contrast-border: #34402b;
+  --contrast-border-strong: #536147;
+  --control-border: #7d8b6b;
+  --control-placeholder: #9aa68a;
+  --scrollbar-thumb-hover: rgba(242, 183, 5, 0.6);
+  --settings-tab-idle-text: #e6eddc;
+  --settings-tab-idle-hover: rgba(255, 255, 255, 0.06);
+
+  --action: #f2b705;
+  --action-hover: #dba300;
+  --action-active: #c49200;
+  --action-on: #1c1500;
+  --action-on-muted: #4a3a00;
+  --action-text: #f7c948;
+  --action-text-hover: #fadb7a;
+  --action-tint: rgba(242, 183, 5, 0.16);
+  --action-tint-hover: rgba(242, 183, 5, 0.24);
+  --action-tint-fg: #fde68a;
+  --action-border: rgba(247, 201, 72, 0.38);
+  --focus-ring: #f7c948;
+
+  --rail-bg: #0b0f09;
+  --rail-border: rgba(214, 228, 190, 0.1);
+  --rail-fg: #e6eddc;
+  --rail-fg-muted: #a7b398;
+  --rail-item-hover: #182014;
+
+  --tooltip-bg: #e6eddc;
+  --tooltip-fg: #0f140d;
+}
