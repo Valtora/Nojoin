@@ -55,36 +55,72 @@ def _new_kid() -> str:
     return f"k_{secrets.token_hex(4)}"
 
 
+class SigningKeyUnavailableError(RuntimeError):
+    """The JWT keyring cannot be loaded, so no token can be signed or verified.
+
+    The message names the file at fault and how to fix it, for the api log.
+    """
+
+
 def _read_keyring_file() -> Optional[dict[str, Any]]:
     keyring_file = _keyring_path()
     if not keyring_file.exists():
         return None
     try:
-        data = json.loads(keyring_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            f"Unable to load JWT keyring at {keyring_file}: {exc}"
-        ) from exc
+        content = keyring_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise _keyring_access_error(exc) from exc
+    except UnicodeDecodeError as exc:
+        raise _malformed_keyring_error(keyring_file, str(exc)) from exc
+    if not content.strip():
+        # A write cut short, for example by a full disk, leaves the file blank.
+        raise _empty_signing_key_error(keyring_file)
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise _malformed_keyring_error(keyring_file, str(exc)) from exc
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("keys"), dict)
         or not isinstance(data.get("active"), str)
         or data["active"] not in data["keys"]
     ):
-        raise RuntimeError(f"JWT keyring at {keyring_file} is malformed.")
-    if not data["keys"][data["active"]]:
-        raise _empty_signing_key_error(keyring_file)
+        raise _malformed_keyring_error(keyring_file, "no usable active key entry")
     return data
 
 
-def _empty_signing_key_error(key_file: Path) -> RuntimeError:
+def _replace_key_file_remedy(key_file: Path) -> str:
+    return (
+        f"Delete {key_file} and restart Nojoin to generate a new key (everyone "
+        "signed in will have to sign in again), or set the SECRET_KEY "
+        "environment variable."
+    )
+
+
+def _empty_signing_key_error(key_file: Path) -> SigningKeyUnavailableError:
     # PyJWT refuses an empty HMAC key, so an empty key would fail every
-    # sign-in with a bare 500. Refusing it at load names the file instead.
-    return RuntimeError(
+    # sign-in with a bare 500. Detecting it at load names the file instead.
+    return SigningKeyUnavailableError(
         f"The JWT signing key in {key_file} is empty, so no token can be signed "
-        f"or verified. Delete {key_file} and restart Nojoin to generate a new "
-        "key (everyone signed in will have to sign in again), or set the "
-        "SECRET_KEY environment variable."
+        f"or verified. {_replace_key_file_remedy(key_file)}"
+    )
+
+
+def _malformed_keyring_error(
+    keyring_file: Path, reason: str
+) -> SigningKeyUnavailableError:
+    return SigningKeyUnavailableError(
+        f"The JWT keyring at {keyring_file} is malformed ({reason}), so no token "
+        f"can be signed or verified. {_replace_key_file_remedy(keyring_file)}"
+    )
+
+
+def _keyring_access_error(exc: Exception) -> SigningKeyUnavailableError:
+    data_dir = _keyring_path().parent
+    return SigningKeyUnavailableError(
+        f"Unable to read or create the JWT keyring in {data_dir} ({exc}), so no "
+        f"token can be signed or verified. Make sure the api can read and write "
+        f"{data_dir}, or set the SECRET_KEY environment variable."
     )
 
 
@@ -148,10 +184,17 @@ def _load_keyring() -> dict[str, Any]:
         return {"active": "env", "keys": {"env": env_key}}
 
     with _keyring_lock:
-        existing = _read_keyring_file()
-        if existing is not None:
-            return existing
-        return _bootstrap_keyring()
+        keyring = _read_keyring_file()
+        if keyring is None:
+            try:
+                keyring = _bootstrap_keyring()
+            except (OSError, UnicodeDecodeError) as exc:
+                raise _keyring_access_error(exc) from exc
+    # Checked here rather than in _read_keyring_file so that
+    # rotate_signing_key() can still replace an empty active key.
+    if not keyring["keys"][keyring["active"]]:
+        raise _empty_signing_key_error(_keyring_path())
+    return keyring
 
 
 def get_signing_keyring() -> dict[str, Any]:
@@ -331,12 +374,18 @@ def decode_access_token(token: str) -> dict[str, Any]:
     verified with any known key. Catch that base class: besides
     :class:`jwt.InvalidTokenError`, ``jwt.decode`` raises
     :class:`jwt.InvalidKeyError` (not an ``InvalidTokenError``) when the
-    stored key for the token's ``kid`` is unusable as an HMAC secret.
+    stored key for the token's ``kid`` is unusable as an HMAC secret. An
+    unloadable keyring also raises ``InvalidTokenError``, so every token
+    is refused until the keyring is fixed.
     """
     # PyJWT parses the header strictly: a malformed token or a non-string
     # ``kid`` raises InvalidTokenError here, before any key lookup.
     kid = jwt.get_unverified_header(token).get("kid")
-    signing_key = get_signing_key_for_kid(kid)
+    try:
+        signing_key = get_signing_key_for_kid(kid)
+    except SigningKeyUnavailableError as exc:
+        # The api logs the cause at startup and on each sign-in attempt.
+        raise jwt.InvalidTokenError("JWT keyring is unavailable") from exc
     if signing_key is None:
         raise jwt.InvalidTokenError("Unknown signing key id")
     return jwt.decode(token, signing_key, algorithms=[ALGORITHM])

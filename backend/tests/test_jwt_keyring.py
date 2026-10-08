@@ -5,7 +5,6 @@ from datetime import timedelta
 import jwt
 import pytest
 
-from backend import main
 from backend.core import security
 
 
@@ -108,16 +107,29 @@ def test_secret_key_env_disables_rotation(monkeypatch, tmp_path):
         security.rotate_signing_key()
 
 
-@pytest.fixture
-def anyio_backend() -> str:
-    return "asyncio"
+def _empty_active_keyring(directory) -> None:
+    (directory / ".secret_keys.json").write_text(
+        json.dumps({"active": "legacy", "keys": {"legacy": ""}}), encoding="utf-8"
+    )
+
+
+def _session_token() -> str:
+    return security.create_access_token(
+        "alice",
+        token_type=security.SESSION_TOKEN_TYPE,
+        scopes=[security.WEB_SESSION_SCOPE],
+        expires_delta=timedelta(minutes=5),
+        token_version=0,
+    )
 
 
 def test_empty_legacy_secret_key_is_refused_with_the_file_named(isolated_keyring):
     legacy_file = isolated_keyring / ".secret_key"
     legacy_file.write_text("\n", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match=re.escape(str(legacy_file))):
+    with pytest.raises(
+        security.SigningKeyUnavailableError, match=re.escape(str(legacy_file))
+    ):
         security.get_signing_keyring()
 
     # Nothing is persisted, so deleting the empty file and restarting
@@ -129,30 +141,35 @@ def test_empty_legacy_secret_key_is_refused_with_the_file_named(isolated_keyring
 
 
 def test_empty_active_keyring_key_is_refused_with_the_file_named(isolated_keyring):
+    _empty_active_keyring(isolated_keyring)
     keyring_file = isolated_keyring / ".secret_keys.json"
-    keyring_file.write_text(
-        json.dumps({"active": "legacy", "keys": {"legacy": ""}}), encoding="utf-8"
+
+    with pytest.raises(
+        security.SigningKeyUnavailableError, match=re.escape(str(keyring_file))
+    ):
+        _session_token()
+
+
+@pytest.mark.parametrize("content", ["", " \n"], ids=["zero-byte", "whitespace"])
+def test_blank_keyring_file_gets_the_empty_key_remedy(isolated_keyring, content):
+    keyring_file = isolated_keyring / ".secret_keys.json"
+    keyring_file.write_text(content, encoding="utf-8")
+
+    with pytest.raises(security.SigningKeyUnavailableError) as excinfo:
+        security.get_signing_keyring()
+
+    assert str(excinfo.value).startswith(
+        f"The JWT signing key in {keyring_file} is empty"
     )
-
-    with pytest.raises(RuntimeError, match=re.escape(str(keyring_file))):
-        security.create_access_token(
-            "alice",
-            token_type=security.SESSION_TOKEN_TYPE,
-            scopes=[security.WEB_SESSION_SCOPE],
-            token_version=0,
-        )
+    assert f"Delete {keyring_file} and restart" in str(excinfo.value)
 
 
-@pytest.mark.anyio
-async def test_api_startup_refuses_an_empty_signing_key(isolated_keyring, monkeypatch):
-    (isolated_keyring / ".secret_keys.json").write_text(
-        json.dumps({"active": "legacy", "keys": {"legacy": ""}}), encoding="utf-8"
-    )
-    migrations: list[bool] = []
-    monkeypatch.setattr(main, "run_migrations", lambda: migrations.append(True))
+def test_rotation_replaces_an_empty_active_key(isolated_keyring):
+    _empty_active_keyring(isolated_keyring)
 
-    with pytest.raises(RuntimeError, match="is empty"):
-        async with main.lifespan(main.app):
-            pass
+    new_kid = security.rotate_signing_key()
 
-    assert migrations == []
+    active_kid, active_key = security.get_active_signing_key()
+    assert active_kid == new_kid
+    assert len(active_key) == 64
+    assert security.decode_access_token(_session_token())["sub"] == "alice"

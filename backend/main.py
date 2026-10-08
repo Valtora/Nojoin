@@ -124,7 +124,7 @@ class EnforceCanonicalHttpsMiddleware(BaseHTTPMiddleware):
 
 # Import models to register them with SQLModel
 from backend.core.db import async_session_maker
-from backend.core.security import get_signing_keyring
+from backend.core.security import SigningKeyUnavailableError, get_signing_keyring
 from backend.models.user import User
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
@@ -254,11 +254,40 @@ def log_recordings_storage_warnings(*, logger_instance: logging.Logger) -> None:
         )
 
 
+SIGNING_KEY_UNAVAILABLE_DETAIL = (
+    "Sign-in is unavailable because the server could not load its JWT signing "
+    "key. The api log names the file to fix."
+)
+
+
+def log_signing_keyring_status(*, logger_instance: logging.Logger) -> None:
+    """Load the JWT keyring at boot, so an unusable one is reported at once.
+
+    Without this the first evidence is a failed sign-in. The API still starts,
+    as with the recordings storage probe: sign-in and token verification fail
+    closed until the keyring is fixed, and the message names the file.
+    """
+    try:
+        get_signing_keyring()
+    except SigningKeyUnavailableError as e:
+        logger_instance.error("%s Sign-in is unavailable until this is fixed.", e)
+
+
+async def signing_key_unavailable_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    # 500, not 503: the frontend reads 502-504 as "backend unreachable", while
+    # here the backend answered and the sign-in page shows the detail.
+    logger.error("Could not issue a token: %s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": SIGNING_KEY_UNAVAILABLE_DETAIL},
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Loading the JWT keyring here, not lazily at the first sign-in, means an
-    # unusable signing key stops startup with a message naming its file.
-    get_signing_keyring()
+    log_signing_keyring_status(logger_instance=logger)
     run_migrations()
     await ensure_owner_exists()
     await log_first_run_setup_pointer()
@@ -328,6 +357,9 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_trusted_host_list())
     app.add_middleware(NormaliseMcpMountPathMiddleware)
 
+    app.add_exception_handler(
+        SigningKeyUnavailableError, signing_key_unavailable_handler
+    )
     app.include_router(api_router, prefix="/api/v1")
     if is_mcp_enabled():
         # OAuth discovery documents must live at the server root (RFC 8414 /
