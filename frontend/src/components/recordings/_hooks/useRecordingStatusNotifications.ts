@@ -77,10 +77,30 @@ export function useRecordingStatusNotifications(
             message: `Transcript ready for "${rec.name}"`,
           });
         }
+        // Reprocessing deletes the transcript, so a failed retry's row is new:
+        // there is no previous transcript status, only an in-flight recording.
+        const sawTranscriptionRun =
+          prevTranscriptStatus !== undefined ||
+          (prevStatus !== undefined && prevStatus !== RecordingStatus.ERROR);
+        if (
+          sawTranscriptionRun &&
+          prevTranscriptStatus !== "error" &&
+          currentTranscriptStatus === "error"
+        ) {
+          // The message already reads "Transcription failed: ...".
+          addNotification({
+            type: "error",
+            message: rec.transcript.error_message
+              ? `"${rec.name}": ${rec.transcript.error_message}`
+              : `Transcription failed for "${rec.name}"`,
+          });
+        }
         prevTranscriptStatusRef.current.set(
           rec.id,
           currentTranscriptStatus || "pending",
         );
+      } else {
+        prevTranscriptStatusRef.current.delete(rec.id);
       }
     });
   }, [recordings, addNotification]);
