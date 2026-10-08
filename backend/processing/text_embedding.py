@@ -16,6 +16,25 @@ MODEL_NAME = TEXT_EMBEDDING_MODEL
 os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 
 
+def fastembed_cache_dir() -> str:
+    """Where fastembed keeps its model files.
+
+    fastembed's default is a directory under the system temp dir, which is
+    private to the container and discarded when it is recreated, so the model
+    was downloaded again after every update. It lives in the model cache with
+    the Whisper and Hugging Face models instead, under ``$XDG_CACHE_HOME`` (the
+    persistent ``model_cache`` volume in compose). fastembed's own
+    ``FASTEMBED_CACHE_PATH`` still wins when it is set.
+    """
+    explicit = os.getenv("FASTEMBED_CACHE_PATH")
+    if explicit:
+        return explicit
+    cache_root = os.getenv(
+        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
+    )
+    return os.path.join(cache_root, "fastembed")
+
+
 class TextEmbeddingService:
     _instance = None
     _model: Any = None
@@ -49,6 +68,7 @@ class TextEmbeddingService:
 
                 self._model = TextEmbedding(
                     model_name=MODEL_NAME,
+                    cache_dir=fastembed_cache_dir(),
                     providers=providers,
                 )
                 # Separate concern: with a GPU attached, CUDA can still be
@@ -66,7 +86,9 @@ class TextEmbeddingService:
                 try:
                     from fastembed import TextEmbedding
 
-                    self._model = TextEmbedding(model_name=MODEL_NAME)
+                    self._model = TextEmbedding(
+                        model_name=MODEL_NAME, cache_dir=fastembed_cache_dir()
+                    )
                 except Exception as e_cpu:
                     logger.error(f"Failed to load text embedding model: {e_cpu}")
                     raise
