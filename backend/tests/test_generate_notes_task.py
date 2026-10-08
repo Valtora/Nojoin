@@ -418,3 +418,81 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
         assert "Canonical follow up." in captured["transcript"]
     finally:
         verification_engine.dispose()
+
+
+_ASR_FAILURE = (
+    "Transcription failed: the GPU ran out of memory (CUDA out of memory) while "
+    "running parakeet."
+)
+
+
+def _fail_the_transcription(engine: Any) -> None:
+    """Leave the transcript as a failed transcription with live text on it."""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE transcripts SET transcript_status = 'error', "
+                "error_message = :failure WHERE recording_id = 1"
+            ),
+            {"failure": _ASR_FAILURE},
+        )
+
+
+def _transcript_status_and_error(engine: Any) -> tuple[str, str, str]:
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        with Session(verification_engine) as session:
+            row = session.exec(
+                text(
+                    "SELECT notes_status, transcript_status, error_message "
+                    "FROM transcripts WHERE id = 1"
+                )
+            ).one()
+        return tuple(row)
+    finally:
+        verification_engine.dispose()
+
+
+def test_notes_generated_from_live_text_keep_the_transcription_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
+    engine = _create_notes_task_database(
+        tmp_path,
+        owner_settings={"llm_provider": "anthropic", "anthropic_model": "claude-test"},
+    )
+    _fail_the_transcription(engine)
+
+    class FakeLLM:
+        def generate_meeting_notes(self, *args, **kwargs) -> str:
+            return "# Meeting Notes"
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(
+        "backend.processing.llm_backends.factory.get_llm_backend",
+        lambda *args, **kwargs: FakeLLM(),
+    )
+
+    _run_generate_notes_task(engine)
+
+    assert _transcript_status_and_error(engine) == ("completed", "error", _ASR_FAILURE)
+
+
+def test_failed_notes_do_not_overwrite_the_transcription_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
+    # No model selected: notes generation fails before any LLM call.
+    engine = _create_notes_task_database(
+        tmp_path, owner_settings={"llm_provider": "anthropic"}
+    )
+    _fail_the_transcription(engine)
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+
+    _run_generate_notes_task(engine)
+
+    assert _transcript_status_and_error(engine) == ("error", "error", _ASR_FAILURE)

@@ -217,7 +217,7 @@ async def generate_notes(
     missing_llm_config = llm_config.missing_configuration_message()
     if missing_llm_config:
         transcript.notes_status = "error"
-        transcript.error_message = missing_llm_config
+        transcript.set_notes_error_message(missing_llm_config)
         db.add(transcript)
         await db.commit()
         raise HTTPException(
@@ -244,7 +244,7 @@ async def generate_notes(
 
     # 5. Call Worker Task
     transcript.notes_status = "generating"
-    transcript.error_message = None
+    transcript.set_notes_error_message(None)
     db.add(transcript)
     await db.commit()
 

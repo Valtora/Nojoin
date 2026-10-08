@@ -31,7 +31,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
 
         # Update status
         transcript.notes_status = "generating"
-        transcript.error_message = None
+        transcript.set_notes_error_message(None)
         recording.processing_step = "Generating meeting notes..."
         recording.processing_progress = 97
         session.add(transcript)
@@ -105,7 +105,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         transcript.notes_status = "completed"
         # Freshly generated notes reflect every READY document by definition.
         transcript.notes_stale_documents = False
-        transcript.error_message = None
+        transcript.set_notes_error_message(None)
         # Provenance: which template produced these notes, and its text at the
         # time, so a later edit or deletion cannot rewrite the record.
         transcript.notes_template_id = resolved_template.template_id
@@ -492,7 +492,7 @@ def _mark_notes_generation_error_impl(
         return
 
     transcript.notes_status = "error"
-    transcript.error_message = _format_notes_generation_error(error)
+    transcript.set_notes_error_message(_format_notes_generation_error(error))
     session.add(transcript)
 
     if recording:
@@ -512,9 +512,18 @@ def _complete_speaker_inference_task(
     if not recording:
         return
 
-    recording.status = RecordingStatus.PROCESSED
+    # Speaker inference never repairs a failed transcription, so a recording
+    # whose ASR failed goes back to ERROR rather than reading as finished.
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording.id)
+    ).first()
+    if transcript is not None and transcript.transcript_status == "error":
+        recording.status = RecordingStatus.ERROR
+        recording.processing_step = transcript.error_message or "Transcription failed"
+    else:
+        recording.status = RecordingStatus.PROCESSED
+        recording.processing_step = "Completed"
     recording.client_status = ClientStatus.IDLE
-    recording.processing_step = "Completed"
     session.add(recording)
     session.commit()
 

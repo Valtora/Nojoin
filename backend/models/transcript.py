@@ -96,3 +96,13 @@ class Transcript(BaseDBModel, table=True):
     )
 
     recording: "Recording" = Relationship(back_populates="transcript")
+
+    def set_notes_error_message(self, message: Optional[str]) -> None:
+        """Record (or clear) a notes error without hiding a failed transcription.
+
+        ``error_message`` is shared. While ``transcript_status`` is ``"error"`` it
+        holds why transcription failed, which is what the recording reports until
+        it is reprocessed, so notes runs leave it alone.
+        """
+        if self.transcript_status != "error":
+            self.error_message = message
