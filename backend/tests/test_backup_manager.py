@@ -2766,3 +2766,81 @@ def test_audio_that_collides_on_its_archive_name_is_counted_and_logged(
     with zipfile.ZipFile(zip_path) as archive:
         members = [n for n in archive.namelist() if n.startswith("recordings/")]
         assert members == ["recordings/meeting.opus"]
+
+
+@pytest.mark.anyio
+async def test_recording_without_archived_audio_never_takes_another_recordings_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In Compressed quality h.wav is archived as recordings/h.opus. A recording whose
+    # own h.opus is missing used to be given that same path, so a restore handed it
+    # h.wav's audio and left h.wav's recording with none.
+    source = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    recordings_dir = source.path_manager.recordings_directory
+    (recordings_dir / "h.wav").write_bytes(b"H-WAV")
+    encoded = tmp_path / "encoded.opus"
+    encoded.write_bytes(b"H-WAV-AS-OPUS")
+    monkeypatch.setattr(backup_export, "_compress_to_opus", lambda source: str(encoded))
+    await seed_source_data(
+        source.async_session_maker,
+        recording_meeting_uid="meeting-present",
+        recording_audio_path=str(recordings_dir / "h.wav"),
+        recording_proxy_path=None,
+    )
+    async with source.async_session_maker() as session:
+        # A lower id than the seeded recording, so its row is written first.
+        session.add(
+            TestRecording(
+                id=39,
+                name="Lost audio",
+                meeting_uid="meeting-lost",
+                audio_path=str(recordings_dir / "h.opus"),
+                status="PROCESSED",
+                user_id=1,
+            )
+        )
+        await session.commit()
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True, archive_quality=backup_format.ARCHIVE_QUALITY_COMPRESSED
+    )
+    await source.async_engine.dispose()
+
+    assert warnings["recordings_without_audio"] == 1
+    with zipfile.ZipFile(zip_path) as archive:
+        archived_paths = {
+            row["meeting_uid"]: row["audio_path"]
+            for row in json.loads(archive.read("recordings.json"))
+        }
+    assert archived_paths["meeting-present"] == "recordings/h.opus"
+    assert archived_paths["meeting-lost"] != "recordings/h.opus"
+
+    target = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    monkeypatch.setattr(
+        backup_stages,
+        "_enqueue_recording_finalization",
+        lambda recording_id, needs_proxy=True: None,
+    )
+    job_id = "restore-unarchived-audio"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    with Session(target.sync_engine) as session:
+        restored = {
+            row.meeting_uid: row for row in session.exec(select(TestRecording)).all()
+        }
+    await target.async_engine.dispose()
+    present = Path(restored["meeting-present"].audio_path)
+    assert present.read_bytes() == b"H-WAV-AS-OPUS"
+    assert not Path(restored["meeting-lost"].audio_path).exists()
