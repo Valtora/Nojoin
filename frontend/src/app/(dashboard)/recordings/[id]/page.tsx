@@ -204,7 +204,7 @@ export default function RecordingPage({ params }: PageProps) {
           </div>
         ) : isMobile ? (
           // The chat button below floats over whichever tab is open, so the
-          // tabs' scroll regions (.clear-floating-action) end with this much
+          // tabs' scroll regions (pb-clear-floating-*) end with this much
           // room: the button's 3.5rem, its 1rem offset, a 0.5rem gap and the
           // safe area it also clears.
           <div className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">

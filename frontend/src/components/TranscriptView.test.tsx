@@ -122,15 +122,17 @@ describe("TranscriptView", () => {
     positionMap.clear();
   });
 
-  // On a phone the meeting page floats its chat button over this region; the
-  // class is what gives the last line room to scroll clear of it.
+  // On a phone the meeting page floats its chat button over this region and
+  // sets --floating-action-clearance (page.test.tsx holds the page to that).
+  // The region's bottom padding is what turns that variable into room after
+  // the last line.
   it("lets the last line scroll clear of a floating button", () => {
     renderTranscriptView([
       buildSegment({ id: "utt-last", text: "Last line", speaker: "SPEAKER_00" }),
     ]);
 
-    expect(screen.getByTestId("transcript-scroll-region")).toHaveClass(
-      "clear-floating-action",
+    expect(screen.getByTestId("transcript-scroll-region").className).toMatch(
+      /\bpb-clear-floating-\d/,
     );
   });
 

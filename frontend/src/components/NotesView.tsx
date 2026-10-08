@@ -685,7 +685,7 @@ export default function NotesView({
       </div>
 
       {/* Notes Content */}
-      <div className="clear-floating-action flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {localNotes || isGenerating ? (
           <div className="relative h-full">
             <RichTextEditor

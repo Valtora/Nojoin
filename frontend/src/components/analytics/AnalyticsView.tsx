@@ -172,7 +172,7 @@ export default function AnalyticsView({
     // A container, not a viewport breakpoint. This tab lives in a resizable
     // panel between two collapsible rails, so how much width it has is the
     // window minus a number it cannot see. See DESIGN.md.
-    <div className="clear-floating-action custom-scrollbar @container/tab h-full space-y-5 overflow-y-auto p-4">
+    <div className="custom-scrollbar @container/tab h-full space-y-5 overflow-y-auto p-4 pb-clear-floating-4">
       {analytics.attribution_warning && (
         <AttributionWarning
           warning={analytics.attribution_warning}

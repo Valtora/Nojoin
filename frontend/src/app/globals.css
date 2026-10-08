@@ -6,6 +6,25 @@
 /* Enable class-based dark mode for manual theme switching */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Bottom padding for a scroll region that a floating button can cover:
+   pb-clear-floating-3 is pb-3 plus --floating-action-clearance.
+
+   The meeting page on a phone floats the chat button over the bottom-right of
+   whichever tab is open. It sets --floating-action-clearance on the mobile
+   container, and each tab's scroll region uses this in place of its own
+   bottom padding, so its last line can scroll clear of the button. The
+   variable defaults to zero, so the same region on desktop keeps exactly its
+   own padding.
+
+   Padding, not a spacer element, on purpose: a child sized h-full (an empty
+   or loading state, the notes editor) resolves against the content box, which
+   the padding already shrinks, so a short region does not overflow and never
+   scrolls. Only content that is genuinely longer than the region gets the
+   extra room at its end. */
+@utility pb-clear-floating-* {
+  padding-bottom: calc(var(--spacing) * --value(integer, number) + var(--floating-action-clearance, 0px));
+}
+
 /* Tailwind v4 has no config file, so this block is where a raw value above
    becomes a utility. Everything is referenced through var() rather than
    copied, which is what makes bg-action, text-status-info-fg and the rest
@@ -163,26 +182,6 @@ html {
   .page-shell {
     height: 100dvh;
     overflow-y: auto;
-  }
-
-  /* Room at the end of a scrolling region for a button floating over it.
-
-     The meeting page on a phone pins the chat button over the bottom-right
-     of whichever tab is open, and without this the last transcript line (or
-     note, or document) sat underneath it with no way to scroll it clear. The
-     page that owns the floating button sets --floating-action-clearance on an
-     ancestor; every region inside opts in with this class and grows a spacer
-     of that height after its content. The default is zero, so a region
-     rendered anywhere else (the desktop layout) is unchanged.
-
-     A spacer rather than padding-bottom because these regions already carry
-     their own padding, and a pseudo-element adds to it instead of replacing
-     it. */
-  .clear-floating-action::after {
-    content: "";
-    display: block;
-    flex-shrink: 0;
-    height: var(--floating-action-clearance, 0px);
   }
 
   .custom-scrollbar {
