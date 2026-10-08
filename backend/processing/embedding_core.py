@@ -10,6 +10,7 @@ from backend.processing.embedding_version import (
     LEGACY_EMBEDDING_METHOD_VERSION,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.embedding_audio import pyannote_readable_audio
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 logger = logging.getLogger(__name__)
@@ -406,16 +407,17 @@ def extract_embedding_for_segments(
         )
 
         speaker_embeddings = []
-        for seg in crops:
-            try:
-                unit_embedding = _crop_embedding(model, audio_path, seg)
-                if unit_embedding is not None:
-                    speaker_embeddings.append(unit_embedding)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    f"Failed to extract embedding for segment ({seg.start:.2f}, {seg.end:.2f}): {e}"
-                )
-                continue
+        with pyannote_readable_audio(audio_path) as readable_path:
+            for seg in crops:
+                try:
+                    unit_embedding = _crop_embedding(model, readable_path, seg)
+                    if unit_embedding is not None:
+                        speaker_embeddings.append(unit_embedding)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        f"Failed to extract embedding for segment ({seg.start:.2f}, {seg.end:.2f}): {e}"
+                    )
+                    continue
 
         if not speaker_embeddings:
             logger.warning(

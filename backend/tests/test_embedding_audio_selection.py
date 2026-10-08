@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import soundfile as sf
 
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.worker.tasks.embeddings import update_speaker_embedding_task
@@ -120,3 +124,45 @@ def test_update_speaker_embedding_task_prefers_proxy_for_browser_capture(
     assert captured["audio"] == str(proxy_path)
     assert captured["segments"] == [(1.0, 2.0)]
     assert recording_speaker.embedding == [0.1, 0.2]
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+def test_a_media_container_without_a_proxy_is_cropped_from_a_decoded_wav(
+    monkeypatch, tmp_path
+):
+    """With no proxy yet, the MKV itself is never handed to pyannote's crop."""
+    from backend.processing import embedding_core
+
+    source = tmp_path / "meeting.mkv"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=4"]
+        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=4:sample_rate=48000"]
+        + ["-c:v", "mpeg4", "-c:a", "aac", "-ac", "2", str(source)],
+        check=True,
+    )
+    recording = SimpleNamespace(audio_path=str(source), proxy_path=None)
+    target = select_recording_audio_for_embedding(recording)
+    cropped: list[tuple[str, int, int]] = []
+
+    def fake_crop(model, audio_path, segment):
+        info = sf.info(audio_path)
+        cropped.append((audio_path, info.channels, info.samplerate))
+        return [1.0, 0.0]
+
+    monkeypatch.setattr(
+        embedding_core, "load_embedding_model", lambda device, token: object()
+    )
+    monkeypatch.setattr(embedding_core, "_crop_embedding", fake_crop)
+    monkeypatch.setattr(embedding_core, "_embedding_model_cache", {})
+
+    result = embedding_core.extract_embedding_for_segments(
+        target, [(0.5, 3.5)], device_str="cpu", hf_token="unused"
+    )
+
+    assert result is not None
+    assert cropped
+    assert {(channels, rate) for _, channels, rate in cropped} == {(1, 16_000)}
+    decoded_paths = {path for path, _, _ in cropped}
+    assert str(source) not in decoded_paths
+    assert not any(Path(path).exists() for path in decoded_paths)

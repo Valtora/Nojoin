@@ -83,9 +83,36 @@ def ensure_ffmpeg_in_path():
         )
 
 
+class NoAudioStreamError(RuntimeError):
+    """ffprobe read the file's streams and none of them is audio."""
+
+
+def _duration_seconds(value) -> float | None:
+    """Parse an ffprobe duration: seconds, or a Matroska ``HH:MM:SS.f`` tag."""
+    if value in (None, "", "N/A"):
+        return None
+    text = str(value)
+    try:
+        if ":" in text:
+            hours, minutes, seconds = text.split(":")
+            return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+        return float(text)
+    except ValueError:
+        return None
+
+
 def get_audio_duration(file_path: str) -> float:
     """
-    Get the duration of an audio file in seconds using ffprobe.
+    Get the duration of a file's audio in seconds using ffprobe.
+
+    The first audio stream's own duration wins over the container's: a video
+    file's container can run longer than its audio track. Matroska keeps the
+    stream duration in a DURATION tag; anything else falls back to the
+    container duration.
+
+    Raises:
+        NoAudioStreamError: ffprobe read the streams and found no audio.
+        RuntimeError: ffprobe failed or reported no usable duration.
     """
     ensure_ffmpeg_in_path()
 
@@ -94,7 +121,7 @@ def get_audio_duration(file_path: str) -> float:
         "-v",
         "error",
         "-show_entries",
-        "format=duration",
+        "format=duration:stream=codec_type,duration:stream_tags=DURATION",
         "-of",
         "json",
         file_path,
@@ -102,15 +129,30 @@ def get_audio_duration(file_path: str) -> float:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
-        return float(data["format"]["duration"])
     except (
         subprocess.CalledProcessError,
-        KeyError,
         ValueError,
         FileNotFoundError,
     ) as e:
         # FileNotFoundError can happen if ffprobe is still not found
         raise RuntimeError(f"Failed to get audio duration for {file_path}: {e}")
+
+    streams = data.get("streams") or []
+    audio = [s for s in streams if s.get("codec_type") == "audio"]
+    if streams and not audio:
+        raise NoAudioStreamError(f"No audio stream in {file_path}")
+
+    candidates = [data.get("format", {}).get("duration")]
+    if audio:
+        candidates[:0] = [
+            audio[0].get("duration"),
+            (audio[0].get("tags") or {}).get("DURATION"),
+        ]
+    for candidate in candidates:
+        seconds = _duration_seconds(candidate)
+        if seconds is not None:
+            return seconds
+    raise RuntimeError(f"Failed to get audio duration for {file_path}: none reported")
 
 
 def _concatenate_with_ffmpeg_concat_demuxer(segment_paths: List[str], output_path: str):

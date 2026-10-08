@@ -26,6 +26,7 @@ from backend.processing.speaker_cap import (
 )
 from backend.utils.audio import (
     MEDIA_CONTAINER_SUFFIXES,
+    NoAudioStreamError,
     concatenate_binary_files,
     get_audio_duration,
 )
@@ -49,6 +50,11 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+NO_AUDIO_STREAM_DETAIL = (
+    "This file has no audio track, so there is nothing to import. "
+    "Check that the recording captured audio."
+)
 
 SUPPORTED_AUDIO_FORMATS = {
     ".wav",
@@ -136,6 +142,9 @@ async def import_audio(
     duration = 0.0
     try:
         duration = get_audio_duration(file_path)
+    except NoAudioStreamError:
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail=NO_AUDIO_STREAM_DETAIL)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
 
@@ -374,6 +383,8 @@ async def finalize_chunked_import(
         # Get duration
         try:
             recording.duration_seconds = get_audio_duration(recording.audio_path)
+        except NoAudioStreamError:
+            raise HTTPException(status_code=400, detail=NO_AUDIO_STREAM_DETAIL)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to get duration: {e}")
 
@@ -519,6 +530,9 @@ async def upload_recording(
     duration = 0.0
     try:
         duration = recordings_module.get_audio_duration(file_path)
+    except NoAudioStreamError:
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail=NO_AUDIO_STREAM_DETAIL)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
 

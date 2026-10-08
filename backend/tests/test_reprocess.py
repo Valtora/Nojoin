@@ -1659,6 +1659,93 @@ async def test_import_media_container_reaches_audio_only_artifacts(
 
 
 @pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_import_takes_the_duration_of_the_audio_not_the_video(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A screen recording whose video outlasts its audio is as long as its audio."""
+    source = tmp_path / "source.mkv"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=6"]
+        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=2"]
+        + ["-c:v", "mpeg4", "-c:a", "aac", str(source)],
+        check=True,
+    )
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+
+    response = await client.post(
+        "/api/v1/recordings/import",
+        files={"file": ("screen.mkv", source.read_bytes(), "video/x-matroska")},
+    )
+
+    assert response.status_code == 200, response.text
+    async with test_session_maker() as session:
+        duration = (
+            await session.execute(text("SELECT duration_seconds FROM recordings"))
+        ).scalar_one()
+    assert duration == pytest.approx(2.0, abs=0.1)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize("chunked", [False, True])
+async def test_import_without_an_audio_track_is_refused(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    chunked: bool,
+) -> None:
+    source = tmp_path / "silent.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"]
+        + ["-c:v", "mpeg4", str(source)],
+        check=True,
+    )
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+
+    if chunked:
+        init = await client.post(
+            "/api/v1/recordings/import/chunked/init",
+            params={"filename": "silent.mp4"},
+        )
+        assert init.status_code == 200, init.text
+        recording_id = init.json()["id"]
+        segment = await client.post(
+            "/api/v1/recordings/import/chunked/segment",
+            params={"recording_id": recording_id, "sequence": 0},
+            files={"file": ("0.part", source.read_bytes(), "application/octet-stream")},
+        )
+        assert segment.status_code == 200, segment.text
+        response = await client.post(
+            "/api/v1/recordings/import/chunked/finalize",
+            params={"recording_id": recording_id},
+        )
+    else:
+        response = await client.post(
+            "/api/v1/recordings/import",
+            files={"file": ("silent.mp4", source.read_bytes(), "video/mp4")},
+        )
+
+    assert response.status_code == 400
+    assert "no audio track" in response.json()["detail"]
+    assert str(tmp_path) not in response.text
+    assert calls == []
+    assert not list(recordings_dir.glob("*.mp4"))
+
+
+@pytest.mark.anyio
 async def test_reprocess_resets_and_rebuilds_pipeline_state(
     client: AsyncClient,
     test_session_maker: sessionmaker,
