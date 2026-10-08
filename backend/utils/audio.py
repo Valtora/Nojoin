@@ -84,7 +84,42 @@ def ensure_ffmpeg_in_path():
 
 
 class NoAudioStreamError(RuntimeError):
-    """ffprobe read the file's streams and none of them is audio."""
+    """The file holds no audio track, or only an empty one.
+
+    ``detail`` is the message shown to the person importing the file; the
+    exception's own text names the server path and stays in the logs.
+    """
+
+    detail = (
+        "This file has no audio track, so there is nothing to import. "
+        "Check that the recording captured audio."
+    )
+
+
+class UnreadableAudioStreamError(NoAudioStreamError):
+    """ffprobe lists an audio stream but could not read its sample format.
+
+    In MPEG-PS/TS this happens when the first audio packet lies past ffmpeg's
+    default probe window. Every conversion uses that same window, so each one
+    would fail with "Output file does not contain any stream".
+    """
+
+    detail = (
+        "Nojoin cannot read this file's audio track; it may start too far into "
+        "the file. Convert the file to an audio format such as MP3 or WAV and "
+        "import that."
+    )
+
+
+# A probe reads headers, not the whole file, so this only ever ends a hung one.
+FFPROBE_TIMEOUT_S = 60
+
+_DURATION_PROBE_ENTRIES = (
+    "format=duration"
+    ":stream=codec_type,channels,duration"
+    ":stream_disposition=default"
+    ":stream_tags"
+)
 
 
 def _duration_seconds(value) -> float | None:
@@ -101,18 +136,89 @@ def _duration_seconds(value) -> float | None:
         return None
 
 
+def _duration_tag(stream: dict) -> str | None:
+    """A Matroska track's DURATION statistics tag.
+
+    mkvmerge can write it with a language suffix, which ffprobe reports as a
+    separate key such as ``DURATION-eng``.
+    """
+    for key, value in (stream.get("tags") or {}).items():
+        name = key.upper()
+        if name == "DURATION" or name.startswith("DURATION-"):
+            return value
+    return None
+
+
+def decoded_audio_stream(streams: list[dict]) -> dict | None:
+    """The audio stream ffmpeg decodes when no stream is mapped explicitly.
+
+    ffmpeg's automatic selection takes the audio stream flagged default, then
+    the one with the most channels, then the first. Every conversion in this
+    module relies on that selection, so a file's length and format are read
+    from the same stream.
+    """
+    audio = [s for s in streams if s.get("codec_type") == "audio"]
+    if not audio:
+        return None
+    return max(
+        audio,
+        key=lambda s: (
+            bool((s.get("disposition") or {}).get("default")),
+            int(s.get("channels") or 0),
+        ),
+    )
+
+
+def audio_duration_from_probe(data: dict, source: str) -> float:
+    """The length in seconds of the audio ffmpeg decodes, from ffprobe JSON.
+
+    ``data`` needs the entries in ``_DURATION_PROBE_ENTRIES`` (``-show_format
+    -show_streams`` includes them). The decoded stream's Matroska DURATION tag
+    wins, then the stream's own duration, then the container's: a video file's
+    container can run longer than its audio track. A zero or negative value
+    counts as missing at each step, and is returned only when no step reports
+    a positive length.
+
+    Raises:
+        NoAudioStreamError: the streams hold no audio, or the decoded audio
+            track is empty (its DURATION tag is zero).
+        UnreadableAudioStreamError: the decoded audio stream has no channels.
+        RuntimeError: no duration is reported at all.
+    """
+    container = _duration_seconds((data.get("format") or {}).get("duration"))
+    candidates = [container]
+    streams = data.get("streams") or []
+    if streams:
+        stream = decoded_audio_stream(streams)
+        if stream is None:
+            raise NoAudioStreamError(f"No audio stream in {source}")
+        if stream.get("channels") == 0:
+            raise UnreadableAudioStreamError(f"Unreadable audio stream in {source}")
+        tagged = _duration_seconds(_duration_tag(stream))
+        if tagged is not None and tagged <= 0:
+            raise NoAudioStreamError(f"Empty audio track in {source}")
+        candidates = [tagged, _duration_seconds(stream.get("duration")), container]
+
+    reported = [seconds for seconds in candidates if seconds is not None]
+    for seconds in reported:
+        if seconds > 0:
+            return seconds
+    if reported:
+        return 0.0
+    raise RuntimeError(f"Failed to get audio duration for {source}: none reported")
+
+
 def get_audio_duration(file_path: str) -> float:
     """
     Get the duration of a file's audio in seconds using ffprobe.
 
-    The first audio stream's own duration wins over the container's: a video
-    file's container can run longer than its audio track. Matroska keeps the
-    stream duration in a DURATION tag; anything else falls back to the
-    container duration.
+    See ``audio_duration_from_probe`` for which track and which reported
+    length are used.
 
     Raises:
-        NoAudioStreamError: ffprobe read the streams and found no audio.
-        RuntimeError: ffprobe failed or reported no usable duration.
+        NoAudioStreamError: no audio track, or an empty one.
+        UnreadableAudioStreamError: an audio track ffmpeg cannot read.
+        RuntimeError: ffprobe failed, timed out or reported no duration.
     """
     ensure_ffmpeg_in_path()
 
@@ -121,38 +227,30 @@ def get_audio_duration(file_path: str) -> float:
         "-v",
         "error",
         "-show_entries",
-        "format=duration:stream=codec_type,duration:stream_tags=DURATION",
+        _DURATION_PROBE_ENTRIES,
         "-of",
         "json",
         file_path,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=FFPROBE_TIMEOUT_S,
+        )
         data = json.loads(result.stdout)
     except (
         subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
         ValueError,
         FileNotFoundError,
     ) as e:
         # FileNotFoundError can happen if ffprobe is still not found
         raise RuntimeError(f"Failed to get audio duration for {file_path}: {e}")
 
-    streams = data.get("streams") or []
-    audio = [s for s in streams if s.get("codec_type") == "audio"]
-    if streams and not audio:
-        raise NoAudioStreamError(f"No audio stream in {file_path}")
-
-    candidates = [data.get("format", {}).get("duration")]
-    if audio:
-        candidates[:0] = [
-            audio[0].get("duration"),
-            (audio[0].get("tags") or {}).get("DURATION"),
-        ]
-    for candidate in candidates:
-        seconds = _duration_seconds(candidate)
-        if seconds is not None:
-            return seconds
-    raise RuntimeError(f"Failed to get audio duration for {file_path}: none reported")
+    return audio_duration_from_probe(data, file_path)
 
 
 def _concatenate_with_ffmpeg_concat_demuxer(segment_paths: List[str], output_path: str):

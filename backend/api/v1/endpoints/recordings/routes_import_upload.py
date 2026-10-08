@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -50,11 +51,6 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
-
-NO_AUDIO_STREAM_DETAIL = (
-    "This file has no audio track, so there is nothing to import. "
-    "Check that the recording captured audio."
-)
 
 SUPPORTED_AUDIO_FORMATS = {
     ".wav",
@@ -141,10 +137,10 @@ async def import_audio(
     # Get duration
     duration = 0.0
     try:
-        duration = get_audio_duration(file_path)
-    except NoAudioStreamError:
+        duration = await asyncio.to_thread(get_audio_duration, file_path)
+    except NoAudioStreamError as exc:
         os.remove(file_path)
-        raise HTTPException(status_code=400, detail=NO_AUDIO_STREAM_DETAIL)
+        raise HTTPException(status_code=400, detail=exc.detail)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
 
@@ -336,6 +332,28 @@ async def upload_chunked_segment(
     return {"status": "received", "segment": sequence}
 
 
+async def _discard_chunked_import(db: AsyncSession, recording: Recording) -> None:
+    """Remove a refused chunked import: its files, chunk rows and recording."""
+    recordings_module.delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=recording.audio_path,
+        proxy_path=None,
+        logger=logger,
+    )
+    await db.execute(
+        delete(RecordingAudioChunk).where(
+            RecordingAudioChunk.recording_id == recording.id
+        )
+    )
+    await db.execute(
+        delete(RecordingAudioWindowManifest).where(
+            RecordingAudioWindowManifest.recording_id == recording.id
+        )
+    )
+    await db.delete(recording)
+    await db.commit()
+
+
 @router.post("/import/chunked/finalize", response_model=RecordingPublicRead)
 async def finalize_chunked_import(
     recording_id: str,
@@ -380,11 +398,13 @@ async def finalize_chunked_import(
         file_stats = os.stat(recording.audio_path)
         recording.file_size_bytes = file_stats.st_size
 
-        # Get duration
+        # Get duration. NoAudioStreamError is left to the refusal below.
         try:
-            recording.duration_seconds = get_audio_duration(recording.audio_path)
+            recording.duration_seconds = await asyncio.to_thread(
+                get_audio_duration, recording.audio_path
+            )
         except NoAudioStreamError:
-            raise HTTPException(status_code=400, detail=NO_AUDIO_STREAM_DETAIL)
+            raise
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to get duration: {e}")
 
@@ -403,6 +423,11 @@ async def finalize_chunked_import(
             recording_id=recording.id,
             audio_path=recording.audio_path,
         )
+    except NoAudioStreamError as exc:
+        # Refused like /import and /upload: nothing of the upload is kept, so
+        # no failed recording is left in the library.
+        await _discard_chunked_import(db, recording)
+        raise HTTPException(status_code=400, detail=exc.detail)
     except HTTPException as exc:
         recordings_module.delete_recording_artifacts(
             recording_id=recording.id,
@@ -518,23 +543,29 @@ async def upload_recording(
                 exc=e,
             )
 
+    # The no-audio refusal comes first: a video-only file has no audio
+    # bitrate, and the floor would refuse it for the wrong reason.
+    duration = 0.0
     try:
-        recordings_module._enforce_lossy_audio_bitrate_floor(file_path)
+        duration = await asyncio.to_thread(
+            recordings_module.get_audio_duration, file_path
+        )
+    except NoAudioStreamError as exc:
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail=exc.detail)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to get duration: {e}")
+
+    try:
+        await asyncio.to_thread(
+            recordings_module._enforce_lossy_audio_bitrate_floor, file_path
+        )
     except HTTPException:
         if os.path.exists(file_path):
             os.remove(file_path)
         raise
 
     file_stats = os.stat(file_path)
-
-    duration = 0.0
-    try:
-        duration = recordings_module.get_audio_duration(file_path)
-    except NoAudioStreamError:
-        os.remove(file_path)
-        raise HTTPException(status_code=400, detail=NO_AUDIO_STREAM_DETAIL)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to get duration: {e}")
 
     # Create DB entry
     name = os.path.splitext(file.filename)[0]

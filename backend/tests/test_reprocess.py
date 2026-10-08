@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +17,8 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.models.document import Document
+from backend.models.tag import RecordingTag
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
@@ -401,6 +404,14 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(GLOBAL_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
+        # Deleting a recording through the ORM loads its tags and documents
+        # to cascade them, so both tables must exist.
+        await connection.run_sync(
+            lambda sync: (
+                RecordingTag.__table__.create(sync),
+                Document.__table__.create(sync),
+            )
+        )
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
         await connection.execute(text(PROCESSING_RUNS_SCHEMA))
         await connection.execute(text(DIARIZATION_WINDOW_RESULTS_SCHEMA))
@@ -1693,56 +1704,271 @@ async def test_import_takes_the_duration_of_the_audio_not_the_video(
     assert duration == pytest.approx(2.0, abs=0.1)
 
 
+def _ffmpeg(*args: str) -> None:
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args], check=True)
+
+
+@contextlib.asynccontextmanager
+async def _no_upload_limit(*args, **kwargs):
+    yield
+
+
+async def _post_upload(
+    client: AsyncClient, route: str, source: Path, filename: str
+) -> object:
+    """Send ``source`` through /import, chunked import or /upload."""
+    if route == "import":
+        return await client.post(
+            "/api/v1/recordings/import",
+            files={"file": (filename, source.read_bytes(), "video/x-test")},
+        )
+    if route == "upload":
+        return await client.post(
+            "/api/v1/recordings/upload",
+            files={"file": (filename, source.read_bytes(), "video/x-test")},
+        )
+    init = await client.post(
+        "/api/v1/recordings/import/chunked/init", params={"filename": filename}
+    )
+    assert init.status_code == 200, init.text
+    recording_id = init.json()["id"]
+    segment = await client.post(
+        "/api/v1/recordings/import/chunked/segment",
+        params={"recording_id": recording_id, "sequence": 0},
+        files={"file": ("0.part", source.read_bytes(), "application/octet-stream")},
+    )
+    assert segment.status_code == 200, segment.text
+    return await client.post(
+        "/api/v1/recordings/import/chunked/finalize",
+        params={"recording_id": recording_id},
+    )
+
+
+async def _assert_nothing_kept(
+    test_session_maker: sessionmaker, recordings_dir: Path
+) -> None:
+    async with test_session_maker() as session:
+        for table in (
+            "recordings",
+            "recording_audio_chunks",
+            "recording_audio_window_manifests",
+        ):
+            count = (
+                await session.execute(text(f"SELECT COUNT(*) FROM {table}"))
+            ).scalar_one()
+            assert count == 0, table
+    assert [path for path in recordings_dir.rglob("*") if path.is_file()] == []
+
+
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-@pytest.mark.parametrize("chunked", [False, True])
+@pytest.mark.parametrize("route", ["import", "chunked", "upload"])
 async def test_import_without_an_audio_track_is_refused(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
     tmp_path: Path,
-    chunked: bool,
+    route: str,
 ) -> None:
+    """Every upload route refuses it and keeps nothing: no row, no file."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
     source = tmp_path / "silent.mp4"
-    subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error"]
-        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"]
-        + ["-c:v", "mpeg4", str(source)],
-        check=True,
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"],
+        *["-c:v", "mpeg4", str(source)],
     )
     recordings_dir = tmp_path / "recordings"
     recordings_dir.mkdir()
     calls = _patch_delay(monkeypatch)
     monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
 
-    if chunked:
-        init = await client.post(
-            "/api/v1/recordings/import/chunked/init",
-            params={"filename": "silent.mp4"},
-        )
-        assert init.status_code == 200, init.text
-        recording_id = init.json()["id"]
-        segment = await client.post(
-            "/api/v1/recordings/import/chunked/segment",
-            params={"recording_id": recording_id, "sequence": 0},
-            files={"file": ("0.part", source.read_bytes(), "application/octet-stream")},
-        )
-        assert segment.status_code == 200, segment.text
-        response = await client.post(
-            "/api/v1/recordings/import/chunked/finalize",
-            params={"recording_id": recording_id},
-        )
-    else:
-        response = await client.post(
-            "/api/v1/recordings/import",
-            files={"file": ("silent.mp4", source.read_bytes(), "video/mp4")},
-        )
+    response = await _post_upload(client, route, source, "silent.mp4")
 
     assert response.status_code == 400
     assert "no audio track" in response.json()["detail"]
     assert str(tmp_path) not in response.text
     assert calls == []
-    assert not list(recordings_dir.glob("*.mp4"))
+    await _assert_nothing_kept(test_session_maker, recordings_dir)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize(
+    ("fixture", "detail"),
+    [
+        # An audio track with no packets: its DURATION tag is zero and a
+        # decode yields 0 s, while the container still says 3 s.
+        (
+            [
+                *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=3"],
+                *["-ss", "30", "-f", "lavfi", "-i", "sine=frequency=440:duration=1"],
+                *["-map", "0:v", "-map", "1:a", "-c:v", "mpeg4", "-c:a", "aac"],
+                "empty.mkv",
+            ],
+            "no audio track",
+        ),
+        # MPEG-PS whose first audio packet lies past ffprobe's default probe
+        # window: the stream reports 0 channels and every conversion fails.
+        (
+            [
+                *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=8"],
+                *["-itsoffset", "6", "-f", "lavfi", "-i", "sine=duration=2"],
+                *["-c:v", "mpeg2video", "-c:a", "mp2"],
+                "late.mpg",
+            ],
+            "cannot read this file's audio track",
+        ),
+    ],
+    ids=["empty-track", "late-audio"],
+)
+async def test_import_refuses_audio_it_cannot_use(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    fixture: list[str],
+    detail: str,
+) -> None:
+    filename = fixture[-1]
+    source = tmp_path / filename
+    _ffmpeg(*fixture[:-1], str(source))
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+
+    response = await _post_upload(client, "import", source, filename)
+
+    assert response.status_code == 400, response.text
+    assert detail in response.json()["detail"]
+    assert calls == []
+    await _assert_nothing_kept(test_session_maker, recordings_dir)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_import_times_the_audio_track_ffmpeg_decodes(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """With two audio tracks the stored length is the default-flagged one's.
+
+    The first track lasts 3 s and the second, flagged default, 5 s. ffmpeg
+    decodes the second, so the transcript runs 5 s and so must the recording.
+    """
+    import soundfile as sf
+
+    from backend.processing.audio_preprocessing import (
+        preprocess_audio_for_diarization,
+    )
+
+    source = tmp_path / "two-tracks.mkv"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=5"],
+        *["-f", "lavfi", "-i", "sine=frequency=440:duration=3"],
+        *["-f", "lavfi", "-i", "sine=frequency=880:duration=5"],
+        *["-map", "0:v", "-map", "1:a", "-map", "2:a"],
+        *["-c:v", "mpeg4", "-c:a", "aac", "-ac", "2"],
+        *["-disposition:a:0", "0", "-disposition:a:1", "default"],
+        str(source),
+    )
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+
+    response = await _post_upload(client, "import", source, "two-tracks.mkv")
+
+    assert response.status_code == 200, response.text
+    async with test_session_maker() as session:
+        audio_path, duration = (
+            await session.execute(
+                text("SELECT audio_path, duration_seconds FROM recordings")
+            )
+        ).one()
+    assert duration == pytest.approx(5.0, abs=0.1)
+    processed = preprocess_audio_for_diarization(audio_path)
+    assert processed is not None
+    try:
+        assert sf.info(processed).duration == pytest.approx(duration, abs=0.1)
+    finally:
+        Path(processed).unlink()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_upload_bitrate_floor_ignores_the_video_track(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """32 kb/s audio under 1 Mb/s of video is low-bitrate audio, and refused."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    source = tmp_path / "screen.mp4"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=2"],
+        *["-f", "lavfi", "-i", "sine=frequency=440:duration=2"],
+        *["-c:v", "mpeg4", "-b:v", "1M", "-c:a", "aac", "-b:a", "32k"],
+        str(source),
+    )
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
+
+    response = await _post_upload(client, "upload", source, "screen.mp4")
+
+    assert response.status_code == 422, response.text
+    assert "below 128 kbps" in response.json()["detail"]
+    assert calls == []
+    await _assert_nothing_kept(test_session_maker, recordings_dir)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_recording_info_describes_the_audio_not_the_video(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """/info agrees with the stored length and leaves the video's bytes out."""
+    source = tmp_path / "screen.mov"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=6"],
+        *["-f", "lavfi", "-i", "sine=frequency=440:duration=2"],
+        *["-c:v", "mpeg4", "-b:v", "1M", "-c:a", "aac", "-b:a", "96k"],
+        str(source),
+    )
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+
+    imported = await _post_upload(client, "import", source, "screen.mov")
+    assert imported.status_code == 200, imported.text
+    response = await client.get(f"/api/v1/recordings/{imported.json()['id']}/info")
+
+    assert response.status_code == 200, response.text
+    original = response.json()["original"]
+    async with test_session_maker() as session:
+        stored = (
+            await session.execute(text("SELECT duration_seconds FROM recordings"))
+        ).scalar_one()
+    assert original["duration"] == pytest.approx(stored)
+    assert original["duration"] == pytest.approx(2.0, abs=0.1)
+    assert 64_000 < original["bitrate"] < 128_000
 
 
 @pytest.mark.anyio

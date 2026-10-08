@@ -254,9 +254,18 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
     """
     Analyze an audio file and return basic information.
     Returns None if analysis fails.
+
+    Describes the audio track ffmpeg decodes. For a file that also carries
+    video, the duration and bitrate are that track's, not the container's,
+    which would count the video; the bitrate is None when the container does
+    not report one per stream (Matroska/WebM). ``size`` is the whole file's.
     """
     try:
-        from backend.utils.audio import ensure_ffmpeg_in_path
+        from backend.utils.audio import (
+            audio_duration_from_probe,
+            decoded_audio_stream,
+            ensure_ffmpeg_in_path,
+        )
 
         ensure_ffmpeg_in_path()
 
@@ -275,13 +284,23 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
 
         format_info = data.get("format", {})
         streams = data.get("streams", [])
-        audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), {})
+        audio_stream = decoded_audio_stream(streams) or {}
+        carries_video = any(
+            s.get("codec_type") == "video"
+            and not (s.get("disposition") or {}).get("attached_pic")
+            for s in streams
+        )
+        try:
+            duration = audio_duration_from_probe(data, file_path)
+        except RuntimeError:
+            duration = float(format_info.get("duration", 0))
+        bitrate_info = audio_stream if carries_video else format_info
 
         return {
-            "duration": float(format_info.get("duration", 0)),
+            "duration": duration,
             "format": format_info.get("format_name"),
-            "bitrate": int(format_info.get("bit_rate", 0))
-            if format_info.get("bit_rate")
+            "bitrate": int(bitrate_info.get("bit_rate", 0))
+            if bitrate_info.get("bit_rate")
             else None,
             "sample_rate": int(audio_stream.get("sample_rate", 0))
             if audio_stream.get("sample_rate")
