@@ -8,9 +8,9 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Optional, Union
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from jose import jwt
 
 from backend.utils.path_manager import path_manager
 from backend.utils.time import utc_now
@@ -312,19 +312,15 @@ def create_access_token(
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and verify a JWT using the keyring entry indicated by its ``kid``.
 
-    Raises :class:`jose.JWTError` if the token cannot be verified with any
-    known key.
+    Raises :class:`jwt.InvalidTokenError` if the token is malformed or cannot
+    be verified with any known key.
     """
-    try:
-        unverified_header = jwt.get_unverified_header(token)
-    except Exception:  # pragma: no cover - defensive: jose raises subclass of Exception  # noqa: BLE001
-        unverified_header = {}
-    kid = unverified_header.get("kid") if isinstance(unverified_header, dict) else None
+    # PyJWT parses the header strictly: a malformed token or a non-string
+    # ``kid`` raises InvalidTokenError here, before any key lookup.
+    kid = jwt.get_unverified_header(token).get("kid")
     signing_key = get_signing_key_for_kid(kid)
     if signing_key is None:
-        from jose import JWTError
-
-        raise JWTError("Unknown signing key id")
+        raise jwt.InvalidTokenError("Unknown signing key id")
     return jwt.decode(token, signing_key, algorithms=[ALGORITHM])
 
 

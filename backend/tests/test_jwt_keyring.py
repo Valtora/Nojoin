@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+import jwt
 import pytest
 
 from backend.core import security
@@ -88,9 +89,7 @@ def test_pruning_retired_keys_invalidates_tokens_signed_by_them(isolated_keyring
 
     assert original_kid in removed
 
-    from jose import JWTError
-
-    with pytest.raises(JWTError):
+    with pytest.raises(jwt.InvalidTokenError):
         security.decode_access_token(token_before)
 
 

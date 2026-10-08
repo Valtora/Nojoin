@@ -304,8 +304,8 @@ def _build_access_token(
         token_version=user.token_version,
         extra_claims={
             "client_id": client_id,
-            # Custom claim (not "aud": python-jose rejects tokens carrying
-            # "aud" unless every decode call passes an audience option).
+            # Custom claim (not "aud": PyJWT rejects tokens carrying "aud"
+            # unless every decode call passes an audience option).
             "res": mcp_resource_url(),
             # Lets the MCP endpoint attribute a request to its consent grant
             # so Connected Apps can show when the grant was actually used.
