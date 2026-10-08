@@ -190,7 +190,40 @@ def test_unreadable_data_directory_is_reported_with_the_file_named(
 
     monkeypatch.setattr(Path, "exists", exists)
 
-    with pytest.raises(
-        security.SigningKeyUnavailableError, match=re.escape(str(keyring_file))
-    ):
+    with pytest.raises(security.SigningKeyUnavailableError) as excinfo:
         security.get_signing_keyring()
+
+    message = str(excinfo.value)
+    assert message.startswith(
+        f"Unable to read or write the JWT key file {keyring_file}"
+    )
+    assert f"Make sure the api can read and write {isolated_keyring}" in message
+
+
+def test_legacy_key_file_that_is_not_utf8_gets_the_delete_remedy(isolated_keyring):
+    legacy_file = isolated_keyring / ".secret_key"
+    legacy_file.write_bytes(b"\xff\xfe not text")
+
+    with pytest.raises(security.SigningKeyUnavailableError) as excinfo:
+        security.get_signing_keyring()
+
+    message = str(excinfo.value)
+    assert message.startswith(f"The JWT key file {legacy_file} is malformed")
+    assert f"Delete {legacy_file} and restart" in message
+    assert not (isolated_keyring / ".secret_keys.json").exists()
+
+
+@pytest.mark.parametrize("file_name", [".secret_keys.json", ".secret_key"])
+def test_key_file_that_is_a_directory_gets_the_remove_remedy(
+    isolated_keyring, file_name
+):
+    key_path = isolated_keyring / file_name
+    key_path.mkdir()
+
+    with pytest.raises(security.SigningKeyUnavailableError) as excinfo:
+        security.get_signing_keyring()
+
+    message = str(excinfo.value)
+    assert message.startswith(f"The JWT key file {key_path} is a directory")
+    assert "bind mount" in message
+    assert "Remove the directory" in message

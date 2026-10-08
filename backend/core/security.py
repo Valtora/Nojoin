@@ -69,23 +69,23 @@ def _read_keyring_file() -> Optional[dict[str, Any]]:
             return None
         content = keyring_file.read_text(encoding="utf-8")
     except OSError as exc:
-        raise _keyring_access_error(exc) from exc
+        raise _key_file_access_error(keyring_file, exc) from exc
     except UnicodeDecodeError as exc:
-        raise _malformed_keyring_error(keyring_file, str(exc)) from exc
+        raise _malformed_key_file_error(keyring_file, str(exc)) from exc
     if not content.strip():
         # A write cut short, for example by a full disk, leaves the file blank.
         raise _empty_signing_key_error(keyring_file)
     try:
         data = json.loads(content)
     except json.JSONDecodeError as exc:
-        raise _malformed_keyring_error(keyring_file, str(exc)) from exc
+        raise _malformed_key_file_error(keyring_file, str(exc)) from exc
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("keys"), dict)
         or not isinstance(data.get("active"), str)
         or data["active"] not in data["keys"]
     ):
-        raise _malformed_keyring_error(keyring_file, "no usable active key entry")
+        raise _malformed_key_file_error(keyring_file, "no usable active key entry")
     return data
 
 
@@ -106,21 +106,31 @@ def _empty_signing_key_error(key_file: Path) -> SigningKeyUnavailableError:
     )
 
 
-def _malformed_keyring_error(
-    keyring_file: Path, reason: str
+def _malformed_key_file_error(
+    key_file: Path, reason: str
 ) -> SigningKeyUnavailableError:
     return SigningKeyUnavailableError(
-        f"The JWT keyring at {keyring_file} is malformed ({reason}), so no token "
-        f"can be signed or verified. {_replace_key_file_remedy(keyring_file)}"
+        f"The JWT key file {key_file} is malformed ({reason}), so no token can "
+        f"be signed or verified. {_replace_key_file_remedy(key_file)}"
     )
 
 
-def _keyring_access_error(exc: Exception) -> SigningKeyUnavailableError:
-    data_dir = _keyring_path().parent
+def _key_file_access_error(
+    key_file: Path, exc: Union[OSError, UnicodeDecodeError]
+) -> SigningKeyUnavailableError:
+    if isinstance(exc, IsADirectoryError):
+        return SigningKeyUnavailableError(
+            f"The JWT key file {key_file} is a directory, so no token can be "
+            "signed or verified. A Docker bind mount of a host file that does "
+            "not exist creates a directory like this. Remove the directory and "
+            "any bind mount of that file (the key lives in the data directory), "
+            "then restart Nojoin to generate a new key (everyone signed in will "
+            "have to sign in again), or set the SECRET_KEY environment variable."
+        )
     return SigningKeyUnavailableError(
-        f"Unable to read or create the JWT keyring in {data_dir} ({exc}), so no "
+        f"Unable to read or write the JWT key file {key_file} ({exc}), so no "
         f"token can be signed or verified. Make sure the api can read and write "
-        f"{data_dir}, or set the SECRET_KEY environment variable."
+        f"{key_file.parent}, or set the SECRET_KEY environment variable."
     )
 
 
@@ -140,12 +150,23 @@ def _write_keyring_file(data: dict[str, Any]) -> None:
         )
 
 
+def _read_legacy_key(legacy_file: Path) -> Optional[str]:
+    try:
+        if not legacy_file.exists():
+            return None
+        return legacy_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise _key_file_access_error(legacy_file, exc) from exc
+    except UnicodeDecodeError as exc:
+        raise _malformed_key_file_error(legacy_file, str(exc)) from exc
+
+
 def _bootstrap_keyring() -> dict[str, Any]:
     legacy_file = _legacy_key_path()
     _migrate_legacy_secret_file(legacy_file)
 
-    if legacy_file.exists():
-        legacy_value = legacy_file.read_text(encoding="utf-8").strip()
+    legacy_value = _read_legacy_key(legacy_file)
+    if legacy_value is not None:
         if not legacy_value:
             raise _empty_signing_key_error(legacy_file)
         data = {
@@ -189,7 +210,8 @@ def _load_keyring() -> dict[str, Any]:
             try:
                 keyring = _bootstrap_keyring()
             except (OSError, UnicodeDecodeError) as exc:
-                raise _keyring_access_error(exc) from exc
+                # Writing the new keyring, or migrating a desktop-era key file.
+                raise _key_file_access_error(_keyring_path(), exc) from exc
     # Checked here rather than in _read_keyring_file so that
     # rotate_signing_key() can still replace an empty active key.
     if not keyring["keys"][keyring["active"]]:
