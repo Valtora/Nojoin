@@ -328,8 +328,11 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   meeting_uid: string;
   audio_path: string;
   has_proxy?: boolean;
-  /** False when neither the audio nor its proxy exists, so none is coming. */
-  has_audio?: boolean;
+  /**
+   * False when neither the audio nor its proxy exists, so none is coming.
+   * Null when the endpoint did not check; only list and detail reads do.
+   */
+  has_audio?: boolean | null;
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;

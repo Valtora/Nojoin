@@ -157,7 +157,9 @@ class RecordingPublicRead(PublicModel):
     # False when neither the recording's audio nor its playback proxy is on disk
     # (a recording restored from a backup taken without audio, for one), so the
     # interface can say so instead of waiting for a proxy that never comes.
-    has_audio: bool = True
+    # None when the endpoint did not check: only the reads that load a recording
+    # for display (list and detail) look at the disk.
+    has_audio: Optional[bool] = None
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
@@ -316,7 +318,7 @@ def serialize_recording(
     recording: Recording,
     *,
     has_proxy: bool = False,
-    has_audio: bool = True,
+    has_audio: Optional[bool] = None,
     processing_eta_seconds: Optional[int] = None,
     processing_eta_learning: bool = False,
     processing_eta_sample_size: int = 0,
