@@ -21,21 +21,11 @@ PARAKEET_REPO = "models--istupakov--parakeet-tdt-0.6b-v3-onnx"
 
 
 @pytest.fixture
-def homes(monkeypatch, tmp_path) -> dict[str, Path]:
+def homes(model_cache_env, tmp_path) -> dict[str, Path]:
     """An empty personal HOME and an empty managed cache, nothing else set."""
-    home = tmp_path / "home"
     managed = tmp_path / "managed"
-    home.mkdir()
     managed.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    for variable in (
-        "HF_HOME",
-        "HF_HUB_CACHE",
-        "HUGGINGFACE_HUB_CACHE",
-        "XDG_CACHE_HOME",
-    ):
-        monkeypatch.delenv(variable, raising=False)
-    return {"home": home, "managed": managed}
+    return {"home": model_cache_env, "managed": managed}
 
 
 def _personal_hf_model(home: Path, repo: str) -> Path:

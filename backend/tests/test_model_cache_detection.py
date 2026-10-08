@@ -14,6 +14,8 @@ import pytest
 
 from backend.preload_models import check_model_status
 
+pytestmark = pytest.mark.usefixtures("model_cache_env")
+
 # The directory names a real install ends up with, taken from a live cache.
 CACHED_REPOS = (
     "models--istupakov--canary-1b-v2-onnx",
