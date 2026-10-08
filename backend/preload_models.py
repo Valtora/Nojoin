@@ -15,6 +15,7 @@ from backend.utils.download_progress import (
     set_download_progress,
 )
 from backend.utils.logging_config import setup_logging
+from backend.utils.model_cache_paths import hf_hub_cache_root, whisper_cache_root
 from backend.utils.pyannote_model_utils import (
     is_repo_bundled_pyannote_path,
     resolve_local_pyannote_model,
@@ -52,36 +53,6 @@ ONNX_ASR_CACHE_FRAGMENTS = {
     "parakeet": "parakeet-tdt-0.6b-v3",
     "canary": "canary-1b-v2",
 }
-
-
-def _hf_hub_cache_root() -> str:
-    """The Hugging Face hub cache the ONNX ASR loader downloads into.
-
-    Mirrors huggingface_hub's own resolution (HF_HUB_CACHE, then
-    HUGGINGFACE_HUB_CACHE, then $HF_HOME/hub, then
-    ${XDG_CACHE_HOME:-~/.cache}/huggingface/hub) without importing it, since
-    the API process reads this too and the library fixes its constants at
-    import time.
-    """
-    for variable in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
-        explicit = os.getenv(variable)
-        if explicit:
-            return os.path.expanduser(os.path.expandvars(explicit))
-    hf_home = os.getenv("HF_HOME")
-    if not hf_home:
-        cache_home = os.getenv(
-            "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-        )
-        hf_home = os.path.join(cache_home, "huggingface")
-    return os.path.join(os.path.expanduser(os.path.expandvars(hf_home)), "hub")
-
-
-def _whisper_cache_root() -> str:
-    """The directory the Whisper engine passes to whisper.load_model."""
-    cache_home = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-    )
-    return os.path.join(cache_home, "whisper")
 
 
 def _is_within(path: str, root: str) -> bool:
@@ -313,10 +284,7 @@ def _prepare_whisper_model(model_size: str) -> None:
     _suppress_whisper_timing_warnings()
     import whisper
 
-    download_root = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-    )
-    download_root = os.path.join(download_root, "whisper")
+    download_root = whisper_cache_root()
     os.makedirs(download_root, exist_ok=True)
 
     logger.info("Preparing Whisper model %s in %s", model_size, download_root)
@@ -502,7 +470,7 @@ def check_model_status(whisper_model_size=None):
 
     # Only where the engine loads from: whisper.load_model is given exactly
     # this directory, so a copy anywhere else would be downloaded again.
-    download_root = _whisper_cache_root()
+    download_root = whisper_cache_root()
 
     # Use local dict instead of importing whisper
     filename = WHISPER_FILENAMES.get(whisper_model_size)
@@ -522,7 +490,7 @@ def check_model_status(whisper_model_size=None):
     # Only the cache onnx-asr downloads into. A copy in another Hugging Face
     # cache (a personal ~/.cache/huggingface on a bare-metal install) is never
     # loaded, so reporting it would hide a download still to come.
-    hf_cache = _hf_hub_cache_root()
+    hf_cache = hf_hub_cache_root()
     for status_key, fragment in ONNX_ASR_CACHE_FRAGMENTS.items():
         status[status_key]["checked_paths"].append(hf_cache)
         if not os.path.isdir(hf_cache):
@@ -573,7 +541,7 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
     # Status can find a Pyannote model in a Hugging Face cache Nojoin does not
     # own (the personal one, on a bare-metal install with HF_HOME set). Deleting
     # is only ever done inside the caches Nojoin's own loaders download into.
-    managed_roots = (_hf_hub_cache_root(), _whisper_cache_root())
+    managed_roots = (hf_hub_cache_root(), whisper_cache_root())
     if not any(_is_within(path, root) for root in managed_roots):
         raise ValueError(
             f"Model {model_name} is outside Nojoin's model cache and is not deleted "

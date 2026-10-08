@@ -240,14 +240,11 @@ class WhisperEngine(TranscriptionEngine):
             if model_size not in _model_cache:
                 logger.info(f"Loading Whisper model: {model_size}")
 
-                # Explicitly define download root to match preload_models.py
-                download_root = os.getenv(
-                    "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-                )
-                download_root = os.path.join(download_root, "whisper")
+                # The root model status and preparation use, from one resolver.
+                from ...utils.model_cache_paths import whisper_cache_root
 
                 _model_cache[model_size] = whisper.load_model(
-                    model_size, device=device, download_root=download_root
+                    model_size, device=device, download_root=whisper_cache_root()
                 )
                 logger.info(f"Whisper model {model_size} loaded successfully.")
             model = _model_cache[model_size]
