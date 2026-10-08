@@ -16,6 +16,7 @@ from backend.utils.download_progress import (
 )
 from backend.utils.logging_config import setup_logging
 from backend.utils.model_cache_paths import hf_hub_cache_root, whisper_cache_root
+from backend.utils.onnx_asr_cache import ONNX_ASR_MODELS, find_cached_onnx_asr_model
 from backend.utils.pyannote_model_utils import (
     is_repo_bundled_pyannote_path,
     resolve_local_pyannote_model,
@@ -39,19 +40,6 @@ WHISPER_FILENAMES = {
     "large-v3": "large-v3.pt",
     "large": "large-v3.pt",
     "turbo": "large-v3-turbo.pt",
-}
-
-# Hugging Face cache directory fragments for the ONNX ASR models, used to detect
-# them without importing onnx-asr into the API process.
-#
-# These are fragments of the *repo* name, not of the Nojoin model id, because the
-# two diverge: `nemo-canary-1b-v2` is cached as `models--istupakov--canary-1b-v2-onnx`,
-# with no `nemo-` prefix. Matching the Nojoin id reported Canary as permanently
-# missing however many times it was downloaded, which also made it undeletable,
-# since deletion resolves its path through the same status check.
-ONNX_ASR_CACHE_FRAGMENTS = {
-    "parakeet": "parakeet-tdt-0.6b-v3",
-    "canary": "canary-1b-v2",
 }
 
 
@@ -483,26 +471,20 @@ def check_model_status(whisper_model_size=None):
             status["whisper"]["downloaded"] = True
             status["whisper"]["path"] = filepath
 
-    # Check the ONNX ASR models.
-    # Best-effort detection: onnx-asr caches the model under the Hugging Face hub
-    # cache. Detection is a directory-name match; the exact repo dir name may vary
-    # by onnx-asr version, so this is treated as a heuristic, not authoritative.
-    # Only the cache onnx-asr downloads into. A copy in another Hugging Face
-    # cache (a personal ~/.cache/huggingface on a bare-metal install) is never
-    # loaded, so reporting it would hide a download still to come.
+    # Check the ONNX ASR models, only in the hub cache onnx-asr downloads into
+    # and only under the exact repo it loads. A copy anywhere else (a personal
+    # ~/.cache/huggingface on a bare-metal install, or another repo with a
+    # similar name) is never loaded, so reporting it would hide a download
+    # still to come.
     hf_cache = hf_hub_cache_root()
-    for status_key, fragment in ONNX_ASR_CACHE_FRAGMENTS.items():
-        status[status_key]["checked_paths"].append(hf_cache)
-        if not os.path.isdir(hf_cache):
-            continue
-        try:
-            for entry in os.listdir(hf_cache):
-                if fragment in entry:
-                    status[status_key]["downloaded"] = True
-                    status[status_key]["path"] = os.path.join(hf_cache, entry)
-                    break
-        except OSError:
-            pass
+    for status_key, onnx_model in ONNX_ASR_MODELS.items():
+        status[status_key]["checked_paths"].append(
+            os.path.join(hf_cache, onnx_model.repo_dirname)
+        )
+        repo_dir = find_cached_onnx_asr_model(onnx_model)
+        if repo_dir:
+            status[status_key]["downloaded"] = True
+            status[status_key]["path"] = repo_dir
 
     for status_key, model_id in (
         ("pyannote", "pyannote/speaker-diarization-community-1"),

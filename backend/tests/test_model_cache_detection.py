@@ -1,7 +1,7 @@
 """Detecting cached ONNX ASR models on disk.
 
-The status heuristic matches Hugging Face cache directory names. It has to match
-the *repo* name rather than the Nojoin model id, because the two diverge:
+Status looks for the exact Hugging Face cache directory of the repo onnx-asr
+loads: the *repo* name rather than the Nojoin model id, because the two diverge:
 onnx-asr caches `nemo-canary-1b-v2` as `models--istupakov--canary-1b-v2-onnx`.
 Matching the Nojoin id reported Canary as missing however many times it was
 prepared, and made it undeletable with it, since deletion resolves its path
@@ -10,9 +10,12 @@ through this same check.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from backend.preload_models import check_model_status
+from backend.tests.hf_cache_layout import write_onnx_asr_repo
 
 pytestmark = pytest.mark.usefixtures("model_cache_env")
 
@@ -27,14 +30,15 @@ CACHED_REPOS = (
 def test_a_downloaded_onnx_model_is_reported_as_present(model, monkeypatch, tmp_path):
     hub = tmp_path / "hub"
     hub.mkdir()
-    for repo in CACHED_REPOS:
-        (hub / repo).mkdir()
+    for cached in ("parakeet", "canary"):
+        write_onnx_asr_repo(hub, cached)
     monkeypatch.setenv("HF_HOME", str(tmp_path))
 
     status = check_model_status(whisper_model_size="turbo")
 
     assert status[model]["downloaded"] is True
-    assert status[model]["path"].startswith(str(hub))
+    assert Path(status[model]["path"]).parent == hub
+    assert Path(status[model]["path"]).name in CACHED_REPOS
 
 
 @pytest.mark.parametrize("model", ["parakeet", "canary"])
