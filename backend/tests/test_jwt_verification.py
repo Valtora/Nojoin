@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 import warnings
 from datetime import timedelta
@@ -14,7 +15,6 @@ from typing import Any
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -178,20 +178,13 @@ def _rsa_private_key() -> rsa.RSAPrivateKey:
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _forge_hs256_with_der_public_key() -> str:
-    # GHSA-3qf3-8w2g-rqmx: an HS256 token whose HMAC secret is a DER-encoded
-    # RSA public key. Nojoin only ever verifies with keyring secrets, so this
-    # must fail signature verification.
-    der = (
-        _rsa_private_key()
-        .public_key()
-        .public_bytes(
-            serialization.Encoding.DER,
-            serialization.PublicFormat.SubjectPublicKeyInfo,
-        )
-    )
+def _forge_wrong_key() -> str:
+    # A known kid and HS256, signed with a secret that is not the keyring's:
+    # the one forged token here that fails at the HMAC signature check.
     header = {"alg": "HS256", "kid": JOSE_KID, "typ": "JWT"}
-    return _hs256_token(header, _claims(security.SESSION_TOKEN_TYPE), der)
+    return _hs256_token(
+        header, _claims(security.SESSION_TOKEN_TYPE), secrets.token_bytes(32)
+    )
 
 
 def _forge_alg_none() -> str:
@@ -231,7 +224,7 @@ def _forge_future_iat() -> str:
 
 
 FORGED_TOKENS = {
-    "hs256-der-public-key": _forge_hs256_with_der_public_key,
+    "wrong-key": _forge_wrong_key,
     "alg-none": _forge_alg_none,
     "rs256": _forge_rs256,
     "list-kid": _forge_list_kid,
