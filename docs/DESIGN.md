@@ -68,9 +68,9 @@ as an uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts
 | Preference | On `<html>` | Default |
 | --- | --- | --- |
 | Theme | `.dark` class | follows the system |
-| Palette | `data-palette` = `graphite`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
+| Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
 | Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
-| Density | `data-ui-density` = `comfortable` or `compact` | resolved from the viewport |
+| Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
 
 Every default leaves the product exactly as it looks without the preference, which is the invariant
 to keep when adding one.
@@ -89,6 +89,14 @@ an error has to look the same whichever palette is chosen.
 
 `check-contrast.mjs` discovers palettes from that file and audits both blocks against the full app
 pairing list, modelling the cascade above, so a new palette is gated the moment it exists.
+
+Two consequences of the shared danger and the 3:1 fill rule show up in the palettes as they stand.
+A page as dark as Windows button-face grey (#D4D0C8) cannot carry the shared danger text, so
+Classic's page is #ECE9D8 and the grey is confined to the rails. And a dark-mode fill has to clear
+3:1 against the card while still carrying its label at 4.5:1, which a deep colour (Classic's navy,
+Marigold's gold-on-forest) cannot do with a white label; those palettes invert the dark fill to a
+light colour with a dark label (`--action-on`). Components must therefore always label an action
+fill with `text-action-on`, never with a literal white.
 
 ## Colour
 
@@ -249,8 +257,26 @@ Spacing, radii and control heights are tokens rather than per-component values, 
 the density setting possible. `ViewportDensityProvider` sets `data-ui-density="compact"` on the
 document element, and a single block in `tokens.css` re-declares the layout tokens at smaller
 values. No component needs to know the density. Density is resolved from the viewport unless the
-user has chosen Comfortable or Compact in Settings; `resolveDensity()` in `lib/viewportDensity.ts`
-is the one place that decision is made, and the pre-paint script mirrors it.
+user has chosen Comfortable, Compact or Dense in Settings; `resolveDensity()` in
+`lib/viewportDensity.ts` is the one place that decision is made, and the pre-paint script mirrors
+it.
+
+### Dense
+
+Dense is opt-in only: the viewport heuristic never returns it, and Compact's values do not move
+for it. Its token block lists itself beside compact, so it inherits compact's values and then
+tightens. It is split by input, and the split is the rule to keep when tuning it:
+
+- **Everywhere:** spacing that is never a touch target (workspace gaps and padding, card padding,
+  surface radii) and `--leading-relaxed-step`, which Tailwind's `leading-relaxed` reads through
+  `globals.css` (1.625 by default, 1.45 in Dense).
+- **`@media (pointer: fine)` only:** the root font size (14px) that every rem padding, row height
+  and control height hangs off, and `--control-height-lg`. On a coarse pointer Dense keeps
+  compact's 15px root and 3.25rem controls, so it never makes a touch target smaller than Compact
+  already does.
+
+`useViewportDensity().isCompact` is true for compact and dense alike, so layout code that narrows a
+rail for compact narrows it for dense too.
 
 | Token group | Members |
 | --- | --- |
