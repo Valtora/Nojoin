@@ -72,7 +72,20 @@ def _read_keyring_file() -> Optional[dict[str, Any]]:
         or data["active"] not in data["keys"]
     ):
         raise RuntimeError(f"JWT keyring at {keyring_file} is malformed.")
+    if not data["keys"][data["active"]]:
+        raise _empty_signing_key_error(keyring_file)
     return data
+
+
+def _empty_signing_key_error(key_file: Path) -> RuntimeError:
+    # PyJWT refuses an empty HMAC key, so an empty key would fail every
+    # sign-in with a bare 500. Refusing it at load names the file instead.
+    return RuntimeError(
+        f"The JWT signing key in {key_file} is empty, so no token can be signed "
+        f"or verified. Delete {key_file} and restart Nojoin to generate a new "
+        "key (everyone signed in will have to sign in again), or set the "
+        "SECRET_KEY environment variable."
+    )
 
 
 def _write_keyring_file(data: dict[str, Any]) -> None:
@@ -97,6 +110,8 @@ def _bootstrap_keyring() -> dict[str, Any]:
 
     if legacy_file.exists():
         legacy_value = legacy_file.read_text(encoding="utf-8").strip()
+        if not legacy_value:
+            raise _empty_signing_key_error(legacy_file)
         data = {
             "active": DEFAULT_LEGACY_KID,
             "keys": {DEFAULT_LEGACY_KID: legacy_value},

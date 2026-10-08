@@ -363,7 +363,7 @@ The compose stack derives internal service URLs for PostgreSQL, Redis, and Celer
 Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
 Every variable below is only read by a container if that container's compose service passes it in, which the shipped `docker-compose.example.yml` does for all of them.
 If you maintain your own compose file, a variable you set in `.env` but never declare in a service's `environment:` block is silently discarded: the stack starts and the application default applies with no warning.
-Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that.
+Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that. If that key file is empty, the api refuses to start and logs which file to delete; see [JWT Signing Key Rotation](SECURITY.md#jwt-signing-key-rotation).
 Nojoin can also auto-generate `data/.data_encryption_key`, but operators should treat that as a fallback rather than the primary persistence strategy.
 
 ### Always Set

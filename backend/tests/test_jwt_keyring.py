@@ -1,8 +1,11 @@
+import json
+import re
 from datetime import timedelta
 
 import jwt
 import pytest
 
+from backend import main
 from backend.core import security
 
 
@@ -103,3 +106,53 @@ def test_secret_key_env_disables_rotation(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError):
         security.rotate_signing_key()
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+def test_empty_legacy_secret_key_is_refused_with_the_file_named(isolated_keyring):
+    legacy_file = isolated_keyring / ".secret_key"
+    legacy_file.write_text("\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match=re.escape(str(legacy_file))):
+        security.get_signing_keyring()
+
+    # Nothing is persisted, so deleting the empty file and restarting
+    # generates a fresh key instead of reloading an empty one.
+    assert not (isolated_keyring / ".secret_keys.json").exists()
+    assert legacy_file.exists()
+    legacy_file.unlink()
+    assert security.get_active_signing_key()[1]
+
+
+def test_empty_active_keyring_key_is_refused_with_the_file_named(isolated_keyring):
+    keyring_file = isolated_keyring / ".secret_keys.json"
+    keyring_file.write_text(
+        json.dumps({"active": "legacy", "keys": {"legacy": ""}}), encoding="utf-8"
+    )
+
+    with pytest.raises(RuntimeError, match=re.escape(str(keyring_file))):
+        security.create_access_token(
+            "alice",
+            token_type=security.SESSION_TOKEN_TYPE,
+            scopes=[security.WEB_SESSION_SCOPE],
+            token_version=0,
+        )
+
+
+@pytest.mark.anyio
+async def test_api_startup_refuses_an_empty_signing_key(isolated_keyring, monkeypatch):
+    (isolated_keyring / ".secret_keys.json").write_text(
+        json.dumps({"active": "legacy", "keys": {"legacy": ""}}), encoding="utf-8"
+    )
+    migrations: list[bool] = []
+    monkeypatch.setattr(main, "run_migrations", lambda: migrations.append(True))
+
+    with pytest.raises(RuntimeError, match="is empty"):
+        async with main.lifespan(main.app):
+            pass
+
+    assert migrations == []

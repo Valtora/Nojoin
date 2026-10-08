@@ -124,6 +124,7 @@ class EnforceCanonicalHttpsMiddleware(BaseHTTPMiddleware):
 
 # Import models to register them with SQLModel
 from backend.core.db import async_session_maker
+from backend.core.security import get_signing_keyring
 from backend.models.user import User
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
@@ -255,6 +256,9 @@ def log_recordings_storage_warnings(*, logger_instance: logging.Logger) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Loading the JWT keyring here, not lazily at the first sign-in, means an
+    # unusable signing key stops startup with a message naming its file.
+    get_signing_keyring()
     run_migrations()
     await ensure_owner_exists()
     await log_first_run_setup_pointer()

@@ -82,6 +82,7 @@ JWT signing material is stored as a small keyring rather than a single static va
 - After enough time has passed for outstanding tokens to expire, `prune_signing_keys()` removes retired keys from the keyring. Any token still signed by a removed key fails verification immediately, providing a hard cut-over.
 - Setting the `SECRET_KEY` environment variable overrides the keyring with a single static key (intended for advanced deployments and tests). In that mode the rotation API is disabled. Use at least 32 bytes of random data (for example `openssl rand -hex 32`, the same size as a generated keyring key): RFC 7518 Section 3.2 requires an HS256 key at least as long as its 256-bit hash output. A shorter value still works, so existing deployments keep signing in, but PyJWT emits an `InsecureKeyLengthWarning` when it signs or verifies with it.
 - Existing single-key installs are migrated automatically: the legacy `<user_data>/.secret_key` file is loaded into the keyring as `kid="legacy"` on first startup and the legacy file is renamed.
+- The api loads the keyring at startup and refuses to start if the signing key is empty (an empty legacy `.secret_key`, or an empty active entry in `.secret_keys.json`, for example after a write to a full disk). The error names the file: delete it and restart to generate a new key. Everyone signed in has to sign in again, which is the right outcome, since an empty HMAC key would let anyone forge a token.
 
 ## Browser Capture Security
 
