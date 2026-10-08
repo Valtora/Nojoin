@@ -4,10 +4,11 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Dict, Optional
+from contextlib import contextmanager
+from typing import Dict, Iterator, Optional
 
 from backend.core.exceptions import AudioFormatError
-from backend.utils.audio import convert_to_mono_16k
+from backend.utils.audio import convert_to_mono_16k, convert_to_wav
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,42 @@ def cleanup_temp_file(temp_path: str):
         logger.warning(f"Failed to delete temp file {temp_path}: {e}", exc_info=True)
 
 
+_ANALYSIS_WAV_SUFFIX = "_analysis.wav"
+
+
+@contextmanager
+def soundfile_readable_audio(audio_path: str) -> Iterator[str]:
+    """Yield a path to ``audio_path``'s audio that soundfile can open.
+
+    A browser-captured recording is stored in the WebM container MediaRecorder
+    produced, which libsndfile cannot open. A file soundfile reads is yielded
+    as it is; anything else is decoded with ffmpeg to a temporary 16-bit PCM
+    WAV, keeping its sample rate and channels (delivery analysis tells the two
+    browser capture sources apart by channel), and removed on exit.
+
+    Raises:
+        AudioFormatError: ffmpeg could not decode the file either.
+    """
+    import soundfile as sf
+
+    try:
+        sf.info(audio_path)
+    except sf.LibsndfileError:
+        pass
+    else:
+        yield audio_path
+        return
+
+    temp_fd, temp_path = tempfile.mkstemp(suffix=_ANALYSIS_WAV_SUFFIX)
+    os.close(temp_fd)
+    try:
+        if not convert_to_wav(audio_path, temp_path):
+            raise AudioFormatError(f"Could not decode {audio_path} for analysis.")
+        yield temp_path
+    finally:
+        cleanup_temp_file(temp_path)
+
+
 # Suffixes this module and the VAD stage give their scratch files. Matched by
 # suffix rather than by a bare "tmp*" glob so the sweep below can only ever reach
 # files Nojoin created.
@@ -149,6 +186,7 @@ _PIPELINE_TEMP_SUFFIXES = (
     "_vad_processed.wav",
     "_vad_processed.mp3",
     "_preprocessed.wav",
+    _ANALYSIS_WAV_SUFFIX,
 )
 
 

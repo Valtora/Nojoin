@@ -28,6 +28,7 @@ def test_pipeline_sweep_reclaims_scratch_a_killed_worker_left_behind(
         "tmpabc123_vad_processed.wav",
         "tmpabc123_vad_processed.mp3",
         "tmpdef456_preprocessed.wav",
+        "tmpghi789_analysis.wav",
     ):
         target = tmp_path / name
         target.write_bytes(b"audio")
@@ -37,7 +38,7 @@ def test_pipeline_sweep_reclaims_scratch_a_killed_worker_left_behind(
         max_age_hours=24, temp_dir=str(tmp_path)
     )
 
-    assert reclaimed == 4
+    assert reclaimed == 5
     assert list(tmp_path.iterdir()) == []
 
 

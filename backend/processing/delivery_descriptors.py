@@ -379,12 +379,17 @@ def analyse_delivery(
     import numpy as np
     import soundfile as sf
 
+    from backend.processing.audio_preprocessing import soundfile_readable_audio
+
     readings: dict[str, list[dict[str, Any]]] = {}
     skipped_overlapping = 0
     skipped_short = 0
     ambiguous_channel = 0
 
-    with sf.SoundFile(audio_path) as handle:
+    with (
+        soundfile_readable_audio(audio_path) as readable_path,
+        sf.SoundFile(readable_path) as handle,
+    ):
         sample_rate = handle.samplerate
         total_frames = len(handle)
 
