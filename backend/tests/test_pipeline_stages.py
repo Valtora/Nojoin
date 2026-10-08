@@ -27,6 +27,7 @@ import sys
 import types
 
 from backend.models.recording import ClientStatus, RecordingStatus
+from backend.models.transcript import Transcript
 from backend.processing import transcribe as real_transcribe
 from backend.worker import tasks as tasks_module
 
@@ -55,6 +56,12 @@ class _ExecResult:
 
 
 class _FakeTranscript:
+    # The real ownership rules for error_message, on this lightweight stand-in.
+    transcription_failed = Transcript.transcription_failed
+    fail_transcription = Transcript.fail_transcription
+    complete_transcription = Transcript.complete_transcription
+    set_notes_error_message = Transcript.set_notes_error_message
+
     def __init__(self, recording_id: int):
         self.recording_id = recording_id
         self.text = None

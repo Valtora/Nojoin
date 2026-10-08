@@ -58,8 +58,7 @@ def mark_transcript_failed(session, recording_id: int, message: str) -> None:
     ).first()
     if transcript is None:
         transcript = Transcript(recording_id=recording_id, text="", segments=[])
-    transcript.transcript_status = "error"
-    transcript.error_message = message
+    transcript.fail_transcription(message)
     session.add(transcript)
     session.commit()
 
@@ -67,15 +66,11 @@ def mark_transcript_failed(session, recording_id: int, message: str) -> None:
 def mark_transcript_without_speech(transcript: Transcript) -> None:
     """Complete a transcript as empty because the audio held no speech.
 
-    ``error_message`` is shared with notes failures. While ``transcript_status``
-    is ``"error"`` it holds why a previous transcription failed, which this run
-    supersedes, so it is cleared; otherwise it belongs to notes and is left
-    alone. ``notes_status`` is left alone too: there is nothing to summarise, so
-    no notes run follows, which is also what the success path does when the
-    meeting-intelligence stage skips an empty transcript.
+    A previous transcription failure is cleared; a notes error is not
+    (``Transcript.complete_transcription``). ``notes_status`` is left alone:
+    there is nothing to summarise, so no notes run follows, which is also what
+    the success path does when meeting intelligence skips an empty transcript.
     """
-    if transcript.transcript_status == "error":
-        transcript.error_message = None
     transcript.text = ""  # Empty string to prevent hallucinations
     transcript.segments = []
-    transcript.transcript_status = "completed"
+    transcript.complete_transcription()

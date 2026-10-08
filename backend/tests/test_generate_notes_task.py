@@ -453,10 +453,12 @@ def _transcript_status_and_error(engine: Any) -> tuple[str, str, str]:
         verification_engine.dispose()
 
 
-def test_notes_generated_from_live_text_keep_the_transcription_failure(
+def test_notes_task_skips_a_recording_whose_transcription_failed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The API refuses notes for a failed transcription; a task queued before
+    the failure leaves the notes and the transcription failure untouched."""
     monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
     engine = _create_notes_task_database(
@@ -465,34 +467,14 @@ def test_notes_generated_from_live_text_keep_the_transcription_failure(
     )
     _fail_the_transcription(engine)
 
-    class FakeLLM:
-        def generate_meeting_notes(self, *args, **kwargs) -> str:
-            return "# Meeting Notes"
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("No LLM call for a failed transcription")
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
     monkeypatch.setattr(
-        "backend.processing.llm_backends.factory.get_llm_backend",
-        lambda *args, **kwargs: FakeLLM(),
+        "backend.processing.llm_backends.factory.get_llm_backend", fail_if_called
     )
 
     _run_generate_notes_task(engine)
 
-    assert _transcript_status_and_error(engine) == ("completed", "error", _ASR_FAILURE)
-
-
-def test_failed_notes_do_not_overwrite_the_transcription_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
-    # No model selected: notes generation fails before any LLM call.
-    engine = _create_notes_task_database(
-        tmp_path, owner_settings={"llm_provider": "anthropic"}
-    )
-    _fail_the_transcription(engine)
-    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-
-    _run_generate_notes_task(engine)
-
-    assert _transcript_status_and_error(engine) == ("error", "error", _ASR_FAILURE)
+    assert _transcript_status_and_error(engine) == ("pending", "error", _ASR_FAILURE)

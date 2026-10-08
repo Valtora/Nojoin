@@ -1,3 +1,5 @@
+from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
+
 from .constants import *
 
 
@@ -27,6 +29,18 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         ).first()
         if not transcript:
             logger.error(f"Transcript for recording {recording_id} not found.")
+            return
+        if transcript.transcription_failed():
+            # The API refuses this; a task queued before the failure lands here.
+            logger.warning(
+                "Skipping notes for recording %s: %s",
+                recording_id,
+                TRANSCRIPTION_FAILED_NOTES_MESSAGE,
+            )
+            if transcript.notes_status == "generating":
+                transcript.notes_status = "pending"
+                session.add(transcript)
+                session.commit()
             return
 
         # Update status
@@ -488,7 +502,7 @@ def _mark_notes_generation_error_impl(
     transcript: Transcript | None,
     error: Exception | str,
 ) -> None:
-    if not transcript:
+    if not transcript or transcript.transcription_failed():
         return
 
     transcript.notes_status = "error"

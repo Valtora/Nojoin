@@ -97,12 +97,36 @@ class Transcript(BaseDBModel, table=True):
 
     recording: "Recording" = Relationship(back_populates="transcript")
 
-    def set_notes_error_message(self, message: Optional[str]) -> None:
-        """Record (or clear) a notes error without hiding a failed transcription.
+    # ``error_message`` is shared by transcription and notes failures. These
+    # methods are the only writers of it, and they keep one rule: while
+    # ``transcript_status`` is ``"error"`` the message says why transcription
+    # failed, which is what the recording reports until it is reprocessed;
+    # otherwise it belongs to notes.
 
-        ``error_message`` is shared. While ``transcript_status`` is ``"error"`` it
-        holds why transcription failed, which is what the recording reports until
-        it is reprocessed, so notes runs leave it alone.
+    def transcription_failed(self) -> bool:
+        return self.transcript_status == "error"
+
+    def fail_transcription(self, message: str) -> None:
+        """Mark the transcription failed, with ``message`` as the reason."""
+        self.transcript_status = "error"
+        self.error_message = message
+
+    def complete_transcription(self) -> None:
+        """Mark the transcription completed, clearing a transcription failure.
+
+        A notes error is left alone: it is still true of the notes.
         """
-        if self.transcript_status != "error":
+        if self.transcription_failed():
+            self.error_message = None
+        self.transcript_status = "completed"
+
+    def set_notes_error_message(self, message: Optional[str]) -> None:
+        """Record (or clear) a notes error without hiding a failed transcription."""
+        if not self.transcription_failed():
             self.error_message = message
+
+
+# Why notes cannot be generated for a recording whose transcription failed.
+TRANSCRIPTION_FAILED_NOTES_MESSAGE = (
+    "Transcription failed; reprocess the recording before generating notes."
+)

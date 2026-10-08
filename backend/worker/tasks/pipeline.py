@@ -528,8 +528,8 @@ def _persist_final_transcript(
     if transcript:
         transcript.text = full_text
         transcript.segments = final_segments
-        transcript.transcript_status = "completed"
-        transcript.error_message = None
+        transcript.complete_transcription()
+        transcript.set_notes_error_message(None)
         if transcript.notes_status == "error":
             transcript.notes_status = "pending"
         session.add(transcript)
@@ -659,7 +659,7 @@ def _finalize_transcript_and_notes(
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
         transcript.notes_status = "generating"
-        transcript.error_message = None
+        transcript.set_notes_error_message(None)
         session.add(transcript)
         session.commit()
         celery_app.send_task(
