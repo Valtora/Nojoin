@@ -23,6 +23,7 @@ const getSettings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
+const exportAudio = vi.fn();
 
 let activePanel = "transcript";
 
@@ -36,6 +37,17 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
+}));
+
+// The dashboard layout wraps every recording page in the capture provider; the
+// shared recording actions read it.
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => ({
+    cancel: vi.fn(),
+    recordingId: null,
+    pausedRecording: null,
+    runtimeActive: false,
+  }),
 }));
 
 vi.mock("@/lib/store", () => ({
@@ -66,7 +78,7 @@ vi.mock("@/lib/api", () => ({
   updateUserNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
   exportContent: vi.fn(),
-  exportAudio: vi.fn(),
+  exportAudio: (...args: unknown[]) => exportAudio(...args),
   ExportContentType: {},
   ExportFormat: {},
 }));
@@ -102,7 +114,19 @@ vi.mock("@/components/RecordingStatusDisplay", () => ({
   default: () => <div data-testid="recording-status-display" />,
 }));
 vi.mock("@/components/ExportModal", () => ({
-  default: () => <div data-testid="export-modal" />,
+  default: ({
+    hasAudio,
+    onExport,
+  }: {
+    hasAudio: boolean;
+    onExport: (contentType: string, format: string) => void;
+  }) => (
+    <button
+      data-testid="export-modal"
+      data-has-audio={String(hasAudio)}
+      onClick={() => onExport("audio", "txt")}
+    />
+  ),
 }));
 vi.mock("@/components/RecordingTagEditor", () => ({
   default: () => <div data-testid="recording-tag-editor" />,
@@ -169,6 +193,7 @@ describe("RecordingPage (detail)", () => {
     getGlobalSpeakers.mockReset();
     getTranscriptUtterances.mockReset();
     renameRecording.mockReset();
+    exportAudio.mockReset();
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -293,6 +318,29 @@ describe("RecordingPage (detail)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("offers no audio export, and explains a failed one, when the audio is gone", async () => {
+    getRecording.mockResolvedValue(
+      buildRecording({ has_proxy: false, has_audio: false }),
+    );
+    exportAudio.mockRejectedValue({ response: { status: 404 } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderPage();
+
+    const exportModal = await screen.findByTestId("export-modal");
+    expect(exportModal).toHaveAttribute("data-has-audio", "false");
+
+    fireEvent.click(exportModal);
+
+    await waitFor(() => {
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "error",
+        message: expect.stringMatching(/audio is not available/),
+      });
+    });
+    expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync");
   });
 
   it("renders the notes panel when notes is the active tab", async () => {

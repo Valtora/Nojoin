@@ -20,7 +20,6 @@ import {
   updateUserNotes,
   updateMeetingEdgeFocus,
   exportContent,
-  exportAudio,
   ExportContentType,
   ExportFormat,
 } from "@/lib/api";
@@ -64,6 +63,7 @@ import {
 } from "@/lib/transcriptState";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
+import { useRecordingActions } from "@/components/recordings/_hooks/useRecordingActions";
 
 import {
   cloneTranscriptSegments,
@@ -95,6 +95,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
   const { addNotification } = useNotificationStore();
+  const recordingActions = useRecordingActions();
   const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
 
   // Undo/Redo State
@@ -1075,14 +1076,14 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     format: ExportFormat,
   ) => {
     if (!recording) return;
+    if (contentType === "audio") {
+      // Reports its own failures, with what went wrong.
+      await recordingActions.exportAudio(recording.id, recording.name);
+      return;
+    }
     try {
-      if (contentType === "audio") {
-        await exportAudio(recording.id, recording.name);
-      } else {
-        await exportContent(recording.id, contentType, format);
-      }
-
-        } catch (error: unknown) {
+      await exportContent(recording.id, contentType, format);
+    } catch (error: unknown) {
       console.error("Export failed:", error);
       addNotification({
         type: "error",

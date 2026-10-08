@@ -203,7 +203,7 @@ Within a processed recording you can:
 - Click transcript text to seek playback.
 - Edit transcript text and speaker assignments.
 - Export transcript-only, notes-only, or combined output as TXT, PDF, or DOCX.
-- Export the recording's audio as MP3.
+- Export the recording's audio as MP3. The option is unavailable when the recording has no audio, for example after a restore from a backup taken without it. While the playable copy is still being prepared, the export asks you to try again shortly.
 
 Exported transcripts carry a `[MM:SS]` timestamp and the resolved speaker name on every line, in all three document formats, so an export stays navigable against the audio without a separate subtitle file. Notes-only exports carry the meeting notes as written. Every export is headed with the meeting name, date, duration, and speaker list.
 

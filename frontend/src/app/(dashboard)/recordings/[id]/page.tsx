@@ -406,6 +406,7 @@ export default function RecordingPage({ params }: PageProps) {
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
+        hasAudio={recording?.has_audio !== false}
       />
     </div>
   );
