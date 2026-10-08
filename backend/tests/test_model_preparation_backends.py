@@ -5,7 +5,8 @@ loads Whisper, so an install whose users transcribe with Parakeet or Canary must
 not download it at every start; the diarisation and voice-embedding models are
 needed whatever the engine. The engine is stored per user (Settings >
 Transcription writes it to the choosing administrator's row, not config.json),
-so startup reads the users.
+so startup reads the users, and the admin health check reports what startup
+prepared.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from backend import preload_models
+from backend.api.services import health_service
 from backend.services import model_preparation
 from backend.tests.sqlite_schemas import USERS_SCHEMA
 
@@ -320,3 +322,63 @@ def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
     assert kwargs == _config_dispatch(monkeypatch)
     assert prepared == ["whisper:turbo", "pyannote"]
     assert "config.json decides" in caplog.text
+
+
+# --- Admin health check -------------------------------------------------------
+
+
+def _stub_other_health_checks(monkeypatch, model_status: dict) -> None:
+    ok = {"status": "ok"}
+
+    async def ready(*args, **kwargs):
+        return ok, True
+
+    for name in (
+        "_get_db_component",
+        "_get_queue_component",
+        "_get_worker_component",
+        "_get_diarization_component",
+        "_get_device_component",
+    ):
+        monkeypatch.setattr(health_service, name, ready)
+
+    async def optional_ai(db):
+        return ok
+
+    monkeypatch.setattr(health_service, "_get_optional_ai_component", optional_ai)
+    monkeypatch.setattr(health_service, "_get_ffmpeg_component", lambda: (ok, True))
+    monkeypatch.setattr(health_service, "_get_storage_component", lambda: (ok, True))
+    monkeypatch.setattr(
+        health_service,
+        "_current_download_summary",
+        lambda: {"in_progress": False, "stage": None},
+    )
+    monkeypatch.setattr(
+        health_service,
+        "check_model_status",
+        lambda whisper_model_size=None: model_status,
+    )
+
+
+def test_admin_health_reports_the_engine_startup_prepared(monkeypatch):
+    """Owner on Parakeet, config.json on whisper, Whisper deleted from the cache."""
+    _use_config(monkeypatch, {"transcription_backend": "whisper"})
+    _stub_other_health_checks(
+        monkeypatch,
+        {
+            "whisper": {"downloaded": False, "path": None},
+            "parakeet": {"downloaded": True, "path": "/cache/parakeet"},
+        },
+    )
+
+    async def run() -> dict:
+        users = [("owner", True, {"transcription_backend": "parakeet"})]
+        async with _users_db(users) as maker, maker() as session:
+            return await health_service.get_admin_health_status(session)
+
+    health = asyncio.run(run())
+
+    component = health["checks"]["transcription_model"]
+    assert component["backend"] == "parakeet"
+    assert component["label"] == "Ready"
+    assert health["summary"]["pipeline_status"] == "ready"
