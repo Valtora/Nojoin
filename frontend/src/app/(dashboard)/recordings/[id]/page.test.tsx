@@ -177,6 +177,7 @@ describe("RecordingPage (detail)", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("shows a loading state before the recording resolves", () => {
@@ -267,4 +268,36 @@ describe("RecordingPage (detail)", () => {
       "Generated notes body",
     );
   });
+  // On a phone the page floats the chat button over whichever tab is open.
+  // The tabs' scroll regions only leave room for it because the page sets
+  // --floating-action-clearance on the mobile container; if that goes, the
+  // last transcript line is back under the button.
+  it("reserves room for the phone chat button around the tab content", async () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 844);
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: "Open Meeting Chat" }),
+    ).toBeInTheDocument();
+    expect(clearanceAncestors(await screen.findByTestId("transcript-view"))).toHaveLength(1);
+  });
+
+  it("reserves nothing on desktop, where there is no floating button", async () => {
+    vi.stubGlobal("innerWidth", 1440);
+    vi.stubGlobal("innerHeight", 900);
+    renderPage();
+
+    const transcript = await screen.findByTestId("transcript-view");
+    expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).toBeNull();
+    expect(clearanceAncestors(transcript)).toHaveLength(0);
+  });
 });
+
+function clearanceAncestors(element: HTMLElement): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    if (/\[--floating-action-clearance:/.test(node.className)) found.push(node);
+  }
+  return found;
+}
