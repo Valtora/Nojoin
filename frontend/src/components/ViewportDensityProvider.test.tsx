@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 import { ViewportDensityProvider, useViewportDensity } from "./ViewportDensityProvider";
 
@@ -44,5 +44,44 @@ describe("ViewportDensityProvider", () => {
     );
 
     expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it.each(["comfortable", "compact", "dense"])(
+    "keeps an explicit %s density through window resizes",
+    (density) => {
+      localStorage.setItem("nojoin-density", density);
+      render(
+        <ViewportDensityProvider>
+          <Probe />
+        </ViewportDensityProvider>,
+      );
+
+      for (const [width, height] of [[390, 844], [1440, 900], [2560, 1440]]) {
+        vi.stubGlobal("innerWidth", width);
+        vi.stubGlobal("innerHeight", height);
+        act(() => {
+          window.dispatchEvent(new Event("resize"));
+        });
+
+        expect(document.documentElement.dataset.uiDensity).toBe(density);
+      }
+    },
+  );
+
+  it("re-resolves automatic density on resize", () => {
+    render(
+      <ViewportDensityProvider>
+        <Probe />
+      </ViewportDensityProvider>,
+    );
+    expect(document.documentElement.dataset.uiDensity).toBe("comfortable");
+
+    vi.stubGlobal("innerWidth", 1440);
+    vi.stubGlobal("innerHeight", 900);
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(document.documentElement.dataset.uiDensity).toBe("compact");
   });
 });
