@@ -144,19 +144,34 @@ def cleanup_temp_file(temp_path: str):
 
 _ANALYSIS_WAV_SUFFIX = "_analysis.wav"
 
+# Upper bound on one analysis decode. ffmpeg decodes Opus far faster than real
+# time (seconds per hour of audio), so this only ever ends a hung process.
+ANALYSIS_DECODE_TIMEOUT_S = 15 * 60
+
 
 @contextmanager
-def soundfile_readable_audio(audio_path: str) -> Iterator[str]:
+def soundfile_readable_audio(
+    audio_path: str, *, mono_16k: bool = False
+) -> Iterator[str]:
     """Yield a path to ``audio_path``'s audio that soundfile can open.
 
     A browser-captured recording is stored in the WebM container MediaRecorder
     produced, which libsndfile cannot open. A file soundfile reads is yielded
     as it is; anything else is decoded with ffmpeg to a temporary 16-bit PCM
-    WAV, keeping its sample rate and channels (delivery analysis tells the two
-    browser capture sources apart by channel), and removed on exit.
+    WAV that is removed on exit.
+
+    The decode keeps the file's sample rate and channels by default, which
+    delivery analysis needs (it tells the two browser capture sources apart by
+    channel). ``mono_16k`` decodes to 16 kHz mono instead, the rate pyannote
+    resamples to anyway: a 2.5 h two-channel 48 kHz capture is about 1.7 GB as
+    native WAV and about 290 MB at 16 kHz mono.
+
+    The temporary file lives in the process's temp dir and is removed in a
+    finally block. A worker killed outright mid-decode can strand one; the
+    container's private /tmp is discarded when it is recreated.
 
     Raises:
-        AudioFormatError: ffmpeg could not decode the file either.
+        AudioFormatError: ffmpeg could not decode the file, or timed out.
     """
     import soundfile as sf
 
@@ -171,7 +186,18 @@ def soundfile_readable_audio(audio_path: str) -> Iterator[str]:
     temp_fd, temp_path = tempfile.mkstemp(suffix=_ANALYSIS_WAV_SUFFIX)
     os.close(temp_fd)
     try:
-        if not convert_to_wav(audio_path, temp_path):
+        if mono_16k:
+            try:
+                convert_to_mono_16k(
+                    audio_path, temp_path, timeout=ANALYSIS_DECODE_TIMEOUT_S
+                )
+            except (RuntimeError, subprocess.TimeoutExpired) as exc:
+                raise AudioFormatError(
+                    f"Could not decode {audio_path} for analysis: {exc}"
+                ) from exc
+        elif not convert_to_wav(
+            audio_path, temp_path, timeout=ANALYSIS_DECODE_TIMEOUT_S
+        ):
             raise AudioFormatError(f"Could not decode {audio_path} for analysis.")
         yield temp_path
     finally:
@@ -186,7 +212,6 @@ _PIPELINE_TEMP_SUFFIXES = (
     "_vad_processed.wav",
     "_vad_processed.mp3",
     "_preprocessed.wav",
-    _ANALYSIS_WAV_SUFFIX,
 )
 
 

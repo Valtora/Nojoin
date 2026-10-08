@@ -179,8 +179,8 @@ audio.
 Deliberately numpy and soundfile only, so it holds no model and never pulls
 torch in. A recording soundfile cannot open (a browser capture is stored as
 the WebM/Opus MediaRecorder produced) is first decoded with ffmpeg to a
-temporary WAV at its own sample rate and channel layout; overlap detection
-reads its audio the same way. The pitch estimator is YIN's cumulative-mean-normalised difference
+temporary WAV at its own sample rate and channel layout. Overlap detection
+decodes such a file to 16 kHz mono instead, the rate its model uses. The pitch estimator is YIN's cumulative-mean-normalised difference
 function — closed-form numpy, chosen after the original autocorrelation
 picker measured a 4% gross-error rate against laryngograph ground truth,
 enough to inflate the pitch-movement spread; the replacement halves every

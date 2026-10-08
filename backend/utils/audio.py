@@ -172,9 +172,14 @@ def concatenate_binary_files(segment_paths: List[str], output_path: str):
         raise RuntimeError(f"Failed to concatenate binary files: {str(e)}")
 
 
-def convert_to_mono_16k(input_path: str, output_path: str):
+def convert_to_mono_16k(
+    input_path: str, output_path: str, *, timeout: float | None = None
+):
     """
     Convert audio to mono 16kHz WAV using ffmpeg.
+
+    ``timeout`` (seconds) kills a hung ffmpeg and raises
+    ``subprocess.TimeoutExpired``; None waits indefinitely.
     """
     ensure_ffmpeg_in_path()
 
@@ -193,7 +198,7 @@ def convert_to_mono_16k(input_path: str, output_path: str):
     ]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to convert audio: {e.stderr.decode()}")
 
@@ -230,18 +235,24 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
         return False
 
 
-def convert_to_wav(input_path: str, output_path: str) -> bool:
+def convert_to_wav(
+    input_path: str, output_path: str, *, timeout: float | None = None
+) -> bool:
     """
     Convert audio to WAV (PCM 16-bit) using ffmpeg.
     Useful for restoring proxy mp3 back to wav for processing.
+    ``timeout`` (seconds) kills a hung ffmpeg and returns False.
     """
     ensure_ffmpeg_in_path()
 
     cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", output_path]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
         return True
+    except subprocess.TimeoutExpired:
+        logger.error("Timed out after %ss converting %s to WAV.", timeout, input_path)
+        return False
     except subprocess.CalledProcessError as e:
         logger.error(
             f"Failed to convert audio to WAV: {e.stderr.decode() if e.stderr else str(e)}"

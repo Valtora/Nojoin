@@ -3,7 +3,8 @@
 A browser capture is finalised as the WebM/Opus container MediaRecorder
 produced, which libsndfile cannot open, so both analytics tiers failed on
 every browser recording with "Format not recognised". They now read the audio
-through soundfile_readable_audio, which decodes such a file with ffmpeg.
+through soundfile_readable_audio, which decodes such a file with ffmpeg:
+at the native rate and layout for delivery, at 16 kHz mono for overlap.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import types
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -96,39 +98,93 @@ def test_delivery_is_measured_on_a_browser_webm_capture(tmp_path):
     assert _analysis_temp_files() == temp_before
 
 
-@needs_ffmpeg
-def test_overlap_is_measured_on_a_browser_webm_capture(tmp_path, monkeypatch):
-    """The segmentation model is stubbed; what is under test is reading the file."""
-    wav = tmp_path / "capture.wav"
-    _two_source_capture(wav)
-    webm = tmp_path / "capture.webm"
-    _encode_webm(wav, webm)
-    seen: list[str] = []
+@pytest.fixture
+def overlap_inputs(monkeypatch) -> list[Any]:
+    """Stub the segmentation model; record what each inference call read."""
+    seen: list[Any] = []
 
     class FakeInference:
         def __init__(self, model, step):
             pass
 
         def __call__(self, path):
-            sf.info(path)
-            seen.append(path)
+            seen.append(sf.info(path))
             # Two chunks of 10 frames, three local speakers, no overlap.
             return types.SimpleNamespace(data=np.zeros((2, 10, 3)))
 
-    pyannote_stub = types.ModuleType("pyannote")
     audio_stub = types.ModuleType("pyannote.audio")
     audio_stub.Inference = FakeInference
-    monkeypatch.setitem(sys.modules, "pyannote", pyannote_stub)
+    monkeypatch.setitem(sys.modules, "pyannote", types.ModuleType("pyannote"))
     monkeypatch.setitem(sys.modules, "pyannote.audio", audio_stub)
     monkeypatch.setattr(
         segmentation_refinement, "load_segmentation_model", lambda device, token: None
     )
+    return seen
+
+
+@needs_ffmpeg
+def test_overlap_is_measured_on_a_browser_webm_capture(tmp_path, overlap_inputs):
+    wav = tmp_path / "capture.wav"
+    _two_source_capture(wav)
+    webm = tmp_path / "capture.webm"
+    _encode_webm(wav, webm)
+    temp_before = _analysis_temp_files()
 
     block = measure_audio_overlap(str(webm), hf_token=None)
 
     assert block["duration_ms"] == pytest.approx(60_000, abs=100)
     assert block["region_count"] == 0
-    assert len(seen) == 1 and seen[0] != str(webm)
+    # Decoded at the model's own rate, not as a 48 kHz two-channel copy.
+    (read,) = overlap_inputs
+    assert (read.channels, read.samplerate) == (1, 16_000)
+    assert _analysis_temp_files() == temp_before
+
+
+def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
+    tmp_path, monkeypatch, overlap_inputs
+):
+    """Runs without ffmpeg: the 16 kHz decoder is replaced by one that writes it."""
+    container = tmp_path / "capture.webm"
+    container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
+    decoded = np.zeros(16_000 * 30, dtype=np.float32)
+
+    def decode(source: str, target: str, *, timeout: float) -> None:
+        assert source == str(container)
+        assert timeout > 0
+        sf.write(target, decoded, 16_000)
+
+    def native_decode(*args, **kwargs):
+        raise AssertionError("overlap must not decode at the native rate")
+
+    monkeypatch.setattr(audio_preprocessing, "convert_to_mono_16k", decode)
+    monkeypatch.setattr(audio_preprocessing, "convert_to_wav", native_decode)
+
+    block = measure_audio_overlap(str(container), hf_token=None)
+
+    assert block["duration_ms"] == 30_000
+    assert [(i.channels, i.samplerate) for i in overlap_inputs] == [(1, 16_000)]
+
+
+def test_a_hung_decode_is_stopped_and_reported(tmp_path, monkeypatch):
+    container = tmp_path / "capture.webm"
+    container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
+    temp_before = _analysis_temp_files()
+    timeouts: list[float | None] = []
+
+    def hung_ffmpeg(cmd, **kwargs):
+        timeouts.append(kwargs.get("timeout"))
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout") or 0)
+
+    monkeypatch.setattr("backend.utils.audio.ensure_ffmpeg_in_path", lambda: None)
+    monkeypatch.setattr("backend.utils.audio.subprocess.run", hung_ffmpeg)
+
+    for mono_16k in (False, True):
+        with pytest.raises(AudioFormatError):
+            with soundfile_readable_audio(str(container), mono_16k=mono_16k):
+                pass
+
+    assert timeouts == [audio_preprocessing.ANALYSIS_DECODE_TIMEOUT_S] * 2
+    assert _analysis_temp_files() == temp_before
 
 
 @needs_ffmpeg
@@ -185,7 +241,7 @@ def test_delivery_reads_an_unreadable_container_through_the_decoder(
     container = tmp_path / "capture.webm"
     container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
 
-    def decode(source: str, target: str) -> bool:
+    def decode(source: str, target: str, *, timeout: float) -> bool:
         assert source == str(container)
         shutil.copyfile(wav, target)
         return True
