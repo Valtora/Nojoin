@@ -24,7 +24,11 @@ from backend.processing.speaker_cap import (
     MIN_SPEAKER_CAP,
     normalize_speaker_cap,
 )
-from backend.utils.audio import concatenate_binary_files, get_audio_duration
+from backend.utils.audio import (
+    MEDIA_CONTAINER_SUFFIXES,
+    concatenate_binary_files,
+    get_audio_duration,
+)
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
@@ -57,6 +61,7 @@ SUPPORTED_AUDIO_FORMATS = {
     ".mp4",
     ".wma",
     ".opus",
+    *MEDIA_CONTAINER_SUFFIXES,
 }
 
 
@@ -92,7 +97,8 @@ async def import_audio(
 ):
     """
     Import an external audio recording (e.g., from Zoom, Teams, Google Meet).
-    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
+    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus, and the audio
+    track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files.
     """
     # Validate file extension
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""

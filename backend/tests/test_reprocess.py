@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -1557,6 +1559,103 @@ async def test_import_low_bitrate_audio_succeeds(
     assert chunk_rows[0][1] == "import"
     assert chunk_rows[0][3] == 15000
     assert manifest_rows == [("import", 0, 15000, 0, 0)]
+
+
+# Each media container import accepts, with a video track wherever the container
+# can carry one, and ffmpeg's built-in encoders only: (suffix, output arguments).
+_MEDIA_CONTAINER_FIXTURES = [
+    (".mkv", ["-c:v", "mpeg4", "-c:a", "aac"]),
+    (".mka", ["-c:a", "flac"]),
+    (".mov", ["-c:v", "mpeg4", "-c:a", "aac"]),
+    (".avi", ["-c:v", "mpeg4", "-c:a", "mp2"]),
+    (".m4v", ["-c:v", "mpeg4", "-c:a", "aac", "-f", "mp4"]),
+    (".ts", ["-c:v", "mpeg4", "-c:a", "aac"]),
+    (".mts", ["-c:v", "mpeg4", "-c:a", "ac3", "-f", "mpegts"]),
+    (".mpg", ["-c:v", "mpeg2video", "-c:a", "mp2"]),
+    (".mpeg", ["-c:v", "mpeg1video", "-c:a", "mp2"]),
+    (".3gp", ["-c:v", "mpeg4", "-c:a", "aac", "-ar", "16000", "-ac", "1"]),
+]
+
+
+def _encode_media_fixture(path: Path, output_args: list[str]) -> None:
+    inputs = ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"]
+    if "-c:v" in output_args:
+        inputs = [
+            *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"],
+            *inputs,
+        ]
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", *inputs, *output_args, "-shortest"]
+        + [str(path)],
+        check=True,
+    )
+
+
+def _stream_types(path: str) -> list[str]:
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type"]
+        + ["-of", "csv=p=0", path],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return probe.stdout.split()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize(("suffix", "output_args"), _MEDIA_CONTAINER_FIXTURES)
+async def test_import_media_container_reaches_audio_only_artifacts(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    suffix: str,
+    output_args: list[str],
+) -> None:
+    """A media container imports and converts like audio, and only its audio is read."""
+    import soundfile as sf
+
+    from backend.processing.audio_preprocessing import (
+        preprocess_audio_for_diarization,
+    )
+    from backend.utils.audio import convert_to_proxy_mp3
+
+    source = tmp_path / f"source{suffix}"
+    _encode_media_fixture(source, output_args)
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+
+    response = await client.post(
+        "/api/v1/recordings/import",
+        files={"file": (f"meeting{suffix}", source.read_bytes(), "video/x-test")},
+    )
+
+    assert response.status_code == 200, response.text
+    assert len(calls) == 1
+    async with test_session_maker() as session:
+        audio_path, duration = (
+            await session.execute(
+                text("SELECT audio_path, duration_seconds FROM recordings")
+            )
+        ).one()
+    assert audio_path.endswith(suffix)
+    assert duration == pytest.approx(2.0, abs=0.2)
+
+    # The processing pipeline's first step and the playback proxy.
+    processed = preprocess_audio_for_diarization(audio_path)
+    assert processed is not None
+    try:
+        info = sf.info(processed)
+        assert (info.channels, info.samplerate) == (1, 16_000)
+        assert info.duration == pytest.approx(2.0, abs=0.2)
+    finally:
+        Path(processed).unlink()
+    proxy = tmp_path / "proxy.mp3"
+    assert convert_to_proxy_mp3(audio_path, str(proxy))
+    assert _stream_types(str(proxy)) == ["audio"]
 
 
 @pytest.mark.anyio

@@ -165,7 +165,7 @@ It can surface live questions, missed points, and quick concept help during a me
 
 You can import existing audio files directly through the web client.
 
-Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS.
+Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS. Video and media containers are accepted too: MKV (as OBS records), MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Only the audio track is used; a video track is skipped, never decoded. When a file carries several audio tracks (OBS can record one per source), only the one ffmpeg selects by default is used.
 
 The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.worker.tasks.embeddings import update_speaker_embedding_task
 
@@ -12,6 +14,21 @@ def test_select_recording_audio_for_embedding_prefers_proxy_for_browser_capture(
     audio_path = tmp_path / "meeting.webm"
     proxy_path = tmp_path / "meeting.mp3"
     audio_path.write_bytes(b"webm")
+    proxy_path.write_bytes(b"mp3")
+
+    recording = SimpleNamespace(audio_path=str(audio_path), proxy_path=str(proxy_path))
+
+    assert select_recording_audio_for_embedding(recording) == str(proxy_path)
+
+
+@pytest.mark.parametrize("suffix", [".mkv", ".mka", ".ts", ".mts", ".mpg", ".avi"])
+def test_select_recording_audio_for_embedding_prefers_proxy_for_media_containers(
+    tmp_path, suffix
+):
+    """pyannote's segment crop returns short or empty chunks from these."""
+    audio_path = tmp_path / f"meeting{suffix}"
+    proxy_path = tmp_path / "meeting.mp3"
+    audio_path.write_bytes(b"container")
     proxy_path.write_bytes(b"mp3")
 
     recording = SimpleNamespace(audio_path=str(audio_path), proxy_path=str(proxy_path))

@@ -11,6 +11,14 @@ LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND = 128_000
 PLAYBACK_PROXY_SAMPLE_RATE_HZ = 48_000
 PLAYBACK_PROXY_BITRATE_BITS_PER_SECOND = 192_000
 
+# Audio/video containers accepted for import (OBS records MKV, cameras MTS, phones
+# 3GP). Only the audio is ever read: every conversion below writes an audio-only
+# format, so ffmpeg maps the audio stream alone and a video track is demuxed past,
+# never decoded.
+MEDIA_CONTAINER_SUFFIXES = frozenset(
+    {".mkv", ".mka", ".mov", ".avi", ".m4v", ".ts", ".mts", ".mpg", ".mpeg", ".3gp"}
+)
+
 
 def load_audio(path: str, *, channels_first: bool = True):
     """Load an audio file into a float32 torch tensor and its sample rate.
