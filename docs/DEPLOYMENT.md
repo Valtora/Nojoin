@@ -203,10 +203,7 @@ first account exists, or when the users cannot be read, `config.json` decides.
 The admin health check reports the engine startup prepares.
 
 The worker validates those assets on CPU where possible, caches them on disk,
-and releases model objects and CUDA memory before returning to idle. For
-Parakeet and Canary, startup prepares the int8 variant the CPU runs; a worker
-with a GPU loads the full-precision weights instead, and fetches them the first
-time it runs that engine.
+and releases model objects and CUDA memory before returning to idle.
 
 Anything else, and anything chosen after startup, is fetched on its first job
 unless an admin downloads it first (see below). For example, an administrator
