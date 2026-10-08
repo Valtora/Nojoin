@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -88,10 +87,12 @@ def pyannote_readable_audio(audio_path: str) -> Iterator[str]:
     cleanup cannot see.
 
     Raises:
-        AudioFormatError: ffmpeg could not decode the file, could not be
-            started, or timed out. The cause may be transient (a full temp
-            directory), so callers must not treat it as "nothing usable in
-            this audio".
+        AudioFormatError: the decode failed for any reason: ffmpeg could not
+            decode the file, could not be started or timed out, or no
+            temporary file could be created. The cause may be transient (a
+            full temp directory), so callers must not treat it as "nothing
+            usable in this audio". Exceptions raised by the caller's own block
+            pass through unchanged.
     """
     _, suffix = os.path.splitext(audio_path)
     if suffix.lower() not in MEDIA_CONTAINER_SUFFIXES:
@@ -103,25 +104,37 @@ def pyannote_readable_audio(audio_path: str) -> Iterator[str]:
         suffixes=(EMBEDDING_WAV_SUFFIX,),
     )
     try:
-        temp_fd, temp_path = tempfile.mkstemp(suffix=EMBEDDING_WAV_SUFFIX)
-    except OSError as exc:
+        temp_path = _decode_to_embedding_wav(audio_path)
+    except Exception as exc:
+        # Every decode failure is one contract, whatever raised it, so a
+        # caller iterating recordings can hold one back and carry on.
         raise AudioFormatError(
-            f"Could not create a temporary file to decode {audio_path}: {exc}"
+            f"Could not decode {audio_path} for embedding extraction: {exc}"
         ) from exc
-    os.close(temp_fd)
     try:
-        logger.info("Decoding %s to 16 kHz WAV for embedding extraction", audio_path)
-        try:
-            convert_to_mono_16k(
-                audio_path, temp_path, timeout=EMBEDDING_DECODE_TIMEOUT_S
-            )
-        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
-            raise AudioFormatError(
-                f"Could not decode {audio_path} for embedding extraction: {exc}"
-            ) from exc
         yield temp_path
     finally:
-        try:
-            os.remove(temp_path)
-        except OSError as exc:
-            logger.warning("Could not remove %s: %s", temp_path, exc)
+        _remove_embedding_wav(temp_path)
+
+
+def _decode_to_embedding_wav(audio_path: str) -> str:
+    """Decode ``audio_path`` to a new temporary 16 kHz mono WAV; return its path.
+
+    The WAV is removed again if the decode fails.
+    """
+    temp_fd, temp_path = tempfile.mkstemp(suffix=EMBEDDING_WAV_SUFFIX)
+    os.close(temp_fd)
+    logger.info("Decoding %s to 16 kHz WAV for embedding extraction", audio_path)
+    try:
+        convert_to_mono_16k(audio_path, temp_path, timeout=EMBEDDING_DECODE_TIMEOUT_S)
+    except BaseException:
+        _remove_embedding_wav(temp_path)
+        raise
+    return temp_path
+
+
+def _remove_embedding_wav(temp_path: str) -> None:
+    try:
+        os.remove(temp_path)
+    except OSError as exc:
+        logger.warning("Could not remove %s: %s", temp_path, exc)

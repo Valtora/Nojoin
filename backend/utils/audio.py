@@ -328,6 +328,11 @@ def convert_to_mono_16k(
 
     ``timeout`` (seconds) kills a hung ffmpeg and raises
     ``subprocess.TimeoutExpired``; None waits indefinitely.
+
+    Raises:
+        RuntimeError: ffmpeg failed; the message carries its stderr.
+        subprocess.TimeoutExpired: ffmpeg ran past ``timeout`` and was killed.
+        OSError: ffmpeg could not be started.
     """
     ensure_ffmpeg_in_path()
 
@@ -348,7 +353,10 @@ def convert_to_mono_16k(
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to convert audio: {e.stderr.decode()}")
+        # ffmpeg's stderr echoes the input's metadata, which need not be UTF-8
+        # (AVI INFO tags are raw bytes, often Latin-1).
+        stderr = e.stderr.decode(errors="replace") if e.stderr else str(e)
+        raise RuntimeError(f"Failed to convert audio: {stderr}") from e
 
 
 def convert_to_mp3(input_path: str, output_path: str) -> bool:

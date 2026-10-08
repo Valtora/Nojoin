@@ -179,8 +179,9 @@ def test_a_media_container_without_a_proxy_is_cropped_from_a_decoded_wav(
     [
         RuntimeError("No space left on device"),
         subprocess.TimeoutExpired(cmd="ffmpeg", timeout=EMBEDDING_DECODE_TIMEOUT_S),
+        UnicodeDecodeError("utf-8", b"Caf\xe9", 3, 4, "invalid continuation byte"),
     ],
-    ids=["ffmpeg-error", "timeout"],
+    ids=["ffmpeg-error", "timeout", "any-other-error"],
 )
 def test_a_failed_decode_is_raised_not_reported_as_no_embedding(
     monkeypatch, tmp_path, failure

@@ -12,6 +12,9 @@ cleared, or explicitly held back for retry -- and that the counts say which.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -503,6 +506,69 @@ def test_a_media_container_is_decoded_once_per_recording(
 
     assert summary["speakers_rebuilt"] == 2
     assert decodes == [str(tmp_path / "screen.mkv")]
+
+
+def _latin1_titled_avi(path: Path) -> None:
+    """A short AVI whose INFO title holds a Latin-1 byte, as older tools write.
+
+    ffmpeg echoes that title raw in its stderr, so the stderr is not UTF-8.
+    """
+    placeholder = b"CafQXYZ"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=16000"]
+        + ["-metadata", f"title={placeholder.decode()}", "-c:a", "pcm_s16le"]
+        + [str(path)],
+        check=True,
+    )
+    data = path.read_bytes()
+    assert data.count(placeholder) == 1
+    path.write_bytes(data.replace(placeholder, b"Caf\xe9XYZ"))
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
+def test_a_decode_failure_with_non_utf8_ffmpeg_output_does_not_stop_the_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One recording's failed decode holds back only that recording.
+
+    The decode writes to /dev/full, as a full temp directory would make it
+    fail, and the file's metadata puts a non-UTF-8 byte in ffmpeg's error
+    output. The recordings after it and the people rebuild must still run,
+    and ffmpeg's diagnostics must reach the log.
+    """
+    source = tmp_path / "camcorder.avi"
+    _latin1_titled_avi(source)
+    engine = _make_engine(tmp_path, "non-utf8-decode-failure")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        _add_recording(connection, 10, 1, audio_path=str(source))
+        _add_recording(connection, 20, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
+        _add_speaker(connection, SpeakerRow(200, 20, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 2000))
+        _add_utterance(connection, 2, 20, 200, (0, 2000))
+
+    real_decode = embedding_audio.convert_to_mono_16k
+
+    def _decode_onto_a_full_disk(input_path, output_path, *, timeout=None):
+        real_decode(input_path, "/dev/full", timeout=timeout)
+
+    monkeypatch.setattr(
+        embedding_audio, "convert_to_mono_16k", _decode_onto_a_full_disk
+    )
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["recordings_processed"] == 2
+    assert summary["speakers_failed_retryable"] == 1
+    assert summary["speakers_rebuilt"] == 1
+    assert summary["people_rebuilt"] == 1
+    rows = _speaker_rows(engine)
+    assert json.loads(rows[100][0]) == STALE_VECTOR
+    assert json.loads(rows[200][0]) == REBUILT_VECTOR
+    assert "Caf\ufffdXYZ" in caplog.text
 
 
 def test_extraction_returning_nothing_clears_the_voiceprint(tmp_path: Path) -> None:
