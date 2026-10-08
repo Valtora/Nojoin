@@ -227,3 +227,21 @@ def test_key_file_that_is_a_directory_gets_the_remove_remedy(
     assert message.startswith(f"The JWT key file {key_path} is a directory")
     assert "bind mount" in message
     assert "Remove the directory" in message
+
+
+@pytest.mark.parametrize("value", [123, True, ["k"], None], ids=repr)
+@pytest.mark.parametrize("kid", ["a", "b"], ids=["active", "retired"])
+def test_non_string_keyring_key_is_refused_with_the_file_named(
+    isolated_keyring, kid, value
+):
+    keyring_file = isolated_keyring / ".secret_keys.json"
+    keys = {"a": "a" * 64, "b": "b" * 64}
+    keys[kid] = value
+    keyring_file.write_text(json.dumps({"active": "a", "keys": keys}), encoding="utf-8")
+
+    with pytest.raises(security.SigningKeyUnavailableError) as excinfo:
+        security.get_signing_keyring()
+
+    message = str(excinfo.value)
+    assert message.startswith(f"The JWT key file {keyring_file} is malformed")
+    assert f"Delete {keyring_file} and restart" in message

@@ -97,6 +97,30 @@ async def test_api_startup_logs_an_empty_signing_key_and_carries_on(
 
 
 @pytest.mark.anyio
+async def test_api_startup_logs_a_non_string_signing_key(
+    keyring_file, monkeypatch, caplog
+):
+    keyring_file.write_text(
+        json.dumps({"active": "legacy", "keys": {"legacy": 123}}), encoding="utf-8"
+    )
+
+    def stop_before_the_database():
+        raise _StartupContinued
+
+    monkeypatch.setattr(main, "run_migrations", stop_before_the_database)
+
+    with caplog.at_level(logging.ERROR, logger=main.logger.name):
+        with pytest.raises(_StartupContinued):
+            async with main.lifespan(main.app):
+                pass
+
+    messages = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert any(
+        f"The JWT key file {keyring_file} is malformed" in m for m in messages
+    ), messages
+
+
+@pytest.mark.anyio
 async def test_api_startup_carries_on_when_the_keyring_check_fails_unexpectedly(
     monkeypatch, caplog
 ):

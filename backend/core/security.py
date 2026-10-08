@@ -86,6 +86,8 @@ def _read_keyring_file() -> Optional[dict[str, Any]]:
         or data["active"] not in data["keys"]
     ):
         raise _malformed_key_file_error(keyring_file, "no usable active key entry")
+    if not all(isinstance(key, str) for key in data["keys"].values()):
+        raise _malformed_key_file_error(keyring_file, "a key that is not a string")
     return data
 
 
