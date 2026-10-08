@@ -48,7 +48,7 @@ def onnx_asr_files(status_key: str, quantization: str | None) -> dict[str, bytes
     model = ONNX_ASR_MODELS[status_key]
     return {
         pattern.replace("?", "."): pattern.encode()
-        for pattern in model.files_for(quantization)
+        for pattern in model.required_files(quantization)
     }
 
 

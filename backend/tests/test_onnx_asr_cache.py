@@ -8,8 +8,10 @@ layout (blobs, snapshot symlinks, refs) in a tmp directory.
 
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
 
+import huggingface_hub
 import pytest
 from onnx_asr.loader import create_asr_resolver
 
@@ -58,6 +60,26 @@ def test_the_files_are_the_ones_onnx_asr_opens(status_key, quantization):
     assert set(model.files_for(quantization)) == expected
 
 
+@pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)
+def test_the_fp32_weights_are_files_onnx_asr_downloads(status_key, monkeypatch):
+    """_get_model_files leaves the external data out; the download fetches it."""
+    model = ONNX_ASR_MODELS[status_key]
+    requested: list[str] = []
+
+    def record_download(repo_id, *, allow_patterns, **kwargs):
+        requested.extend(allow_patterns)
+        return "snapshot"
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", record_download)
+    resolver = create_asr_resolver(model.onnx_asr_id)
+    resolver._download_model(None, local_files_only=True)
+
+    assert model.fp32_external_data
+    for name in model.fp32_external_data:
+        assert name.removesuffix(".data") in model.files_for(None)
+        assert any(fnmatch.fnmatch(name, pattern) for pattern in requested), name
+
+
 @pytest.mark.parametrize("quantization", ONNX_ASR_QUANTIZATIONS)
 @pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)
 def test_a_complete_download_is_ready(status_key, quantization, hub):
@@ -86,6 +108,50 @@ def test_a_download_still_in_progress_is_missing(hub):
     """huggingface_hub links a file into the snapshot only once it completes."""
     repo = write_hf_repo(hub, ONNX_ASR_MODELS["canary"].repo_id, {"vocab.txt": b"v"})
     (repo / "blobs" / "0f1e2d.incomplete").write_bytes(b"half an encoder")
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["canary"]["downloaded"] is False
+
+
+def _fp32_without_its_weights(status_key: str) -> dict[str, bytes]:
+    files = onnx_asr_files(status_key, None)
+    for name in ONNX_ASR_MODELS[status_key].fp32_external_data:
+        del files[name]
+    return files
+
+
+@pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)
+def test_an_fp32_download_with_its_weights_in_flight_is_missing(status_key, hub):
+    """The small graphs land first; the weights stay in blobs/ until complete."""
+    model = ONNX_ASR_MODELS[status_key]
+    repo = write_hf_repo(hub, model.repo_id, _fp32_without_its_weights(status_key))
+    (repo / "blobs" / "a1711a0b.incomplete").write_bytes(b"the first 700 MB")
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status[status_key]["downloaded"] is False
+
+
+@pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)
+def test_an_fp32_download_cut_off_before_its_weights_is_missing(status_key, hub):
+    """No partial blob left behind, and still the weights onnxruntime needs are absent."""
+    model = ONNX_ASR_MODELS[status_key]
+    write_hf_repo(hub, model.repo_id, _fp32_without_its_weights(status_key))
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status[status_key]["downloaded"] is False
+
+
+def test_a_partial_download_keeps_even_a_complete_precision_missing(hub):
+    """A partial blob cannot be traced to a file, so any one counts.
+
+    Here int8 is complete while the fp32 weights a GPU lane loads are still
+    arriving.
+    """
+    repo = write_onnx_asr_repo(hub, "canary", "int8")
+    (repo / "blobs" / "a1711a0b.incomplete").write_bytes(b"the first 700 MB")
 
     status = preload_models.check_model_status(whisper_model_size="turbo")
 
