@@ -12,7 +12,13 @@
  * and the compact spacing on html[data-ui-density].
  */
 
-export const PALETTES = ["default", "graphite", "ultraviolet", "marigold"] as const;
+export const PALETTES = [
+  "default",
+  "graphite",
+  "classic",
+  "ultraviolet",
+  "marigold",
+] as const;
 export type Palette = (typeof PALETTES)[number];
 
 export const CORNER_STYLES = ["rounded", "subtle", "square"] as const;
@@ -35,6 +41,7 @@ export const APPEARANCE_STORAGE_KEYS = {
 export const PALETTE_LABELS: Record<Palette, string> = {
   default: "Nojoin (orange)",
   graphite: "Graphite (blue)",
+  classic: "Classic",
   ultraviolet: "Ultraviolet (magenta)",
   marigold: "Marigold (forest and gold)",
 };

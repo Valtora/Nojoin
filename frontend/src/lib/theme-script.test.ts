@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_PALETTE, PALETTES } from "./appearance";
 import { themeScript } from "./theme-script";
 import { resolveDensity } from "./viewportDensity";
 
@@ -107,15 +108,26 @@ describe("themeScript appearance preferences", () => {
     expect(root.hasAttribute("data-corners")).toBe(false);
   });
 
-  it("stamps a stored palette and corner style", () => {
-    localStorage.setItem("nojoin-palette", "graphite");
+  it("stamps a stored corner style", () => {
     localStorage.setItem("nojoin-corners", "square");
 
     runScript();
 
-    expect(root.dataset.palette).toBe("graphite");
     expect(root.dataset.corners).toBe("square");
   });
+
+  // Every palette the settings offer must survive the pre-paint script, or
+  // choosing it flashes the default palette on each load.
+  it.each(PALETTES.filter((palette) => palette !== DEFAULT_PALETTE))(
+    "stamps the stored %s palette before first paint",
+    (palette) => {
+      localStorage.setItem("nojoin-palette", palette);
+
+      runScript();
+
+      expect(root.dataset.palette).toBe(palette);
+    },
+  );
 
   it("ignores values it does not recognise rather than stamping them", () => {
     localStorage.setItem("nojoin-palette", "neon\"><script>");

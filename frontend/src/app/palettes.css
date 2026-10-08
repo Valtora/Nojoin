@@ -111,6 +111,129 @@ html[data-palette="graphite"].dark {
   --tooltip-fg: #111317;
 }
 
+/* Classic: the institutional desktop look of Windows 2000 and Java Swing.
+   Untinted greys, white content areas, black text, a mid-grey #808080 line
+   and navy #0A246A for the primary action and for selection. Colour only:
+   no bevels, no border-style changes.
+
+   The page is the Explorer beige #ECE9D8 rather than button-face grey
+   #D4D0C8 because the shared danger text (#B91C1C) is 4.25:1 on #D4D0C8 and
+   palettes may not move danger. Button-face grey is kept for the rails, which
+   carry only rail tokens. Selection is the classic solid navy with white text
+   (rail and settings-tab tokens); the general tint stays pale, because a
+   number of components draw action-text on action-tint and navy on navy
+   would vanish.
+
+   Dark keeps the charcoal of a dark-grey scheme. Navy cannot be a fill on a
+   dark page (it is darker than the page), so the fill inverts: pale
+   navy-family blue with a navy label, the same move Marigold makes. */
+html[data-palette="classic"]:not(.dark) {
+  --background: #ece9d8;
+  --surface-page: #ece9d8;
+  --surface-card: #ffffff;
+  --surface-card-border: #a0a0a0;
+  --surface-divider: #c0c0c0;
+  --surface-inset: #f4f3ee;
+  --surface-float: #ffffff;
+  --surface-float-border: #808080;
+  --surface-card-shadow: none;
+  --foreground: #000000;
+  --contrast-muted: #1e1e1e;
+  --contrast-helper: #404040;
+  --contrast-icon-muted: #505050;
+  --contrast-border: #a0a0a0;
+  --contrast-border-strong: #808080;
+  --control-border: #6a6a6a;
+  --control-placeholder: #5a5a5a;
+  --control-disabled-bg: #ece9d8;
+  --control-disabled-border: #a0a0a0;
+  --control-disabled-fg: #6d6d6d;
+  --scrollbar-thumb: rgba(128, 128, 128, 0.6);
+  --scrollbar-thumb-hover: rgba(10, 36, 106, 0.6);
+  --settings-tab-idle-text: #000000;
+  --settings-tab-idle-hover: #dcd9c9;
+  --settings-tab-active-bg: #0a246a;
+  --settings-tab-active-border: #000000;
+  --settings-tab-active-text: #ffffff;
+
+  --action: #0a246a;
+  --action-hover: #081d55;
+  --action-active: #06163f;
+  --action-on: #ffffff;
+  --action-on-muted: #c8d4f0;
+  --action-text: #0a246a;
+  --action-text-hover: #1c3d99;
+  --action-tint: #dfe4f2;
+  --action-tint-hover: #cdd5ec;
+  --action-tint-fg: #0a246a;
+  --action-border: #8a9cc8;
+  --focus-ring: #000000;
+
+  --rail-bg: #d4d0c8;
+  --rail-border: #808080;
+  --rail-fg: #000000;
+  --rail-fg-muted: #303030;
+  --rail-item-hover: #c4c0b7;
+  --rail-item-active: #0a246a;
+  --rail-item-active-fg: #ffffff;
+
+  --tooltip-bg: #000000;
+  --tooltip-fg: #ffffe1;
+}
+
+html[data-palette="classic"].dark {
+  --background: #1a1a1a;
+  --surface-page: #1a1a1a;
+  --surface-card: #262626;
+  --surface-card-border: #4a4a4a;
+  --surface-divider: #3a3a3a;
+  --surface-inset: rgba(255, 255, 255, 0.04);
+  --surface-float: #333333;
+  --surface-float-border: #6a6a6a;
+  --foreground: #ffffff;
+  --contrast-muted: #e6e6e6;
+  --contrast-helper: #cccccc;
+  --contrast-icon-muted: #aaaaaa;
+  --contrast-border: #4a4a4a;
+  --contrast-border-strong: #6a6a6a;
+  --control-border: #909090;
+  --control-placeholder: #a8a8a8;
+  --control-disabled-bg: rgba(255, 255, 255, 0.04);
+  --control-disabled-border: #444444;
+  --control-disabled-fg: #8c8c8c;
+  --scrollbar-thumb: rgba(160, 160, 160, 0.5);
+  --scrollbar-thumb-hover: rgba(166, 200, 255, 0.7);
+  --settings-tab-idle-text: #e6e6e6;
+  --settings-tab-idle-hover: rgba(255, 255, 255, 0.07);
+  --settings-tab-active-bg: #2a4f8a;
+  --settings-tab-active-border: #a6c8ff;
+  --settings-tab-active-text: #ffffff;
+
+  --action: #a6c8ff;
+  --action-hover: #8fb5f5;
+  --action-active: #7aa3ea;
+  --action-on: #0a246a;
+  --action-on-muted: #1c3d7a;
+  --action-text: #a6c8ff;
+  --action-text-hover: #c8ddff;
+  --action-tint: rgba(110, 150, 230, 0.18);
+  --action-tint-hover: rgba(110, 150, 230, 0.26);
+  --action-tint-fg: #d6e3ff;
+  --action-border: rgba(140, 175, 240, 0.4);
+  --focus-ring: #ffffff;
+
+  --rail-bg: #2b2b2b;
+  --rail-border: #4a4a4a;
+  --rail-fg: #f0f0f0;
+  --rail-fg-muted: #b8b8b8;
+  --rail-item-hover: #363636;
+  --rail-item-active: #2a4f8a;
+  --rail-item-active-fg: #ffffff;
+
+  --tooltip-bg: #ffffe1;
+  --tooltip-fg: #000000;
+}
+
 /* Ultraviolet: lavender-tinted surfaces, a magenta action and a cyan focus
    ring. Deliberately loud; the two hues are far enough apart that focus never
    reads as selection. */
