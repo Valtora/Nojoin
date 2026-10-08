@@ -3,8 +3,8 @@
 A browser capture is finalised as the WebM/Opus container MediaRecorder
 produced, which libsndfile cannot open, so both analytics tiers failed on
 every browser recording with "Format not recognised". They now read the audio
-through soundfile_readable_audio, which decodes such a file with ffmpeg:
-at the native rate and layout for delivery, at 16 kHz mono for overlap.
+through soundfile_readable_audio, which decodes such a file with ffmpeg to a
+16 kHz WAV: keeping the channels for delivery, downmixed for overlap.
 """
 
 from __future__ import annotations
@@ -87,6 +87,22 @@ def _analysis_temp_files(directory: Path) -> list[Path]:
     return sorted(directory.glob("*_analysis.wav"))
 
 
+UNREADABLE = b"\x1aE\xdf\xa3 not something libsndfile reads"
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="fakes ffmpeg with a sh script"
+)
+
+
+def _fake_ffmpeg(tmp_path: Path, monkeypatch, body: str) -> None:
+    """Put an ``ffmpeg`` running the given sh ``body`` first on PATH."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "ffmpeg"
+    fake.write_text(f"#!/bin/sh\n{body}\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
 @needs_ffmpeg
 def test_delivery_is_measured_on_a_browser_webm_capture(tmp_path, scratch):
     wav = tmp_path / "capture.wav"
@@ -155,19 +171,16 @@ def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
 ):
     """Runs without ffmpeg: the 16 kHz decoder is replaced by one that writes it."""
     container = tmp_path / "capture.webm"
-    container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
+    container.write_bytes(UNREADABLE)
     decoded = np.zeros(16_000 * 30, dtype=np.float32)
 
-    def decode(source: str, target: str, *, timeout: float) -> None:
+    def decode(source: str, target: str, *, mono: bool, timeout: float) -> None:
         assert source == str(container)
+        assert mono is True
         assert timeout > 0
         sf.write(target, decoded, 16_000)
 
-    def native_decode(*args, **kwargs):
-        raise AssertionError("overlap must not decode at the native rate")
-
-    monkeypatch.setattr(audio_preprocessing, "convert_to_mono_16k", decode)
-    monkeypatch.setattr(audio_preprocessing, "convert_to_wav", native_decode)
+    monkeypatch.setattr(audio_preprocessing, "convert_to_16k_wav", decode)
 
     block = measure_audio_overlap(str(container), hf_token=None)
 
@@ -175,24 +188,19 @@ def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
     assert [(i.channels, i.samplerate) for i in overlap_inputs] == [(1, 16_000)]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fakes ffmpeg with a sh script")
-@pytest.mark.parametrize("mono_16k", [False, True])
-def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mono_16k):
+@posix_only
+@pytest.mark.parametrize("mono", [False, True])
+def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mono):
     """A real child that never finishes: killed at the timeout, reaped, cleaned up."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
     pid_file = tmp_path / "ffmpeg.pid"
-    fake_ffmpeg = bin_dir / "ffmpeg"
-    fake_ffmpeg.write_text(f'#!/bin/sh\necho $$ > "{pid_file}"\nexec sleep 30\n')
-    fake_ffmpeg.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    _fake_ffmpeg(tmp_path, monkeypatch, f'echo $$ > "{pid_file}"\nexec sleep 30')
     monkeypatch.setattr(audio_preprocessing, "ANALYSIS_DECODE_TIMEOUT_S", 0.5)
     container = tmp_path / "capture.webm"
-    container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
+    container.write_bytes(UNREADABLE)
 
     started = time.monotonic()
     with pytest.raises(AudioFormatError):
-        with soundfile_readable_audio(str(container), mono_16k=mono_16k):
+        with soundfile_readable_audio(str(container), mono=mono):
             pass
 
     assert time.monotonic() - started < 10
@@ -203,7 +211,7 @@ def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mo
 
 
 @needs_ffmpeg
-def test_a_webm_is_decoded_with_its_rate_and_channels(tmp_path):
+def test_a_webm_is_decoded_to_16_khz_keeping_its_channels(tmp_path, scratch):
     wav = tmp_path / "capture.wav"
     _two_source_capture(wav)
     webm = tmp_path / "capture.webm"
@@ -214,11 +222,70 @@ def test_a_webm_is_decoded_with_its_rate_and_channels(tmp_path):
         decoded = readable
 
     assert decoded != str(webm)
-    assert info.channels == 2
-    # Opus always decodes at 48 kHz; the point is that nothing downsamples it.
-    assert info.samplerate == 48_000
+    # Opus decodes at 48 kHz; delivery reads it at the rate it was validated at.
+    assert (info.channels, info.samplerate) == (2, 16_000)
     assert info.duration == pytest.approx(60.0, abs=0.1)
-    assert not os.path.exists(decoded)
+    assert _analysis_temp_files(scratch) == []
+
+
+@posix_only
+@pytest.mark.parametrize("mono", [False, True])
+def test_the_decode_writes_rf64_rather_than_a_broken_header_past_4_gib(
+    tmp_path, monkeypatch, scratch, mono
+):
+    """A plain WAV header cannot describe more than 4 GiB. Without ``-rf64 auto``
+    ffmpeg writes a broken one and exits 0, and the reader silently gets only
+    the first 4 GiB. A >4 GiB fixture is too big for CI, so this reads the
+    command line a fake ffmpeg was given."""
+    argv_file = tmp_path / "argv"
+    _fake_ffmpeg(tmp_path, monkeypatch, f'printf "%s\\n" "$@" > "{argv_file}"\nexit 1')
+    container = tmp_path / "capture.webm"
+    container.write_bytes(UNREADABLE)
+
+    with pytest.raises(AudioFormatError):
+        with soundfile_readable_audio(str(container), mono=mono):
+            pass
+
+    argv = argv_file.read_text().splitlines()
+    pairs = set(zip(argv, argv[1:]))
+    assert ("-rf64", "auto") in pairs
+    assert ("-ar", "16000") in pairs
+    assert (("-ac", "1") in pairs) is mono
+
+
+@posix_only
+@pytest.mark.parametrize("mono", [False, True])
+def test_ffmpeg_stderr_that_is_not_utf8_is_still_an_audio_format_error(
+    tmp_path, monkeypatch, scratch, mono
+):
+    _fake_ffmpeg(tmp_path, monkeypatch, "printf '\\377\\376 broken\\n' >&2\nexit 1")
+    container = tmp_path / "capture.webm"
+    container.write_bytes(UNREADABLE)
+
+    with pytest.raises(AudioFormatError, match="broken"):
+        with soundfile_readable_audio(str(container), mono=mono):
+            pass
+
+    assert _analysis_temp_files(scratch) == []
+
+
+@pytest.mark.parametrize("mono", [False, True])
+def test_a_missing_ffmpeg_is_an_audio_format_error(
+    tmp_path, monkeypatch, scratch, mono
+):
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    # Otherwise it finds the host's ffmpeg in a well-known location.
+    monkeypatch.setattr("backend.utils.audio.ensure_ffmpeg_in_path", lambda: None)
+    container = tmp_path / "capture.webm"
+    container.write_bytes(UNREADABLE)
+
+    with pytest.raises(AudioFormatError):
+        with soundfile_readable_audio(str(container), mono=mono):
+            pass
+
+    assert _analysis_temp_files(scratch) == []
 
 
 @needs_ffmpeg
@@ -240,7 +307,7 @@ def test_a_file_soundfile_reads_is_used_in_place(tmp_path, monkeypatch):
     def no_decode(*args, **kwargs):
         raise AssertionError("a WAV must not be decoded again")
 
-    monkeypatch.setattr(audio_preprocessing, "convert_to_wav", no_decode)
+    monkeypatch.setattr(audio_preprocessing, "convert_to_16k_wav", no_decode)
 
     with soundfile_readable_audio(str(wav)) as readable:
         assert readable == str(wav)
@@ -253,14 +320,14 @@ def test_delivery_reads_an_unreadable_container_through_the_decoder(
     wav = tmp_path / "capture.wav"
     local, remote = _two_source_capture(wav)
     container = tmp_path / "capture.webm"
-    container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
+    container.write_bytes(UNREADABLE)
 
-    def decode(source: str, target: str, *, timeout: float) -> bool:
+    def decode(source: str, target: str, *, mono: bool, timeout: float) -> None:
         assert source == str(container)
+        assert mono is False
         shutil.copyfile(wav, target)
-        return True
 
-    monkeypatch.setattr(audio_preprocessing, "convert_to_wav", decode)
+    monkeypatch.setattr(audio_preprocessing, "convert_to_16k_wav", decode)
 
     result = analyse_delivery(str(container), local + remote, browser_capture=True)
 

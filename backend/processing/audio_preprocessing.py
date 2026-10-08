@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from typing import Dict, Iterator, Optional
 
 from backend.core.exceptions import AudioFormatError
-from backend.utils.audio import convert_to_mono_16k, convert_to_wav
+from backend.utils.audio import convert_to_16k_wav, convert_to_mono_16k
 
 logger = logging.getLogger(__name__)
 
@@ -150,28 +150,29 @@ ANALYSIS_DECODE_TIMEOUT_S = 15 * 60
 
 
 @contextmanager
-def soundfile_readable_audio(
-    audio_path: str, *, mono_16k: bool = False
-) -> Iterator[str]:
+def soundfile_readable_audio(audio_path: str, *, mono: bool = False) -> Iterator[str]:
     """Yield a path to ``audio_path``'s audio that soundfile can open.
 
-    A browser-captured recording is stored in the WebM container MediaRecorder
-    produced, which libsndfile cannot open. A file soundfile reads is yielded
-    as it is; anything else is decoded with ffmpeg to a temporary 16-bit PCM
-    WAV that is removed on exit.
+    A browser-captured recording is stored in the container MediaRecorder
+    produced (WebM/Opus, or MP4/AAC on older Safari), and an import keeps its
+    own container; libsndfile opens neither WebM nor MP4/AAC. A file soundfile
+    reads is yielded as it is; anything else is decoded with ffmpeg to a
+    temporary 16 kHz, 16-bit PCM WAV that is removed on exit.
 
-    The decode keeps the file's sample rate and channels by default, which
-    delivery analysis needs (it tells the two browser capture sources apart by
-    channel). ``mono_16k`` decodes to 16 kHz mono instead, the rate pyannote
-    resamples to anyway: a 2.5 h two-channel 48 kHz capture is about 1.7 GB as
-    native WAV and about 290 MB at 16 kHz mono.
+    16 kHz is the rate both consumers work at: the overlap model resamples to
+    it, and delivery's pitch estimator was validated on 16 kHz audio. A 4 h
+    two-channel 48 kHz capture decodes to about 2.8 GB at its native rate and
+    about 920 MB at 16 kHz. The decode keeps the channels, which delivery needs
+    to tell the two browser capture sources apart; ``mono`` downmixes as well,
+    for overlap, which needs one channel.
 
     The temporary file lives in the process's temp dir and is removed in a
     finally block. A worker killed outright mid-decode can strand one; the
     container's private /tmp is discarded when it is recreated.
 
     Raises:
-        AudioFormatError: ffmpeg could not decode the file, or timed out.
+        AudioFormatError: ffmpeg could not decode the file, could not be
+            started, or timed out.
     """
     import soundfile as sf
 
@@ -186,19 +187,14 @@ def soundfile_readable_audio(
     temp_fd, temp_path = tempfile.mkstemp(suffix=_ANALYSIS_WAV_SUFFIX)
     os.close(temp_fd)
     try:
-        if mono_16k:
-            try:
-                convert_to_mono_16k(
-                    audio_path, temp_path, timeout=ANALYSIS_DECODE_TIMEOUT_S
-                )
-            except (RuntimeError, subprocess.TimeoutExpired) as exc:
-                raise AudioFormatError(
-                    f"Could not decode {audio_path} for analysis: {exc}"
-                ) from exc
-        elif not convert_to_wav(
-            audio_path, temp_path, timeout=ANALYSIS_DECODE_TIMEOUT_S
-        ):
-            raise AudioFormatError(f"Could not decode {audio_path} for analysis.")
+        try:
+            convert_to_16k_wav(
+                audio_path, temp_path, mono=mono, timeout=ANALYSIS_DECODE_TIMEOUT_S
+            )
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+            raise AudioFormatError(
+                f"Could not decode {audio_path} for analysis: {exc}"
+            ) from exc
         yield temp_path
     finally:
         cleanup_temp_file(temp_path)

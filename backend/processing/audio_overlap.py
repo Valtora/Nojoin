@@ -98,10 +98,9 @@ def measure_audio_overlap(audio_path: str, hf_token: str | None) -> dict[str, An
     model = load_segmentation_model(device_str, hf_token)
     inference = Inference(model, step=OVERLAP_INFERENCE_STEP_S)
 
-    # Decoded at 16 kHz mono when it has to be decoded at all: the segmentation
-    # model resamples to that, and a native-rate copy of a long two-channel
-    # capture costs gigabytes on disk and in this process.
-    with soundfile_readable_audio(audio_path, mono_16k=True) as readable_path:
+    # Downmixed when it has to be decoded at all: the segmentation model reads
+    # one channel, and a two-channel copy doubles what this process holds.
+    with soundfile_readable_audio(audio_path, mono=True) as readable_path:
         info = sf.info(readable_path)
         duration_ms = int(math.floor(info.frames / info.samplerate * 1000))
         scores = inference(readable_path)

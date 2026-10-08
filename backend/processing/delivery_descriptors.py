@@ -386,6 +386,9 @@ def analyse_delivery(
     skipped_short = 0
     ambiguous_channel = 0
 
+    # A file soundfile cannot open is read from a 16 kHz decode, the rate this
+    # frame chain was validated at. That needs no method-version bump: no
+    # stored figure came from such a file, because it could not be opened.
     with (
         soundfile_readable_audio(audio_path) as readable_path,
         sf.SoundFile(readable_path) as handle,
