@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 from typing import Any
@@ -69,21 +70,29 @@ def _encode_webm(source: Path, target: Path) -> None:
     )
 
 
-def _analysis_temp_files() -> set[str]:
-    return {
-        name
-        for name in os.listdir(tempfile.gettempdir())
-        if name.endswith("_analysis.wav")
-    }
+@pytest.fixture
+def scratch(tmp_path, monkeypatch) -> Path:
+    """A temp dir of the test's own for the decode to write into.
+
+    The system temp dir is shared with every other suite running on the host,
+    so a before/after listing of it is not exact; this one is.
+    """
+    directory = tmp_path / "scratch"
+    directory.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(directory))
+    return directory
+
+
+def _analysis_temp_files(directory: Path) -> list[Path]:
+    return sorted(directory.glob("*_analysis.wav"))
 
 
 @needs_ffmpeg
-def test_delivery_is_measured_on_a_browser_webm_capture(tmp_path):
+def test_delivery_is_measured_on_a_browser_webm_capture(tmp_path, scratch):
     wav = tmp_path / "capture.wav"
     local, remote = _two_source_capture(wav)
     webm = tmp_path / "capture.webm"
     _encode_webm(wav, webm)
-    temp_before = _analysis_temp_files()
 
     result = analyse_delivery(str(webm), local + remote, browser_capture=True)
 
@@ -95,7 +104,7 @@ def test_delivery_is_measured_on_a_browser_webm_capture(tmp_path):
     assert abs(local_speaker["median_f0_hz"] - 190) / 190 < 0.05
     assert abs(remote_speaker["median_f0_hz"] - 110) / 110 < 0.05
     # The decoded copy does not outlive the measurement.
-    assert _analysis_temp_files() == temp_before
+    assert _analysis_temp_files(scratch) == []
 
 
 @pytest.fixture
@@ -123,12 +132,13 @@ def overlap_inputs(monkeypatch) -> list[Any]:
 
 
 @needs_ffmpeg
-def test_overlap_is_measured_on_a_browser_webm_capture(tmp_path, overlap_inputs):
+def test_overlap_is_measured_on_a_browser_webm_capture(
+    tmp_path, scratch, overlap_inputs
+):
     wav = tmp_path / "capture.wav"
     _two_source_capture(wav)
     webm = tmp_path / "capture.webm"
     _encode_webm(wav, webm)
-    temp_before = _analysis_temp_files()
 
     block = measure_audio_overlap(str(webm), hf_token=None)
 
@@ -137,7 +147,7 @@ def test_overlap_is_measured_on_a_browser_webm_capture(tmp_path, overlap_inputs)
     # Decoded at the model's own rate, not as a 48 kHz two-channel copy.
     (read,) = overlap_inputs
     assert (read.channels, read.samplerate) == (1, 16_000)
-    assert _analysis_temp_files() == temp_before
+    assert _analysis_temp_files(scratch) == []
 
 
 def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
@@ -165,26 +175,31 @@ def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
     assert [(i.channels, i.samplerate) for i in overlap_inputs] == [(1, 16_000)]
 
 
-def test_a_hung_decode_is_stopped_and_reported(tmp_path, monkeypatch):
+@pytest.mark.skipif(sys.platform == "win32", reason="fakes ffmpeg with a sh script")
+@pytest.mark.parametrize("mono_16k", [False, True])
+def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mono_16k):
+    """A real child that never finishes: killed at the timeout, reaped, cleaned up."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    pid_file = tmp_path / "ffmpeg.pid"
+    fake_ffmpeg = bin_dir / "ffmpeg"
+    fake_ffmpeg.write_text(f'#!/bin/sh\necho $$ > "{pid_file}"\nexec sleep 30\n')
+    fake_ffmpeg.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(audio_preprocessing, "ANALYSIS_DECODE_TIMEOUT_S", 0.5)
     container = tmp_path / "capture.webm"
     container.write_bytes(b"\x1aE\xdf\xa3 not something libsndfile reads")
-    temp_before = _analysis_temp_files()
-    timeouts: list[float | None] = []
 
-    def hung_ffmpeg(cmd, **kwargs):
-        timeouts.append(kwargs.get("timeout"))
-        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout") or 0)
+    started = time.monotonic()
+    with pytest.raises(AudioFormatError):
+        with soundfile_readable_audio(str(container), mono_16k=mono_16k):
+            pass
 
-    monkeypatch.setattr("backend.utils.audio.ensure_ffmpeg_in_path", lambda: None)
-    monkeypatch.setattr("backend.utils.audio.subprocess.run", hung_ffmpeg)
-
-    for mono_16k in (False, True):
-        with pytest.raises(AudioFormatError):
-            with soundfile_readable_audio(str(container), mono_16k=mono_16k):
-                pass
-
-    assert timeouts == [audio_preprocessing.ANALYSIS_DECODE_TIMEOUT_S] * 2
-    assert _analysis_temp_files() == temp_before
+    assert time.monotonic() - started < 10
+    # The child is gone, not merely abandoned: killed and reaped.
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
+    assert _analysis_temp_files(scratch) == []
 
 
 @needs_ffmpeg
@@ -207,16 +222,15 @@ def test_a_webm_is_decoded_with_its_rate_and_channels(tmp_path):
 
 
 @needs_ffmpeg
-def test_audio_ffmpeg_cannot_decode_raises_and_leaves_no_temp_file(tmp_path):
+def test_audio_ffmpeg_cannot_decode_raises_and_leaves_no_temp_file(tmp_path, scratch):
     broken = tmp_path / "broken.webm"
     broken.write_bytes(b"not a media file")
-    temp_before = _analysis_temp_files()
 
     with pytest.raises(AudioFormatError):
         with soundfile_readable_audio(str(broken)):
             pass
 
-    assert _analysis_temp_files() == temp_before
+    assert _analysis_temp_files(scratch) == []
 
 
 def test_a_file_soundfile_reads_is_used_in_place(tmp_path, monkeypatch):
