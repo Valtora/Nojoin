@@ -392,10 +392,10 @@ def _build_catch_up_segments_impl(
                         error_payload={"error_type": exc.__class__.__name__},
                     )
                 raise
-            metric["payload"]["segment_count"] = len((result or {}).get("segments", []))
+            metric["payload"]["segment_count"] = len(result.get("segments", []))
 
         result_segments: list[dict] = []
-        for segment in (result or {}).get("segments", []):
+        for segment in result.get("segments", []):
             text = str(segment.get("text", "")).strip()
             if not text:
                 continue
@@ -454,7 +454,7 @@ def _build_catch_up_segments_impl(
                     config_hash=_final_asr_config_hash(merged_config),
                     result_payload={
                         "segment_count": len(result_segments),
-                        "text_chars": len((result or {}).get("text") or ""),
+                        "text_chars": len(result.get("text") or ""),
                         "segments": result_segments,
                     },
                 )

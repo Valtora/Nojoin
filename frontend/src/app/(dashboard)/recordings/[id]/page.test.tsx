@@ -22,6 +22,7 @@ const getSettings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
+const generateNotes = vi.fn();
 
 let activePanel = "transcript";
 
@@ -59,7 +60,7 @@ vi.mock("@/lib/api", () => ({
   updateTranscriptUtteranceText: vi.fn(),
   findAndReplace: vi.fn(),
   updateSpeakerColor: vi.fn(),
-  generateNotes: vi.fn(),
+  generateNotes: (...args: unknown[]) => generateNotes(...args),
   updateNotes: vi.fn(),
   updateUserNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
@@ -87,8 +88,19 @@ vi.mock("@/components/TranscriptView", () => ({
   ),
 }));
 vi.mock("@/components/NotesView", () => ({
-  default: ({ notes }: { notes: string | null }) => (
-    <div data-testid="notes-view">{notes ?? "no-notes"}</div>
+  default: ({
+    notes,
+    onGenerateNotes,
+  }: {
+    notes: string | null;
+    onGenerateNotes: () => void;
+  }) => (
+    <div data-testid="notes-view">
+      {notes ?? "no-notes"}
+      <button type="button" onClick={() => onGenerateNotes()}>
+        Generate notes
+      </button>
+    </div>
   ),
 }));
 vi.mock("@/components/DocumentsView", () => ({
@@ -164,6 +176,7 @@ describe("RecordingPage (detail)", () => {
     getGlobalSpeakers.mockReset();
     getTranscriptUtterances.mockReset();
     renameRecording.mockReset();
+    generateNotes.mockReset();
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -291,6 +304,38 @@ describe("RecordingPage (detail)", () => {
     const transcript = await screen.findByTestId("transcript-view");
     expect(screen.queryByRole("button", { name: "Open Meeting Chat" })).toBeNull();
     expect(clearanceAncestors(transcript)).toHaveLength(0);
+  });
+
+  it("does not toast a notes error that was already there when the page opened", async () => {
+    getRecording.mockResolvedValue(
+      buildRecording({
+        transcript: {
+          ...buildRecording().transcript!,
+          notes_status: "error",
+          error_message: "No model selected for anthropic",
+        },
+      }),
+    );
+
+    renderPage();
+    await screen.findByTestId("transcript-view");
+
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+
+  it("shows why notes cannot be generated for a failed transcription", async () => {
+    const detail =
+      "Transcription failed; reprocess the recording before generating notes.";
+    generateNotes.mockRejectedValue({ response: { status: 409, data: { detail } } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    activePanel = "notes";
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate notes" }));
+
+    await waitFor(() => {
+      expect(addNotification).toHaveBeenCalledWith({ type: "error", message: detail });
+    });
   });
 });
 
