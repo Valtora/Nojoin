@@ -15,7 +15,10 @@ from pathlib import Path
 import pytest
 
 from backend import preload_models
-from backend.tests.hf_cache_layout import write_onnx_asr_repo
+from backend.tests.hf_cache_layout import (
+    write_onnx_asr_repo,
+    write_pyannote_embedding,
+)
 from backend.utils import pyannote_model_utils
 
 PARAKEET_REPO = "models--istupakov--parakeet-tdt-0.6b-v3-onnx"
@@ -27,6 +30,12 @@ def homes(model_cache_env, tmp_path) -> dict[str, Path]:
     managed = tmp_path / "managed"
     managed.mkdir()
     return {"home": model_cache_env, "managed": managed}
+
+
+@pytest.fixture
+def no_bundled_pyannote(monkeypatch, tmp_path) -> None:
+    """The repo ships Pyannote models; point the bundled root at nothing."""
+    monkeypatch.setenv("NOJOIN_PYANNOTE_MODELS_DIR", str(tmp_path / "no-bundled"))
 
 
 def _personal_hub(home: Path) -> Path:
@@ -114,3 +123,43 @@ def test_a_model_in_the_managed_cache_is_still_deleted(homes, monkeypatch):
 
     assert preload_models.delete_model("parakeet") is True
     assert not model.exists()
+
+
+@pytest.mark.usefixtures("no_bundled_pyannote")
+@pytest.mark.parametrize("variable", ["XDG_CACHE_HOME", "HF_HUB_CACHE"])
+def test_pyannote_is_found_in_the_cache_its_loader_downloads_into(
+    variable, homes, monkeypatch
+):
+    """from_pretrained(model_id) downloads into huggingface_hub's own cache.
+
+    Pyannote status used to check only $HF_HOME/hub and ~/.cache, so with the
+    cache moved by XDG_CACHE_HOME or HF_HUB_CACHE a model its loader had just
+    downloaded showed as Missing and could never be deleted.
+    """
+    monkeypatch.setenv(variable, str(homes["managed"]))
+    hub = (
+        homes["managed"] / "huggingface" / "hub"
+        if variable == "XDG_CACHE_HOME"
+        else homes["managed"]
+    )
+    repo = write_pyannote_embedding(hub)
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["embedding"]["downloaded"] is True
+    assert status["embedding"]["source"] == "cache"
+    assert status["embedding"]["path"].startswith(str(repo))
+
+
+@pytest.mark.usefixtures("no_bundled_pyannote")
+def test_a_pyannote_model_in_the_personal_cache_is_reported_as_external(
+    homes, monkeypatch
+):
+    """It is still loaded from there, so it is Ready, but it is not Nojoin's."""
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    write_pyannote_embedding(_personal_hub(homes["home"]))
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["embedding"]["downloaded"] is True
+    assert status["embedding"]["source"] == "external"

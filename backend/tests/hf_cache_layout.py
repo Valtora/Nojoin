@@ -61,3 +61,15 @@ def write_onnx_asr_repo(
         ONNX_ASR_MODELS[status_key].repo_id,
         onnx_asr_files(status_key, quantization),
     )
+
+
+PYANNOTE_EMBEDDING = "pyannote/wespeaker-voxceleb-resnet34-LM"
+
+
+def write_pyannote_embedding(hub: Path) -> Path:
+    """A complete cached copy of the Pyannote voice embedding model."""
+    return write_hf_repo(
+        hub,
+        PYANNOTE_EMBEDDING,
+        {"config.yaml": b"model: {}\n", "pytorch_model.bin": b"weights"},
+    )

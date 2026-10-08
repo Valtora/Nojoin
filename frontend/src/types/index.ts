@@ -735,11 +735,16 @@ export interface AudioDevice {
   is_default: boolean;
 }
 
+/** Where a found model lives. `external`: loadable, but outside the cache
+ * Nojoin manages (a personal Hugging Face cache), so it is not deleted from
+ * the UI. Only Pyannote models report a source. */
+export type ModelSource = "bundled" | "cache" | "external";
+
 export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
   checked_paths: string[];
-  source?: string;
+  source?: ModelSource;
 }
 
 export interface SystemModelStatus {
