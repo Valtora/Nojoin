@@ -11,6 +11,7 @@ export const shouldPollRecordingUpdates = (recording: Recording) => {
   const waitingForProxy =
     recording.status === RecordingStatus.PROCESSED &&
     recording.has_proxy === false &&
+    recording.has_audio !== false &&
     !isDemoRecording(recording);
 
   return (

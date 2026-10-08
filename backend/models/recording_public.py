@@ -154,6 +154,10 @@ class RecordingPublicRead(PublicModel):
     meeting_uid: str
     audio_path: str
     has_proxy: bool = False
+    # False when neither the recording's audio nor its playback proxy is on disk
+    # (a recording restored from a backup taken without audio, for one), so the
+    # interface can say so instead of waiting for a proxy that never comes.
+    has_audio: bool = True
     duration_seconds: Optional[float] = None
     file_size_bytes: Optional[int] = None
     status: RecordingStatus
@@ -312,6 +316,7 @@ def serialize_recording(
     recording: Recording,
     *,
     has_proxy: bool = False,
+    has_audio: bool = True,
     processing_eta_seconds: Optional[int] = None,
     processing_eta_learning: bool = False,
     processing_eta_sample_size: int = 0,
@@ -369,6 +374,7 @@ def serialize_recording(
         meeting_uid=recording.meeting_uid,
         audio_path=recording.audio_path,
         has_proxy=has_proxy,
+        has_audio=has_audio,
         duration_seconds=recording.duration_seconds,
         file_size_bytes=recording.file_size_bytes,
         status=recording.status,

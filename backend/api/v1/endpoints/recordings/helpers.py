@@ -66,6 +66,13 @@ def _recording_has_proxy(recording: Recording) -> bool:
     return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
 
 
+def _recording_has_audio(recording: Recording) -> bool:
+    """Whether anything playable exists, or can be made, for this recording."""
+    return _recording_has_proxy(recording) or bool(
+        recording.audio_path and os.path.exists(recording.audio_path)
+    )
+
+
 def _estimated_audio_bitrate_bits_per_second(
     audio_info: dict[str, Any] | None,
 ) -> int | None:

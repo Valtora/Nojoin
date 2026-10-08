@@ -49,12 +49,18 @@ from backend.utils.timezones import (
 
 from .helpers import (
     _get_owned_recording,
+    _recording_has_audio,
     _recording_has_proxy,
     _should_hide_in_flight_transcript_content,
 )
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+RECORDING_AUDIO_UNAVAILABLE_DETAIL = (
+    "This recording's audio is not available. It may have been restored from a "
+    "backup taken without audio."
+)
 
 # Capture is still open, so the live view is watching for audio going missing.
 # A paused recording counts: it can be resumed, and the shortfall accrued before
@@ -183,7 +189,11 @@ async def list_recordings(
     result = await db.execute(query)
     recordings = result.scalars().all()
     return [
-        serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+        serialize_recording(
+            recording,
+            has_proxy=_recording_has_proxy(recording),
+            has_audio=_recording_has_audio(recording),
+        )
         for recording in recordings
     ]
 
@@ -417,6 +427,7 @@ async def get_recording(
     return serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),
+        has_audio=_recording_has_audio(recording),
         processing_eta_seconds=processing_eta_seconds,
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
@@ -469,6 +480,13 @@ async def stream_recording(
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if not recording.proxy_path or not os.path.exists(recording.proxy_path):
+        # A proxy is only ever on its way when there is audio to make it from.
+        # Without any, answering 202 would leave the player waiting forever.
+        if not _recording_has_audio(recording):
+            raise HTTPException(
+                status_code=404,
+                detail=RECORDING_AUDIO_UNAVAILABLE_DETAIL,
+            )
         raise HTTPException(
             status_code=202,
             detail="Audio proxy is being prepared. Please try again shortly.",
