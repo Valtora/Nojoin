@@ -498,13 +498,16 @@ async def stream_recording(
     file_size = os.path.getsize(file_path)
     CHUNK_SIZE = 2500 * 1024
 
-    is_range_request = False
     start = 0
-    end = min(file_size - 1, CHUNK_SIZE - 1)
-
     range_header = request.headers.get("range")
+    # A request without Range wants the whole file (the audio export), so it gets
+    # all of it with 200. Media elements always send Range and keep getting
+    # chunked 206s. The body is read 64 KB at a time either way, so a whole-file
+    # answer never holds the file in memory.
+    end = file_size - 1
+
     if range_header:
-        is_range_request = True
+        end = min(file_size - 1, CHUNK_SIZE - 1)
         try:
             range_str = range_header.replace("bytes=", "")
             range_parts = range_str.split("-")
@@ -523,8 +526,7 @@ async def stream_recording(
         except ValueError:
             pass
 
-    chunk_end = min(end, start + CHUNK_SIZE - 1)
-    end = chunk_end
+        end = min(end, start + CHUNK_SIZE - 1)
 
     if start >= file_size:
         raise HTTPException(
@@ -551,7 +553,7 @@ async def stream_recording(
                 bytes_to_read -= len(data)
 
     cache_control = "private, max-age=3600"
-    use_partial = is_range_request or content_length < file_size
+    use_partial = bool(range_header)
 
     headers = {
         "Accept-Ranges": "bytes",

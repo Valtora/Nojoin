@@ -48,12 +48,14 @@ def _recording(tmp_path: Path, *, audio: bytes | None, proxy: bool) -> SimpleNam
     )
 
 
-async def _stream(monkeypatch, recording: SimpleNamespace):
+async def _stream(
+    monkeypatch, recording: SimpleNamespace, headers: dict[str, str] | None = None
+):
     async def owned(db, recording_id, user_id):
         return recording
 
     monkeypatch.setattr(routes_query, "_get_owned_recording", owned)
-    request = SimpleNamespace(headers={})
+    request = SimpleNamespace(headers=headers or {})
     return await routes_query.stream_recording(
         "rec-1", request, db=None, current_user=SimpleNamespace(id=1)
     )
@@ -78,6 +80,72 @@ async def test_stream_still_asks_to_wait_while_a_proxy_can_be_made(
         await _stream(monkeypatch, _recording(tmp_path, audio=b"webm", proxy=False))
 
     assert raised.value.status_code == 202
+
+
+# --- What the stream sends -----------------------------------------------------
+#
+# Larger than the 2.5 MB chunk a range request is answered with, like the proxy
+# of any recording over about 2 min 40 s.
+PROXY_SIZE = 3_000_000
+
+
+def _proxy_bytes() -> bytes:
+    return (bytes(range(251)) * (PROXY_SIZE // 251 + 1))[:PROXY_SIZE]
+
+
+def _recording_with_proxy(tmp_path: Path, content: bytes) -> SimpleNamespace:
+    recording = _recording(tmp_path, audio=b"webm", proxy=True)
+    Path(recording.proxy_path).write_bytes(content)
+    return recording
+
+
+@pytest.mark.anyio
+async def test_stream_sends_the_whole_file_with_200_when_no_range_is_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The audio export asks without Range. A 206 carrying the first chunk saved
+    # only the first 2 min 40 s of a longer recording.
+    content = _proxy_bytes()
+
+    response = await _stream(monkeypatch, _recording_with_proxy(tmp_path, content))
+    chunks = [chunk async for chunk in response.body_iterator]
+
+    assert response.status_code == 200
+    assert "content-range" not in response.headers
+    assert response.headers["content-length"] == str(PROXY_SIZE)
+    assert b"".join(chunks) == content
+    # Read a bounded piece at a time, never the whole file at once.
+    assert max(len(chunk) for chunk in chunks) <= 64 * 1024
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("range_header", "start", "end"),
+    [
+        ("bytes=0-", 0, 2_559_999),
+        ("bytes=2900000-", 2_900_000, PROXY_SIZE - 1),
+        ("bytes=-1000", PROXY_SIZE - 1000, PROXY_SIZE - 1),
+    ],
+)
+async def test_stream_still_answers_a_range_with_one_chunk_and_206(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    range_header: str,
+    start: int,
+    end: int,
+) -> None:
+    content = _proxy_bytes()
+
+    response = await _stream(
+        monkeypatch,
+        _recording_with_proxy(tmp_path, content),
+        headers={"range": range_header},
+    )
+    body = b"".join([chunk async for chunk in response.body_iterator])
+
+    assert response.status_code == 206
+    assert response.headers["content-range"] == f"bytes {start}-{end}/{PROXY_SIZE}"
+    assert body == content[start : end + 1]
 
 
 @pytest.mark.parametrize(
