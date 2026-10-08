@@ -67,8 +67,9 @@ import { useViewportDensity } from "@/components/ViewportDensityProvider";
 
 import {
   cloneTranscriptSegments,
-  isDemoRecording,
+  hasPolledRecordingChanged,
   isRecordingInFlight,
+  recordingPollIntervalMs,
   shouldPollRecordingUpdates,
   type TranscriptHistoryItem,
 } from "./recordingDetailUtils";
@@ -393,48 +394,17 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   useEffect(() => {
     if (!recording) return;
 
-    if (!shouldPollRecordingUpdates(recording)) {
+    const pollIntervalMs = recordingPollIntervalMs(recording);
+    if (pollIntervalMs === null) {
       return;
     }
-
-    const pollIntervalMs =
-      recording.status === RecordingStatus.UPLOADING ||
-      recording.status === RecordingStatus.PAUSED ||
-      (recording.status === RecordingStatus.PROCESSED &&
-        recording.has_proxy === false &&
-        !isDemoRecording(recording))
-        ? 1000
-        : 3000;
 
     const interval = setInterval(async () => {
       try {
         const { id } = await params;
         const data = await getRecording(id);
 
-        const meetingEdgeSignature = (rec: Recording | null) =>
-          JSON.stringify({
-            focus: rec?.transcript?.meeting_edge_focus ?? null,
-            status: rec?.transcript?.meeting_edge_status ?? null,
-            error: rec?.transcript?.meeting_edge_error_message ?? null,
-            payload: rec?.transcript?.meeting_edge_payload ?? null,
-          });
-
-        if (
-          data.status !== recording.status ||
-          data.client_status !== recording.client_status ||
-          data.processing_step !== recording.processing_step ||
-          data.upload_progress !== recording.upload_progress ||
-          data.processing_progress !== recording.processing_progress ||
-          data.processing_eta_seconds !== recording.processing_eta_seconds ||
-          data.processing_eta_learning !== recording.processing_eta_learning ||
-          data.processing_eta_sample_size !== recording.processing_eta_sample_size ||
-          data.has_proxy !== recording.has_proxy ||
-          data.transcript?.notes_status !== recording.transcript?.notes_status ||
-          data.transcript?.notes !== recording.transcript?.notes ||
-          data.transcript?.user_notes !== recording.transcript?.user_notes ||
-          meetingEdgeSignature(data) !== meetingEdgeSignature(recording) ||
-          JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
-        ) {
+        if (hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }

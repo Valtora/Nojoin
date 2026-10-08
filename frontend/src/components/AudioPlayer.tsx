@@ -140,8 +140,14 @@ export default function AudioPlayer({
   // The demo recording ("Welcome to Nojoin") intentionally has no proxy audio
   const isDemo = recording.name === "Welcome to Nojoin";
   // No audio and no proxy on disk: nothing is being prepared, so say so rather
-  // than showing the processing state indefinitely.
-  const audioMissing = recording.has_audio === false && !isDemo;
+  // than showing the processing state indefinitely. Only once the recording has
+  // settled: while it is in flight its master may not be assembled yet.
+  const inFlight =
+    recording.status === RecordingStatus.UPLOADING ||
+    recording.status === RecordingStatus.PAUSED ||
+    recording.status === RecordingStatus.PROCESSING ||
+    recording.status === RecordingStatus.QUEUED;
+  const audioMissing = recording.has_audio === false && !inFlight && !isDemo;
   const proxyUnavailable =
     recording.has_proxy === false &&
     recording.status !== RecordingStatus.UPLOADING &&
@@ -214,9 +220,11 @@ export default function AudioPlayer({
         <div className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
             <VolumeX className="w-4 h-4" />
-            {audioMissing
-              ? "This recording's audio is not available"
-              : "This meeting was imported with no audio"}
+            {isDemo
+              ? "This meeting was imported with no audio"
+              : audioMissing
+                ? "This recording's audio is not available"
+                : "This recording's audio could not be loaded"}
           </span>
         </div>
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  act,
   fireEvent,
   renderWithProviders,
   screen,
@@ -25,11 +26,12 @@ const renameRecording = vi.fn();
 
 let activePanel = "transcript";
 
+// Stable across renders, like Next's own router: the page's load callback
+// depends on it, and a fresh object per render would reload in a loop.
+const router = { push: routerPush, refresh: routerRefresh };
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: routerPush,
-    refresh: routerRefresh,
-  }),
+  useRouter: () => router,
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
@@ -76,7 +78,9 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 vi.mock("@/components/AudioPlayer", () => ({
-  default: () => <div data-testid="audio-player" />,
+  default: ({ recording }: { recording: Recording }) => (
+    <div data-testid="audio-player" data-has-audio={String(recording.has_audio)} />
+  ),
 }));
 vi.mock("@/components/SpeakerPanel", () => ({
   default: () => <div data-testid="speaker-panel" />,
@@ -108,6 +112,7 @@ vi.mock("@/components/LinkedEventPanel", () => ({
 }));
 
 import RecordingPage from "./page";
+import { AUDIO_RECHECK_INTERVAL_MS } from "./_hooks/recordingDetailUtils";
 
 const buildRecording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1",
@@ -257,6 +262,37 @@ describe("RecordingPage (detail)", () => {
       type: "error",
       message: "Failed to load recording.",
     });
+  });
+
+  it("picks up audio that arrives after the page reported it unavailable", async () => {
+    // A restore commits the recording rows before it moves their audio into
+    // place, so a page opened in between first sees no audio at all.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let audioOnDisk = false;
+      getRecording.mockImplementation(async () =>
+        buildRecording({ has_proxy: false, has_audio: audioOnDisk }),
+      );
+
+      renderPage();
+
+      expect(await screen.findByTestId("audio-player")).toHaveAttribute(
+        "data-has-audio",
+        "false",
+      );
+
+      audioOnDisk = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUDIO_RECHECK_INTERVAL_MS);
+      });
+
+      expect(screen.getByTestId("audio-player")).toHaveAttribute(
+        "data-has-audio",
+        "true",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders the notes panel when notes is the active tab", async () => {

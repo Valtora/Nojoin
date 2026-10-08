@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { renderWithProviders, screen } from "@/test/renderWithProviders";
+import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 import { RecordingStatus, type Recording } from "@/types";
-import { shouldPollRecordingUpdates } from "@/app/(dashboard)/recordings/[id]/_hooks/recordingDetailUtils";
 
 vi.mock("@/lib/api", () => ({
   getRecordingStreamUrl: (id: string) => `/api/v1/recordings/${id}/stream`,
@@ -47,12 +46,29 @@ describe("a recording with no audio and no proxy", () => {
     expect(screen.getByText(/being processed/)).toBeInTheDocument();
   });
 
-  it("stops the page polling for a proxy that will never come", () => {
-    expect(shouldPollRecordingUpdates(recordingWith({ has_audio: false }))).toBe(
-      false,
+  it("does not call in-flight audio unavailable: the master may not be assembled yet", () => {
+    renderPlayer(
+      recordingWith({ status: RecordingStatus.PROCESSING, has_audio: false }),
     );
-    expect(shouldPollRecordingUpdates(recordingWith({ has_audio: true }))).toBe(
-      true,
-    );
+
+    expect(
+      screen.queryByText("This recording's audio is not available"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/being processed/)).toBeInTheDocument();
+  });
+});
+
+describe("a recording whose audio fails to load", () => {
+  it("says the audio could not be loaded, not that the meeting had none", () => {
+    renderPlayer(recordingWith({ has_proxy: true, has_audio: true }));
+
+    const audio = document.querySelector("audio");
+    expect(audio).not.toBeNull();
+    fireEvent.error(audio as HTMLAudioElement);
+
+    expect(
+      screen.getByText("This recording's audio could not be loaded"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/imported with no audio/)).not.toBeInTheDocument();
   });
 });
