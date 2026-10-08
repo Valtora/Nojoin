@@ -20,7 +20,7 @@ export const themeScript = `
       document.documentElement.classList.remove('dark');
     }
 
-    } catch (e: unknown) {
+  } catch (e) {
     // localStorage may be unavailable, default to system preference
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');
