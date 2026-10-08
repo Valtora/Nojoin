@@ -189,7 +189,9 @@ design, with a 24-hour lifetime, so take the backup again if you needed it.
 
 The worker container starts Celery without preloading inference models. Nojoin
 keeps GPU memory idle at startup, then queues worker-side model preparation for
-the configured Whisper model, Pyannote diarisation, and voice embeddings. The
+the configured transcription model (Whisper, Parakeet or Canary, following
+`transcription_backend`), Pyannote diarisation, and voice embeddings. Whisper is
+not downloaded on an install that transcribes with Parakeet or Canary. The
 worker validates those assets on CPU where possible, caches them on disk, and
 releases model objects and CUDA memory before returning to idle.
 

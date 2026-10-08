@@ -416,7 +416,9 @@ def download_models(
             config_manager.get("canary_model", "nemo-canary-1b-v2")
         )
 
-        if include_core:
+        # Whisper is only ever loaded by the Whisper engine, live and final
+        # alike, so an install on Parakeet or Canary never needs it on disk.
+        if include_core and transcription_backend == "whisper":
             report(
                 f"Preparing Whisper {whisper_model_size} for live transcription...",
                 5,
@@ -431,6 +433,7 @@ def download_models(
                 status="downloading",
             )
 
+        if include_core:
             report(
                 "Preparing Pyannote diarization, voice embedding, and segmentation models...",
                 40,
