@@ -306,6 +306,23 @@ a status badge, a count) uses `rounded-pill`, backed by `--pill-radius`. `rounde
 for true circles (avatars, dots, round icon buttons, spinners), which stay circles in every corner
 style. An arbitrary radius must go through the scale, as in
 `rounded-[calc(5px*var(--radius-scale))]`; a bare `rounded-[5px]` ignores the setting.
+`radiusUsage.test.ts` fails on either slip: `rounded-full` with horizontal padding in one class
+string, or an arbitrary radius without the scale.
+
+Third-party stylesheets are brought under the scale where they draw corners: the typography
+plugin's `<pre>` and `<kbd>` (`globals.css`) and every fixed radius in react-datepicker's stylesheet
+(`datepicker-radius.css`, checked against the library by `datepickerRadius.test.ts`).
+
+**Deliberate exceptions.** These stay round under Subtle and Square, because their shape is what
+they are rather than a corner treatment:
+
+- circles: avatars, colour and status dots, round icon buttons (the chat button, calendar month
+  arrows), spinners, the selected day in the task deadline calendar, react-datepicker's clear
+  button;
+- switches: the `Switch` track and thumb, which read as a switch because they are round;
+- progress and level bars (uploads, document parsing, model downloads, the capture level meters):
+  thin rounded bars whose ends are not corners;
+- scrollbar thumbs.
 
 ### Width is a property of the surface, not of the app
 
