@@ -192,15 +192,17 @@ keeps GPU memory idle at startup, then queues worker-side model preparation for
 Pyannote diarisation and voice embeddings, plus the transcription engine the
 install's users actually run. Administrators pick the engine and model under
 **Settings > Transcription**. Nojoin stores that choice on the choosing
-administrator's own settings, not in `config.json`, and every other user runs
-the engine and model named in `config.json` (`transcription_backend`, Whisper
-`turbo` by default). Startup therefore prepares the owner's engine and model
+administrator's own settings, not in `config.json`, and every user who has not
+picked one runs the engine and model named in `config.json`
+(`transcription_backend`, Whisper `turbo` by default). Startup therefore prepares the owner's engine and model
 (the earliest-created active account's while the owner's account is
 deactivated), and Whisper only while at least one active user runs it: at the
 owner's size when the owner runs Whisper, otherwise at the earliest-created such
 account's size. Another Whisper size in use is fetched on first use. Before the
 first account exists, or when the users cannot be read, `config.json` decides.
-The admin health check reports the engine startup prepares.
+The admin health check reports the owner's engine, the install's primary
+choice, not every engine in use: a Whisper model that only other users run does
+not appear there.
 
 The worker validates those assets on CPU where possible, caches them on disk,
 and releases model objects and CUDA memory before returning to idle.
