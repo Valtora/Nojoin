@@ -5,7 +5,11 @@
 import logging
 
 from ..utils.config_manager import config_manager
-from .engines.errors import TranscriptionError, transcription_error_from
+from .engines.errors import (
+    TranscriptionError,
+    is_task_interruption,
+    transcription_error_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,8 @@ def transcribe_audio(audio_path: str, config: dict | None = None) -> dict:
     except TranscriptionError:
         raise
     except Exception as e:
+        if is_task_interruption(e):
+            raise
         logger.error(f"Transcription backend '{backend}' failed: {e}", exc_info=True)
         # Engines catch their own model errors and attribute out-of-memory to
         # the device they ran on. What escapes them never ran on a GPU.

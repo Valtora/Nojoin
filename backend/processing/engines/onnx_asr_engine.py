@@ -5,11 +5,17 @@
 import gc
 import logging
 import os
+import traceback
 
 from ...utils.languages import resolve_transcription_language_code
-from ..onnx_providers import gpu_is_present, verify_gpu_providers
+from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from .base import TranscriptionEngine
-from .errors import TranscriptionError, is_out_of_memory, transcription_error_from
+from .errors import (
+    TranscriptionError,
+    is_out_of_memory,
+    is_task_interruption,
+    transcription_error_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,9 +286,10 @@ class OnnxAsrEngine(TranscriptionEngine):
             )
             # onnxruntime silently drops a provider it cannot load, so confirm the
             # session actually landed on the GPU instead of assuming it did.
-            self._model_on_gpu[onnx_id] = verify_gpu_providers(
+            verify_gpu_providers(
                 model, component=f"{self.name} model {onnx_id}", requested=providers
             )
+            self._model_on_gpu[onnx_id] = sessions_use_cuda(model, requested=providers)
             self._model_cache[onnx_id] = model
             logger.info(f"{self.name} model {onnx_id} loaded successfully.")
         return self._model_cache[onnx_id]
@@ -313,6 +320,7 @@ class OnnxAsrEngine(TranscriptionEngine):
                 engine=self.name,
             )
 
+        model = recognizer = None
         try:
             model = self._get_model(config or {})
             recognizer = model.with_timestamps()
@@ -356,6 +364,8 @@ class OnnxAsrEngine(TranscriptionEngine):
             return result
 
         except Exception as e:
+            if is_task_interruption(e):
+                raise
             logger.error(
                 f"Error during {self.name} transcription for {audio_path}: {e}",
                 exc_info=True,
@@ -365,10 +375,14 @@ class OnnxAsrEngine(TranscriptionEngine):
             )
             if is_out_of_memory(e):
                 # onnxruntime's arena grows to the largest window and never
-                # shrinks, so a cached session that ran out of memory would run
-                # out again on the next call. Drop it and collect it now, so the
-                # memory is free for the next call, which reloads.
+                # shrinks, so a session that ran out of memory would run out
+                # again on the next call. Drop every reference to it (the cache,
+                # this frame's locals, and the locals of the frames the
+                # traceback keeps alive) and collect, so its memory is freed
+                # before the next call reloads it.
                 self.release()
+                model = recognizer = None
+                traceback.clear_frames(e.__traceback__)
                 gc.collect()
             raise failure from e
 

@@ -535,8 +535,8 @@ def _onnx_engine_loading(monkeypatch, recognize_outcomes, *, sessions_on_cuda=Tr
     """A real ParakeetEngine whose onnx-asr loader hands out one fake model per
     load on a GPU host. Each recognize() call takes the next outcome: an
     exception is raised, anything else is returned. ``sessions_on_cuda`` is
-    what provider verification reports for the loaded sessions. Returns the
-    engine and the list of loads."""
+    whether the loaded sessions report running on CUDA. Returns the engine and
+    the list of loads."""
     import onnx_asr
 
     from backend.processing.engines import onnx_asr_engine
@@ -561,8 +561,9 @@ def _onnx_engine_loading(monkeypatch, recognize_outcomes, *, sessions_on_cuda=Tr
         return _Model()
 
     monkeypatch.setattr(onnx_asr, "load_model", _load_model)
+    monkeypatch.setattr(onnx_asr_engine, "verify_gpu_providers", lambda *a, **k: True)
     monkeypatch.setattr(
-        onnx_asr_engine, "verify_gpu_providers", lambda *a, **k: sessions_on_cuda
+        onnx_asr_engine, "sessions_use_cuda", lambda *a, **k: sessions_on_cuda
     )
     monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda: True)
     return ParakeetEngine(), loads
@@ -670,3 +671,153 @@ def test_whisper_missing_audio_raises():
 
     with pytest.raises(TranscriptionError, match="audio file is missing"):
         WhisperEngine().transcribe("/nonexistent/meeting.wav", {})
+
+
+def test_onnx_asr_oom_frees_the_session(tmp_path, monkeypatch):
+    """After an OOM nothing keeps the session alive: not the engine's cache, not
+    the engine's locals, and not the frames the raised error's traceback holds."""
+    import weakref
+
+    import onnx_asr
+
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    class _Session:
+        pass
+
+    class _Recognizer:
+        def __init__(self, model):
+            self.model = model
+
+        def recognize(self, path, **kwargs):
+            raise RuntimeError("CUDA failure 2: out of memory ; GPU=0")
+
+    class _Model:
+        def __init__(self):
+            self.session = _Session()
+
+        def with_timestamps(self):
+            return _Recognizer(self)
+
+    sessions = []
+
+    def _load_model(model_id, **kwargs):
+        model = _Model()
+        sessions.append(weakref.ref(model.session))
+        return model
+
+    monkeypatch.setattr(onnx_asr, "load_model", _load_model)
+    monkeypatch.setattr(onnx_asr_engine, "verify_gpu_providers", lambda *a, **k: True)
+    monkeypatch.setattr(onnx_asr_engine, "sessions_use_cuda", lambda *a, **k: True)
+    monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda: True)
+    audio_path = tmp_path / "meeting.wav"
+    _write_silence(audio_path, 1)
+
+    with pytest.raises(TranscriptionError) as caught:
+        ParakeetEngine().transcribe(str(audio_path), {})
+
+    assert caught.value.gpu_out_of_memory is True
+    assert sessions[0]() is None
+
+
+def test_whisper_oom_frees_the_model(monkeypatch):
+    import weakref
+
+    import torch
+
+    from backend.processing.engines import whisper_engine
+    from backend.processing.engines.whisper_engine import WhisperEngine
+
+    class _OomModel:
+        def transcribe(self, audio_path, **kwargs):
+            raise torch.cuda.OutOfMemoryError("CUDA out of memory.")
+
+    models = []
+
+    def _load_model(*args, **kwargs):
+        model = _OomModel()
+        models.append(weakref.ref(model))
+        return model
+
+    monkeypatch.setattr(whisper_engine, "_model_cache", {})
+    monkeypatch.setattr(whisper_engine.whisper, "load_model", _load_model)
+    monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(whisper_engine.torch.cuda, "empty_cache", lambda: None)
+
+    with pytest.raises(TranscriptionError):
+        WhisperEngine().transcribe("meeting.wav", {"processing_device": "cuda"})
+
+    assert models[0]() is None
+
+
+def test_task_interruptions_pass_through_engine_and_dispatcher(tmp_path, monkeypatch):
+    """A Celery time limit is the task being stopped, not a failed transcription."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    audio_path = tmp_path / "meeting.wav"
+    _write_silence(audio_path, 1)
+    engine = _parakeet_with_model(
+        monkeypatch, _raising_onnx_model(SoftTimeLimitExceeded()), on_gpu=False
+    )
+    transcribe._ENGINE_REGISTRY["parakeet"] = engine
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        transcribe.transcribe_audio(
+            str(audio_path), {"transcription_backend": "parakeet"}
+        )
+
+
+class _FakeSession:
+    def __init__(self, providers):
+        self._providers = providers
+
+    def get_providers(self):
+        return self._providers
+
+
+def test_sessions_use_cuda_when_any_session_is_on_the_gpu(monkeypatch):
+    from backend.processing import onnx_providers
+
+    monkeypatch.setattr(
+        onnx_providers,
+        "iter_inference_sessions",
+        lambda model: iter(
+            [
+                _FakeSession(["CUDAExecutionProvider", "CPUExecutionProvider"]),
+                _FakeSession(["CPUExecutionProvider"]),
+            ]
+        ),
+    )
+    requested = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+    assert onnx_providers.sessions_use_cuda(object(), requested=requested) is True
+    assert (
+        onnx_providers.sessions_use_cuda(object(), requested=["CPUExecutionProvider"])
+        is False
+    )
+
+
+@pytest.mark.parametrize("gpu_present", [True, False])
+def test_sessions_use_cuda_falls_back_to_the_device_when_uninspectable(
+    monkeypatch, gpu_present
+):
+    from backend.processing import onnx_providers
+
+    def _uninspectable(model):
+        raise RuntimeError("session refuses to report providers")
+
+    monkeypatch.setattr(onnx_providers, "gpu_is_present", lambda: gpu_present)
+    requested = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+    monkeypatch.setattr(onnx_providers, "iter_inference_sessions", _uninspectable)
+    assert (
+        onnx_providers.sessions_use_cuda(object(), requested=requested) is gpu_present
+    )
+
+    monkeypatch.setattr(
+        onnx_providers, "iter_inference_sessions", lambda model: iter([])
+    )
+    assert (
+        onnx_providers.sessions_use_cuda(object(), requested=requested) is gpu_present
+    )

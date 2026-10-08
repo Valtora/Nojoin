@@ -105,3 +105,15 @@ def transcription_error_from(
     return TranscriptionError(
         f"Transcription failed ({engine}): {_first_line(exc)}", engine=engine
     )
+
+
+def is_task_interruption(exc: BaseException) -> bool:
+    """Whether ``exc`` is Celery stopping the task: a time limit or termination.
+
+    Those are not transcription failures and must reach Celery unchanged, so
+    engines and callers re-raise them instead of wrapping them.
+    """
+    from billiard.exceptions import Terminated
+    from celery.exceptions import SoftTimeLimitExceeded, TimeLimitExceeded
+
+    return isinstance(exc, (SoftTimeLimitExceeded, TimeLimitExceeded, Terminated))
