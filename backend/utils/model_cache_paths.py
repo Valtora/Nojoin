@@ -28,9 +28,10 @@ def whisper_cache_root() -> str:
 def hf_hub_cache_root() -> str:
     """The Hugging Face hub cache that huggingface_hub downloads into.
 
-    Mirrors huggingface_hub 1.32.0 ``constants.py`` (lines 159-183) step for
-    step: ``HF_HUB_CACHE``, then ``HUGGINGFACE_HUB_CACHE``, then
-    ``$HF_HOME/hub``, then ``${XDG_CACHE_HOME:-~/.cache}/huggingface/hub``.
+    Mirrors huggingface_hub 1.33.0 ``constants.py`` (lines 159-183, the same
+    in 1.32.0) step for step: ``HF_HUB_CACHE``, then
+    ``HUGGINGFACE_HUB_CACHE``, then ``$HF_HOME/hub``, then
+    ``${XDG_CACHE_HOME:-~/.cache}/huggingface/hub``.
     That includes its quirks: a variable set to the empty string counts as set
     (an empty ``HF_HOME`` gives the relative path ``hub``), and each value is
     passed through ``expanduser`` before ``expandvars``.
