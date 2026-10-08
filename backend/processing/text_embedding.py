@@ -25,6 +25,12 @@ def fastembed_cache_dir() -> str:
     the Whisper and Hugging Face models instead, under ``$XDG_CACHE_HOME`` (the
     persistent ``model_cache`` volume in compose). fastembed's own
     ``FASTEMBED_CACHE_PATH`` still wins when it is set.
+
+    The io and parse lanes share this directory and can both hit a fresh
+    volume at once. fastembed downloads through huggingface_hub, which takes
+    a file lock per blob under ``.locks`` and renames each finished file into
+    place, so the second lane waits for the first rather than reading a
+    partial file.
     """
     explicit = os.getenv("FASTEMBED_CACHE_PATH")
     if explicit:
