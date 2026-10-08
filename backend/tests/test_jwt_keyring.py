@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import timedelta
+from pathlib import Path
 
 import jwt
 import pytest
@@ -173,3 +174,23 @@ def test_rotation_replaces_an_empty_active_key(isolated_keyring):
     assert active_kid == new_kid
     assert len(active_key) == 64
     assert security.decode_access_token(_session_token())["sub"] == "alice"
+
+
+def test_unreadable_data_directory_is_reported_with_the_file_named(
+    isolated_keyring, monkeypatch
+):
+    keyring_file = isolated_keyring / ".secret_keys.json"
+    real_exists = Path.exists
+
+    def exists(path: Path, **kwargs) -> bool:
+        # What stat() raises when the api cannot traverse the data directory.
+        if path == keyring_file:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_exists(path, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+
+    with pytest.raises(
+        security.SigningKeyUnavailableError, match=re.escape(str(keyring_file))
+    ):
+        security.get_signing_keyring()

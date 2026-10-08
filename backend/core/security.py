@@ -64,9 +64,9 @@ class SigningKeyUnavailableError(RuntimeError):
 
 def _read_keyring_file() -> Optional[dict[str, Any]]:
     keyring_file = _keyring_path()
-    if not keyring_file.exists():
-        return None
     try:
+        if not keyring_file.exists():
+            return None
         content = keyring_file.read_text(encoding="utf-8")
     except OSError as exc:
         raise _keyring_access_error(exc) from exc

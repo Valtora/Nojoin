@@ -271,6 +271,11 @@ def log_signing_keyring_status(*, logger_instance: logging.Logger) -> None:
         get_signing_keyring()
     except SigningKeyUnavailableError as e:
         logger_instance.error("%s Sign-in is unavailable until this is fixed.", e)
+    except Exception:
+        # Boundary: like the storage probe, this check must not block startup.
+        logger_instance.exception(
+            "The JWT keyring check failed to run, so sign-in may be unavailable."
+        )
 
 
 async def signing_key_unavailable_handler(

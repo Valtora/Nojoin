@@ -97,6 +97,30 @@ async def test_api_startup_logs_an_empty_signing_key_and_carries_on(
 
 
 @pytest.mark.anyio
+async def test_api_startup_carries_on_when_the_keyring_check_fails_unexpectedly(
+    monkeypatch, caplog
+):
+    def unexpected_failure():
+        raise RuntimeError("Could not determine home directory.")
+
+    def stop_before_the_database():
+        raise _StartupContinued
+
+    monkeypatch.setattr(main, "get_signing_keyring", unexpected_failure)
+    monkeypatch.setattr(main, "run_migrations", stop_before_the_database)
+
+    with caplog.at_level(logging.ERROR, logger=main.logger.name):
+        with pytest.raises(_StartupContinued):
+            async with main.lifespan(main.app):
+                pass
+
+    assert any(
+        "keyring check failed to run" in r.getMessage() and r.exc_info
+        for r in caplog.records
+    ), [r.getMessage() for r in caplog.records]
+
+
+@pytest.mark.anyio
 async def test_sign_in_with_an_empty_signing_key_fails_with_an_actionable_error(
     keyring_file, client, caplog
 ):
