@@ -62,10 +62,10 @@ def _two_source_capture(path: Path) -> tuple[list, list]:
     return local, remote
 
 
-def _encode_webm(source: Path, target: Path) -> None:
+def _encode(source: Path, target: Path, codec: str = "libopus") -> None:
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", str(source)]
-        + ["-c:a", "libopus", "-b:a", "128k", str(target)],
+        + ["-c:a", codec, "-b:a", "128k", "-ar", "48000", str(target)],
         check=True,
     )
 
@@ -108,7 +108,7 @@ def test_delivery_is_measured_on_a_browser_webm_capture(tmp_path, scratch):
     wav = tmp_path / "capture.wav"
     local, remote = _two_source_capture(wav)
     webm = tmp_path / "capture.webm"
-    _encode_webm(wav, webm)
+    _encode(wav, webm)
 
     result = analyse_delivery(str(webm), local + remote, browser_capture=True)
 
@@ -154,7 +154,7 @@ def test_overlap_is_measured_on_a_browser_webm_capture(
     wav = tmp_path / "capture.wav"
     _two_source_capture(wav)
     webm = tmp_path / "capture.webm"
-    _encode_webm(wav, webm)
+    _encode(wav, webm)
 
     block = measure_audio_overlap(str(webm), hf_token=None)
 
@@ -211,18 +211,26 @@ def test_a_hung_ffmpeg_is_killed_and_reported(tmp_path, monkeypatch, scratch, mo
 
 
 @needs_ffmpeg
-def test_a_webm_is_decoded_to_16_khz_keeping_its_channels(tmp_path, scratch):
+@pytest.mark.parametrize(
+    ("name", "codec"),
+    # A browser capture (WebM/Opus, or MP4/AAC from Safari) and an M4A import:
+    # libsndfile reads none of them.
+    [("capture.webm", "libopus"), ("capture.m4a", "aac")],
+)
+def test_a_container_soundfile_cannot_read_is_decoded_to_16_khz_with_its_channels(
+    tmp_path, scratch, name, codec
+):
     wav = tmp_path / "capture.wav"
     _two_source_capture(wav)
-    webm = tmp_path / "capture.webm"
-    _encode_webm(wav, webm)
+    container = tmp_path / name
+    _encode(wav, container, codec)
 
-    with soundfile_readable_audio(str(webm)) as readable:
+    with soundfile_readable_audio(str(container)) as readable:
         info = sf.info(readable)
         decoded = readable
 
-    assert decoded != str(webm)
-    # Opus decodes at 48 kHz; delivery reads it at the rate it was validated at.
+    assert decoded != str(container)
+    # Stored at 48 kHz; delivery reads it at the rate it was validated at.
     assert (info.channels, info.samplerate) == (2, 16_000)
     assert info.duration == pytest.approx(60.0, abs=0.1)
     assert _analysis_temp_files(scratch) == []
