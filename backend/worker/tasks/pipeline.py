@@ -1,5 +1,6 @@
 from backend.processing.engines.errors import (
     TranscriptionError,
+    is_task_interruption,
     transcription_error_from,
 )
 
@@ -320,11 +321,15 @@ def _run_final_asr_stage(
                     or "Final ASR invocation failed.",
                     error_payload={"error_type": exc.__class__.__name__},
                 )
+            if is_task_interruption(exc):
+                # A time limit or termination is Celery stopping the task, not a
+                # transcription failure: let it through unchanged.
+                raise
             failure = exc
             if not isinstance(exc, TranscriptionError):
                 failure = transcription_error_from(
                     exc,
-                    engine=str(merged_config.get("transcription_backend")),
+                    engine=str(merged_config.get("transcription_backend", "whisper")),
                     on_gpu=False,
                 )
             mark_transcript_failed(session, recording.id, str(failure))
@@ -728,7 +733,10 @@ def _release_pipeline_vram() -> None:
     import torch
 
     try:
-        logger.info("Releasing VRAM (keep_models_loaded=False)...")
+        logger.info(
+            "Releasing VRAM (keep_models_loaded=%s)...",
+            config_manager.get("keep_models_loaded", False),
+        )
 
         from backend.processing.transcribe import release_model_cache
 

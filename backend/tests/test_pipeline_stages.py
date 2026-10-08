@@ -577,6 +577,25 @@ def test_asr_gpu_oom_twice_surfaces_cuda_out_of_memory(monkeypatch):
     assert "GPU ran out of memory (CUDA out of memory)" in transcript.error_message
 
 
+def test_asr_stage_lets_a_task_time_limit_through(monkeypatch):
+    """A Celery soft time limit stops the task; it is not recorded as a failed
+    transcription."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    recording = _FakeRecording(713)
+    transcript = _FakeTranscript(713)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    _route_asr_through_parakeet(monkeypatch, [SoftTimeLimitExceeded()])
+
+    _run_task(monkeypatch, session, recording_id=713, engine_override=_PARAKEET)
+
+    assert transcript.transcript_status == "pending"
+    assert transcript.error_message is None
+    assert recording.status == RecordingStatus.ERROR
+    assert recording.processing_step.startswith("System Error")
+
+
 def test_asr_failure_is_recorded_even_when_freeing_gpu_memory_fails(monkeypatch):
     """The OOM retry frees memory first. If that raises, the run still ends with
     a failed transcript and an ERROR recording, not one stuck PROCESSING
@@ -601,11 +620,11 @@ def test_asr_failure_is_recorded_even_when_freeing_gpu_memory_fails(monkeypatch)
 
     _run_task(monkeypatch, session, recording_id=711, engine_override=_PARAKEET)
 
-    message = "Transcription failed (parakeet): RuntimeError: CUDA driver unavailable"
+    # The OOM is what the user needs to see, not the failure to free memory.
     assert transcript.transcript_status == "error"
-    assert transcript.error_message == message
+    assert "GPU ran out of memory (CUDA out of memory)" in transcript.error_message
     assert recording.status == RecordingStatus.ERROR
-    assert recording.processing_step == message
+    assert recording.processing_step == transcript.error_message
 
 
 def test_asr_hearing_no_speech_is_a_completed_empty_transcript(monkeypatch):

@@ -27,8 +27,9 @@ def transcribe_with_gpu_oom_retry(
     work itself: onnxruntime's arena grows with the largest window and never
     shrinks, torch's caching allocator keeps freed blocks, and with
     ``keep_models_loaded`` the diarisation and embedding models stay resident.
-    ``free_gpu`` releases all of that, best-effort, before one more attempt. A
-    second OOM means the card is too small for the job and is raised.
+    ``free_gpu`` releases all of that before one more attempt. A second OOM
+    means the card is too small for the job and is raised. If freeing the memory
+    itself fails, the first OOM is raised: it is what the user needs to see.
 
     Raises:
         TranscriptionError: The engine failed, or ran out of GPU memory twice.
@@ -40,8 +41,13 @@ def transcribe_with_gpu_oom_retry(
     except TranscriptionError as exc:
         if not exc.gpu_out_of_memory:
             raise
-        logger.warning("%s Freeing GPU memory and retrying once.", exc)
-    free_gpu()
+        oom = exc
+    logger.warning("%s Freeing GPU memory and retrying once.", oom)
+    try:
+        free_gpu()
+    except (ImportError, OSError, RuntimeError) as free_exc:
+        logger.error("Could not free GPU memory for the retry: %s", free_exc)
+        raise oom from free_exc
     return transcribe_audio(audio_path, config=config)
 
 
