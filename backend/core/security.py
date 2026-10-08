@@ -312,8 +312,11 @@ def create_access_token(
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and verify a JWT using the keyring entry indicated by its ``kid``.
 
-    Raises :class:`jwt.InvalidTokenError` if the token is malformed or cannot
-    be verified with any known key.
+    Raises :class:`jwt.PyJWTError` if the token is malformed or cannot be
+    verified with any known key. Catch that base class: besides
+    :class:`jwt.InvalidTokenError`, ``jwt.decode`` raises
+    :class:`jwt.InvalidKeyError` (not an ``InvalidTokenError``) when the
+    stored key for the token's ``kid`` is unusable as an HMAC secret.
     """
     # PyJWT parses the header strictly: a malformed token or a non-string
     # ``kid`` raises InvalidTokenError here, before any key lookup.

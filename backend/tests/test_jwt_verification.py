@@ -330,6 +330,27 @@ async def test_forged_tokens_are_401_before_any_database_lookup(jose_keyring, fo
     assert excinfo.value.status_code == 401
 
 
+@pytest.mark.anyio
+async def test_unusable_stored_key_is_refused_as_a_401(jose_keyring):
+    # jwt.decode raises InvalidKeyError, which is a PyJWTError but not an
+    # InvalidTokenError, when the key stored for a kid is empty.
+    (jose_keyring / ".secret_keys.json").write_text(
+        json.dumps({"active": JOSE_KID, "keys": {JOSE_KID: JOSE_KEY, "k_empty": ""}}),
+        encoding="utf-8",
+    )
+    header = {"alg": "HS256", "kid": "k_empty", "typ": "JWT"}
+    token = _hs256_token(header, _claims(security.SESSION_TOKEN_TYPE), b"")
+
+    with pytest.raises(jwt.InvalidKeyError):
+        security.decode_access_token(token)
+    with pytest.raises(HTTPException) as excinfo:
+        await deps.get_authenticated_token_details(
+            None, token, allowed_token_types={security.SESSION_TOKEN_TYPE}
+        )
+
+    assert excinfo.value.status_code == 401
+
+
 def test_short_secret_key_still_verifies_but_warns(monkeypatch):
     monkeypatch.setenv("SECRET_KEY", "short-key")
 
