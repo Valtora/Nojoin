@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from pyannote.core import Segment
 
+from backend.core.exceptions import AudioFormatError
 from backend.processing.embedding_version import (
     EMBEDDING_METHOD_VERSION,
     LEGACY_EMBEDDING_METHOD_VERSION,
@@ -377,6 +378,12 @@ def extract_embedding_for_segments(
 
     Returns:
         Aggregated embedding vector as a list of floats, or None if extraction fails.
+
+    Raises:
+        AudioFormatError: the recording could not be decoded for cropping. This
+            can be transient, so it is raised rather than returned as None,
+            which callers such as the voiceprint rebuild read as "these
+            segments hold nothing usable".
     """
     if not segments:
         logger.warning("No segments provided for embedding extraction")
@@ -427,6 +434,8 @@ def extract_embedding_for_segments(
 
         return _aggregate_crop_embeddings(speaker_embeddings)
 
+    except AudioFormatError:
+        raise
     except Exception as e:
         logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)
         return None

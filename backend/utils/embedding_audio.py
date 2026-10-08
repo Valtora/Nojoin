@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from os import PathLike
 
+from backend.core.exceptions import AudioFormatError
 from backend.utils.audio import MEDIA_CONTAINER_SUFFIXES, convert_to_mono_16k
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
+
+# Swept by audio_preprocessing.cleanup_stale_pipeline_temp_files.
+EMBEDDING_WAV_SUFFIX = "_embedding.wav"
+
+# Upper bound on one decode. ffmpeg decodes far faster than real time, so this
+# only ever ends a hung process.
+EMBEDDING_DECODE_TIMEOUT_S = 15 * 60
 
 # Containers pyannote cannot crop segments from reliably. Its seek-and-crop
 # returns short or empty chunks from Matroska, MPEG-TS/PS and AVI, so imports
@@ -63,22 +72,36 @@ def pyannote_readable_audio(audio_path: str) -> Iterator[str]:
     A media container (MKV, MPEG-TS/PS, AVI and the rest of
     ``MEDIA_CONTAINER_SUFFIXES``) is reached here only when its recording has no
     playback proxy yet. pyannote's crop returns short or empty chunks from
-    those, so the audio is decoded once to a temporary 16 kHz mono WAV (the
+    those, so the audio is decoded to a temporary 16 kHz mono WAV (the
     embedding model's rate), removed on exit. Any other path is yielded as is.
 
+    The decode covers the whole recording, so a caller cropping several
+    speakers from one recording should hold one context around all of them.
+    A worker killed mid-decode can strand the WAV; the daily pipeline
+    temp-file sweep reclaims it by its ``_embedding.wav`` suffix.
+
     Raises:
-        RuntimeError: ffmpeg could not decode the container.
+        AudioFormatError: ffmpeg could not decode the file, or timed out. The
+            cause may be transient (a full temp directory), so callers must not
+            treat it as "nothing usable in this audio".
     """
     _, suffix = os.path.splitext(audio_path)
     if suffix.lower() not in MEDIA_CONTAINER_SUFFIXES:
         yield audio_path
         return
 
-    temp_fd, temp_path = tempfile.mkstemp(suffix="_embedding.wav")
+    temp_fd, temp_path = tempfile.mkstemp(suffix=EMBEDDING_WAV_SUFFIX)
     os.close(temp_fd)
     try:
         logger.info("Decoding %s to 16 kHz WAV for embedding extraction", audio_path)
-        convert_to_mono_16k(audio_path, temp_path)
+        try:
+            convert_to_mono_16k(
+                audio_path, temp_path, timeout=EMBEDDING_DECODE_TIMEOUT_S
+            )
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            raise AudioFormatError(
+                f"Could not decode {audio_path} for embedding extraction: {exc}"
+            ) from exc
         yield temp_path
     finally:
         try:

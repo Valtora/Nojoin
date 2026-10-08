@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from backend.processing.audio_preprocessing import cleanup_stale_pipeline_temp_files
+from backend.utils.embedding_audio import EMBEDDING_WAV_SUFFIX
 
 
 def _age(path: Path, hours: float) -> None:
@@ -39,6 +40,22 @@ def test_pipeline_sweep_reclaims_scratch_a_killed_worker_left_behind(
 
     assert reclaimed == 4
     assert list(tmp_path.iterdir()) == []
+
+
+def test_pipeline_sweep_reclaims_an_abandoned_embedding_decode(
+    tmp_path: Path,
+) -> None:
+    """Named from the decode's own suffix, so a rename cannot slip the sweep."""
+    stale = tmp_path / f"tmpabc123{EMBEDDING_WAV_SUFFIX}"
+    stale.write_bytes(b"audio")
+    _age(stale, 48)
+
+    reclaimed = cleanup_stale_pipeline_temp_files(
+        max_age_hours=24, temp_dir=str(tmp_path)
+    )
+
+    assert reclaimed == 1
+    assert not stale.exists()
 
 
 def test_pipeline_sweep_keeps_scratch_from_a_run_still_in_flight(

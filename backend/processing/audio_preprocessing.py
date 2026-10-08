@@ -145,6 +145,7 @@ def cleanup_temp_file(temp_path: str):
 # suffix rather than by a bare "tmp*" glob so the sweep below can only ever reach
 # files Nojoin created.
 _PIPELINE_TEMP_SUFFIXES = (
+    "_embedding.wav",  # utils.embedding_audio.pyannote_readable_audio
     "_vad.wav",
     "_vad_processed.wav",
     "_vad_processed.mp3",

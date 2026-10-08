@@ -320,9 +320,14 @@ def concatenate_binary_files(segment_paths: List[str], output_path: str):
         raise RuntimeError(f"Failed to concatenate binary files: {str(e)}")
 
 
-def convert_to_mono_16k(input_path: str, output_path: str):
+def convert_to_mono_16k(
+    input_path: str, output_path: str, *, timeout: float | None = None
+):
     """
     Convert audio to mono 16kHz WAV using ffmpeg.
+
+    ``timeout`` (seconds) kills a hung ffmpeg and raises
+    ``subprocess.TimeoutExpired``; None waits indefinitely.
     """
     ensure_ffmpeg_in_path()
 
@@ -341,7 +346,7 @@ def convert_to_mono_16k(input_path: str, output_path: str):
     ]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to convert audio: {e.stderr.decode()}")
 

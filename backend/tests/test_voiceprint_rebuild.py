@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 from sqlalchemy import create_engine, text
 from sqlmodel import Session
@@ -41,6 +42,10 @@ from backend.tests.sqlite_schemas import (
 
 STALE_VECTOR = [1.0, 0.0, 0.0]
 REBUILT_VECTOR = [0.6, 0.8, 0.0]
+
+# Captured before the autouse fixture below replaces it, for the tests that
+# exercise the real extraction around a stubbed model.
+_REAL_EXTRACT = embedding_core.extract_embedding_for_segments
 
 
 def _utc_now_naive() -> datetime:
@@ -82,7 +87,9 @@ def _add_user(connection, user_id: int) -> None:
     )
 
 
-def _add_recording(connection, recording_id: int, user_id: int) -> None:
+def _add_recording(
+    connection, recording_id: int, user_id: int, audio_path: str | None = None
+) -> None:
     connection.execute(
         text(
             """
@@ -102,7 +109,7 @@ def _add_recording(connection, recording_id: int, user_id: int) -> None:
             "name": f"Meeting {recording_id}",
             "public_id": f"public-recording-{recording_id}",
             "uid": f"meeting-uid-{recording_id}",
-            "audio_path": f"/audio/{recording_id}.wav",
+            "audio_path": audio_path or f"/audio/{recording_id}.wav",
             "user_id": user_id,
         },
     )
@@ -426,6 +433,76 @@ def test_transient_extraction_failure_is_held_back_for_retry(tmp_path: Path) -> 
     embedding, version = _speaker_rows(engine)[100]
     assert json.loads(embedding) == STALE_VECTOR
     assert version == LEGACY_EMBEDDING_METHOD_VERSION
+
+
+def _extract_with_a_stub_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the real segment extraction, with the model and its crop stubbed."""
+    monkeypatch.setattr(embedding_core, "extract_embedding_for_segments", _REAL_EXTRACT)
+    monkeypatch.setattr(
+        embedding_core, "load_embedding_model", lambda device, token: object()
+    )
+    monkeypatch.setattr(
+        embedding_core,
+        "_crop_embedding",
+        lambda model, audio_path, segment: np.asarray(REBUILT_VECTOR),
+    )
+    monkeypatch.setattr(embedding_core, "_embedding_model_cache", {})
+
+
+def test_a_failed_decode_of_a_media_container_is_held_back_for_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A container with no proxy is decoded before cropping, and that can fail.
+
+    A full temp directory or a hung ffmpeg says nothing about the speaker's
+    audio, so the voiceprint must survive for a later run.
+    """
+    engine = _make_engine(tmp_path, "decode-failure")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_recording(connection, 10, 1, audio_path=str(tmp_path / "screen.mkv"))
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
+        _add_utterance(connection, 1, 10, 100, (0, 2000))
+
+    def _no_space(input_path, output_path, *, timeout=None):
+        raise RuntimeError("No space left on device")
+
+    _extract_with_a_stub_model(monkeypatch)
+    monkeypatch.setattr(embedding_audio, "convert_to_mono_16k", _no_space)
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["speakers_failed_retryable"] == 1
+    assert summary["speakers_cleared_unrebuildable"] == 0
+    embedding, version = _speaker_rows(engine)[100]
+    assert json.loads(embedding) == STALE_VECTOR
+    assert version == LEGACY_EMBEDDING_METHOD_VERSION
+
+
+def test_a_media_container_is_decoded_once_per_recording(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every speaker is cropped from one decode, not one decode each."""
+    engine = _make_engine(tmp_path, "single-decode")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_recording(connection, 10, 1, audio_path=str(tmp_path / "screen.mkv"))
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
+        _add_speaker(connection, SpeakerRow(101, 10, "SPEAKER_01"))
+        _add_utterance(connection, 1, 10, 100, (0, 2000))
+        _add_utterance(connection, 2, 10, 101, (2000, 4000))
+
+    decodes: list[str] = []
+
+    def _decode(input_path, output_path, *, timeout=None):
+        decodes.append(input_path)
+        Path(output_path).write_bytes(b"RIFF")
+
+    _extract_with_a_stub_model(monkeypatch)
+    monkeypatch.setattr(embedding_audio, "convert_to_mono_16k", _decode)
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["speakers_rebuilt"] == 2
+    assert decodes == [str(tmp_path / "screen.mkv")]
 
 
 def test_extraction_returning_nothing_clears_the_voiceprint(tmp_path: Path) -> None:

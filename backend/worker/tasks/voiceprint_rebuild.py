@@ -188,65 +188,98 @@ def _stale_speakers_by_recording(
     return by_recording
 
 
-def _rebuild_recording_speakers(
-    session, *, audio_path: str, speakers: list, ranges: dict, device: str
-) -> tuple[int, int, int, set[int]]:
-    """Re-extract one recording's stale speakers.
-
-    Returns ``(rebuilt, cleared, failed, affected person ids)``.
-    """
+def _rebuild_speaker(
+    session, speaker, *, audio_path: str, segments: list, device: str
+) -> str:
+    """Re-extract one stale speaker: ``"rebuilt"``, ``"cleared"`` or ``"failed"``."""
     from backend.processing.embedding_core import (
         EMBEDDING_METHOD_VERSION,
         extract_embedding_for_segments,
     )
 
-    rebuilt = 0
-    cleared = 0
-    failed = 0
+    try:
+        embedding = extract_embedding_for_segments(
+            audio_path, segments, device_str=device
+        )
+    except Exception as e:  # noqa: BLE001 -- boundary: per-speaker best effort
+        # Left stale on purpose. An exception here can be transient (a
+        # decode hiccup, a busy device), so a later run must be able to
+        # retry rather than find the voiceprint already discarded.
+        logger.warning(
+            "Voiceprint rebuild failed for speaker %s, leaving it stale to retry: %s",
+            speaker.id,
+            e,
+        )
+        return "failed"
+
+    if not embedding:
+        # Extraction ran and produced nothing usable from these segments.
+        # That is deterministic for this input, so retrying cannot help.
+        _clear_dead_voiceprint(speaker, session, "extraction produced no usable vector")
+        return "cleared"
+
+    speaker.embedding = embedding
+    speaker.embedding_version = EMBEDDING_METHOD_VERSION
+    session.add(speaker)
+    return "rebuilt"
+
+
+def _rebuild_recording_speakers(
+    session, *, audio_path: str, speakers: list, ranges: dict, device: str
+) -> tuple[int, int, int, set[int]]:
+    """Re-extract one recording's stale speakers.
+
+    The recording is made croppable once (a media container is decoded to a
+    temporary WAV) and every speaker is cropped from that, rather than each
+    extraction decoding the whole recording again.
+
+    Returns ``(rebuilt, cleared, failed, affected person ids)``.
+    """
+    from backend.core.exceptions import AudioFormatError
+    from backend.utils.embedding_audio import pyannote_readable_audio
+
+    outcomes = {"rebuilt": 0, "cleared": 0, "failed": 0}
     affected: set[int] = set()
 
+    to_extract = []
     for speaker in speakers:
         segments = ranges.get(int(speaker.id)) or []
-        if not segments:
-            # No utterance and no transcript segment names this speaker, so
-            # there is no audio to re-extract from -- now or on any later run.
-            _clear_dead_voiceprint(speaker, session, "no attributable speech")
-            cleared += 1
+        if segments:
+            to_extract.append((speaker, segments))
             continue
+        # No utterance and no transcript segment names this speaker, so
+        # there is no audio to re-extract from -- now or on any later run.
+        _clear_dead_voiceprint(speaker, session, "no attributable speech")
+        outcomes["cleared"] += 1
 
+    if to_extract:
         try:
-            embedding = extract_embedding_for_segments(
-                audio_path, segments, device_str=device
-            )
-        except Exception as e:  # noqa: BLE001 -- boundary: per-speaker best effort
-            # Left stale on purpose. An exception here can be transient (a
-            # decode hiccup, a busy device), so a later run must be able to
-            # retry rather than find the voiceprint already discarded.
+            with pyannote_readable_audio(audio_path) as readable_path:
+                for speaker, segments in to_extract:
+                    outcome = _rebuild_speaker(
+                        session,
+                        speaker,
+                        audio_path=readable_path,
+                        segments=segments,
+                        device=device,
+                    )
+                    outcomes[outcome] += 1
+                    if outcome == "rebuilt" and speaker.global_speaker_id:
+                        affected.add(int(speaker.global_speaker_id))
+        except AudioFormatError as e:
+            # The decode itself failed, before any speaker was cropped. It can
+            # be transient (a full temp directory), so every voiceprint is
+            # left stale for a later run instead of being cleared.
             logger.warning(
-                "Voiceprint rebuild failed for speaker %s, leaving it stale to retry: %s",
-                speaker.id,
+                "Could not decode %s for voiceprint rebuild, leaving %d speaker(s) "
+                "stale to retry: %s",
+                audio_path,
+                len(to_extract),
                 e,
             )
-            failed += 1
-            continue
+            outcomes["failed"] += len(to_extract)
 
-        if not embedding:
-            # Extraction ran and produced nothing usable from these segments.
-            # That is deterministic for this input, so retrying cannot help.
-            _clear_dead_voiceprint(
-                speaker, session, "extraction produced no usable vector"
-            )
-            cleared += 1
-            continue
-
-        speaker.embedding = embedding
-        speaker.embedding_version = EMBEDDING_METHOD_VERSION
-        session.add(speaker)
-        rebuilt += 1
-        if speaker.global_speaker_id:
-            affected.add(int(speaker.global_speaker_id))
-
-    return rebuilt, cleared, failed, affected
+    return outcomes["rebuilt"], outcomes["cleared"], outcomes["failed"], affected
 
 
 def _rebuild_people(
