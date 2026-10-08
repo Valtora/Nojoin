@@ -119,3 +119,24 @@ describe("ChatPanel AI availability gate", () => {
     expect(screen.queryByText(DISABLED)).not.toBeInTheDocument();
   });
 });
+
+describe("ChatPanel empty state", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettings.mockReset();
+    getUserMe.mockReset();
+    getCliOAuthStatus.mockReset();
+  });
+
+  // The helper text token is pitched to clear 4.5:1 on the card on its own.
+  // Any opacity on the way up composites it below that (opacity-60 measured
+  // 2.79:1), and the contrast gate cannot see opacity, so assert it here.
+  it("does not dim the guidance text with opacity", async () => {
+    const { container } = renderPanel(SERVER_READY);
+
+    const guidance = await screen.findByText(/Ask questions about the transcript/);
+    for (let node: Element | null = guidance; node && node !== container; node = node.parentElement) {
+      expect(node.className).not.toMatch(/(^|\s)opacity-/);
+    }
+  });
+});
