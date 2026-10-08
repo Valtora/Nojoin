@@ -15,7 +15,11 @@ from backend.utils.download_progress import (
     set_download_progress,
 )
 from backend.utils.logging_config import setup_logging
-from backend.utils.model_cache_paths import hf_hub_cache_root, whisper_cache_root
+from backend.utils.model_cache_paths import (
+    hf_hub_cache_root,
+    hf_repo_dirname,
+    whisper_cache_root,
+)
 from backend.utils.onnx_asr_cache import ONNX_ASR_MODELS, find_cached_onnx_asr_model
 from backend.utils.pyannote_model_utils import (
     is_repo_bundled_pyannote_path,
@@ -43,13 +47,12 @@ WHISPER_FILENAMES = {
 }
 
 
-def _is_within(path: str, root: str) -> bool:
-    real_path = os.path.realpath(path)
-    real_root = os.path.realpath(root)
-    return (
-        real_path != real_root
-        and os.path.commonpath([real_path, real_root]) == real_root
-    )
+# The Pyannote models status reports, by status key.
+PYANNOTE_STATUS_MODELS = {
+    "pyannote": "pyannote/speaker-diarization-community-1",
+    "embedding": "pyannote/wespeaker-voxceleb-resnet34-LM",
+    "segmentation": "pyannote/segmentation-3.0",
+}
 
 
 def _suppress_ort_warnings():
@@ -497,11 +500,7 @@ def check_model_status(whisper_model_size=None):
             status[status_key]["downloaded"] = True
             status[status_key]["path"] = repo_dir
 
-    for status_key, model_id in (
-        ("pyannote", "pyannote/speaker-diarization-community-1"),
-        ("embedding", "pyannote/wespeaker-voxceleb-resnet34-LM"),
-        ("segmentation", "pyannote/segmentation-3.0"),
-    ):
+    for status_key, model_id in PYANNOTE_STATUS_MODELS.items():
         resolved = resolve_local_pyannote_model(model_id)
         status[status_key]["checked_paths"] = resolved.checked_paths
         if resolved.path:
@@ -512,10 +511,30 @@ def check_model_status(whisper_model_size=None):
     return status
 
 
-def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
+def _deletion_target(model_name: str, found_path: str) -> tuple[str, str]:
+    """The managed root, and the one entry in it, that deleting this model removes.
+
+    Whisper is a single file. The Hugging Face models are a whole repo
+    directory: blobs, snapshots and refs together. Removing only the snapshot
+    a Pyannote status points at would delete symlinks and leave the weights in
+    blobs/, with refs/main naming a revision that is gone. Blobs are per repo
+    in the hub cache, so no other model shares them.
     """
-    Delete a specific model from the cache.
-    model_name: 'whisper', 'pyannote', 'embedding'
+    if model_name == "whisper":
+        return whisper_cache_root(), os.path.basename(found_path)
+    if model_name in ONNX_ASR_MODELS:
+        return hf_hub_cache_root(), ONNX_ASR_MODELS[model_name].repo_dirname
+    return hf_hub_cache_root(), hf_repo_dirname(PYANNOTE_STATUS_MODELS[model_name])
+
+
+def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
+    """Delete one model from the cache its loader downloads into.
+
+    Removes exactly the model's own file or repo directory in that cache, and
+    raises ValueError for anything else status may have found: a bundled
+    asset, a copy in another cache that the loader also reads (Pyannote's
+    personal-cache fallback), or an entry that is a symbolic link to
+    somewhere else.
     """
     status = check_model_status(whisper_model_size=whisper_model_size)
     model_info = status.get(model_name)
@@ -531,26 +550,35 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
         raise ValueError(
             f"Model {model_name} is bundled with the repository at {path} and cannot be deleted from the runtime cache UI."
         )
-    # Status can find a Pyannote model in a Hugging Face cache Nojoin does not
-    # own (the personal one, on a bare-metal install with HF_HOME set). Deleting
-    # is only ever done inside the caches Nojoin's own loaders download into.
-    managed_roots = (hf_hub_cache_root(), whisper_cache_root())
-    if not any(_is_within(path, root) for root in managed_roots):
+
+    root, entry = _deletion_target(model_name, path)
+    root = os.path.abspath(root)
+    target = os.path.join(root, entry)
+    # Status finds Pyannote in the personal cache too, and loads it from there,
+    # but Nojoin did not download it and does not delete it.
+    if os.path.commonpath([os.path.abspath(path), target]) != target:
         raise ValueError(
             f"Model {model_name} is outside Nojoin's model cache and is not deleted "
             "from here."
         )
-    try:
-        if os.path.isfile(path):
-            os.remove(path)
-            logger.info(f"Deleted file: {path}")
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
-            logger.info(f"Deleted directory: {path}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to delete {model_name} at {path}: {e}")
-        raise e
+    # Compared after resolving links, so the target must be a real entry of
+    # the root rather than a link to a directory elsewhere, inside it or not.
+    resolved = os.path.realpath(target)
+    if resolved != os.path.join(os.path.realpath(root), entry):
+        raise ValueError(
+            f"Model {model_name} at {target} is a link to {resolved}, not a model "
+            "Nojoin downloaded, and is not deleted from here. Remove it by hand."
+        )
+
+    if os.path.isfile(target):
+        os.remove(target)
+        logger.info(f"Deleted file: {target}")
+    elif os.path.isdir(target):
+        shutil.rmtree(target)
+        logger.info(f"Deleted directory: {target}")
+    else:
+        return False
+    return True
 
 
 if __name__ == "__main__":

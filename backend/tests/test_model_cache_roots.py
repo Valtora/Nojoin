@@ -19,7 +19,6 @@ from backend.tests.hf_cache_layout import (
     write_onnx_asr_repo,
     write_pyannote_embedding,
 )
-from backend.utils import pyannote_model_utils
 
 PARAKEET_REPO = "models--istupakov--parakeet-tdt-0.6b-v3-onnx"
 
@@ -40,13 +39,6 @@ def no_bundled_pyannote(monkeypatch, tmp_path) -> None:
 
 def _personal_hub(home: Path) -> Path:
     return home / ".cache" / "huggingface" / "hub"
-
-
-def _personal_hf_model(home: Path, repo: str) -> Path:
-    path = _personal_hub(home) / repo
-    path.mkdir(parents=True)
-    (path / "marker").write_text("personal copy")
-    return path
 
 
 def test_an_onnx_model_outside_hf_home_is_not_reported(homes, monkeypatch):
@@ -93,28 +85,19 @@ def test_deleting_never_reaches_the_personal_hf_cache(homes, monkeypatch):
     assert (personal / "refs" / "main").exists()
 
 
+@pytest.mark.usefixtures("no_bundled_pyannote")
 def test_a_pyannote_model_found_outside_the_managed_cache_is_not_deleted(
-    homes, monkeypatch, tmp_path
+    homes, monkeypatch
 ):
     """Status may load Pyannote from the personal cache; delete must refuse it."""
     monkeypatch.setenv("HF_HOME", str(homes["managed"]))
-    monkeypatch.setattr(
-        pyannote_model_utils,
-        "get_bundled_pyannote_models_root",
-        lambda: tmp_path / "no-bundled-models",
-    )
-    repo = _personal_hf_model(homes["home"], "models--pyannote--segmentation-3.0")
-    snapshot = repo / "snapshots" / "abc123"
-    snapshot.mkdir(parents=True)
-    (repo / "refs").mkdir()
-    (repo / "refs" / "main").write_text("abc123")
-    for name in ("config.yaml", "pytorch_model.bin"):
-        (snapshot / name).write_text("x")
+    repo = write_pyannote_embedding(_personal_hub(homes["home"]))
 
     with pytest.raises(ValueError, match="outside Nojoin's model cache"):
-        preload_models.delete_model("segmentation")
+        preload_models.delete_model("embedding")
 
-    assert (snapshot / "pytorch_model.bin").exists()
+    assert (repo / "refs" / "main").exists()
+    assert list((repo / "blobs").iterdir())
 
 
 def test_a_model_in_the_managed_cache_is_still_deleted(homes, monkeypatch):
@@ -163,3 +146,88 @@ def test_a_pyannote_model_in_the_personal_cache_is_reported_as_external(
 
     assert status["embedding"]["downloaded"] is True
     assert status["embedding"]["source"] == "external"
+
+
+@pytest.mark.usefixtures("no_bundled_pyannote")
+def test_deleting_pyannote_removes_the_whole_repo(homes, monkeypatch):
+    """Status points at a snapshot of symlinks; the weights are in blobs/."""
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    repo = write_pyannote_embedding(homes["managed"] / "hub")
+
+    assert preload_models.delete_model("embedding") is True
+
+    assert not repo.exists()
+    assert (homes["managed"] / "hub").is_dir()
+
+
+@pytest.mark.usefixtures("no_bundled_pyannote")
+def test_a_hub_root_over_home_cannot_reach_the_personal_cache(homes, monkeypatch):
+    """The model's own repo under the root is deletable, nothing else under it.
+
+    With HF_HUB_CACHE pointed at HOME, the personal cache sits inside the
+    managed root, which a check against the root alone accepted.
+    """
+    monkeypatch.setenv("HF_HUB_CACHE", str(homes["home"]))
+    personal = write_pyannote_embedding(_personal_hub(homes["home"]))
+
+    with pytest.raises(ValueError, match="outside Nojoin's model cache"):
+        preload_models.delete_model("embedding")
+
+    assert (personal / "refs" / "main").exists()
+
+
+def test_a_repo_linked_to_outside_the_cache_is_not_deleted(
+    homes, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    elsewhere = write_onnx_asr_repo(tmp_path / "elsewhere", "parakeet")
+    link = homes["managed"] / "hub" / PARAKEET_REPO
+    link.parent.mkdir()
+    link.symlink_to(elsewhere, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="is a link to"):
+        preload_models.delete_model("parakeet")
+
+    assert link.is_symlink()
+    assert (elsewhere / "refs" / "main").exists()
+
+
+def test_a_repo_linked_within_the_cache_is_refused_cleanly(homes, monkeypatch):
+    """Not an OSError from rmtree on a symlink, which surfaced as a 500."""
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    hub = homes["managed"] / "hub"
+    real = write_onnx_asr_repo(hub / "moved", "parakeet")
+    link = hub / PARAKEET_REPO
+    link.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="Remove it by hand"):
+        preload_models.delete_model("parakeet")
+
+    assert link.is_symlink()
+    assert (real / "refs" / "main").exists()
+
+
+def test_a_whisper_model_is_deleted_from_its_cache(homes, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(homes["managed"]))
+    model = homes["managed"] / "whisper" / "large-v3-turbo.pt"
+    model.parent.mkdir()
+    model.write_bytes(b"weights")
+
+    assert preload_models.delete_model("whisper", whisper_model_size="turbo") is True
+    assert not model.exists()
+
+
+def test_a_whisper_file_linked_to_outside_the_cache_is_not_deleted(
+    homes, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(homes["managed"]))
+    elsewhere = tmp_path / "large-v3-turbo.pt"
+    elsewhere.write_bytes(b"weights")
+    link = homes["managed"] / "whisper" / "large-v3-turbo.pt"
+    link.parent.mkdir()
+    link.symlink_to(elsewhere)
+
+    with pytest.raises(ValueError, match="is a link to"):
+        preload_models.delete_model("whisper", whisper_model_size="turbo")
+
+    assert elsewhere.exists()
