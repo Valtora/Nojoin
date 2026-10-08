@@ -5,6 +5,8 @@ explicit orchestration stages:
 
 * input-audio resolution (proxy restore / repair / duration backfill),
 * the VAD stage and its "no speech" short-circuit,
+* the ASR stage telling an engine failure (ERROR, nothing downstream runs, one
+  retry on GPU out-of-memory) apart from ASR that ran and heard nothing,
 * combine + consolidate of ASR and diarization into final segments
   (including the raw-transcription fallback that pins every segment to the
   ``UNKNOWN`` speaker while preserving ``id``/``words``),
@@ -25,6 +27,7 @@ import sys
 import types
 
 from backend.models.recording import ClientStatus, RecordingStatus
+from backend.processing import transcribe as real_transcribe
 from backend.worker import tasks as tasks_module
 
 
@@ -433,30 +436,253 @@ def test_raw_transcription_fallback_pins_unknown_and_preserves_fields(monkeypatc
     ]
 
 
-def test_none_transcription_result_yields_empty_full_text(monkeypatch):
-    """If ASR returns None, the persisted transcript text is the empty string."""
-    recording = _FakeRecording(704)
-    transcript = _FakeTranscript(704)
-    session = _FakeSession(recording, transcript)
+# --- ASR failure vs. silence ---------------------------------------------------
+#
+# These run the real dispatcher and a real ParakeetEngine; only the onnx-asr
+# model underneath is fake, so the engine's own error handling is exercised.
 
-    _install_happy_path_modules(monkeypatch, segments=[])
-    _install(
-        monkeypatch,
-        "backend.processing.transcribe",
-        transcribe_audio=lambda *a, **k: None,
-        release_model_cache=lambda: None,
-    )
+_PARAKEET = {"transcription_backend": "parakeet"}
+_CUDA_OOM = (
+    "[ONNXRuntimeError] : 6 : RUNTIME_EXCEPTION : Non-zero status code returned "
+    "while running MatMul node. CUDA failure 2: out of memory ; GPU=0"
+)
+
+
+class _Recognized:
+    def __init__(self, text: str):
+        self.text = text
+        self.tokens = [f" {text}"] if text else []
+        self.timestamps = [0.0] if text else []
+
+
+def _route_asr_through_parakeet(monkeypatch, outcomes, *, on_gpu=False):
+    """Serve each recognize() call from ``outcomes``: an exception is raised, a
+    string is recognised as that text. Returns the list of recognised paths."""
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    calls: list[str] = []
+    pending = list(outcomes)
+
+    class _Recognizer:
+        def recognize(self, path, **kwargs):
+            calls.append(path)
+            outcome = pending.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return _Recognized(outcome)
+
+    class _Model:
+        def with_timestamps(self):
+            return _Recognizer()
+
+    monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda: on_gpu)
+    engine = ParakeetEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _Model())
+    monkeypatch.setitem(sys.modules, "backend.processing.transcribe", real_transcribe)
+    monkeypatch.setitem(real_transcribe._ENGINE_REGISTRY, "parakeet", engine)
+    return calls
+
+
+def _record_downstream_stages(monkeypatch) -> dict[str, list]:
+    """Record whether diarization, notes and post-processing follow-ups ran."""
+    from backend.worker.tasks import followups
+
+    ran: dict[str, list] = {"diarize": [], "notes": [], "followups": []}
     _install(
         monkeypatch,
         "backend.processing.diarize",
-        diarize_audio=lambda *a, **k: None,
+        diarize_audio=lambda *a, **k: ran["diarize"].append(a),
         release_pipeline_cache=lambda: None,
     )
+    monkeypatch.setattr(
+        tasks_module,
+        "_run_automatic_meeting_intelligence_stage",
+        lambda *a, **k: ran["notes"].append(k),
+    )
+    monkeypatch.setattr(
+        followups,
+        "dispatch_post_processing_followups",
+        lambda recording_id: ran["followups"].append(recording_id),
+    )
+    return ran
 
-    _run_task(monkeypatch, session, recording_id=704)
 
+def test_asr_engine_failure_marks_transcript_and_recording_failed(monkeypatch):
+    """An engine error ends in ERROR with the reason, never an empty 'completed'
+    transcript, and nothing downstream runs on the missing text."""
+    recording = _FakeRecording(704)
+    transcript = _FakeTranscript(704)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    _route_asr_through_parakeet(monkeypatch, [RuntimeError("decoder exploded")])
+    ran = _record_downstream_stages(monkeypatch)
+
+    result = _run_task(
+        monkeypatch, session, recording_id=704, engine_override=_PARAKEET
+    )
+
+    message = "Transcription failed (parakeet): RuntimeError: decoder exploded"
+    assert result is None
+    assert recording.status == RecordingStatus.ERROR
+    assert recording.processing_step == message
+    assert recording.processing_completed_at is None
+    assert transcript.transcript_status == "error"
+    assert transcript.error_message == message
+    assert transcript.text is None
+    assert ran == {"diarize": [], "notes": [], "followups": []}
+
+
+def test_asr_gpu_oom_is_retried_once_and_can_recover(monkeypatch):
+    recording = _FakeRecording(706)
+    transcript = _FakeTranscript(706)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    calls = _route_asr_through_parakeet(
+        monkeypatch, [RuntimeError(_CUDA_OOM), "hello"], on_gpu=True
+    )
+
+    result = _run_task(
+        monkeypatch, session, recording_id=706, engine_override=_PARAKEET
+    )
+
+    assert len(calls) == 2
+    assert result == {"status": "success", "recording_id": 706}
+    assert transcript.transcript_status == "completed"
+    assert transcript.text == "hello"
+    assert recording.processing_step == "Completed"
+
+
+def test_asr_gpu_oom_twice_surfaces_cuda_out_of_memory(monkeypatch):
+    recording = _FakeRecording(707)
+    transcript = _FakeTranscript(707)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    calls = _route_asr_through_parakeet(
+        monkeypatch, [RuntimeError(_CUDA_OOM), RuntimeError(_CUDA_OOM)], on_gpu=True
+    )
+
+    _run_task(monkeypatch, session, recording_id=707, engine_override=_PARAKEET)
+
+    assert len(calls) == 2
+    assert recording.status == RecordingStatus.ERROR
+    assert transcript.transcript_status == "error"
+    assert "GPU ran out of memory (CUDA out of memory)" in transcript.error_message
+
+
+def test_asr_failure_is_recorded_even_when_freeing_gpu_memory_fails(monkeypatch):
+    """The OOM retry frees memory first. If that raises, the run still ends with
+    a failed transcript and an ERROR recording, not one stuck PROCESSING
+    because its transcript row still says "processing" (as imports create it)."""
+    from backend.utils.status_manager import update_recording_status
+    from backend.worker.tasks import pipeline as pipeline_module
+
+    recording = _FakeRecording(711)
+    transcript = _FakeTranscript(711)
+    transcript.transcript_status = "processing"
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    _route_asr_through_parakeet(monkeypatch, [RuntimeError(_CUDA_OOM)], on_gpu=True)
+    monkeypatch.setattr(
+        tasks_module, "update_recording_status", update_recording_status
+    )
+
+    def _driver_gone():
+        raise RuntimeError("CUDA driver unavailable")
+
+    monkeypatch.setattr(pipeline_module, "_release_pipeline_vram", _driver_gone)
+
+    _run_task(monkeypatch, session, recording_id=711, engine_override=_PARAKEET)
+
+    message = "Transcription failed (parakeet): RuntimeError: CUDA driver unavailable"
+    assert transcript.transcript_status == "error"
+    assert transcript.error_message == message
+    assert recording.status == RecordingStatus.ERROR
+    assert recording.processing_step == message
+
+
+def test_asr_hearing_no_speech_is_a_completed_empty_transcript(monkeypatch):
+    """VAD passed the audio but ASR recognised nothing: that is silence, not a
+    failure, so the recording completes with an empty transcript."""
+    recording = _FakeRecording(708)
+    transcript = _FakeTranscript(708)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch, segments=[])
+    _route_asr_through_parakeet(monkeypatch, [""])
+
+    result = _run_task(
+        monkeypatch, session, recording_id=708, engine_override=_PARAKEET
+    )
+
+    assert result == {"status": "success", "recording_id": 708}
+    assert recording.status != RecordingStatus.ERROR
+    assert recording.processing_step == "Completed"
+    assert transcript.transcript_status == "completed"
     assert transcript.text == ""
     assert transcript.segments == []
+    assert transcript.error_message is None
+
+
+def _transcript_left_failed_by_a_previous_run(recording_id: int) -> _FakeTranscript:
+    transcript = _FakeTranscript(recording_id)
+    transcript.transcript_status = "error"
+    transcript.error_message = "Transcription failed: the GPU ran out of memory"
+    return transcript
+
+
+def _run_no_speech(monkeypatch, session, recording_id):
+    _install_happy_path_modules(monkeypatch)
+    _install(
+        monkeypatch,
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, 0.0),
+    )
+    _run_task(monkeypatch, session, recording_id=recording_id)
+
+
+def test_no_speech_short_circuit_clears_a_previous_failure(monkeypatch):
+    recording = _FakeRecording(709)
+    transcript = _transcript_left_failed_by_a_previous_run(709)
+    session = _FakeSession(recording, transcript)
+
+    _run_no_speech(monkeypatch, session, 709)
+
+    assert recording.status == RecordingStatus.PROCESSED
+    assert transcript.transcript_status == "completed"
+    assert transcript.error_message is None
+    # Nothing to summarise: notes stay as they were, the state the success path
+    # also leaves when meeting intelligence skips an empty transcript.
+    assert transcript.notes_status == "pending"
+
+
+def test_no_speech_short_circuit_leaves_a_notes_error_alone(monkeypatch):
+    """Outside a transcription failure, error_message belongs to notes."""
+    recording = _FakeRecording(712)
+    transcript = _FakeTranscript(712)
+    transcript.transcript_status = "completed"
+    transcript.notes_status = "error"
+    transcript.error_message = "No model selected for anthropic"
+    session = _FakeSession(recording, transcript)
+
+    _run_no_speech(monkeypatch, session, 712)
+
+    assert transcript.transcript_status == "completed"
+    assert transcript.notes_status == "error"
+    assert transcript.error_message == "No model selected for anthropic"
+
+
+def test_successful_run_clears_a_previous_failure(monkeypatch):
+    recording = _FakeRecording(710)
+    transcript = _transcript_left_failed_by_a_previous_run(710)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+
+    result = _run_task(monkeypatch, session, recording_id=710)
+
+    assert result == {"status": "success", "recording_id": 710}
+    assert transcript.transcript_status == "completed"
+    assert transcript.error_message is None
+    assert transcript.notes_status == "pending"
 
 
 # --- speaker assignment seam: manual-edit authority & stable-id alignment ----
