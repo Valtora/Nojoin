@@ -519,6 +519,17 @@ lane-specific ASR and diarisation fields. Operator-facing recording pages now
 surface only high-level recording progress plus Meeting Edge guidance while a
 recording is still in flight.
 
+A run that fails outright still accounts for the audio it drained. If it had
+already carried the audio past its cut point into `live/buffer.wav`, that buffer
+is kept and `buffer_abs_start` moves to where it starts, exactly as a successful
+run would leave it. Otherwise the run's audio is spent: the buffer and the
+`live/context.wav` run-up are removed and `buffer_abs_start` moves past the
+audio the run read (its decoded length, or the WAV headers and recorded chunk
+durations when it failed while reading). Advancing only `next_expected` would
+replay the stale buffer in the next run and stamp every later utterance early by
+the length of the failed run. `next_expected` is saved before any of this, so a
+failure while moving the timeline cannot stall the lane.
+
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`
 promotes canonical live and catch-up transcript state first, fills only missing

@@ -1744,6 +1744,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 run=run,
             )
         )
+        live_run.combined_len = combined_len
         combined_abs_start = buffer_abs_start
         logger.info(
             "Live capture channel analysis for recording %s sequence %s run %s: %s",
@@ -1829,6 +1830,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             prev_context_channels=prev_context_channels,
             context_window_samples=W,
         )
+        live_run.carried_abs_start = new_abs_start
 
         # --- Persistence: provisional utterances, manifest coverage, ledger ---
         should_dispatch_meeting_edge = _persist_live_run(

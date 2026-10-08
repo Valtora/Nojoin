@@ -3206,3 +3206,165 @@ def test_persist_asr_window_result_best_effort_swallows_errors(monkeypatch):
 
     assert "commit" not in events
     assert events == ["rollback", "close"]
+
+
+# --- a live run that fails outright -------------------------------------------
+
+
+def _three_chunk_lane(monkeypatch, tmp_path, recording_id, *, vad_fails_on=None):
+    """Drive chunks 0-2 (2 s each, one 1 s speech region per run) through the
+    live task. Each recognised region is labelled with the run that produced it
+    and the number of samples the engine was handed."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+    from backend.processing import transcribe as transcribe_module
+
+    temp_dir = tmp_path / str(recording_id)
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    vad_calls = {"n": 0}
+
+    def speech_map(audio):
+        vad_calls["n"] += 1
+        if vad_calls["n"] == vad_fails_on:
+            raise RuntimeError("VAD crashed")
+        return [{"start": 0.0, "end": 1.0}]
+
+    audio_store = _patch_live_deps(monkeypatch, speech_map=speech_map)
+    clip_samples: list[int] = []
+
+    def transcribe(path, config=None):
+        clip_samples.append(int(audio_store.read_audio(path).shape[-1]))
+        text = f"run {vad_calls['n']}"
+        return {"text": text, "segments": [{"start": 0.0, "end": 1.0e9, "text": text}]}
+
+    monkeypatch.setattr(transcribe_module, "transcribe_audio", transcribe)
+
+    transcript = _FakeTranscript()
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
+
+    def run_chunk(seq):
+        _make_segment_wav(temp_dir, seq, 2.0, audio_store)
+        _run_live_task(monkeypatch, recording_id, seq, session)
+
+    return transcript, temp_dir, run_chunk, clip_samples
+
+
+def test_live_failed_run_keeps_later_timestamps_correct(monkeypatch, tmp_path):
+    """A run that fails outright spends its audio: the carried buffer is not
+    transcribed again, and the next chunk is stamped at its real time."""
+    from backend.processing import live_transcribe as lt
+
+    transcript, temp_dir, run_chunk, clip_samples = _three_chunk_lane(
+        monkeypatch, tmp_path, 31, vad_fails_on=2
+    )
+    for seq in (0, 1, 2):
+        run_chunk(seq)
+
+    # Run 1 cuts at 1.0 s and carries chunk 0's last second. Run 2 fails after
+    # combining that second with chunk 1 (3 s from 1.0 s), so chunk 2 begins at
+    # 4.0 s. Advancing only next_expected stamped it 1.0 s, behind the replayed
+    # buffer.
+    assert [(s["start"], s["text"]) for s in transcript.segments] == [
+        (0.0, "run 1"),
+        (4.0, "run 3"),
+    ]
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 3
+    assert state["sequence_outcomes"]["1"]["outcome"] == "failed"
+    # Run 3 got its 1 s region alone: no stale buffer, and no run-up, since the
+    # failed run's audio no longer precedes it.
+    assert clip_samples[1] == lt.LIVE_SAMPLE_RATE
+
+
+def test_live_failure_after_carry_over_keeps_the_carried_tail(monkeypatch, tmp_path):
+    """A run that fails after carrying its tail into the next buffer (here while
+    persisting utterances) keeps that buffer, so its audio is transcribed by the
+    next run at the time it was spoken."""
+    from backend.processing import live_transcribe as lt
+
+    transcript, temp_dir, run_chunk, _ = _three_chunk_lane(monkeypatch, tmp_path, 32)
+    persist = lt._persist_live_run
+    persist_calls = {"n": 0}
+
+    def persist_failing_second_run(**kwargs):
+        persist_calls["n"] += 1
+        if persist_calls["n"] == 2:
+            raise RuntimeError("database went away")
+        return persist(**kwargs)
+
+    monkeypatch.setattr(lt, "_persist_live_run", persist_failing_second_run)
+
+    run_chunk(0)
+    run_chunk(1)
+    # Run 2 combined chunk 0's last second with chunk 1 from 1.0 s, cut at 1.0 s
+    # and carried the remaining 2 s (chunk 1) into the buffer from 2.0 s.
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 2
+    assert state["buffer_abs_start"] == 2.0
+    assert (temp_dir / "live" / "buffer.wav").exists()
+
+    run_chunk(2)
+
+    assert [(s["start"], s["text"]) for s in transcript.segments] == [
+        (0.0, "run 1"),
+        (2.0, "run 3"),
+    ]
+
+
+def test_live_failure_keeps_the_lane_moving_when_the_timeline_cannot(
+    monkeypatch, tmp_path
+):
+    """Moving the timeline touches files and the database; if that fails the
+    advance of next_expected is already saved and the task still returns."""
+    from backend.processing import live_run_failure
+    from backend.processing import live_transcribe as lt
+
+    _, temp_dir, run_chunk, _ = _three_chunk_lane(
+        monkeypatch, tmp_path, 33, vad_fails_on=2
+    )
+
+    def disk_gone(*args, **kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(live_run_failure, "consume_failed_run_audio", disk_gone)
+
+    run_chunk(0)
+    run_chunk(1)
+
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 2
+    assert state["sequence_outcomes"]["1"]["outcome"] == "failed"
+
+
+def test_consume_failed_run_audio_reads_lengths_when_the_run_never_combined(tmp_path):
+    """A run that failed while reading its audio takes its length from the WAV
+    headers, and from the recorded chunk duration where a header is unreadable."""
+    import numpy as np
+    import soundfile
+
+    from backend.processing.live_run_failure import LiveRun, consume_failed_run_audio
+
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+    live_run = LiveRun(
+        recording_id=1,
+        sequence=3,
+        run=[3, 4],
+        live_dir=live_dir,
+        buffer_path=str(live_dir / "buffer.wav"),
+        context_path=str(live_dir / "context.wav"),
+    )
+    for path, seconds in ((live_run.buffer_path, 0.5), (tmp_path / "3.wav", 2.0)):
+        soundfile.write(str(path), np.zeros(int(seconds * 16000)), 16000)
+    (tmp_path / "4.wav").write_bytes(b"not audio")
+    Path(live_run.context_path).write_bytes(b"run-up")
+
+    next_start = consume_failed_run_audio(live_run, 10.0, {3: 1990, 4: 1980})
+
+    # 0.5 s buffer + 2.0 s from chunk 3's header + 1.98 s recorded for chunk 4.
+    assert next_start == pytest.approx(14.48)
+    assert not Path(live_run.buffer_path).exists()
+    assert not Path(live_run.context_path).exists()
