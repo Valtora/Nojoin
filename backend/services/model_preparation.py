@@ -4,25 +4,18 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from sqlalchemy import case, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col
 
 from backend.core.task_dispatch import dispatch_task
 from backend.models.user import User
-from backend.utils.config_manager import config_manager
+from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG, config_manager
 from backend.utils.download_progress import set_download_progress
 
 logger = logging.getLogger(__name__)
 
 MODEL_PREPARATION_TASK = "backend.worker.tasks.download_models_task"
-
-# The per-user transcription keys and the defaults config_manager falls back to.
-_TRANSCRIPTION_DEFAULTS = {
-    "transcription_backend": "whisper",
-    "whisper_model_size": "turbo",
-    "parakeet_model": "parakeet-tdt-0.6b-v3",
-    "canary_model": "nemo-canary-1b-v2",
-}
 
 
 async def enqueue_model_preparation(
@@ -69,58 +62,112 @@ async def _queue_preparation(kwargs: dict[str, Any]) -> str:
     return str(task.id)
 
 
-def _effective(settings: Mapping[str, Any] | None, key: str) -> str:
+def effective_transcription_setting(
+    settings: Mapping[str, Any] | None, key: str
+) -> str:
     """A user's value for a transcription key, else the install config's.
 
-    The same precedence the processing pipeline applies: the transcription keys
-    are user-scoped, and an unset or empty user value falls through.
+    The transcription keys are user-scoped: Settings > Transcription stores the
+    choosing administrator's value on that administrator's own row, and a user
+    whose row holds none falls back to config.json. The processing pipeline
+    merges a user's settings over the config the same way
+    (``utils/llm_config._merge_llm_config``): any stored value other than None
+    wins, an empty string included.
     """
-    value = (settings or {}).get(key)
-    if value:
+    value = settings.get(key) if settings else None
+    if value is not None:
         return str(value)
-    return str(config_manager.get(key, _TRANSCRIPTION_DEFAULTS[key]))
+    return str(config_manager.get(key, DEFAULT_SYSTEM_CONFIG[key]))
 
 
 def resolve_startup_model_selection(
     user_settings: Sequence[Mapping[str, Any] | None],
 ) -> dict[str, Any]:
-    """Decide what API startup prepares, from every active user's settings.
+    """The preparation-task arguments for these users' effective engines.
 
-    ``user_settings`` lists the active users' settings, owner first. The owner's
-    effective engine and models are prepared, as the install's primary choice.
-    Whisper is prepared only when at least one user transcribes with it, at the
-    size the first such user chose. With no users yet, the install config
-    decides. Pyannote is always prepared (the core batch).
+    ``user_settings`` lists the active users' settings, owner first, then by id.
+    The first user's effective engine and models are prepared as the install's
+    primary choice: the owner's, or the lowest-id active user's while the owner
+    is deactivated. Whisper is prepared only while at least one user's effective
+    engine is Whisper, at the size of the first such user. With no users, the
+    install config decides. Pyannote is always prepared (the core batch).
     """
     rows: list[Mapping[str, Any] | None] = list(user_settings) or [None]
     primary = rows[0]
     whisper_rows = [
-        row for row in rows if _effective(row, "transcription_backend") == "whisper"
+        row
+        for row in rows
+        if effective_transcription_setting(row, "transcription_backend") == "whisper"
     ]
-    return {
-        "transcription_backend": _effective(primary, "transcription_backend"),
-        "whisper_model_size": _effective(
+    selection: dict[str, Any] = {
+        "whisper_model_size": effective_transcription_setting(
             whisper_rows[0] if whisper_rows else primary, "whisper_model_size"
         ),
-        "parakeet_model": _effective(primary, "parakeet_model"),
-        "canary_model": _effective(primary, "canary_model"),
+        "transcription_backend": effective_transcription_setting(
+            primary, "transcription_backend"
+        ),
+        "parakeet_model": effective_transcription_setting(primary, "parakeet_model"),
+        "canary_model": effective_transcription_setting(primary, "canary_model"),
         "include_core": True,
-        "include_whisper": bool(whisper_rows),
     }
+    # Without the flag, download_models prepares Whisper exactly when the backend
+    # (an empty one falling back to config) is Whisper. Send the flag only when
+    # the users need otherwise, so a worker on an image that predates it still
+    # accepts the common case.
+    inferred = (
+        selection["transcription_backend"]
+        or effective_transcription_setting(None, "transcription_backend")
+    ) == "whisper"
+    if bool(whisper_rows) != inferred:
+        selection["include_whisper"] = bool(whisper_rows)
+    return selection
+
+
+async def _read_active_user_settings(
+    session: AsyncSession,
+) -> list[Mapping[str, Any] | None]:
+    """Every active user's settings, owner first, then by id."""
+    result = await session.execute(
+        select(User.settings)
+        .where(col(User.is_active).is_(True))
+        .order_by(case((User.role == "owner", 0), else_=1), User.id)
+    )
+    rows = [row[0] for row in result.all()]
+    for settings in rows:
+        if settings is not None and not isinstance(settings, Mapping):
+            raise ValueError(
+                f"a user's settings hold a {type(settings).__name__}, not an object"
+            )
+    return rows
+
+
+async def resolve_install_transcription_selection(
+    session: AsyncSession,
+) -> dict[str, Any]:
+    """What this install's users transcribe with, as startup prepares it.
+
+    Startup preparation and the admin health check both read it, so the health
+    check reports the engine that was actually prepared. When the users cannot
+    be read (a transient database error, a settings row that is not an object),
+    the install config decides, as it did before startup read the users.
+    """
+    try:
+        user_settings = await _read_active_user_settings(session)
+    except (SQLAlchemyError, OSError, ValueError) as exc:
+        await session.rollback()
+        logger.warning(
+            "Could not read the users' transcription settings, so config.json "
+            "decides the transcription models: %s",
+            exc,
+        )
+        user_settings = []
+    return resolve_startup_model_selection(user_settings)
 
 
 async def enqueue_startup_model_preparation(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> str:
-    """Queue the startup preparation for the engines this install's users chose."""
+    """Queue the startup preparation for the engines this install's users run."""
     async with session_maker() as session:
-        result = await session.execute(
-            select(User.settings)
-            .where(col(User.is_active).is_(True))
-            .order_by(case((User.role == "owner", 0), else_=1), User.id)
-        )
-        user_settings = [row[0] for row in result.all()]
-
-    # Sent straight to the task: unlike the Settings paths, startup decides
-    # Whisper separately from the owner's engine (include_whisper).
-    return await _queue_preparation(resolve_startup_model_selection(user_settings))
+        selection = await resolve_install_transcription_selection(session)
+    return await _queue_preparation(selection)

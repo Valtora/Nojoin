@@ -3,15 +3,19 @@
 API startup queues preparation with the core batch on. Only the Whisper engine
 loads Whisper, so an install whose users transcribe with Parakeet or Canary must
 not download it at every start; the diarisation and voice-embedding models are
-needed whatever the engine. The engine is a per-user setting (Settings > AI
-writes it to the user row, not config.json), so startup reads the users.
+needed whatever the engine. The engine is stored per user (Settings >
+Transcription writes it to the choosing administrator's row, not config.json),
+so startup reads the users.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import json
+import logging
+from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy import text
@@ -114,6 +118,14 @@ def test_an_explicit_whisper_flag_overrides_the_backend(prepared):
 
 # --- API startup ------------------------------------------------------------
 
+_INSERT_USER = text(
+    "INSERT INTO users (id, created_at, updated_at, username, hashed_password,"
+    " is_active, is_superuser, force_password_change, role, token_version,"
+    " settings, has_seen_demo_recording)"
+    " VALUES (:id, '2026-01-01', '2026-01-01', :name, 'x', :active, 0, 0, :role,"
+    " 0, :settings, 0)"
+)
+
 
 def _use_config(monkeypatch, values: dict) -> None:
     monkeypatch.setattr(
@@ -123,14 +135,40 @@ def _use_config(monkeypatch, values: dict) -> None:
     )
 
 
-def _startup_dispatch(monkeypatch, users: list[tuple[str, bool, dict | None]]):
-    """Run the startup entry point over these users; return the task kwargs.
-
-    ``users`` is (role, is_active, settings) per user, inserted in order.
-    """
+@contextlib.asynccontextmanager
+async def _users_db(
+    users: list[tuple[str, bool, object]], *, with_users_table: bool = True
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """A database holding these users: (role, is_active, settings), in id order."""
     # The User mapper resolves its relationships by name, so every model has to
     # be registered before the first query, as the API's startup has done.
     importlib.import_module("backend.models.registry")
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    try:
+        async with engine.begin() as connection:
+            if with_users_table:
+                await connection.execute(text(USERS_SCHEMA))
+            for index, (role, active, settings) in enumerate(users, start=1):
+                await connection.execute(
+                    _INSERT_USER,
+                    {
+                        "id": index,
+                        "name": f"user{index}",
+                        "active": active,
+                        "role": role,
+                        "settings": None if settings is None else json.dumps(settings),
+                    },
+                )
+        yield async_sessionmaker(engine, class_=AsyncSession)
+    finally:
+        await engine.dispose()
+
+
+def _capture_dispatch(monkeypatch) -> list[dict]:
     dispatched: list[dict] = []
 
     async def fake_dispatch(name, *, kwargs, ignore_result):
@@ -141,37 +179,31 @@ def _startup_dispatch(monkeypatch, users: list[tuple[str, bool, dict | None]]):
     monkeypatch.setattr(
         model_preparation, "set_download_progress", lambda *args, **kwargs: None
     )
+    return dispatched
+
+
+def _startup_dispatch(
+    monkeypatch,
+    users: list[tuple[str, bool, object]],
+    *,
+    with_users_table: bool = True,
+) -> dict:
+    """Run the startup entry point over these users; return the task kwargs."""
+    dispatched = _capture_dispatch(monkeypatch)
 
     async def run() -> None:
-        engine = create_async_engine(
-            "sqlite+aiosqlite://",
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-        )
-        async with engine.begin() as connection:
-            await connection.execute(text(USERS_SCHEMA))
-            for index, (role, active, settings) in enumerate(users, start=1):
-                await connection.execute(
-                    text(
-                        "INSERT INTO users VALUES (:id, '2026-01-01', '2026-01-01',"
-                        " :name, 'x', :active, 0, 0, :role, 0, :settings, 0, NULL)"
-                    ),
-                    {
-                        "id": index,
-                        "name": f"user{index}",
-                        "active": active,
-                        "role": role,
-                        "settings": json.dumps(settings) if settings else None,
-                    },
-                )
-        maker = async_sessionmaker(engine, class_=AsyncSession)
-        try:
+        async with _users_db(users, with_users_table=with_users_table) as maker:
             await model_preparation.enqueue_startup_model_preparation(maker)
-        finally:
-            await engine.dispose()
 
     asyncio.run(run())
     assert len(dispatched) == 1
+    return dispatched[0]
+
+
+def _config_dispatch(monkeypatch) -> dict:
+    """The task kwargs of the config-only path startup used before reading users."""
+    dispatched = _capture_dispatch(monkeypatch)
+    asyncio.run(model_preparation.enqueue_model_preparation(include_core=True))
     return dispatched[0]
 
 
@@ -208,7 +240,7 @@ def test_startup_keeps_whisper_while_any_user_transcribes_with_it(
     assert prepared == ["whisper:small", "pyannote", "onnx:canary/nemo-canary-1b-v2"]
 
 
-def test_startup_ignores_deactivated_users(prepared, monkeypatch):
+def test_startup_ignores_deactivated_users(monkeypatch):
     _use_config(monkeypatch, {"transcription_backend": "parakeet"})
 
     kwargs = _startup_dispatch(
@@ -219,18 +251,72 @@ def test_startup_ignores_deactivated_users(prepared, monkeypatch):
         ],
     )
 
-    assert kwargs["include_whisper"] is False
+    assert kwargs["transcription_backend"] == "parakeet"
+    assert "include_whisper" not in kwargs
 
 
-@pytest.mark.parametrize(
-    ("configured", "include_whisper"), [("whisper", True), ("parakeet", False)]
-)
+@pytest.mark.parametrize("configured", ["whisper", "parakeet"])
 def test_startup_before_any_user_exists_follows_the_install_config(
-    prepared, monkeypatch, configured, include_whisper
+    monkeypatch, configured
 ):
     _use_config(monkeypatch, {"transcription_backend": configured})
 
     kwargs = _startup_dispatch(monkeypatch, [])
 
+    assert kwargs == _config_dispatch(monkeypatch)
     assert kwargs["transcription_backend"] == configured
-    assert kwargs["include_whisper"] is include_whisper
+
+
+@pytest.mark.parametrize(
+    "users",
+    [
+        [("owner", True, {"transcription_backend": "whisper"})],
+        [("owner", True, {"transcription_backend": "parakeet"}), ("user", True, None)],
+    ],
+    ids=["owner-on-whisper", "nobody-on-whisper"],
+)
+def test_startup_sends_no_whisper_flag_when_the_engine_already_implies_it(
+    monkeypatch, users
+):
+    """A worker on an image older than the flag rejects any unknown kwarg."""
+    _use_config(monkeypatch, {"transcription_backend": "parakeet"})
+
+    kwargs = _startup_dispatch(monkeypatch, users)
+
+    assert "include_whisper" not in kwargs
+
+
+def test_startup_treats_an_empty_engine_as_the_pipeline_does(prepared, monkeypatch):
+    """The pipeline keeps a stored "" over config and fails, so Whisper is unused."""
+    _use_config(monkeypatch, {"transcription_backend": "whisper"})
+
+    kwargs = _startup_dispatch(
+        monkeypatch, [("owner", True, {"transcription_backend": ""})]
+    )
+    preload_models.download_models(**kwargs)
+
+    assert prepared == ["pyannote"]
+
+
+@pytest.mark.parametrize(
+    ("users", "with_users_table"),
+    [
+        ([], False),
+        ([("owner", True, ["transcription_backend", "parakeet"])], True),
+    ],
+    ids=["database-error", "settings-not-an-object"],
+)
+def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
+    prepared, monkeypatch, caplog, users, with_users_table
+):
+    _use_config(monkeypatch, {"transcription_backend": "whisper"})
+
+    with caplog.at_level(logging.WARNING, logger=model_preparation.__name__):
+        kwargs = _startup_dispatch(
+            monkeypatch, users, with_users_table=with_users_table
+        )
+    preload_models.download_models(**kwargs)
+
+    assert kwargs == _config_dispatch(monkeypatch)
+    assert prepared == ["whisper:turbo", "pyannote"]
+    assert "config.json decides" in caplog.text

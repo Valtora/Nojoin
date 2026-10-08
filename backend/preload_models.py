@@ -387,8 +387,9 @@ def download_models(
 
     ``include_whisper`` decides whether the core batch prepares Whisper. When it
     is None, Whisper is prepared only for the Whisper backend. API startup sets
-    it explicitly, because the transcription engine is chosen per user and the
-    install may need Whisper for someone other than the owner.
+    it when its users need otherwise, because the transcription engine is
+    stored per user and the install may need Whisper for someone other than the
+    owner.
 
     Warmup intentionally runs in the worker process. It may instantiate a model
     on CPU to validate that downloads completed, then releases all caches and
@@ -428,7 +429,7 @@ def download_models(
             include_whisper = transcription_backend == "whisper"
         if include_core and include_whisper:
             report(
-                f"Preparing Whisper {whisper_model_size} for live transcription...",
+                f"Preparing Whisper {whisper_model_size} for transcription...",
                 5,
                 stage="whisper",
                 status="downloading",
