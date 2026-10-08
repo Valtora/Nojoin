@@ -394,6 +394,10 @@ The normal backend processing path is:
 10. Automatic meeting intelligence when an AI provider and model are configured.
 11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
 
+### Imported Media Input
+
+An import keeps the file it was given as `audio_path`, so the original can be a video container (MKV, MOV, MPEG-TS and the rest of `MEDIA_CONTAINER_SUFFIXES` in [backend/utils/audio.py](../backend/utils/audio.py)) with its video track still inside. Every ffmpeg conversion of `audio_path` must write an audio-only format (WAV, MP3) or pass `-vn`; a conversion into a container that can hold video, such as `-c copy` to `.mkv` or `.mp4`, would carry or decode the video. Conversions map no stream explicitly, so they read the audio track ffmpeg selects (the one flagged default, then the one with most channels, then the first), and `get_audio_duration` times that same track so the stored length matches what is transcribed. A file with no audio track, an empty one, or one whose audio format ffprobe cannot read within its default probe window is refused at import and nothing of it is kept. Speaker embeddings never crop a media container directly: they use the MP3 proxy, or decode the audio once to a temporary 16 kHz WAV. A failure of that decode is raised rather than reported as an empty result, so the voiceprint rebuild counts it as a transient failure.
+
 ### Speaker Cap And Voiceprint Versioning
 
 `Recording.max_speakers` is an optional per-recording upper bound. `NULL` means auto-detect and is the default; that path passes no speaker keyword to pyannote at all, so it is unchanged from before the field existed. A set value is applied as pyannote's `max_speakers` and never as `num_speakers` — an exact count forces a split whenever the user overcounts, which is the over-clustering failure the field exists to prevent. It is settable at import, on the reprocess request, and throughout a live capture, since diarisation runs at stop time.
