@@ -4,6 +4,7 @@ import { RecordingStatus, type Recording } from "@/types";
 
 import {
   AUDIO_RECHECK_INTERVAL_MS,
+  AUDIO_RECHECK_WINDOW_MS,
   hasPolledRecordingChanged,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
@@ -34,6 +35,22 @@ describe("polling a recording with no audio and no proxy", () => {
       AUDIO_RECHECK_INTERVAL_MS,
     );
     expect(recordingPollIntervalMs(recordingWith({ has_audio: true }))).toBe(1000);
+  });
+
+  it("stops re-checking once the audio has been unavailable for the whole window", () => {
+    const missing = recordingWith({ has_audio: false });
+
+    expect(recordingPollIntervalMs(missing, AUDIO_RECHECK_WINDOW_MS - 1)).toBe(
+      AUDIO_RECHECK_INTERVAL_MS,
+    );
+    expect(recordingPollIntervalMs(missing, AUDIO_RECHECK_WINDOW_MS)).toBeNull();
+    // The window bounds only the re-check, never the wait for a proxy.
+    expect(
+      recordingPollIntervalMs(
+        recordingWith({ has_audio: true }),
+        AUDIO_RECHECK_WINDOW_MS,
+      ),
+    ).toBe(1000);
   });
 
   it("does not poll a settled recording that has its audio", () => {

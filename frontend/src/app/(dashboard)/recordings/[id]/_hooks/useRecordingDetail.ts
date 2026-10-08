@@ -68,6 +68,7 @@ import { useRecordingActions } from "@/components/recordings/_hooks/useRecording
 import {
   cloneTranscriptSegments,
   hasPolledRecordingChanged,
+  isAudioUnavailable,
   isRecordingInFlight,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
@@ -142,6 +143,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
   const lastNotesErrorRef = useRef<string | null>(null);
   const lastMeetingEdgeErrorRef = useRef<string | null>(null);
+  // When the page first saw the audio as unavailable. It bounds how long the
+  // page keeps re-checking for it.
+  const audioUnavailableSinceRef = useRef<number | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const compactChatPanelHeight = isCompact
     ? Math.min(chatPanelHeight, 42)
@@ -395,12 +399,29 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   useEffect(() => {
     if (!recording) return;
 
-    const pollIntervalMs = recordingPollIntervalMs(recording);
+    if (!isAudioUnavailable(recording)) {
+      audioUnavailableSinceRef.current = null;
+    } else if (audioUnavailableSinceRef.current === null) {
+      audioUnavailableSinceRef.current = Date.now();
+    }
+    const currentPollIntervalMs = () =>
+      recordingPollIntervalMs(
+        recording,
+        audioUnavailableSinceRef.current === null
+          ? 0
+          : Date.now() - audioUnavailableSinceRef.current,
+      );
+
+    const pollIntervalMs = currentPollIntervalMs();
     if (pollIntervalMs === null) {
       return;
     }
 
     const interval = setInterval(async () => {
+      if (currentPollIntervalMs() === null) {
+        clearInterval(interval);
+        return;
+      }
       try {
         const { id } = await params;
         const data = await getRecording(id);

@@ -43,12 +43,23 @@ export const shouldPollRecordingUpdates = (recording: Recording) =>
 export const AUDIO_RECHECK_INTERVAL_MS = 15_000;
 
 /**
- * How often the detail page re-reads the recording, or null when nothing on
- * it can change by itself. Unavailable audio is re-checked slowly, so a page
- * opened while a restore is still moving files into place recovers without a
- * reload.
+ * How long a page keeps checking. A restore moves the audio into place seconds
+ * after it commits the rows, so audio still missing after this is gone, and
+ * each check re-reads the whole recording.
  */
-export const recordingPollIntervalMs = (recording: Recording): number | null => {
+export const AUDIO_RECHECK_WINDOW_MS = 10 * 60_000;
+
+/**
+ * How often the detail page re-reads the recording, or null when nothing on
+ * it can change by itself. Unavailable audio is re-checked slowly for a while,
+ * so a page opened while a restore is still moving files into place recovers
+ * without a reload. `audioUnavailableForMs` is how long the page has seen the
+ * audio as unavailable.
+ */
+export const recordingPollIntervalMs = (
+  recording: Recording,
+  audioUnavailableForMs = 0,
+): number | null => {
   if (shouldPollRecordingUpdates(recording)) {
     return recording.status === RecordingStatus.UPLOADING ||
       recording.status === RecordingStatus.PAUSED ||
@@ -56,7 +67,10 @@ export const recordingPollIntervalMs = (recording: Recording): number | null => 
       ? 1000
       : 3000;
   }
-  return isAudioUnavailable(recording) ? AUDIO_RECHECK_INTERVAL_MS : null;
+  return isAudioUnavailable(recording) &&
+    audioUnavailableForMs < AUDIO_RECHECK_WINDOW_MS
+    ? AUDIO_RECHECK_INTERVAL_MS
+    : null;
 };
 
 const meetingEdgeSignature = (recording: Recording) =>

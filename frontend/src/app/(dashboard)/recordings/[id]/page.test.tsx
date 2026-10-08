@@ -136,7 +136,10 @@ vi.mock("@/components/LinkedEventPanel", () => ({
 }));
 
 import RecordingPage from "./page";
-import { AUDIO_RECHECK_INTERVAL_MS } from "./_hooks/recordingDetailUtils";
+import {
+  AUDIO_RECHECK_INTERVAL_MS,
+  AUDIO_RECHECK_WINDOW_MS,
+} from "./_hooks/recordingDetailUtils";
 
 const buildRecording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1",
@@ -315,6 +318,32 @@ describe("RecordingPage (detail)", () => {
         "data-has-audio",
         "true",
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops re-checking for audio that has not arrived within the window", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getRecording.mockImplementation(async () =>
+        buildRecording({ has_proxy: false, has_audio: false }),
+      );
+
+      renderPage();
+      await screen.findByTestId("audio-player");
+      const loads = getRecording.mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUDIO_RECHECK_WINDOW_MS);
+      });
+      const checksInWindow = getRecording.mock.calls.length - loads;
+      expect(checksInWindow).toBeGreaterThan(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUDIO_RECHECK_WINDOW_MS);
+      });
+      expect(getRecording.mock.calls.length - loads).toBe(checksInWindow);
     } finally {
       vi.useRealTimers();
     }
