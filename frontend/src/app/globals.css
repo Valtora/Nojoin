@@ -101,6 +101,7 @@
   --radius-3xl: calc(1.5rem * var(--radius-scale));
   --radius-4xl: calc(2rem * var(--radius-scale));
   --radius-pill: var(--pill-radius);
+  --leading-relaxed: var(--leading-relaxed-step);
   --radius-surface: var(--surface-radius);
   --radius-surface-subtle: var(--surface-radius-subtle);
   --radius-surface-panel: var(--surface-radius-panel);
@@ -425,16 +426,16 @@ html {
    layer order beats selector specificity — which left these rules silently
    inert. Unlayered declarations beat every layer, so the scaling actually
    applies. */
-html[data-ui-density="compact"] .density-heading-page {
+html:is([data-ui-density="compact"], [data-ui-density="dense"]) .density-heading-page {
   font-size: clamp(2rem, 2vw + 1.35rem, 2.75rem);
 }
 
-html[data-ui-density="compact"] .density-heading-section {
+html:is([data-ui-density="compact"], [data-ui-density="dense"]) .density-heading-section {
   font-size: clamp(1.375rem, 1vw + 1rem, 1.875rem);
   line-height: 1.1;
 }
 
-html[data-ui-density="compact"] .density-body-copy {
+html:is([data-ui-density="compact"], [data-ui-density="dense"]) .density-body-copy {
   line-height: 1.55;
 }
 

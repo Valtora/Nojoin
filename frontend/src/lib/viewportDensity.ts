@@ -4,7 +4,11 @@ export const DESKTOP_BREAKPOINT = 1024;
 export const COMPACT_DESKTOP_MAX_WIDTH = 1920;
 export const COMPACT_DESKTOP_MAX_HEIGHT = 1080;
 
-export type ViewportDensity = "comfortable" | "compact";
+/**
+ * "dense" is only ever an explicit user choice: resolveViewportDensity never
+ * returns it, so the automatic behaviour is unchanged.
+ */
+export type ViewportDensity = "comfortable" | "compact" | "dense";
 
 export function resolveViewportDensity(
   width: number,

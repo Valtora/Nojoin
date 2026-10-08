@@ -110,4 +110,13 @@ describe("AppearanceSettings", () => {
 
     expect(root.dataset.uiDensity).toBe("compact");
   });
+
+  it("applies and persists the opt-in dense level", () => {
+    renderSettings();
+
+    choose("Density", "dense");
+
+    expect(root.dataset.uiDensity).toBe("dense");
+    expect(localStorage.getItem("nojoin-density")).toBe("dense");
+  });
 });

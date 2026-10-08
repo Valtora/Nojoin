@@ -153,6 +153,7 @@ export default function GeneralSettings({
       "density",
       "compact",
       "comfortable",
+      "dense",
     ]);
   const showDateTime =
     enabled("dateTime") &&

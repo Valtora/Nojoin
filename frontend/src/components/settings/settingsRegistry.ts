@@ -134,7 +134,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: [
       "theme", "appearance", "dark", "light", "colour", "color", "mode", "system default",
       "palette", "accent", "corners", "rounded", "square", "radius", "density", "compact",
-      "comfortable", "spacing",
+      "comfortable", "dense", "spacing",
     ],
   },
   {

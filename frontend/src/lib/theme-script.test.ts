@@ -142,13 +142,18 @@ describe("themeScript appearance preferences", () => {
     expect(root.dataset.uiDensity).toBe("comfortable");
   });
 
-  it("applies an explicit density whatever the viewport", () => {
-    localStorage.setItem("nojoin-density", "compact");
-    setViewport(390, 844);
+  it.each([
+    ["compact", 390, 844],
+    ["dense", 390, 844],
+    ["dense", 2560, 1440],
+    ["comfortable", 1440, 900],
+  ])("applies an explicit %s density at %ix%i whatever the viewport says", (density, width, height) => {
+    localStorage.setItem("nojoin-density", density as string);
+    setViewport(width as number, height as number);
 
     runScript();
 
-    expect(root.dataset.uiDensity).toBe("compact");
+    expect(root.dataset.uiDensity).toBe(density);
   });
 
   it.each([
@@ -165,5 +170,7 @@ describe("themeScript appearance preferences", () => {
     runScript();
 
     expect(root.dataset.uiDensity).toBe(resolveDensity("auto", width, height));
+    // Dense is opt-in only; no window size may land on it.
+    expect(root.dataset.uiDensity).not.toBe("dense");
   });
 });

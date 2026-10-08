@@ -106,7 +106,7 @@ export default function AppearanceSettings() {
 
       <SettingsRow
         label="Density"
-        description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else."
+        description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else. Dense is tighter still for mouse and keyboard; on a touch screen it keeps compact-sized controls."
       >
         <select
           aria-label="Density"

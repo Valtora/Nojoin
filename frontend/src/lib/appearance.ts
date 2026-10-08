@@ -24,7 +24,7 @@ export type Palette = (typeof PALETTES)[number];
 export const CORNER_STYLES = ["rounded", "subtle", "square"] as const;
 export type CornerStyle = (typeof CORNER_STYLES)[number];
 
-export const DENSITY_PREFERENCES = ["auto", "comfortable", "compact"] as const;
+export const DENSITY_PREFERENCES = ["auto", "comfortable", "compact", "dense"] as const;
 export type DensityPreference = (typeof DENSITY_PREFERENCES)[number];
 
 export const DEFAULT_PALETTE: Palette = "default";
@@ -56,6 +56,7 @@ export const DENSITY_PREFERENCE_LABELS: Record<DensityPreference, string> = {
   auto: "Automatic (by window size)",
   comfortable: "Comfortable",
   compact: "Compact",
+  dense: "Dense",
 };
 
 function readStored<T extends string>(

@@ -155,6 +155,10 @@
      height", not a length -- so they carry their own value. */
   --radius-scale: 1;
   --pill-radius: 9999px;
+  /* The line height behind Tailwind's leading-relaxed (Tailwind's own 1.625),
+     re-expressed in globals.css so Dense can tighten transcript and prose
+     lines without touching each component. */
+  --leading-relaxed-step: 1.625;
   --surface-radius: calc(1.25rem * var(--radius-scale));
   --surface-radius-subtle: calc(1.125rem * var(--radius-scale));
   --surface-radius-panel: calc(1rem * var(--radius-scale));
@@ -383,7 +387,10 @@
   --chart-grid: rgba(148, 163, 184, 0.2);
 }
 
-html[data-ui-density="compact"] {
+/* Compact. Dense starts from these values as well, which is why it is listed
+   here, and then tightens further in its own blocks below. */
+html[data-ui-density="compact"],
+html[data-ui-density="dense"] {
   --app-root-font-size: 15px;
   --workspace-gap: 1.125rem;
   --workspace-padding-x: 0.875rem;
@@ -400,6 +407,42 @@ html[data-ui-density="compact"] {
   --surface-padding: 1.25rem;
   --surface-padding-lg: 1.5rem;
   --control-height-lg: 3.25rem;
+}
+
+/* Dense: an opt-in, IDE-like step beyond compact, chosen only in Settings.
+   Automatic never resolves to it, so nobody lands here by window size.
+
+   It is split by input. Spacing that is never a touch target -- gaps, card
+   padding, line height -- tightens everywhere. What sizes the targets
+   themselves -- the root font size every rem padding and height hangs off,
+   and the large-control height -- tightens only for a fine pointer. On a
+   touch screen Dense keeps compact's 15px root and 3.25rem controls, so it
+   never makes a target smaller than compact already does. The wider
+   max-widths offset the smaller rem, so a dense page shows more, not the
+   same amount smaller. */
+html[data-ui-density="dense"] {
+  --workspace-gap: 0.75rem;
+  --workspace-padding-x: 0.75rem;
+  --workspace-padding-x-md: 1rem;
+  --workspace-padding-y: 0.75rem;
+  --workspace-padding-y-md: 1rem;
+  --workspace-max-width: 76rem;
+  --workspace-max-width-wide: 84rem;
+  --workspace-max-width-feature: 68rem;
+  --workspace-max-width-dense: 128rem;
+  --surface-radius: calc(0.75rem * var(--radius-scale));
+  --surface-radius-subtle: calc(0.6875rem * var(--radius-scale));
+  --surface-radius-panel: calc(0.625rem * var(--radius-scale));
+  --surface-padding: 0.875rem;
+  --surface-padding-lg: 1rem;
+  --leading-relaxed-step: 1.45;
+}
+
+@media (pointer: fine) {
+  html[data-ui-density="dense"] {
+    --app-root-font-size: 14px;
+    --control-height-lg: 2.5rem;
+  }
 }
 
 /* Corner styles, chosen in Settings -> Appearance and stamped on <html> by

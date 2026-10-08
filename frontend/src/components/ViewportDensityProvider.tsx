@@ -26,6 +26,10 @@ interface ViewportDensityContextValue {
   /** The user's choice: "auto" follows the viewport heuristic. */
   densityPreference: DensityPreference;
   setDensityPreference: (preference: DensityPreference) => void;
+  /**
+   * True for compact and for the tighter dense step: layout code that narrows
+   * rails or panels for compact should narrow them for dense too.
+   */
   isCompact: boolean;
   /** True below the desktop breakpoint (1024px) — the app-wide mobile boundary. */
   isMobile: boolean;
@@ -100,7 +104,7 @@ export function ViewportDensityProvider({
       density,
       densityPreference,
       setDensityPreference,
-      isCompact: density === "compact",
+      isCompact: density !== "comfortable",
       isMobile: !isDesktop,
       isDesktop,
       viewportHeight: height,
