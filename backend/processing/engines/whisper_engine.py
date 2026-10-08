@@ -13,6 +13,7 @@ import whisper
 
 from ...utils.config_manager import config_manager
 from ...utils.languages import resolve_transcription_language_code
+from ...utils.model_cache_paths import whisper_cache_root
 from .base import TranscriptionEngine
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,9 @@ def transcribe_audio_with_progress(
                 logger.info(
                     f"Whisper model {model_size} not found locally - will be downloaded"
                 )
-            _model_cache[model_size] = whisper.load_model(model_size, device=device)
+            _model_cache[model_size] = whisper.load_model(
+                model_size, device=device, download_root=whisper_cache_root()
+            )
             logger.info(f"Whisper model {model_size} loaded successfully.")
         model = _model_cache[model_size]
 
@@ -241,8 +244,6 @@ class WhisperEngine(TranscriptionEngine):
                 logger.info(f"Loading Whisper model: {model_size}")
 
                 # The root model status and preparation use, from one resolver.
-                from ...utils.model_cache_paths import whisper_cache_root
-
                 _model_cache[model_size] = whisper.load_model(
                     model_size, device=device, download_root=whisper_cache_root()
                 )
