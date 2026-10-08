@@ -215,7 +215,7 @@ def _load_keyring() -> dict[str, Any]:
                 # Writing the new keyring, or migrating a desktop-era key file.
                 raise _key_file_access_error(_keyring_path(), exc) from exc
     # Checked here rather than in _read_keyring_file so that
-    # rotate_signing_key() can still replace an empty active key.
+    # rotate_signing_key() can still replace an empty active entry.
     if not keyring["keys"][keyring["active"]]:
         raise _empty_signing_key_error(_keyring_path())
     return keyring

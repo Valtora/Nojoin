@@ -795,7 +795,7 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   chmod -R 700 ./data
   ```
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
-- **Empty JWT signing key:** PyJWT, which signs and verifies sign-in tokens, cannot use an empty key. If the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again. Until then sign-in fails. Installs with a usable key need no action.
+- **Empty JWT signing key:** if the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again.
 ### One-Time Migrations From Pre-Browser-Capture Releases
 
 The notes below describe one-time migrations that run automatically when you first upgrade across the relevant cutover. They apply only if your database or installation predates that cutover. On a clean install, or on any installation already past these cutovers, they require no action and can be treated as historical context.
