@@ -447,6 +447,8 @@ def _default_live_state() -> dict:
     return {
         "next_expected": LIVE_INITIAL_SEQUENCE,
         "buffer_abs_start": 0.0,
+        # Seconds of audio in live/buffer.wav, for when that file cannot be read.
+        "buffer_len_s": None,
         "last_speaker_label": None,
         _STATE_SOURCE_CHANNEL_LABELS_KEY: {},
         _STATE_SEQUENCE_OUTCOMES_KEY: {},
@@ -521,11 +523,16 @@ def _normalize_live_state(raw_state: dict | None) -> dict:
         buffer_abs_start = float(raw_state.get("buffer_abs_start", 0.0))
     except (TypeError, ValueError):
         buffer_abs_start = 0.0
+    try:
+        buffer_len_s = max(0.0, float(raw_state["buffer_len_s"]))
+    except (KeyError, TypeError, ValueError):
+        buffer_len_s = None
 
     default.update(
         {
             "next_expected": max(LIVE_INITIAL_SEQUENCE, next_expected),
             "buffer_abs_start": max(0.0, buffer_abs_start),
+            "buffer_len_s": buffer_len_s,
             "last_speaker_label": raw_state.get("last_speaker_label") or None,
             _STATE_SOURCE_CHANNEL_LABELS_KEY: _sanitize_source_channel_labels(
                 raw_state.get(_STATE_SOURCE_CHANNEL_LABELS_KEY)
@@ -613,6 +620,8 @@ def write_live_state(live_dir, state: dict) -> None:
         "next_expected": int(normalized_state["next_expected"]),
         "buffer_abs_start": float(normalized_state["buffer_abs_start"]),
     }
+    if normalized_state["buffer_len_s"] is not None:
+        state_payload["buffer_len_s"] = normalized_state["buffer_len_s"]
     if normalized_state.get("last_speaker_label"):
         state_payload["last_speaker_label"] = normalized_state["last_speaker_label"]
     if normalized_state.get(_STATE_SOURCE_CHANNEL_LABELS_KEY):
@@ -1510,95 +1519,6 @@ def _dispatch_meeting_edge_refresh_best_effort(recording_id: int) -> None:
         )
 
 
-def _record_live_run_failure(
-    *,
-    recording_id: int,
-    sequence: int,
-    run: list[int],
-    exc: Exception,
-    state: dict,
-    live_dir,
-    live_config: dict | None,
-    pending_asr_completions: list[dict[str, Any]] | None,
-) -> None:
-    """Best-effort recovery for a failed live run; never raises.
-
-    Non-fatal by contract: records the failure metric, marks pending ASR ledger
-    rows failed, marks the drained sequences ``failed`` and advances
-    next_expected so the lane keeps moving. The source windows stay discoverable
-    via their pending ASR coverage so the final pipeline recovers them.
-    """
-    record_pipeline_metric(
-        stage="live_run_failed",
-        recording_id=recording_id,
-        payload={
-            "sequence": sequence,
-            "run": run,
-            "error": str(exc),
-            "catch_up_recoverable": bool(run),
-        },
-        status="error",
-        log=logger,
-    )
-    logger.error(
-        "Live transcription failed for recording %s run %s: %s",
-        recording_id,
-        run,
-        exc,
-        exc_info=True,
-    )
-    if pending_asr_completions is not None and config_manager.get(
-        "enable_asr_window_result_ledger", True
-    ):
-        # Bind error details to plain locals: `exc` is unbound once the caller's
-        # except block exits and the callbacks below run best-effort after.
-        persistence_error_summary = (
-            str(exc).strip()[:500] or "Live utterance persistence failed."
-        )
-        persistence_error_type = exc.__class__.__name__
-        for pending_result in pending_asr_completions:
-            _persist_asr_window_result_best_effort(
-                lambda ledger_session, pending_result=pending_result: (
-                    fail_recording_asr_window_result(
-                        ledger_session,
-                        recording_id=recording_id,
-                        source_kind="live",
-                        span_start_ms=pending_result["span_start_ms"],
-                        span_end_ms=pending_result["span_end_ms"],
-                        chunk_start_sequence=run[0] if run else None,
-                        chunk_end_sequence=run[-1] if run else None,
-                        config=live_config,
-                        error_summary=persistence_error_summary,
-                        error_payload={"error_type": persistence_error_type},
-                    )
-                )
-            )
-    if run:
-        for failed_sequence in run:
-            _record_live_sequence_outcome(
-                state,
-                sequence=failed_sequence,
-                outcome="failed",
-                reason="live_run_failed",
-                run=run,
-                error=str(exc),
-            )
-        state["next_expected"] = run[-1] + 1
-        _write_live_state_best_effort(live_dir, state)
-        _record_live_sequence_outcome_metric(
-            recording_id=recording_id,
-            sequence=sequence,
-            outcome="failed",
-            reason="live_run_failed",
-            run=run,
-            extra_payload={
-                "error": str(exc),
-                "next_expected": state["next_expected"],
-                "catch_up_recoverable": True,
-            },
-        )
-
-
 @celery_app.task(bind=True)
 def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     """Transcribe an uploaded recording segment in the live lane.
@@ -1611,6 +1531,10 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
 
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording, RecordingStatus
+    from backend.processing.live_run_failure import (
+        LiveRun,
+        record_live_run_failure,
+    )
     from backend.processing.vad import detect_speech_segments
 
     config_manager.reload()
@@ -1804,6 +1728,15 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     # tell a pre-ASR failure (None) from a mid-run one without locals() probing.
     live_config: dict | None = None
     pending_asr_completions: list[dict[str, Any]] | None = None
+    live_run = LiveRun(
+        recording_id=recording_id,
+        sequence=sequence,
+        run=run,
+        temp_dir=temp_dir,
+        live_dir=live_dir,
+        buffer_path=buffer_path,
+        context_path=context_path,
+    )
 
     try:
         record_pipeline_metric(
@@ -1821,6 +1754,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 run=run,
             )
         )
+        live_run.combined_len = combined_len
         combined_abs_start = buffer_abs_start
         logger.info(
             "Live capture channel analysis for recording %s sequence %s run %s: %s",
@@ -1906,6 +1840,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             prev_context_channels=prev_context_channels,
             context_window_samples=W,
         )
+        live_run.carried_abs_start = new_abs_start
 
         # --- Persistence: provisional utterances, manifest coverage, ledger ---
         should_dispatch_meeting_edge = _persist_live_run(
@@ -1936,6 +1871,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             )
         state["next_expected"] = run[-1] + 1
         state["buffer_abs_start"] = new_abs_start
+        state["buffer_len_s"] = combined_len - cut_point
         write_live_state(live_dir, state)
         _record_live_sequence_outcome_metric(
             recording_id=recording_id,
@@ -1961,13 +1897,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     except Exception as exc:  # noqa: BLE001 -- boundary: live failures are non-fatal
         # Non-fatal: log and keep the source windows discoverable for final
         # catch-up through their pending ASR coverage.
-        _record_live_run_failure(
-            recording_id=recording_id,
-            sequence=sequence,
-            run=run,
-            exc=exc,
-            state=state,
-            live_dir=live_dir,
-            live_config=live_config,
-            pending_asr_completions=pending_asr_completions,
+        record_live_run_failure(
+            live_run, exc, state, live_config, pending_asr_completions
         )
