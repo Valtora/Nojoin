@@ -32,15 +32,19 @@ logger = lt.logger
 class LiveRun:
     """One drain of the live lane, and how far it got.
 
-    ``combined_len`` is the seconds of audio the run combined (carried buffer
-    plus drained chunks); it stays None when the run failed while reading that
-    audio. ``carried_abs_start`` is set once the run has written the audio past
-    its cut point as the next buffer, and is where that buffer starts.
+    Drained chunks sit in ``temp_dir`` as ``{sequence}.wav``; ``live_dir`` holds
+    the lane's state, the carried buffer (``buffer_path``) and the left-context
+    run-up (``context_path``). ``combined_len`` is the seconds of audio the run
+    combined (carried buffer plus drained chunks); it stays None when the run
+    failed while reading that audio. ``carried_abs_start`` is set once the run
+    has written the audio past its cut point as the next buffer, and is where
+    that buffer starts.
     """
 
     recording_id: int
     sequence: int
     run: list[int]
+    temp_dir: Path
     live_dir: Path
     buffer_path: str
     context_path: str
@@ -70,61 +74,72 @@ def _recorded_chunk_durations_ms(recording_id: int) -> dict[int, int]:
     return {int(chunk.sequence_no): int(chunk.duration_ms) for chunk in chunks}
 
 
-def consume_failed_run_audio(
-    live_run: LiveRun,
-    buffer_abs_start: float,
-    chunk_durations_ms: dict[int, int],
+def _unread_run_length_s(
+    live_run: LiveRun, state: dict, chunk_durations_ms: dict[int, int]
 ) -> float:
-    """Spend a failed run's audio and return the next run's ``buffer_abs_start``.
+    """Seconds of audio in a run that failed before it combined its audio.
 
-    When the run never combined its audio, its length is summed from the WAV
-    headers, falling back to the duration the upload recorded
-    (``chunk_durations_ms``, by sequence) for a chunk whose header cannot be
-    read. The carried buffer and the left-context run-up are removed: the buffer
-    would be transcribed again, and the run-up no longer precedes the audio that
-    comes next.
+    Read from the WAV headers. For a header that cannot be read, the carried
+    buffer falls back to the length the lane saved with it, and a chunk to the
+    duration the upload recorded.
     """
+    total = 0.0
+    if os.path.exists(live_run.buffer_path):
+        seconds = _wav_duration_s(live_run.buffer_path)
+        if seconds is None:
+            seconds = state.get("buffer_len_s")
+        if seconds is None:
+            logger.warning("No length for the carried live buffer; counting 0 s.")
+        total += seconds or 0.0
+    for sequence in live_run.run:
+        seconds = _wav_duration_s(str(live_run.temp_dir / f"{sequence}.wav"))
+        if seconds is None and sequence in chunk_durations_ms:
+            seconds = chunk_durations_ms[sequence] / 1000.0
+        if seconds is None:
+            logger.warning("No duration for live chunk %s; counting 0 s.", sequence)
+        total += seconds or 0.0
+    return total
+
+
+def end_of_failed_run(
+    live_run: LiveRun, state: dict, chunk_durations_ms: dict[int, int]
+) -> tuple[float, float]:
+    """Return ``(buffer_abs_start, buffer_len_s)`` for the run after a failed one.
+
+    A run that failed after carrying its tail into the next buffer keeps that
+    buffer, which starts where the carry-over says. Otherwise every second the
+    run read is spent and the next run starts after it with no buffer.
+    """
+    start = float(state["buffer_abs_start"])
+    if live_run.carried_abs_start is not None and live_run.combined_len is not None:
+        carried_len = start + live_run.combined_len - live_run.carried_abs_start
+        return live_run.carried_abs_start, carried_len
     combined_len = live_run.combined_len
     if combined_len is None:
-        combined_len = 0.0
-        if os.path.exists(live_run.buffer_path):
-            combined_len += _wav_duration_s(live_run.buffer_path) or 0.0
-        for sequence in live_run.run:
-            chunk_path = live_run.live_dir.parent / f"{sequence}.wav"
-            seconds = _wav_duration_s(str(chunk_path))
-            if seconds is None and sequence in chunk_durations_ms:
-                seconds = chunk_durations_ms[sequence] / 1000.0
-            if seconds is None:
-                logger.warning("No duration for live chunk %s; counting 0 s.", sequence)
-            combined_len += seconds or 0.0
+        combined_len = _unread_run_length_s(live_run, state, chunk_durations_ms)
+    return start + combined_len, 0.0
+
+
+def _next_timeline(live_run: LiveRun, state: dict) -> tuple[float, float]:
+    chunk_durations_ms = (
+        {}
+        if live_run.combined_len is not None
+        else _recorded_chunk_durations_ms(live_run.recording_id)
+    )
+    return end_of_failed_run(live_run, state, chunk_durations_ms)
+
+
+def _remove_spent_audio(live_run: LiveRun) -> None:
+    """Remove the spent buffer and the run-up that no longer precedes anything."""
     for path in (live_run.buffer_path, live_run.context_path):
         try:
             os.remove(path)
         except FileNotFoundError:
             pass
         except OSError as exc:
-            logger.warning("Could not remove stale live audio %s: %s", path, exc)
-    return buffer_abs_start + combined_len
-
-
-def _advance_timeline(live_run: LiveRun, state: dict) -> None:
-    """Move ``buffer_abs_start`` past the failed run's audio.
-
-    A run that failed after carrying its tail into the next buffer keeps that
-    buffer: it starts where the carry-over says, and the next run transcribes
-    it. Otherwise every second the run read is spent.
-    """
-    if live_run.carried_abs_start is not None:
-        state["buffer_abs_start"] = live_run.carried_abs_start
-        return
-    chunk_durations_ms = (
-        {}
-        if live_run.combined_len is not None
-        else _recorded_chunk_durations_ms(live_run.recording_id)
-    )
-    state["buffer_abs_start"] = consume_failed_run_audio(
-        live_run, float(state["buffer_abs_start"]), chunk_durations_ms
-    )
+            # The saved state says this audio is spent; if the buffer survives,
+            # the next run will replay it.
+            logger.error("Could not remove spent live audio %s: %s", path, exc)
 
 
 def _fail_pending_asr_results(
@@ -157,6 +172,43 @@ def _fail_pending_asr_results(
                 )
             )
         )
+
+
+def _save_advance(live_run: LiveRun, state: dict) -> None:
+    """Advance ``next_expected`` and the timeline past the run, then save them.
+
+    The new state is written before any audio is removed, in one write. If the
+    timeline cannot be worked out, ``next_expected`` still advances. If the
+    write fails, the spent audio stays where it is, consistent with the state
+    still on disk.
+    """
+    run = live_run.run
+    state["next_expected"] = run[-1] + 1
+    spent = False
+    try:
+        state["buffer_abs_start"], state["buffer_len_s"] = _next_timeline(
+            live_run, state
+        )
+        spent = live_run.carried_abs_start is None
+    except (OSError, RuntimeError, ValueError, SQLAlchemyError) as timeline_exc:
+        logger.warning(
+            "Could not move the live timeline past failed run %s of recording %s: %s",
+            run,
+            live_run.recording_id,
+            timeline_exc,
+        )
+    try:
+        lt.write_live_state(live_run.live_dir, state)
+    except OSError:
+        logger.error(
+            "Could not save the live state after failed run %s of recording %s",
+            run,
+            live_run.recording_id,
+            exc_info=True,
+        )
+        return
+    if spent:
+        _remove_spent_audio(live_run)
 
 
 def record_live_run_failure(
@@ -209,21 +261,7 @@ def record_live_run_failure(
             run=run,
             error=str(exc),
         )
-    state["next_expected"] = run[-1] + 1
-    # Persist the advance before touching audio files, so nothing that goes
-    # wrong while moving the timeline can lose it.
-    lt._write_live_state_best_effort(live_run.live_dir, state)
-    try:
-        _advance_timeline(live_run, state)
-    except (OSError, RuntimeError, ValueError, SQLAlchemyError) as timeline_exc:
-        logger.warning(
-            "Could not move the live timeline past failed run %s of recording %s: %s",
-            run,
-            recording_id,
-            timeline_exc,
-        )
-    else:
-        lt._write_live_state_best_effort(live_run.live_dir, state)
+    _save_advance(live_run, state)
     lt._record_live_sequence_outcome_metric(
         recording_id=recording_id,
         sequence=sequence,

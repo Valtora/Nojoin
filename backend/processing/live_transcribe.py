@@ -447,6 +447,8 @@ def _default_live_state() -> dict:
     return {
         "next_expected": LIVE_INITIAL_SEQUENCE,
         "buffer_abs_start": 0.0,
+        # Seconds of audio in live/buffer.wav, for when that file cannot be read.
+        "buffer_len_s": None,
         "last_speaker_label": None,
         _STATE_SOURCE_CHANNEL_LABELS_KEY: {},
         _STATE_SEQUENCE_OUTCOMES_KEY: {},
@@ -521,11 +523,16 @@ def _normalize_live_state(raw_state: dict | None) -> dict:
         buffer_abs_start = float(raw_state.get("buffer_abs_start", 0.0))
     except (TypeError, ValueError):
         buffer_abs_start = 0.0
+    try:
+        buffer_len_s = max(0.0, float(raw_state["buffer_len_s"]))
+    except (KeyError, TypeError, ValueError):
+        buffer_len_s = None
 
     default.update(
         {
             "next_expected": max(LIVE_INITIAL_SEQUENCE, next_expected),
             "buffer_abs_start": max(0.0, buffer_abs_start),
+            "buffer_len_s": buffer_len_s,
             "last_speaker_label": raw_state.get("last_speaker_label") or None,
             _STATE_SOURCE_CHANNEL_LABELS_KEY: _sanitize_source_channel_labels(
                 raw_state.get(_STATE_SOURCE_CHANNEL_LABELS_KEY)
@@ -613,6 +620,8 @@ def write_live_state(live_dir, state: dict) -> None:
         "next_expected": int(normalized_state["next_expected"]),
         "buffer_abs_start": float(normalized_state["buffer_abs_start"]),
     }
+    if normalized_state["buffer_len_s"] is not None:
+        state_payload["buffer_len_s"] = normalized_state["buffer_len_s"]
     if normalized_state.get("last_speaker_label"):
         state_payload["last_speaker_label"] = normalized_state["last_speaker_label"]
     if normalized_state.get(_STATE_SOURCE_CHANNEL_LABELS_KEY):
@@ -1723,6 +1732,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         recording_id=recording_id,
         sequence=sequence,
         run=run,
+        temp_dir=temp_dir,
         live_dir=live_dir,
         buffer_path=buffer_path,
         context_path=context_path,
@@ -1861,6 +1871,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             )
         state["next_expected"] = run[-1] + 1
         state["buffer_abs_start"] = new_abs_start
+        state["buffer_len_s"] = combined_len - cut_point
         write_live_state(live_dir, state)
         _record_live_sequence_outcome_metric(
             recording_id=recording_id,
