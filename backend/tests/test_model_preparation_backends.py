@@ -428,7 +428,8 @@ def test_a_malformed_settings_row_falls_back_to_the_config_for_that_user_only(
 # --- Admin health check -------------------------------------------------------
 
 
-def _stub_other_health_checks(monkeypatch, model_status: dict) -> None:
+def _stub_other_health_checks(monkeypatch, model_status: dict) -> list[str | None]:
+    """Stub every health component but transcription; return the sizes checked."""
     ok = {"status": "ok"}
 
     async def ready(*args, **kwargs):
@@ -454,11 +455,22 @@ def _stub_other_health_checks(monkeypatch, model_status: dict) -> None:
         "_current_download_summary",
         lambda: {"in_progress": False, "stage": None},
     )
-    monkeypatch.setattr(
-        health_service,
-        "check_model_status",
-        lambda whisper_model_size=None: model_status,
-    )
+    checked_sizes: list[str | None] = []
+
+    def check_model_status(whisper_model_size=None):
+        checked_sizes.append(whisper_model_size)
+        return model_status
+
+    monkeypatch.setattr(health_service, "check_model_status", check_model_status)
+    return checked_sizes
+
+
+def _admin_health(users: list[tuple[str, bool, object]]) -> dict:
+    async def run() -> dict:
+        async with _users_db(users) as maker, maker() as session:
+            return await health_service.get_admin_health_status(session)
+
+    return asyncio.run(run())
 
 
 def test_admin_health_reports_the_engine_startup_prepared(monkeypatch):
@@ -472,14 +484,32 @@ def test_admin_health_reports_the_engine_startup_prepared(monkeypatch):
         },
     )
 
-    async def run() -> dict:
-        users = [("owner", True, {"transcription_backend": "parakeet"})]
-        async with _users_db(users) as maker, maker() as session:
-            return await health_service.get_admin_health_status(session)
-
-    health = asyncio.run(run())
+    health = _admin_health([("owner", True, {"transcription_backend": "parakeet"})])
 
     component = health["checks"]["transcription_model"]
     assert component["backend"] == "parakeet"
     assert component["label"] == "Ready"
     assert health["summary"]["pipeline_status"] == "ready"
+
+
+def test_admin_health_checks_the_whisper_size_the_owner_chose(monkeypatch):
+    """Owner on Whisper small in Settings, config.json on Whisper turbo."""
+    _use_config(
+        monkeypatch, {"transcription_backend": "whisper", "whisper_model_size": "turbo"}
+    )
+    checked_sizes = _stub_other_health_checks(
+        monkeypatch, {"whisper": {"downloaded": True, "path": "/cache/small.pt"}}
+    )
+
+    health = _admin_health(
+        [
+            (
+                "owner",
+                True,
+                {"transcription_backend": "whisper", "whisper_model_size": "small"},
+            )
+        ]
+    )
+
+    assert checked_sizes == ["small"]
+    assert health["checks"]["transcription_model"]["configured_model"] == "small"
