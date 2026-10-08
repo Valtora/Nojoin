@@ -14,6 +14,7 @@ import whisper
 from ...utils.config_manager import config_manager
 from ...utils.languages import resolve_transcription_language_code
 from .base import TranscriptionEngine
+from .errors import TranscriptionError, transcription_error_from
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +205,7 @@ class WhisperEngine(TranscriptionEngine):
 
     name = "whisper"
 
-    def transcribe(self, audio_path: str, config: dict) -> dict | None:
+    def transcribe(self, audio_path: str, config: dict) -> dict:
         """Transcribes the given audio file using OpenAI Whisper.
 
         Args:
@@ -212,12 +213,18 @@ class WhisperEngine(TranscriptionEngine):
             config: Optional configuration dictionary to override defaults.
 
         Returns:
-            A dictionary containing the transcription result (including text, segments, language)
-            or None if transcription fails.
+            A dictionary containing the transcription result (including text,
+            segments, language); empty text means no speech.
+
+        Raises:
+            TranscriptionError: The file is missing or Whisper failed.
         """
         if not os.path.exists(audio_path):
             logger.error(f"Audio file not found for transcription: {audio_path}")
-            return None
+            raise TranscriptionError(
+                f"Transcription failed ({self.name}): the audio file is missing.",
+                engine=self.name,
+            )
 
         # Use provided config or fall back to system config
         get_config = config.get if config else config_manager.get
@@ -307,7 +314,9 @@ class WhisperEngine(TranscriptionEngine):
                 del _model_cache[model_size]
                 if device == "cuda":
                     torch.cuda.empty_cache()
-            return None
+            raise transcription_error_from(
+                e, engine=self.name, on_gpu=device == "cuda"
+            ) from e
 
     def release(self) -> None:
         """Releases all loaded Whisper models from memory and clears CUDA cache."""

@@ -1779,6 +1779,55 @@ def test_live_failure_path_records_recoverable_outcome(monkeypatch, tmp_path):
     assert state["sequence_outcomes"]["0"]["run"] == [0]
 
 
+def test_live_engine_failure_loses_only_that_region(monkeypatch, tmp_path):
+    """A TranscriptionError on one chunk drops that chunk's text only: the lane
+    keeps draining in order and later chunks keep their real timestamps."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+    from backend.processing import transcribe as transcribe_module
+    from backend.processing.engines.errors import TranscriptionError
+
+    temp_dir = tmp_path / "16"
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+
+    calls = {"n": 0}
+
+    def transcribe_failing_second_chunk(path, config=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise TranscriptionError(
+                "Transcription failed: the GPU ran out of memory (CUDA out of memory)",
+                engine="parakeet",
+                gpu_out_of_memory=True,
+            )
+        text = f"chunk {calls['n']}"
+        return {"text": text, "segments": [{"start": 0.0, "end": 1.0e9, "text": text}]}
+
+    monkeypatch.setattr(
+        transcribe_module, "transcribe_audio", transcribe_failing_second_chunk
+    )
+
+    transcript = _FakeTranscript()
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
+    for seq in (0, 1, 2):
+        _make_segment_wav(temp_dir, seq, 2.0, audio_store)
+        _run_live_task(monkeypatch, 16, seq, session)
+
+    assert [(s["start"], s["text"]) for s in transcript.segments] == [
+        (0.0, "chunk 1"),
+        (2.0, "chunk 3"),
+    ]
+    state = lt.read_live_state(temp_dir / "live")
+    assert state["next_expected"] == 3
+    assert {o["outcome"] for o in state["sequence_outcomes"].values()} == {"consumed"}
+
+
 # --- _extract_region_text unit tests ----------------------------------------
 
 
@@ -3095,8 +3144,8 @@ def test_mix_live_audio_channels_averages_channels():
 
 
 def test_live_empty_asr_result_emits_no_segment(monkeypatch, tmp_path):
-    """ASR-result seam: a falsy engine result yields no provisional segment but
-    still advances the lane cleanly (no crash)."""
+    """ASR-result seam: an empty engine result (nothing recognised) yields no
+    provisional segment but still advances the lane cleanly (no crash)."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
     from backend.processing import transcribe as transcribe_module
@@ -3109,7 +3158,7 @@ def test_live_empty_asr_result_emits_no_segment(monkeypatch, tmp_path):
     )
     _make_segment_wav(temp_dir, 0, 2.0, audio_store)
 
-    # Engine returns an empty dict: the 'if not result' guard must skip it.
+    # Engine returns an empty dict: no text, so no segment is emitted.
     monkeypatch.setattr(
         transcribe_module, "transcribe_audio", lambda path, config=None: {}
     )

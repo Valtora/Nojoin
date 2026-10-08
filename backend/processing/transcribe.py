@@ -5,6 +5,7 @@
 import logging
 
 from ..utils.config_manager import config_manager
+from .engines.errors import TranscriptionError, transcription_error_from
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +38,16 @@ def _get_engine(name: str):
     return engine
 
 
-def transcribe_audio(audio_path: str, config: dict = None) -> dict | None:
+def transcribe_audio(audio_path: str, config: dict | None = None) -> dict:
     """Transcribe an audio file with the engine selected in config.
 
-    Reads config['transcription_backend'] (default 'whisper'). Public signature
-    preserved for backend/worker/tasks.py. Returns the canonical transcription
-    dict, or None on failure / unknown engine.
+    Reads config['transcription_backend'] (default 'whisper'). Returns the
+    canonical transcription dict; empty text means the audio held no speech.
+
+    Raises:
+        TranscriptionError: The backend is unknown or unavailable, or the engine
+            failed. Anything else an engine lets escape is wrapped too, so this
+            is the only exception callers need to treat as a lost transcription.
     """
     get_config = config.get if config else config_manager.get
     backend = get_config("transcription_backend", "whisper")
@@ -50,8 +55,20 @@ def transcribe_audio(audio_path: str, config: dict = None) -> dict | None:
         engine = _get_engine(backend)
     except (ValueError, ImportError) as e:
         logger.error(f"Transcription backend '{backend}' unavailable: {e}")
-        return None
-    return engine.transcribe(audio_path, config or {})
+        raise TranscriptionError(
+            f"Transcription failed: the '{backend}' transcription backend is "
+            f"unavailable ({e}).",
+            engine=str(backend),
+        ) from e
+    try:
+        return engine.transcribe(audio_path, config or {})
+    except TranscriptionError:
+        raise
+    except Exception as e:
+        logger.error(f"Transcription backend '{backend}' failed: {e}", exc_info=True)
+        # Engines catch their own model errors and attribute out-of-memory to
+        # the device they ran on. What escapes them never ran on a GPU.
+        raise transcription_error_from(e, engine=str(backend), on_gpu=False) from e
 
 
 def release_model_cache() -> None:
