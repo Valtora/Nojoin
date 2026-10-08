@@ -793,7 +793,7 @@ export default function TranscriptView({
       <div
         ref={scrollContainerRef}
         data-testid="transcript-scroll-region"
-        className="space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0"
+        className="clear-floating-action space-y-4 px-2 md:px-4 py-3 overflow-y-auto flex-1 min-h-0"
         onScroll={updateScrollAnchor}
       >
         {trackGroups.length === 0 ? (

@@ -122,6 +122,18 @@ describe("TranscriptView", () => {
     positionMap.clear();
   });
 
+  // On a phone the meeting page floats its chat button over this region; the
+  // class is what gives the last line room to scroll clear of it.
+  it("lets the last line scroll clear of a floating button", () => {
+    renderTranscriptView([
+      buildSegment({ id: "utt-last", text: "Last line", speaker: "SPEAKER_00" }),
+    ]);
+
+    expect(screen.getByTestId("transcript-scroll-region")).toHaveClass(
+      "clear-floating-action",
+    );
+  });
+
   it("disables export while a local edit is open", () => {
     renderTranscriptView([
       buildSegment({

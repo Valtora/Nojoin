@@ -165,6 +165,26 @@ html {
     overflow-y: auto;
   }
 
+  /* Room at the end of a scrolling region for a button floating over it.
+
+     The meeting page on a phone pins the chat button over the bottom-right
+     of whichever tab is open, and without this the last transcript line (or
+     note, or document) sat underneath it with no way to scroll it clear. The
+     page that owns the floating button sets --floating-action-clearance on an
+     ancestor; every region inside opts in with this class and grows a spacer
+     of that height after its content. The default is zero, so a region
+     rendered anywhere else (the desktop layout) is unchanged.
+
+     A spacer rather than padding-bottom because these regions already carry
+     their own padding, and a pseudo-element adds to it instead of replacing
+     it. */
+  .clear-floating-action::after {
+    content: "";
+    display: block;
+    flex-shrink: 0;
+    height: var(--floating-action-clearance, 0px);
+  }
+
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
