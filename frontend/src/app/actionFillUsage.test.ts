@@ -4,8 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Source guard: anything drawn on an action fill (bg-action) takes
- * text-action-on (or text-action-on-muted).
+ * Source guard: anything drawn on an action fill (bg-action, or its
+ * bg-action-hover and bg-action-active states) takes text-action-on (or
+ * text-action-on-muted).
  *
  * The contrast gate proves action-on against action in every palette, but it
  * cannot see which text token a component actually puts on the fill. The
@@ -14,21 +15,28 @@ import { describe, expect, it } from "vitest";
  * grey on bg-action can drop to ~1.3:1 there while looking fine in the default
  * palette.
  *
- * Checks the class string carrying bg-action, and any element opened on the
- * next three lines (an icon or label nested in it). Only unprefixed utilities
- * count, so hover:bg-action over a resting text colour is fine; a quoted class
- * string is cut at its closing quote, so a ternary's other branch is ignored;
- * a nested element that sets its own surface (any other bg-*) ends the window.
+ * A heuristic over source lines, not a parser. It checks the common text
+ * colours (foreground, white, black, and the contrast-, action-, rail- and
+ * status- families) in the class string carrying the fill, and on any element
+ * opened on the next three lines (an icon or label nested in it). Only
+ * unprefixed utilities count, so hover:bg-action over a resting text colour is
+ * fine; a quoted class string is cut at its closing quote, so a ternary's other
+ * branch is ignored; a nested element that sets its own surface (any other
+ * bg-*) ends the window; and a self-closing element ("/>") has no children,
+ * so nothing after it is inside the fill.
  */
 const SRC = path.resolve(__dirname, "..");
 const UNPREFIXED = "(?:^|[\\s\"'`{(])!?";
-const ACTION_FILL = new RegExp(`${UNPREFIXED}bg-action(?![-\\w])`);
+const ACTION_FILL_NAME = "bg-action(?:-hover|-active)?(?![-\\w])";
+const ACTION_FILL = new RegExp(`${UNPREFIXED}${ACTION_FILL_NAME}`);
 const TEXT_COLOUR = new RegExp(
   `${UNPREFIXED}text-(?!action-on\\b|action-on-muted\\b)(foreground|white|black|contrast-[\\w-]+|action-[\\w-]+|rail-[\\w-]+|status-[\\w-]+)\\b`,
 );
-const OTHER_SURFACE = new RegExp(`${UNPREFIXED}bg-(?!action(?![-\\w]))[\\w-]+`);
+const OTHER_SURFACE = new RegExp(
+  `${UNPREFIXED}bg-(?!action(?:-hover|-active)?(?![-\\w]))[\\w-]+`,
+);
 
-/** The quoted class string that contains bg-action, so a ternary's other branch on the same line is ignored. */
+/** The quoted class string that contains the fill, so a ternary's other branch on the same line is ignored. */
 function actionClassString(line: string): string {
   const start = line.search(ACTION_FILL);
   const rest = line.slice(start + 1);
@@ -50,7 +58,8 @@ function findViolations(): string[] {
     const lines = readFileSync(file, "utf8").split("\n");
     lines.forEach((line, index) => {
       if (!ACTION_FILL.test(line)) return;
-      for (let offset = 0; offset <= 3 && index + offset < lines.length; offset += 1) {
+      const lastOffset = /\/>\s*$/.test(line) ? 0 : 3;
+      for (let offset = 0; offset <= lastOffset && index + offset < lines.length; offset += 1) {
         const candidate = offset === 0 ? actionClassString(line) : lines[index + offset];
         if (offset > 0 && !/<[A-Za-z]/.test(candidate)) continue;
         if (offset > 0 && OTHER_SURFACE.test(candidate)) break;
