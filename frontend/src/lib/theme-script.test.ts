@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { themeScript } from "./theme-script";
+import { resolveDensity } from "./viewportDensity";
 
 /**
  * The script is shipped to the browser as a string and never compiled, so the
@@ -25,15 +26,25 @@ function stubPrefersDark(matches: boolean) {
   );
 }
 
+function setViewport(width: number, height: number) {
+  vi.stubGlobal("innerWidth", width);
+  vi.stubGlobal("innerHeight", height);
+}
+
 const root = document.documentElement;
 
-beforeEach(() => {
+function resetRoot() {
   root.className = "";
-});
+  for (const attribute of ["data-palette", "data-corners", "data-ui-density"]) {
+    root.removeAttribute(attribute);
+  }
+}
+
+beforeEach(resetRoot);
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  root.className = "";
+  resetRoot();
 });
 
 describe("themeScript", () => {
@@ -79,5 +90,68 @@ describe("themeScript", () => {
     runScript();
 
     expect(root.classList.contains("dark")).toBe(true);
+    expect(root.dataset.palette).toBeUndefined();
+    expect(root.dataset.corners).toBeUndefined();
+  });
+});
+
+describe("themeScript appearance preferences", () => {
+  beforeEach(() => {
+    stubPrefersDark(false);
+  });
+
+  it("leaves palette and corners unset by default so the original look applies", () => {
+    runScript();
+
+    expect(root.hasAttribute("data-palette")).toBe(false);
+    expect(root.hasAttribute("data-corners")).toBe(false);
+  });
+
+  it("stamps a stored palette and corner style", () => {
+    localStorage.setItem("nojoin-palette", "graphite");
+    localStorage.setItem("nojoin-corners", "square");
+
+    runScript();
+
+    expect(root.dataset.palette).toBe("graphite");
+    expect(root.dataset.corners).toBe("square");
+  });
+
+  it("ignores values it does not recognise rather than stamping them", () => {
+    localStorage.setItem("nojoin-palette", "neon\"><script>");
+    localStorage.setItem("nojoin-corners", "blobby");
+    localStorage.setItem("nojoin-density", "tiny");
+    setViewport(390, 844);
+
+    runScript();
+
+    expect(root.hasAttribute("data-palette")).toBe(false);
+    expect(root.hasAttribute("data-corners")).toBe(false);
+    expect(root.dataset.uiDensity).toBe("comfortable");
+  });
+
+  it("applies an explicit density whatever the viewport", () => {
+    localStorage.setItem("nojoin-density", "compact");
+    setViewport(390, 844);
+
+    runScript();
+
+    expect(root.dataset.uiDensity).toBe("compact");
+  });
+
+  it.each([
+    [390, 844],
+    [1023, 700],
+    [1024, 768],
+    [1440, 900],
+    [1920, 1080],
+    [1920, 1081],
+    [2560, 1440],
+  ])("resolves automatic density at %ix%i exactly as the React provider does", (width, height) => {
+    setViewport(width, height);
+
+    runScript();
+
+    expect(root.dataset.uiDensity).toBe(resolveDensity("auto", width, height));
   });
 });

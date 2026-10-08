@@ -401,3 +401,19 @@ html[data-ui-density="compact"] {
   --surface-padding-lg: 1.5rem;
   --control-height-lg: 3.25rem;
 }
+
+/* Corner styles, chosen in Settings -> Appearance and stamped on <html> by
+   lib/theme-script.ts; rounded is the absence of the attribute. Subtle halves
+   every radius (an 8px control becomes 4px, a 20px card 10px) and makes pills
+   small rounded rectangles; square removes rounding outright. Circles
+   (avatars, dots, round icon buttons, spinners) use rounded-full and stay
+   circles in every style, because their shape is their meaning. */
+html[data-corners="subtle"] {
+  --radius-scale: 0.5;
+  --pill-radius: 0.375rem;
+}
+
+html[data-corners="square"] {
+  --radius-scale: 0;
+  --pill-radius: 0;
+}

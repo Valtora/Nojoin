@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -10,13 +11,21 @@ import {
 } from "react";
 
 import {
+  readStoredDensityPreference,
+  storeDensityPreference,
+  type DensityPreference,
+} from "@/lib/appearance";
+import {
   DESKTOP_BREAKPOINT,
-  resolveViewportDensity,
+  resolveDensity,
   type ViewportDensity,
 } from "@/lib/viewportDensity";
 
 interface ViewportDensityContextValue {
   density: ViewportDensity;
+  /** The user's choice: "auto" follows the viewport heuristic. */
+  densityPreference: DensityPreference;
+  setDensityPreference: (preference: DensityPreference) => void;
   isCompact: boolean;
   /** True below the desktop breakpoint (1024px) — the app-wide mobile boundary. */
   isMobile: boolean;
@@ -63,9 +72,17 @@ export function ViewportDensityProvider({
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
+  const [densityPreference, setDensityPreferenceState] =
+    useState<DensityPreference>(readStoredDensityPreference);
+
+  const setDensityPreference = useCallback((preference: DensityPreference) => {
+    setDensityPreferenceState(preference);
+    storeDensityPreference(preference);
+  }, []);
+
   const density = useMemo(
-    () => resolveViewportDensity(width, height),
-    [height, width],
+    () => resolveDensity(densityPreference, width, height),
+    [densityPreference, height, width],
   );
 
   useEffect(() => {
@@ -81,13 +98,15 @@ export function ViewportDensityProvider({
 
     return {
       density,
+      densityPreference,
+      setDensityPreference,
       isCompact: density === "compact",
       isMobile: !isDesktop,
       isDesktop,
       viewportHeight: height,
       viewportWidth: width,
     };
-  }, [density, height, width]);
+  }, [density, densityPreference, height, setDensityPreference, width]);
 
   return (
     <ViewportDensityContext.Provider value={value}>
