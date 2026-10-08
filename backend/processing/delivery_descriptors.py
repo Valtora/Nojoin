@@ -369,6 +369,18 @@ def _speech_totals(utterances: Sequence[DeliveryUtterance]) -> dict[str, int]:
     return totals
 
 
+def _report_beyond_audio(count: int, audio_s: float, audio_path: str) -> None:
+    """Log utterances the audio ended before, which the result also counts."""
+    if count:
+        logger.warning(
+            "Delivery skipped %d utterance(s) starting after the end of the "
+            "audio (%.1f s) of %s.",
+            count,
+            audio_s,
+            audio_path,
+        )
+
+
 def analyse_delivery(
     audio_path: str,
     utterances: Sequence[DeliveryUtterance],
@@ -384,6 +396,7 @@ def analyse_delivery(
     readings: dict[str, list[dict[str, Any]]] = {}
     skipped_overlapping = 0
     skipped_short = 0
+    skipped_beyond_audio = 0
     ambiguous_channel = 0
 
     # A file soundfile cannot open is read from a 16 kHz decode, the rate this
@@ -408,6 +421,10 @@ def analyse_delivery(
             start_frame = int(utterance.start_ms * sample_rate / 1000)
             stop_frame = min(int(utterance.end_ms * sample_rate / 1000), total_frames)
             if stop_frame <= start_frame:
+                # Starts after the audio ends: a decode cut short, or a
+                # transcript running past its audio. Counted, so a short read
+                # cannot pass for a complete measurement.
+                skipped_beyond_audio += 1
                 continue
 
             handle.seek(start_frame)
@@ -436,6 +453,8 @@ def analyse_delivery(
                     ),
                 }
             )
+
+    _report_beyond_audio(skipped_beyond_audio, total_frames / sample_rate, audio_path)
 
     pauses = _pause_structure(utterances)
     speech_totals = _speech_totals(utterances)
@@ -466,5 +485,6 @@ def analyse_delivery(
         "channel_layout": "browser_live" if browser_capture else "single_source",
         "skipped_overlapping": skipped_overlapping,
         "skipped_short": skipped_short,
+        "skipped_beyond_audio": skipped_beyond_audio,
         "ambiguous_channel": ambiguous_channel,
     }
