@@ -127,11 +127,15 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ------------------------------------------------------------- appearance
   {
     id: "appearance-theme",
-    label: "Theme",
+    label: "Theme, palette and density",
     description: "Choose how Nojoin looks in your browser.",
     category: "appearance",
     access: "all",
-    keywords: ["theme", "appearance", "dark", "light", "colour", "color", "mode", "system default"],
+    keywords: [
+      "theme", "appearance", "dark", "light", "colour", "color", "mode", "system default",
+      "palette", "accent", "corners", "rounded", "square", "radius", "density", "compact",
+      "comfortable", "spacing",
+    ],
   },
   {
     id: "appearance-timezone",
