@@ -339,7 +339,9 @@ async def test_unusable_stored_key_is_refused_as_a_401(jose_keyring):
         encoding="utf-8",
     )
     header = {"alg": "HS256", "kid": "k_empty", "typ": "JWT"}
-    token = _hs256_token(header, _claims(security.SESSION_TOKEN_TYPE), b"")
+    token = _hs256_token(
+        header, _claims(security.SESSION_TOKEN_TYPE), JOSE_KEY.encode()
+    )
 
     with pytest.raises(jwt.InvalidKeyError):
         security.decode_access_token(token)
