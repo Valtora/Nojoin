@@ -39,7 +39,7 @@ export function EventDetailsPopoverContent({
           {event.title}
         </div>
         {status === "live" && (
-          <span className="shrink-0 rounded-full bg-action-tint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-action-text">
+          <span className="shrink-0 rounded-pill bg-action-tint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-action-text">
             Live now
           </span>
         )}
@@ -85,7 +85,7 @@ export function EventDetailsPopoverContent({
           target="_blank"
           rel="noopener noreferrer"
           title={meetingUrl}
-          className="mt-3 inline-flex items-center gap-2 rounded-full bg-action px-3.5 py-1.5 text-xs font-semibold text-action-on transition-colors hover:bg-action-hover"
+          className="mt-3 inline-flex items-center gap-2 rounded-pill bg-action px-3.5 py-1.5 text-xs font-semibold text-action-on transition-colors hover:bg-action-hover"
         >
           <Video className="h-3.5 w-3.5" />
           Join meeting{meetingHost ? ` (${meetingHost})` : ""}

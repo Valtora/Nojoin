@@ -785,7 +785,7 @@ export default function Sidebar() {
               return (
                 <div
                   key={tagId}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-status-neutral-bg border border-status-neutral-border text-xs group hover:border-action-border transition-colors"
                 >
                   <span
                     className={`w-2 h-2 rounded-full ${color.dot} shrink-0`}
@@ -805,7 +805,7 @@ export default function Sidebar() {
             })}
             <button
               onClick={clearTagFilters}
-              className="px-2.5 py-1 rounded-full text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
+              className="px-2.5 py-1 rounded-pill text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
               title="Clear all tag filters"
             >
               Clear All
@@ -896,7 +896,7 @@ export default function Sidebar() {
                           : [...prev, speaker.id],
                       );
                     }}
-                    className={`px-2 py-1 rounded-full text-xs border ${
+                    className={`px-2 py-1 rounded-pill text-xs border ${
                       selectedSpeakers.includes(speaker.id)
                         ? "bg-action-tint border-action-border text-action-tint-fg"
                         : "bg-surface-card border-surface-border text-contrast-helper"

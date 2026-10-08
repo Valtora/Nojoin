@@ -44,7 +44,7 @@ account sees a dashboard rather than a page of empty boxes. The dashboard adds a
 third column as space allows, measured against the workspace itself, so collapsing the navigation
 rail can gain you a column at the same window size.
 
-On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout.
+On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout. **Settings > Appearance > Density** overrides this: choose Comfortable or Compact to use that spacing at every window size, including phones, or Automatic to go back to the behaviour above. **Dense** is a further, opt-in step for mouse-and-keyboard use: smaller text, tighter rows, panels and transcript lines. On a touch screen Dense tightens spacing only and keeps controls at Compact size, so touch targets do not shrink.
 
 ### Calendar Surface
 
@@ -413,6 +413,7 @@ Nojoin includes a built-in MCP connector so AI assistants such as Claude can wor
 Settings are grouped by task.
 
 - **Profile**: account details and password changes.
+- **Appearance**: theme (system, light or dark), colour palette (Nojoin orange, Graphite, Classic, Ultraviolet or Marigold), corner style (Rounded, Subtle or Square), density (Automatic, Comfortable, Compact or Dense), timezone, and spellcheck language. Theme, palette, corner style and density are saved in this browser only, so each browser can look different; they apply immediately, and on the next load before the page first paints.
 - **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
 - **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
 - **Transcription**: transcription backend and model choices. Administrators picking a model the server does not have yet are asked whether to download it now, so it is ready before the next recording, or to leave it until first use.

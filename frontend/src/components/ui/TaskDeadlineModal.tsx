@@ -97,7 +97,7 @@ function TaskDeadlineTimeInput({
               type="button"
               onClick={() => onChange?.(preset.value)}
               className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                "rounded-pill border px-3 py-1.5 text-xs font-semibold transition-colors",
                 isActive
                   ? "border-action bg-action text-action-on"
                   : "border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text",
@@ -274,7 +274,7 @@ export default function TaskDeadlineModal({
               onClick={() => setDraftValue(option.date)}
               disabled={isSaving}
               className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "rounded-pill border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 isActive
                   ? "border-action bg-action text-action-on"
                   : "border-control-border bg-surface-card text-contrast-muted hover:border-action-border hover:text-action-text",

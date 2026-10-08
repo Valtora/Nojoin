@@ -189,7 +189,7 @@ export default function InvitesTab() {
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
                   <span
-                    className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                    className={`px-2 py-0.5 text-xs font-medium rounded-pill ${
                       inv.role === UserRole.ADMIN
                         ? "bg-status-info-bg text-status-info-fg"
                         : "bg-status-info-bg text-status-info-fg"
@@ -198,7 +198,7 @@ export default function InvitesTab() {
                     {inv.role}
                   </span>
                   {inv.is_revoked && (
-                    <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-status-danger-bg text-status-danger-fg">
+                    <span className="px-2 py-0.5 text-xs font-medium rounded-pill bg-status-danger-bg text-status-danger-fg">
                       Revoked
                     </span>
                   )}

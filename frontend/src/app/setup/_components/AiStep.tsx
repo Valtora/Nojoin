@@ -382,7 +382,7 @@ function RouteCard({
           {badge && (
             <span
               className={cn(
-                "rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                "rounded-pill border px-2 py-0.5 text-[11px] font-medium",
                 badgeTone === "success" &&
                   "bg-status-success-bg text-status-success-fg border-status-success-border",
                 badgeTone === "danger" &&

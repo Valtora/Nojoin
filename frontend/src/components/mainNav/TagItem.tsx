@@ -154,7 +154,7 @@ export default function TagItem({
           <span className={`w-3 h-3 rounded-full ${color.dot}`} />
           {hasChildren && (
             <span
-              className="absolute -top-1.5 -right-2 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-status-neutral-bg px-1 text-[9px] font-medium leading-none text-status-neutral-fg"
+              className="absolute -top-1.5 -right-2 flex h-3.5 min-w-[14px] items-center justify-center rounded-pill bg-status-neutral-bg px-1 text-[9px] font-medium leading-none text-status-neutral-fg"
               title={`${childCount} sub-tag${childCount === 1 ? "" : "s"}`}
             >
               {childCount}

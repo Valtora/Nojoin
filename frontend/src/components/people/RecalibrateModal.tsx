@@ -364,7 +364,7 @@ export default function RecalibrateModal({
                       {/* Header / Info */}
                       <div className="p-4 flex-1">
                         <div className="mb-3 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-inset text-xs font-medium text-contrast-helper">
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-pill bg-surface-inset text-xs font-medium text-contrast-helper">
                             <Volume2 className="w-3 h-3" />
                             {(seg.end - seg.start).toFixed(1)}s
                           </div>

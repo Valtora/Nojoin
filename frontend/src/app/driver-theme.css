@@ -46,7 +46,7 @@
   text-shadow: none;
   font-size: 0.875rem; /* text-sm */
   padding: 0.5rem 1rem;
-  border-radius: 0.5rem; /* rounded-lg */
+  border-radius: calc(0.5rem * var(--radius-scale)); /* rounded-lg */
   cursor: pointer;
   transition: background-color 0.2s;
   font-weight: 500;
