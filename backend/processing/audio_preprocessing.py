@@ -148,6 +148,10 @@ _ANALYSIS_WAV_SUFFIX = "_analysis.wav"
 # time (seconds per hour of audio), so this only ever ends a hung process.
 ANALYSIS_DECODE_TIMEOUT_S = 15 * 60
 
+# An analysis WAV older than this has no measurement left reading it: the decode
+# is bounded above, and the measurement that reads it takes minutes.
+_STRANDED_ANALYSIS_WAV_AGE_HOURS = 6
+
 
 @contextmanager
 def soundfile_readable_audio(audio_path: str, *, mono: bool = False) -> Iterator[str]:
@@ -167,8 +171,11 @@ def soundfile_readable_audio(audio_path: str, *, mono: bool = False) -> Iterator
     for overlap, which needs one channel.
 
     The temporary file lives in the process's temp dir and is removed in a
-    finally block. A worker killed outright mid-decode can strand one; the
-    container's private /tmp is discarded when it is recreated.
+    finally block. A worker killed outright (an OOM kill during inference) never
+    reaches that, so each decode first sweeps analysis WAVs older than a few
+    hours from the same temp dir. The sweep runs here rather than on the io
+    lane's daily task because each worker container has a private /tmp that
+    the io lane cannot see.
 
     Raises:
         AudioFormatError: ffmpeg could not decode the file, could not be
@@ -184,6 +191,10 @@ def soundfile_readable_audio(audio_path: str, *, mono: bool = False) -> Iterator
         yield audio_path
         return
 
+    cleanup_stale_pipeline_temp_files(
+        max_age_hours=_STRANDED_ANALYSIS_WAV_AGE_HOURS,
+        suffixes=(_ANALYSIS_WAV_SUFFIX,),
+    )
     temp_fd, temp_path = tempfile.mkstemp(suffix=_ANALYSIS_WAV_SUFFIX)
     os.close(temp_fd)
     try:
@@ -212,7 +223,10 @@ _PIPELINE_TEMP_SUFFIXES = (
 
 
 def cleanup_stale_pipeline_temp_files(
-    *, max_age_hours: int = 24, temp_dir: str | None = None
+    *,
+    max_age_hours: int = 24,
+    temp_dir: str | None = None,
+    suffixes: tuple[str, ...] = _PIPELINE_TEMP_SUFFIXES,
 ) -> int:
     """Reclaim pipeline scratch left behind by a worker that did not exit cleanly.
 
@@ -223,6 +237,9 @@ def cleanup_stale_pipeline_temp_files(
 
     An age floor well beyond any finalise means a file still in use cannot be
     caught: a run old enough to qualify has no process left behind it.
+
+    Only files ending in one of ``suffixes`` are considered, so a caller
+    sweeping its own scratch cannot reach anyone else's.
     """
     directory = temp_dir or tempfile.gettempdir()
     cutoff = time.time() - (max_age_hours * 60 * 60)
@@ -235,7 +252,7 @@ def cleanup_stale_pipeline_temp_files(
         return 0
 
     for name in entries:
-        if not name.endswith(_PIPELINE_TEMP_SUFFIXES):
+        if not name.endswith(suffixes):
             continue
 
         path = os.path.join(directory, name)

@@ -300,6 +300,41 @@ def test_audio_ffmpeg_cannot_decode_raises_and_leaves_no_temp_file(tmp_path, scr
     assert _analysis_temp_files(scratch) == []
 
 
+def _aged(path: Path, hours: float) -> Path:
+    path.write_bytes(b"audio")
+    stamp = time.time() - hours * 60 * 60
+    os.utime(path, (stamp, stamp))
+    return path
+
+
+def test_a_decode_first_reclaims_analysis_wavs_a_killed_worker_stranded(
+    tmp_path, monkeypatch, scratch
+):
+    """The daily sweep runs on the io lane and cannot see this lane's /tmp."""
+    stranded = _aged(scratch / "tmpold123_analysis.wav", 7)
+    in_use = _aged(scratch / "tmpnew456_analysis.wav", 1)
+    other_scratch = [
+        _aged(scratch / "tmpabc789_vad.wav", 48),
+        _aged(scratch / "tmpdef012_preprocessed.wav", 48),
+        _aged(scratch / "notes_analysis.txt", 48),
+    ]
+    container = tmp_path / "capture.webm"
+    container.write_bytes(UNREADABLE)
+
+    def decode(source: str, target: str, *, mono: bool, timeout: float) -> None:
+        sf.write(target, np.zeros(16_000, dtype=np.float32), 16_000)
+
+    monkeypatch.setattr(audio_preprocessing, "convert_to_16k_wav", decode)
+
+    with soundfile_readable_audio(str(container), mono=True):
+        pass
+
+    assert not stranded.exists()
+    assert in_use.exists()
+    assert all(path.exists() for path in other_scratch)
+    assert _analysis_temp_files(scratch) == [in_use]
+
+
 def test_a_file_soundfile_reads_is_used_in_place(tmp_path, monkeypatch):
     wav = tmp_path / "meeting.wav"
     write_wav(wav, [voiced_tone(150.0, 2.0)])
