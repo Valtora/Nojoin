@@ -10,10 +10,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set, Tuple
 
-from backend.core.backup.format import (
-    ARCHIVABLE_AUDIO_EXTENSIONS,
-    ARCHIVE_QUALITY_COMPRESSED,
-)
+from backend.core.backup.format import ARCHIVE_QUALITY_COMPRESSED
 from backend.core.backup.paths import (
     _build_backup_document_path,
     _build_backup_recording_audio_path,
@@ -117,16 +114,10 @@ def _build_audio_plan(
             plan.missing_audio += 1
             continue
 
+        # Every recording's own file is archived, whatever its container: browser
+        # captures are WebM, and imports keep the format they arrived in. ffmpeg
+        # reads all of them, so the compressed mode re-encodes any of them to Opus.
         extension = os.path.splitext(source_path)[1].lower()
-        if extension not in ARCHIVABLE_AUDIO_EXTENSIONS:
-            logger.warning(
-                "Recording audio has an unsupported extension %r; "
-                "archiving metadata only: %s",
-                extension,
-                audio_path,
-            )
-            plan.missing_audio += 1
-            continue
 
         # Already-Opus audio is copied verbatim under either quality: re-encoding it
         # would be a pointless generation loss.

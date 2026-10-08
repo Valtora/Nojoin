@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import time
 import zipfile
 from dataclasses import dataclass
@@ -2539,3 +2541,145 @@ async def test_backup_progress_callback_failure_never_breaks_the_export(
         assert json.loads(archive.read("recordings.json"))
 
     await context.async_engine.dispose()
+
+
+# --- Every recording format is archived ------------------------------------
+#
+# The archive used to take audio only from .wav .mp3 .m4a .ogg .flac and .opus
+# files. Every browser recording (finalised as WebM) and every AAC, MP4 or WMA
+# import was archived as metadata only, reported as "no audio file on disk", and
+# restored as a PROCESSED recording whose player waited for a proxy forever.
+
+needs_ffmpeg = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None, reason="ffmpeg is not installed"
+)
+
+
+async def _back_up_recording(
+    tmp_path: Path, monkeypatch, audio: Path, quality: str
+) -> str:
+    source = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    recorded = source.path_manager.recordings_directory / audio.name
+    shutil.copyfile(audio, recorded)
+    await seed_source_data(
+        source.async_session_maker,
+        recording_meeting_uid=f"meeting-{audio.suffix[1:]}",
+        recording_audio_path=str(recorded),
+        recording_proxy_path=None,
+    )
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True, archive_quality=quality
+    )
+
+    assert warnings["recordings_without_audio"] == 0
+    assert warnings["recordings_audio_failed"] == 0
+    await source.async_engine.dispose()
+    return zip_path
+
+
+async def _restore_recording(tmp_path: Path, monkeypatch, zip_path: str):
+    target = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    finalized: list[tuple[int, bool]] = []
+    monkeypatch.setattr(
+        backup_stages,
+        "_enqueue_recording_finalization",
+        lambda recording_id, needs_proxy=True: finalized.append(
+            (recording_id, needs_proxy)
+        ),
+    )
+    job_id = "restore-audio-formats"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    with Session(target.sync_engine) as session:
+        restored = session.exec(select(TestRecording)).one()
+    await target.async_engine.dispose()
+    return restored, finalized
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("suffix", [".webm", ".mp4", ".aac", ".wma"])
+async def test_original_quality_round_trips_every_recording_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    audio = tmp_path / f"meeting{suffix}"
+    audio.write_bytes(f"{suffix}-AUDIO-BYTES".encode())
+
+    zip_path = await _back_up_recording(
+        tmp_path, monkeypatch, audio, backup_format.ARCHIVE_QUALITY_ORIGINAL
+    )
+
+    with zipfile.ZipFile(zip_path) as archive:
+        assert archive.read(f"recordings/meeting{suffix}") == audio.read_bytes()
+
+    restored, finalized = await _restore_recording(tmp_path, monkeypatch, zip_path)
+
+    assert restored.audio_path.endswith(f"meeting{suffix}")
+    assert Path(restored.audio_path).read_bytes() == audio.read_bytes()
+    # The audio landed, so the restore asks for a playback proxy to be made from it.
+    assert finalized == [(restored.id, True)]
+
+
+def _encode_media(target: Path, args: list[str]) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"]
+        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"]
+        + args
+        + ["-shortest", str(target)],
+        check=True,
+    )
+
+
+@needs_ffmpeg
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        # A browser capture: two-channel Opus in WebM, no video.
+        ("capture.webm", ["-map", "1:a", "-ac", "2", "-c:a", "libopus"]),
+        # An imported screen recording with a video track.
+        ("screen.mp4", ["-c:v", "mpeg4", "-c:a", "aac"]),
+    ],
+)
+async def test_compressed_quality_reencodes_every_recording_format_to_opus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, args: list[str]
+) -> None:
+    audio = tmp_path / name
+    _encode_media(audio, args)
+
+    zip_path = await _back_up_recording(
+        tmp_path, monkeypatch, audio, backup_format.ARCHIVE_QUALITY_COMPRESSED
+    )
+
+    member = f"recordings/{Path(name).stem}.opus"
+    with zipfile.ZipFile(zip_path) as archive:
+        extracted = tmp_path / "member.opus"
+        extracted.write_bytes(archive.read(member))
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name"]
+        + ["-of", "csv=p=0", str(extracted)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert probe.stdout.split() == ["opus,audio"]
+
+    restored, finalized = await _restore_recording(tmp_path, monkeypatch, zip_path)
+
+    assert restored.audio_path.endswith(".opus")
+    assert Path(restored.audio_path).exists()
+    assert finalized == [(restored.id, True)]

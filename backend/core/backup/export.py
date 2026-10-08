@@ -52,6 +52,9 @@ def _compress_to_opus(input_path: str) -> str:
         "-y",
         "-i",
         input_path,
+        # Audio only: a recording imported from a video container keeps its
+        # video track on disk, and the archive has no use for it.
+        "-vn",
         "-c:a",
         "libopus",
         "-b:a",

@@ -67,15 +67,17 @@ The download streams straight to disk, so a large archive does not need to fit i
 
 ### Archive Quality
 
-**Compressed** (the default) re-encodes audio to Opus, producing a much smaller archive. Audio that is already Opus is copied unchanged rather than re-encoded.
+**Compressed** (the default) re-encodes audio to Opus, producing a much smaller archive. Every recording is included whatever its format: browser recordings (WebM), and imports in the format they arrived in, including video containers, of which only the audio track is kept. Audio that is already Opus is copied unchanged rather than re-encoded.
 
-**Original** stores every recording exactly as captured. The archive is substantially larger, but a restored recording can be reprocessed without compounding compression loss. Choose this if you may want to re-run transcription or diarisation on restored meetings.
+**Original** stores every recording exactly as captured, in its own file format. The archive is substantially larger, but a restored recording can be reprocessed without compounding compression loss. Choose this if you may want to re-run transcription or diarisation on restored meetings.
 
 Each recording's audio is selected from its database record, so the master recording is always the file that is archived, never its playback proxy.
 
 ### Recordings Without Audio
 
-If a recording's audio file is missing from disk when the backup runs, its metadata, transcript and notes are still archived and you are told how many recordings were affected, both at download time and inside the archive's `backup_info.json`. Those recordings restore without playable audio.
+If a recording's audio file is missing from disk when the backup runs, or cannot be read or re-encoded, its metadata, transcript and notes are still archived and you are told how many recordings were affected, both at download time and inside the archive's `backup_info.json` (`recordings_without_audio`, `recordings_audio_failed`). Those recordings restore without playable audio, and their player says the audio is not available.
+
+Backups from earlier versions archived audio only for WAV, MP3, M4A, OGG, FLAC and Opus recordings, and did not report the rest. In those archives, every browser recording (stored as WebM) and every AAC, MP4 or WMA import is metadata only. Take a new backup to capture their audio.
 
 ## Restoring a Backup
 
