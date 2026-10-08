@@ -304,13 +304,16 @@ export default function ChatPanel({
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3 @min-[20rem]:p-4 @min-[20rem]:space-y-4">
         {!recordingId ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper opacity-60">
-            <MessageSquare className="w-12 h-12 mb-4" />
+          // No opacity on these empty states: the helper token is pitched to
+          // clear 4.5:1 on the card, and dimming the wrapper took the text
+          // to 2.79:1. The icon carries the quieter look instead.
+          <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper">
+            <MessageSquare className="w-12 h-12 mb-4 text-contrast-icon-muted" aria-hidden="true" />
             <p className="text-sm">Select a meeting to start chatting.</p>
           </div>
         ) : messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper opacity-60">
-            <Info className="w-12 h-12 mb-4" />
+          <div className="h-full flex flex-col items-center justify-center text-center text-contrast-helper">
+            <Info className="w-12 h-12 mb-4 text-contrast-icon-muted" aria-hidden="true" />
             <p className="text-sm">
               Ask questions about the transcript, generate summaries, or draft
               emails. To regenerate the notes, make a request via the meeting chat below with the requested changes.

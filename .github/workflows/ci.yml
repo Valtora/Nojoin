@@ -445,8 +445,14 @@ jobs:
       # Informational on pull requests: surfaces dependency and config CVEs in
       # the repository without blocking merges. The release pipeline enforces
       # the blocking image scan and severity policy (REL-008).
+      #
+      # Trivy's pip analyzer only picks up files named exactly requirements.txt,
+      # so without the file pattern the Python pins in requirements/*.txt are
+      # never read and only the npm lockfiles are scanned.
       - name: Scan repository dependencies and config
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_FILE_PATTERNS: 'pip:^requirements/.*\.txt$'
         with:
           scan-type: fs
           scan-ref: .
