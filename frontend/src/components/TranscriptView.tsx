@@ -502,7 +502,7 @@ export default function TranscriptView({
           <div className="flex flex-wrap items-center gap-1">
             {isAiTextEdit ? (
               <span
-                className="inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
+                className="inline-flex items-center gap-1 rounded-pill border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
                 title="An assistant connected through the MCP connector corrected this line's text"
               >
                 <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
@@ -510,14 +510,14 @@ export default function TranscriptView({
               </span>
             ) : (
               segment.text_manually_edited && (
-                <span className="rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-contrast-muted">
+                <span className="rounded-pill border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-contrast-muted">
                   Edited
                 </span>
               )
             )}
             {isAiSpeakerEdit && (
               <span
-                className="inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
+                className="inline-flex items-center gap-1 rounded-pill border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
                 title="An assistant connected through the MCP connector corrected which speaker this line is attributed to"
               >
                 <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
@@ -525,17 +525,17 @@ export default function TranscriptView({
               </span>
             )}
             {isSpeakerLowConfidence && (
-              <span className="rounded-full border border-status-danger-border bg-status-danger-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger-fg">
+              <span className="rounded-pill border border-status-danger-border bg-status-danger-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger-fg">
                 Low confidence
               </span>
             )}
             {isRecentlyUpdated && !isEditingText && !isEditingSegmentSpeaker && (
-              <span className="rounded-full border border-status-success-border bg-status-success-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-success-fg">
+              <span className="rounded-pill border border-status-success-border bg-status-success-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-success-fg">
                 Revised
               </span>
             )}
             {hasPendingRemoteUpdate && (
-              <span className="rounded-full border border-status-info-border bg-status-info-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-info-fg">
+              <span className="rounded-pill border border-status-info-border bg-status-info-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-info-fg">
                 Pending update
               </span>
             )}

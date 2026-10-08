@@ -172,11 +172,11 @@ export default function WhisperModelModal({
                   <Loader2 aria-hidden="true" className="w-3 h-3 animate-spin" /> Checking...
                 </span>
               ) : isDownloaded ? (
-                <span className="flex items-center gap-1 rounded-full bg-status-success-bg px-2 py-0.5 text-sm font-medium text-status-success-fg">
+                <span className="flex items-center gap-1 rounded-pill bg-status-success-bg px-2 py-0.5 text-sm font-medium text-status-success-fg">
                   <Check aria-hidden="true" className="w-3 h-3" /> Ready to use
                 </span>
               ) : (
-                <span className="flex items-center gap-1 rounded-full bg-status-danger-bg px-2 py-0.5 text-sm font-medium text-status-danger-fg">
+                <span className="flex items-center gap-1 rounded-pill bg-status-danger-bg px-2 py-0.5 text-sm font-medium text-status-danger-fg">
                   <X aria-hidden="true" className="w-3 h-3" /> Preparation pending
                 </span>
               )}

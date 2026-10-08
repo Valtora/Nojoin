@@ -235,7 +235,7 @@ export function PeopleTable({
                           return (
                             <span
                               key={tag.id}
-                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-surface-inset border-control-border text-contrast-muted"
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-pill text-xs font-medium border bg-surface-inset border-control-border text-contrast-muted"
                             >
                               <span
                                 className={`w-1.5 h-1.5 rounded-full mr-1.5 ${color.dot}`}
@@ -358,7 +358,7 @@ export function PeopleTable({
             )}
 
             <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-7">
-              <span className="inline-flex items-center rounded-full bg-surface-inset px-2.5 py-0.5 text-xs font-medium text-contrast-helper">
+              <span className="inline-flex items-center rounded-pill bg-surface-inset px-2.5 py-0.5 text-xs font-medium text-contrast-helper">
                 {person.recording_count || 0} meetings
               </span>
               {person.tags?.map((tag) => {
@@ -366,7 +366,7 @@ export function PeopleTable({
                 return (
                   <span
                     key={tag.id}
-                    className="inline-flex items-center rounded-full border border-control-border bg-surface-inset px-2.5 py-0.5 text-xs font-medium text-contrast-muted"
+                    className="inline-flex items-center rounded-pill border border-control-border bg-surface-inset px-2.5 py-0.5 text-xs font-medium text-contrast-muted"
                   >
                     <span
                       className={`mr-1.5 h-1.5 w-1.5 rounded-full ${color.dot}`}

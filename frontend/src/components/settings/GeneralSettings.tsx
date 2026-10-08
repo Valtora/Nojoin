@@ -309,12 +309,12 @@ export default function GeneralSettings({
                                           {timeZone}
                                         </span>
                                         {timeZone === DEFAULT_TIME_ZONE && (
-                                          <span className="rounded-full bg-surface-inset px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-contrast-muted">
+                                          <span className="rounded-pill bg-surface-inset px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-contrast-muted">
                                             UTC
                                           </span>
                                         )}
                                         {isBrowserDetected && (
-                                          <span className="rounded-full bg-action-tint px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-action-text">
+                                          <span className="rounded-pill bg-action-tint px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-action-text">
                                             Browser detected
                                           </span>
                                         )}

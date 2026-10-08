@@ -85,6 +85,21 @@
   --color-tooltip-bg: var(--tooltip-bg);
   --color-tooltip-fg: var(--tooltip-fg);
 
+  /* Tailwind's own radius steps, at their stock sizes, multiplied by the
+     corner scale from tokens.css. Overriding the steps rather than renaming
+     every call site keeps rounded-lg meaning what contributors expect while
+     making every one of them answer to the scale. rounded-full is deliberately
+     absent: it is a circle, not a size. Text-bearing pills use rounded-pill. */
+  --radius-xs: calc(0.125rem * var(--radius-scale));
+  --radius-sm: calc(0.25rem * var(--radius-scale));
+  --radius: calc(0.25rem * var(--radius-scale));
+  --radius-md: calc(0.375rem * var(--radius-scale));
+  --radius-lg: calc(0.5rem * var(--radius-scale));
+  --radius-xl: calc(0.75rem * var(--radius-scale));
+  --radius-2xl: calc(1rem * var(--radius-scale));
+  --radius-3xl: calc(1.5rem * var(--radius-scale));
+  --radius-4xl: calc(2rem * var(--radius-scale));
+  --radius-pill: var(--pill-radius);
   --radius-surface: var(--surface-radius);
   --radius-surface-subtle: var(--surface-radius-subtle);
   --radius-surface-panel: var(--surface-radius-panel);

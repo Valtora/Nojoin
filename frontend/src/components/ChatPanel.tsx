@@ -256,7 +256,7 @@ export default function ChatPanel({
               <TagIcon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Context</span>
               {selectedTagIds.length > 0 && (
-                <span className="ml-0.5 bg-action-tint text-action-text text-[10px] px-1.5 rounded-full">
+                <span className="ml-0.5 bg-action-tint text-action-text text-[10px] px-1.5 rounded-pill">
                   {selectedTagIds.length}
                 </span>
               )}

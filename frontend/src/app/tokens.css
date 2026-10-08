@@ -147,9 +147,17 @@
      above, since the reading-length argument that justifies those does not
      apply to a table. */
   --workspace-max-width-dense: 120rem;
-  --surface-radius: 1.25rem;
-  --surface-radius-subtle: 1.125rem;
-  --surface-radius-panel: 1rem;
+  /* Corner radii. Every radius in the product is a multiple of one scale, so a
+     single value reshapes all of them together and nested corners keep their
+     proportions. globals.css re-expresses Tailwind's rounded-* steps through
+     it, which is what keeps a hand-written rounded-lg tokenised. 1 is the
+     original look. Pills are the exception that cannot be scaled -- a pill is "half the
+     height", not a length -- so they carry their own value. */
+  --radius-scale: 1;
+  --pill-radius: 9999px;
+  --surface-radius: calc(1.25rem * var(--radius-scale));
+  --surface-radius-subtle: calc(1.125rem * var(--radius-scale));
+  --surface-radius-panel: calc(1rem * var(--radius-scale));
   --surface-padding: 1.5rem;
   --surface-padding-lg: 2rem;
   --control-height-lg: 3.625rem;
@@ -386,9 +394,9 @@ html[data-ui-density="compact"] {
   --workspace-max-width-wide: 74rem;
   --workspace-max-width-feature: 60rem;
   --workspace-max-width-dense: 112rem;
-  --surface-radius: 1rem;
-  --surface-radius-subtle: 0.9375rem;
-  --surface-radius-panel: 0.875rem;
+  --surface-radius: calc(1rem * var(--radius-scale));
+  --surface-radius-subtle: calc(0.9375rem * var(--radius-scale));
+  --surface-radius-panel: calc(0.875rem * var(--radius-scale));
   --surface-padding: 1.25rem;
   --surface-padding-lg: 1.5rem;
   --control-height-lg: 3.25rem;

@@ -52,7 +52,7 @@ export default function NavItem({
             {label}
           </span>
           {badge !== undefined && badge > 0 && (
-            <span className="text-xs bg-status-neutral-bg text-status-neutral-fg px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-status-neutral-bg text-status-neutral-fg px-1.5 py-0.5 rounded-pill">
               {badge}
             </span>
           )}
