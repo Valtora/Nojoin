@@ -207,6 +207,30 @@ def test_a_repo_linked_within_the_cache_is_refused_cleanly(homes, monkeypatch):
     assert (real / "refs" / "main").exists()
 
 
+def test_delete_resolves_dotdot_after_a_link_as_the_loader_does(
+    homes, monkeypatch, tmp_path
+):
+    """``link/../hub`` is a sibling of the link's target, not of the link.
+
+    The OS follows the link before applying "..", and so do the loaders and
+    status. Collapsing the root as text deleted a different directory, one
+    status never reported.
+    """
+    (tmp_path / "deep" / "x").mkdir(parents=True)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "link").symlink_to(
+        tmp_path / "deep" / "x", target_is_directory=True
+    )
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "a" / "link" / ".." / "hub"))
+    loaded = write_onnx_asr_repo(tmp_path / "deep" / "hub", "parakeet")
+    lookalike = write_onnx_asr_repo(tmp_path / "a" / "hub", "parakeet")
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not loaded.exists()
+    assert (lookalike / "refs" / "main").exists()
+
+
 def test_a_whisper_model_is_deleted_from_its_cache(homes, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(homes["managed"]))
     model = homes["managed"] / "whisper" / "large-v3-turbo.pt"

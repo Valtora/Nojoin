@@ -541,22 +541,26 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
         )
 
     root, entry = _deletion_target(model_name, path)
-    root = os.path.abspath(root)
+    # Joined as given, not normalised: the loaders and status hand the root to
+    # the OS, which resolves ".." after following links, so collapsing it as
+    # text could name a different directory from the one they use.
     target = os.path.join(root, entry)
+    # The entry itself must be real. A symlinked cache root is fine, but a
+    # model entry linked to a directory elsewhere, inside the root or not, is
+    # not a model Nojoin downloaded.
+    if os.path.islink(target):
+        raise ValueError(
+            f"Model {model_name} at {target} is a link to "
+            f"{os.path.realpath(target)}, not a model Nojoin downloaded, and is "
+            "not deleted from here. Remove it by hand."
+        )
     # Status finds Pyannote in the personal cache too, and loads it from there,
     # but Nojoin did not download it and does not delete it.
-    if os.path.commonpath([os.path.abspath(path), target]) != target:
+    real_target = os.path.realpath(target)
+    if os.path.commonpath([os.path.realpath(path), real_target]) != real_target:
         raise ValueError(
             f"Model {model_name} is outside Nojoin's model cache and is not deleted "
             "from here."
-        )
-    # Compared after resolving links, so the target must be a real entry of
-    # the root rather than a link to a directory elsewhere, inside it or not.
-    resolved = os.path.realpath(target)
-    if resolved != os.path.join(os.path.realpath(root), entry):
-        raise ValueError(
-            f"Model {model_name} at {target} is a link to {resolved}, not a model "
-            "Nojoin downloaded, and is not deleted from here. Remove it by hand."
         )
 
     if os.path.isfile(target):
