@@ -54,41 +54,43 @@ ONNX_ASR_CACHE_FRAGMENTS = {
 }
 
 
-def _is_onnx_asr_model_cached(model_substring: str) -> bool:
-    """Check if an onnx-asr model is present in the Hugging Face hub cache."""
-    hf_cache_base = os.getenv(
-        "HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
-    )
-    hf_cache = os.path.join(hf_cache_base, "hub")
-    for cache_dir in [
-        hf_cache,
-        os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub"),
-    ]:
-        if os.path.isdir(cache_dir):
-            try:
-                for entry in os.listdir(cache_dir):
-                    if model_substring in entry:
-                        return True
-            except OSError:
-                pass
-    return False
+def _hf_hub_cache_root() -> str:
+    """The Hugging Face hub cache the ONNX ASR loader downloads into.
+
+    Mirrors huggingface_hub's own resolution (HF_HUB_CACHE, then
+    HUGGINGFACE_HUB_CACHE, then $HF_HOME/hub, then
+    ${XDG_CACHE_HOME:-~/.cache}/huggingface/hub) without importing it, since
+    the API process reads this too and the library fixes its constants at
+    import time.
+    """
+    for variable in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        explicit = os.getenv(variable)
+        if explicit:
+            return os.path.expanduser(os.path.expandvars(explicit))
+    hf_home = os.getenv("HF_HOME")
+    if not hf_home:
+        cache_home = os.getenv(
+            "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
+        )
+        hf_home = os.path.join(cache_home, "huggingface")
+    return os.path.join(os.path.expanduser(os.path.expandvars(hf_home)), "hub")
 
 
-def _is_whisper_model_cached(model_size: str) -> bool:
-    """Check if a Whisper model file exists in the local cache."""
-    filename = WHISPER_FILENAMES.get(model_size)
-    if not filename:
-        return False
-    download_root = os.getenv(
+def _whisper_cache_root() -> str:
+    """The directory the Whisper engine passes to whisper.load_model."""
+    cache_home = os.getenv(
         "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
     )
-    filepath = os.path.join(download_root, "whisper", filename)
-    if os.path.exists(filepath):
-        return True
-    default_filepath = os.path.join(
-        os.path.expanduser("~"), ".cache", "whisper", filename
+    return os.path.join(cache_home, "whisper")
+
+
+def _is_within(path: str, root: str) -> bool:
+    real_path = os.path.realpath(path)
+    real_root = os.path.realpath(root)
+    return (
+        real_path != real_root
+        and os.path.commonpath([real_path, real_root]) == real_root
     )
-    return default_filepath != filepath and os.path.exists(default_filepath)
 
 
 def _suppress_ort_warnings():
@@ -498,11 +500,9 @@ def check_model_status(whisper_model_size=None):
     if not whisper_model_size:
         whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
 
-    # 1. Check XDG_CACHE_HOME location (Primary)
-    download_root = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-    )
-    download_root = os.path.join(download_root, "whisper")
+    # Only where the engine loads from: whisper.load_model is given exactly
+    # this directory, so a copy anywhere else would be downloaded again.
+    download_root = _whisper_cache_root()
 
     # Use local dict instead of importing whisper
     filename = WHISPER_FILENAMES.get(whisper_model_size)
@@ -514,46 +514,27 @@ def check_model_status(whisper_model_size=None):
         if os.path.exists(filepath):
             status["whisper"]["downloaded"] = True
             status["whisper"]["path"] = filepath
-        else:
-            # 2. Fallback: Check default ~/.cache/whisper
-            # This helps if XDG_CACHE_HOME is set but files are in default location
-            default_root = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
-            default_filepath = os.path.join(default_root, filename)
-            if default_filepath != filepath:
-                status["whisper"]["checked_paths"].append(default_filepath)
-                if os.path.exists(default_filepath):
-                    status["whisper"]["downloaded"] = True
-                    status["whisper"]["path"] = default_filepath
 
     # Check the ONNX ASR models.
     # Best-effort detection: onnx-asr caches the model under the Hugging Face hub
     # cache. Detection is a directory-name match; the exact repo dir name may vary
     # by onnx-asr version, so this is treated as a heuristic, not authoritative.
-    hf_cache_base = os.getenv(
-        "HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
-    )
-    hf_cache = os.path.join(hf_cache_base, "hub")
-    parakeet_hf_caches = [hf_cache]
-    default_hf_cache = os.path.join(
-        os.path.expanduser("~"), ".cache", "huggingface", "hub"
-    )
-    if default_hf_cache not in parakeet_hf_caches:
-        parakeet_hf_caches.append(default_hf_cache)
-
+    # Only the cache onnx-asr downloads into. A copy in another Hugging Face
+    # cache (a personal ~/.cache/huggingface on a bare-metal install) is never
+    # loaded, so reporting it would hide a download still to come.
+    hf_cache = _hf_hub_cache_root()
     for status_key, fragment in ONNX_ASR_CACHE_FRAGMENTS.items():
-        for cache_dir in parakeet_hf_caches:
-            status[status_key]["checked_paths"].append(cache_dir)
-            if os.path.isdir(cache_dir):
-                try:
-                    for entry in os.listdir(cache_dir):
-                        if fragment in entry:
-                            status[status_key]["downloaded"] = True
-                            status[status_key]["path"] = os.path.join(cache_dir, entry)
-                            break
-                except OSError:
-                    pass
-            if status[status_key]["downloaded"]:
-                break
+        status[status_key]["checked_paths"].append(hf_cache)
+        if not os.path.isdir(hf_cache):
+            continue
+        try:
+            for entry in os.listdir(hf_cache):
+                if fragment in entry:
+                    status[status_key]["downloaded"] = True
+                    status[status_key]["path"] = os.path.join(hf_cache, entry)
+                    break
+        except OSError:
+            pass
 
     for status_key, model_id in (
         ("pyannote", "pyannote/speaker-diarization-community-1"),
@@ -588,6 +569,15 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
     if is_repo_bundled_pyannote_path(path):
         raise ValueError(
             f"Model {model_name} is bundled with the repository at {path} and cannot be deleted from the runtime cache UI."
+        )
+    # Status can find a Pyannote model in a Hugging Face cache Nojoin does not
+    # own (the personal one, on a bare-metal install with HF_HOME set). Deleting
+    # is only ever done inside the caches Nojoin's own loaders download into.
+    managed_roots = (_hf_hub_cache_root(), _whisper_cache_root())
+    if not any(_is_within(path, root) for root in managed_roots):
+        raise ValueError(
+            f"Model {model_name} is outside Nojoin's model cache and is not deleted "
+            "from here."
         )
     try:
         if os.path.isfile(path):
