@@ -25,6 +25,9 @@ TRANSCRIPTION_KEYS = (
     "canary_model",
 )
 
+# The engines download_models prepares outside the core batch.
+ONNX_ENGINES = ("parakeet", "canary")
+
 
 async def enqueue_model_preparation(
     *,
@@ -91,14 +94,14 @@ def effective_transcription_setting(
 def resolve_startup_model_selection(
     user_settings: Sequence[Mapping[str, Any] | None],
 ) -> dict[str, Any]:
-    """The preparation-task arguments for these users' effective engines.
+    """The engines and models these users transcribe with.
 
     ``user_settings`` lists the active users' settings, owner first, then by id.
-    The first user's effective engine and models are prepared as the install's
-    primary choice: the owner's, or the lowest-id active user's while the owner
-    is deactivated. Whisper is prepared only while at least one user's effective
-    engine is Whisper, at the size of the first such user. With no users, the
-    install config decides. Pyannote is always prepared (the core batch).
+    The first user's effective engine and models are the install's primary
+    choice: the owner's, or the lowest-id active user's while the owner is
+    deactivated. ``whisper_needed`` says whether any user's effective engine is
+    Whisper, and the Whisper size is the first such user's. With no users, the
+    install config decides.
     """
     rows: list[Mapping[str, Any] | None] = list(user_settings) or [None]
     primary = rows[0]
@@ -107,7 +110,7 @@ def resolve_startup_model_selection(
         for row in rows
         if effective_transcription_setting(row, "transcription_backend") == "whisper"
     ]
-    selection: dict[str, Any] = {
+    return {
         "whisper_model_size": effective_transcription_setting(
             whisper_rows[0] if whisper_rows else primary, "whisper_model_size"
         ),
@@ -116,19 +119,35 @@ def resolve_startup_model_selection(
         ),
         "parakeet_model": effective_transcription_setting(primary, "parakeet_model"),
         "canary_model": effective_transcription_setting(primary, "canary_model"),
-        "include_core": True,
+        "whisper_needed": bool(whisper_rows),
     }
-    # Without the flag, download_models prepares Whisper exactly when the backend
-    # (an empty one falling back to config) is Whisper. Send the flag only when
-    # the users need otherwise, so a worker on an image that predates it still
-    # accepts the common case.
-    inferred = (
-        selection["transcription_backend"]
-        or effective_transcription_setting(None, "transcription_backend")
-    ) == "whisper"
-    if bool(whisper_rows) != inferred:
-        selection["include_whisper"] = bool(whisper_rows)
-    return selection
+
+
+def startup_preparation_tasks(selection: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The preparation tasks that put this selection's models on disk, in order.
+
+    One task normally does it all: the core batch (Pyannote, and Whisper when
+    the backend is Whisper) plus the primary engine. download_models prepares
+    Whisper only for the Whisper backend, so when the primary engine is
+    Parakeet or Canary while other users run Whisper, Whisper goes in its own
+    task with the core batch and the primary engine follows alone. Every task
+    uses only arguments that every worker image accepts, so a worker still on
+    an older image prepares them too.
+    """
+    models = {
+        "whisper_model_size": selection["whisper_model_size"],
+        "parakeet_model": selection["parakeet_model"],
+        "canary_model": selection["canary_model"],
+    }
+    backend = selection["transcription_backend"]
+    if not selection["whisper_needed"] or backend == "whisper":
+        return [{**models, "transcription_backend": backend, "include_core": True}]
+    tasks = [{**models, "transcription_backend": "whisper", "include_core": True}]
+    if backend in ONNX_ENGINES:
+        tasks.append(
+            {**models, "transcription_backend": backend, "include_core": False}
+        )
+    return tasks
 
 
 async def _read_active_user_settings(
@@ -188,8 +207,16 @@ async def resolve_install_transcription_selection(
 
 async def enqueue_startup_model_preparation(
     session_maker: async_sessionmaker[AsyncSession],
-) -> str:
-    """Queue the startup preparation for the engines this install's users run."""
+) -> list[str]:
+    """Queue the startup preparation for the engines this install's users run.
+
+    The tasks share the GPU lane, which runs one task at a time by default, so
+    they run in the order queued. A lane with more concurrency may overlap
+    them, which is safe: no two tasks prepare the same model.
+    """
     async with session_maker() as session:
         selection = await resolve_install_transcription_selection(session)
-    return await _queue_preparation(selection)
+    return [
+        await _queue_preparation(kwargs)
+        for kwargs in startup_preparation_tasks(selection)
+    ]

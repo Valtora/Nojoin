@@ -34,7 +34,6 @@ def download_models_task(
     parakeet_model: str | None = None,
     canary_model: str | None = None,
     include_core: bool = True,
-    include_whisper: bool | None = None,
 ):
     """
     Prepare required model assets on disk without retaining models in memory.
@@ -67,7 +66,6 @@ def download_models_task(
         parakeet_model=parakeet_model,
         canary_model=canary_model,
         include_core=include_core,
-        include_whisper=include_whisper,
     )
     return {"status": "success", "message": "Model preparation complete."}
 

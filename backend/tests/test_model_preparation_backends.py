@@ -102,22 +102,6 @@ def test_with_no_backend_given_the_install_config_decides(prepared, monkeypatch)
     assert prepared == ["pyannote", "onnx:parakeet/parakeet-tdt-0.6b-v3"]
 
 
-def test_an_explicit_whisper_flag_overrides_the_backend(prepared):
-    preload_models.download_models(
-        transcription_backend="parakeet",
-        whisper_model_size="small",
-        parakeet_model="parakeet-tdt-0.6b-v3",
-        include_core=True,
-        include_whisper=True,
-    )
-
-    assert prepared == [
-        "whisper:small",
-        "pyannote",
-        "onnx:parakeet/parakeet-tdt-0.6b-v3",
-    ]
-
-
 # --- API startup ------------------------------------------------------------
 
 _INSERT_USER = text(
@@ -189,8 +173,8 @@ def _startup_dispatch(
     users: list[tuple[str, bool, object]],
     *,
     with_users_table: bool = True,
-) -> dict:
-    """Run the startup entry point over these users; return the task kwargs."""
+) -> list[dict]:
+    """Run the startup entry point over these users; return each task's kwargs."""
     dispatched = _capture_dispatch(monkeypatch)
 
     async def run() -> None:
@@ -198,8 +182,13 @@ def _startup_dispatch(
             await model_preparation.enqueue_startup_model_preparation(maker)
 
     asyncio.run(run())
-    assert len(dispatched) == 1
-    return dispatched[0]
+    return dispatched
+
+
+def _run_on_the_worker(tasks: list[dict]) -> None:
+    """Run each queued task's preparation in order, as the GPU lane does."""
+    for kwargs in tasks:
+        preload_models.download_models(**kwargs)
 
 
 def _config_dispatch(monkeypatch) -> dict:
@@ -215,12 +204,12 @@ def test_startup_skips_whisper_when_the_owner_chose_parakeet_in_settings(
     """The UI writes the engine to the owner's row; config.json still says whisper."""
     _use_config(monkeypatch, {})
 
-    kwargs = _startup_dispatch(
+    tasks = _startup_dispatch(
         monkeypatch, [("owner", True, {"transcription_backend": "parakeet"})]
     )
-    preload_models.download_models(**kwargs)
+    _run_on_the_worker(tasks)
 
-    assert kwargs["transcription_backend"] == "parakeet"
+    assert [task["transcription_backend"] for task in tasks] == ["parakeet"]
     assert prepared == ["pyannote", "onnx:parakeet/parakeet-tdt-0.6b-v3"]
 
 
@@ -229,32 +218,34 @@ def test_startup_keeps_whisper_while_any_user_transcribes_with_it(
 ):
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
-    kwargs = _startup_dispatch(
+    tasks = _startup_dispatch(
         monkeypatch,
         [
             ("user", True, {"whisper_model_size": "small"}),
             ("owner", True, {"transcription_backend": "canary"}),
         ],
     )
-    preload_models.download_models(**kwargs)
+    _run_on_the_worker(tasks)
 
-    # The owner's engine is prepared, and Whisper at the size its user chose.
+    # Whisper at the size its user chose, with the core batch, then the
+    # owner's engine on its own.
+    assert [task["transcription_backend"] for task in tasks] == ["whisper", "canary"]
     assert prepared == ["whisper:small", "pyannote", "onnx:canary/nemo-canary-1b-v2"]
 
 
-def test_startup_ignores_deactivated_users(monkeypatch):
+def test_startup_ignores_deactivated_users(prepared, monkeypatch):
     _use_config(monkeypatch, {"transcription_backend": "parakeet"})
 
-    kwargs = _startup_dispatch(
+    tasks = _startup_dispatch(
         monkeypatch,
         [
             ("owner", True, None),
             ("user", False, {"transcription_backend": "whisper"}),
         ],
     )
+    _run_on_the_worker(tasks)
 
-    assert kwargs["transcription_backend"] == "parakeet"
-    assert "include_whisper" not in kwargs
+    assert prepared == ["pyannote", "onnx:parakeet/parakeet-tdt-0.6b-v3"]
 
 
 @pytest.mark.parametrize("configured", ["whisper", "parakeet"])
@@ -263,41 +254,61 @@ def test_startup_before_any_user_exists_follows_the_install_config(
 ):
     _use_config(monkeypatch, {"transcription_backend": configured})
 
-    kwargs = _startup_dispatch(monkeypatch, [])
+    tasks = _startup_dispatch(monkeypatch, [])
 
-    assert kwargs == _config_dispatch(monkeypatch)
-    assert kwargs["transcription_backend"] == configured
+    assert tasks == [_config_dispatch(monkeypatch)]
+    assert tasks[0]["transcription_backend"] == configured
+
+
+# download_models_task's keyword arguments on worker images released before
+# startup read the users. Such a worker rejects any other keyword argument and
+# prepares nothing, so a half-upgraded install must never be sent one.
+_OLDER_WORKER_KWARGS = {
+    "hf_token",
+    "whisper_model_size",
+    "transcription_backend",
+    "parakeet_model",
+    "canary_model",
+    "include_core",
+}
 
 
 @pytest.mark.parametrize(
-    "users",
-    [
-        [("owner", True, {"transcription_backend": "whisper"})],
-        [("owner", True, {"transcription_backend": "parakeet"}), ("user", True, None)],
-    ],
-    ids=["owner-on-whisper", "nobody-on-whisper"],
+    ("configured", "owner_engine"),
+    [("parakeet", "whisper"), ("parakeet", "parakeet"), ("whisper", "canary")],
+    ids=["owner-on-whisper", "nobody-on-whisper", "others-on-whisper"],
 )
-def test_startup_sends_no_whisper_flag_when_the_engine_already_implies_it(
-    monkeypatch, users
+def test_startup_tasks_use_only_arguments_older_workers_accept(
+    monkeypatch, configured, owner_engine
 ):
-    """A worker on an image older than the flag rejects any unknown kwarg."""
-    _use_config(monkeypatch, {"transcription_backend": "parakeet"})
+    _use_config(monkeypatch, {"transcription_backend": configured})
 
-    kwargs = _startup_dispatch(monkeypatch, users)
+    tasks = _startup_dispatch(
+        monkeypatch,
+        [
+            ("owner", True, {"transcription_backend": owner_engine}),
+            ("user", True, None),
+        ],
+    )
 
-    assert "include_whisper" not in kwargs
+    assert tasks
+    assert all(set(task) <= _OLDER_WORKER_KWARGS for task in tasks)
 
 
-def test_startup_treats_an_empty_engine_as_the_pipeline_does(prepared, monkeypatch):
-    """The pipeline keeps a stored "" over config and fails, so Whisper is unused."""
+def test_startup_does_not_count_an_empty_engine_as_whisper(prepared, monkeypatch):
+    """The pipeline keeps a stored "" over config and fails, so it needs no Whisper."""
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
-    kwargs = _startup_dispatch(
-        monkeypatch, [("owner", True, {"transcription_backend": ""})]
+    tasks = _startup_dispatch(
+        monkeypatch,
+        [
+            ("owner", True, {"transcription_backend": "parakeet"}),
+            ("user", True, {"transcription_backend": ""}),
+        ],
     )
-    preload_models.download_models(**kwargs)
+    _run_on_the_worker(tasks)
 
-    assert prepared == ["pyannote"]
+    assert prepared == ["pyannote", "onnx:parakeet/parakeet-tdt-0.6b-v3"]
 
 
 def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
@@ -306,10 +317,10 @@ def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
     with caplog.at_level(logging.WARNING, logger=model_preparation.__name__):
-        kwargs = _startup_dispatch(monkeypatch, [], with_users_table=False)
-    preload_models.download_models(**kwargs)
+        tasks = _startup_dispatch(monkeypatch, [], with_users_table=False)
+    _run_on_the_worker(tasks)
 
-    assert kwargs == _config_dispatch(monkeypatch)
+    assert tasks == [_config_dispatch(monkeypatch)]
     assert prepared == ["whisper:turbo", "pyannote"]
     assert "config.json decides" in caplog.text
     assert "no such table: users" in caplog.text
@@ -396,17 +407,17 @@ def test_a_malformed_settings_row_falls_back_to_the_config_for_that_user_only(
     """One bad row must not move the owner's engine back to config.json's."""
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
-    kwargs = _startup_dispatch(
+    tasks = _startup_dispatch(
         monkeypatch,
         [
             ("owner", True, {"transcription_backend": "parakeet"}),
             ("user", True, malformed),
         ],
     )
-    preload_models.download_models(**kwargs)
+    _run_on_the_worker(tasks)
 
     # The malformed user runs config.json's Whisper turbo; the owner keeps Parakeet.
-    assert kwargs["transcription_backend"] == "parakeet"
+    assert [task["transcription_backend"] for task in tasks] == ["whisper", "parakeet"]
     assert prepared == [
         "whisper:turbo",
         "pyannote",

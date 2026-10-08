@@ -380,16 +380,9 @@ def download_models(
     parakeet_model=None,
     canary_model=None,
     include_core=True,
-    include_whisper=None,
 ):
     """
     Prepare required model assets on disk without retaining models in memory.
-
-    ``include_whisper`` decides whether the core batch prepares Whisper. When it
-    is None, Whisper is prepared only for the Whisper backend. API startup sets
-    it when its users need otherwise, because the transcription engine is
-    stored per user and the install may need Whisper for someone other than the
-    owner.
 
     Warmup intentionally runs in the worker process. It may instantiate a model
     on CPU to validate that downloads completed, then releases all caches and
@@ -424,10 +417,9 @@ def download_models(
         )
 
         # Whisper is only ever loaded by the Whisper engine, live and final
-        # alike, so an install on Parakeet or Canary never needs it on disk.
-        if include_whisper is None:
-            include_whisper = transcription_backend == "whisper"
-        if include_core and include_whisper:
+        # alike, so a run for Parakeet or Canary leaves it out. API startup
+        # queues a separate Whisper run when other users still transcribe with it.
+        if include_core and transcription_backend == "whisper":
             report(
                 f"Preparing Whisper {whisper_model_size} for transcription...",
                 5,
