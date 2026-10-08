@@ -63,6 +63,43 @@ describe("AppearanceSettings", () => {
     expect(screen.getByRole("combobox", { name: "Colour palette" })).toHaveValue("default");
   });
 
+  it("treats an unknown stored theme as System", () => {
+    localStorage.setItem("nojoin-theme", "purple");
+
+    renderSettings();
+
+    expect(screen.getByRole("combobox", { name: "Theme" })).toHaveValue("system");
+    expect(root.classList.contains("dark")).toBe(false);
+  });
+
+  it("keeps working when the browser blocks storage", () => {
+    const blocked = () => {
+      throw new Error("storage blocked");
+    };
+    vi.stubGlobal("localStorage", {
+      getItem: blocked,
+      setItem: blocked,
+      removeItem: blocked,
+    });
+
+    renderSettings();
+    choose("Theme", "dark");
+    choose("Colour palette", "graphite");
+
+    expect(root.classList.contains("dark")).toBe(true);
+    expect(root.dataset.palette).toBe("graphite");
+  });
+
+  it("stores an explicit theme and forgets System, the default", () => {
+    renderSettings();
+
+    choose("Theme", "light");
+    expect(localStorage.getItem("nojoin-theme")).toBe("light");
+
+    choose("Theme", "system");
+    expect(localStorage.getItem("nojoin-theme")).toBeNull();
+  });
+
   it("applies and persists a palette, and returning to the default leaves no trace", () => {
     renderSettings();
 

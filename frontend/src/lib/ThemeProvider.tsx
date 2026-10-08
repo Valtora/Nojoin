@@ -3,18 +3,20 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 import {
-  APPEARANCE_STORAGE_KEYS,
   applyCornerStyle,
   applyPalette,
   readStoredCornerStyle,
   readStoredPalette,
+  readStoredTheme,
   storeCornerStyle,
   storePalette,
+  storeTheme,
   type CornerStyle,
   type Palette,
+  type Theme,
 } from '@/lib/appearance';
 
-export type Theme = 'light' | 'dark' | 'system';
+export type { Theme } from '@/lib/appearance';
 export type ResolvedTheme = 'light' | 'dark';
 
 interface ThemeContextValue {
@@ -28,8 +30,6 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
-
-const THEME_STORAGE_KEY = APPEARANCE_STORAGE_KEYS.theme;
 
 function getSystemTheme(): ResolvedTheme {
   if (typeof window === 'undefined') return 'dark';
@@ -62,10 +62,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [palette, setPaletteState] = useState<Palette>(readStoredPalette);
   const [cornerStyle, setCornerStyleState] = useState<CornerStyle>(readStoredCornerStyle);
 
-  // Initialize theme from localStorage on mount
+  // Initialize theme from localStorage on mount. readStoredTheme validates
+  // against the allowed values and survives blocked storage, so a junk value
+  // falls back to System rather than reaching the select or the class list.
   useEffect(() => {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
-    const initialTheme = stored || 'system';
+    const initialTheme = readStoredTheme();
     setThemeState(initialTheme);
     const resolved = resolveTheme(initialTheme);
     setResolvedTheme(resolved);
@@ -93,7 +94,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+    storeTheme(newTheme);
     const resolved = resolveTheme(newTheme);
     setResolvedTheme(resolved);
     applyTheme(resolved);

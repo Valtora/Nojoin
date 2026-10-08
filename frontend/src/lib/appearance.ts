@@ -12,6 +12,9 @@
  * and the compact spacing on html[data-ui-density].
  */
 
+export const THEMES = ["system", "light", "dark"] as const;
+export type Theme = (typeof THEMES)[number];
+
 export const PALETTES = [
   "default",
   "graphite",
@@ -27,6 +30,7 @@ export type CornerStyle = (typeof CORNER_STYLES)[number];
 export const DENSITY_PREFERENCES = ["auto", "comfortable", "compact", "dense"] as const;
 export type DensityPreference = (typeof DENSITY_PREFERENCES)[number];
 
+export const DEFAULT_THEME: Theme = "system";
 export const DEFAULT_PALETTE: Palette = "default";
 export const DEFAULT_CORNER_STYLE: CornerStyle = "rounded";
 export const DEFAULT_DENSITY_PREFERENCE: DensityPreference = "auto";
@@ -88,6 +92,14 @@ function writeStored(key: string, value: string, isDefault: boolean) {
   } catch {
     // The choice still applies for this page view; it just will not persist.
   }
+}
+
+export function readStoredTheme(): Theme {
+  return readStored(APPEARANCE_STORAGE_KEYS.theme, THEMES, DEFAULT_THEME);
+}
+
+export function storeTheme(theme: Theme) {
+  writeStored(APPEARANCE_STORAGE_KEYS.theme, theme, theme === DEFAULT_THEME);
 }
 
 export function readStoredPalette(): Palette {

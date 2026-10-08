@@ -15,14 +15,13 @@ import {
   DEFAULT_PALETTE,
   DENSITY_PREFERENCES,
   PALETTES,
+  THEMES,
 } from "./appearance";
 import {
   COMPACT_DESKTOP_MAX_HEIGHT,
   COMPACT_DESKTOP_MAX_WIDTH,
   DESKTOP_BREAKPOINT,
 } from "./viewportDensity";
-
-const THEMES = ["light", "dark", "system"];
 
 export const themeScript = `
 (function () {
