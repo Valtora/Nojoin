@@ -45,7 +45,7 @@ export const APPEARANCE_STORAGE_KEYS = {
 export const PALETTE_LABELS: Record<Palette, string> = {
   default: "Nojoin (orange)",
   graphite: "Graphite (blue)",
-  classic: "Classic",
+  classic: "Classic (grey and navy)",
   ultraviolet: "Ultraviolet (magenta)",
   marigold: "Marigold (forest and gold)",
 };
