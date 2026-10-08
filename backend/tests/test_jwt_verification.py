@@ -152,6 +152,10 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+def _b64url_json(segment: str) -> dict[str, Any]:
+    return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+
+
 def _claims(token_type: str) -> dict[str, Any]:
     now = int(time.time())
     return {
@@ -261,6 +265,24 @@ async def test_python_jose_tokens_still_authenticate(
 
     assert user.username == "alice"
     assert payload["token_type"] == token_type
+
+
+@pytest.mark.parametrize("token_type", TOKEN_TYPES)
+def test_pyjwt_mints_the_python_jose_fixture_byte_for_byte(token_type):
+    # Same claims, key and kid as the python-jose fixture, encoded the way
+    # create_access_token encodes them: the wire format is unchanged, so
+    # compatibility does not rest on PyJWT tolerating jose's output.
+    header_segment, payload_segment, _ = JOSE_TOKENS[token_type].split(".")
+    assert _b64url_json(header_segment)["kid"] == JOSE_KID
+
+    reminted = jwt.encode(
+        _b64url_json(payload_segment),
+        JOSE_KEY,
+        algorithm=security.ALGORITHM,
+        headers={"kid": JOSE_KID},
+    )
+
+    assert reminted == JOSE_TOKENS[token_type]
 
 
 @pytest.mark.parametrize("token_type", TOKEN_TYPES)
