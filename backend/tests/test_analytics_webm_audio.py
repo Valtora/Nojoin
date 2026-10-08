@@ -167,7 +167,7 @@ def test_overlap_is_measured_on_a_browser_webm_capture(
 
 
 def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
-    tmp_path, monkeypatch, overlap_inputs
+    tmp_path, monkeypatch, scratch, overlap_inputs
 ):
     """Runs without ffmpeg: the 16 kHz decoder is replaced by one that writes it."""
     container = tmp_path / "capture.webm"
@@ -186,6 +186,7 @@ def test_overlap_reads_an_unreadable_container_through_the_mono_decoder(
 
     assert block["duration_ms"] == 30_000
     assert [(i.channels, i.samplerate) for i in overlap_inputs] == [(1, 16_000)]
+    assert _analysis_temp_files(scratch) == []
 
 
 @posix_only
@@ -373,7 +374,7 @@ def test_a_file_soundfile_reads_is_used_in_place(tmp_path, monkeypatch):
 
 
 def test_delivery_reads_an_unreadable_container_through_the_decoder(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, scratch
 ):
     """Runs without ffmpeg: the decoder is replaced by one that writes the WAV."""
     wav = tmp_path / "capture.wav"
@@ -392,3 +393,4 @@ def test_delivery_reads_an_unreadable_container_through_the_decoder(
 
     assert result["speakers"]["rs:local"]["capture_sources"] == ["microphone"]
     assert result["speakers"]["rs:remote"]["capture_sources"] == ["system"]
+    assert _analysis_temp_files(scratch) == []
