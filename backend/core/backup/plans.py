@@ -45,6 +45,10 @@ class _AudioPlan:
     arcname_by_audio_path: Dict[str, str] = field(default_factory=dict)
     # Recordings whose row survives but whose audio file could not be found on disk.
     missing_audio: int = 0
+    # Recordings whose audio was found but maps to an archive member another
+    # recording already claimed (``x.wav`` and ``x.webm`` both compress to
+    # ``recordings/x.opus``), so it is archived as metadata only.
+    colliding_audio: int = 0
 
 
 @dataclass
@@ -128,6 +132,13 @@ def _build_audio_plan(
 
         arcname = _build_backup_recording_audio_path(audio_path, arc_extension)
         if not arcname or arcname in claimed_arcnames:
+            logger.warning(
+                "Recording audio maps to archive member %r, which another recording "
+                "already uses; archiving metadata only: %s",
+                arcname,
+                audio_path,
+            )
+            plan.colliding_audio += 1
             continue
 
         claimed_arcnames.add(arcname)

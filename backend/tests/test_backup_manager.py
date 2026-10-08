@@ -9,6 +9,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
@@ -29,6 +30,7 @@ from sqlmodel import Field, Session, SQLModel, select
 import backend.core.backup.export as backup_export
 import backend.core.backup.format as backup_format
 import backend.core.backup.paths as backup_paths
+import backend.core.backup.plans as backup_plans
 import backend.core.backup.restore.runner as backup_runner
 import backend.core.backup.restore.stages as backup_stages
 import backend.core.backup.runtime as backup_runtime
@@ -1743,6 +1745,10 @@ async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim
         # The member carries the re-encoded extension, and the recording row's
         # audio_path agrees with it so the restore can find the file again.
         assert archive.read("recordings/quarterly-planning.opus") == b"OPUS-AUDIO"
+        # The WAV master is deflated in Original quality, but the Opus it became
+        # is already compressed and is stored.
+        member = archive.getinfo("recordings/quarterly-planning.opus")
+        assert member.compress_type == zipfile.ZIP_STORED
         rows = json.loads(archive.read("recordings.json"))
         assert rows[0]["audio_path"] == "recordings/quarterly-planning.opus"
         info = json.loads(archive.read("backup_info.json"))
@@ -2546,9 +2552,10 @@ async def test_backup_progress_callback_failure_never_breaks_the_export(
 # --- Every recording format is archived ------------------------------------
 #
 # The archive used to take audio only from .wav .mp3 .m4a .ogg .flac and .opus
-# files. Every browser recording (finalised as WebM) and every AAC, MP4 or WMA
-# import was archived as metadata only, reported as "no audio file on disk", and
-# restored as a PROCESSED recording whose player waited for a proxy forever.
+# files. Every browser recording made since v1.1.0 (finalised as WebM) and every
+# AAC, MP4, WMA or WebM import was archived as metadata only, reported as "no
+# audio file on disk", and restored as a PROCESSED recording whose player waited
+# for a proxy forever.
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg is not installed"
@@ -2651,7 +2658,8 @@ def _encode_media(target: Path, args: list[str]) -> None:
     [
         # A browser capture: two-channel Opus in WebM, no video.
         ("capture.webm", ["-map", "1:a", "-ac", "2", "-c:a", "libopus"]),
-        # An imported screen recording with a video track.
+        # An imported screen recording with a video track. The .opus muxer takes
+        # no video, so this guards the audio-only outcome, not the -vn flag.
         ("screen.mp4", ["-c:v", "mpeg4", "-c:a", "aac"]),
     ],
 )
@@ -2667,6 +2675,7 @@ async def test_compressed_quality_reencodes_every_recording_format_to_opus(
 
     member = f"recordings/{Path(name).stem}.opus"
     with zipfile.ZipFile(zip_path) as archive:
+        assert archive.getinfo(member).compress_type == zipfile.ZIP_STORED
         extracted = tmp_path / "member.opus"
         extracted.write_bytes(archive.read(member))
     probe = subprocess.run(
@@ -2683,3 +2692,77 @@ async def test_compressed_quality_reencodes_every_recording_format_to_opus(
     assert restored.audio_path.endswith(".opus")
     assert Path(restored.audio_path).exists()
     assert finalized == [(restored.id, True)]
+
+
+# --- How audio members are stored --------------------------------------------
+#
+# Deflating already-compressed audio measured a 0.99 ratio at about 58 MB/s, so
+# those members are stored as they are. WAV is raw PCM, which deflate still
+# shrinks, and the records stay deflated.
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("suffix", "compress_type"),
+    [
+        (".webm", zipfile.ZIP_STORED),
+        (".m4a", zipfile.ZIP_STORED),
+        (".wav", zipfile.ZIP_DEFLATED),
+    ],
+)
+async def test_audio_members_are_stored_unless_they_are_raw_pcm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, compress_type: int
+) -> None:
+    audio = tmp_path / f"meeting{suffix}"
+    audio.write_bytes(b"\0" * 4096)
+
+    zip_path = await _back_up_recording(
+        tmp_path, monkeypatch, audio, backup_format.ARCHIVE_QUALITY_ORIGINAL
+    )
+
+    with zipfile.ZipFile(zip_path) as archive:
+        member = archive.getinfo(f"recordings/meeting{suffix}")
+        assert member.compress_type == compress_type
+        assert archive.read(member) == audio.read_bytes()
+        records = archive.getinfo("recordings.json")
+        assert records.compress_type == zipfile.ZIP_DEFLATED
+
+
+def test_audio_that_collides_on_its_archive_name_is_counted_and_logged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Compressed quality names every member <stem>.opus, so x.wav and x.webm both
+    # want recordings/x.opus. The second used to be skipped without a word.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    recordings_dir = context.path_manager.recordings_directory
+    rows = []
+    for name in ("meeting.wav", "meeting.webm"):
+        (recordings_dir / name).write_bytes(name.encode())
+        rows.append(SimpleNamespace(audio_path=str(recordings_dir / name)))
+    encoded = tmp_path / "encoded.opus"
+    encoded.write_bytes(b"OPUS-AUDIO")
+    monkeypatch.setattr(backup_export, "_compress_to_opus", lambda source: str(encoded))
+
+    plan = backup_plans._build_audio_plan(
+        rows, recordings_dir, backup_format.ARCHIVE_QUALITY_COMPRESSED
+    )
+    zip_path, warnings = backup_export._create_backup_sync(
+        backup_export._ExportRequest(
+            recordings_dir=recordings_dir,
+            config_path=context.path_manager.config_path,
+            db_dump={},
+            include_audio=True,
+            audio_plan=plan,
+            archive_quality=backup_format.ARCHIVE_QUALITY_COMPRESSED,
+        )
+    )
+
+    assert warnings["recordings_audio_failed"] == 1
+    assert warnings["recordings_without_audio"] == 0
+    assert "recordings/meeting.opus" in caplog.text
+    with zipfile.ZipFile(zip_path) as archive:
+        members = [n for n in archive.namelist() if n.startswith("recordings/")]
+        assert members == ["recordings/meeting.opus"]
