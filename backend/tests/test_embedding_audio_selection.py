@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +15,7 @@ from backend.processing import embedding_core
 from backend.utils import embedding_audio
 from backend.utils.embedding_audio import (
     EMBEDDING_DECODE_TIMEOUT_S,
+    EMBEDDING_WAV_SUFFIX,
     select_recording_audio_for_embedding,
 )
 from backend.worker.tasks.embeddings import update_speaker_embedding_task
@@ -206,3 +209,44 @@ def test_a_failed_decode_is_raised_not_reported_as_no_embedding(
 
     assert [timeout for _, timeout in decodes] == [EMBEDDING_DECODE_TIMEOUT_S]
     assert not any(Path(path).exists() for path, _ in decodes)
+
+
+def test_no_room_for_the_decode_is_raised_as_a_decode_failure(monkeypatch, tmp_path):
+    def full(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(embedding_audio.tempfile, "mkstemp", full)
+
+    with pytest.raises(AudioFormatError):
+        with embedding_audio.pyannote_readable_audio(str(tmp_path / "meeting.mkv")):
+            pass
+
+
+def test_a_decode_first_reclaims_embedding_wavs_a_killed_worker_left(
+    monkeypatch, tmp_path
+):
+    """Swept on the lane that writes them: each worker's /tmp is private."""
+
+    def aged(name: str, hours: float) -> Path:
+        path = tmp_path / name
+        path.write_bytes(b"audio")
+        stamp = time.time() - hours * 3600
+        os.utime(path, (stamp, stamp))
+        return path
+
+    stranded = aged(f"tmpold{EMBEDDING_WAV_SUFFIX}", 48)
+    in_use = aged(f"tmpnew{EMBEDDING_WAV_SUFFIX}", 1)
+    not_ours = aged("tmpold_vad.wav", 48)
+    monkeypatch.setattr(embedding_audio.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(
+        embedding_audio,
+        "convert_to_mono_16k",
+        lambda input_path, output_path, *, timeout=None: None,
+    )
+
+    with embedding_audio.pyannote_readable_audio(str(tmp_path / "meeting.mkv")):
+        pass
+
+    assert not stranded.exists()
+    assert in_use.exists()
+    assert not_ours.exists()

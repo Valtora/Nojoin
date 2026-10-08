@@ -9,15 +9,19 @@ from contextlib import contextmanager
 from os import PathLike
 
 from backend.core.exceptions import AudioFormatError
+from backend.processing.audio_preprocessing import cleanup_stale_pipeline_temp_files
 from backend.utils.audio import MEDIA_CONTAINER_SUFFIXES, convert_to_mono_16k
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 
-# Swept by audio_preprocessing.cleanup_stale_pipeline_temp_files.
 EMBEDDING_WAV_SUFFIX = "_embedding.wav"
 
 # Upper bound on one decode. ffmpeg decodes far faster than real time, so this
 # only ever ends a hung process.
 EMBEDDING_DECODE_TIMEOUT_S = 15 * 60
+
+# An embedding WAV older than this has no extraction left reading it: the
+# decode is bounded above, and cropping a recording's speakers takes minutes.
+_STRANDED_EMBEDDING_WAV_AGE_HOURS = 6
 
 # Containers pyannote cannot crop segments from reliably. Its seek-and-crop
 # returns short or empty chunks from Matroska, MPEG-TS/PS and AVI, so imports
@@ -77,20 +81,33 @@ def pyannote_readable_audio(audio_path: str) -> Iterator[str]:
 
     The decode covers the whole recording, so a caller cropping several
     speakers from one recording should hold one context around all of them.
-    A worker killed mid-decode can strand the WAV; the daily pipeline
-    temp-file sweep reclaims it by its ``_embedding.wav`` suffix.
+    The WAV is removed in a finally block, which a worker killed outright never
+    reaches, so each decode first sweeps embedding WAVs older than a few hours
+    from the same temp dir. The sweep runs here, on the lane that writes them,
+    because each worker container has a private /tmp the io lane's daily
+    cleanup cannot see.
 
     Raises:
-        AudioFormatError: ffmpeg could not decode the file, or timed out. The
-            cause may be transient (a full temp directory), so callers must not
-            treat it as "nothing usable in this audio".
+        AudioFormatError: ffmpeg could not decode the file, could not be
+            started, or timed out. The cause may be transient (a full temp
+            directory), so callers must not treat it as "nothing usable in
+            this audio".
     """
     _, suffix = os.path.splitext(audio_path)
     if suffix.lower() not in MEDIA_CONTAINER_SUFFIXES:
         yield audio_path
         return
 
-    temp_fd, temp_path = tempfile.mkstemp(suffix=EMBEDDING_WAV_SUFFIX)
+    cleanup_stale_pipeline_temp_files(
+        max_age_hours=_STRANDED_EMBEDDING_WAV_AGE_HOURS,
+        suffixes=(EMBEDDING_WAV_SUFFIX,),
+    )
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(suffix=EMBEDDING_WAV_SUFFIX)
+    except OSError as exc:
+        raise AudioFormatError(
+            f"Could not create a temporary file to decode {audio_path}: {exc}"
+        ) from exc
     os.close(temp_fd)
     try:
         logger.info("Decoding %s to 16 kHz WAV for embedding extraction", audio_path)
@@ -98,7 +115,7 @@ def pyannote_readable_audio(audio_path: str) -> Iterator[str]:
             convert_to_mono_16k(
                 audio_path, temp_path, timeout=EMBEDDING_DECODE_TIMEOUT_S
             )
-        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
             raise AudioFormatError(
                 f"Could not decode {audio_path} for embedding extraction: {exc}"
             ) from exc

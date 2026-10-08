@@ -145,7 +145,6 @@ def cleanup_temp_file(temp_path: str):
 # suffix rather than by a bare "tmp*" glob so the sweep below can only ever reach
 # files Nojoin created.
 _PIPELINE_TEMP_SUFFIXES = (
-    "_embedding.wav",  # utils.embedding_audio.pyannote_readable_audio
     "_vad.wav",
     "_vad_processed.wav",
     "_vad_processed.mp3",
@@ -154,7 +153,10 @@ _PIPELINE_TEMP_SUFFIXES = (
 
 
 def cleanup_stale_pipeline_temp_files(
-    *, max_age_hours: int = 24, temp_dir: str | None = None
+    *,
+    max_age_hours: int = 24,
+    temp_dir: str | None = None,
+    suffixes: tuple[str, ...] = _PIPELINE_TEMP_SUFFIXES,
 ) -> int:
     """Reclaim pipeline scratch left behind by a worker that did not exit cleanly.
 
@@ -165,6 +167,9 @@ def cleanup_stale_pipeline_temp_files(
 
     An age floor well beyond any finalise means a file still in use cannot be
     caught: a run old enough to qualify has no process left behind it.
+
+    Only files ending in one of ``suffixes`` are considered, so a caller
+    sweeping its own scratch cannot reach anyone else's.
     """
     directory = temp_dir or tempfile.gettempdir()
     cutoff = time.time() - (max_age_hours * 60 * 60)
@@ -177,7 +182,7 @@ def cleanup_stale_pipeline_temp_files(
         return 0
 
     for name in entries:
-        if not name.endswith(_PIPELINE_TEMP_SUFFIXES):
+        if not name.endswith(suffixes):
             continue
 
         path = os.path.join(directory, name)
