@@ -178,11 +178,15 @@ def soundfile_readable_audio(audio_path: str, *, mono: bool = False) -> Iterator
     the io lane cannot see.
 
     Raises:
+        FileNotFoundError: ``audio_path`` does not exist.
         AudioFormatError: ffmpeg could not decode the file, could not be
             started, or timed out.
     """
     import soundfile as sf
 
+    # libsndfile reports a missing file as one it cannot read, which would send
+    # it to ffmpeg and log a decode failure for what is a missing file.
+    os.stat(audio_path)
     try:
         sf.info(audio_path)
     except sf.LibsndfileError:

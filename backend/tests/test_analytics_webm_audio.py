@@ -335,6 +335,22 @@ def test_a_decode_first_reclaims_analysis_wavs_a_killed_worker_stranded(
     assert _analysis_temp_files(scratch) == [in_use]
 
 
+def test_a_missing_file_is_reported_as_missing_not_undecodable(
+    tmp_path, monkeypatch, scratch
+):
+    def no_decode(*args, **kwargs):
+        raise AssertionError("a missing file must not reach ffmpeg")
+
+    monkeypatch.setattr(audio_preprocessing, "convert_to_16k_wav", no_decode)
+    missing = tmp_path / "gone.webm"
+
+    with pytest.raises(FileNotFoundError, match="gone.webm"):
+        with soundfile_readable_audio(str(missing)):
+            pass
+
+    assert _analysis_temp_files(scratch) == []
+
+
 def test_a_file_soundfile_reads_is_used_in_place(tmp_path, monkeypatch):
     wav = tmp_path / "meeting.wav"
     write_wav(wav, [voiced_tone(150.0, 2.0)])
