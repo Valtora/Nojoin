@@ -15,6 +15,7 @@ from backend.processing.processing_tuning import (
     PHANTOM_MERGE_THRESHOLD_KEY,
     TUNING_KEYS,
     TUNING_SPECS,
+    PhantomThresholdConflict,
     normalise_tuning_value,
     phantom_thresholds_conflict,
     validate_tuning_candidate,
@@ -375,8 +376,9 @@ def _validate_processing_tuning(
     ignores.
 
     Raises:
-        ValueError: The floor would not be below the merge threshold; the
-            message names each value and any that comes from the install.
+        PhantomThresholdConflict: The floor would not be below the merge
+            threshold; the message names each value and any that comes from
+            the install.
     """
     if not set(PHANTOM_PAIR_KEYS).intersection(update_data):
         return
@@ -385,7 +387,7 @@ def _validate_processing_tuning(
     install = config_manager.get_all()
     try:
         validate_tuning_candidate(_phantom_pair_in_effect(install, candidate))
-    except ValueError as exc:
+    except PhantomThresholdConflict as exc:
         inherited = [
             f"{key} to {value}"
             for key in PHANTOM_PAIR_KEYS
@@ -393,7 +395,7 @@ def _validate_processing_tuning(
             and (value := normalise_tuning_value(key, install.get(key))) is not None
         ]
         if inherited:
-            raise ValueError(
+            raise PhantomThresholdConflict(
                 f"{exc} The installation sets {' and '.join(inherited)}."
             ) from exc
         raise
@@ -596,24 +598,23 @@ async def _save_user_settings(
         candidate_settings.update(current_settings)
         candidate_settings.update(update_data)
         validate_language_settings(candidate_settings)
+        _validate_processing_tuning(candidate_settings, update_data)
+    except PhantomThresholdConflict as e:
+        # Only this error's message is shown: it holds key names and numbers,
+        # and names an install value the user cannot see on the page.
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message=str(e),
+            log_message="Rejected settings update: phantom thresholds conflict.",
+            exc=e,
+        )
     except ValueError as e:
         raise sanitized_http_exception(
             logger=logger,
             status_code=400,
             client_message="Invalid settings value.",
             log_message="Rejected settings update due to invalid value.",
-            exc=e,
-        )
-    try:
-        _validate_processing_tuning(candidate_settings, update_data)
-    except ValueError as e:
-        # The message holds only key names and numbers, and names an install
-        # value the user cannot see on the page.
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=400,
-            client_message=str(e),
-            log_message="Rejected settings update: phantom thresholds conflict.",
             exc=e,
         )
 

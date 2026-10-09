@@ -67,6 +67,13 @@ TUNING_SPECS: dict[str, TuningSpec] = {
 TUNING_KEYS: tuple[str, ...] = tuple(TUNING_SPECS)
 
 
+class PhantomThresholdConflict(ValueError):
+    """The phantom floor is not below the phantom merge threshold.
+
+    Its message holds only key names and numbers, so the API may show it.
+    """
+
+
 def normalise_tuning_value(key: str, value: object) -> float | None:
     """Return ``value`` as a usable number for ``key``, or ``None``.
 
@@ -139,12 +146,13 @@ def validate_tuning_candidate(candidate: Mapping[str, object]) -> None:
     unusable values count as their defaults, as they would when processing.
 
     Raises:
-        ValueError: The phantom floor is not below the phantom merge threshold.
+        PhantomThresholdConflict: The phantom floor is not below the phantom
+            merge threshold.
     """
     if phantom_thresholds_conflict(candidate):
         floor = _effective(candidate, PHANTOM_EMBEDDING_FLOOR_KEY)
         merge = _effective(candidate, PHANTOM_MERGE_THRESHOLD_KEY)
-        raise ValueError(
+        raise PhantomThresholdConflict(
             f"{PHANTOM_EMBEDDING_FLOOR_KEY} ({floor}) must be lower than "
             f"{PHANTOM_MERGE_THRESHOLD_KEY} ({merge})."
         )

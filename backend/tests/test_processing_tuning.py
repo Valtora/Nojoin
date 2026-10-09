@@ -12,6 +12,7 @@ import pytest
 from backend.processing import phantom_filter
 from backend.processing.processing_tuning import (
     TUNING_SPECS,
+    PhantomThresholdConflict,
     normalise_tuning_value,
     resolve_tuning,
     validate_tuning_candidate,
@@ -131,9 +132,9 @@ def test_resolve_treats_an_explicit_none_as_unset_without_warning(caplog) -> Non
 
 def test_candidate_rejects_a_floor_at_or_above_the_default_merge() -> None:
     # Merge unset: its effective value is the 0.60 default.
-    with pytest.raises(ValueError):
+    with pytest.raises(PhantomThresholdConflict):
         validate_tuning_candidate({"phantom_embedding_floor": 0.65})
-    with pytest.raises(ValueError):
+    with pytest.raises(PhantomThresholdConflict, match=r"\(0\.6\) must be lower"):
         validate_tuning_candidate({"phantom_embedding_floor": 0.60})
 
 
