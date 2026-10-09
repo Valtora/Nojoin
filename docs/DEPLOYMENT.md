@@ -189,9 +189,13 @@ design, with a 24-hour lifetime, so take the backup again if you needed it.
 
 The worker container starts Celery without preloading inference models. Nojoin
 keeps GPU memory idle at startup, then queues worker-side model preparation for
-the configured Whisper model, Pyannote diarisation, and voice embeddings. The
-worker validates those assets on CPU where possible, caches them on disk, and
-releases model objects and CUDA memory before returning to idle.
+Pyannote diarisation, voice embeddings, and the install's transcription engine
+(`transcription_backend` in `config.json`, chosen by an administrator under
+**Settings > Transcription**). Whisper is prepared only when that
+engine is Whisper, at the configured `whisper_model_size`: Parakeet and Canary
+never load it, so an install running either does not download Whisper at every
+start. The worker validates those assets on CPU where possible, caches them on
+disk, and releases model objects and CUDA memory before returning to idle.
 
 Downloaded models live in the `model_cache` volume (`XDG_CACHE_HOME` and
 `HF_HOME` on the worker lanes), so they survive container recreation. The text
@@ -210,8 +214,9 @@ the instance to be reachable from the public internet over HTTPS at
 
 Changing the transcription model later does not download anything on its own.
 Preparation runs on the GPU lane, so an unannounced download would queue in
-front of live work; instead **Settings > AI providers** asks whether to fetch a newly
-selected model now, and **Model dependencies** offers a `Download` action plus
+front of live work; instead **Settings > Transcription** asks whether to fetch a
+newly selected model now, and **Model dependencies** under **Settings > AI
+providers** offers a `Download` action plus
 live progress for anything still missing. A model that is never prepared is
 fetched on first use, which delays live transcription and Meeting Edge until it
 is ready. Only one preparation runs at a time; a second request is refused with
@@ -458,12 +463,14 @@ Nojoin splits configuration between:
 The first-run setup wizard can pre-fill many values from environment variables to speed up deployment.
 On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_PASSWORD`.
 
-Install-wide settings that an administrator changes in the UI (the AI provider and models, the install
-glossary, the install default notes structure) are written to `data/config.json` rather than to the
-database, so the mounted `data/` directory must be writable by the API container's user. If it is not,
-saving any of those settings now fails with an explicit error instead of appearing to succeed and then
-reverting on the next restart. If you see that error, check the ownership of the host directory bound to
-`/app/data`.
+Install-wide settings that an administrator changes in the UI (the AI provider and models, the
+transcription engine and model, the install glossary, the install default notes structure) are written
+to `data/config.json` rather than to the database, so the mounted `data/` directory must be writable by
+the API container's user. If it is not, saving any of those settings now fails with an explicit error
+instead of appearing to succeed and then reverting on the next restart. If you see that error, check the
+ownership of the host directory bound to `/app/data`. First-run setup writes the wizard's Whisper model
+size there as well, except that the wizard's default (`turbo`) does not replace a different size already
+in a pre-seeded `config.json`.
 
 Speech and speaker tuning is per user (**Settings > Recording > Advanced**), and every value defaults to
 inherit. An operator can set an installation default for any of these keys as a flat entry in
@@ -831,6 +838,33 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   chmod -R 700 ./data
   ```
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
+- **The transcription engine and model are install-wide.** The engine (`transcription_backend`) and its
+  model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply
+  to every user. Releases before this one stored them per account: **Settings > Transcription**, shown
+  only to administrators, saved the choice on that administrator's own account; first-run setup saved
+  the wizard's Whisper size on the owner's account; and any settings save stored the displayed values
+  on the saving user's account. Everyone without a stored value used `config.json`.
+
+  On the first start after the upgrade, the API copies the owner's choice (the first account with the
+  owner role) into `config.json` and removes it from the owner's account, so a later start never
+  repeats it over a choice made since. The owner's value wins over what `config.json` holds, with one
+  exception: an owner value equal to the shipped default (`whisper`, `turbo`, `parakeet-tdt-0.6b-v3`,
+  `nemo-canary-1b-v2`) does not replace a different value in `config.json`. A default on the owner's
+  account may never have been a choice: first-run setup stored the wizard's Whisper size there, and the
+  settings page saves every displayed value, defaults included, whenever an administrator changes any
+  setting. The same autosave means a non-default value on the owner's account can be a snapshot of what
+  `config.json` held at the time; it still wins, even over a later hand edit of the file, because it is
+  what the owner was running. An unknown engine or Whisper size is not carried; model ids are passed to
+  the engine as given. The api log names every value carried, kept or rejected, and why. If
+  `config.json` cannot be read or written, the owner's choice stays on their account, unused, and the
+  next start tries again; until then everyone transcribes with the `config.json` engine. Workers do not
+  wait for the API, so a recording a worker picks up in the moments before the carry-over runs can
+  still be transcribed with the old `config.json` engine.
+
+  After the upgrade, users who are not administrators transcribe with the install's engine and model,
+  settled as above, and with whatever an administrator picks later. That is what the settings page
+  already described. Choices stored on other accounts, other administrators' included, are not
+  carried; they are ignored, and removed when that user next saves their settings.
 - **Empty JWT signing key:** if the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again.
 ### One-Time Migrations From Pre-Browser-Capture Releases
 
