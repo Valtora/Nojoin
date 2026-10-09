@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+from pathlib import Path
 
 import pytest
 
 from backend.processing import phantom_filter
 from backend.processing.processing_tuning import (
+    TUNING_SPECS,
     normalise_tuning_value,
     resolve_tuning,
     validate_tuning_candidate,
 )
 from backend.utils import transcript_utils
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_MIRROR = REPO_ROOT / "frontend" / "src" / "lib" / "processingTuning.json"
 
 # The values every reader used before any of them could be overridden. A change
 # here is a change to processing defaults, which this feature promised not to make.
@@ -144,3 +150,20 @@ def test_candidate_counts_an_unusable_value_as_its_default() -> None:
         validate_tuning_candidate(
             {"phantom_embedding_floor": 0.7, "phantom_merge_threshold": 4.0}
         )
+
+
+def test_the_frontend_mirror_matches_the_spec() -> None:
+    """The settings page validates against a JSON copy of these bounds. A copy
+    that drifts lets the page offer values the API refuses, or refuse values it
+    accepts; checking it here runs whenever the spec changes."""
+    mirror = json.loads(FRONTEND_MIRROR.read_text())
+
+    assert mirror == {
+        spec.key: {
+            "default": spec.default,
+            "min": spec.minimum,
+            "max": spec.maximum,
+            "integer": spec.integer,
+        }
+        for spec in TUNING_SPECS.values()
+    }

@@ -1,9 +1,13 @@
 import type { Settings } from "@/types";
 
+import TUNING_BOUNDS from "./processingTuning.json";
+
 /**
  * Shipped defaults and accepted ranges of the processing values a user may
- * override. Mirrors TUNING_SPECS in backend/processing/processing_tuning.py,
- * which is the authority: the API rejects anything outside these bounds.
+ * override. The defaults and bounds come from processingTuning.json, which
+ * mirrors TUNING_SPECS in backend/processing/processing_tuning.py, the
+ * authority: the API rejects anything outside these bounds, and a backend
+ * test fails when the JSON drifts from it. Labels and steps live here.
  *
  * A null (or absent) value means inherit: the install's config.json value if
  * the operator set one, else the default below.
@@ -15,7 +19,7 @@ export interface ProcessingTuningSpec {
   min: number;
   max: number;
   step: number;
-  integer?: boolean;
+  integer: boolean;
 }
 
 export type ProcessingTuningKey =
@@ -28,72 +32,38 @@ export type ProcessingTuningKey =
   | "word_flip_max_duration_s"
   | "word_flip_max_gap_s";
 
+interface TuningBounds {
+  default: number;
+  min: number;
+  max: number;
+  integer: boolean;
+}
+
+// Typed as a full record, so a key missing from the JSON fails the build.
+const BOUNDS: Record<ProcessingTuningKey, TuningBounds> = TUNING_BOUNDS;
+
+function tuningSpec(key: ProcessingTuningKey, label: string, step: number): ProcessingTuningSpec {
+  const bounds = BOUNDS[key];
+  return {
+    key,
+    label,
+    step,
+    defaultValue: bounds.default,
+    min: bounds.min,
+    max: bounds.max,
+    integer: bounds.integer,
+  };
+}
+
 export const PROCESSING_TUNING_SPECS: Record<ProcessingTuningKey, ProcessingTuningSpec> = {
-  vad_threshold: {
-    key: "vad_threshold",
-    label: "Speech detection threshold",
-    defaultValue: 0.5,
-    min: 0.15,
-    max: 0.9,
-    step: 0.05,
-  },
-  asr_word_end_padding_s: {
-    key: "asr_word_end_padding_s",
-    label: "Word end padding (seconds)",
-    defaultValue: 0.2,
-    min: 0.05,
-    max: 0.8,
-    step: 0.05,
-  },
-  phantom_max_duration_s: {
-    key: "phantom_max_duration_s",
-    label: "Max speech (seconds)",
-    defaultValue: 3,
-    min: 0,
-    max: 10,
-    step: 0.5,
-  },
-  phantom_max_segments: {
-    key: "phantom_max_segments",
-    label: "Max segments",
-    defaultValue: 3,
-    min: 0,
-    max: 20,
-    step: 1,
-    integer: true,
-  },
-  phantom_embedding_floor: {
-    key: "phantom_embedding_floor",
-    label: "Non-speech floor",
-    defaultValue: 0.35,
-    min: 0,
-    max: 0.95,
-    step: 0.05,
-  },
-  phantom_merge_threshold: {
-    key: "phantom_merge_threshold",
-    label: "Merge similarity",
-    defaultValue: 0.6,
-    min: 0.05,
-    max: 1,
-    step: 0.05,
-  },
-  word_flip_max_duration_s: {
-    key: "word_flip_max_duration_s",
-    label: "Max word length (seconds)",
-    defaultValue: 0.45,
-    min: 0,
-    max: 2,
-    step: 0.05,
-  },
-  word_flip_max_gap_s: {
-    key: "word_flip_max_gap_s",
-    label: "Max gap (seconds)",
-    defaultValue: 0.25,
-    min: 0,
-    max: 1,
-    step: 0.05,
-  },
+  vad_threshold: tuningSpec("vad_threshold", "Speech detection threshold", 0.05),
+  asr_word_end_padding_s: tuningSpec("asr_word_end_padding_s", "Word end padding (seconds)", 0.05),
+  phantom_max_duration_s: tuningSpec("phantom_max_duration_s", "Max speech (seconds)", 0.5),
+  phantom_max_segments: tuningSpec("phantom_max_segments", "Max segments", 1),
+  phantom_embedding_floor: tuningSpec("phantom_embedding_floor", "Non-speech floor", 0.05),
+  phantom_merge_threshold: tuningSpec("phantom_merge_threshold", "Merge similarity", 0.05),
+  word_flip_max_duration_s: tuningSpec("word_flip_max_duration_s", "Max word length (seconds)", 0.05),
+  word_flip_max_gap_s: tuningSpec("word_flip_max_gap_s", "Max gap (seconds)", 0.05),
 };
 
 export const PROCESSING_TUNING_KEYS = Object.keys(
