@@ -132,7 +132,9 @@ class _LiveSession:
         pass
 
 
-def _resolve_live(monkeypatch, user_settings: dict, *, first_run: bool = True) -> dict:
+def _resolve_live(
+    monkeypatch, user_settings: dict, *, warn_unusable: bool = True
+) -> dict:
     from backend.core import db as db_module
     from backend.processing import live_transcribe as lt
     from backend.worker import tasks as tasks_module
@@ -156,7 +158,7 @@ def _resolve_live(monkeypatch, user_settings: dict, *, first_run: bool = True) -
         "forced_max_s": 8.0,
         "max_segment_s": 20.0,
     }
-    return lt._resolve_live_engine_config(42, live_config, first_run=first_run)
+    return lt._resolve_live_engine_config(42, live_config, warn_unusable=warn_unusable)
 
 
 def test_live_engine_config_carries_the_owners_vad_threshold(monkeypatch):
@@ -172,18 +174,18 @@ def test_live_engine_config_carries_the_owners_word_end_padding(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("first_run", "warned"), [(True, True), (False, False)], ids=["first", "later"]
+    ("warn_unusable", "warned"), [(True, True), (False, False)], ids=["warn", "quiet"]
 )
-def test_live_engine_config_drops_an_unusable_value_warning_on_the_first_run(
-    monkeypatch, caplog, first_run, warned
+def test_live_engine_config_drops_an_unusable_value_warning_when_asked(
+    monkeypatch, caplog, warn_unusable, warned
 ):
     """Live segments arrive every few seconds; an unusable stored value is
-    dropped (so the reader inherits) and logged once, on the first run."""
+    dropped (so the reader inherits) and logged at WARNING only when asked."""
     with caplog.at_level(logging.WARNING):
         live_config = _resolve_live(
             monkeypatch,
             {"vad_threshold": 1.7, "asr_word_end_padding_s": 10**400},
-            first_run=first_run,
+            warn_unusable=warn_unusable,
         )
 
     assert live_config["vad_threshold"] is None

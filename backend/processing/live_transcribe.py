@@ -983,17 +983,27 @@ def _live_tuning_value(
     return value
 
 
+def _live_lane_has_consumed(state: dict) -> bool:
+    """Whether a live run of this recording has completed (from its state).
+
+    Until one has, each run warns about an unusable tuning value, so the
+    warning is not lost when the first run fails before loading the config.
+    """
+    outcomes = state.get(_STATE_SEQUENCE_OUTCOMES_KEY) or {}
+    return any(entry.get("outcome") == "consumed" for entry in outcomes.values())
+
+
 def _resolve_live_engine_config(
-    recording_id: int, live_config: dict, *, first_run: bool = True
+    recording_id: int, live_config: dict, *, warn_unusable: bool = True
 ) -> dict:
     """Layer user-aware overrides onto the base live engine config.
 
     Loads the recording's owning user once and merges their resolved LLM/ASR
     settings into ``live_config`` in place, returning the same dict. Behaviour is
     a no-op when the recording or user is absent. DB/model imports stay local so
-    module import time pulls in no ML inference dependencies. ``first_run``
-    marks the recording's first live run, the one that warns about unusable
-    tuning values.
+    module import time pulls in no ML inference dependencies.
+    ``warn_unusable`` logs an unusable tuning value at WARNING (else DEBUG);
+    the task sets it until a live run of the recording has completed.
     """
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
@@ -1055,13 +1065,13 @@ def _resolve_live_engine_config(
                         recording_id,
                         merged_config,
                         VAD_THRESHOLD_KEY,
-                        warn=first_run,
+                        warn=warn_unusable,
                     ),
                     "asr_word_end_padding_s": _live_tuning_value(
                         recording_id,
                         merged_config,
                         ASR_WORD_END_PADDING_KEY,
-                        warn=first_run,
+                        warn=warn_unusable,
                     ),
                 }
             )
@@ -1799,7 +1809,11 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         live_config = _build_live_config()
         W = int(live_config["context_window_s"] * LIVE_SAMPLE_RATE)
         # Load user-aware overrides once for live speaker matching.
-        _resolve_live_engine_config(recording_id, live_config, first_run=run[0] == 0)
+        _resolve_live_engine_config(
+            recording_id,
+            live_config,
+            warn_unusable=not _live_lane_has_consumed(state),
+        )
         ledger_enabled = bool(
             config_manager.get("enable_asr_window_result_ledger", True)
         )
