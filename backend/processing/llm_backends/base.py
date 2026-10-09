@@ -52,7 +52,9 @@ from backend.utils.meeting_notes import (
     build_meeting_context_prompt_section,
     build_meeting_metadata_prompt_section,
     build_notes_body_spec,
+    build_recording_speaker_map,
     build_user_notes_prompt_section,
+    format_segments_for_llm,
     strip_leading_title_heading,
 )
 from backend.utils.prompt_blocks import render_prompt_blocks
@@ -722,49 +724,37 @@ Preserve the same schema and do not invent facts not supported by the original t
 
     @staticmethod
     def get_mapped_transcript_for_llm(recording_id: int) -> str:
-        """
-        Fetches the diarized transcript and speaker mapping for a recording, and returns the mapped transcript as plaintext.
+        """Render a recording's transcript for Meeting Chat.
+
+        Reads the same view as notes generation and Meeting Edge: canonical
+        utterances (falling back to the stored projection for a recording
+        without them), speaker names resolved by ``build_recording_speaker_map``
+        and lines formatted by ``format_segments_for_llm``.
         """
         from sqlmodel import select
 
         from backend.core.db import get_sync_session
         from backend.models.recording import Recording
         from backend.models.speaker import RecordingSpeaker
-        from backend.models.transcript import Transcript
+        from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 
         with get_sync_session() as session:
             rec = session.get(Recording, recording_id)
             if not rec:
                 return "Recording not found."
 
-            # Get Transcript
-            transcript_obj = session.exec(
-                select(Transcript).where(Transcript.recording_id == recording_id)
-            ).first()
-            if not transcript_obj or not transcript_obj.segments:
+            segments = build_transcript_segments_for_read(session, recording_id)
+            if not segments:
                 return "Diarized transcript not found."
 
-            # Get Speakers
             speakers = session.exec(
                 select(RecordingSpeaker).where(
                     RecordingSpeaker.recording_id == recording_id
                 )
             ).all()
-            label_to_name = {s.diarization_label: s.name for s in speakers}
-
-            # Render
-            lines = []
-            for seg in transcript_obj.segments:
-                speaker_label = seg.get("speaker", "Unknown")
-                speaker_name = label_to_name.get(speaker_label, speaker_label)
-                text = seg.get("text", "")
-                start = seg.get("start", 0)
-                minutes = int(start // 60)
-                seconds = int(start % 60)
-                timestamp = f"[{minutes:02d}:{seconds:02d}]"
-                lines.append(f"{timestamp} {speaker_name}: {text}")
-
-            return "\n".join(lines)
+            return format_segments_for_llm(
+                segments, build_recording_speaker_map(speakers)
+            )
 
     def _update_notes_in_db(self, recording_id: int, new_notes: str):
         """
