@@ -825,7 +825,9 @@ def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
             status_code=409,
             detail=UPLOAD_CLOSED_DETAIL,
         )
-    _refuse_while_finalizing_import(recording)
+    # An import's claim, live or stale, is never a capture to finalize.
+    if _carries_finalize_claim(recording):
+        raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
 
 
 def generate_default_meeting_name() -> str:
