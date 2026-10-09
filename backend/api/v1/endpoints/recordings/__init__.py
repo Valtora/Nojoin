@@ -95,6 +95,7 @@ from .helpers import (
     _mark_recording_upload_error,
     _normalize_segment_content_type,
     _quarantine_corrupt_browser_segments,
+    _recording_has_audio,
     _recording_has_proxy,
     _requeue_for_processing,
     _rescue_pending_browser_segments_for_finalize,

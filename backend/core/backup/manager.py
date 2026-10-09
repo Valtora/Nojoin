@@ -11,7 +11,6 @@ from backend.core.backup.export import (  # noqa: F401  (public surface preserve
     create_backup_blocking,
 )
 from backend.core.backup.format import (  # noqa: F401  (re-exported for callers and tests)
-    ARCHIVABLE_AUDIO_EXTENSIONS,
     ARCHIVE_QUALITIES,
     ARCHIVE_QUALITY_COMPRESSED,
     ARCHIVE_QUALITY_ORIGINAL,

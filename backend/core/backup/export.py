@@ -52,6 +52,10 @@ def _compress_to_opus(input_path: str) -> str:
         "-y",
         "-i",
         input_path,
+        # Defensive: states the audio-only intent explicitly. The .opus output
+        # already selects ffmpeg's audio-only muxer, so a video import's picture
+        # is not encoded either way.
+        "-vn",
         "-c:a",
         "libopus",
         "-b:a",
@@ -92,6 +96,21 @@ def _table_dump_statement(table_name: str, model_cls: Type[SQLModel]):
     return statement
 
 
+def _audio_member_compression(arcname: str) -> int:
+    """How an audio member is stored in the zip, decided by its extension.
+
+    A member whose extension is a compressed audio format is stored uncompressed:
+    deflating it costs CPU for nothing (on Opus it measured a 0.99 ratio at about
+    58 MB/s). WAV normally holds raw PCM, which deflate still shrinks. The file's
+    contents are not inspected, so a WAV holding compressed audio is deflated for
+    no gain, and another container carrying PCM (a MOV, AVI or MKA can) is stored
+    at full size.
+    """
+    if arcname.lower().endswith(".wav"):
+        return zipfile.ZIP_DEFLATED
+    return zipfile.ZIP_STORED
+
+
 def _write_audio_members(
     zipf: zipfile.ZipFile,
     audio_plan: _AudioPlan,
@@ -115,11 +134,14 @@ def _write_audio_members(
         report(stage, index, total)
         opus_path: str | None = None
         try:
+            compress_type = _audio_member_compression(entry.arcname)
             if entry.compress:
                 opus_path = _compress_to_opus(entry.source_path)
-                zipf.write(opus_path, entry.arcname)
+                zipf.write(opus_path, entry.arcname, compress_type=compress_type)
             else:
-                zipf.write(entry.source_path, entry.arcname)
+                zipf.write(
+                    entry.source_path, entry.arcname, compress_type=compress_type
+                )
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to process audio {entry.source_path}: {e}")
             failed += 1
@@ -240,7 +262,7 @@ def _create_backup_sync(request: _ExportRequest) -> Tuple[str, Dict[str, Any]]:
                 "recordings_without_audio": audio_plan.missing_audio
                 if include_audio
                 else 0,
-                "recordings_audio_failed": failed_audio,
+                "recordings_audio_failed": failed_audio + audio_plan.colliding_audio,
                 "documents_without_files": document_plan.missing_files,
                 "documents_failed": failed_documents,
             }

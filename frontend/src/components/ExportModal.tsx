@@ -11,6 +11,8 @@ interface ExportModalProps {
   onClose: () => void;
   onExport: (contentType: ExportContentType, format: ExportFormat) => void;
   hasNotes: boolean;
+  /** False when the recording's audio is gone, so there is nothing to export. */
+  hasAudio: boolean;
 }
 
 export default function ExportModal({
@@ -18,6 +20,7 @@ export default function ExportModal({
   onClose,
   onExport,
   hasNotes,
+  hasAudio,
 }: ExportModalProps) {
   const [selected, setSelected] = useState<ExportContentType>("transcript");
   const [format, setFormat] = useState<ExportFormat>("txt");
@@ -212,10 +215,12 @@ export default function ExportModal({
 
             {/* Audio Option */}
             <label
-              className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
-                selected === "audio"
-                  ? "border-action bg-action-tint"
-                  : "border-surface-border hover:border-control-border"
+              className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-colors ${
+                !hasAudio
+                  ? "opacity-50 cursor-not-allowed border-surface-border"
+                  : selected === "audio"
+                    ? "border-action bg-action-tint cursor-pointer"
+                    : "border-surface-border hover:border-control-border cursor-pointer"
               }`}
             >
               <input
@@ -223,7 +228,8 @@ export default function ExportModal({
                 name="exportType"
                 value="audio"
                 checked={selected === "audio"}
-                onChange={() => setSelected("audio")}
+                onChange={() => hasAudio && setSelected("audio")}
+                disabled={!hasAudio}
                 className="sr-only"
               />
               <div
@@ -240,7 +246,9 @@ export default function ExportModal({
                   Audio File (.mp3)
                 </div>
                 <div className="text-sm text-contrast-helper">
-                  Export the proxy audio file of the recording
+                  {hasAudio
+                    ? "Export the proxy audio file of the recording"
+                    : "This recording's audio is not available"}
                 </div>
               </div>
               <div
