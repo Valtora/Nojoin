@@ -63,11 +63,23 @@ _STREAM_COPY_SUFFIXES = {
 
 # Any other codec is re-encoded. PCM and the other lossless codecs become FLAC:
 # still lossless, about 40% of a WAV's size, and free of WAV's 4 GiB limit.
-# Anything else (MP2, AC-3, AMR, DTS, ...) becomes what browser capture stores:
-# Opus at 160 kb/s in WebM.
+# SMPTE 302M is the PCM of broadcast MPEG-TS. Anything else (MP2, AC-3, AMR,
+# DTS, ...) becomes what browser capture stores: Opus at 160 kb/s in WebM.
 _PCM_CODEC_PREFIX = "pcm_"
 _LOSSLESS_CODECS = frozenset(
-    {"wavpack", "tta", "truehd", "mlp", "ape", "tak", "wmalossless"}
+    {
+        "wavpack",
+        "tta",
+        "truehd",
+        "mlp",
+        "ape",
+        "tak",
+        "wmalossless",
+        "s302m",
+        "mp4als",
+        "shorten",
+        "ralf",
+    }
 )
 _REENCODE_SUFFIX = ".webm"
 _REENCODE_OPUS_BITRATE = "160k"

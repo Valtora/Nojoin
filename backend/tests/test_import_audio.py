@@ -139,6 +139,15 @@ _EXTRACTIONS = [
     ),
     # An upload format that carries video is stored as audio too.
     (["-c:v", "mpeg4", "-c:a", "aac"], ".mp4", ".m4a", "aac", 1),
+    # SMPTE 302M, the PCM of broadcast MPEG-TS, is lossless: kept as FLAC.
+    (
+        ["-c:v", "mpeg2video", "-ac", "2", "-c:a", "s302m", "-strict", "-2"]
+        + ["-f", "mpegts"],
+        ".ts",
+        ".flac",
+        "flac",
+        2,
+    ),
 ]
 
 
