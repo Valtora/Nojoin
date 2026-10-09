@@ -338,18 +338,6 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["phantom speaker", "brief speaker", "short speaker", "noise", "chime", "large meeting", "tuning"],
   },
   {
-    id: "recording-speaker-merge",
-    label: "Duplicate speaker merge similarity",
-    description:
-      "How alike two detected speakers' voices must be before they are merged into one. Lower merges more split speakers, but wrong merges are harder to undo than splits.",
-    category: "recording",
-    access: "all",
-    advanced: "can-degrade",
-    settingsKeys: ["speaker_merge_threshold"],
-    defaultValue: null,
-    keywords: ["merge threshold", "duplicate speaker", "split speaker", "same person", "voiceprint", "large meeting", "tuning"],
-  },
-  {
     id: "recording-word-flip",
     label: "Single-word flip smoothing",
     description:

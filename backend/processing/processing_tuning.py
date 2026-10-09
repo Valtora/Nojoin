@@ -38,7 +38,6 @@ PHANTOM_MAX_DURATION_KEY = "phantom_max_duration_s"
 PHANTOM_MAX_SEGMENTS_KEY = "phantom_max_segments"
 PHANTOM_EMBEDDING_FLOOR_KEY = "phantom_embedding_floor"
 PHANTOM_MERGE_THRESHOLD_KEY = "phantom_merge_threshold"
-SPEAKER_MERGE_THRESHOLD_KEY = "speaker_merge_threshold"
 WORD_FLIP_MAX_DURATION_KEY = "word_flip_max_duration_s"
 WORD_FLIP_MAX_GAP_KEY = "word_flip_max_gap_s"
 
@@ -59,10 +58,6 @@ TUNING_SPECS: dict[str, TuningSpec] = {
         # validate_tuning_candidate), or no brief speaker is ever retained.
         TuningSpec(PHANTOM_EMBEDDING_FLOOR_KEY, 0.35, 0.0, 0.95),
         TuningSpec(PHANTOM_MERGE_THRESHOLD_KEY, 0.60, 0.05, 1.0),
-        # 0.30 sits under the measured same-person 10th percentile (0.363) and
-        # far above the different-person median (0.073); see ARCHITECTURE.md,
-        # "Speaker Cap And Voiceprint Versioning".
-        TuningSpec(SPEAKER_MERGE_THRESHOLD_KEY, 0.70, 0.30, 1.00),
         # Past about 2 s a single-word "flip" is a genuine interjection.
         TuningSpec(WORD_FLIP_MAX_DURATION_KEY, 0.45, 0.0, 2.0),
         TuningSpec(WORD_FLIP_MAX_GAP_KEY, 0.25, 0.0, 1.0),

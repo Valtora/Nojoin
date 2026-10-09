@@ -113,7 +113,7 @@ def test_a_non_admin_can_store_a_value() -> None:
         {"vad_threshold": 0.95},
         {"vad_threshold": True},
         {"phantom_max_segments": 2.5},
-        {"speaker_merge_threshold": 0.29},
+        {"phantom_merge_threshold": 0.04},
         # Too large to convert to a float: must still be a 422, not a 500.
         {"vad_threshold": 10**400},
     ],

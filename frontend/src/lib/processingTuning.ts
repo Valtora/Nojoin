@@ -25,7 +25,6 @@ export type ProcessingTuningKey =
   | "phantom_max_segments"
   | "phantom_embedding_floor"
   | "phantom_merge_threshold"
-  | "speaker_merge_threshold"
   | "word_flip_max_duration_s"
   | "word_flip_max_gap_s";
 
@@ -78,14 +77,6 @@ export const PROCESSING_TUNING_SPECS: Record<ProcessingTuningKey, ProcessingTuni
     min: 0.05,
     max: 1,
     step: 0.05,
-  },
-  speaker_merge_threshold: {
-    key: "speaker_merge_threshold",
-    label: "Duplicate speaker merge similarity",
-    defaultValue: 0.7,
-    min: 0.3,
-    max: 1,
-    step: 0.01,
   },
   word_flip_max_duration_s: {
     key: "word_flip_max_duration_s",

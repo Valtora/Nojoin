@@ -7,10 +7,6 @@ from backend.processing.embedding_version import (
     EMBEDDING_METHOD_VERSION,
     LEGACY_EMBEDDING_METHOD_VERSION,
 )
-from backend.processing.processing_tuning import (
-    SPEAKER_MERGE_THRESHOLD_KEY,
-    TUNING_SPECS,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +25,7 @@ UI_SHOW_MATCH_THRESHOLD = 0.50
 UI_STRONG_MATCH_THRESHOLD = 0.75
 # Embedding-based speaker deduplication: cosine similarity above which two
 # RecordingSpeaker rows within the same recording are merged automatically.
-# This is the default; a user's settings may override it (processing_tuning.py).
-DUPLICATE_SPEAKER_MERGE_THRESHOLD = TUNING_SPECS[SPEAKER_MERGE_THRESHOLD_KEY].default
+DUPLICATE_SPEAKER_MERGE_THRESHOLD = 0.70
 # Default threshold for the scan-matches endpoint
 SCAN_MATCH_THRESHOLD = 0.75
 

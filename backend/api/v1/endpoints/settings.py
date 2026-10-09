@@ -117,7 +117,6 @@ class SettingsUpdate(BaseModel):
     phantom_max_segments: Optional[int] = None
     phantom_embedding_floor: Optional[float] = None
     phantom_merge_threshold: Optional[float] = None
-    speaker_merge_threshold: Optional[float] = None
     word_flip_max_duration_s: Optional[float] = None
     word_flip_max_gap_s: Optional[float] = None
 

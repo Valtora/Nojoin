@@ -17,11 +17,6 @@ Two load-bearing invariants run through the whole stage:
 
 from dataclasses import dataclass
 
-from backend.processing.processing_tuning import (
-    SPEAKER_MERGE_THRESHOLD_KEY,
-    resolve_tuning,
-)
-
 from .constants import *  # noqa: F403
 
 
@@ -325,7 +320,6 @@ def _run_duplicate_merge_pass(
         merge_pairs = merge_duplicate_speakers(
             ctx.session,
             recording_id=recording.id,
-            threshold=resolve_tuning(ctx.merged_config, SPEAKER_MERGE_THRESHOLD_KEY),
             segments=final_segments,
             # Utterance rows are not written until after this stage on an
             # imported recording, so speech duration is the only survivor

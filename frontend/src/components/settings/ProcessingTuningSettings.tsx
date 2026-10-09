@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState, type ChangeEvent } from "react";
-import { ArrowLeftRight, Ghost, Mic, RotateCcw, Timer, Users } from "lucide-react";
+import { ArrowLeftRight, Ghost, Mic, RotateCcw, Timer } from "lucide-react";
 
 import {
   PROCESSING_TUNING_SPECS,
@@ -152,15 +152,6 @@ export default function ProcessingTuningSettings({
           {input("phantom_embedding_floor", true)}
           {input("phantom_merge_threshold", true)}
         </div>
-      </SettingsRow>
-
-      <SettingsRow
-        id="recording-speaker-merge"
-        label="Duplicate speaker merge similarity"
-        description="Two detected speakers whose voices are at least this similar are merged into one. Lower merges more speakers who were split in two, but also merges different people, which is harder to undo than a split."
-        icon={<Users className={ICON_CLASS} aria-hidden="true" />}
-      >
-        {input("speaker_merge_threshold")}
       </SettingsRow>
 
       <SettingsRow

@@ -7,7 +7,7 @@ import math
 
 import pytest
 
-from backend.processing import embedding, phantom_filter
+from backend.processing import phantom_filter
 from backend.processing.processing_tuning import (
     normalise_tuning_value,
     resolve_tuning,
@@ -24,7 +24,6 @@ TODAYS_LITERALS = {
     "phantom_max_segments": 3,
     "phantom_embedding_floor": 0.35,
     "phantom_merge_threshold": 0.60,
-    "speaker_merge_threshold": 0.70,
     "word_flip_max_duration_s": 0.45,
     "word_flip_max_gap_s": 0.25,
 }
@@ -44,7 +43,6 @@ def test_module_constants_keep_todays_literals() -> None:
     assert phantom_filter.PHANTOM_MAX_SEGMENTS == 3
     assert phantom_filter.PHANTOM_EMBEDDING_FLOOR == 0.35
     assert phantom_filter.PHANTOM_MERGE_THRESHOLD == 0.60
-    assert embedding.DUPLICATE_SPEAKER_MERGE_THRESHOLD == 0.70
     assert transcript_utils.ISOLATED_WORD_FLIP_MAX_DURATION_S == 0.45
     assert transcript_utils.ISOLATED_WORD_FLIP_MAX_GAP_S == 0.25
 
@@ -58,8 +56,7 @@ def test_module_constants_keep_todays_literals() -> None:
         ("asr_word_end_padding_s", 0.80),
         ("phantom_max_duration_s", 0),
         ("phantom_max_segments", 20),
-        ("speaker_merge_threshold", 0.30),
-        ("speaker_merge_threshold", 1),
+        ("phantom_merge_threshold", 1),
         ("word_flip_max_gap_s", 0.0),
     ],
 )
@@ -72,7 +69,7 @@ def test_boundary_values_are_accepted(key, value) -> None:
     [
         ("vad_threshold", 0.1499),
         ("vad_threshold", 0.95),
-        ("speaker_merge_threshold", 0.29),
+        ("phantom_merge_threshold", 0.04),
         ("phantom_max_segments", 21),
         ("phantom_max_segments", -1),
         ("phantom_max_segments", 2.5),

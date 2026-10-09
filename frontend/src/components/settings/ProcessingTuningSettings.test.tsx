@@ -20,7 +20,7 @@ describe("ProcessingTuningSettings", () => {
     const { onUpdate } = renderTuning({
       theme: "dark",
       vad_threshold: 0.3,
-      speaker_merge_threshold: 0.6,
+      phantom_merge_threshold: 0.7,
     });
 
     fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));

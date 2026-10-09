@@ -52,13 +52,13 @@ describe("validateProcessingTuning", () => {
     expect(validateProcessingTuning({})).toBeNull();
     expect(validateProcessingTuning(processingTuningReset())).toBeNull();
     expect(
-      validateProcessingTuning({ vad_threshold: 0.15, speaker_merge_threshold: 1 }),
+      validateProcessingTuning({ vad_threshold: 0.15, phantom_merge_threshold: 1 }),
     ).toBeNull();
   });
 
   it.each([
     [{ vad_threshold: 0.95 }],
-    [{ speaker_merge_threshold: 0.29 }],
+    [{ phantom_merge_threshold: 0.04 }],
     [{ phantom_max_segments: 2.5 }],
     [{ asr_word_end_padding_s: Number.NaN }],
   ])("rejects %o", (settings) => {

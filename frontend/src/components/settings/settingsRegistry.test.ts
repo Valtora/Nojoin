@@ -338,7 +338,6 @@ describe("registry search", () => {
     ["vad threshold", "recording-vad-threshold"],
     ["quiet speech", "recording-vad-threshold"],
     ["brief speaker", "recording-phantom-filter"],
-    ["merge threshold", "recording-speaker-merge"],
   ])("finds processing tuning by %s", (query, id) => {
     const ids = searchSettingsRegistry(query, { isAdmin: false }).map(
       (result) => result.entry.id,

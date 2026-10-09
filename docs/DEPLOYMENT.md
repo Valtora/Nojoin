@@ -475,7 +475,6 @@ inherit. An operator can set an installation default for any of these keys as a 
 | `phantom_max_segments` | 3 | 0 to 20 (whole number) |
 | `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
 | `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
-| `speaker_merge_threshold` | 0.70 | 0.30 to 1.00 |
 | `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
 | `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
 
