@@ -595,9 +595,12 @@ def _delete_hub_repo(repo_dir: str) -> None:
     if strategy is not None:
         strategy.execute()
     # Refs, snapshot directories and unfinished downloads are left by
-    # delete_files. huggingface_hub also logs a path it could not remove and
-    # carries on; removing what is left here raises instead, so a failure
-    # reaches the UI.
+    # delete_files. huggingface_hub also logs a repo path it could not remove
+    # and carries on; removing what is left here raises instead, so a failure
+    # inside the repo reaches the UI. A shared copy it could not free (a lock
+    # or a store directory it may not write) is logged only at debug level and
+    # stays until `hf cache prune`: execute() discards the sweep's result, so
+    # there is nothing here to report it from.
     shutil.rmtree(repo_dir)
 
 
