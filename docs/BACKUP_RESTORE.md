@@ -79,7 +79,7 @@ Each recording's audio is selected from its database record, so the master recor
 
 ### Recordings Without Audio
 
-If a recording's audio file is missing from disk when the backup runs, or cannot be read, re-encoded or given a unique name in the archive, its metadata, transcript and notes are still archived and you are told how many recordings were affected, both at download time and inside the archive's `backup_info.json` (`recordings_without_audio`, `recordings_audio_failed`). Those recordings restore without playable audio, and their player says the audio is not available.
+If a recording's audio file is missing from disk or empty when the backup runs, or cannot be read, re-encoded or given a unique name in the archive, its metadata, transcript and notes are still archived and you are told how many recordings were affected, both at download time and inside the archive's `backup_info.json` (`recordings_without_audio`, `recordings_audio_failed`). Those recordings restore without playable audio, and their player says the audio is not available.
 
 Backups from earlier versions archived audio only for WAV, MP3, M4A, OGG, FLAC and Opus recordings. Browser recordings made since v1.1.0 (stored as WebM) and AAC, MP4, WMA or WebM imports were left out of the archive. Backups taken with v1.7.0 or later counted them among recordings that had no audio file on disk, and earlier versions did not report them. Those recordings are metadata only in such an archive. Take a new backup to capture their audio.
 

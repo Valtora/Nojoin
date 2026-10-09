@@ -71,7 +71,10 @@ def _resolve_source_audio_path(
     audio_path: str | None,
     recordings_dir: str | os.PathLike[str],
 ) -> str | None:
-    """Find a recording's audio on disk, or ``None`` if it is not there.
+    """Find a recording's audio on disk, or ``None`` if it is not there or is empty.
+
+    An empty file, left by an interrupted write, is no audio: the player treats it
+    as unavailable, so the backup counts it as missing rather than archiving it.
 
     ``Recording.audio_path`` is stored relative to the process working directory,
     which is ``/app`` in every container. The recordings directory is tried as a
@@ -89,7 +92,7 @@ def _resolve_source_audio_path(
         )
 
     for candidate in candidates:
-        if os.path.isfile(candidate):
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
             return candidate
 
     return None
@@ -112,7 +115,7 @@ def _build_audio_plan(
         source_path = _resolve_source_audio_path(audio_path, recordings_dir)
         if source_path is None:
             logger.warning(
-                "Recording audio not found on disk; archiving metadata only: %s",
+                "Recording audio missing or empty on disk; archiving metadata only: %s",
                 audio_path,
             )
             plan.missing_audio += 1

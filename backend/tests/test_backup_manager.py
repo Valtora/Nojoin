@@ -1794,6 +1794,41 @@ async def test_backup_counts_recordings_whose_audio_is_missing_from_disk(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "quality",
+    [backup_format.ARCHIVE_QUALITY_ORIGINAL, backup_format.ARCHIVE_QUALITY_COMPRESSED],
+)
+async def test_backup_counts_an_empty_audio_file_as_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quality: str
+) -> None:
+    # An interrupted write can leave an empty master, which the player reports as
+    # unavailable. Original quality used to archive it as an empty member without a
+    # word, and Compressed counted it as an audio file that failed to encode.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    empty = context.path_manager.recordings_directory / "interrupted.webm"
+    empty.write_bytes(b"")
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-empty",
+        recording_audio_path=str(empty),
+        recording_proxy_path=None,
+    )
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True, archive_quality=quality
+    )
+
+    assert warnings["recordings_without_audio"] == 1
+    assert warnings["recordings_audio_failed"] == 0
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        assert not [n for n in archive.namelist() if n.startswith("recordings/")]
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
 async def test_restore_refuses_an_archive_from_a_newer_format_version(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
