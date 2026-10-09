@@ -564,8 +564,10 @@ def _delete_hub_repo(repo_dir: str) -> None:
         return os.path.commonpath([real, repo_dir]) == repo_dir
 
     # scan_cache_dir reads every repo in the cache, so an unrelated one it
-    # cannot read (root-owned files left by a sudo run in a personal cache)
-    # would otherwise make every model undeletable.
+    # cannot read (root-owned files left by a sudo run in a personal cache, or
+    # a ref torn into bytes that are not text) would otherwise make every
+    # model undeletable. Nothing is deleted until the plan is made, so
+    # catching here cannot hide a partial deletion.
     try:
         cache_info = scan_cache_dir(cache_dir=os.path.dirname(repo_dir))
         # delete_files unlinks each snapshot entry and removes the first place
@@ -585,7 +587,7 @@ def _delete_hub_repo(repo_dir: str) -> None:
             if inside_repo(file.file_path.parent) and inside_repo(file.blob_path.parent)
         ]
         strategy = cache_info.delete_files(*files) if files else None
-    except OSError as e:
+    except (OSError, UnicodeError) as e:
         logger.warning(
             f"Could not read the hub cache to delete {repo_dir} ({e}). Removing it "
             "as a directory only: a file it shared with another repo stays until "

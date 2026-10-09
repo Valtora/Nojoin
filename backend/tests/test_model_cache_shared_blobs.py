@@ -213,6 +213,19 @@ def test_an_unreadable_unrelated_repo_does_not_block_deletion(hub, caplog):
     assert "hf cache prune" in caplog.text
 
 
+def test_an_unrelated_repo_with_a_garbled_ref_does_not_block_deletion(hub):
+    """huggingface_hub reads each ref as text; a torn one raises UnicodeDecodeError."""
+    repo, payloads = _shared_parakeet(hub)
+    unrelated = write_hf_repo(hub, "someone/else", {"a.txt": b"a"}, ref=False)
+    (unrelated / "refs").mkdir()
+    (unrelated / "refs" / "main").write_bytes(b"\xff\xfe\x00garbage")
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    assert (unrelated / "snapshots" / COMMIT / "a.txt").read_bytes() == b"a"
+
+
 def test_a_partial_download_frees_the_file_it_finished(hub):
     """Cut off after vocab.txt: one shared file linked, one blob in flight."""
     repo = write_hf_repo(hub, PARAKEET, {"vocab.txt": b"vocab"})
