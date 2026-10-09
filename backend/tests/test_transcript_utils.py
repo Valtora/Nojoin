@@ -314,3 +314,78 @@ def test_segment_level_combination_ignores_tiny_secondary_overlap():
             "text": "hello there",
         }
     ]
+
+
+def _spans(segments):
+    return [(seg["start"], seg["end"], seg["speaker"], seg["text"]) for seg in segments]
+
+
+def test_combination_keeps_text_of_a_segment_without_words():
+    # A segment with an empty "words" list between segments that have words.
+    transcription = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "text": " Let's start.",
+                "words": [
+                    {"start": 0.0, "end": 0.5, "word": " Let's"},
+                    {"start": 0.5, "end": 1.0, "word": " start."},
+                ],
+            },
+            {"start": 1.5, "end": 3.0, "text": " Sorry, I was muted.", "words": []},
+            {
+                "start": 3.5,
+                "end": 4.5,
+                "text": " No problem.",
+                "words": [
+                    {"start": 3.5, "end": 4.0, "word": " No"},
+                    {"start": 4.0, "end": 4.5, "word": " problem."},
+                ],
+            },
+        ]
+    }
+    diarization = FakeDiarization(
+        [(0.0, 1.2, "SPEAKER_00"), (1.4, 3.1, "SPEAKER_01"), (3.4, 4.6, "SPEAKER_00")]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _spans(result) == [
+        (0.0, 1.0, "SPEAKER_00", "Let's start."),
+        (1.5, 3.0, "SPEAKER_01", "Sorry, I was muted."),
+        (3.5, 4.5, "SPEAKER_00", "No problem."),
+    ]
+    assert "words" not in result[1]
+
+
+def test_combination_aligns_words_after_a_segment_without_them():
+    # A chunked onnx-asr run can return one window without token timings;
+    # later windows still carry words and must be aligned word by word.
+    transcription = {
+        "segments": [
+            {"start": 0.0, "end": 2.0, "text": " Good morning everyone."},
+            {
+                "start": 2.5,
+                "end": 4.0,
+                "text": " Thanks. Sure, go ahead.",
+                "words": [
+                    {"start": 2.5, "end": 3.0, "word": " Thanks."},
+                    {"start": 3.1, "end": 3.5, "word": " Sure,"},
+                    {"start": 3.5, "end": 3.7, "word": " go"},
+                    {"start": 3.7, "end": 4.0, "word": " ahead."},
+                ],
+            },
+        ]
+    }
+    diarization = FakeDiarization(
+        [(0.0, 3.05, "SPEAKER_00"), (3.05, 4.0, "SPEAKER_01")]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "SPEAKER_00", "Good morning everyone."),
+        (2.5, 3.0, "SPEAKER_00", "Thanks."),
+        (3.1, 4.0, "SPEAKER_01", "Sure, go ahead."),
+    ]

@@ -109,6 +109,7 @@ def render_transcript(transcript_path, label_to_name, output_format="plain"):
         return "\n".join(display_lines)
 
 
+from itertools import groupby
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -120,9 +121,11 @@ def combine_transcription_diarization(
 ) -> Optional[List[Dict]]:
     """Combines Whisper segments with Pyannote diarization.
 
-    Automatically detects if word-level timestamps are available:
-    - If YES: Uses precise word-level alignment (better for fast turn-taking).
-    - If NO: Uses segment-level dominant speaker logic (fallback for Windows/No-Triton).
+    Word timestamps are optional per segment, so each run of consecutive
+    segments is combined on its own:
+    - With words: precise word-level alignment (better for fast turn-taking).
+    - Without: segment-level dominant speaker logic (fallback for Windows/No-Triton,
+      or a segment the engine returned without word timings). Its text is kept.
 
     Args:
         transcription: The result dictionary from whisper.transcribe().
@@ -141,15 +144,20 @@ def combine_transcription_diarization(
         segments = transcription["segments"]
         speaker_turns = diarization
 
-        # Check if we have word timestamps
-        has_word_timestamps = len(segments) > 0 and "words" in segments[0]
-
-        if has_word_timestamps:
-            logger.info("Combining using WORD-LEVEL timestamps (High Precision)")
-            return _combine_word_level(segments, speaker_turns)
-        else:
-            logger.info("Combining using SEGMENT-LEVEL timestamps (Standard Precision)")
-            return _combine_segment_level(segments, speaker_turns)
+        word_segment_count = sum(1 for seg in segments if seg.get("words"))
+        logger.info(
+            "Combining %d of %d segments using WORD-LEVEL timestamps (High Precision), "
+            "the rest using SEGMENT-LEVEL timestamps (Standard Precision)",
+            word_segment_count,
+            len(segments),
+        )
+        combined: list[dict] = []
+        for has_words, run in groupby(segments, key=lambda seg: bool(seg.get("words"))):
+            if has_words:
+                combined.extend(_combine_word_level(list(run), speaker_turns))
+            else:
+                combined.extend(_combine_segment_level(list(run), speaker_turns))
+        return combined
 
     except Exception as e:
         logger.error(
