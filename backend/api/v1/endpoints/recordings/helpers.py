@@ -47,16 +47,11 @@ from backend.utils.recording_audio_sync import (
     sync_recording_audio_window_manifests,
 )
 from backend.utils.recording_storage import (
-    FINALIZING_IMPORT_STEP,
     RECORDING_UPLOAD_RETENTION_HOURS,
-    is_finalize_claim_token,
-    is_finalizing_import,
-    remove_finalize_leftovers,
 )
 from backend.utils.time import utc_now
 
 from .constants import (
-    IMPORT_BEING_FINALIZED_DETAIL,
     LOSSY_AUDIO_SUFFIXES,
     SEGMENT_CONTENT_TYPE_SUFFIXES,
     STATUS_UPDATES_CLOSED_DETAIL,
@@ -118,11 +113,7 @@ def _enforce_lossy_audio_bitrate_floor(file_path: str) -> None:
     from backend.processing.audio_preprocessing import analyze_audio_file
 
     audio_info = analyze_audio_file(file_path)
-    _enforce_lossy_bitrate(_estimated_audio_bitrate_bits_per_second(audio_info))
-
-
-def _enforce_lossy_bitrate(bitrate: int | None) -> None:
-    """Refuse lossy audio below the floor, or whose bitrate is unknown."""
+    bitrate = _estimated_audio_bitrate_bits_per_second(audio_info)
     if bitrate is None:
         raise HTTPException(
             status_code=422,
@@ -765,54 +756,6 @@ def _ensure_recording_accepts_status_updates(recording: Recording) -> None:
         )
 
 
-async def _lock_unless_finalizing_import(
-    db: AsyncSession, recording: Recording, *, refuse_stale: bool = False
-) -> None:
-    """Lock ``recording`` for this transaction, refusing an import whose
-    finalize is extracting its audio.
-
-    The claimed import is still UPLOADING, but its files are being read and
-    its row is about to be queued, so nothing else may change either. The row
-    is re-read under the lock, so a claim cannot land between this check and
-    the caller's write. ``refuse_stale`` refuses a stale claim too, whose
-    finalize may still be running: only discard, which removes the import,
-    may end one.
-    """
-    await db.refresh(recording, with_for_update=True)
-    if refuse_stale and _carries_finalize_claim(recording):
-        raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
-    _refuse_while_finalizing_import(recording)
-
-
-def _carries_finalize_claim(recording: Recording) -> bool:
-    """A finalize claim is on the row, stale or not."""
-    return (
-        recording.status == RecordingStatus.UPLOADING
-        and recording.processing_step == FINALIZING_IMPORT_STEP
-    )
-
-
-def _refuse_while_finalizing_import(recording: Recording) -> None:
-    if is_finalizing_import(recording):
-        raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
-
-
-def _remove_claimed_import_leftovers(recording: Recording) -> None:
-    """Before an import is deleted, remove what its finalize attempts wrote.
-
-    Their files are named after ``audio_path``, not at it, so deleting the
-    recording's artifacts alone would leave them.
-    """
-    if _carries_finalize_claim(recording):
-        remove_finalize_leftovers(recording.audio_path, logger=logger)
-
-
-def _revocable_task_id(recording: Recording) -> str | None:
-    """``celery_task_id`` when it names a task, not a finalize claim's token."""
-    task_id = recording.celery_task_id
-    return None if is_finalize_claim_token(task_id) else task_id
-
-
 def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
     # PAUSED is accepted so a capture whose browser runtime is gone can still be
     # finalized (issue #166). Requiring a resume first meant the client had to
@@ -825,9 +768,6 @@ def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
             status_code=409,
             detail=UPLOAD_CLOSED_DETAIL,
         )
-    # An import's claim, live or stale, is never a capture to finalize.
-    if _carries_finalize_claim(recording):
-        raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
 
 
 def generate_default_meeting_name() -> str:

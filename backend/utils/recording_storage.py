@@ -6,13 +6,10 @@ import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
 
-from sqlalchemy import update
 from sqlmodel import select
 
 from backend.models.pipeline import RecordingAudioChunk
-from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.utils.time import utc_now
 
 RECORDING_UPLOAD_RETENTION_HOURS = 24
@@ -258,134 +255,6 @@ def cleanup_recording_audio_chunks(
     return cleaned_count
 
 
-# A chunked import being finalized stays UPLOADING, so every guard that keeps an
-# upload from being reprocessed, shown as finished or swept still applies. Its
-# finalize claims it in one conditional UPDATE, committed before the audio is
-# extracted outside any transaction: the step marks the claim, ``updated_at``
-# dates it, and ``celery_task_id`` holds the claim's token, which names the
-# finalize attempt that owns it. That column is free while an import is
-# UPLOADING; finalize overwrites it with the processing task's id once the
-# import is queued. Every write that settles the claim matches the token, so a
-# finalize acts only on its own claim. A claim older than
-# FINALIZE_CLAIM_STALE_AFTER may be taken over by the next finalize, and is
-# released by the daily cleanup; staleness gates only that, never the owner.
-FINALIZING_IMPORT_STEP = "Finalizing import"
-IMPORT_FINALIZING_CODE = "import_finalizing"
-FINALIZE_CLAIM_STALE_AFTER = timedelta(hours=2)
-FINALIZE_CLAIM_TOKEN_PREFIX = "import-finalize:"
-STALE_FINALIZE_CLAIM_DETAIL = (
-    "This import was interrupted before its audio was kept. Delete this "
-    "recording and import the file again."
-)
-
-
-def finalize_claim_cutoff(now: datetime | None = None) -> datetime:
-    """A finalize claim dated at or before this is stale."""
-    return (now or utc_now()) - FINALIZE_CLAIM_STALE_AFTER
-
-
-def new_finalize_claim_token() -> str:
-    """A token naming one finalize attempt, stored with its claim."""
-    return f"{FINALIZE_CLAIM_TOKEN_PREFIX}{uuid4().hex}"
-
-
-def is_finalize_claim_token(value: str | None) -> bool:
-    """``celery_task_id`` holds a finalize claim's token, not a task id."""
-    return bool(value) and str(value).startswith(FINALIZE_CLAIM_TOKEN_PREFIX)
-
-
-def is_finalizing_import(recording: Recording, now: datetime | None = None) -> bool:
-    """A live finalize holds ``recording``: its claim is set and not stale."""
-    return (
-        recording.status == RecordingStatus.UPLOADING
-        and recording.processing_step == FINALIZING_IMPORT_STEP
-        and recording.updated_at > finalize_claim_cutoff(now)
-    )
-
-
-def remove_finalize_leftovers(
-    audio_path: str | None, *, logger: logging.Logger
-) -> None:
-    """Delete what every finalize attempt wrote beside a chunked import.
-
-    An attempt reassembles the upload, which can hold video, as
-    ``<stem>.<attempt><suffix>`` beside ``audio_path``, and
-    ``keep_imported_audio`` names the audio it extracts after that, finished
-    or partial. For a claim no live finalize holds: a stale one, or the
-    import's deletion.
-    """
-    resolved = _resolve_path_within_recordings_root(audio_path)
-    if resolved is None:
-        return
-    for path in resolved.parent.glob(f"{resolved.stem}.*"):
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            logger.warning("Failed to delete import leftover %s: %s", path, error)
-
-
-def release_stale_finalize_claims(
-    session,
-    *,
-    logger: logging.Logger,
-    now: datetime | None = None,
-) -> int:
-    """Mark ERROR the chunked imports whose finalize died mid-extraction.
-
-    Settled as a finalize the server failed is: the recording is marked ERROR
-    with a note to import the file again, its parts move to ``failed/``, and
-    the reassembled upload and any extracted audio are deleted, so a retry can
-    never process a video container as audio. Each release is a conditional
-    UPDATE, so a finalize that took the claim over first keeps it.
-    """
-    cutoff = finalize_claim_cutoff(now)
-    stale_claim = (
-        (Recording.status == RecordingStatus.UPLOADING)
-        & (Recording.processing_step == FINALIZING_IMPORT_STEP)
-        & (Recording.updated_at <= cutoff)
-    )
-    candidates = session.exec(
-        select(Recording.id, Recording.audio_path).where(stale_claim)
-    ).all()
-    released = 0
-    for recording_id, audio_path in candidates:
-        result = session.execute(
-            update(Recording)
-            .where(Recording.id == recording_id)
-            .where(stale_claim)
-            .values(
-                status=RecordingStatus.ERROR,
-                client_status=ClientStatus.IDLE,
-                processing_step=STALE_FINALIZE_CLAIM_DETAIL,
-                celery_task_id=None,
-            )
-        )
-        if result.rowcount != 1:
-            continue
-        session.commit()
-        try:
-            failed_root = move_recording_upload_to_failed(recording_id, logger=logger)
-        except OSError as error:
-            logger.error("Failed to move import parts to the failed dir: %s", error)
-            failed_root = None
-        mark_recording_audio_chunks_ready_for_cleanup(
-            session,
-            recording_id=recording_id,
-            upload_status="failed",
-            moved_to=failed_root,
-        )
-        session.commit()
-        remove_finalize_leftovers(audio_path, logger=logger)
-        released += 1
-        logger.warning(
-            "Released the finalize claim on recording %s, interrupted mid-import",
-            recording_id,
-        )
-    return released
-
-
 def cleanup_orphaned_uploading_recordings(
     session,
     *,
@@ -458,10 +327,7 @@ def mark_recording_audio_chunks_ready_for_cleanup(
     *,
     recording_id: int,
     upload_status: str = "finalized",
-    moved_to: Path | None = None,
 ) -> int:
-    """Date a recording's chunk rows for cleanup; ``moved_to`` is where their
-    files went (``move_recording_upload_to_failed``), if they moved."""
     rows = session.exec(
         select(RecordingAudioChunk).where(
             RecordingAudioChunk.recording_id == recording_id
@@ -472,8 +338,6 @@ def mark_recording_audio_chunks_ready_for_cleanup(
 
     deadline = chunk_cleanup_deadline()
     for row in rows:
-        if moved_to is not None:
-            row.storage_path = str(moved_to / Path(row.storage_path).name)
         row.upload_status = upload_status
         row.cleanup_eligible_at = deadline
         session.add(row)

@@ -6,8 +6,6 @@ import type {
   RecordingInitResponse,
   ReprocessRequest,
 } from "@/types";
-import { isAxiosError } from "@/lib/errors";
-
 import api, { API_BASE_URL } from "./client";
 
 export interface RecordingFilters {
@@ -151,90 +149,6 @@ export interface ImportAudioOptions {
   onUploadProgress?: (progress: number) => void;
 }
 
-// Finalize extracts the audio of a video file before it answers, which can
-// outlast a proxy's timeout (Cloudflare gives up after 100 s) while the server
-// carries on. Finalize is idempotent: a repeated call answers 409
-// "import_finalizing" while the first is still running and the recording once
-// it is done. So a lost answer is retried, and a 409 is waited out.
-const FINALIZE_LOST_ANSWER_ATTEMPTS = 5;
-const FINALIZE_LOST_ANSWER_STATUSES = new Set([502, 503, 504, 524]);
-const FINALIZE_FIRST_DELAY_MS = 2_000;
-const FINALIZE_MAX_DELAY_MS = 30_000;
-// Longer than any realistic extraction: a copy runs at disk speed and an Opus
-// re-encode at about 200 times real time. Past it the import may still finish;
-// a claim whose finalize died can be taken over once it is two hours old.
-const FINALIZE_IN_PROGRESS_LIMIT_MS = 20 * 60_000;
-const IMPORT_FINALIZING_CODE = "import_finalizing";
-
-/** The client stopped waiting for a finalize the server is still running. */
-export class ImportStillFinalizingError extends Error {
-  constructor() {
-    super(
-      "The server is still finishing this import; your library shows the " +
-        "result when it is done. If it still shows as uploading two hours " +
-        "from now, discard it and import the file again.",
-    );
-    this.name = "ImportStillFinalizingError";
-  }
-}
-
-const wait = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-const backoffMs = (retry: number) =>
-  Math.min(FINALIZE_FIRST_DELAY_MS * 2 ** retry, FINALIZE_MAX_DELAY_MS);
-
-type FinalizeOutcome = "lost" | "in-progress" | "final";
-
-const classifyFinalizeError = (error: unknown): FinalizeOutcome => {
-  if (!isAxiosError(error)) {
-    return "final";
-  }
-  const status = error.response?.status;
-  if (status === undefined || FINALIZE_LOST_ANSWER_STATUSES.has(status)) {
-    return "lost";
-  }
-  const detail = (error.response?.data as { detail?: { code?: unknown } })
-    ?.detail;
-  if (status === 409 && detail?.code === IMPORT_FINALIZING_CODE) {
-    return "in-progress";
-  }
-  return "final";
-};
-
-const finalizeChunkedImport = async (
-  recordingId: RecordingId,
-): Promise<Recording> => {
-  let lostAnswers = 0;
-  let retries = 0;
-  let waitingSince: number | null = null;
-  for (;;) {
-    try {
-      const response = await api.post<Recording>(
-        `/recordings/import/chunked/finalize?recording_id=${recordingId}`,
-      );
-      return response.data;
-    } catch (error) {
-      const outcome = classifyFinalizeError(error);
-      if (outcome === "lost") {
-        lostAnswers += 1;
-        if (lostAnswers >= FINALIZE_LOST_ANSWER_ATTEMPTS) {
-          throw error;
-        }
-      } else if (outcome === "in-progress") {
-        waitingSince ??= Date.now();
-        if (Date.now() - waitingSince >= FINALIZE_IN_PROGRESS_LIMIT_MS) {
-          throw new ImportStillFinalizingError();
-        }
-      } else {
-        throw error;
-      }
-    }
-    await wait(backoffMs(retries));
-    retries += 1;
-  }
-};
-
 export const importAudio = async (
   file: File,
   options?: ImportAudioOptions,
@@ -284,13 +198,15 @@ export const importAudio = async (
   }
 
   // 3. Finalize Import
-  const finalized = await finalizeChunkedImport(recording.id);
+  const finalizeResponse = await api.post<Recording>(
+    `/recordings/import/chunked/finalize?recording_id=${recording.id}`,
+  );
 
   if (options?.onUploadProgress) {
     options.onUploadProgress(100);
   }
 
-  return finalized;
+  return finalizeResponse.data;
 };
 
 export const getSupportedAudioFormats = (): string[] => {

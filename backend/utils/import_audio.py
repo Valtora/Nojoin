@@ -370,10 +370,7 @@ def _write_audio_track(
         _CopyChangedCodec: see the class.
         The new file is removed in every case.
     """
-    # Named after the upload, so whoever cleans up after it finds this file,
-    # finished or partial (``remove_finalize_leftovers``).
-    source = Path(source_path)
-    target = str(source.with_name(f"{source.stem}.{uuid4().hex}{plan.suffix}"))
+    target = str(Path(source_path).with_name(f"{uuid4()}{plan.suffix}"))
     cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
     cmd += ["-map", f"0:{track['index']}", *plan.codec_arguments]
     if (seconds(track.get("start_time")) or 0.0) > 0:

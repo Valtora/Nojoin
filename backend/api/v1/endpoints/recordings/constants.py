@@ -4,9 +4,6 @@ logger = logging.getLogger(__name__)
 
 UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting capture uploads"
 STATUS_UPDATES_CLOSED_DETAIL = "Recording is no longer accepting capture status updates"
-IMPORT_BEING_FINALIZED_DETAIL = (
-    "This import is being finalized. Try again once it is queued for processing."
-)
 UNSUPPORTED_SEGMENT_MEDIA_DETAIL = "Unsupported audio segment format. Use audio/wav, audio/webm, audio/ogg, or audio/mp4 with a matching filename suffix."
 SEGMENT_CONTENT_TYPE_SUFFIXES = {
     "audio/wav": ".wav",

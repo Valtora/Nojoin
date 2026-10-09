@@ -34,7 +34,6 @@ describe("api public surface", () => {
       [
         "API_BASE_URL",
         "DOCUMENT_SIZE_WARNING_BYTES",
-        "ImportStillFinalizingError",
         "SUPPORTED_DOCUMENT_FORMATS",
         "VISION_ONLY_DOCUMENT_FORMATS",
         "addPersonalDictionaryWord",

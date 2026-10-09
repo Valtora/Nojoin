@@ -101,7 +101,6 @@ async def delete_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    recordings_module._remove_claimed_import_leftovers(recording)
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,
@@ -276,14 +275,14 @@ async def permanently_delete_recording(
             ),
         )
 
-    task_id = recordings_module._revocable_task_id(recording)
-    if task_id:
+    if recording.celery_task_id:
         try:
-            recordings_module.celery_app.control.revoke(task_id, terminate=True)
+            recordings_module.celery_app.control.revoke(
+                recording.celery_task_id, terminate=True
+            )
         except Exception:  # noqa: BLE001
             pass
 
-    recordings_module._remove_claimed_import_leftovers(recording)
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,

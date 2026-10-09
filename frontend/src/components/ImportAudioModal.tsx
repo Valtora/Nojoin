@@ -6,12 +6,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
-import {
-  importAudio,
-  getSupportedAudioFormats,
-  ImportStillFinalizingError,
-} from '@/lib/api';
-import { getErrorDetail, getErrorStatus } from '@/lib/errors';
+import { importAudio, getSupportedAudioFormats } from '@/lib/api';
 import SpeakerCapField from '@/components/SpeakerCapField';
 import { useNotificationStore } from '@/lib/notificationStore';
 
@@ -34,25 +29,6 @@ const formatFileSize = (bytes: number): string => {
 const getFileExtension = (filename: string): string => {
   const lastDot = filename.lastIndexOf('.');
   return lastDot !== -1 ? filename.substring(lastDot).toLowerCase() : '';
-};
-
-// Always a string message: the toast renders it, and history persists it.
-const importFailureNotification = (
-  error: unknown,
-): { type: 'error' | 'warning'; message: string } => {
-  if (error instanceof ImportStillFinalizingError) {
-    return { type: 'warning', message: error.message };
-  }
-  if (getErrorStatus(error) === null) {
-    return {
-      type: 'error',
-      message: 'Upload failed. Please check your connection and try again.',
-    };
-  }
-  return {
-    type: 'error',
-    message: getErrorDetail(error) ?? 'Upload failed. Please try again.',
-  };
 };
 
 export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportAudioModalProps) {
@@ -179,7 +155,18 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
       }, 1500);
     } catch (error: unknown) {
       setUploadState('idle');
-      addNotification(importFailureNotification(error));
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { detail?: string } } };
+        addNotification({
+          type: 'error',
+          message: axiosError.response?.data?.detail || 'Upload failed. Please try again.',
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          message: 'Upload failed. Please check your connection and try again.',
+        });
+      }
     }
   };
 
