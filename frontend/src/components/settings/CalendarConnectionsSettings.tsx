@@ -363,7 +363,7 @@ export default function CalendarConnectionsSettings() {
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex rounded-full bg-action-tint px-2.5 py-1 text-xs font-medium text-action-text">
+                          <span className="inline-flex rounded-pill bg-action-tint px-2.5 py-1 text-xs font-medium text-action-text">
                             {PROVIDER_LABELS[connection.provider]}
                           </span>
                           <span className="text-xs contrast-helper">
@@ -371,7 +371,7 @@ export default function CalendarConnectionsSettings() {
                           </span>
                           {connection.push_active && (
                             <span
-                              className="inline-flex items-center gap-1 rounded-full bg-status-success-bg px-2 py-0.5 text-[11px] font-medium text-status-success-fg"
+                              className="inline-flex items-center gap-1 rounded-pill bg-status-success-bg px-2 py-0.5 text-[11px] font-medium text-status-success-fg"
                               title="Live sync active: changes arrive by push notification"
                             >
                               <Zap className="h-3 w-3" />
@@ -440,7 +440,7 @@ export default function CalendarConnectionsSettings() {
                                   {calendar.name}
                                 </span>
                                 {calendar.is_primary && (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-action-tint px-2 py-0.5 text-[11px] font-medium text-action-text">
+                                  <span className="inline-flex items-center gap-1 rounded-pill bg-action-tint px-2 py-0.5 text-[11px] font-medium text-action-text">
                                     <CheckCircle2 className="h-3 w-3" />
                                     Primary
                                   </span>
@@ -455,7 +455,7 @@ export default function CalendarConnectionsSettings() {
 
                             <div className="flex flex-wrap items-center gap-2 @min-[24rem]:shrink-0">
                               {busyKey === `colour:${calendar.id}` ? (
-                                <div className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-helper">
+                                <div className="inline-flex items-center gap-2 rounded-pill border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-helper">
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                   Saving
                                 </div>
@@ -474,7 +474,7 @@ export default function CalendarConnectionsSettings() {
                                       calendar.colour,
                                     );
                                     return (
-                                      <div className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text">
+                                      <div className="inline-flex items-center gap-2 rounded-pill border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text">
                                         <span
                                           className={`h-3 w-3 rounded-full ${indicator.className}`}
                                           style={indicator.style}
@@ -498,7 +498,7 @@ export default function CalendarConnectionsSettings() {
                                       null,
                                     )
                                   }
-                                  className="rounded-full border border-surface-border px-2.5 py-2 text-xs font-medium text-contrast-helper transition-colors hover:border-action-border hover:text-action-text"
+                                  className="rounded-pill border border-surface-border px-2.5 py-2 text-xs font-medium text-contrast-helper transition-colors hover:border-action-border hover:text-action-text"
                                 >
                                   Auto
                                 </button>

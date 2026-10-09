@@ -216,7 +216,7 @@ export default function RecordingStatusDisplay({
             As a strip it costs one row and gives that width back. */}
         <section className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-            <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
               {isActiveRecording ? (
                 isPaused ? (
                   <Pause className="h-3.5 w-3.5" />

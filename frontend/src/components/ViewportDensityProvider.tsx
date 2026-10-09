@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -10,13 +11,26 @@ import {
 } from "react";
 
 import {
+  APPEARANCE_STORAGE_KEYS,
+  readStoredDensityPreference,
+  storeDensityPreference,
+  type DensityPreference,
+} from "@/lib/appearance";
+import {
   DESKTOP_BREAKPOINT,
-  resolveViewportDensity,
+  resolveDensity,
   type ViewportDensity,
 } from "@/lib/viewportDensity";
 
 interface ViewportDensityContextValue {
   density: ViewportDensity;
+  /** The user's choice: "auto" follows the viewport heuristic. */
+  densityPreference: DensityPreference;
+  setDensityPreference: (preference: DensityPreference) => void;
+  /**
+   * True for compact and for the tighter dense step: layout code that narrows
+   * rails or panels for compact should narrow them for dense too.
+   */
   isCompact: boolean;
   /** True below the desktop breakpoint (1024px) — the app-wide mobile boundary. */
   isMobile: boolean;
@@ -63,9 +77,29 @@ export function ViewportDensityProvider({
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
+  const [densityPreference, setDensityPreferenceState] =
+    useState<DensityPreference>(readStoredDensityPreference);
+
+  const setDensityPreference = useCallback((preference: DensityPreference) => {
+    setDensityPreferenceState(preference);
+    storeDensityPreference(preference);
+  }, []);
+
+  // Follow a density change made in another tab (see ThemeProvider).
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === APPEARANCE_STORAGE_KEYS.density) {
+        setDensityPreferenceState(readStoredDensityPreference());
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
   const density = useMemo(
-    () => resolveViewportDensity(width, height),
-    [height, width],
+    () => resolveDensity(densityPreference, width, height),
+    [densityPreference, height, width],
   );
 
   useEffect(() => {
@@ -81,13 +115,15 @@ export function ViewportDensityProvider({
 
     return {
       density,
-      isCompact: density === "compact",
+      densityPreference,
+      setDensityPreference,
+      isCompact: density !== "comfortable",
       isMobile: !isDesktop,
       isDesktop,
       viewportHeight: height,
       viewportWidth: width,
     };
-  }, [density, height, width]);
+  }, [density, densityPreference, height, setDensityPreference, width]);
 
   return (
     <ViewportDensityContext.Provider value={value}>

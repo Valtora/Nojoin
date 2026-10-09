@@ -150,7 +150,7 @@ export default function LiveTranscriptPanel({
     // rather than text sitting loose on top of the next module.
     <section className="density-surface flex h-full min-h-0 flex-col overflow-hidden border border-surface-border bg-surface-card shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
+        <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
           Live Transcript
         </div>
@@ -245,7 +245,7 @@ export default function LiveTranscriptPanel({
           <button
             type="button"
             onClick={jumpToLatest}
-            className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"
+            className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"
           >
             <ArrowDown className="h-3.5 w-3.5" />
             Jump to latest

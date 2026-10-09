@@ -1,4 +1,15 @@
+from backend.processing.engines.errors import (
+    TranscriptionError,
+    is_task_interruption,
+    transcription_error_from,
+)
+
 from .constants import *
+from .final_asr import (
+    mark_transcript_failed,
+    mark_transcript_without_speech,
+    transcribe_with_gpu_oom_retry,
+)
 from .speaker_assignment import assign_and_identify_speakers
 
 # ---------------------------------------------------------------------------
@@ -207,9 +218,7 @@ def _run_vad_stage(
             if not transcript:
                 transcript = Transcript(recording_id=recording.id)
 
-            transcript.text = ""  # Empty string to prevent hallucinations
-            transcript.segments = []
-            transcript.transcript_status = "completed"
+            mark_transcript_without_speech(transcript)
 
             mark_recording_audio_chunks_ready_for_cleanup(
                 session,
@@ -247,16 +256,15 @@ def _run_final_asr_stage(
     recording: Recording,
     processed_audio_path: str,
     engine_override: dict | None,
-) -> dict | None:
+) -> dict:
     """Run the configured transcription engine with ASR-ledger bookkeeping.
 
     Records a ledger row (start/complete/fail) when the ledger is enabled so the
-    manifest/asr_status semantics survive a crash mid-finalize. Re-raises any
-    ASR exception after marking the ledger row failed -- the failure flows to the
-    orchestrator's error handler unchanged.
+    manifest/asr_status semantics survive a crash mid-finalize. A GPU OOM is
+    retried once. Any failure marks the ledger row and the transcript failed and
+    is re-raised as a TranscriptionError, so the orchestrator's error handler
+    marks the recording ERROR.
     """
-    from backend.processing.transcribe import transcribe_audio
-
     session = ctx.session
     merged_config = ctx.merged_config
     recording_id = ctx.recording_id
@@ -272,8 +280,6 @@ def _run_final_asr_stage(
     if engine_override:
         merged_config.update(engine_override)
         logger.info("Reprocess: engine override applied: %s", engine_override)
-
-    transcription_result = None
 
     with pipeline_metric_timer(
         stage="final_asr_invocation",
@@ -298,8 +304,8 @@ def _run_final_asr_stage(
                 config_hash=_final_asr_config_hash(merged_config),
             )
         try:
-            transcription_result = transcribe_audio(
-                processed_audio_path, config=merged_config
+            transcription_result = transcribe_with_gpu_oom_retry(
+                processed_audio_path, merged_config, free_gpu=_release_pipeline_vram
             )
         except Exception as exc:
             if config_manager.get("enable_asr_window_result_ledger", True):
@@ -315,41 +321,38 @@ def _run_final_asr_stage(
                     or "Final ASR invocation failed.",
                     error_payload={"error_type": exc.__class__.__name__},
                 )
-            raise
+            if is_task_interruption(exc):
+                # A time limit or termination is Celery stopping the task, not a
+                # transcription failure: let it through unchanged.
+                raise
+            failure = exc
+            if not isinstance(exc, TranscriptionError):
+                failure = transcription_error_from(
+                    exc,
+                    engine=str(merged_config.get("transcription_backend", "whisper")),
+                    on_gpu=False,
+                )
+            mark_transcript_failed(session, recording.id, str(failure))
+            if failure is exc:
+                raise
+            raise failure from exc
         if config_manager.get("enable_asr_window_result_ledger", True):
-            if transcription_result is None:
-                fail_recording_asr_window_result(
-                    session,
-                    recording_id=recording.id,
-                    source_kind=asr_source_kind,
-                    span_start_ms=0,
-                    span_end_ms=span_end_ms,
-                    config=merged_config,
-                    config_hash=_final_asr_config_hash(merged_config),
-                    error_summary="Final ASR returned no result.",
-                    error_payload={"error_type": "empty_result"},
-                )
-            else:
-                complete_recording_asr_window_result(
-                    session,
-                    recording_id=recording.id,
-                    source_kind=asr_source_kind,
-                    span_start_ms=0,
-                    span_end_ms=span_end_ms,
-                    config=merged_config,
-                    config_hash=_final_asr_config_hash(merged_config),
-                    result_payload={
-                        "segment_count": len(
-                            (transcription_result or {}).get("segments", [])
-                        ),
-                        "text_chars": len(
-                            (transcription_result or {}).get("text") or ""
-                        ),
-                        "engine_override": bool(engine_override),
-                    },
-                )
+            complete_recording_asr_window_result(
+                session,
+                recording_id=recording.id,
+                source_kind=asr_source_kind,
+                span_start_ms=0,
+                span_end_ms=span_end_ms,
+                config=merged_config,
+                config_hash=_final_asr_config_hash(merged_config),
+                result_payload={
+                    "segment_count": len(transcription_result.get("segments", [])),
+                    "text_chars": len(transcription_result.get("text") or ""),
+                    "engine_override": bool(engine_override),
+                },
+            )
         metric["payload"]["segment_count"] = len(
-            (transcription_result or {}).get("segments", [])
+            transcription_result.get("segments", [])
         )
 
     return transcription_result
@@ -444,7 +447,7 @@ def _run_final_diarization_stage(
 
 
 def _combine_and_consolidate_segments(
-    transcription_result: dict | None,
+    transcription_result: dict,
     diarization_result,
     *,
     enable_diarization: bool,
@@ -463,13 +466,12 @@ def _combine_and_consolidate_segments(
     )
 
     combined_segments = []
-    if transcription_result:
-        if diarization_result:
-            combined_segments = combine_transcription_diarization(
-                transcription_result, diarization_result
-            )
-        else:
-            logger.info("Diarization result missing or disabled. Skipping combination.")
+    if diarization_result:
+        combined_segments = combine_transcription_diarization(
+            transcription_result, diarization_result
+        )
+    else:
+        logger.info("Diarization result missing or disabled. Skipping combination.")
 
     logger.info(
         f"Combined segments count: {len(combined_segments) if combined_segments else 0}"
@@ -485,25 +487,18 @@ def _combine_and_consolidate_segments(
                 "Using raw transcription segments (Diarization disabled or failed)."
             )
 
-        if transcription_result and "segments" in transcription_result:
-            combined_segments = []
-            for seg in transcription_result.get("segments", []):
-                fallback_segment = {
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "speaker": "UNKNOWN",
-                    "text": seg["text"].strip(),
-                }
-                if seg.get("id"):
-                    fallback_segment["id"] = seg["id"]
-                if seg.get("words"):
-                    fallback_segment["words"] = seg["words"]
-                combined_segments.append(fallback_segment)
-        else:
-            logger.error(
-                "Transcription result is None or missing segments during fallback."
-            )
-            combined_segments = []
+        for seg in transcription_result.get("segments", []):
+            fallback_segment = {
+                "start": seg["start"],
+                "end": seg["end"],
+                "speaker": "UNKNOWN",
+                "text": seg["text"].strip(),
+            }
+            if seg.get("id"):
+                fallback_segment["id"] = seg["id"]
+            if seg.get("words"):
+                fallback_segment["words"] = seg["words"]
+            combined_segments.append(fallback_segment)
 
     final_segments = consolidate_diarized_transcript(combined_segments)
     record_pipeline_metric(
@@ -520,12 +515,12 @@ def _persist_final_transcript(
     ctx: _PipelineRunContext,
     recording: Recording,
     final_segments: list[dict],
-    transcription_result: dict | None,
+    transcription_result: dict,
 ) -> Transcript:
     """Create or update the transcript row with the consolidated segments.
 
-    Handles a ``None`` transcription result by persisting empty text, and resets
-    a stale ``notes_status == "error"`` back to ``pending`` so notes regenerate.
+    Clears any error a previous run left, and resets a stale
+    ``notes_status == "error"`` back to ``pending`` so notes regenerate.
     """
     session = ctx.session
 
@@ -533,13 +528,13 @@ def _persist_final_transcript(
         select(Transcript).where(Transcript.recording_id == recording.id)
     ).first()
 
-    full_text = transcription_result.get("text", "") if transcription_result else ""
+    full_text = transcription_result.get("text", "")
 
     if transcript:
         transcript.text = full_text
         transcript.segments = final_segments
-        transcript.transcript_status = "completed"
-        transcript.error_message = None
+        transcript.complete_transcription()
+        transcript.set_notes_error_message(None)
         if transcript.notes_status == "error":
             transcript.notes_status = "pending"
         session.add(transcript)
@@ -562,7 +557,7 @@ def _finalize_transcript_and_notes(
     transcript: Transcript,
     final_segments: list[dict],
     llm_config: ResolvedLLMConfig,
-    transcription_result: dict | None,
+    transcription_result: dict,
     reused_live_transcript_segments: Sequence[dict],
 ) -> None:
     """Persist final segments, run canonical writes + segmentation refinement,
@@ -669,7 +664,7 @@ def _finalize_transcript_and_notes(
         # The recording is otherwise finished; only notes remain pending, exactly
         # as in manual regeneration, so the GPU task still marks it Completed.
         transcript.notes_status = "generating"
-        transcript.error_message = None
+        transcript.set_notes_error_message(None)
         session.add(transcript)
         session.commit()
         celery_app.send_task(
@@ -695,7 +690,7 @@ def _finalize_transcript_and_notes(
         llm_config=llm_config,
         prefer_short_titles=merged_config.get("prefer_short_titles", True),
         device_suffix=device_suffix,
-        detected_transcription_language=(transcription_result or {}).get("language"),
+        detected_transcription_language=transcription_result.get("language"),
     )
 
 
@@ -738,7 +733,10 @@ def _release_pipeline_vram() -> None:
     import torch
 
     try:
-        logger.info("Releasing VRAM (keep_models_loaded=False)...")
+        logger.info(
+            "Releasing VRAM (keep_models_loaded=%s)...",
+            config_manager.get("keep_models_loaded", False),
+        )
 
         from backend.processing.transcribe import release_model_cache
 
@@ -1064,7 +1062,10 @@ def process_recording_task(
                 catch_up_run.completed_at = utc_now()
                 session.add(catch_up_run)
             recording.status = RecordingStatus.ERROR
-            recording.processing_step = f"System Error: {str(e)}"
+            # A transcription failure's message already says what failed.
+            recording.processing_step = (
+                str(e) if isinstance(e, TranscriptionError) else f"System Error: {e}"
+            )
             recording.processing_completed_at = None
             session.add(recording)
             session.commit()

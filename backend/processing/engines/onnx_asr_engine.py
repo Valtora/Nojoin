@@ -2,12 +2,20 @@
 # Shared base for onnx-asr-backed transcription engines (Parakeet, Canary).
 # Heavy imports (onnx_asr, soundfile) live inside methods, never at module top.
 
+import gc
 import logging
 import os
+import traceback
 
 from ...utils.languages import resolve_transcription_language_code
-from ..onnx_providers import gpu_is_present, verify_gpu_providers
+from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from .base import TranscriptionEngine
+from .errors import (
+    TranscriptionError,
+    is_out_of_memory,
+    is_task_interruption,
+    transcription_error_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -218,19 +226,33 @@ class OnnxAsrEngine(TranscriptionEngine):
     def __init__(self) -> None:
         # Cache for loaded models, keyed by onnx-asr model id.
         self._model_cache: dict = {}
+        # Whether every session of a cached model runs on CUDA, by onnx-asr id.
+        self._model_on_gpu: dict[str, bool] = {}
 
     def _to_onnx_asr_id(self, nojoin_id: str) -> str:
         """Resolve a Nojoin model id to its onnx-asr equivalent."""
         return self.onnx_id_map.get(nojoin_id, nojoin_id)
 
-    def _get_model(self, config: dict):
-        """Load (once, lazily) and return the onnx-asr model for the given config."""
+    def _onnx_id_for(self, config: dict) -> str:
         nojoin_id = (
             config.get(self.config_key, self.default_model_id)
             if config
             else self.default_model_id
         )
-        onnx_id = self._to_onnx_asr_id(nojoin_id)
+        return self._to_onnx_asr_id(nojoin_id)
+
+    def _runs_on_gpu(self, config: dict) -> bool:
+        """Whether the model for ``config`` runs on CUDA.
+
+        Once loaded, that is what its sessions report: onnxruntime silently falls
+        back to CPU when the CUDA provider cannot load. Before then it is what
+        loading asks for, which is CUDA exactly when a GPU is present.
+        """
+        return self._model_on_gpu.get(self._onnx_id_for(config), gpu_is_present())
+
+    def _get_model(self, config: dict):
+        """Load (once, lazily) and return the onnx-asr model for the given config."""
+        onnx_id = self._onnx_id_for(config)
         if onnx_id not in self._model_cache:
             import onnx_asr
 
@@ -267,11 +289,12 @@ class OnnxAsrEngine(TranscriptionEngine):
             verify_gpu_providers(
                 model, component=f"{self.name} model {onnx_id}", requested=providers
             )
+            self._model_on_gpu[onnx_id] = sessions_use_cuda(model, requested=providers)
             self._model_cache[onnx_id] = model
             logger.info(f"{self.name} model {onnx_id} loaded successfully.")
         return self._model_cache[onnx_id]
 
-    def transcribe(self, audio_path: str, config: dict) -> dict | None:
+    def transcribe(self, audio_path: str, config: dict) -> dict:
         """Transcribe the given audio file using onnx-asr.
 
         Audio longer than MAX_CHUNK_DURATION_S is transcribed window-by-window
@@ -283,14 +306,21 @@ class OnnxAsrEngine(TranscriptionEngine):
             config: Configuration dictionary (reads the engine's config_key).
 
         Returns:
-            The canonical transcription dict, or None on failure / missing file.
+            The canonical transcription dict; empty text means no speech.
+
+        Raises:
+            TranscriptionError: The file is missing or onnx-asr failed.
         """
         import os
 
         if not os.path.exists(audio_path):
             logger.error(f"Audio file not found for transcription: {audio_path}")
-            return None
+            raise TranscriptionError(
+                f"Transcription failed ({self.name}): the audio file is missing.",
+                engine=self.name,
+            )
 
+        model = recognizer = None
         try:
             model = self._get_model(config or {})
             recognizer = model.with_timestamps()
@@ -334,11 +364,27 @@ class OnnxAsrEngine(TranscriptionEngine):
             return result
 
         except Exception as e:
+            if is_task_interruption(e):
+                raise
             logger.error(
                 f"Error during {self.name} transcription for {audio_path}: {e}",
                 exc_info=True,
             )
-            return None
+            failure = transcription_error_from(
+                e, engine=self.name, on_gpu=self._runs_on_gpu(config or {})
+            )
+            if is_out_of_memory(e):
+                # onnxruntime's arena grows to the largest window and never
+                # shrinks, so a session that ran out of memory would run out
+                # again on the next call. Drop every reference to it (the cache,
+                # this frame's locals, and the locals of the frames the
+                # traceback keeps alive) and collect, so its memory is freed
+                # before the next call reloads it.
+                self.release()
+                model = recognizer = None
+                traceback.clear_frames(e.__traceback__)
+                gc.collect()
+            raise failure from e
 
     def _transcribe_chunked(
         self,
@@ -422,3 +468,4 @@ class OnnxAsrEngine(TranscriptionEngine):
                 f"Releasing {list(self._model_cache.keys())} from {self.name} model cache."
             )
             self._model_cache.clear()
+        self._model_on_gpu.clear()
