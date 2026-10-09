@@ -590,6 +590,10 @@ meetings rather than a frontend-driven migration workflow.
    marked `unified` and treated as fully supported for transcript and speaker
    mutation flows.
 
+### Word Timestamps In The Merge
+
+Word timestamps are optional per segment, and an engine can return them for some segments and not others: a chunked onnx-asr run returns a window that came back without token timings as one segment with no words, and a Whisper segment can carry an empty `words` list. `combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) therefore chooses the method for each run of consecutive segments rather than once for the transcript. A run with words is aligned to the diarisation word by word; a run without them gets each segment's dominant speaker over its own time span. Every segment's text reaches the transcript either way, and a first segment without words does not turn word alignment off for the rest of the recording.
+
 ## Stall Detection
 
 A live recording is the one workload where a stall is unrecoverable. The browser keeps counting wall-clock time while nothing reaches the server, and audio for that stretch is lost. Nojoin had no signal for it: an outage in August 2026 froze the API three times for about two minutes each, and the only evidence was requests that completed late.
