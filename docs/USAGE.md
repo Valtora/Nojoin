@@ -165,7 +165,7 @@ It can surface live questions, missed points, and quick concept help during a me
 
 You can import existing audio files directly through the web client.
 
-Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS. Video and media files are accepted too: MKV (as OBS records), MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Nojoin keeps only their audio: it extracts one audio track (the default one, when there are several) and discards the rest of the file, video included. Most audio is copied unchanged; lossless audio is stored as FLAC and anything else as Opus. A file with no usable audio is refused and nothing of it is kept. A long video file can take a while to finish importing after the upload reaches 100%. If it still shows as uploading two hours later, discard it and import the file again.
+Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS. Video and media files are accepted too: MKV (as OBS records), MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Nojoin keeps only their audio: it extracts one audio track (the default one, when there are several) and discards the rest of the file, video included. AAC, ALAC, MP3, Opus, Vorbis and FLAC are copied unchanged; PCM and other lossless audio become FLAC, and anything else Opus. A file with no usable audio is refused and nothing of it is kept. A long video file can take a while to finish importing after the upload reaches 100%. If it still shows as uploading two hours later, discard it and import the file again.
 
 The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
 
