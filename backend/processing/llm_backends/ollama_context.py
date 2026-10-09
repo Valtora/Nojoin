@@ -2,7 +2,7 @@
 
 Ollama decides whether a prompt fits. Every ``/api/chat`` request is sent with
 ``truncate: false`` and ``shift: false`` (both honoured since Ollama 0.12.6), so
-an oversized prompt is refused with a 4xx before anything is generated, and an
+an oversized prompt is refused with a 400 before anything is generated, and an
 answer that fills the window ends with ``done_reason: "length"``. Left at their
 defaults, Ollama cuts the prompt to fit (to about half the window on current
 releases) and answers from what is left without saying so.
@@ -14,31 +14,19 @@ context and the question on the last message are never cut.
 
 from __future__ import annotations
 
-import re
+import json
 from typing import Optional, Sequence
 
-CONTEXT_EXHAUSTED_ADVICE = (
-    "Increase the Ollama context window or select a model with a larger context."
-)
+# Ollama 0.12.6 (and Ollama's own runners) refuse with this plain message and no
+# counts. 0.34 and later relay llama-server's error as a JSON string, with type
+# "exceed_context_size_error", "n_prompt_tokens" and "n_ctx".
+_RUNNER_OVERFLOW = "the input length exceeds the context length"
+_LLAMA_SERVER_OVERFLOW = "exceed_context_size_error"
 
-# Phrases of Ollama's prompt-too-long refusal. 0.40 relays llama-server's
-# ``exceed_context_size_error`` ("request (N tokens) exceeds the available
-# context size (M tokens)"); 0.12.6 and Ollama's own runners answer "the input
-# length exceeds the context length"; 0.40 with context shift disabled answers
-# "the prompt is longer than the context length ...".
-_OVERFLOW_PHRASES = (
-    "exceed_context_size_error",
-    "exceeds the available context size",
-    "the input length exceeds the context length",
-    "the prompt is longer than the context length",
-)
-_N_PROMPT_TOKENS = re.compile(r'"n_prompt_tokens"\s*:\s*(\d+)')
-_N_CTX = re.compile(r'"n_ctx"\s*:\s*(\d+)')
-_REQUEST_TOKENS = re.compile(r"request \((\d+) tokens\)")
-
-# Transcript text runs 2.6 (short turns, each opening with a timestamp) to 3.5
-# (prose) UTF-8 bytes per token, measured on Ollama. The low end over-counts,
-# so history trimmed against it leaves the room it was meant to. Kept as a
+# Prose and transcripts run 2.6 (short timestamped turns) to 5 UTF-8 bytes per
+# token, measured on Ollama, so this estimate over-counts them and history
+# trimmed against it leaves the room it was meant to. Numbers and code run
+# denser; for those the retry on Ollama's own count takes over. Kept as a
 # ratio of integers so the estimate stays exact integer arithmetic.
 _ESTIMATE_BYTES, _ESTIMATE_TOKENS = 26, 10
 
@@ -48,10 +36,26 @@ _ESTIMATE_BYTES, _ESTIMATE_TOKENS = 26, 10
 CHAT_ANSWER_ROOM_MAX_TOKENS = 2048
 
 
+def context_advice(model_maximum: bool) -> str:
+    """What to do about a full window, given whether it is the model's own limit.
+
+    When the window was already lowered to the model's trained maximum, a larger
+    configured window changes nothing.
+    """
+    if model_maximum:
+        return (
+            "The meeting is too long for this model's context; select a model "
+            "with a larger context."
+        )
+    return "Increase the Ollama context window or select a model with a larger context."
+
+
 class OllamaContextOverflowError(RuntimeError):
     """Ollama refused a prompt longer than its context window."""
 
-    def __init__(self, prompt_tokens: Optional[int], window: int):
+    def __init__(
+        self, prompt_tokens: Optional[int], window: int, *, model_maximum: bool
+    ):
         self.prompt_tokens = prompt_tokens
         self.window = window
         size = (
@@ -59,32 +63,53 @@ class OllamaContextOverflowError(RuntimeError):
             if prompt_tokens
             else "the prompt is longer than that"
         )
+        limit = "this model's maximum context" if model_maximum else "the window"
         super().__init__(
-            "The Ollama context window was exhausted: Ollama refused the "
-            f"request because the window is {window:,} tokens and {size}. "
-            f"{CONTEXT_EXHAUSTED_ADVICE}"
+            "The Ollama context window was exhausted: Ollama refused the request "
+            f"because {limit} is {window:,} tokens and {size}. "
+            f"{context_advice(model_maximum)}"
         )
 
 
-def context_overflow_from_response(
-    status_code: int, body: object, window: int
-) -> Optional[OllamaContextOverflowError]:
-    """The overflow refusal in an Ollama error response, or None.
+def _llama_server_error(error: str) -> Optional[dict]:
+    """The structured error inside a relayed llama-server message, if any."""
+    try:
+        detail = json.loads(error)
+    except ValueError:
+        return None
+    inner = detail.get("error") if isinstance(detail, dict) else None
+    return inner if isinstance(inner, dict) else None
 
-    ``window`` is the num_ctx that was sent; the count Ollama reports wins.
+
+def _count(value: object) -> Optional[int]:
+    return value if isinstance(value, int) and value > 0 else None
+
+
+def context_overflow_from_response(
+    body: object, sent_window: int, configured_window: int
+) -> Optional[OllamaContextOverflowError]:
+    """The overflow refusal in an Ollama error body, or None.
+
+    ``sent_window`` is the num_ctx that was sent; the n_ctx Ollama reports
+    wins. A window below ``configured_window`` is the model's own maximum.
     """
-    if status_code not in (400, 413) or not isinstance(body, dict):
+    if not isinstance(body, dict):
         return None
     error = body.get("error")
     if not isinstance(error, str):
         return None
-    if not any(phrase in error.lower() for phrase in _OVERFLOW_PHRASES):
+    detail = _llama_server_error(error)
+    if detail is not None:
+        if detail.get("type") != _LLAMA_SERVER_OVERFLOW:
+            return None
+        prompt_tokens = _count(detail.get("n_prompt_tokens"))
+        window = _count(detail.get("n_ctx")) or sent_window
+    elif _RUNNER_OVERFLOW in error.lower():
+        prompt_tokens, window = None, sent_window
+    else:
         return None
-    prompt = _N_PROMPT_TOKENS.search(error) or _REQUEST_TOKENS.search(error)
-    n_ctx = _N_CTX.search(error)
     return OllamaContextOverflowError(
-        int(prompt.group(1)) if prompt else None,
-        int(n_ctx.group(1)) if n_ctx else window,
+        prompt_tokens, window, model_maximum=window < configured_window
     )
 
 

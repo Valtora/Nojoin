@@ -27,11 +27,11 @@ from backend.utils.meeting_intelligence import (
 
 
 @pytest.fixture(autouse=True)
-def _fresh_ollama_model_show_cache():
+def _fresh_ollama_model_facts_cache():
     # /api/show answers are cached per process; each fake server starts clean.
-    ollama_module._model_show_cache.clear()
+    ollama_module._model_facts_cache.clear()
     yield
-    ollama_module._model_show_cache.clear()
+    ollama_module._model_facts_cache.clear()
 
 
 def _sample_request() -> AutomaticMeetingIntelligenceRequest:
@@ -289,12 +289,14 @@ def test_ollama_chat_options_pins_num_ctx_floor_when_unconfigured() -> None:
     # Without num_ctx Ollama defaults to 2048 and silently truncates meeting-
     # length prompts, so an unconfigured backend must still send the safe floor.
     backend = object.__new__(OllamaLLMBackend)
+    backend.model = None
     backend.context_window = None
     assert backend._chat_options(temperature=0.3)["num_ctx"] == OLLAMA_DEFAULT_NUM_CTX
 
 
 def test_ollama_chat_options_honours_configured_context_window() -> None:
     backend = object.__new__(OllamaLLMBackend)
+    backend.model = None
     backend.context_window = 131072
     assert backend._chat_options(temperature=0.3)["num_ctx"] == 131072
 

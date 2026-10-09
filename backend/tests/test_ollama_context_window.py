@@ -61,6 +61,31 @@ TRUNCATED_0_12_5 = {
     "prompt_eval_count": 512,
     "eval_count": 11,
 }
+# Without shift:false the answer pushed a 496-token prompt past 512 (0.12.6).
+SHIFTED_0_12_6 = {
+    "done": True,
+    "done_reason": "stop",
+    "prompt_eval_count": 496,
+    "eval_count": 30,
+}
+# 400s that are not about the window (0.34.2): an image for a text-only model
+# arrives in the same llama-server envelope as the overflow, and bad base64.
+MULTIMODAL_0_34 = {
+    "error": json.dumps(
+        {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Multimodal data provided, but model does not support "
+                    "multimodal requests."
+                ),
+                "type": "invalid_request_error",
+            }
+        },
+        separators=(",", ":"),
+    )
+}
+BAD_BASE64_0_34 = {"error": "illegal base64 data at input byte 0"}
 
 ANSWER = "# Meeting Notes\n\n## Summary\nThe launch moves to Friday."
 
@@ -126,10 +151,10 @@ class _FakeOllama:
 
 
 @pytest.fixture(autouse=True)
-def _fresh_model_show_cache():
-    ollama_module._model_show_cache.clear()
+def _fresh_model_facts_cache():
+    ollama_module._model_facts_cache.clear()
     yield
-    ollama_module._model_show_cache.clear()
+    ollama_module._model_facts_cache.clear()
 
 
 def _backend(fake: _FakeOllama, context_window: int) -> OllamaLLMBackend:
@@ -171,8 +196,9 @@ def test_every_request_has_ollama_refuse_rather_than_cut_the_prompt():
     payload = fake.chat_payloads[0]
     assert payload["truncate"] is False
     assert payload["shift"] is False
-    # The answer is bounded by the window even where shift is ignored.
-    assert payload["options"]["num_predict"] == payload["options"]["num_ctx"] == 32768
+    assert payload["options"]["num_ctx"] == 32768
+    # The window bounds the answer; a num_predict would override the Modelfile's.
+    assert "num_predict" not in payload["options"]
 
 
 @pytest.mark.parametrize(
@@ -196,16 +222,67 @@ def test_ollamas_overflow_refusal_is_reported_as_the_context_window(
     assert len(fake.chat_payloads) == 1
 
 
-def test_an_unrelated_error_is_not_called_a_context_overflow():
-    missing = {"error": 'model "qwen2.5:0.5b" not found, try pulling it first'}
-    fake = _FakeOllama(_refusal(missing, status_code=404))
+@pytest.mark.parametrize(
+    ("body", "status_code"),
+    [
+        (MULTIMODAL_0_34, 400),
+        (BAD_BASE64_0_34, 400),
+        ({"error": "model 'qwen2.5:0.5b' not found"}, 404),
+    ],
+    ids=["multimodal-400", "base64-400", "unknown-model-404"],
+)
+def test_an_unrelated_error_is_not_called_a_context_overflow(body, status_code):
+    fake = _FakeOllama(_refusal(body, status_code=status_code))
     backend = _backend(fake, context_window=32768)
 
     with pytest.raises(RuntimeError) as error:
         _notes(backend)
 
-    assert "404" in str(error.value)
+    assert str(status_code) in str(error.value)
     assert "context window" not in str(error.value)
+
+
+def test_the_window_ollama_reports_wins_over_the_one_sent():
+    # Ollama may run a smaller window than requested (it clamps to the model);
+    # its n_ctx is what the prompt did not fit.
+    fake = _FakeOllama(_refusal(_llama_server_overflow(9000, 8192)))
+    backend = _backend(fake, context_window=32768)
+
+    with pytest.raises(RuntimeError) as error:
+        _notes(backend)
+
+    assert "is 8,192 tokens and the prompt is 9,000 tokens" in str(error.value)
+
+
+def test_a_refusal_at_the_configured_window_suggests_raising_it():
+    fake = _FakeOllama(_refusal(_llama_server_overflow(5000, 4096)))
+    backend = _backend(fake, context_window=4096)
+
+    with pytest.raises(RuntimeError) as error:
+        _notes(backend)
+
+    assert "Increase the Ollama context window" in str(error.value)
+    assert "too long for this model" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_refusal(_llama_server_overflow(9000, 8192)), _answer(WINDOW_FILLED_0_40)],
+    ids=["prompt-refused", "answer-filled-window"],
+)
+def test_a_window_at_the_models_maximum_does_not_suggest_raising_the_setting(
+    response,
+):
+    # The window was lowered to the model's trained 8192; raising the
+    # configured 32768 would change nothing.
+    fake = _FakeOllama(response, trained_context=8192)
+    backend = _backend(fake, context_window=32768)
+
+    with pytest.raises(RuntimeError, match="context window was exhausted") as error:
+        _notes(backend)
+
+    assert "too long for this model's context" in str(error.value)
+    assert "Increase the Ollama context window" not in str(error.value)
 
 
 @pytest.mark.parametrize("window", [1024, 4096, 32768])
@@ -232,8 +309,13 @@ def test_an_answer_that_filled_the_window_is_incomplete_and_refused(metadata):
         _notes(backend)
 
 
-def test_a_server_that_ignores_truncate_is_still_caught_by_its_counts():
-    fake = _FakeOllama(_answer(TRUNCATED_0_12_5))
+@pytest.mark.parametrize(
+    "metadata",
+    [TRUNCATED_0_12_5, SHIFTED_0_12_6],
+    ids=["prompt-cut-to-window", "answer-shifted-prompt-out"],
+)
+def test_a_server_that_ignores_truncate_and_shift_is_caught_by_its_counts(metadata):
+    fake = _FakeOllama(_answer(metadata))
     backend = _backend(fake, context_window=512)
 
     with pytest.raises(RuntimeError, match="context window was exhausted"):
@@ -286,6 +368,17 @@ def test_the_model_is_looked_up_once_per_process_until_the_entry_expires(
     assert fake.show_calls == 2
 
 
+def test_the_model_lookup_is_kept_apart_per_server():
+    fake = _FakeOllama(_answer(FITS), _answer(FITS), trained_context=8192)
+    other_server = _backend(fake, context_window=32768)
+    other_server.api_url = "http://other-ollama.local"
+
+    _notes(_backend(fake, context_window=32768))
+    _notes(other_server)
+
+    assert fake.show_calls == 2
+
+
 def test_chat_keeps_the_newest_turns_that_fit_and_never_cuts_the_question():
     # 4096 window, a quarter of it kept for the answer: two 3,000-byte turns
     # fit beside the question, three do not.
@@ -300,8 +393,20 @@ def test_chat_keeps_the_newest_turns_that_fit_and_never_cuts_the_question():
     assert "we ship Friday" in sent[-1]["content"]
 
 
+def test_chat_history_kept_never_opens_on_an_assistant_turn():
+    # The two newest turns that fit are an answer and the question after it;
+    # an answer without its question goes too.
+    fake = _FakeOllama(_answer(FITS, content="Friday."))
+    backend = _backend(fake, context_window=4096)
+
+    assert _chat(backend, _turns(5, 3000)) == "Friday."
+
+    sent = fake.chat_payloads[0]["messages"]
+    assert [(m["role"], m["content"][0]) for m in sent[:-1]] == [("user", "4")]
+
+
 def test_chat_trims_again_by_ollamas_own_count_when_it_still_refuses():
-    # Dense text (digits, CJK) can run past the estimate; Ollama's count then
+    # Dense text (numbers, code) can run past the estimate; Ollama's count then
     # decides how many more turns go.
     fake = _FakeOllama(
         _refusal(_llama_server_overflow(9000, 8192)),

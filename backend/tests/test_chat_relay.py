@@ -226,7 +226,9 @@ def test_a_context_window_refusal_with_503_in_its_count_is_not_high_demand():
         OllamaContextOverflowError,
     )
 
-    refusal = OllamaContextOverflowError(prompt_tokens=12503, window=8192)
+    refusal = OllamaContextOverflowError(
+        prompt_tokens=12503, window=8192, model_maximum=False
+    )
     message = chat_relay.friendly_chat_error(
         RuntimeError(f"Ollama API error (streaming chat): {refusal}")
     )

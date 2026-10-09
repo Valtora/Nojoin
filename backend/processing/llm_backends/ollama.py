@@ -36,8 +36,8 @@ from backend.processing.llm_backends.base import (
     summarize_llm_response_shape,
 )
 from backend.processing.llm_backends.ollama_context import (
-    CONTEXT_EXHAUSTED_ADVICE,
     OllamaContextOverflowError,
+    context_advice,
     context_overflow_from_response,
     trim_chat_history,
     trim_chat_history_after_overflow,
@@ -46,11 +46,11 @@ from backend.processing.llm_backends.ollama_context import (
 # Ollama's num_ctx defaults to 2048, which silently truncates meeting-length prompts.
 OLLAMA_DEFAULT_NUM_CTX = 8192
 
-# /api/show answers are reused for this long per server and model: a model
+# /api/show facts are reused for this long per server and model: a model
 # pulled again under the same name can change its context length or
 # capabilities, and /api/show carries no digest to key on.
 MODEL_SHOW_TTL_SECONDS = 300.0
-_model_show_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+_model_facts_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 
 
 class OllamaLLMBackend(LLMBackend):
@@ -80,45 +80,54 @@ class OllamaLLMBackend(LLMBackend):
             "ollama_context_window"
         )
 
-    def _model_show(self) -> Optional[dict]:
-        """``/api/show`` for the selected model, cached per server and model.
+    def _model_facts(self) -> dict:
+        """The model's trained context length and capabilities from ``/api/show``.
 
-        Backends are built per call, so the cache is per process. A failure is
-        raised and not cached.
+        Cached per server and model (backends are built per call, so the cache
+        is per process). A failure is raised and not cached.
         """
-        model = getattr(self, "model", None)
-        if not model:
-            return None
-        key = (self.api_url, model)
-        cached = _model_show_cache.get(key)
+        if not self.model:
+            return {}
+        key = (self.api_url, self.model)
+        cached = _model_facts_cache.get(key)
         now = time.monotonic()
         if cached and now - cached[0] < MODEL_SHOW_TTL_SECONDS:
             return cached[1]
-        resp = self._post("/api/show", json={"model": model}, timeout=10)
+        resp = self._post("/api/show", json={"model": self.model}, timeout=10)
         resp.raise_for_status()
         body = resp.json()
         if not isinstance(body, dict):
             raise ValueError("Ollama /api/show returned a non-object body")
-        _model_show_cache[key] = (now, body)
-        return body
+        info = body.get("model_info")
+        length = None
+        if isinstance(info, dict):
+            length = info.get(f"{info.get('general.architecture')}.context_length")
+        facts = {
+            "context_length": length
+            if isinstance(length, int) and length > 0
+            else None,
+            "capabilities": body.get("capabilities"),
+        }
+        _model_facts_cache[key] = (now, facts)
+        return facts
 
     def _model_context_length(self) -> Optional[int]:
-        """The model's trained context length from ``/api/show``, or None.
+        """The model's trained context length, or None when unknown.
 
         Ollama clamps num_ctx to this length when it loads the model, so it is
         the real ceiling of the window.
         """
         try:
-            show = self._model_show()
+            return self._model_facts().get("context_length")
         except (RequestException, ValueError) as e:
             # An unknown length falls back to the configured window.
             logger.debug(f"Ollama context length probe failed for {self.model}: {e}")
             return None
-        info = (show or {}).get("model_info")
-        if not isinstance(info, dict):
-            return None
-        raw = info.get(f"{info.get('general.architecture')}.context_length")
-        return raw if isinstance(raw, int) and raw > 0 else None
+
+    def _configured_window(self) -> int:
+        # num_ctx must always be sent; an unset one lets Ollama fall back to its
+        # 2048 default, which silently truncates meeting-length prompts.
+        return int(getattr(self, "context_window", None) or OLLAMA_DEFAULT_NUM_CTX)
 
     def _context_window(self) -> int:
         """The num_ctx to send: the configured window, clamped to the model's.
@@ -126,21 +135,14 @@ class OllamaLLMBackend(LLMBackend):
         The configured window is the operator's VRAM budget (see
         ``ollama_context_window``), so it is never raised automatically.
         """
-        # num_ctx must always be sent; an unset one lets Ollama fall back to its
-        # 2048 default, which silently truncates meeting-length prompts.
-        configured = int(
-            getattr(self, "context_window", None) or OLLAMA_DEFAULT_NUM_CTX
-        )
+        configured = self._configured_window()
         trained = self._model_context_length()
         return min(configured, trained) if trained else configured
 
     def _chat_options(self, *, temperature: float) -> dict[str, object]:
-        window = self._context_window()
-        # With shift off the window already bounds the answer to num_ctx minus
-        # the prompt. num_predict holds a server that ignores shift (before
-        # 0.12.6) to the same bound; its own cap is ten windows of a looping
-        # model shifting the context.
-        return {"temperature": temperature, "num_ctx": window, "num_predict": window}
+        # No num_predict: with shift off the window already bounds the answer,
+        # and sending one would override a Modelfile's own limit.
+        return {"temperature": temperature, "num_ctx": self._context_window()}
 
     def _post_chat(self, payload: dict, **kwargs):
         """POST ``/api/chat`` with Ollama as the judge of whether it fits.
@@ -161,7 +163,9 @@ class OllamaLLMBackend(LLMBackend):
             except ValueError:
                 body = None
             overflow = context_overflow_from_response(
-                resp.status_code, body, int(payload["options"]["num_ctx"])
+                body,
+                int(payload["options"]["num_ctx"]),
+                self._configured_window(),
             )
             if overflow is None:
                 raise
@@ -205,20 +209,19 @@ class OllamaLLMBackend(LLMBackend):
             return
         prompt_eval_count = response_metadata.get("prompt_eval_count")
         eval_count = response_metadata.get("eval_count")
+        window = self._context_window()
         if response_metadata.get("done_reason") != "length":
             if not isinstance(prompt_eval_count, int):
                 return
-            window = self._context_window()
-            if (
-                prompt_eval_count < window
-                and prompt_eval_count + (eval_count or 0) <= window
-            ):
+            # A cut prompt counts the whole window, so any answer takes the
+            # total past it; so does an answer that shifted the prompt out.
+            if prompt_eval_count + (eval_count or 0) <= window:
                 return
         raise RuntimeError(
             "Ollama stopped because the context window was exhausted, so the "
             "answer is incomplete and was not used "
             f"(prompt_eval_count={prompt_eval_count}, eval_count={eval_count}). "
-            f"{CONTEXT_EXHAUSTED_ADVICE}"
+            f"{context_advice(window < self._configured_window())}"
         )
 
     def _get(self, path: str, **kwargs):
@@ -262,7 +265,7 @@ class OllamaLLMBackend(LLMBackend):
         if not self.model:
             return None
         try:
-            capabilities = (self._model_show() or {}).get("capabilities")
+            capabilities = self._model_facts().get("capabilities")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Ollama capability probe failed for {self.model}: {e}")
             return None
