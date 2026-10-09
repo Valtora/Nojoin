@@ -112,6 +112,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/test.txt
 
+      # The images ship ffmpeg, and the tests that run real media through it
+      # skip where it is missing. Ubuntu's package is the 6.1 series, older
+      # than the 7.1 in the images.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run backend tests
         run: pytest
 
