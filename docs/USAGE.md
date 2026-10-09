@@ -188,11 +188,11 @@ If a recording fails or you want to rebuild the generated meeting artifacts, use
 
 Retry Processing clears transcript-derived generated state, preserves recording metadata, tags, uploaded documents, and user-authored notes, then records a fresh processing timing sample for future ETA calculations.
 
-If transcription itself fails, the recording is marked **Error** instead of finishing with an empty transcript, a notification says so, and the transcript tab explains what went wrong. Meeting notes cannot be generated for it until it is reprocessed. When the GPU ran out of memory the message says so; Nojoin has already retried once after freeing memory by then, so free GPU memory or choose a smaller transcription model in Settings before using Retry Processing. A meeting in which nobody spoke still finishes normally, and its transcript tab says that no speech was detected.
+If transcription itself fails, the recording is marked **Error** instead of finishing with an empty transcript, a notification says so, and the transcript tab explains what went wrong. Meeting notes cannot be generated for it until it is reprocessed. When the GPU ran out of memory the message says so; Nojoin has already retried once after freeing memory by then, so free GPU memory, or have an administrator choose a smaller transcription model for the installation under **Settings > Transcription**, before using Retry Processing. A meeting in which nobody spoke still finishes normally, and its transcript tab says that no speech was detected.
 
 ### Reprocess A Recording
 
-From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after you change the transcription engine or model in Settings.
+From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after an administrator changes the transcription engine or model, which apply to the whole installation, under **Settings > Transcription**.
 
 Reprocessing clears and rebuilds transcript and generated artifacts while preserving metadata, tags, documents, and user-authored notes. Older meetings that predate the unified pipeline cutover may require reprocess before transcript or speaker edits are available.
 

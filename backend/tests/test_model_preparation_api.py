@@ -4,7 +4,7 @@ Selecting a transcription model used to queue a download as a side effect of
 saving the setting. That download runs on the GPU lane, in front of live work,
 with no indication in the UI that it had started. Preparation is now requested
 explicitly, so these tests pin both halves: the settings save queues nothing,
-and the dedicated endpoint queues the model the admin actually has selected.
+and the dedicated endpoint queues the model the install has selected.
 """
 
 from __future__ import annotations
@@ -25,16 +25,17 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.endpoints import settings as settings_ep
 from backend.api.v1.endpoints import system
 from backend.models.user import User
+from backend.services import model_preparation
 from backend.tests.sqlite_schemas import NOTES_TEMPLATES_SCHEMA, USERS_SCHEMA
 
 DOWNLOAD_TASK = "backend.worker.tasks.download_models_task"
 
 
 class _FakeConfigManager:
-    """Install config with none of the transcription keys set.
+    """Install config, empty unless a test gives it values.
 
-    Deliberately empty: the transcription keys are user-scoped, so anything the
-    endpoint resolves has to come from the user row rather than from here.
+    The transcription keys are install-wide, so the endpoint resolves them from
+    here and never from the user row.
     """
 
     def __init__(self, values: dict | None = None):
@@ -49,7 +50,7 @@ class _FakeConfigManager:
     def save_config(self, config_data):
         self.config = dict(config_data)
 
-    def reload(self):
+    def reload(self, *, force=False):
         return None
 
     def validate_config_value(self, key, value):
@@ -102,16 +103,37 @@ def test_preparation_is_refused_for_non_admins(prepare_app):
     assert calls == []
 
 
-def test_active_target_prepares_the_admins_own_selection(prepare_app):
-    app, calls = prepare_app
-    _as_user(app, settings={"whisper_model_size": "medium"})
+def test_active_target_prepares_the_install_selection(prepare_app, monkeypatch):
+    app, _ = prepare_app
+    config = _FakeConfigManager(
+        {"transcription_backend": "whisper", "whisper_model_size": "medium"}
+    )
+    dispatched: list[dict] = []
+
+    async def fake_dispatch(name, *, kwargs, **options):
+        dispatched.append(kwargs)
+        return SimpleNamespace(id="task-123")
+
+    # The real enqueue, so the sizes it fills in from config are checked too.
+    monkeypatch.setattr(
+        system, "enqueue_model_preparation", model_preparation.enqueue_model_preparation
+    )
+    monkeypatch.setattr(model_preparation, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(
+        model_preparation, "set_download_progress", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(system, "config_manager", config)
+    monkeypatch.setattr(model_preparation, "config_manager", config)
+    # A value left on the admin's row from when the keys were per user.
+    _as_user(
+        app, settings={"transcription_backend": "canary", "whisper_model_size": "tiny"}
+    )
 
     response = asyncio.run(_post_prepare(app, {"target": "active"}))
 
     assert response.status_code == 200
     assert response.json()["task_id"] == "task-123"
-    # The user row wins over the install config, which has none of these keys.
-    assert calls == [
+    assert dispatched == [
         {
             "whisper_model_size": "medium",
             "transcription_backend": "whisper",
@@ -122,9 +144,14 @@ def test_active_target_prepares_the_admins_own_selection(prepare_app):
     ]
 
 
-def test_active_target_on_an_onnx_engine_skips_the_core_batch(prepare_app):
+def test_active_target_on_an_onnx_engine_skips_the_core_batch(prepare_app, monkeypatch):
     app, calls = prepare_app
-    _as_user(app, settings={"transcription_backend": "parakeet"})
+    monkeypatch.setattr(
+        system,
+        "config_manager",
+        _FakeConfigManager({"transcription_backend": "parakeet"}),
+    )
+    _as_user(app)
 
     response = asyncio.run(_post_prepare(app, {"target": "active"}))
 
