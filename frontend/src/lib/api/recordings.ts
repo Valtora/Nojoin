@@ -161,9 +161,8 @@ const FINALIZE_LOST_ANSWER_STATUSES = new Set([502, 503, 504, 524]);
 const FINALIZE_FIRST_DELAY_MS = 2_000;
 const FINALIZE_MAX_DELAY_MS = 30_000;
 // Longer than any realistic extraction: a copy runs at disk speed and an Opus
-// re-encode at about 200 times real time. The server's timeouts allow about
-// 66 minutes at worst, so past this the import may still finish; a claim
-// whose finalize died is released once it is two hours old.
+// re-encode at about 200 times real time. Past it the import may still finish;
+// a claim whose finalize died can be taken over once it is two hours old.
 const FINALIZE_IN_PROGRESS_LIMIT_MS = 20 * 60_000;
 const IMPORT_FINALIZING_CODE = "import_finalizing";
 
@@ -171,9 +170,9 @@ const IMPORT_FINALIZING_CODE = "import_finalizing";
 export class ImportStillFinalizingError extends Error {
   constructor() {
     super(
-      "The server is still finishing this import, and the recording is " +
-        "queued for processing when it is done. If it still shows as " +
-        "uploading two hours from now, discard it and import the file again.",
+      "The server is still finishing this import; your library shows the " +
+        "result when it is done. If it still shows as uploading two hours " +
+        "from now, discard it and import the file again.",
     );
     this.name = "ImportStillFinalizingError";
   }
