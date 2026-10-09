@@ -3,6 +3,7 @@ from backend.processing.engines.errors import (
     is_task_interruption,
     transcription_error_from,
 )
+from backend.utils.import_audio import KEEPING_AUDIO_STEP
 
 from .constants import *
 from .final_asr import (
@@ -1134,7 +1135,15 @@ def check_queued_recordings(sender, **kwargs):
 
         for recording in recordings:
             logger.info("Re-queueing recording %s: %s", recording.id, recording.name)
-            process_recording_task.delay(recording.id)  # type: ignore
+            if recording.processing_step == KEEPING_AUDIO_STEP:
+                # An import whose audio is not kept yet: that task queues
+                # processing once it has.
+                celery_app.send_task(
+                    "backend.worker.tasks.keep_imported_audio_task",
+                    args=[recording.id],
+                )
+            else:
+                process_recording_task.delay(recording.id)  # type: ignore
 
     except Exception as e:
         logger.error("Failed to check pending recordings: %s", e, exc_info=True)

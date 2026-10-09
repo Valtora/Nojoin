@@ -3,6 +3,7 @@ from __future__ import annotations
 import types
 
 from backend.models.recording import Recording, RecordingStatus
+from backend.utils.import_audio import KEEPING_AUDIO_STEP
 from backend.worker.tasks import pipeline
 
 GPU_QUEUE = "gpu"
@@ -24,6 +25,9 @@ class FakeSession:
 
     def commit(self) -> None:
         self.commits += 1
+
+    def close(self) -> None:
+        pass
 
 
 def processing(recording_id: int, task_id: str | None) -> Recording:
@@ -129,3 +133,34 @@ def test_sweeps_when_the_consumed_queues_cannot_be_read():
     """Prefer a duplicate run over leaving recordings stranded."""
     assert pipeline._sweeps_recordings(_sender(None))
     assert pipeline._sweeps_recordings(types.SimpleNamespace(app=None))
+
+
+def test_the_sweep_sends_an_import_waiting_for_its_audio_back_to_that_task(
+    monkeypatch, stub_celery_dispatch
+):
+    """Processing must not start on an upload whose audio is not kept yet: the
+    task keeps it, then queues processing itself."""
+    waiting = Recording(
+        id=7,
+        name="screen",
+        status=RecordingStatus.QUEUED,
+        processing_step=KEEPING_AUDIO_STEP,
+    )
+    queued = Recording(id=8, name="meeting", status=RecordingStatus.QUEUED)
+    monkeypatch.setattr(
+        pipeline, "get_sync_session", lambda: FakeSession([waiting, queued])
+    )
+    monkeypatch.setattr(pipeline, "_reclaim_orphaned_processing", lambda session: [])
+    processed: list[int] = []
+    monkeypatch.setattr(
+        pipeline,
+        "process_recording_task",
+        types.SimpleNamespace(delay=processed.append),
+    )
+
+    pipeline.check_queued_recordings(_sender({GPU_QUEUE: object()}))
+
+    assert processed == [8]
+    assert stub_celery_dispatch == [
+        ("backend.worker.tasks.keep_imported_audio_task", [7], None)
+    ]

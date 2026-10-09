@@ -2,12 +2,13 @@
 
 Import accepts video and media containers (OBS's MKV, a camera's MTS, a
 phone's 3GP) as well as audio files, but stores no video. Once the upload is
-complete, the audio track of a container, or of any other upload that carries
-video, is extracted to an audio-only file in a format import already
-accepted; that file replaces the upload as the recording's ``audio_path``, and
-the upload is deleted. Nothing after import (the playback proxy, processing,
-analytics, embeddings, backups) ever reads a video container. See "Imported
-Media Input" in docs/ARCHITECTURE.md.
+complete, a worker task extracts the audio track of a container, or of any
+other upload that carries video, to an audio-only file in a format import
+already accepted, before the recording is processed; that file replaces the
+upload as the recording's ``audio_path``, and the upload is deleted. Nothing
+after that (the playback proxy, processing, analytics, embeddings, backups)
+ever reads a video container. See "Imported Media Input" in
+docs/ARCHITECTURE.md.
 """
 
 from __future__ import annotations
@@ -49,6 +50,10 @@ MEDIA_CONTAINER_SUFFIXES = frozenset(
 # before, without needing ffprobe. Every other accepted format (MP4/M4A, WebM,
 # Ogg/Opus, WMA) is a container that can hold video, so it is probed.
 AUDIO_ONLY_SUFFIXES = frozenset({".wav", ".mp3", ".aac", ".flac"})
+
+# The step a QUEUED import shows until ``keep_imported_audio_task`` has kept
+# its audio and queued it for processing.
+KEEPING_AUDIO_STEP = "Extracting audio..."
 
 # Upper bound on one extraction, and on a full read of a track's packets. A
 # stream copy runs at disk speed (6.5 s for a 3.5 GB, one-hour OBS recording,
