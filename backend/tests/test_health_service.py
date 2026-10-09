@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import backend.api.services.health_service as health_service
@@ -133,6 +135,22 @@ def test_storage_component_reports_error_when_not_writable(monkeypatch) -> None:
     assert component["status"] == "error"
     assert component["detail"] == "Permission denied"
     assert component["action"]
+
+
+def test_ffmpeg_component_reports_missing_when_path_lacks_it(
+    tmp_path, monkeypatch
+) -> None:
+    """Reported from PATH alone, even on a host that keeps ffmpeg in a
+    well-known location such as /usr/bin."""
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+    component, ready = health_service._get_ffmpeg_component()
+
+    assert ready is False
+    assert component["status"] == "error"
+    assert os.environ["PATH"] == str(empty_bin)
 
 
 def test_unwritable_storage_blocks_the_pipeline_summary() -> None:
