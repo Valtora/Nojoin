@@ -16,7 +16,7 @@ from backend.core.db import async_session_maker
 from backend.core.task_dispatch import dispatch_task
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
-from backend.models.recording import Recording
+from backend.models.recording import IN_FLIGHT_TRANSCRIPT_STATUSES, Recording
 from backend.models.recording_public import (
     ChatMessagePublicRead,
     serialize_chat_message,
@@ -152,6 +152,13 @@ async def chat_with_meeting(
     """
     # 1. Check Ownership & Fetch Data
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # The view blanks the transcript of an in-flight recording and the UI
+    # hides chat for it; the API must not answer from it either.
+    if recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="Meeting Chat is available once the recording has finished processing.",
+        )
 
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
