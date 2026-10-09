@@ -252,7 +252,7 @@ def _combine_word_level(segments, speaker_turns):
     }
 
     def get_speakers_for_range(start, end):
-        if end <= start:
+        if end - start <= ZERO_DURATION_EPSILON_S:
             return [_speaker_at_instant(start, speaker_turns)]
         speaker_overlaps = {}
         word_seg = Segment(start, end)
@@ -386,6 +386,11 @@ def _combine_word_level(segments, speaker_turns):
     )
 
     return final_segments
+
+
+# pyannote treats a Segment no longer than this (its SEGMENT_PRECISION) as
+# empty, so a word that short overlaps no turn and is looked up as an instant.
+ZERO_DURATION_EPSILON_S = 1e-6
 
 
 def _speaker_at_instant(instant: float, speaker_turns) -> str:

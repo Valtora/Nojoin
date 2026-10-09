@@ -601,6 +601,20 @@ def test_consolidate_keeps_an_isolated_short_segment_on_its_own():
     ]
 
 
+def test_word_with_float_noise_duration_is_looked_up_as_an_instant():
+    # pyannote treats a Segment this short as empty, so it overlaps no turn.
+    word = {"start": 0.5, "end": 0.5 + 1e-9, "word": " ship"}
+    transcription = {
+        "segments": [{"start": 0.5, "end": 0.5, "text": " ship", "words": [word]}]
+    }
+
+    result = combine_transcription_diarization(
+        transcription, FakeDiarization(ZERO_LENGTH_TURNS)
+    )
+
+    assert [seg["speaker"] for seg in result] == ["S0"]
+
+
 @pytest.mark.parametrize(
     "segments",
     [
