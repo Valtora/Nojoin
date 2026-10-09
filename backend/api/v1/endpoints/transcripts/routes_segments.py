@@ -30,6 +30,7 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
+from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
@@ -52,6 +53,20 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+
+async def _apply_segment_replace(
+    db: AsyncSession, *, recording_id: int, segments: list[dict]
+) -> None:
+    """Replace the canonical segments; reused utterance ids are a 409."""
+    try:
+        await db.run_sync(
+            lambda sync_session: apply_compatibility_segment_replace(
+                sync_session, recording_id=recording_id, segments=segments
+            )
+        )
+    except SegmentIdConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/{recording_id}/segments/{segment_index}")
@@ -563,12 +578,10 @@ async def find_and_replace(
         await db.run_sync(
             lambda sync_session: ensure_canonical_backfill(sync_session, recording.id)
         )
-        await db.run_sync(
-            lambda sync_session: apply_compatibility_segment_replace(
-                sync_session,
-                recording_id=recording.id,
-                segments=[dict(segment) for segment in (transcript.segments or [])],
-            )
+        await _apply_segment_replace(
+            db,
+            recording_id=recording.id,
+            segments=[dict(segment) for segment in (transcript.segments or [])],
         )
 
     db.add(transcript)
@@ -624,12 +637,8 @@ async def update_transcript_segments(
                 for index, segment in enumerate(canonical_segments):
                     segment["id"] = transcript.segments[index].get("id")
 
-        await db.run_sync(
-            lambda sync_session: apply_compatibility_segment_replace(
-                sync_session,
-                recording_id=recording.id,
-                segments=canonical_segments,
-            )
+        await _apply_segment_replace(
+            db, recording_id=recording.id, segments=canonical_segments
         )
 
         await db.commit()
