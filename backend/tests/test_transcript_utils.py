@@ -887,3 +887,43 @@ def test_consolidate_output_does_not_depend_on_the_hash_seed():
     }
 
     assert len(outputs) == 1
+
+
+def test_consolidate_leaves_untouched_neighbours_as_the_merge_left_them():
+    # The merge keeps these apart (their raw overlapping sets differ); with no
+    # fragment between them, the rejoin must not reconsider the pair.
+    segments = [
+        _with_overlap(_segment(0.0, 2.0, "S0", "a"), ["UNKNOWN"]),
+        _segment(2.0, 4.0, "S0", "b"),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert [seg["text"] for seg in result] == ["a", "b"]
+
+
+# 0.0 and 0.01 are the pair whose float difference is exactly the 0.01 s
+# tolerance, so these pin "under the tolerance" as strict.
+@pytest.mark.parametrize(
+    "segments",
+    [
+        # The merge itself: a gap of exactly the tolerance is a pause.
+        [_segment(-1.0, 0.0, "S0", "a"), _segment(0.01, 1.0, "S0", "b")],
+        # A rejoin whose first gap is exactly the tolerance.
+        [
+            _segment(-1.0, 0.0, "S0", "a"),
+            _segment(0.01, 0.05, "S1", "uh"),
+            _segment(0.05, 1.0, "S0", "b"),
+        ],
+        # A rejoin whose last gap is exactly the tolerance.
+        [
+            _segment(-1.0, -0.05, "S0", "a"),
+            _segment(-0.05, 0.0, "S1", "uh"),
+            _segment(0.01, 1.0, "S0", "b"),
+        ],
+    ],
+)
+def test_consolidate_treats_a_gap_of_exactly_the_tolerance_as_a_pause(segments):
+    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+
+    assert len(result) == 2
