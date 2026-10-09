@@ -5,7 +5,7 @@ export const DAY_IN_MS = 24 * 60 * 60 * 1000;
 export const HOUR_IN_MS = 60 * 60 * 1000;
 
 export const DEADLINE_TRIGGER_CLASS =
-  "inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-dashed border-contrast-border bg-surface-card px-3 py-1 text-xs font-medium text-contrast-muted transition-colors duration-150 hover:border-action-border hover:text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
+  "inline-flex h-8 max-w-full items-center gap-2 rounded-pill border border-dashed border-contrast-border bg-surface-card px-3 py-1 text-xs font-medium text-contrast-muted transition-colors duration-150 hover:border-action-border hover:text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
 export function parseTaskDeadline(value: string): Date | null {
   const parsed = new Date(value);

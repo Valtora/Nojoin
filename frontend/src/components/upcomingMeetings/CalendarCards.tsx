@@ -53,7 +53,7 @@ export function LinkedRecordingsMeta({
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-contrast-helper">
-      <span className="inline-flex items-center rounded-full border border-surface-border bg-surface-inset px-2.5 py-1 font-medium text-contrast-muted">
+      <span className="inline-flex items-center rounded-pill border border-surface-border bg-surface-inset px-2.5 py-1 font-medium text-contrast-muted">
         {recordings.length === 1 ? "Recording linked" : `${recordings.length} recordings linked`}
       </span>
       {singleRecording ? (
@@ -102,7 +102,7 @@ export function DashboardRecordingCard({
                   return (
                     <span
                       key={tag.id}
-                      className="inline-flex items-center rounded-full border border-action-border bg-action-tint px-2 py-0.5 text-[11px] font-semibold text-action-text"
+                      className="inline-flex items-center rounded-pill border border-action-border bg-action-tint px-2 py-0.5 text-[11px] font-semibold text-action-text"
                     >
                       <span
                         className={`mr-1.5 h-1.5 w-1.5 rounded-full ${colour.dot}`}
@@ -135,7 +135,7 @@ export function DashboardRecordingCard({
             </span>
             <span>{formatRecordingDuration(recording.duration_seconds)}</span>
             {showStatus ? (
-              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
+              <span className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-semibold ${getRecordingStatusClasses(recording.status)}`}>
                 {recording.status}
               </span>
             ) : null}
@@ -250,7 +250,7 @@ export function DayTimelineEventCard({
   // A timeline bubble keeps the card fill and a border because it is a control
   // rather than a surface in the stack: it has to be opaque over the hour rules
   // it covers, and its border is the only thing marking it as live or past.
-  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[5px] border bg-surface-card text-left transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+  const cardClasses = `relative block h-full w-full cursor-pointer overflow-hidden rounded-[calc(5px*var(--radius-scale))] border bg-surface-card text-left transition-colors hover:border-action-border hover:bg-action-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
     isLive
       ? "border-action-border"
       : "border-surface-border"
@@ -280,7 +280,7 @@ export function DayTimelineEventCard({
               <div className="flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-contrast-helper">
                 <span>{formatAgendaTime(event, timeZone)}</span>
                 {showLiveBadge && (
-                  <span className="rounded-full bg-action-tint px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] text-action-text">
+                  <span className="rounded-pill bg-action-tint px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] text-action-text">
                     Live now
                   </span>
                 )}
@@ -351,7 +351,7 @@ export function DayTimelineEventCard({
           href={meetingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full bg-action px-2.5 py-0.5 text-[10px] font-semibold text-action-on transition-colors hover:bg-action-hover"
+          className="absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-pill bg-action px-2.5 py-0.5 text-[10px] font-semibold text-action-on transition-colors hover:bg-action-hover"
         >
           <Video className="h-3 w-3" />
           Join

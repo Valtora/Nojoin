@@ -42,7 +42,7 @@ export default function AiDecisions({
               {decision.decision}
             </p>
             <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${consensusClass(decision.consensus)}`}
+              className={`shrink-0 rounded-pill border px-2 py-0.5 text-xs font-medium ${consensusClass(decision.consensus)}`}
             >
               {consensusLabel(decision.consensus)}
             </span>

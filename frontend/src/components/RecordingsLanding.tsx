@@ -44,7 +44,7 @@ export default function RecordingsLanding() {
         className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card"
       >
         <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-action-text">
+          <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-action-text">
             <Waves className="h-3.5 w-3.5" />
             Recordings Workspace
           </div>

@@ -146,7 +146,7 @@ function TagSelector({
                   : [...selectedIds, tag.id],
               );
             }}
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            className={`inline-flex items-center gap-2 rounded-pill border px-3 py-1.5 text-xs font-semibold transition-colors ${
               isSelected
                 ? `${color.bg} ${color.border} ${color.text}`
                 : "border-surface-border bg-surface-card text-contrast-helper hover:border-action-border hover:text-action-text"
@@ -687,12 +687,12 @@ export default function TasksWorkspace() {
                           {task.title}
                         </h2>
                         {task.completed_at && !task.archived_at && (
-                          <span className="rounded-full border border-status-success-border bg-status-success-bg px-2.5 py-1 text-xs font-semibold text-status-success-fg">
+                          <span className="rounded-pill border border-status-success-border bg-status-success-bg px-2.5 py-1 text-xs font-semibold text-status-success-fg">
                             Completed
                           </span>
                         )}
                         {task.archived_at && (
-                          <span className="rounded-full border border-status-warning-border bg-status-warning-bg px-2.5 py-1 text-xs font-semibold text-status-warning-fg">
+                          <span className="rounded-pill border border-status-warning-border bg-status-warning-bg px-2.5 py-1 text-xs font-semibold text-status-warning-fg">
                             Archived
                           </span>
                         )}
@@ -706,13 +706,13 @@ export default function TasksWorkspace() {
 
                       <div className="mt-4 flex flex-wrap items-center gap-2">
                         {dueLabel && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-surface-border bg-surface-inset px-3 py-1 text-xs font-semibold text-contrast-muted">
+                          <span className="inline-flex items-center gap-2 rounded-pill border border-surface-border bg-surface-inset px-3 py-1 text-xs font-semibold text-contrast-muted">
                             <Clock className="h-3.5 w-3.5" />
                             {dueLabel}
                           </span>
                         )}
                         {archivedLabel && (
-                          <span className="inline-flex items-center gap-2 rounded-full border border-status-warning-border bg-status-warning-bg px-3 py-1 text-xs font-semibold text-status-warning-fg">
+                          <span className="inline-flex items-center gap-2 rounded-pill border border-status-warning-border bg-status-warning-bg px-3 py-1 text-xs font-semibold text-status-warning-fg">
                             <Archive className="h-3.5 w-3.5" />
                             {archivedLabel}
                           </span>
@@ -722,7 +722,7 @@ export default function TasksWorkspace() {
                           return (
                             <span
                               key={tag.id}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${color.bg} ${color.border} ${color.text}`}
+                              className={`inline-flex items-center gap-2 rounded-pill border px-3 py-1 text-xs font-semibold ${color.bg} ${color.border} ${color.text}`}
                             >
                               <span className={`h-2 w-2 rounded-full ${color.dot}`} />
                               {tag.name}
@@ -733,7 +733,7 @@ export default function TasksWorkspace() {
                           <Link
                             key={recording.id}
                             href={`/recordings/${recording.id}`}
-                            className="inline-flex items-center gap-2 rounded-full border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
+                            className="inline-flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 text-xs font-semibold text-status-info-fg transition-colors hover:border-status-info-border hover:text-status-info-fg"
                           >
                             <FileAudio className="h-3.5 w-3.5" />
                             {recording.name}

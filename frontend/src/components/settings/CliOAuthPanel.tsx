@@ -322,15 +322,15 @@ function ProviderConnectRow({
         </div>
         <div className="shrink-0">
           {usageLimited ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-status-warning-bg text-status-warning-fg">
+            <span className="inline-flex items-center px-3 py-1 rounded-pill text-xs font-semibold bg-status-warning-bg text-status-warning-fg">
               Usage limited
             </span>
           ) : connected ? (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-status-success-bg text-status-success-fg">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-pill text-xs font-semibold bg-status-success-bg text-status-success-fg">
               <Check className="w-3 h-3" /> Connected
             </span>
           ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-surface-inset text-contrast-helper text-contrast-icon-muted">
+            <span className="inline-flex items-center px-3 py-1 rounded-pill text-xs font-semibold bg-surface-inset text-contrast-helper text-contrast-icon-muted">
               Not connected
             </span>
           )}
