@@ -8,6 +8,8 @@ left its weights on disk and a re-download linked them back at once.
 
 from __future__ import annotations
 
+import os
+import shutil
 from hashlib import sha256
 from pathlib import Path
 
@@ -16,6 +18,7 @@ import pytest
 from backend import preload_models
 from backend.tests.hf_cache_layout import (
     COMMIT,
+    PYANNOTE_EMBEDDING,
     onnx_asr_files,
     share_blob,
     write_hf_repo,
@@ -77,6 +80,119 @@ def test_weights_another_repo_links_to_survive(hub):
     assert (sibling / "snapshots" / COMMIT / ENCODER).read_bytes() == content
     manifest = payload.with_name(f"{payload.name}.refs").read_text()
     assert manifest.split() == [f"{sibling.name}/blobs/{sha256(content).hexdigest()}"]
+
+
+@pytest.fixture
+def outside(tmp_path) -> Path:
+    """A directory beside the hub cache, standing in for files kept elsewhere."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    return outside
+
+
+def test_a_snapshot_link_to_a_file_outside_the_repo_keeps_that_file(hub, outside):
+    repo = write_onnx_asr_repo(hub, "parakeet")
+    kept = outside / "notes.bin"
+    kept.write_bytes(b"not the model's")
+    (repo / "snapshots" / COMMIT / "extra.bin").symlink_to(kept)
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    assert kept.read_bytes() == b"not the model's"
+
+
+def test_a_snapshot_directory_linked_elsewhere_keeps_its_files(hub, outside):
+    """A whole snapshot placed by hand: snapshots/<commit> -> a directory elsewhere."""
+    files = onnx_asr_files("parakeet", "int8")
+    for name, content in files.items():
+        (outside / name).write_bytes(content)
+    repo = hub / hf_repo_dirname(PARAKEET)
+    (repo / "snapshots").mkdir(parents=True)
+    (repo / "snapshots" / COMMIT).symlink_to(outside, target_is_directory=True)
+    (repo / "refs").mkdir()
+    (repo / "refs" / "main").write_text(COMMIT)
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+    assert status["parakeet"]["downloaded"] is True
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    assert all(
+        (outside / name).read_bytes() == content for name, content in files.items()
+    )
+
+
+def test_a_snapshot_directory_linked_to_a_copy_elsewhere_keeps_the_copy(hub, outside):
+    """snapshots/<commit> -> the same snapshot in a copy of the repo kept elsewhere.
+
+    The copy's entries are relative links, which huggingface_hub reads as
+    naming this repo's own blobs, so the blobs alone look like they belong here.
+    """
+    repo = write_onnx_asr_repo(hub, "parakeet")
+    copy = outside / repo.name
+    shutil.copytree(repo, copy, symlinks=True)
+    shutil.rmtree(repo / "snapshots" / COMMIT)
+    (repo / "snapshots" / COMMIT).symlink_to(
+        copy / "snapshots" / COMMIT, target_is_directory=True
+    )
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    copied = copy / "snapshots" / COMMIT
+    files = onnx_asr_files("parakeet", "int8")
+    assert all(
+        (copied / name).read_bytes() == content for name, content in files.items()
+    )
+
+
+def test_sideloaded_pyannote_weights_kept_elsewhere_survive(
+    hub, outside, monkeypatch, tmp_path
+):
+    """An offline install linking the weights file to a copy on another disk."""
+    monkeypatch.setenv("NOJOIN_PYANNOTE_MODELS_DIR", str(tmp_path / "no-bundled"))
+    repo = write_hf_repo(hub, PYANNOTE_EMBEDDING, {"config.yaml": b"model: {}\n"})
+    weights = outside / "pytorch_model.bin"
+    weights.write_bytes(b"weights")
+    (repo / "snapshots" / COMMIT / "pytorch_model.bin").symlink_to(weights)
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+    assert status["embedding"]["downloaded"] is True
+
+    assert preload_models.delete_model("embedding") is True
+
+    assert not repo.exists()
+    assert weights.read_bytes() == b"weights"
+
+
+def test_a_snapshot_link_into_another_repos_blobs_keeps_that_blob(hub):
+    repo = write_onnx_asr_repo(hub, "parakeet")
+    sibling = write_hf_repo(
+        hub, "istupakov/parakeet-tdt-0.6b-v2-onnx", {"vocab.txt": b"v2"}
+    )
+    # In no snapshot of the sibling, so no other cached file keeps it.
+    stray = sibling / "blobs" / "0f1e2d"
+    stray.write_bytes(b"the sibling's")
+    snapshot = repo / "snapshots" / COMMIT
+    (snapshot / "x.bin").symlink_to(os.path.relpath(stray, snapshot))
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    assert stray.read_bytes() == b"the sibling's"
+
+
+def test_a_repo_with_a_link_outside_still_frees_its_shared_weights(hub, outside):
+    repo, payloads = _shared_parakeet(hub)
+    kept = outside / "notes.bin"
+    kept.write_bytes(b"not the model's")
+    (repo / "snapshots" / COMMIT / "extra.bin").symlink_to(kept)
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    assert kept.exists()
+    assert not any(payload.exists() for payload in payloads)
 
 
 def test_a_partial_download_frees_the_file_it_finished(hub):

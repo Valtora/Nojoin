@@ -557,13 +557,26 @@ def _delete_hub_repo(repo_dir: str) -> None:
     # only the worker image installs huggingface_hub.
     from huggingface_hub import scan_cache_dir
 
+    def inside_repo(path: os.PathLike[str]) -> bool:
+        real = os.path.realpath(path)
+        return os.path.commonpath([real, repo_dir]) == repo_dir
+
     cache_info = scan_cache_dir(cache_dir=os.path.dirname(repo_dir))
+    # delete_files unlinks each snapshot entry and removes the first place its
+    # symlink points (blob_path), wherever that is. A snapshot entry, or a
+    # whole snapshot directory, linked to files outside the repo (weights kept
+    # on another disk, another repo's blob) would take those files with it.
+    # Both removals act on the entry in its real parent directory without
+    # following the entry itself, so a file is handed over only when both
+    # parents resolve inside the repo. The rest are links that rmtree below
+    # unlinks without following.
     files = [
         file
         for repo in cache_info.repos
         if str(repo.repo_path) == repo_dir
         for revision in repo.revisions
         for file in revision.files
+        if inside_repo(file.file_path.parent) and inside_repo(file.blob_path.parent)
     ]
     if files:
         cache_info.delete_files(*files).execute()
