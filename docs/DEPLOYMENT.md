@@ -463,6 +463,30 @@ saving any of those settings now fails with an explicit error instead of appeari
 reverting on the next restart. If you see that error, check the ownership of the host directory bound to
 `/app/data`.
 
+Speech and speaker tuning is per user (**Settings > Recording > Advanced**), and every value defaults to
+inherit. An operator can set an installation default for any of these keys as a flat entry in
+`data/config.json`. It applies to every user who has not set their own value:
+
+| Key | Shipped default | Accepted range |
+| --- | --- | --- |
+| `vad_threshold` | 0.5 | 0.15 to 0.90 |
+| `asr_word_end_padding_s` | 0.2 | 0.05 to 0.80 |
+| `phantom_max_duration_s` | 3.0 | 0 to 10 |
+| `phantom_max_segments` | 3 | 0 to 20 (whole number) |
+| `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
+| `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
+| `speaker_merge_threshold` | 0.70 | 0.30 to 1.00 |
+| `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
+| `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
+
+The legacy `vad_parameters.threshold` in `config.json` is still honoured, used as given, below both a
+user's `vad_threshold` and a flat `vad_threshold`. The worker logs and ignores a value outside its range,
+or a phantom floor that is not below the phantom merge threshold, and uses the shipped default instead
+(for the VAD threshold, `vad_parameters.threshold`), so a typo never fails a recording. A user's own
+value, when set, replaces the flat key entirely, so an unusable per-user value falls back to the shipped
+default rather than to the installation's. The settings page shows a user's own value only: where the installation sets
+a default, the field still reads "Default" with the shipped value as its placeholder.
+
 ## CLI OAuth (worker-io image)
 
 The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). `docker-compose.example.yml` already points the `worker-io` service at that image through its `image:`/`build:` override, so a deployment made from the tracked template can offer this route out of the box, including from the first-run wizard's AI step; `worker-gpu` and `worker-cpu` stay on the base image. A deployment whose compose file has been changed to run `worker-io` on the base image can still complete the Claude connect flow, which Nojoin drives itself, but inference through the subscription will then fail and fall back to the server's provider chain. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`).
