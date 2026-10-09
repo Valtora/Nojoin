@@ -286,6 +286,30 @@ describe("changed-count badge", () => {
   it("ignores unset values rather than counting them as changed", () => {
     expect(countChangedAdvanced("recording", {}, { isAdmin: false })).toBe(0);
   });
+
+  it("counts a processing tuning value only once the user sets one", () => {
+    expect(
+      countChangedAdvanced("recording", { vad_threshold: 0.3 }, { isAdmin: false }),
+    ).toBe(1);
+    // null is "inherit", which is what every user starts with.
+    expect(
+      countChangedAdvanced(
+        "recording",
+        { vad_threshold: null, phantom_merge_threshold: null },
+        { isAdmin: false },
+      ),
+    ).toBe(0);
+  });
+
+  it("counts a multi-field tuning entry once however many fields are set", () => {
+    expect(
+      countChangedAdvanced(
+        "recording",
+        { word_flip_max_duration_s: 0, word_flip_max_gap_s: 0.1 },
+        { isAdmin: false },
+      ),
+    ).toBe(1);
+  });
 });
 
 describe("registry search", () => {
@@ -308,6 +332,18 @@ describe("registry search", () => {
     );
 
     expect(ids).toContain("recording-echo-cancellation");
+  });
+
+  it.each([
+    ["vad threshold", "recording-vad-threshold"],
+    ["quiet speech", "recording-vad-threshold"],
+    ["brief speaker", "recording-phantom-filter"],
+  ])("finds processing tuning by %s", (query, id) => {
+    const ids = searchSettingsRegistry(query, { isAdmin: false }).map(
+      (result) => result.entry.id,
+    );
+
+    expect(ids).toContain(id);
   });
 
   it("hides admin-only settings from a non-admin", () => {
