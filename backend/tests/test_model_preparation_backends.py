@@ -131,7 +131,9 @@ def test_a_task_with_a_preparation_linked_after_it_does_not_report_complete(
     download_models_task.push_request(callbacks=callbacks)
     try:
         download_models_task.run(
-            transcription_backend="whisper", whisper_model_size="small", include_core=True
+            transcription_backend="whisper",
+            whisper_model_size="small",
+            include_core=True,
         )
     finally:
         download_models_task.pop_request()
