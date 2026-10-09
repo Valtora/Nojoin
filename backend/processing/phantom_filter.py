@@ -84,8 +84,11 @@ def _resolve_thresholds(
     """Resolve each threshold: explicit argument, else the config, else default.
 
     A floor at or above the merge threshold would leave no similarity at which
-    a brief speaker is retained, so that pair falls back to both defaults.
+    a brief speaker is retained, so each half of that pair read from the config
+    falls back to its default. An explicit argument is used as given.
     """
+    floor_from_config = embedding_floor is None
+    merge_from_config = merge_threshold is None
     if max_duration_s is None:
         max_duration_s = resolve_tuning(config, PHANTOM_MAX_DURATION_KEY)
     if max_segments is None:
@@ -94,17 +97,19 @@ def _resolve_thresholds(
         embedding_floor = resolve_tuning(config, PHANTOM_EMBEDDING_FLOOR_KEY)
     if merge_threshold is None:
         merge_threshold = resolve_tuning(config, PHANTOM_MERGE_THRESHOLD_KEY)
-    if embedding_floor >= merge_threshold:
+    if embedding_floor >= merge_threshold and (floor_from_config or merge_from_config):
         logger.warning(
             "[PhantomFilter] Floor %s is not below merge threshold %s; "
-            "using the defaults %s and %s.",
+            "using the default for each value read from settings (%s and %s).",
             embedding_floor,
             merge_threshold,
             PHANTOM_EMBEDDING_FLOOR,
             PHANTOM_MERGE_THRESHOLD,
         )
-        embedding_floor = PHANTOM_EMBEDDING_FLOOR
-        merge_threshold = PHANTOM_MERGE_THRESHOLD
+        if floor_from_config:
+            embedding_floor = PHANTOM_EMBEDDING_FLOOR
+        if merge_from_config:
+            merge_threshold = PHANTOM_MERGE_THRESHOLD
     return max_duration_s, max_segments, embedding_floor, merge_threshold
 
 
@@ -141,7 +146,9 @@ def filter_phantom_speakers(
                          into the matched real speaker.
 
     Each threshold left as None comes from ``config``, else the module default.
-    A zero duration or segment ceiling selects no candidates, which turns the
+    When the floor is not below the merge threshold, each of the two that came
+    from ``config`` falls back to its default; explicit arguments are used as
+    given, as they always were. A zero duration or segment ceiling selects no candidates, which turns the
     filter off before the embedding model is loaded.
 
     Returns:

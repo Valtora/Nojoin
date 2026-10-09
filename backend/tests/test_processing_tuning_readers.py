@@ -410,6 +410,46 @@ def test_inverted_phantom_pair_falls_back_to_both_defaults(monkeypatch, caplog):
     assert "not below merge threshold" in caplog.text
 
 
+def test_explicit_phantom_arguments_are_used_as_given(monkeypatch, caplog):
+    """The conflict fallback guards values read from settings; a caller's own
+    arguments behave as they did before the values were configurable."""
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel(cosine=0.5))
+
+    with caplog.at_level(logging.WARNING):
+        result = filter_phantom_speakers(
+            _phantom_diarization(),
+            "audio.wav",
+            config={"processing_device": "cpu"},
+            embedding_floor=0.9,
+            merge_threshold=0.8,
+        )
+
+    # 0.5 is below the explicit 0.9 floor: reassigned as non-speech.
+    assert _labels(result) == {"SPEAKER_00"}
+    assert "not below merge threshold" not in caplog.text
+
+
+def test_a_conflicting_configured_floor_falls_back_beside_an_explicit_merge(
+    monkeypatch,
+):
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel(cosine=0.65))
+
+    result = filter_phantom_speakers(
+        _phantom_diarization(),
+        "audio.wav",
+        config={"processing_device": "cpu", "phantom_embedding_floor": 0.9},
+        merge_threshold=0.8,
+    )
+
+    # The floor falls back to 0.35 and the explicit 0.8 stays, so 0.65 is
+    # retained; with both at their defaults it would merge at 0.60.
+    assert _labels(result) == {"SPEAKER_00", "SPEAKER_01"}
+
+
 # --- duplicate speaker merge pass ----------------------------------------------
 
 
