@@ -217,6 +217,8 @@ def test_parakeet_mapping_segment_split_on_pause():
         audio_duration=3.0,
     )
     assert len(result["segments"]) == 2
+    # A word followed by a pause lasts the default 0.2 s word end padding.
+    assert result["segments"][0]["words"][0]["end"] == 0.2
 
 
 def test_parakeet_mapping_word_leading_space():

@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { getSettings, getUserMe, updateSettings } from "@/lib/api";
+import { validateProcessingTuning } from "@/lib/processingTuning";
 import { isValidUrl } from "@/lib/validation";
 import { isValidTimeZone, setCachedUserTimeZone } from "@/lib/timezone";
 import { Settings, UserRole } from "@/types";
@@ -93,7 +94,7 @@ function validateSettings(settings: Settings): string | null {
   ) {
     return "Meeting Edge Technical Context must be between 1 and 5.";
   }
-  return null;
+  return validateProcessingTuning(settings);
 }
 
 export default function SettingsProvider({ children }: { children: ReactNode }) {

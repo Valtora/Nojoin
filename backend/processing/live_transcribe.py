@@ -35,6 +35,11 @@ from backend.processing.pipeline_metrics import (
     pipeline_metric_timer,
     record_pipeline_metric,
 )
+from backend.processing.processing_tuning import (
+    ASR_WORD_END_PADDING_KEY,
+    VAD_THRESHOLD_KEY,
+    normalise_tuning_value,
+)
 from backend.utils.asr_window_results import (
     build_recording_asr_window_result_config_hash,
     complete_recording_asr_window_result,
@@ -957,13 +962,48 @@ def _strip_repetition(text: str) -> str:
     return " ".join(out)
 
 
-def _resolve_live_engine_config(recording_id: int, live_config: dict) -> dict:
+def _live_tuning_value(
+    recording_id: int, merged_config: dict, key: str, *, warn: bool
+) -> float | None:
+    """The owner's ``key`` when usable, else None, so the reader inherits.
+
+    Validated here rather than by the reader, which would log an unusable value
+    on every live segment; ``warn`` lets the caller log it once per recording.
+    """
+    raw = merged_config.get(key)
+    value = normalise_tuning_value(key, raw)
+    if raw is not None and value is None:
+        logger.log(
+            logging.WARNING if warn else logging.DEBUG,
+            "Ignoring invalid %s=%r for live recording %s.",
+            key,
+            raw,
+            recording_id,
+        )
+    return value
+
+
+def _live_lane_has_consumed(state: dict) -> bool:
+    """Whether a live run of this recording has completed (from its state).
+
+    Until one has, each run warns about an unusable tuning value, so the
+    warning is not lost when the first run fails before loading the config.
+    """
+    outcomes = state.get(_STATE_SEQUENCE_OUTCOMES_KEY) or {}
+    return any(entry.get("outcome") == "consumed" for entry in outcomes.values())
+
+
+def _resolve_live_engine_config(
+    recording_id: int, live_config: dict, *, warn_unusable: bool = True
+) -> dict:
     """Layer user-aware overrides onto the base live engine config.
 
     Loads the recording's owning user once and merges their resolved LLM/ASR
     settings into ``live_config`` in place, returning the same dict. Behaviour is
     a no-op when the recording or user is absent. DB/model imports stay local so
     module import time pulls in no ML inference dependencies.
+    ``warn_unusable`` logs an unusable tuning value at WARNING (else DEBUG);
+    the task sets it until a live run of the recording has completed.
     """
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
@@ -1020,6 +1060,18 @@ def _resolve_live_engine_config(recording_id: int, live_config: dict) -> dict:
                     "max_segment_s": merged_config.get(
                         "live_max_segment_s",
                         live_config["max_segment_s"],
+                    ),
+                    "vad_threshold": _live_tuning_value(
+                        recording_id,
+                        merged_config,
+                        VAD_THRESHOLD_KEY,
+                        warn=warn_unusable,
+                    ),
+                    "asr_word_end_padding_s": _live_tuning_value(
+                        recording_id,
+                        merged_config,
+                        ASR_WORD_END_PADDING_KEY,
+                        warn=warn_unusable,
                     ),
                 }
             )
@@ -1757,7 +1809,11 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         live_config = _build_live_config()
         W = int(live_config["context_window_s"] * LIVE_SAMPLE_RATE)
         # Load user-aware overrides once for live speaker matching.
-        _resolve_live_engine_config(recording_id, live_config)
+        _resolve_live_engine_config(
+            recording_id,
+            live_config,
+            warn_unusable=not _live_lane_has_consumed(state),
+        )
         ledger_enabled = bool(
             config_manager.get("enable_asr_window_result_ledger", True)
         )
@@ -1767,6 +1823,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             combined,
             min_silence_duration_ms=LIVE_MIN_SILENCE_MS,
             speech_pad_ms=live_config["speech_pad_ms"],
+            config=live_config,
         )
         complete, cut_point = classify_speech(
             speech,

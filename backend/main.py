@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -132,6 +133,9 @@ from backend.services.recording_identity_service import (
     ensure_recording_meeting_uids,
     ensure_recording_public_ids,
 )
+from backend.services.transcription_settings_upgrade import (
+    carry_owner_transcription_choice,
+)
 from backend.utils.config_manager import (
     get_configured_web_origin,
     get_cors_origin_list,
@@ -221,6 +225,29 @@ async def ensure_recording_public_ids_on_startup() -> None:
         )
 
 
+async def carry_owner_transcription_choice_on_startup() -> None:
+    """Move the owner's transcription choice into config.json, once.
+
+    Runs before startup queues model preparation, so the engine that run
+    prepares is the one carried over.
+    """
+    try:
+        async with async_session_maker() as session:
+            carried = await carry_owner_transcription_choice(session)
+    except (OSError, ValueError, SQLAlchemyError) as e:
+        logger.error(
+            "Could not carry the owner's transcription choice into config.json: %s", e
+        )
+        return
+
+    if carried:
+        logger.warning(
+            "The transcription engine is install-wide now; carried the owner's "
+            "choice into config.json: %s",
+            carried,
+        )
+
+
 def run_migrations():
     if should_skip_startup_migrations():
         logger.info(
@@ -298,6 +325,7 @@ async def lifespan(app: FastAPI):
     await log_first_run_setup_pointer()
     await ensure_recording_public_ids_on_startup()
     await ensure_recording_meeting_uids_on_startup()
+    await carry_owner_transcription_choice_on_startup()
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)
     log_trusted_proxy_warnings(startup_path="API startup", logger_instance=logger)
     log_recordings_storage_warnings(logger_instance=logger)

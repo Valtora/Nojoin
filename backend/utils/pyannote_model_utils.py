@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from backend.utils.model_cache_paths import hf_hub_cache_root, hf_repo_dirname
 from backend.utils.path_manager import path_manager
 
 PYANNOTE_MODEL_ID_TO_DIRNAME = {
@@ -73,13 +74,17 @@ def get_bundled_pyannote_model_dir(model_id: str) -> Path | None:
 
 
 def _hf_cache_roots() -> list[Path]:
-    roots: list[Path] = []
+    """The hub caches searched for a Pyannote model, the managed one first.
 
-    hf_home = os.getenv("HF_HOME", "").strip()
-    if hf_home:
-        roots.append(Path(hf_home).expanduser() / "hub")
-
-    roots.append(Path.home() / ".cache" / "huggingface" / "hub")
+    The first is the cache huggingface_hub downloads into, so the loaders'
+    remote fallback (``from_pretrained(model_id)`` with no cache_dir) lands
+    there. The second is the default personal cache: a model already in it is
+    loaded from there, but Nojoin did not put it there.
+    """
+    roots = [
+        Path(hf_hub_cache_root()),
+        Path.home() / ".cache" / "huggingface" / "hub",
+    ]
 
     seen: set[str] = set()
     deduped: list[Path] = []
@@ -93,7 +98,7 @@ def _hf_cache_roots() -> list[Path]:
 
 
 def _hf_cache_repo_dir(model_id: str, cache_root: Path) -> Path:
-    return cache_root / f"models--{model_id.replace('/', '--')}"
+    return cache_root / hf_repo_dirname(model_id)
 
 
 def _resolve_snapshot_dir(cache_repo_dir: Path) -> Path | None:
@@ -135,14 +140,16 @@ def resolve_local_pyannote_model(model_id: str) -> PyannoteModelResolution:
                 checked_paths=checked_paths,
             )
 
-    for cache_root in _hf_cache_roots():
+    for index, cache_root in enumerate(_hf_cache_roots()):
         cache_repo_dir = _hf_cache_repo_dir(model_id, cache_root)
         checked_paths.append(str(cache_repo_dir))
         snapshot_dir = _resolve_snapshot_dir(cache_repo_dir)
         if snapshot_dir and _looks_complete_model_dir(snapshot_dir, model_id):
             return PyannoteModelResolution(
                 model_id=model_id,
-                source="cache",
+                # "external": loadable, but outside the cache Nojoin manages,
+                # so it is not Nojoin's to delete.
+                source="cache" if index == 0 else "external",
                 load_ref=str(snapshot_dir),
                 path=str(snapshot_dir),
                 checked_paths=checked_paths,
