@@ -252,6 +252,8 @@ def _combine_word_level(segments, speaker_turns):
     }
 
     def get_speakers_for_range(start, end):
+        if end <= start:
+            return [_speaker_at_instant(start, speaker_turns)]
         speaker_overlaps = {}
         word_seg = Segment(start, end)
         for turn, _, label in speaker_turns.itertracks(yield_label=True):
@@ -384,6 +386,25 @@ def _combine_word_level(segments, speaker_turns):
     )
 
     return final_segments
+
+
+def _speaker_at_instant(instant: float, speaker_turns) -> str:
+    """Speaker of the turn containing ``instant``, for a word with no duration.
+
+    Such a word overlaps no turn by any amount, so the overlap lookup would
+    leave it UNKNOWN. A turn holds ``[start, end)``: an instant on an edge two
+    turns share belongs to the turn that starts there, and a turn's end still
+    counts when no turn starts at it. Where turns overlap, the first in the
+    diarisation's order wins. An instant in a gap between turns or outside
+    every turn is UNKNOWN, as a word that overlaps no turn is.
+    """
+    ending_here = None
+    for turn, _, label in speaker_turns.itertracks(yield_label=True):
+        if turn.start <= instant < turn.end:
+            return label
+        if ending_here is None and turn.end == instant:
+            ending_here = label
+    return ending_here or "UNKNOWN"
 
 
 def _with_word_source_public_ids(segment: dict) -> dict:

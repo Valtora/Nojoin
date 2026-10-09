@@ -1,3 +1,4 @@
+import pytest
 from pyannote.core import Segment
 
 from backend.utils.transcript_utils import (
@@ -479,3 +480,55 @@ def test_combination_aligns_words_after_a_segment_without_them():
         (2.5, 3.0, "SPEAKER_00", "Thanks."),
         (3.1, 4.0, "SPEAKER_01", "Sure, go ahead."),
     ]
+
+
+ZERO_LENGTH_TURNS = [(0.0, 1.0, "S0"), (1.0, 2.0, "S1"), (3.0, 4.0, "S2")]
+
+
+@pytest.mark.parametrize(
+    ("instant", "turns", "speaker"),
+    [
+        (0.5, ZERO_LENGTH_TURNS, "S0"),  # inside a turn
+        (1.0, ZERO_LENGTH_TURNS, "S1"),  # shared edge: the turn starting there
+        (2.0, ZERO_LENGTH_TURNS, "S1"),  # a turn's end, no turn starting there
+        (2.5, ZERO_LENGTH_TURNS, "UNKNOWN"),  # gap between turns
+        (5.0, ZERO_LENGTH_TURNS, "UNKNOWN"),  # outside every turn
+        (1.5, [(0.0, 2.0, "S0"), (1.0, 3.0, "S1")], "S0"),  # overlap: first turn
+    ],
+)
+def test_zero_length_word_takes_the_speaker_of_the_turn_containing_it(
+    instant, turns, speaker
+):
+    word = {"start": instant, "end": instant, "word": " ship"}
+    transcription = {
+        "segments": [
+            {"start": instant, "end": instant, "text": " ship", "words": [word]}
+        ]
+    }
+
+    result = combine_transcription_diarization(transcription, FakeDiarization(turns))
+
+    assert [(seg["speaker"], seg["text"]) for seg in result] == [(speaker, "ship")]
+
+
+def test_zero_length_word_mid_sentence_survives_consolidation():
+    # Whisper rounds word timings to 0.01 s, so a word can start and end at once.
+    words = [(0.0, 0.5, " we"), (0.5, 1.0, " will"), (1.0, 1.0, " ship")]
+    words += [(1.0, 2.0, " it"), (2.0, 3.0, " today")]
+    transcription = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 3.0,
+                "text": " we will ship it today",
+                "words": [{"start": s, "end": e, "word": w} for s, e, w in words],
+            }
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 3.0, "SPEAKER_00")])
+
+    result = consolidate_diarized_transcript(
+        combine_transcription_diarization(transcription, diarization)
+    )
+
+    assert _spans(result) == [(0.0, 3.0, "SPEAKER_00", "we will ship it today")]
