@@ -1,3 +1,8 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from pyannote.core import Segment
 
@@ -700,3 +705,87 @@ def test_consolidate_drops_a_short_segment_without_text():
     result = consolidate_diarized_transcript(segments)
 
     assert [seg["text"] for seg in result] == ["First point.", "Second point."]
+
+
+def _with_overlap(segment, overlapping):
+    return {**segment, "overlapping_speakers": overlapping}
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        # Different overlapping speakers on the two sides.
+        [
+            _with_overlap(_segment(0.0, 2.0, "S0", "a"), ["S2"]),
+            _segment(2.0, 2.05, "S1", "uh"),
+            _segment(2.05, 4.0, "S0", "b"),
+        ],
+        # Joined, the line would run past 10 s.
+        [
+            _segment(0.0, 5.0, "S0", "a"),
+            _segment(5.0, 5.05, "S1", "uh"),
+            _segment(5.05, 11.0, "S0", "b"),
+        ],
+        # A 0.05 s pause after the fragment.
+        [
+            _segment(0.0, 2.0, "S0", "a"),
+            _segment(2.0, 2.05, "S1", "uh"),
+            _segment(2.1, 4.0, "S0", "b"),
+        ],
+        # A 0.05 s pause before two fragments that fold back and close the gap.
+        [
+            _segment(0.0, 2.0, "S0", "a"),
+            _segment(2.05, 2.1, "S1", "uh"),
+            _segment(2.1, 2.15, "S2", "hm"),
+            _segment(2.15, 4.0, "S0", "b"),
+        ],
+    ],
+)
+def test_consolidate_keeps_neighbours_apart_unless_the_fold_tiles_one_turn(segments):
+    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+
+    assert len(result) == 2
+    assert result[-1]["text"] == "b"
+
+
+REJOIN_ACROSS_A_SPLIT = """
+import json
+from backend.utils.transcript_utils import consolidate_diarized_transcript
+
+def seg(start, end, text, overlapping, words=None):
+    out = {"start": start, "end": end, "speaker": "S0", "text": text,
+           "overlapping_speakers": overlapping}
+    if words:
+        out["words"] = words
+    return out
+
+segments = [
+    seg(0.0, 1.0, "a", ["S2", "S3"]),
+    {**seg(1.0, 1.05, "uh", []), "speaker": "S1"},
+    seg(1.05, 12.05, "one. two", ["S3", "S2"], [
+        {"start": 1.05, "end": 9.05, "word": " one."},
+        {"start": 9.05, "end": 12.05, "word": " two"},
+    ]),
+]
+result = consolidate_diarized_transcript(segments)
+print(json.dumps([(s["start"], s["end"], s["overlapping_speakers"]) for s in result]))
+"""
+
+
+def test_consolidate_output_does_not_depend_on_the_hash_seed():
+    # A split chunk builds its overlapping speakers from a set, whose order
+    # follows PYTHONHASHSEED; the rejoin must not depend on that order.
+    repo_root = Path(__file__).resolve().parents[2]
+    outputs = {
+        subprocess.run(
+            [sys.executable, "-c", REJOIN_ACROSS_A_SPLIT],
+            cwd=repo_root,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        for seed in range(8)
+    }
+
+    assert len(outputs) == 1

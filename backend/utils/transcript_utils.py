@@ -578,16 +578,23 @@ def _fold_short_segments(
     speaker and overlapping speakers; ids and edit flags merge as in
     consolidation. Consecutive short segments keep their order: once one stays
     or goes to the later neighbour, none after it goes to the earlier one. A
-    short segment without text is dropped. When every short segment between
-    two neighbours folds away and they now continue one turn, they merge.
+    short segment without text is dropped.
+
+    After all folds, two neighbours that had only folded or dropped short
+    segments between them merge when those pieces tiled, as consolidation
+    would have merged them: every gap from the earlier neighbour through each
+    short segment to the later one under CONTIGUOUS_GAP_TOLERANCE_S, with the
+    same speaker and overlapping speakers, within ``max_duration_s``.
     """
     result: list[_Entry] = []
+    tiles_with_previous: list[bool] = []
     previous_at: Optional[int] = None
     run: list[_Entry] = []
     for index, entry in enumerate([*entries, None]):
         if entry is not None and index in short_indices:
             run.append(entry)
             continue
+        previous_end = None if previous_at is None else result[previous_at][0]["end"]
         forward: list[_Entry] = []
         choice = _FOLD_PREVIOUS
         kept_own = False
@@ -606,23 +613,47 @@ def _fold_short_segments(
                 forward.append(short)
             else:
                 result.append(short)
+                tiles_with_previous.append(False)
                 kept_own = True
         if entry is not None:
-            entry = _absorb_entries(entry, forward, [])
-            if (
-                run
+            tiles = (
+                bool(run)
                 and not kept_own
-                and previous_at is not None
-                and _continues_turn(result[previous_at][0], entry[0], max_duration_s)
-            ):
-                result[previous_at] = _absorb_entries(result[previous_at], [], [entry])
-            else:
-                result.append(entry)
-                previous_at = len(result) - 1
+                and previous_end is not None
+                and _pieces_tile(
+                    previous_end, [short[0] for short in run], entry[0]["start"]
+                )
+            )
+            result.append(_absorb_entries(entry, forward, []))
+            tiles_with_previous.append(tiles)
+            previous_at = len(result) - 1
         run = []
     if not result and entries:
         return [entries[-1][0]]
-    return [segment for segment, _ in result]
+
+    joined: list[_Entry] = []
+    for entry, tiles in zip(result, tiles_with_previous):
+        if (
+            tiles
+            and joined
+            and _same_turn_within(joined[-1][0], entry[0], max_duration_s)
+        ):
+            joined[-1] = _absorb_entries(joined[-1], [], [entry])
+        else:
+            joined.append(entry)
+    return [segment for segment, _ in joined]
+
+
+def _pieces_tile(
+    previous_end: float, shorts: list[dict], following_start: float
+) -> bool:
+    """Whether the short segments fill the gap between two neighbours, end to end."""
+    end = previous_end
+    for short in shorts:
+        if abs(short["start"] - end) >= CONTIGUOUS_GAP_TOLERANCE_S:
+            return False
+        end = short["end"]
+    return abs(following_start - end) < CONTIGUOUS_GAP_TOLERANCE_S
 
 
 def _short_segment_fold(
@@ -651,13 +682,16 @@ def _short_segment_fold(
     return min(same_speaker or candidates, key=lambda candidate: candidate[2])[0]
 
 
-def _continues_turn(previous: dict, following: dict, max_duration_s: float) -> bool:
-    """Consolidation's rule for merging back-to-back segments by one speaker."""
+def _same_turn_within(previous: dict, following: dict, max_duration_s: float) -> bool:
+    """Consolidation's same-speaker merge conditions, apart from the gap."""
+    span = max(previous["end"], following["end"]) - min(
+        previous["start"], following["start"]
+    )
     return (
         following["speaker"] == previous["speaker"]
-        and abs(following["start"] - previous["end"]) < CONTIGUOUS_GAP_TOLERANCE_S
-        and following["overlapping_speakers"] == previous["overlapping_speakers"]
-        and max(previous["end"], following["end"]) - previous["start"] <= max_duration_s
+        and set(following["overlapping_speakers"])
+        == set(previous["overlapping_speakers"])
+        and span <= max_duration_s
     )
 
 
@@ -790,7 +824,7 @@ def consolidate_diarized_transcript(
                     "start": curr_start,
                     "end": split_end_time,
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": chunk_text,
                     "words": first_chunk_words,
                 }
@@ -801,7 +835,7 @@ def consolidate_diarized_transcript(
                     "start": split_end_time,
                     "end": curr_end,
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": remainder_text,
                     "words": remainder_words,
                 }
@@ -843,7 +877,7 @@ def consolidate_diarized_transcript(
                     "start": curr_start,
                     "end": split_end,
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": chunk_text,
                 }
                 consolidated.append(_copy_consolidation_metadata(curr, split_segment))
@@ -856,7 +890,7 @@ def consolidate_diarized_transcript(
                     "start": split_end,
                     "end": curr_end,  # Original end
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": remainder_text,
                 }
                 segments[i] = _copy_consolidation_metadata(curr, remainder_segment)
