@@ -195,6 +195,24 @@ def test_a_repo_with_a_link_outside_still_frees_its_shared_weights(hub, outside)
     assert not any(payload.exists() for payload in payloads)
 
 
+def test_an_unreadable_unrelated_repo_does_not_block_deletion(hub, caplog):
+    """The scan reads every repo in the cache; one it cannot read raises OSError.
+
+    A ref naming nothing raises it for any user, root included, as root-owned
+    files left by a sudo run in a personal cache do for everyone else.
+    """
+    repo, _ = _shared_parakeet(hub)
+    unrelated = write_hf_repo(hub, "someone/else", {"a.txt": b"a"}, ref=False)
+    (unrelated / "refs").mkdir()
+    (unrelated / "refs" / "main").symlink_to(unrelated / "refs" / "gone")
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not repo.exists()
+    assert (unrelated / "snapshots" / COMMIT / "a.txt").read_bytes() == b"a"
+    assert "hf cache prune" in caplog.text
+
+
 def test_a_partial_download_frees_the_file_it_finished(hub):
     """Cut off after vocab.txt: one shared file linked, one blob in flight."""
     repo = write_hf_repo(hub, PARAKEET, {"vocab.txt": b"vocab"})

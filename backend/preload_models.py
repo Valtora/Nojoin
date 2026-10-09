@@ -549,9 +549,9 @@ def _delete_hub_repo(repo_dir: str) -> None:
     A repo huggingface_hub cannot list is only removed as a directory: a
     download cut off before its first file started, which has no snapshots
     directory yet, or a repo left inconsistent, such as a snapshot link to a
-    blob that is gone. Unfinished files are in the repo's own ``blobs/``. A
-    finished file such a repo shared stays in the cache until ``hf cache
-    prune`` collects it.
+    blob that is gone. So is any repo when another repo in the cache cannot be
+    read. Unfinished files are in the repo's own ``blobs/``. A finished file
+    such a repo shared stays in the cache until ``hf cache prune`` collects it.
     """
     # Imported here: the API process imports this module for model status, and
     # only the worker image installs huggingface_hub.
@@ -561,25 +561,37 @@ def _delete_hub_repo(repo_dir: str) -> None:
         real = os.path.realpath(path)
         return os.path.commonpath([real, repo_dir]) == repo_dir
 
-    cache_info = scan_cache_dir(cache_dir=os.path.dirname(repo_dir))
-    # delete_files unlinks each snapshot entry and removes the first place its
-    # symlink points (blob_path), wherever that is. A snapshot entry, or a
-    # whole snapshot directory, linked to files outside the repo (weights kept
-    # on another disk, another repo's blob) would take those files with it.
-    # Both removals act on the entry in its real parent directory without
-    # following the entry itself, so a file is handed over only when both
-    # parents resolve inside the repo. The rest are links that rmtree below
-    # unlinks without following.
-    files = [
-        file
-        for repo in cache_info.repos
-        if str(repo.repo_path) == repo_dir
-        for revision in repo.revisions
-        for file in revision.files
-        if inside_repo(file.file_path.parent) and inside_repo(file.blob_path.parent)
-    ]
-    if files:
-        cache_info.delete_files(*files).execute()
+    # scan_cache_dir reads every repo in the cache, so an unrelated one it
+    # cannot read (root-owned files left by a sudo run in a personal cache)
+    # would otherwise make every model undeletable.
+    try:
+        cache_info = scan_cache_dir(cache_dir=os.path.dirname(repo_dir))
+        # delete_files unlinks each snapshot entry and removes the first place
+        # its symlink points (blob_path), wherever that is. A snapshot entry,
+        # or a whole snapshot directory, linked to files outside the repo
+        # (weights kept on another disk, another repo's blob) would take those
+        # files with it. Both removals act on the entry in its real parent
+        # directory without following the entry itself, so a file is handed
+        # over only when both parents resolve inside the repo. The rest are
+        # links that rmtree below unlinks without following.
+        files = [
+            file
+            for repo in cache_info.repos
+            if str(repo.repo_path) == repo_dir
+            for revision in repo.revisions
+            for file in revision.files
+            if inside_repo(file.file_path.parent) and inside_repo(file.blob_path.parent)
+        ]
+        strategy = cache_info.delete_files(*files) if files else None
+    except OSError as e:
+        logger.warning(
+            f"Could not read the hub cache to delete {repo_dir} ({e}). Removing it "
+            "as a directory only: a file it shared with another repo stays until "
+            "`hf cache prune` collects it."
+        )
+        strategy = None
+    if strategy is not None:
+        strategy.execute()
     # Refs, snapshot directories and unfinished downloads are left by
     # delete_files. huggingface_hub also logs a path it could not remove and
     # carries on; removing what is left here raises instead, so a failure
