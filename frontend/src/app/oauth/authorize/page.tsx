@@ -154,7 +154,7 @@ function AuthorizeContent() {
     try {
       const response = await login(username, password);
       if (response.force_password_change) {
-        // As on /login. push keeps this consent URL in history: after the change, Back resumes the request.
+        // As on /login: the settings layout mounts fresh and loads the signed-in user itself.
         router.push("/settings/profile");
         return;
       }

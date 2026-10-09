@@ -110,8 +110,8 @@ api.interceptors.response.use(
         // here would discard the client's authorization parameters.
         !window.location.pathname.startsWith("/oauth/authorize")
       ) {
-        // A full load drops the expired session's client state; replace keeps the dead page off the Back stack.
-        window.location.replace("/login");
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
+        window.location.href = "/login";
       }
     }
 
@@ -124,8 +124,8 @@ api.interceptors.response.use(
         typeof window !== "undefined" &&
         !window.location.pathname.startsWith("/settings")
       ) {
-        // A full load reloads the user's state; replace keeps the blocked page off the Back stack.
-        window.location.replace(FORCE_PASSWORD_CHANGE_REDIRECT);
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
+        window.location.href = FORCE_PASSWORD_CHANGE_REDIRECT;
       }
     }
 

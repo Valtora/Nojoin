@@ -4,16 +4,35 @@ import { logout } from "./auth";
 import api from "./client";
 
 // The real axios instance runs on the fetch adapter against a stubbed fetch.
-// jsdom cannot navigate, so location is a stand-in that records the target.
+// jsdom cannot navigate, so location is a stand-in that logs every
+// navigation, whether by href, assign or replace.
 const originalAdapter = api.defaults.adapter;
 
-const replace = vi.fn<(url: string) => void>();
+let navigations: string[] = [];
+
+const navigate = (url: string) => {
+  navigations.push(url);
+};
+
+const serverAnswers = (answer: () => Promise<Response>) => {
+  vi.stubGlobal("fetch", vi.fn(answer));
+};
 
 describe("logout", () => {
   beforeEach(() => {
     api.defaults.adapter = "fetch";
-    replace.mockClear();
-    vi.stubGlobal("location", { pathname: "/recordings", replace });
+    navigations = [];
+    vi.stubGlobal("location", {
+      pathname: "/recordings",
+      get href() {
+        return "https://nojoin.test/recordings";
+      },
+      set href(url: string) {
+        navigate(url);
+      },
+      assign: navigate,
+      replace: navigate,
+    });
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -23,16 +42,21 @@ describe("logout", () => {
     vi.restoreAllMocks();
   });
 
-  it("still leaves for the sign-in page when the server cannot be reached", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new TypeError("Failed to fetch");
-      }),
-    );
+  it("leaves for the sign-in page once the server ends the session", async () => {
+    serverAnswers(async () => new Response(null, { status: 204 }));
 
     await logout();
 
-    expect(replace).toHaveBeenCalledWith("/login");
+    expect(navigations).toEqual(["/login"]);
+  });
+
+  it("still leaves for the sign-in page when the server cannot be reached", async () => {
+    serverAnswers(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    await logout();
+
+    expect(navigations).toEqual(["/login"]);
   });
 });

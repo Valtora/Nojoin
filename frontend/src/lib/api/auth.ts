@@ -33,8 +33,8 @@ export const logout = async (): Promise<void> => {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
-      // A full load drops the old session's client state; replace keeps the signed-in page off the Back stack.
-      window.location.replace("/login");
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
+      window.location.href = "/login";
     }
   }
 };

@@ -4,13 +4,26 @@ import api from "./client";
 
 // The real axios instance and its response interceptor run, on the fetch
 // adapter, against a stubbed fetch. jsdom cannot navigate, so location is a
-// stand-in that records where the page was sent.
+// stand-in that logs every navigation, whether by href, assign or replace.
 const originalAdapter = api.defaults.adapter;
 
-const replace = vi.fn<(url: string) => void>();
+let navigations: string[] = [];
 
 const openPage = (pathname: string) => {
-  vi.stubGlobal("location", { pathname, replace });
+  const navigate = (url: string) => {
+    navigations.push(url);
+  };
+  vi.stubGlobal("location", {
+    pathname,
+    get href() {
+      return `https://nojoin.test${pathname}`;
+    },
+    set href(url: string) {
+      navigate(url);
+    },
+    assign: navigate,
+    replace: navigate,
+  });
 };
 
 const serverAnswers = (status: number, detail: string) => {
@@ -29,7 +42,7 @@ const serverAnswers = (status: number, detail: string) => {
 describe("api client auth redirects", () => {
   beforeEach(() => {
     api.defaults.adapter = "fetch";
-    replace.mockClear();
+    navigations = [];
   });
 
   afterEach(() => {
@@ -45,7 +58,7 @@ describe("api client auth redirects", () => {
       response: { status: 401 },
     });
 
-    expect(replace).toHaveBeenCalledWith("/login");
+    expect(navigations).toEqual(["/login"]);
   });
 
   it.each(["/login", "/setup", "/register", "/oauth/authorize"])(
@@ -58,7 +71,7 @@ describe("api client auth redirects", () => {
         response: { status: 401 },
       });
 
-      expect(replace).not.toHaveBeenCalled();
+      expect(navigations).toEqual([]);
     },
   );
 
@@ -70,7 +83,7 @@ describe("api client auth redirects", () => {
       response: { status: 403 },
     });
 
-    expect(replace).toHaveBeenCalledWith("/settings/profile");
+    expect(navigations).toEqual(["/settings/profile"]);
   });
 
   it("stays on the settings pages for a pending password change", async () => {
@@ -81,7 +94,7 @@ describe("api client auth redirects", () => {
       response: { status: 403 },
     });
 
-    expect(replace).not.toHaveBeenCalled();
+    expect(navigations).toEqual([]);
   });
 
   it("does not redirect on any other 403", async () => {
@@ -92,6 +105,6 @@ describe("api client auth redirects", () => {
       response: { status: 403 },
     });
 
-    expect(replace).not.toHaveBeenCalled();
+    expect(navigations).toEqual([]);
   });
 });
