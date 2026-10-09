@@ -7,10 +7,12 @@ cases skip where ffmpeg is not installed, as the suite's other media tests do.
 from __future__ import annotations
 
 import json
+import os
 import resource
 import shutil
 import signal
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -23,7 +25,11 @@ from backend.utils.import_audio import (
     NoAudioStreamError,
     keep_imported_audio,
 )
-from backend.utils.import_audio_probe import decoded_audio_stream
+from backend.utils.import_audio_probe import (
+    ToolFailure,
+    decoded_audio_stream,
+    track_span,
+)
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg is not installed"
@@ -608,3 +614,45 @@ def test_a_crash_is_the_files_fault_and_a_kill_is_the_servers(
     with pytest.raises(error):
         keep_imported_audio(str(source))
     assert sorted(tmp_path.iterdir()) == [source]
+
+
+@needs_ffmpeg
+def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A service or container stopping sends SIGTERM, which ffmpeg traps: it
+    exits 255 having reported nothing, not -15. The file is not at fault."""
+    source = tmp_path / "screen.mkv"
+    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(source))
+    real_run = subprocess.run
+
+    def run_until_stopped(cmd, **kwargs):
+        if cmd[0] != "ffmpeg":
+            return real_run(cmd, **kwargs)
+        # -re reads the input at its own pace, so ffmpeg is still running.
+        process = subprocess.Popen(
+            [cmd[0], "-re", *cmd[1:]], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        time.sleep(0.5)
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate()
+        raise subprocess.CalledProcessError(process.returncode, cmd, stdout, stderr)
+
+    monkeypatch.setattr(import_audio.subprocess, "run", run_until_stopped)
+
+    with pytest.raises(ImportServerError):
+        keep_imported_audio(str(source))
+    assert sorted(tmp_path.iterdir()) == [source]
+
+
+@needs_ffmpeg
+def test_a_packet_read_past_its_timeout_is_killed_as_a_server_failure(
+    tmp_path: Path,
+) -> None:
+    """The streamed read runs under a watchdog. ffprobe blocked opening a pipe
+    nobody writes to stands in for a hung read."""
+    stalled = tmp_path / "stalled.mkv"
+    os.mkfifo(stalled)
+
+    with pytest.raises(ToolFailure, match="ran past"):
+        track_span(str(stalled), 0, None, timeout=0.2)

@@ -85,7 +85,8 @@ _DOWNMIX_CHANNELS = "2"
 _DURATION_TOLERANCE_S = 1.0
 _DURATION_TOLERANCE_RATIO = 0.001
 
-# ffmpeg error text that points at the server rather than at the file.
+# ffmpeg error text that points at the server rather than at the file. An
+# ffmpeg stopped from outside reports nothing (see ``_is_server_fault``).
 _SERVER_FAULT_MARKERS = (
     "No space left on device",
     "Disk quota exceeded",
@@ -360,14 +361,25 @@ def _reason(exc: BaseException) -> str:
 
 
 def _is_server_fault(exc: BaseException) -> bool:
-    """The failure lies with the server (tools, disk, time), not the file."""
+    """The failure lies with the server (tools, disk, time), not the file.
+
+    An ffmpeg that was stopped is the server's failure, whoever stopped it:
+    the timeout (``TimeoutExpired``), or something outside. ffmpeg traps
+    SIGTERM and SIGINT and exits 255 having reported nothing, so its exit code
+    cannot say a signal stopped it; an exit with no error text does. A signal
+    ffmpeg cannot trap shows as that signal: SIGKILL or SIGXFSZ is the
+    server's, a crash on the file (SIGSEGV, SIGABRT) the file's. An error
+    ffmpeg reports is the file's unless it names the server
+    (``_SERVER_FAULT_MARKERS``).
+    """
     if isinstance(exc, (ToolFailure, subprocess.TimeoutExpired, OSError)):
         return True
     if isinstance(exc, subprocess.CalledProcessError):
-        # A crash on the file (SIGSEGV, SIGABRT) is the file's fault.
-        return killed_by_server_signal(exc.returncode) or (
-            exc.returncode > 0
-            and any(marker in _reason(exc) for marker in _SERVER_FAULT_MARKERS)
+        if exc.returncode < 0:
+            return killed_by_server_signal(exc.returncode)
+        reported = (exc.stderr or b"").strip()
+        return not reported or any(
+            marker in _reason(exc) for marker in _SERVER_FAULT_MARKERS
         )
     return False
 

@@ -28,17 +28,19 @@ PROBE_ENTRIES = (
 _TAIL_WINDOW_S = 30.0
 
 
-# Signals that end ffmpeg or ffprobe from outside: the OOM killer or a timeout
-# (SIGKILL), a disk quota (SIGXFSZ), a container stopping (SIGTERM). Any other
-# signal, such as SIGSEGV or SIGABRT, is the tool crashing on the file.
+# Signals that end ffprobe (or an ffmpeg that cannot trap them) from outside:
+# the OOM killer (SIGKILL), a disk quota (SIGXFSZ), a container stopping
+# (SIGTERM, which ffmpeg traps instead; see ``import_audio._is_server_fault``).
+# Any other signal, such as SIGSEGV or SIGABRT, is the tool crashing on the
+# file.
 SERVER_SIGNALS = frozenset({signal.SIGKILL, signal.SIGXFSZ, signal.SIGTERM})
 
 
 class ToolFailure(Exception):
     """ffprobe or ffmpeg did not finish for a reason on the server's side.
 
-    It could not be started, ran past its timeout, or was ended by one of
-    ``SERVER_SIGNALS``. It says nothing about the file.
+    It could not be started, ran past its timeout (and was killed for it), or
+    was ended by one of ``SERVER_SIGNALS``. It says nothing about the file.
     """
 
 
@@ -224,8 +226,13 @@ def _packet_bounds(
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr)
         except OSError as exc:
             raise ToolFailure(f"ffprobe could not be started: {exc}") from exc
-        # SIGKILL on timeout, which _failure reports as a server-side failure.
-        watchdog = threading.Timer(timeout, process.kill)
+        timed_out = threading.Event()
+
+        def stop() -> None:
+            timed_out.set()
+            process.kill()
+
+        watchdog = threading.Timer(timeout, stop)
         watchdog.start()
         try:
             with process:
@@ -238,6 +245,8 @@ def _packet_bounds(
                     end = finish if end is None else max(end, finish)
         finally:
             watchdog.cancel()
+        if timed_out.is_set():
+            raise ToolFailure(f"ffprobe ran past {timeout} s on {path}; killed")
         if process.returncode != 0:
             stderr.seek(0)
             raise _failure(process.returncode, stderr.read(), path)
