@@ -294,6 +294,54 @@ def test_rule_based_speaker_suggestions_ignore_non_name_this_is_phrase() -> None
     assert result.suggestions == ()
 
 
+def _rule_based_names(line: str) -> list[str]:
+    result = detect_rule_based_speaker_suggestions(
+        [{"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00", "text": line}],
+        ["SPEAKER_00"],
+    )
+    return [suggestion.suggested_name for suggestion in result.suggestions]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Okay, I'm going to share my screen now.",
+        "I am not sure about that.",
+        "I'm sorry, go ahead.",
+        "Just here to listen today.",
+        "Generally speaking, the rollout went fine.",
+        "I'm here.",
+        "So this is Tom's laptop.",
+        "I'M GOING TO SHARE MY SCREEN.",
+        # Lowercase transcripts carry no capitalisation evidence, so the rule
+        # makes no suggestion rather than guessing.
+        "hi, i'm priya.",
+    ],
+)
+def test_rule_based_speaker_suggestions_reject_non_name_introductions(
+    line: str,
+) -> None:
+    assert _rule_based_names(line) == []
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("Hi, I'm Priya.", ["Priya"]),
+        ("And my name is Priya Shah.", ["Priya Shah"]),
+        ("Morning, this is Tom from finance.", ["Tom"]),
+        ("Priya here, can you hear me?", ["Priya"]),
+        ("THIS IS TOM HERE.", ["Tom"]),
+        ("This Is Priya Shah Speaking.", ["Priya Shah"]),
+        ("I'm going to start, so hi, I'm Priya.", ["Priya"]),
+    ],
+)
+def test_rule_based_speaker_suggestions_keep_real_introductions(
+    line: str, expected: list[str]
+) -> None:
+    assert _rule_based_names(line) == expected
+
+
 def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
