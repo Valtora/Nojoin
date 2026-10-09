@@ -275,3 +275,25 @@ def test_an_audio_file_ffprobe_cannot_read_is_kept_as_before(
     monkeypatch.setattr(import_audio.subprocess, "run", _hung({}))
 
     assert keep_imported_audio(str(source)) == str(source)
+
+
+@needs_ffmpeg
+def test_an_upload_that_cannot_be_removed_leaves_no_extracted_copy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The caller only knows the upload's path, so the new file goes too."""
+    source = tmp_path / "screen.mkv"
+    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(source))
+    real_remove = import_audio.os.remove
+
+    def remove(path):
+        if path == str(source):
+            raise PermissionError(13, "Permission denied", path)
+        real_remove(path)
+
+    monkeypatch.setattr(import_audio.os, "remove", remove)
+
+    with pytest.raises(PermissionError):
+        keep_imported_audio(str(source))
+
+    assert sorted(tmp_path.iterdir()) == [source]

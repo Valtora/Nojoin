@@ -148,6 +148,7 @@ def keep_imported_audio(source_path: str) -> str:
         probe = _probe(source_path)
     except RuntimeError as exc:
         if is_container:
+            logger.warning("Refusing imported container %s: %s", source_path, exc)
             raise AudioExtractionError(str(exc)) from exc
         logger.warning("Keeping imported file %s as uploaded: %s", source_path, exc)
         return source_path
@@ -158,7 +159,12 @@ def keep_imported_audio(source_path: str) -> str:
         return source_path
 
     extracted = _extract_audio_track(source_path, track)
-    os.remove(source_path)
+    try:
+        os.remove(source_path)
+    except OSError:
+        # The caller's cleanup only knows source_path; leave nothing it cannot see.
+        _remove_quietly(extracted)
+        raise
     logger.info("Kept the audio of imported file %s as %s", source_path, extracted)
     return extracted
 
@@ -319,9 +325,9 @@ def _extract_audio_track(source_path: str, track: dict) -> str:
         _remove_quietly(target)
         stderr = getattr(exc, "stderr", None)
         reason = stderr.decode(errors="replace") if stderr else str(exc)
-        raise AudioExtractionError(
-            f"Could not extract the audio of {source_path}: {reason}"
-        ) from exc
+        message = f"Could not extract the audio of {source_path}: {reason}"
+        logger.warning("%s", message)
+        raise AudioExtractionError(message) from exc
     return target
 
 
