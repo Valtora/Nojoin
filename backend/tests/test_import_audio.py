@@ -13,7 +13,6 @@ import resource
 import shutil
 import signal
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
@@ -678,12 +677,18 @@ def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
     def run_until_stopped(cmd, **kwargs):
         if cmd[0] != "ffmpeg":
             return real_run(cmd, **kwargs)
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(0.3)
+        # -re reads the input at its own pace, so the ten minutes cannot finish
+        # first; the signal goes once ffmpeg has reported an error.
+        process = subprocess.Popen(
+            [cmd[0], "-re", *cmd[1:]], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        reported = process.stderr.read(1) if process.stderr else b""
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate()
         stopped.append(
-            subprocess.CalledProcessError(process.returncode, cmd, stdout, stderr)
+            subprocess.CalledProcessError(
+                process.returncode, cmd, stdout, reported + stderr
+            )
         )
         raise stopped[-1]
 

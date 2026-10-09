@@ -351,39 +351,6 @@ async def test_deleting_an_import_being_finalized_leaves_nothing_behind(
     assert _files(recordings_dir) == []
 
 
-@pytest.mark.anyio
-@pytest.mark.parametrize("after_keep", [False, True], ids=["before-keep", "after-keep"])
-async def test_a_finalize_whose_claim_was_taken_over_leaves_the_new_owner_alone(
-    pg, pg_client, monkeypatch, tmp_path: Path, after_keep: bool
-) -> None:
-    """Its claim looks stale by the database clock (a suspended host, a clock
-    step), so another finalize takes it over and queues the import. When the
-    first one resumes, it removes only its own files and answers as a
-    repeated call would."""
-    engine, _ = pg
-    recording_id, first, release, dispatches, recordings_dir = await _finalize_held(
-        pg_client, monkeypatch, tmp_path, after_keep=after_keep
-    )
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("UPDATE recordings SET updated_at = :t"),
-            {"t": utc_now() - timedelta(hours=3)},
-        )
-
-    second = await _finalize(pg_client, recording_id)
-    release.set()
-    first_answer = await first
-
-    assert second.status_code == 200, second.text
-    assert second.json()["status"] == "QUEUED"
-    stored = await _stored_audio(engine)
-    assert stored.exists()
-    assert [path for path in recordings_dir.iterdir() if path.is_file()] == [stored]
-    assert first_answer.status_code == 200, first_answer.text
-    assert first_answer.json()["status"] == "QUEUED"
-    assert len(dispatches) == 1
-
-
 async def _backdate_claim(engine) -> None:
     """Make the claim look stale by the database clock, as after a suspended
     host or a clock step."""
@@ -392,6 +359,82 @@ async def _backdate_claim(engine) -> None:
             text("UPDATE recordings SET updated_at = :t"),
             {"t": utc_now() - timedelta(hours=3)},
         )
+
+
+def _hold_two(monkeypatch, *, first_after_keep: bool):
+    """Hold the first extraction (A) and the second (B) independently."""
+    entered = [threading.Event(), threading.Event()]
+    release = [threading.Event(), threading.Event()]
+    started: list[str] = []
+    lock = threading.Lock()
+
+    def keep(path: str) -> KeptAudio:
+        with lock:
+            index = len(started)
+            started.append(path)
+        if index > 1:
+            return _stub_keep(path)
+        if index == 0 and first_after_keep:
+            kept = _stub_keep(path)
+            entered[index].set()
+            release[index].wait(30)
+            return kept
+        entered[index].set()
+        release[index].wait(30)
+        return _stub_keep(path)
+
+    _patch_keep(monkeypatch, keep)
+    return entered, release
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "ordering",
+    [(False, True), (False, False), (True, True), (True, False)],
+    ids=[
+        "A-before-keep-finishes-first",
+        "A-before-keep-finishes-last",
+        "A-after-keep-finishes-first",
+        "A-after-keep-finishes-last",
+    ],
+)
+async def test_a_finalize_whose_claim_was_taken_over_leaves_the_new_owner_alone(
+    pg, pg_client, monkeypatch, tmp_path: Path, ordering: tuple[bool, bool]
+) -> None:
+    """A's claim goes stale while it runs, and B takes it over. Whichever
+    finishes first, B stores, A removes only its own files and answers as a
+    repeated call would, and one processing run is queued."""
+    a_after_keep, a_first = ordering
+    engine, _ = pg
+    recording_id, dispatches, recordings_dir = await _start(
+        pg_client, monkeypatch, tmp_path
+    )
+    entered, release = _hold_two(monkeypatch, first_after_keep=a_after_keep)
+    call_a = asyncio.create_task(_finalize(pg_client, recording_id))
+    await _until(entered[0])
+    await _backdate_claim(engine)
+    call_b = asyncio.create_task(_finalize(pg_client, recording_id))
+    await _until(entered[1])
+
+    order = [(0, call_a), (1, call_b)] if a_first else [(1, call_b), (0, call_a)]
+    answers = {}
+    for index, call in order:
+        release[index].set()
+        answers[index] = await call
+    a_answer, b_answer = answers[0], answers[1]
+
+    assert b_answer.status_code == 200, b_answer.text
+    assert b_answer.json()["status"] == "QUEUED"
+    stored = await _stored_audio(engine)
+    assert stored.exists()
+    assert [path for path in recordings_dir.iterdir() if path.is_file()] == [stored]
+    if a_first:
+        assert a_answer.status_code == 409, a_answer.text
+        assert a_answer.json()["detail"]["code"] == "import_finalizing"
+    else:
+        assert a_answer.status_code == 200, a_answer.text
+        assert a_answer.json()["status"] == "QUEUED"
+    assert len(dispatches) == 1
 
 
 @pytest.mark.anyio
