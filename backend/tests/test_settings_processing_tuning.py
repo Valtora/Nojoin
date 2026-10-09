@@ -167,6 +167,72 @@ def test_lowering_merge_below_a_stored_floor_is_rejected() -> None:
     assert row["phantom_merge_threshold"] == 0.8
 
 
+def test_a_merge_threshold_under_the_installs_floor_is_rejected(fake_config) -> None:
+    """Processing reads the install's floor for a user who has not set one, so
+    the save is checked against it, and the message says where it comes from."""
+    fake_config.config = {"phantom_embedding_floor": 0.55}
+
+    (response,), row = _run([("POST", {"phantom_merge_threshold": 0.5})])
+
+    assert response.status_code == 400
+    assert "phantom_embedding_floor to 0.55" in response.json()["detail"]
+    assert "phantom_merge_threshold" not in row
+
+
+def test_a_floor_under_the_installs_merge_threshold_is_accepted(fake_config) -> None:
+    # Above the shipped 0.60 merge threshold, but below the install's 0.8.
+    fake_config.config = {"phantom_merge_threshold": 0.8}
+
+    (response,), row = _run([("POST", {"phantom_embedding_floor": 0.7})])
+
+    assert response.status_code == 200
+    assert row["phantom_embedding_floor"] == 0.7
+
+
+def test_an_install_conflict_does_not_block_a_whole_page_save(fake_config) -> None:
+    """The settings page always sends both phantom keys. When the user has set
+    neither, a conflict lies in the install's values alone (processing ignores
+    it), so it must not block their save."""
+    fake_config.config = {
+        "phantom_embedding_floor": 0.7,
+        "phantom_merge_threshold": 0.6,
+    }
+
+    (response,), row = _run(
+        [
+            (
+                "POST",
+                {
+                    "theme": "light",
+                    "phantom_embedding_floor": None,
+                    "phantom_merge_threshold": None,
+                },
+            )
+        ]
+    )
+
+    assert response.status_code == 200
+    assert row["theme"] == "light"
+
+
+def test_get_reports_the_installs_pair_and_hides_a_value_it_overrides(
+    fake_config,
+) -> None:
+    fake_config.config = {"phantom_embedding_floor": 0.55, "phantom_merge_threshold": 4}
+
+    (response,), _row = _run([("GET", None)], stored={"phantom_merge_threshold": 0.5})
+
+    payload = response.json()
+    # The stored 0.5 is under the install's 0.55 floor, so processing falls
+    # back for both; the page shows it as unset.
+    assert payload["phantom_merge_threshold"] is None
+    # The install's unusable 4 reads as unset too.
+    assert payload["phantom_thresholds_install"] == {
+        "phantom_embedding_floor": 0.55,
+        "phantom_merge_threshold": None,
+    }
+
+
 @pytest.mark.parametrize("stored", [1.7, 10**400], ids=["out-of-range", "huge-int"])
 def test_an_unusable_stored_value_reads_as_unset(stored) -> None:
     (response,), _row = _run([("GET", None)], stored={"vad_threshold": stored})

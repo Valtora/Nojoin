@@ -116,13 +116,31 @@ export function processingTuningReset(): Pick<Settings, ProcessingTuningKey> {
   ) as Pick<Settings, ProcessingTuningKey>;
 }
 
-function setValue(settings: Settings, key: ProcessingTuningKey): number | null {
-  const value = settings[key];
-  return typeof value === "number" ? value : null;
+type PhantomPairKey = "phantom_embedding_floor" | "phantom_merge_threshold";
+
+/**
+ * The value processing will use, and where it comes from: the user's own, else
+ * the installation's (sent read-only by the API), else the shipped default.
+ */
+function effectiveValue(
+  settings: Settings,
+  key: PhantomPairKey,
+): { value: number; source: "user" | "installation" | "default" } {
+  const own = settings[key];
+  if (typeof own === "number") {
+    return { value: own, source: "user" };
+  }
+  const installed = settings.phantom_thresholds_install?.[key];
+  if (typeof installed === "number") {
+    return { value: installed, source: "installation" };
+  }
+  return { value: PROCESSING_TUNING_SPECS[key].defaultValue, source: "default" };
 }
 
-function effectiveValue(settings: Settings, key: ProcessingTuningKey): number {
-  return setValue(settings, key) ?? PROCESSING_TUNING_SPECS[key].defaultValue;
+function describe(effective: ReturnType<typeof effectiveValue>): string {
+  return effective.source === "installation"
+    ? `${effective.value}, the installation's value`
+    : String(effective.value);
 }
 
 /**
@@ -147,11 +165,13 @@ export function validateProcessingTuning(settings: Settings): string | null {
     }
   }
 
-  if (
-    effectiveValue(settings, "phantom_embedding_floor") >=
-    effectiveValue(settings, "phantom_merge_threshold")
-  ) {
-    return "The phantom speaker non-speech floor must be lower than its merge similarity.";
+  // Mirrors the API: the user must have set one of the pair for a conflict to
+  // be theirs. One lying in the installation's values alone is ignored by
+  // processing and must not block the page's saves.
+  const floor = effectiveValue(settings, "phantom_embedding_floor");
+  const merge = effectiveValue(settings, "phantom_merge_threshold");
+  if ((floor.source === "user" || merge.source === "user") && floor.value >= merge.value) {
+    return `The phantom speaker non-speech floor (${describe(floor)}) must be lower than its merge similarity (${describe(merge)}).`;
   }
   return null;
 }

@@ -76,4 +76,42 @@ describe("validateProcessingTuning", () => {
       }),
     ).toBeNull();
   });
+
+  it("checks an empty half of the phantom pair against the installation's value", () => {
+    const installFloor = {
+      phantom_thresholds_install: {
+        phantom_embedding_floor: 0.55,
+        phantom_merge_threshold: null,
+      },
+    };
+    expect(
+      validateProcessingTuning({ ...installFloor, phantom_merge_threshold: 0.5 }),
+    ).toBe(
+      "The phantom speaker non-speech floor (0.55, the installation's value) must be lower than its merge similarity (0.5).",
+    );
+
+    // Above the shipped 0.6 merge similarity, but below the installation's 0.8.
+    expect(
+      validateProcessingTuning({
+        phantom_embedding_floor: 0.7,
+        phantom_thresholds_install: {
+          phantom_embedding_floor: null,
+          phantom_merge_threshold: 0.8,
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("ignores a conflict in the installation's values alone", () => {
+    expect(
+      validateProcessingTuning({
+        phantom_embedding_floor: null,
+        phantom_merge_threshold: null,
+        phantom_thresholds_install: {
+          phantom_embedding_floor: 0.7,
+          phantom_merge_threshold: 0.6,
+        },
+      }),
+    ).toBeNull();
+  });
 });

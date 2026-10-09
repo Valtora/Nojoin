@@ -485,7 +485,10 @@ or a phantom floor that is not below the phantom merge threshold, and uses the s
 (for the VAD threshold, `vad_parameters.threshold`), so a typo never fails a recording. A user's own
 value, when set, replaces the flat key entirely, so an unusable per-user value falls back to the shipped
 default rather than to the installation's. The settings page shows a user's own value only: where the installation sets
-a default, the field still reads "Default" with the shipped value as its placeholder.
+a default, the field still reads "Default" with the shipped value as its placeholder. When a user saves either phantom
+similarity, the floor-below-merge rule is checked against the pair processing will use, so a half the user left empty
+counts as the installation's flat value, and the error names it. A pair whose conflict lies in the installation's two
+values alone does not block anyone's save; processing ignores it as above.
 
 ## CLI OAuth (worker-io image)
 

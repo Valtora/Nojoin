@@ -457,6 +457,12 @@ export interface Settings {
   speaker_merge_threshold?: number | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
+  // Read-only, from GET: the installation's phantom pair (null where unset or
+  // unusable). The floor/merge check counts it for a field left empty.
+  phantom_thresholds_install?: {
+    phantom_embedding_floor: number | null;
+    phantom_merge_threshold: number | null;
+  };
   spellcheck_language?: string;
 
     [key: string]: unknown;
