@@ -89,11 +89,13 @@ def _record_source_public_id(segment: dict[str, Any], public_id: str) -> list[st
 class UtterancePublicIds:
     """Hands out ``public_id`` values for one write of a recording's segments.
 
-    A requested id is kept when it is a well-formed utterance id that no
-    utterance holds yet, in this recording or any other. An id this recording
+    A requested id is kept when no utterance holds it yet, in this recording
+    or any other, and it is a canonical UUID. ``any_form`` drops the UUID rule
+    for a recording's own stored projection (backfill), whose ids clients have
+    already seen in whatever form they were stored. An id this recording
     already holds (a superseded or still-active utterance) is recorded as the
-    new utterance's source and a fresh id is minted. Anything else, an engine's
-    segment number or an id another recording owns, gets a fresh id.
+    new utterance's source and a fresh id is minted. Anything else, such as an
+    engine's segment number or an id another recording owns, gets a fresh id.
     """
 
     def __init__(
@@ -102,6 +104,7 @@ class UtterancePublicIds:
         *,
         recording_id: int,
         segments: Iterable[Mapping[str, Any]],
+        any_form: bool = False,
     ) -> None:
         self._held_here: set[str] = {
             str(public_id)
@@ -118,7 +121,7 @@ class UtterancePublicIds:
             {
                 public_id
                 for public_id in map(_requested_public_id, segments)
-                if is_utterance_public_id(public_id)
+                if public_id and (any_form or is_utterance_public_id(public_id))
             }
         )
         self._claimable = set(candidates) - _held_ids(
@@ -168,10 +171,8 @@ class RequestedPublicIds:
         conflicts = sorted(repeated | _held_ids(session, sorted(counts)))
         if conflicts:
             raise SegmentIdConflictError(
-                f"{len(conflicts)} segment id(s) already belong to existing "
-                f"utterances or repeat in the request (first: {conflicts[0]}). "
-                "Send exactly the current utterance ids to edit in place, or "
-                "omit ids for new segments."
+                "This transcript has changed since it was loaded. "
+                "Reload it and try again."
             )
 
     def assign(self, segment: Mapping[str, Any]) -> str:
@@ -188,7 +189,13 @@ def public_ids_for_write(
     segments: Iterable[Mapping[str, Any]],
     keep_requested: bool,
 ) -> UtterancePublicIds | RequestedPublicIds:
-    """``RequestedPublicIds`` for a client edit, ``UtterancePublicIds`` otherwise."""
+    """``RequestedPublicIds`` for a client edit, backfill rules otherwise.
+
+    The client-edit path raises ``SegmentIdConflictError`` when a requested id
+    is held or repeated.
+    """
     if keep_requested:
         return RequestedPublicIds(session, segments)
-    return UtterancePublicIds(session, recording_id=recording_id, segments=segments)
+    return UtterancePublicIds(
+        session, recording_id=recording_id, segments=segments, any_form=True
+    )

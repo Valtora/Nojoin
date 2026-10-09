@@ -260,10 +260,11 @@ def _segment(public_id: str, start: float, end: float, text: str) -> dict:
     }
 
 
-def test_backfill_never_persists_whisper_segment_numbers(
+def test_backfill_of_whisper_numbered_projections_never_collides(
     session: Session, user: User
 ) -> None:
-    public_ids: list[str] = []
+    """A projection's own ids are kept, as upstream keeps them, unless taken."""
+    public_ids: list[list[str]] = []
     for name in ("first", "second"):
         segments = _combine_and_consolidate_segments(
             _whisper_without_word_timestamps(),
@@ -276,10 +277,11 @@ def test_backfill_never_persists_whisper_segment_numbers(
             "Hello there. Over here.",
             "And again.",
         ]
-        public_ids.extend(utterance.public_id for utterance in utterances)
+        public_ids.append([utterance.public_id for utterance in utterances])
 
-    assert all(is_utterance_public_id(public_id) for public_id in public_ids)
-    assert len(set(public_ids)) == len(public_ids)
+    first, second = public_ids
+    assert first == ["1", "2"]
+    assert all(is_utterance_public_id(public_id) for public_id in second)
 
 
 def test_backfill_does_not_reuse_an_id_another_recording_holds(
@@ -394,17 +396,57 @@ def _utterance_rows(session: Session) -> list[tuple]:
     return [tuple(row) for row in rows]
 
 
-def _segments_url(session: Session, user: User) -> str:
+def _segments_url(
+    session: Session, user: User, segments: list[dict] | None = None
+) -> str:
     recording = _new_recording(session, user, "edited")
     session.add(
         Transcript(
             recording_id=recording.id,
             text="hello",
-            segments=[_segment("", 0.0, 1.0, "hello")],
+            segments=segments or [_segment("", 0.0, 1.0, "hello")],
         )
     )
     session.commit()
     return f"/api/v1/transcripts/{recording.public_id}"
+
+
+@pytest.mark.anyio
+async def test_bulk_put_of_a_recordings_own_legacy_ids_keeps_its_text_lock(
+    client: AsyncClient, session: Session, user: User
+) -> None:
+    """Legacy ids a client already holds edit in place, as upstream does.
+
+    The recording has only its projection, whose ids predate UUIDs. The PUT
+    backfills first; keeping those ids lets the edit match the rows and take
+    the in-place path, which honours the text lock.
+    """
+    locked = _segment("legacy-segment-1", 0.0, 1.0, "locked legacy")
+    locked["text_manually_edited"] = True
+    url = _segments_url(
+        session, user, [locked, _segment("legacy-segment-2", 1.0, 2.0, "two")]
+    )
+
+    response = await client.put(
+        f"{url}/segments",
+        json={
+            "segments": [
+                _segment("legacy-segment-1", 0.0, 1.0, "client overwrite"),
+                _segment("legacy-segment-2", 1.0, 2.0, "two"),
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert [
+        (segment["id"], segment["text"]) for segment in response.json()["segments"]
+    ] == [("legacy-segment-1", "locked legacy"), ("legacy-segment-2", "two")]
+    rows = _utterance_rows(session)
+    assert [(row[0], row[1], row[3]) for row in rows] == [
+        ("legacy-segment-1", "locked legacy", True),
+        ("legacy-segment-2", "two", False),
+    ]
+    assert all(row[2] != TranscriptUtteranceState.SUPERSEDED for row in rows)
 
 
 @pytest.mark.anyio
@@ -459,7 +501,9 @@ async def test_bulk_put_reusing_held_ids_is_a_conflict_and_changes_nothing(
     )
 
     assert response.status_code == 409
-    assert "already belong to existing utterances" in response.json()["detail"]
+    assert response.json()["detail"] == (
+        "This transcript has changed since it was loaded. Reload it and try again."
+    )
     assert _utterance_rows(session) == rows_before
     read_after = (await client.get(f"{url}/utterances")).json()["utterances"]
     assert read_after == read_before

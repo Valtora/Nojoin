@@ -572,17 +572,18 @@ locks remain authoritative.
 ### Utterance Public Ids
 
 `transcript_utterances.public_id` is unique across every recording. A segment's
-`id` is only a request: it carries live utterance ids into finalize and
-projection ids into backfill, but openai-whisper also numbers its segments there.
-Finalize and backfill (`replace_utterances_from_segments`) take ids from
-`UtterancePublicIds` in
-[backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py):
-a canonical UUID that no utterance holds is kept, one this recording holds goes
-into the new row's `confidence_payload.source_public_ids` and is replaced by a
-fresh uuid4, and anything else gets a uuid4. The bulk segment edit's full-replace
-fallback keeps the client's ids and answers 409 when one is held. The live append
-persists the uuid5 the live lane mints over the recording id, span, speaker and
-text; diarisation reconciliation mints uuid4.
+`id` is only a request: it carries live utterance ids into finalize and a
+recording's stored ids into backfill, but openai-whisper also numbers its
+segments there. Finalize and backfill (`replace_utterances_from_segments`) take
+ids from `UtterancePublicIds` in
+[backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py).
+An id that no utterance holds is kept (finalize also requires a canonical UUID);
+one this recording holds goes into the new row's
+`confidence_payload.source_public_ids` and is replaced by a fresh uuid4;
+anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps
+the client's ids and answers 409 when one is held or repeated. The live append
+persists the live lane's uuid5 of recording id, span, speaker and text;
+diarisation reconciliation mints uuid4.
 
 ### Startup Canonical Cutover
 
